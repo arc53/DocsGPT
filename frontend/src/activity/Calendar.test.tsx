@@ -74,7 +74,22 @@ const WINDOW: PlannedWindow = {
       last_checked_at: null,
     },
   ],
-  syncs: [],
+  syncs: [
+    {
+      source_id: 'k1',
+      name: 'Carrier portal',
+      frequency: 'daily',
+      last_synced_at: null,
+      next_sync_at: at(1, 3),
+    },
+    {
+      source_id: 'k2',
+      name: 'Customs handbook',
+      frequency: 'monthly',
+      last_synced_at: null,
+      next_sync_at: null,
+    },
+  ],
   truncated: [],
 };
 
@@ -138,6 +153,15 @@ describe('Calendar page', () => {
     expect(slotButton('Daily support digest').dataset.state).toBe('planned');
     expect(slotButton('Prospect news scan').dataset.state).toBe('failed');
     expect(container.textContent).toContain('Rotterdam congestion');
+  });
+
+  it('says when each knowledge sync runs next, when known', async () => {
+    await render();
+    const labels = Array.from(container.querySelectorAll('span')).map(
+      (span) => span.textContent,
+    );
+    expect(labels).toContain('activity.calendar.syncBarNext');
+    expect(labels).toContain('activity.calendar.syncBar');
   });
 
   it('opens a planned slot in the schedule panel', async () => {

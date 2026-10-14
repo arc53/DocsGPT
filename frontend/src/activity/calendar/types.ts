@@ -49,6 +49,8 @@ export type SyncEntry = {
   name: string;
   frequency: 'daily' | 'weekly' | 'monthly';
   last_synced_at: string | null;
+  /** When its frequency syncs next; null when beat hasn't run it yet. */
+  next_sync_at: string | null;
 };
 
 export type PlannedWindow = {

@@ -66,6 +66,8 @@ import type {
   PausedScheduleItem,
   RunningItem,
   RunningKind,
+  ScheduleUpNext,
+  SyncUpNext,
   UpNextItem,
 } from './types';
 
@@ -531,23 +533,29 @@ export default function Now() {
     />
   );
 
-  const upNextRow = (item: UpNextItem) => (
+  /** When an Up next item runs: its time, or "Overdue" when the scheduler is behind. */
+  const upNextLeading = (item: UpNextItem) =>
+    Date.parse(item.next_run_at) < clock ? (
+      <span className="text-warning w-16 shrink-0 text-xs font-medium">
+        {t('agents.schedules.stats.overdue')}
+      </span>
+    ) : (
+      <span className="text-foreground w-16 shrink-0 text-xs font-medium tabular-nums">
+        {formatRunTime(item.next_run_at, clock)}
+      </span>
+    );
+
+  const upNextName = (item: UpNextItem) =>
+    item.kind === 'sync'
+      ? t(`activity.now.syncBatch.${item.frequency}`)
+      : (item.name ?? '');
+
+  const scheduleUpNextRow = (item: ScheduleUpNext) => (
     <ListRow
-      key={item.schedule_id}
+      key={item.id}
       interactive
       asChild
-      leading={
-        // A past next run means the scheduler is behind: say so, not a date.
-        Date.parse(item.next_run_at) < clock ? (
-          <span className="text-warning w-16 shrink-0 text-xs font-medium">
-            {t('agents.schedules.stats.overdue')}
-          </span>
-        ) : (
-          <span className="text-foreground w-16 shrink-0 text-xs font-medium tabular-nums">
-            {formatRunTime(item.next_run_at, clock)}
-          </span>
-        )
-      }
+      leading={upNextLeading(item)}
       title={item.name ?? ''}
       description={meta(
         item.agent_name ??
@@ -580,6 +588,33 @@ export default function Now() {
       />
     </ListRow>
   );
+
+  // "Daily sync · 4 sources" over the source names (D4).
+  const syncUpNextRow = (item: SyncUpNext) => (
+    <ListRow
+      key={item.id}
+      interactive
+      asChild
+      leading={upNextLeading(item)}
+      title={meta(
+        upNextName(item),
+        t('activity.now.syncSources', { count: item.sources.length }),
+      )}
+      description={meta(
+        item.sources.join(', '),
+        item.blocked.length > 0 &&
+          t('activity.now.syncBlocked', { count: item.blocked.length }),
+      )}
+      trailing={
+        <RefreshCw aria-hidden className="text-muted-foreground size-3.5" />
+      }
+    >
+      <Link to="/settings/knowledge" />
+    </ListRow>
+  );
+
+  const upNextRow = (item: UpNextItem) =>
+    item.kind === 'sync' ? syncUpNextRow(item) : scheduleUpNextRow(item);
 
   const sideHeader = (title: string, to: string, link: string) => (
     <SectionHeader
@@ -633,7 +668,7 @@ export default function Now() {
                 ? t('activity.now.stats.nextAt', {
                     ...NO_ESCAPE,
                     time: formatRunTime(next.next_run_at, clock),
-                    name: next.name ?? '',
+                    name: upNextName(next),
                   })
                 : undefined
             }

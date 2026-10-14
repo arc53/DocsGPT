@@ -3536,7 +3536,16 @@
         "upload": "Upload",
         "sync": "Sync",
         "reingest": "Re-index"
-      }
+      },
+      "syncBatch": {
+        "daily": "Daily sync",
+        "weekly": "Weekly sync",
+        "monthly": "Monthly sync"
+      },
+      "syncSources_one": "{{count}} source",
+      "syncSources_other": "{{count}} sources",
+      "syncBlocked_one": "{{count}} needs reconnecting",
+      "syncBlocked_other": "{{count}} need reconnecting"
     },
     "calendar": {
       "label": "Calendar",
@@ -3606,7 +3615,8 @@
       "queued": "Run started. It shows in Now and in the run log.",
       "openSchedule": "Open schedule",
       "timezone": "Schedule time zone",
-      "missedNote": "This run never started: the scheduler was down or behind at the time. Run now to catch up, or check that the worker runs with beat."
+      "missedNote": "This run never started: the scheduler was down or behind at the time. Run now to catch up, or check that the worker runs with beat.",
+      "syncBarNext": "{{name}} · {{frequency}}, next {{time}}"
     },
     "history": {
       "label": "History",

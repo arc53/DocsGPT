@@ -3505,7 +3505,16 @@
         "upload": "上傳",
         "sync": "同步",
         "reingest": "重新索引"
-      }
+      },
+      "syncBatch": {
+        "daily": "每日同步",
+        "weekly": "每週同步",
+        "monthly": "每月同步"
+      },
+      "syncSources_one": "{{count}} 個來源",
+      "syncSources_other": "{{count}} 個來源",
+      "syncBlocked_one": "{{count}} 個需要重新連線",
+      "syncBlocked_other": "{{count}} 個需要重新連線"
     },
     "calendar": {
       "label": "行事曆",
@@ -3575,7 +3584,8 @@
       "queued": "已開始執行。它會顯示在「目前」和執行記錄中。",
       "openSchedule": "開啟排程",
       "timezone": "排程時區",
-      "missedNote": "這次執行從未開始：當時排程器已停止或落後。立即執行以補上，或檢查 worker 是否帶 beat 執行。"
+      "missedNote": "這次執行從未開始：當時排程器已停止或落後。立即執行以補上，或檢查 worker 是否帶 beat 執行。",
+      "syncBarNext": "{{name}} · {{frequency}}，下次 {{time}}"
     },
     "history": {
       "label": "歷史",

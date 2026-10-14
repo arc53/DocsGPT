@@ -3517,7 +3517,16 @@
         "upload": "Upload",
         "sync": "Synchronisierung",
         "reingest": "Neu indexieren"
-      }
+      },
+      "syncBatch": {
+        "daily": "Tägliche Synchronisierung",
+        "weekly": "Wöchentliche Synchronisierung",
+        "monthly": "Monatliche Synchronisierung"
+      },
+      "syncSources_one": "{{count}} Quelle",
+      "syncSources_other": "{{count}} Quellen",
+      "syncBlocked_one": "{{count}} muss neu verbunden werden",
+      "syncBlocked_other": "{{count}} müssen neu verbunden werden"
     },
     "calendar": {
       "label": "Kalender",
@@ -3587,7 +3596,8 @@
       "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
       "openSchedule": "Zeitplan öffnen",
       "timezone": "Zeitzone des Zeitplans",
-      "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft."
+      "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft.",
+      "syncBarNext": "{{name}} · {{frequency}}, nächste {{time}}"
     },
     "history": {
       "label": "Verlauf",

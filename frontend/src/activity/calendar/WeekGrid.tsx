@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 import { intlLocale } from '../../utils/dateTimeUtils';
+import { formatRunTime } from '../format';
 import {
   addDays,
   dayKey,
@@ -148,11 +149,18 @@ export default function WeekGrid({
     >
       <RefreshCw aria-hidden className="size-3 shrink-0" />
       <span className="truncate">
-        {t('activity.calendar.syncBar', {
-          name: sync.name,
-          frequency: t(`activity.calendar.frequency.${sync.frequency}`),
-          interpolation: { escapeValue: false },
-        })}
+        {sync.next_sync_at
+          ? t('activity.calendar.syncBarNext', {
+              name: sync.name,
+              frequency: t(`activity.calendar.frequency.${sync.frequency}`),
+              time: formatRunTime(sync.next_sync_at),
+              interpolation: { escapeValue: false },
+            })
+          : t('activity.calendar.syncBar', {
+              name: sync.name,
+              frequency: t(`activity.calendar.frequency.${sync.frequency}`),
+              interpolation: { escapeValue: false },
+            })}
       </span>
     </div>
   ));

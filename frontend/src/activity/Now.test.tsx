@@ -109,12 +109,23 @@ const SNAPSHOT: NowSnapshot = {
   ],
   up_next: [
     {
+      kind: 'schedule',
+      id: 'schedule:x2',
       schedule_id: 'x2',
       name: 'Daily support digest',
       agent_id: 'a2',
       agent_name: 'Support Assistant',
       trigger_type: 'recurring',
       next_run_at: new Date(Date.now() + 3_600_000).toISOString(),
+      runs_in_window: 1,
+    },
+    {
+      kind: 'sync',
+      id: 'sync:daily',
+      frequency: 'daily',
+      next_run_at: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+      sources: ['Carrier portal', 'Rate cards'],
+      blocked: ['Shared drive'],
       runs_in_window: 1,
     },
   ],
@@ -236,6 +247,20 @@ describe('Now page', () => {
     expect(reading.textContent).toContain('activity.now.reading');
     expect(reading.textContent).toContain('1:35');
     expect(reading.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it('lists a knowledge sync batch in Up next', async () => {
+    await render();
+    const row = Array.from(container.querySelectorAll('li')).find((li) =>
+      li.textContent?.includes('activity.now.syncBatch.daily'),
+    ) as HTMLElement;
+    expect(row).toBeDefined();
+    expect(row.textContent).toContain('activity.now.syncSources');
+    expect(row.textContent).toContain('Carrier portal, Rate cards');
+    expect(row.textContent).toContain('activity.now.syncBlocked');
+    expect(row.querySelector('a')?.getAttribute('href')).toBe(
+      '/settings/knowledge',
+    );
   });
 
   it('stops a running answer', async () => {

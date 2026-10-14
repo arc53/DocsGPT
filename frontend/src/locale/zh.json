@@ -3504,7 +3504,16 @@
         "upload": "上传",
         "sync": "同步",
         "reingest": "重新索引"
-      }
+      },
+      "syncBatch": {
+        "daily": "每日同步",
+        "weekly": "每周同步",
+        "monthly": "每月同步"
+      },
+      "syncSources_one": "{{count}} 个来源",
+      "syncSources_other": "{{count}} 个来源",
+      "syncBlocked_one": "{{count}} 个需要重新连接",
+      "syncBlocked_other": "{{count}} 个需要重新连接"
     },
     "calendar": {
       "label": "日历",
@@ -3574,7 +3583,8 @@
       "queued": "已开始运行。它会显示在“当前”和运行日志中。",
       "openSchedule": "打开计划",
       "timezone": "计划时区",
-      "missedNote": "这次运行从未开始：当时调度器已停止或滞后。立即运行以补上，或检查 worker 是否带 beat 运行。"
+      "missedNote": "这次运行从未开始：当时调度器已停止或滞后。立即运行以补上，或检查 worker 是否带 beat 运行。",
+      "syncBarNext": "{{name}} · {{frequency}}，下次 {{time}}"
     },
     "history": {
       "label": "历史",

@@ -3517,7 +3517,16 @@
         "upload": "Subida",
         "sync": "Sincronización",
         "reingest": "Reindexación"
-      }
+      },
+      "syncBatch": {
+        "daily": "Sincronización diaria",
+        "weekly": "Sincronización semanal",
+        "monthly": "Sincronización mensual"
+      },
+      "syncSources_one": "{{count}} fuente",
+      "syncSources_other": "{{count}} fuentes",
+      "syncBlocked_one": "{{count}} necesita reconectarse",
+      "syncBlocked_other": "{{count}} necesitan reconectarse"
     },
     "calendar": {
       "label": "Calendario",
@@ -3587,7 +3596,8 @@
       "queued": "Ejecución iniciada. Aparece en Ahora y en el registro de ejecuciones.",
       "openSchedule": "Abrir programación",
       "timezone": "Zona horaria de la programación",
-      "missedNote": "Esta ejecución nunca empezó: el planificador estaba parado o con retraso en ese momento. Ejecútala ahora o comprueba que el worker funciona con beat."
+      "missedNote": "Esta ejecución nunca empezó: el planificador estaba parado o con retraso en ese momento. Ejecútala ahora o comprueba que el worker funciona con beat.",
+      "syncBarNext": "{{name}} · {{frequency}}, próxima {{time}}"
     },
     "history": {
       "label": "Historial",

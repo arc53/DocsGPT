@@ -3,9 +3,9 @@
 Future slots come from each schedule's cron (or one-time ``run_at``); past and
 in-flight slots come from ``schedule_runs`` with their real status, so a slot
 the scheduler already handled shows how it went. Monitors are ranges, not
-events: a check every 30 minutes would bury the week. Knowledge syncs have no
-clock time (every source of a frequency syncs when its beat task fires), so
-they are listed by frequency only.
+events: a check every 30 minutes would bury the week. Knowledge syncs are
+listed by frequency, each with when its frequency syncs next (every source of
+a frequency syncs when its beat entry fires; see ``activity.syncs``).
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from docsgpt.activity.syncs import next_sync_at, next_sync_times
 from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
     cron_interval_seconds,
@@ -251,6 +252,7 @@ def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) ->
 
 
 def _syncs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    times = next_sync_times()
     rows = _rows(
         conn,
         """
@@ -267,6 +269,7 @@ def _syncs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
             "name": r.get("name"),
             "frequency": r.get("sync_frequency"),
             "last_synced_at": r.get("date"),
+            "next_sync_at": next_sync_at(times, r.get("sync_frequency")),
         }
         for r in rows
     ]

@@ -18,6 +18,7 @@ from sqlalchemy.engine import Connection
 
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.labels import tool_labels
+from docsgpt.activity.syncs import due_batches, next_sync_times
 from docsgpt.agents.scheduler_utils import ScheduleValidationError, next_cron_run
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
@@ -515,6 +516,8 @@ def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, An
     for r in rows:
         out.append(
             {
+                "kind": "schedule",
+                "id": f"schedule:{r['id']}",
                 "schedule_id": _str(r["id"]),
                 "name": r.get("name") or (r.get("instruction") or "")[:80] or None,
                 "agent_id": _str(r.get("agent_id")),
@@ -604,6 +607,11 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     approvals = _approvals(conn, user_id)
     needs_you = approvals + _autopaused_schedules(conn, user_id)
     up_next = _up_next(conn, user_id, current)
+    # Knowledge syncs join the schedules: one batch per frequency due today.
+    syncs = due_batches(conn, user_id, current, current + UP_NEXT_WINDOW, next_sync_times())
+    for batch in syncs:
+        batch["runs_in_window"] = 1
+    up_next = sorted(up_next + syncs, key=lambda item: _as_datetime(item["next_run_at"]) or current)
     return {
         "running": running,
         "needs_you": needs_you,

@@ -88,7 +88,10 @@ export type PausedScheduleItem = {
 
 export type NeedsYouItem = ApprovalItem | PausedScheduleItem;
 
-export type UpNextItem = {
+/** A schedule due in the next day. */
+export type ScheduleUpNext = {
+  kind: 'schedule';
+  id: string;
   schedule_id: string;
   name: string | null;
   agent_id?: string | null;
@@ -101,6 +104,21 @@ export type UpNextItem = {
   origin_conversation_name?: string | null;
   runs_in_window: number;
 };
+
+/** One sync frequency's batch of sources due in the next day (docsgpt/activity/syncs.py). */
+export type SyncUpNext = {
+  kind: 'sync';
+  id: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  next_run_at: string;
+  /** Names of the sources that sync. */
+  sources: string[];
+  /** Names of the sources that need a reconnect first. */
+  blocked: string[];
+  runs_in_window: number;
+};
+
+export type UpNextItem = ScheduleUpNext | SyncUpNext;
 
 export type NowSnapshot = {
   running: RunningItem[];

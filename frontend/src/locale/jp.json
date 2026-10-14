@@ -3505,7 +3505,16 @@
         "upload": "アップロード",
         "sync": "同期",
         "reingest": "再インデックス"
-      }
+      },
+      "syncBatch": {
+        "daily": "毎日の同期",
+        "weekly": "毎週の同期",
+        "monthly": "毎月の同期"
+      },
+      "syncSources_one": "{{count}} 件のソース",
+      "syncSources_other": "{{count}} 件のソース",
+      "syncBlocked_one": "{{count}} 件は再接続が必要",
+      "syncBlocked_other": "{{count}} 件は再接続が必要"
     },
     "calendar": {
       "label": "カレンダー",
@@ -3575,7 +3584,8 @@
       "queued": "実行を開始しました。「現在」と実行ログに表示されます。",
       "openSchedule": "スケジュールを開く",
       "timezone": "スケジュールのタイムゾーン",
-      "missedNote": "この実行は開始されませんでした。その時点でスケジューラーが停止しているか遅れていました。今すぐ実行するか、ワーカーが beat 付きで動いているか確認してください。"
+      "missedNote": "この実行は開始されませんでした。その時点でスケジューラーが停止しているか遅れていました。今すぐ実行するか、ワーカーが beat 付きで動いているか確認してください。",
+      "syncBarNext": "{{name}} · {{frequency}}、次回 {{time}}"
     },
     "history": {
       "label": "履歴",
