@@ -304,6 +304,15 @@ class TestIngest:
         monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(source_id)])
         assert activity_now.build_now(pg_conn, "u1")["running"] == []
 
+    def test_a_failed_ingest_is_not_running(self, pg_conn):
+        # The failure cleared the marker; the closed row must not fall back
+        # to "embedding" until the reconciler notices.
+        source = SourcesRepository(pg_conn).create("Carrier handbook 2026.pdf", user_id="u1")
+        progress = IngestChunkProgressRepository(pg_conn)
+        progress.init_progress(str(source["id"]), 120)
+        progress.mark_failed(str(source["id"]))
+        assert activity_now.build_now(pg_conn, "u1")["running"] == []
+
     def test_an_ingest_marker_is_not_a_webhook_run(self, pg_conn, monkeypatch):
         monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(str(uuid.uuid4()))])
         assert _kinds(activity_now.build_now(pg_conn, "u1")) == ["ingest"]

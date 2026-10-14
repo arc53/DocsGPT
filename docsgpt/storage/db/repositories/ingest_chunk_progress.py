@@ -134,6 +134,37 @@ class IngestChunkProgressRepository:
         )
         return result.rowcount > 0
 
+    def mark_failed(self, source_id: str) -> bool:
+        """Close an unfinished checkpoint whose ingest just failed.
+
+        Sets ``status`` to ``'stalled'``, the one terminal value the column
+        allows, which every reader already takes as "ended without
+        finishing": the sources list shows it as failed and Activity › Now
+        drops it. Without this the row looks in flight until the
+        reconciler's stalled sweep. A finished row is left alone (the
+        failure came after embedding), and ``init_progress`` reopens the
+        row when a retry starts embedding again.
+
+        Args:
+            source_id: The source whose ingest failed.
+
+        Returns:
+            ``True`` when a row was closed.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE ingest_chunk_progress
+                SET status = 'stalled'
+                WHERE source_id = CAST(:source_id AS uuid)
+                  AND status = 'active'
+                  AND embedded_chunks < total_chunks
+                """
+            ),
+            {"source_id": str(source_id)},
+        )
+        return result.rowcount > 0
+
     def bump_heartbeat(self, source_id: str) -> None:
         """Refresh ``last_updated`` so the row looks alive to the reconciler."""
         self._conn.execute(

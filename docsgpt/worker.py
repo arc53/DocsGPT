@@ -282,6 +282,26 @@ def _start_ingest_heartbeat(source_id):
     return thread, stop_event
 
 
+def close_failed_ingest_progress(source_id: Optional[str]) -> None:
+    """Close a failed ingest's progress row before ``source.ingest.failed`` goes out.
+
+    The pages refetch on that event; left ``active``, the row would show
+    as in flight (Activity › Now, the sources list) until the reconciler's
+    stalled sweep. Best effort: a failure here is logged, never raised over
+    the ingest's own error.
+
+    Args:
+        source_id: The source whose ingest failed; ``None`` does nothing.
+    """
+    if not source_id:
+        return
+    try:
+        with db_session() as conn:
+            IngestChunkProgressRepository(conn).mark_failed(str(source_id))
+    except Exception:
+        logging.warning("Could not close the progress row of %s", source_id, exc_info=True)
+
+
 def _stop_ingest_heartbeat(thread, stop_event):
     """Signal the heartbeat daemon to exit and wait briefly for it."""
     if stop_event is not None:
@@ -838,6 +858,7 @@ def ingest_worker(
             _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id_for_events)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -1234,6 +1255,7 @@ def reingest_source_worker(self, source_id, user):
 
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -1479,6 +1501,7 @@ def remote_worker(
         _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
+        close_failed_ingest_progress(source_id_for_events)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -4009,6 +4032,7 @@ def ingest_connector(
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id_for_events)
         publish_user_event(
             user,
             "source.ingest.failed",
