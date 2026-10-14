@@ -35,6 +35,22 @@ describe('mergeLoadedPages', () => {
     expect(next[2].map((log) => log.id)).toEqual(['b', 'a', 'old']);
   });
 
+  it('keeps every row the refresh returned, a running webhook included', () => {
+    // The server adds running webhook rows to page 1 after paging, so a page
+    // can hold more rows than the page size.
+    const fresh = [
+      row('d2', '2026-10-14T10:07:00Z'),
+      row('d1', '2026-10-14T10:06:00Z'),
+      row('webhook-run-1', '2026-10-14T09:00:00Z', true),
+    ];
+    const next = mergeLoadedPages({ 1: [] }, fresh, 1, 2);
+    expect(next[1].map((log) => log.id)).toEqual([
+      'd2',
+      'd1',
+      'webhook-run-1',
+    ]);
+  });
+
   it('leaves pages past the refreshed ones as they are', () => {
     const third = [row('z', '2026-10-14T09:00:00Z')];
     const next = mergeLoadedPages(
