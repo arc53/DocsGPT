@@ -1503,6 +1503,7 @@
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
         "mcp_drawio": "Create editable flowcharts and other diagrams with draw.io.",
+        "mcp_coingecko": "Look up live crypto prices, market caps, volumes, trending coins and price history.",
         "mcp_clickup": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
