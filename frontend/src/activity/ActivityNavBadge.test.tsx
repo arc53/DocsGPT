@@ -106,7 +106,7 @@ describe('ActivityNavBadge', () => {
     expect(container.textContent).toContain('activity.nav.needsYou:2');
   });
 
-  it("counts an agent's API requests, not its one row", () => {
+  it("counts an agent's API requests as the one row Now lists", () => {
     const s = store([], 1);
     const base = s.getState().activity;
     const withApi = configureStore({
@@ -125,7 +125,7 @@ describe('ActivityNavBadge', () => {
       },
     });
     render(withApi);
-    expect(container.textContent).toContain('activity.nav.running:6');
+    expect(container.textContent).toContain('activity.nav.running:2');
   });
 
   it('counts each connection to reconnect, as Now does', () => {

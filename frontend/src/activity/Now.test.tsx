@@ -219,16 +219,18 @@ describe('Now page', () => {
         </Provider>,
       );
     });
+    const heading = (title: string) =>
+      Array.from(container.querySelectorAll('h2, h3'))
+        .find((h) => h.textContent?.startsWith(title))
+        ?.querySelector('[data-slot="count"]')?.textContent;
     const stat = (label: string) =>
       Array.from(container.querySelectorAll('p')).find(
         (p) => p.textContent === label,
       )?.parentElement?.textContent;
-    // An API row stands for its requests.
-    const requests = SNAPSHOT.running.reduce(
-      (sum, item) => sum + (item.count ?? 1),
-      0,
-    );
-    expect(stat('activity.now.stats.running')).toContain(String(requests));
+    const rows = SNAPSHOT.running.length;
+    // The card, the heading and the rows agree: an API row is one.
+    expect(stat('activity.now.stats.running')).toContain(String(rows));
+    expect(heading('activity.now.runningTitle')).toContain(String(rows));
     await act(async () => {
       store.dispatch(
         sseEventReceived({
@@ -238,7 +240,7 @@ describe('Now page', () => {
         } as SSEEvent),
       );
     });
-    expect(stat('activity.now.stats.running')).toContain(String(requests + 1));
+    expect(stat('activity.now.stats.running')).toContain(String(rows + 1));
   });
 
   it('lists running work and what runs next', async () => {

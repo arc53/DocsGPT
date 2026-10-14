@@ -15,9 +15,9 @@ export type ActivitySummary = {
 
 /**
  * The Activity counts, one definition for the sidebar and Now: running is
- * what Now lists (an API row standing for its requests) plus chats that
- * started since the snapshot; needs-you is its items plus each connection to
- * sign in to again.
+ * the rows Now lists (an API row is one; it says how many requests) plus
+ * chats that started since the snapshot; needs-you is its items plus each
+ * connection to sign in to again.
  */
 export function useActivitySummary(): ActivitySummary {
   const now = useSelector(selectActivityNow);
@@ -34,9 +34,7 @@ export function useActivitySummary(): ActivitySummary {
   ).length;
   const needs = now?.needs_you ?? [];
   return {
-    running:
-      (now?.running ?? []).reduce((sum, item) => sum + (item.count ?? 1), 0) +
-      started,
+    running: (now?.running.length ?? 0) + started,
     needsYou: needs.length + reconnects,
     failed: needs.some((item) => item.kind === 'schedule_paused'),
   };
