@@ -146,11 +146,17 @@ describe('History page', () => {
         ) as HTMLElement
       ).click(),
     );
+  const EMPTY_SNAPSHOT: NowSnapshot = {
+    running: [],
+    needs_you: [],
+    up_next: [],
+    approval_conversations: [],
+    failed_conversations: [],
+    stats: { running: 0, needs_you: 0, next_24h: 0, failed_24h: 0 },
+  };
   const newSnapshot = (store: Awaited<ReturnType<typeof render>>) =>
     act(async () => {
-      store.dispatch(
-        loadActivityNow.fulfilled({} as NowSnapshot, 'req', 'event'),
-      );
+      store.dispatch(loadActivityNow.fulfilled(EMPTY_SNAPSHOT, 'req', 'event'));
     });
 
   it('lists runs under a day heading', async () => {

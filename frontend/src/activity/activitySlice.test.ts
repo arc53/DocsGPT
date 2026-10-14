@@ -1,20 +1,25 @@
-import { describe, expect, it, vi } from 'vitest';
+import { configureStore } from '@reduxjs/toolkit';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../api/services/activityService', () => ({
   default: { now: vi.fn(), stopMessage: vi.fn() },
 }));
 
+import activityService from '../api/services/activityService';
 import { markConversationRead } from '../backgroundJobs/backgroundSlice';
 import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
 import reducer, {
+  activityListenerMiddleware,
   loadActivityNow,
+  REFRESH_DEBOUNCE_MS,
   selectActivityRevision,
   selectApprovalConversations,
   selectFailedConversations,
   selectWorkingConversations,
+  type ActivityRefresh,
   type ActivityState,
 } from './activitySlice';
 import type { NowSnapshot } from './types';
@@ -161,7 +166,7 @@ describe('activitySlice', () => {
     const fetched = (
       state: ActivityState,
       now: NowSnapshot,
-      reason?: 'event' | 'poll',
+      reason?: ActivityRefresh,
     ) => reducer(state, loadActivityNow.fulfilled(now, 'req', reason));
     const revision = (state: ActivityState) =>
       selectActivityRevision(wrap(state));
@@ -188,6 +193,46 @@ describe('activitySlice', () => {
       expect(revision(next)).toBe(revision(first) + 1);
     });
 
+    it('stays put when only something new is running', () => {
+      // An answer starting or a step moving adds nothing to Calendar, Logs
+      // or History; they change when something ends.
+      const first = polled();
+      const started = snapshot({
+        running: [
+          ...snapshot().running,
+          { kind: 'chat', id: 'm9', title: 'New', conversation_id: 'c9' },
+        ],
+        stats: { running: 4, needs_you: 0, next_24h: 0, failed_24h: 0 },
+      });
+      expect(revision(fetched(first, started, 'progress'))).toBe(
+        revision(first),
+      );
+      const moved = snapshot({
+        running: snapshot().running.map((item) =>
+          item.kind === 'job' ? { ...item, progress: 40 } : item,
+        ),
+      });
+      expect(revision(fetched(first, moved, 'poll'))).toBe(revision(first));
+    });
+
+    it('moves when something left Running without an event', () => {
+      const first = polled();
+      const ended = snapshot({ running: snapshot().running.slice(1) });
+      expect(revision(fetched(first, ended, 'progress'))).toBe(
+        revision(first) + 1,
+      );
+    });
+
+    it('moves when what waits or comes next changed', () => {
+      const first = polled();
+      const next = fetched(
+        first,
+        snapshot({ failed_conversations: [] }),
+        'poll',
+      );
+      expect(revision(next)).toBe(revision(first) + 1);
+    });
+
     it('stays put when the snapshot is patched locally', () => {
       const first = polled();
       let state = reducer(first, markConversationRead.pending('req', 'c4'));
@@ -197,6 +242,62 @@ describe('activitySlice', () => {
       expect(revision(fetched(state, snapshot(), 'poll'))).toBe(
         revision(first),
       );
+    });
+  });
+
+  describe('refetch after events', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.mocked(activityService.now).mockReset();
+    });
+
+    const store = () =>
+      configureStore({
+        reducer: {
+          activity: reducer,
+          preference: () => ({ token: null as string | null }),
+        },
+        middleware: (getDefault) =>
+          getDefault().prepend(activityListenerMiddleware.middleware),
+      });
+
+    const after = async (...events: SSEEvent[]) => {
+      vi.useFakeTimers();
+      vi.mocked(activityService.now).mockReset();
+      vi.mocked(activityService.now).mockResolvedValue(snapshot());
+      const s = store();
+      s.dispatch(loadActivityNow.fulfilled(snapshot(), 'first', 'poll'));
+      const before = s.getState().activity.revision;
+      for (const e of events) s.dispatch(sseEventReceived(e));
+      await vi.advanceTimersByTimeAsync(REFRESH_DEBOUNCE_MS + 10);
+      expect(activityService.now).toHaveBeenCalledTimes(1);
+      return s.getState().activity.revision - before;
+    };
+    const job = (status: string): SSEEvent =>
+      ({
+        id: 'e',
+        type: 'job.updated',
+        payload: { conversation_id: 'c2', status },
+      }) as SSEEvent;
+
+    it('leaves the other pages alone after a start or a step', async () => {
+      expect(
+        await after(
+          event('message.started', 'c9'),
+          event('workflow.run.step', 'c9'),
+          job('running'),
+        ),
+      ).toBe(0);
+    });
+
+    it('reloads them when something in the burst ended', async () => {
+      expect(
+        await after(
+          event('message.started', 'c9'),
+          event('message.finished', 'c9'),
+        ),
+      ).toBe(1);
+      expect(await after(job('completed'))).toBe(1);
     });
   });
 

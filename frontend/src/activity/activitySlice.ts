@@ -25,13 +25,13 @@ export type ActivityState = {
   live: Record<string, true>;
   /**
    * Moves when what Calendar, Logs and History show may have changed: after
-   * a refetch an event asked for, or a poll that brought something new.
-   * Local patches and a poll that brought the same snapshot leave it, so an
-   * idle page doesn't reload them every minute.
+   * an event that ended something, or a fetch that finds something left
+   * Running or a change outside it. Something new running, a step moving and
+   * local patches leave it, so those pages don't reload for every start.
    */
   revision: number;
-  /** The last fetched snapshot, serialized, for telling a poll's news. */
-  fetched: string | null;
+  /** The last fetched snapshot without `running`, serialized. */
+  settled: string | null;
   /**
    * The latest fetch's id. The poll, event refetches and Retry overlap, so
    * only its answer is applied: an older one would put back what changed.
@@ -49,7 +49,7 @@ const initialState: ActivityState = {
   error: false,
   live: {},
   revision: 0,
-  fetched: null,
+  settled: null,
   requestId: null,
   liveAtRequest: [],
   finishedSinceRequest: [],
@@ -60,10 +60,19 @@ const isLatest = (state: ActivityState, requestId: string) =>
   state.requestId === null || state.requestId === requestId;
 
 /**
- * Why a refetch runs: `event` after a live event (something started, moved
- * or ended), `poll` for the slow refresh. Without one it counts as a poll.
+ * Why a refetch runs: `event` after live events one of which ended something,
+ * `progress` after ones that only started or moved something, `poll` for the
+ * slow refresh. Without one it counts as a poll.
  */
-export type ActivityRefresh = 'event' | 'poll';
+export type ActivityRefresh = 'event' | 'progress' | 'poll';
+
+/** The snapshot without what is running, which the other pages don't show. */
+const settledKey = (now: NowSnapshot) =>
+  JSON.stringify({
+    ...now,
+    running: undefined,
+    stats: { ...now.stats, running: undefined },
+  });
 
 export const loadActivityNow = createAsyncThunk<
   NowSnapshot,
@@ -89,13 +98,17 @@ const activitySlice = createSlice({
       })
       .addCase(loadActivityNow.fulfilled, (state, action) => {
         if (!isLatest(state, action.meta.requestId)) return;
-        // An event says something happened even when the snapshot reads the
-        // same: a run can start and end between two fetches.
-        const fetched = JSON.stringify(action.payload);
-        if (action.meta.arg === 'event' || fetched !== state.fetched) {
+        // An ending event says something happened even when the snapshot
+        // reads the same: a run can start and end between two fetches.
+        const settled = settledKey(action.payload);
+        const fresh = new Set(action.payload.running.map((item) => item.id));
+        const ended = (state.now?.running ?? []).some(
+          (item) => !fresh.has(item.id),
+        );
+        if (action.meta.arg === 'event' || ended || settled !== state.settled) {
           state.revision += 1;
         }
-        state.fetched = fetched;
+        state.settled = settled;
         // The server may have read before an answer that finished since.
         const finished = new Set(state.finishedSinceRequest);
         state.now = finished.size
@@ -183,8 +196,38 @@ const REFRESH_EVENTS: ReadonlySet<string> = new Set([
   'source.ingest.failed',
 ]);
 
+/** Events that start or move something, never end it. */
+const PROGRESS_EVENTS: ReadonlySet<string> = new Set([
+  'message.started',
+  'workflow.run.step',
+  'source.ingest.queued',
+]);
+
+const JOB_ENDED: ReadonlySet<string> = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+  'lost',
+]);
+
+/** Whether an event may have added a row to Calendar, Logs or History. */
+const endsSomething = (event: SSEEvent): boolean => {
+  if (PROGRESS_EVENTS.has(event.type)) return false;
+  const payload = (event.payload || {}) as {
+    status?: string;
+    running?: boolean;
+  };
+  if (event.type === 'job.updated') return JOB_ENDED.has(payload.status ?? '');
+  // A webhook run's marker: `running` is false when it ends.
+  if (event.type === 'activity.updated') return payload.running !== true;
+  return true;
+};
+
 /** Refetches wait this long so a burst of events costs one request. */
 export const REFRESH_DEBOUNCE_MS = 800;
+
+/** Whether the burst the pending refetch waits out ended something. */
+let burstEnded = false;
 
 /** Refetches the snapshot after the events that change it, debounced. */
 export const activityListenerMiddleware = createListenerMiddleware();
@@ -193,10 +236,15 @@ activityListenerMiddleware.startListening({
   predicate: (action) =>
     action.type === sseEventReceived.type &&
     REFRESH_EVENTS.has((action as PayloadAction<SSEEvent>).payload?.type),
-  effect: async (_action, api) => {
+  effect: async (action, api) => {
+    if (endsSomething((action as PayloadAction<SSEEvent>).payload)) {
+      burstEnded = true;
+    }
     api.cancelActiveListeners();
     await api.delay(REFRESH_DEBOUNCE_MS);
-    await api.dispatch(loadActivityNow('event') as never);
+    const reason: ActivityRefresh = burstEnded ? 'event' : 'progress';
+    burstEnded = false;
+    await api.dispatch(loadActivityNow(reason) as never);
   },
 });
 
