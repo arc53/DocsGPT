@@ -435,7 +435,33 @@ class GitHubLoader(BaseRemote):
         return response
 
     def fetch_repo_files(self, repo_url: str, path: str = "") -> List[str]:
-        """Walk ``/contents/`` recursively (fallback for truncated trees)."""
+        """Walk ``/contents/`` recursively and return the file paths.
+
+        Args:
+            repo_url: ``owner/name``.
+            path: Directory to start from; the repo root by default.
+
+        Returns:
+            Repo-relative file paths, skipped directories excluded.
+        """
+        return [file_path for file_path, _ in self.fetch_repo_entries(repo_url, path)]
+
+    def fetch_repo_entries(self, repo_url: str, path: str = "") -> List[Tuple[str, int]]:
+        """Walk ``/contents/`` recursively (fallback for truncated trees).
+
+        Directories that :meth:`should_skip_path` rejects are never
+        requested, since every file under them would be dropped anyway and
+        each directory costs one API call.
+
+        Args:
+            repo_url: ``owner/name``.
+            path: Directory to start from; the repo root by default.
+
+        Returns:
+            ``(path, size_bytes)`` pairs, in the same shape as
+            :meth:`fetch_repo_tree`, so :meth:`select_files` can apply the
+            size cap.
+        """
         url = f"https://api.github.com/repos/{repo_url}/contents/{path}"
         response = self._make_request(url)
 
@@ -449,13 +475,17 @@ class GitHubLoader(BaseRemote):
         if not isinstance(contents, list):
             raise TypeError(f"Expected list from GitHub API, got {type(contents).__name__}: {contents}")
 
-        files = []
+        entries: List[Tuple[str, int]] = []
         for item in contents:
             if item["type"] == "file":
-                files.append(item["path"])
+                entries.append((item["path"], int(item.get("size") or 0)))
             elif item["type"] == "dir":
-                files.extend(self.fetch_repo_files(repo_url, item["path"]))
-        return files
+                # A trailing segment makes should_skip_path judge the
+                # directory itself rather than its parents.
+                if self.should_skip_path(f"{item['path']}/_"):
+                    continue
+                entries.extend(self.fetch_repo_entries(repo_url, item["path"]))
+        return entries
 
     def _list_candidate_files(self, repo_name: str, branch: str) -> List[str]:
         """Enumerate ingestable paths, preferring the single tree request."""
@@ -472,8 +502,7 @@ class GitHubLoader(BaseRemote):
                 "Tree listing failed for %s (%s); falling back to the "
                 "directory walk", repo_name, e,
             )
-        paths = self.fetch_repo_files(repo_name)
-        return self.select_files([(p, 0) for p in paths])
+        return self.select_files(self.fetch_repo_entries(repo_name))
 
     def load_data(self, inputs: Union[str, Dict[str, Any]]) -> List[Document]:
         """Load every ingestable text file of a repository as a Document.

@@ -439,9 +439,87 @@ class TestGitHubLoaderTree:
         loader = GitHubLoader()
         mock_get.return_value = make_response({"tree": [], "truncated": True})
         monkeypatch.setattr(
-            loader, "fetch_repo_files", lambda repo, path="": ["README.md"]
+            loader, "fetch_repo_entries", lambda repo, path="": [("README.md", 10)]
         )
         assert loader._list_candidate_files("owner/repo", "main") == ["README.md"]
+
+
+class TestGitHubLoaderTruncatedTreeWalk:
+    """The ``/contents/`` walk used when the tree listing is truncated must
+    apply the same skip-list and size cap as the tree path."""
+
+    LISTINGS = {
+        "": [
+            {"type": "file", "path": "README.md", "size": 100},
+            {"type": "dir", "path": "docs"},
+            {"type": "dir", "path": "node_modules"},
+            {"type": "dir", "path": ".cache"},
+            {"type": "dir", "path": "data"},
+        ],
+        "docs": [{"type": "file", "path": "docs/guide.md", "size": 200}],
+        "node_modules": [{"type": "dir", "path": "node_modules/lodash"}],
+        "node_modules/lodash": [{"type": "file", "path": "node_modules/lodash/README.md", "size": 10}],
+        ".cache": [{"type": "file", "path": ".cache/notes.md", "size": 10}],
+        "data": [{"type": "file", "path": "data/dump.json", "size": 5 * 1024 * 1024}],
+    }
+
+    def _fake_get(self, requested):
+        def side_effect(url, headers=None, timeout=None):
+            path = url.split("/contents/", 1)[1]
+            requested.append(path)
+            if path not in self.LISTINGS:
+                raise AssertionError(f"Unexpected URL: {url}")
+            return make_response(self.LISTINGS[path])
+
+        return side_effect
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_walk_does_not_request_skipped_directories(self, mock_get):
+        requested = []
+        mock_get.side_effect = self._fake_get(requested)
+
+        GitHubLoader().fetch_repo_entries("owner/repo")
+
+        assert requested == ["", "docs", "data"]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_walk_returns_sizes_from_the_listing(self, mock_get):
+        mock_get.side_effect = self._fake_get([])
+
+        entries = GitHubLoader().fetch_repo_entries("owner/repo")
+
+        assert entries == [
+            ("README.md", 100), ("docs/guide.md", 200), ("data/dump.json", 5 * 1024 * 1024),
+        ]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_fetch_repo_files_still_returns_paths(self, mock_get):
+        mock_get.side_effect = self._fake_get([])
+
+        assert GitHubLoader().fetch_repo_files("owner/repo") == [
+            "README.md", "docs/guide.md", "data/dump.json",
+        ]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_fallback_applies_the_size_cap(self, mock_get, monkeypatch):
+        """Regression: the fallback passed a size of 0 for every file, so
+        ``GITHUB_INGEST_MAX_FILE_BYTES`` never applied to it."""
+        monkeypatch.setattr(
+            "docsgpt.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
+            1024 * 1024, raising=False,
+        )
+        listing = self._fake_get([])
+
+        def side_effect(url, headers=None, timeout=None):
+            if "/git/trees/" in url:
+                return make_response({"tree": [], "truncated": True})
+            return listing(url, headers=headers, timeout=timeout)
+
+        mock_get.side_effect = side_effect
+
+        files = GitHubLoader()._list_candidate_files("owner/repo", "main")
+
+        assert files == ["README.md", "docs/guide.md"]
 
 
 class TestGitHubLoaderDefaultBranch:
