@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-13
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components'
@@ -306,9 +306,9 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend and Cal.com are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
 
-draw.io is a remote MCP preset that needs no account or credentials. Pick its card, test the prefilled server connection, and save it to give agents diagram tools. An agent can create an editable diagram and return a link that opens it in the draw.io editor. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option.
+draw.io is a remote MCP preset that needs no account or credentials. Pick its card and click **Connect** to give agents diagram tools. An agent can create an editable diagram and return a link that opens it in the draw.io editor. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option.
 
-CoinGecko is also a no-sign-in preset: pick its card, test the prefilled connection, and save it. Agents can then answer crypto questions with live prices, market caps, volumes, trending coins and price history. The server has two tools: `search_docs` finds the right endpoint in CoinGecko's API docs, and `execute` runs a short script against the API. The keyless server shares rate limits across all users, so heavy use can be throttled. See [CoinGecko's MCP server docs](https://docs.coingecko.com/docs/mcp-server).
+CoinGecko is also a no-sign-in preset: pick its card and click **Connect**. Agents can then answer crypto questions with live prices, market caps, volumes, trending coins and price history. The server has two tools: `search_docs` finds the right endpoint in CoinGecko's API docs, and `execute` runs a short script against the API. The keyless server shares rate limits across all users, so heavy use can be throttled. See [CoinGecko's MCP server docs](https://docs.coingecko.com/docs/mcp-server).
 
 ### Linear
 
