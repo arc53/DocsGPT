@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatElapsed, formatRunTime } from './format';
+import { formatElapsed, formatRunTime, workflowStep } from './format';
 
 const NOW = Date.parse('2026-10-13T14:20:00');
 
@@ -25,5 +25,39 @@ describe('formatRunTime', () => {
     expect(formatRunTime('2026-10-14T08:00:00', NOW, 'en-GB')).toBe(
       'Wed 08:00',
     );
+  });
+});
+
+describe('workflowStep', () => {
+  const current = { node_id: 'b', title: 'Draft reply', type: 'agent' };
+
+  it('numbers the current step and fills a bar when the count is known', () => {
+    expect(workflowStep({ done: 2, total: 5, current })).toEqual({
+      step: 3,
+      total: 5,
+      title: 'Draft reply',
+      percent: 40,
+    });
+  });
+
+  it('has no total or bar when the workflow branches', () => {
+    expect(workflowStep({ done: 2, total: null, current })).toEqual({
+      step: 3,
+      total: null,
+      title: 'Draft reply',
+      percent: null,
+    });
+  });
+
+  it('is nothing before the first step starts', () => {
+    expect(workflowStep(null)).toBeNull();
+    expect(workflowStep({ done: 0, total: 3, current: null })).toBeNull();
+  });
+
+  it('drops a blank title', () => {
+    expect(
+      workflowStep({ done: 0, total: 1, current: { ...current, title: ' ' } })
+        ?.title,
+    ).toBeNull();
   });
 });

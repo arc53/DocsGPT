@@ -3500,7 +3500,9 @@
       "allMonitors": "Todos los monitores",
       "nothingWatched": "No se está vigilando nada",
       "checked": "revisado {{time}}",
-      "openCalendar": "Abrir calendario"
+      "openCalendar": "Abrir calendario",
+      "step": "paso {{step}}",
+      "stepOf": "paso {{step}} de {{total}}"
     },
     "calendar": {
       "label": "Calendario",

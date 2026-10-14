@@ -3,6 +3,20 @@
 export type RunningKind =
   'chat' | 'job' | 'schedule' | 'workflow' | 'webhook' | 'ingest';
 
+/** Where a running workflow is (`workflow_runs.progress`). */
+export type WorkflowProgress = {
+  /** Steps finished before the current one. */
+  done: number;
+  /** Steps in the run; null when the workflow branches. */
+  total: number | null;
+  current: {
+    node_id: string;
+    title?: string | null;
+    type: string;
+    started_at?: string | null;
+  } | null;
+};
+
 export type RunningItem = {
   kind: RunningKind;
   id: string;
@@ -17,6 +31,8 @@ export type RunningItem = {
   status?: string;
   /** chat / schedule / webhook: a workflow agent's run is folded in. */
   workflow?: boolean;
+  /** workflow, or a host a workflow run is folded into: the step it is on. */
+  workflow_progress?: WorkflowProgress | null;
   /** job */
   job_id?: string;
   tool_name?: string | null;

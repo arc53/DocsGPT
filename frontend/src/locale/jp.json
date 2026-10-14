@@ -3488,7 +3488,9 @@
       "allMonitors": "すべてのモニター",
       "nothingWatched": "監視中のものはありません",
       "checked": "{{time}}に確認",
-      "openCalendar": "カレンダーを開く"
+      "openCalendar": "カレンダーを開く",
+      "step": "ステップ {{step}}",
+      "stepOf": "ステップ {{step}}/{{total}}"
     },
     "calendar": {
       "label": "カレンダー",

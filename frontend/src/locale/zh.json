@@ -3487,7 +3487,9 @@
       "allMonitors": "所有监控",
       "nothingWatched": "没有正在监控的内容",
       "checked": "{{time}}检查过",
-      "openCalendar": "打开日历"
+      "openCalendar": "打开日历",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步"
     },
     "calendar": {
       "label": "日历",

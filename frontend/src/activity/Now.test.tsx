@@ -33,6 +33,32 @@ const SNAPSHOT: NowSnapshot = {
       started_at: new Date().toISOString(),
     },
     {
+      kind: 'webhook',
+      id: 'w1',
+      title: 'Customer Renewal Desk',
+      agent_id: 'a3',
+      agent_name: 'Customer Renewal Desk',
+      started_at: new Date().toISOString(),
+      workflow: true,
+      workflow_progress: {
+        done: 2,
+        total: 5,
+        current: { node_id: 'n3', title: 'Draft renewal email', type: 'agent' },
+      },
+    },
+    {
+      kind: 'workflow',
+      id: 'r1',
+      title: 'Triage desk',
+      agent_id: 'a4',
+      started_at: new Date().toISOString(),
+      workflow_progress: {
+        done: 1,
+        total: null,
+        current: { node_id: 'n2', title: 'Classify', type: 'agent' },
+      },
+    },
+    {
       kind: 'ingest',
       id: 's1',
       source_id: 's1',
@@ -149,6 +175,19 @@ describe('Now page', () => {
     expect(container.textContent).toContain('Nordhaven renewal prep');
     expect(container.textContent).toContain('Carrier handbook 2026.pdf');
     expect(container.textContent).toContain('Daily support digest');
+  });
+
+  it('shows the step a workflow run is on', async () => {
+    await render();
+    const row = (kind: string) =>
+      container.querySelector(`li[data-kind="${kind}"]`) as HTMLElement;
+    expect(row('webhook').textContent).toContain('activity.now.stepOf');
+    expect(row('webhook').textContent).toContain('Draft renewal email');
+    expect(row('webhook').querySelector('[role="progressbar"]')).not.toBeNull();
+    // A branching workflow has no step count, so no bar.
+    expect(row('workflow').textContent).toContain('activity.now.step');
+    expect(row('workflow').textContent).toContain('Classify');
+    expect(row('workflow').querySelector('[role="progressbar"]')).toBeNull();
   });
 
   it('stops a running answer', async () => {

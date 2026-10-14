@@ -172,7 +172,7 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     rows = _rows(
         conn,
         """
-        SELECT r.id, r.started_at, r.workflow_id, w.name AS workflow_name,
+        SELECT r.id, r.started_at, r.workflow_id, r.progress, w.name AS workflow_name,
                a.id AS agent_id, a.name AS agent_name
         FROM workflow_runs r
         JOIN workflows w ON w.id = r.workflow_id
@@ -196,6 +196,7 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
             "agent_id": _str(r.get("agent_id")),
             "agent_name": r.get("agent_name"),
             "started_at": _iso(r.get("started_at")),
+            "workflow_progress": r.get("progress"),
         }
         for r in rows
     ]
@@ -261,18 +262,22 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
 
     A workflow agent's chat, scheduled run or webhook run also writes a
     ``workflow_runs`` row; listing both would show one piece of work twice.
-    The run is matched by agent; one with nothing to fold into (a builder
-    preview, say) is listed on its own.
+    Runs are matched by agent, oldest run to oldest host, one run per host;
+    the host takes the run's step (``workflow_progress``). A run with nothing
+    to fold into (a builder preview, an API call) is listed on its own.
     """
-    hosts = {}
-    for item in running:
+    hosts: Dict[str, List[Dict[str, Any]]] = {}
+    oldest = datetime.min.replace(tzinfo=timezone.utc)
+    for item in sorted(running, key=lambda entry: _as_datetime(entry.get("started_at")) or oldest):
         if item["kind"] in ("chat", "schedule", "webhook") and item.get("agent_id"):
-            hosts.setdefault(item["agent_id"], item)
+            hosts.setdefault(item["agent_id"], []).append(item)
     standalone = []
     for flow in workflows:
-        host = hosts.get(flow.get("agent_id")) if flow.get("agent_id") else None
-        if host is not None:
+        waiting = hosts.get(flow.get("agent_id")) if flow.get("agent_id") else None
+        if waiting:
+            host = waiting.pop(0)
             host["workflow"] = True
+            host["workflow_progress"] = flow.get("workflow_progress")
         else:
             standalone.append(flow)
     return standalone

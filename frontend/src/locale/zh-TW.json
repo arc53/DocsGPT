@@ -3488,7 +3488,9 @@
       "allMonitors": "所有監控",
       "nothingWatched": "沒有正在監控的內容",
       "checked": "{{time}}檢查過",
-      "openCalendar": "開啟行事曆"
+      "openCalendar": "開啟行事曆",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步"
     },
     "calendar": {
       "label": "行事曆",

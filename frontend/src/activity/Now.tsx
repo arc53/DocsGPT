@@ -53,7 +53,7 @@ import {
   selectActivityError,
   selectActivityNow,
 } from './activitySlice';
-import { formatElapsed, formatRunTime } from './format';
+import { formatElapsed, formatRunTime, workflowStep } from './format';
 import {
   ACTIVITY_CALENDAR_PATH,
   ACTIVITY_MONITORS_PATH,
@@ -227,16 +227,31 @@ export default function Now() {
     item.agent_name ||
     t(`activity.kind.${item.kind}`, { defaultValue: item.kind });
 
+  /** "Step 3 of 5", "Draft reply": a workflow run's step, last on the meta line. */
+  const stepParts = (item: RunningItem): string[] | null => {
+    const step = workflowStep(item.workflow_progress);
+    if (!step) return null;
+    return [
+      step.total
+        ? t('activity.now.stepOf', { step: step.step, total: step.total })
+        : t('activity.now.step', { step: step.step }),
+      step.title ?? '',
+    ];
+  };
+
   const runningMeta = (item: RunningItem): string => {
     const kind = t(`activity.kind.${item.kind}`);
+    const step = stepParts(item);
     switch (item.kind) {
       case 'chat':
         return meta(
           item.workflow ? t('activity.kind.workflow') : kind,
           item.agent_name,
-          item.status === 'pending'
-            ? t('activity.now.thinking')
-            : t('activity.now.writing'),
+          ...(step ?? [
+            item.status === 'pending'
+              ? t('activity.now.thinking')
+              : t('activity.now.writing'),
+          ]),
         );
       case 'job':
         return meta(
@@ -248,13 +263,15 @@ export default function Now() {
         return meta(
           kind,
           item.agent_name,
-          item.trigger_source === 'manual'
-            ? t('activity.now.ranByHand')
-            : item.scheduled_for &&
+          ...(step ?? [
+            item.trigger_source === 'manual'
+              ? t('activity.now.ranByHand')
+              : item.scheduled_for &&
                 t('activity.now.due', {
                   ...NO_ESCAPE,
                   time: formatRunTime(item.scheduled_for, clock),
                 }),
+          ]),
         );
       case 'ingest':
         return meta(
@@ -267,7 +284,11 @@ export default function Now() {
             : null,
         );
       default:
-        return meta(kind, item.workflow ? t('activity.kind.workflow') : null);
+        return meta(
+          kind,
+          item.workflow ? t('activity.kind.workflow') : null,
+          ...(step ?? []),
+        );
     }
   };
 
@@ -321,10 +342,14 @@ export default function Now() {
       item.kind === 'job' && item.job_kind === 'code_exec'
         ? SquareTerminal
         : KIND_ICON[item.kind];
-    const progress =
+    const percent =
       typeof item.progress === 'number'
         ? Math.round(item.progress * 100)
         : null;
+    // A workflow's bar says which step it is on; the meta line already
+    // counts the steps, so it has no percentage beside it.
+    const progress =
+      percent ?? workflowStep(item.workflow_progress)?.percent ?? null;
     const tail =
       item.kind === 'job' && (item.status_message || item.output_tail);
     return (
@@ -351,9 +376,9 @@ export default function Now() {
                   {String(tail).split('\n').filter(Boolean).pop()}
                 </span>
               ) : (
-                progress !== null && (
+                percent !== null && (
                   <span className="text-muted-foreground text-xs tabular-nums">
-                    {progress}%
+                    {percent}%
                   </span>
                 )
               )}

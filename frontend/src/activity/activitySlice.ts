@@ -112,6 +112,7 @@ const REFRESH_EVENTS: ReadonlySet<string> = new Set([
   'schedule.cancelled',
   'schedule.completed',
   'activity.updated',
+  'workflow.run.step',
   'tool.approval.required',
   'tool.approval.cleared',
   'source.ingest.queued',

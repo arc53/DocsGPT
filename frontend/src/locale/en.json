@@ -3519,7 +3519,9 @@
       "allMonitors": "All monitors",
       "nothingWatched": "Nothing is being watched",
       "checked": "checked {{time}}",
-      "openCalendar": "Open calendar"
+      "openCalendar": "Open calendar",
+      "step": "step {{step}}",
+      "stepOf": "step {{step}} of {{total}}"
     },
     "calendar": {
       "label": "Calendar",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -116,6 +117,13 @@ class TestScheduledRuns:
         assert runs[0]["schedule_id"] == str(schedule["id"])
 
 
+_PROGRESS = {
+    "done": 1,
+    "total": 3,
+    "current": {"node_id": "b", "title": "Draft reply", "type": "agent", "started_at": "2026-10-14T10:00:00+00:00"},
+}
+
+
 class TestWorkflowRuns:
     def _workflow(self, conn) -> str:
         return str(
@@ -124,13 +132,14 @@ class TestWorkflowRuns:
             ).scalar()
         )
 
-    def _run(self, conn, workflow_id: str) -> None:
+    def _run(self, conn, workflow_id: str, progress: dict | None = None, age: int = 0) -> None:
         conn.execute(
             text(
-                "INSERT INTO workflow_runs (workflow_id, user_id, status, started_at) "
-                "VALUES (CAST(:w AS uuid), 'u1', 'running', now())"
+                "INSERT INTO workflow_runs (workflow_id, user_id, status, started_at, progress) "
+                "VALUES (CAST(:w AS uuid), 'u1', 'running', now() - make_interval(secs => :age), "
+                "CAST(:p AS jsonb))"
             ),
-            {"w": workflow_id},
+            {"w": workflow_id, "p": json.dumps(progress) if progress else None, "age": age},
         )
 
     def test_a_run_on_its_own_is_listed(self, pg_conn):
@@ -150,6 +159,35 @@ class TestWorkflowRuns:
         snap = activity_now.build_now(pg_conn, "u1")
         assert _kinds(snap) == ["chat"]
         assert snap["running"][0]["workflow"] is True
+
+    def test_a_folded_run_lends_its_step_to_the_chat(self, pg_conn):
+        workflow = self._workflow(pg_conn)
+        agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        _message(pg_conn, _chat(pg_conn, agent_id=agent), "streaming")
+        self._run(pg_conn, workflow, _PROGRESS)
+        chat = activity_now.build_now(pg_conn, "u1")["running"][0]
+        assert chat["workflow_progress"] == _PROGRESS
+
+    def test_a_run_on_its_own_carries_its_step(self, pg_conn):
+        workflow = self._workflow(pg_conn)
+        _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        self._run(pg_conn, workflow, _PROGRESS)
+        flow = activity_now.build_now(pg_conn, "u1")["running"][0]
+        assert flow["kind"] == "workflow"
+        assert flow["workflow_progress"] == _PROGRESS
+
+    def test_runs_pair_with_hosts_oldest_first(self, pg_conn):
+        workflow = self._workflow(pg_conn)
+        agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        _message(pg_conn, _chat(pg_conn, agent_id=agent), "streaming")
+        older = {**_PROGRESS, "done": 3}
+        self._run(pg_conn, workflow, older, age=60)
+        self._run(pg_conn, workflow, _PROGRESS)
+        snap = activity_now.build_now(pg_conn, "u1")
+        # One chat hosts one run; the second run of the same agent is its own row.
+        assert _kinds(snap) == ["chat", "workflow"]
+        assert snap["running"][0]["workflow_progress"] == older
+        assert snap["running"][1]["workflow_progress"] == _PROGRESS
 
 
 class TestIngest:

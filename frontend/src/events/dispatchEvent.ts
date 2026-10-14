@@ -55,11 +55,13 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   'conversation.continued',
   'notification.created',
   // A chat answer started or ended, a scheduled run started, a webhook run
-  // started or ended (docsgpt/activity); consumed by activitySlice.
+  // started or ended (docsgpt/activity), a workflow run started a step
+  // (workflow_agent.py); consumed by activitySlice.
   'message.started',
   'message.finished',
   'schedule.run.started',
   'activity.updated',
+  'workflow.run.step',
 ]);
 
 /**

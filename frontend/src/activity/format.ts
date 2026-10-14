@@ -1,4 +1,5 @@
 import { intlLocale } from '../utils/dateTimeUtils';
+import type { WorkflowProgress } from './types';
 
 const DAY_MS = 86_400_000;
 
@@ -62,4 +63,32 @@ export function formatElapsed(
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
     : `${minutes}:${seconds}`;
+}
+
+/**
+ * The step a running workflow is on, as Now shows it.
+ *
+ * Args:
+ *   progress: The run's `workflow_progress`.
+ *
+ * Returns:
+ *   The 1-based step, the step count (null when the workflow branches), the
+ *   step's title, and how far along it is in percent (only with a count); null
+ *   before the first step starts.
+ */
+export function workflowStep(progress: WorkflowProgress | null | undefined): {
+  step: number;
+  total: number | null;
+  title: string | null;
+  percent: number | null;
+} | null {
+  if (!progress?.current) return null;
+  const total = progress.total || null;
+  const step = total ? Math.min(progress.done + 1, total) : progress.done + 1;
+  return {
+    step,
+    total,
+    title: progress.current.title?.trim() || null,
+    percent: total ? Math.round((progress.done / total) * 100) : null,
+  };
 }

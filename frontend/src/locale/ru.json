@@ -3658,7 +3658,9 @@
       "allMonitors": "Все мониторы",
       "nothingWatched": "Ничего не отслеживается",
       "checked": "проверено {{time}}",
-      "openCalendar": "Открыть календарь"
+      "openCalendar": "Открыть календарь",
+      "step": "шаг {{step}}",
+      "stepOf": "шаг {{step}} из {{total}}"
     },
     "calendar": {
       "label": "Календарь",
