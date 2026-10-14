@@ -190,3 +190,35 @@ class TestCap:
         week = _week(pg_conn)
         assert len([e for e in week["events"] if e["state"] == "planned"]) == 50
         assert str(schedule["id"]) in week["truncated"]
+
+    def test_past_runs_are_capped_per_schedule_and_reported(self, pg_conn, monkeypatch):
+        # A frequent schedule's runs must not crowd out another's, nor leave
+        # the days after the cut looking empty with no word of it.
+        monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 5)
+        busy = _schedule(pg_conn, cron="0 * * * *", name="Inbox triage")
+        daily = _schedule(pg_conn, cron="0 15 * * 1-5", name="Daily digest")
+        runs = ScheduleRunsRepository(pg_conn)
+        for hour in range(10):
+            run = runs.record_pending(str(busy["id"]), "u1", None, MONDAY + timedelta(hours=hour))
+            runs.update(str(run["id"]), {"status": "success"})
+        run = runs.record_pending(str(daily["id"]), "u1", None, MONDAY + timedelta(hours=15))
+        runs.update(str(run["id"]), {"status": "success"})
+        week = _week(pg_conn)
+        busy_runs = [e for e in week["events"] if e["schedule_id"] == str(busy["id"]) and e.get("run_id")]
+        assert [e["at"][11:16] for e in busy_runs] == ["00:00", "01:00", "02:00", "03:00", "04:00"]
+        assert str(busy["id"]) in week["truncated"]
+        assert [e["state"] for e in week["events"] if e["schedule_id"] == str(daily["id"])][0] == "success"
+
+    def test_slots_past_the_cut_runs_are_not_missed(self, pg_conn, monkeypatch):
+        # The runs after the cut exist; their slots must not read as missed.
+        monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 5)
+        busy = _schedule(pg_conn, cron="0 * * * *", name="Inbox triage")
+        pg_conn.execute(
+            text("UPDATE schedules SET created_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": MONDAY + timedelta(hours=3), "id": str(busy["id"])},
+        )
+        runs = ScheduleRunsRepository(pg_conn)
+        for hour in range(10):
+            run = runs.record_pending(str(busy["id"]), "u1", None, MONDAY + timedelta(hours=hour))
+            runs.update(str(run["id"]), {"status": "success"})
+        assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]

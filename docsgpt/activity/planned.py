@@ -30,14 +30,12 @@ logger = logging.getLogger(__name__)
 #: The widest window one request may ask for (a month view plus its edges).
 MAX_WINDOW = timedelta(days=62)
 
-#: Planned slots one schedule may add to a window; a finer cron is truncated.
+#: Planned slots, and past runs, one schedule may add to a window; a finer
+#: cron is truncated to its first ones.
 MAX_SLOTS_PER_SCHEDULE = 1_000
 
 #: A schedule this frequent or more is drawn as one block per day.
 FREQUENT_SECONDS = 60 * 60
-
-#: Past runs one window lists.
-MAX_RUNS = 5_000
 
 #: A past slot with no run is "missed" once it is this late: the dispatcher
 #: ticks every minute and a run row appears as soon as it claims the slot.
@@ -131,25 +129,33 @@ def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, 
 
 
 def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
-    """The user's schedule runs whose slot falls in the window, capped at ``MAX_RUNS``."""
+    """The user's schedule runs whose slot falls in the window, oldest first.
+
+    Each schedule keeps its first ``MAX_SLOTS_PER_SCHEDULE``, as its planned
+    slots do; ``in_window`` on every row says how many it had in all.
+    """
     return _rows(
         conn,
         """
-        SELECT sr.id, sr.schedule_id, sr.status, sr.scheduled_for, sr.started_at,
-               sr.finished_at, sr.trigger_source, sr.error_type, sr.conversation_id,
-               s.name, s.instruction, s.agent_id, s.trigger_type, s.cron, s.timezone,
-               s.origin_conversation_id, a.name AS agent_name,
-               c.name AS origin_conversation_name
-        FROM schedule_runs sr
-        JOIN schedules s ON s.id = sr.schedule_id
-        LEFT JOIN agents a ON a.id = s.agent_id
-        LEFT JOIN conversations c ON c.id = s.origin_conversation_id
-        WHERE sr.user_id = :user_id
-          AND sr.scheduled_for >= :start AND sr.scheduled_for < :end
-        ORDER BY sr.scheduled_for ASC
-        LIMIT :limit
+        SELECT * FROM (
+            SELECT sr.id, sr.schedule_id, sr.status, sr.scheduled_for, sr.started_at,
+                   sr.finished_at, sr.trigger_source, sr.error_type, sr.conversation_id,
+                   s.name, s.instruction, s.agent_id, s.trigger_type, s.cron, s.timezone,
+                   s.origin_conversation_id, a.name AS agent_name,
+                   c.name AS origin_conversation_name,
+                   ROW_NUMBER() OVER (PARTITION BY sr.schedule_id ORDER BY sr.scheduled_for, sr.id) AS rank,
+                   COUNT(*) OVER (PARTITION BY sr.schedule_id) AS in_window
+            FROM schedule_runs sr
+            JOIN schedules s ON s.id = sr.schedule_id
+            LEFT JOIN agents a ON a.id = s.agent_id
+            LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+            WHERE sr.user_id = :user_id
+              AND sr.scheduled_for >= :start AND sr.scheduled_for < :end
+        ) runs
+        WHERE rank <= :limit
+        ORDER BY scheduled_for ASC
         """,
-        {"user_id": user_id, "start": start, "end": end, "limit": MAX_RUNS},
+        {"user_id": user_id, "start": start, "end": end, "limit": MAX_SLOTS_PER_SCHEDULE},
     )
 
 
@@ -295,12 +301,20 @@ def build_planned(
     frequent_cache: Dict[str, bool] = {}
     events: List[Dict[str, Any]] = []
     taken: set = set()
+    truncated: List[str] = []
+    # Schedules whose runs were cut, to the last run kept: the slots after it
+    # had runs too, so none of them is missed.
+    runs_cut_at: Dict[str, datetime] = {}
 
     for run in _runs(conn, user_id, start, end):
         at = _as_datetime(run.get("scheduled_for"))
         if at is None:
             continue
-        taken.add((str(run["schedule_id"]), _minute(at)))
+        schedule_id = str(run["schedule_id"])
+        if (run.get("in_window") or 0) > MAX_SLOTS_PER_SCHEDULE:
+            truncated.append(schedule_id)
+            runs_cut_at[schedule_id] = max(at, runs_cut_at.get(schedule_id, at))
+        taken.add((schedule_id, _minute(at)))
         events.append(
             {
                 **_base(run, _is_frequent(run, frequent_cache)),
@@ -313,7 +327,6 @@ def build_planned(
             }
         )
 
-    truncated: List[str] = []
     future_start = max(start, current)
     missed_until = min(end, current - MISSED_GRACE)
     for row in _schedules(conn, user_id, end):
@@ -342,8 +355,9 @@ def build_planned(
         past, cut = _past_slots(row, since, missed_until)
         if cut:
             truncated.append(str(row["id"]))
+        cut_at = runs_cut_at.get(str(row["id"]))
         for at in past:
-            if (str(row["id"]), _minute(at)) in taken:
+            if (str(row["id"]), _minute(at)) in taken or (cut_at is not None and at > cut_at):
                 continue
             events.append({**_base(row, frequent), "at": _iso(at), "state": "missed"})
 
