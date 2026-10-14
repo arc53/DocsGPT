@@ -338,6 +338,30 @@ describe('Calendar page', () => {
     expect(schedules.runNow).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a day summary under "Hide past" while it has slots to come', async () => {
+    activity.planned.mockReset().mockResolvedValue({
+      ...WINDOW,
+      events: [
+        slot({
+          schedule_id: 'f1',
+          name: 'Inbox triage',
+          frequent: true,
+          at: at(0, 0),
+          until: new Date(Date.now() + 3_600_000).toISOString(),
+          count: 24,
+        }),
+      ],
+    });
+    await render();
+    const hidePast = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'activity.calendar.hidePast',
+    )!;
+    await act(async () => hidePast.click());
+    expect(
+      container.querySelector('button[aria-label="activity.calendar.block"]'),
+    ).not.toBeNull();
+  });
+
   it('opens a planned slot in the schedule panel', async () => {
     await render();
     await act(async () => slotButton('Daily support digest').click());

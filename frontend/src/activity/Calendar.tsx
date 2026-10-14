@@ -151,7 +151,8 @@ export default function Calendar() {
   const events = useMemo(
     () =>
       (data?.events ?? []).filter((event) => {
-        if (hidePast && Date.parse(event.at) < now) return false;
+        // A day summary is past only once its last slot is.
+        if (hidePast && Date.parse(event.until ?? event.at) < now) return false;
         // Syncs belong to no agent: their chip shows or hides them.
         if (event.kind === 'sync') return showSyncs;
         if (agent === CHAT && event.agent_id) return false;
