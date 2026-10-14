@@ -179,3 +179,14 @@
     - TOOL_LIST
     - TOOL_GET
     - TOOL_CALL
+
+# Keyless server; its rate limits are shared across all users.
+- key: mcp:coingecko
+  name: CoinGecko
+  description: Look up live crypto prices, market caps, volumes, trending coins and price history.
+  icon: coingecko
+  category: business
+  mcp_url: https://mcp.api.coingecko.com/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://docs.coingecko.com/docs/mcp-server

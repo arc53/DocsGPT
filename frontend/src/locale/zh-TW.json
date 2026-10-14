@@ -1502,6 +1502,7 @@
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
         "mcp_drawio": "使用 draw.io 建立可編輯的流程圖和其他圖表。",
+        "mcp_coingecko": "查詢即時加密貨幣價格、市值、交易量、熱門幣種和價格歷史。",
         "mcp_clickup": "搜尋、讀取和更新 ClickUp 任務、文件與清單，並新增留言。",
         "mcp_zapier": "使用 Zapier MCP 帳戶中啟用的動作讀取或更新已連線的應用程式。",
         "mcp_trello": "尋找 Trello 看板與卡片，並建立及更新卡片。",
@@ -1836,8 +1837,8 @@
           "connect": "連接到 Google Drive",
           "validateFailed": "無法驗證登入。請再試一次。",
           "pickerFailed": "無法開啟檔案選擇器。請再試一次。",
-          "selectedFiles": "已選擇的檔案",
-          "selectFiles": "選擇檔案",
+          "selectedFiles": "已選擇的項目",
+          "selectFiles": "選擇檔案或資料夾",
           "noFilesSelected": "尚未選擇檔案或資料夾。",
           "removeItem": "移除 {{name}}"
         }

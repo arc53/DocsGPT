@@ -37,6 +37,60 @@ interface PickerFile {
   sizeBytes?: string;
 }
 
+// The file types the worker can ingest; folders are shown on top of these.
+const VIEW_MIME_TYPES = [
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.presentation',
+  'application/vnd.google-apps.spreadsheet',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/msword',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.ms-excel',
+  'text/plain',
+  'text/csv',
+  'text/html',
+  'text/markdown',
+  'text/x-rst',
+  'application/json',
+  'application/epub+zip',
+  'application/rtf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+].join(',');
+
+/** The part of Google's Picker API the shared-drives tab is built with. */
+interface PickerDocsView {
+  setEnableDrives(enabled: boolean): PickerDocsView;
+  setIncludeFolders(included: boolean): PickerDocsView;
+  setSelectFolderEnabled(enabled: boolean): PickerDocsView;
+  setMimeTypes(mimeTypes: string): PickerDocsView;
+}
+interface PickerApi {
+  DocsView: new (viewId: unknown) => PickerDocsView;
+  ViewId: Record<string, unknown>;
+}
+
+/**
+ * A "Shared drives" tab for the picker. Built from the Picker API the
+ * picker hook loads, so it is left out until that script is there.
+ */
+const sharedDrivesView = (): PickerDocsView[] | undefined => {
+  const pickerApi = (window as { google?: { picker?: PickerApi } }).google
+    ?.picker;
+  if (!pickerApi) return undefined;
+  return [
+    new pickerApi.DocsView(pickerApi.ViewId.DOCS)
+      .setEnableDrives(true)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes(VIEW_MIME_TYPES),
+  ];
+};
+
 /** Why the last attempt to open the picker failed. */
 type PickerError = 'expired' | 'validateFailed' | 'pickerFailed' | null;
 
@@ -142,15 +196,17 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         clientId: clientId,
         developerKey,
         appId: appId,
-        setSelectFolderEnabled: false,
+        // Folders are picked like files; the worker downloads their contents.
+        setIncludeFolders: true,
+        setSelectFolderEnabled: true,
         viewId: 'DOCS',
         showUploadView: false,
         showUploadFolders: false,
-        supportDrives: false,
+        supportDrives: true,
+        customViews: sharedDrivesView(),
         multiselect: true,
         token: accessToken,
-        viewMimeTypes:
-          'application/vnd.google-apps.document,application/vnd.google-apps.presentation,application/vnd.google-apps.spreadsheet,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.ms-powerpoint,application/vnd.ms-excel,text/plain,text/csv,text/html,text/markdown,text/x-rst,application/json,application/epub+zip,application/rtf,image/jpeg,image/jpg,image/png',
+        viewMimeTypes: VIEW_MIME_TYPES,
         callbackFunction: (data: any) => {
           setIsLoading(false);
           if (data.action === 'picked') {

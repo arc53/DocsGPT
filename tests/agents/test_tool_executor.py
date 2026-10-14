@@ -1312,6 +1312,39 @@ class TestToolExecutorExecute:
             "artifact_id" in e.get("data", {}) for e in completed_events
         )
 
+    def test_execute_tool_reports_the_version_each_artifact_is_at(self, mock_tool_manager, monkeypatch):
+        """A tool's artifact entries keep the version it produced; junk versions are dropped."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "act", {}))),
+        )
+        mock_tool = mock_tool_manager.load_tool.return_value
+        mock_tool.get_artifact_id = Mock(return_value="a-1")
+        mock_tool.get_artifacts = Mock(
+            return_value=[
+                {"id": "a-1", "filename": "Deal.docx", "ref": "A1", "version": 2},
+                {"id": "a-2", "filename": "x.csv", "ref": "A2", "version": "3"},
+            ]
+        )
+        tools_dict = {
+            "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "test_tool",
+                "config": {},
+                "actions": [{"name": "act", "description": "Test", "parameters": {"properties": {}}}],
+            }
+        }
+
+        events = list(_drain(executor.execute(tools_dict, self._make_call(name="act_t1"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert completed["data"]["artifacts"] == [
+            {"id": "a-1", "filename": "Deal.docx", "ref": "A1", "version": 2},
+            {"id": "a-2", "filename": "x.csv", "ref": "A2"},
+        ]
+
     def test_get_or_load_tool_encrypted_credentials(self, monkeypatch):
         """Cover lines 273-278: encrypted credentials path."""
         executor = ToolExecutor(user="test_user")
@@ -1394,6 +1427,24 @@ class TestToolExecutorExecute:
         tool_config = call_kwargs[1].get("tool_config", call_kwargs[0][1] if len(call_kwargs[0]) > 1 else {})
         assert tool_config.get("query_mode") is True
         assert tool_config.get("conversation_id") == "conv-123"
+
+    def test_get_or_load_tool_passes_the_run_scope_without_a_conversation(self, monkeypatch):
+        """A headless run with no conversation scopes run-bound tools to the run."""
+        mock_tm = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm)
+        tool_data = {"id": "00000000-0000-0000-0000-000000000004", "name": "code_executor", "config": {}}
+
+        executor = ToolExecutor(user="test_user")
+        executor.run_scope_id = "agent-run-1"
+        executor._get_or_load_tool(tool_data, "t1", "run_code")
+        assert mock_tm.load_tool.call_args[1]["tool_config"]["run_scope_id"] == "agent-run-1"
+
+        mock_tm.reset_mock()
+        chat = ToolExecutor(user="test_user")
+        chat.conversation_id = "conv-1"
+        chat.run_scope_id = "agent-run-1"
+        chat._get_or_load_tool(tool_data, "t1", "run_code")
+        assert "run_scope_id" not in mock_tm.load_tool.call_args[1]["tool_config"]
 
     def test_mcp_tool_gets_its_stored_action_schemas(self, monkeypatch):
         """The stored schemas carry the ``x-mcp-header`` annotations the tool sends headers for."""
@@ -1652,3 +1703,12 @@ class TestStoredAndSynthesizedBuiltinCollapse:
             "t2": {"name": "mcp_tool", "actions": [dict(action)]},
         }
         assert len(executor.prepare_tools_for_llm(tools_dict)) == 2
+
+
+def _drain(gen):
+    """Every event a generator yields, ignoring its return value."""
+    while True:
+        try:
+            yield next(gen)
+        except StopIteration:
+            return

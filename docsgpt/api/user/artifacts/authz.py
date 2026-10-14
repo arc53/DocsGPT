@@ -7,6 +7,7 @@ from typing import Mapping, Optional
 
 from flask import request
 
+from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
@@ -23,7 +24,8 @@ class Principal:
 
     A decoded JWT is a full *owner* session (``agent_id`` is ``None``). An
     ``api_key`` is a low-trust, publicly-distributed *agent* credential -- it is
-    embedded client-side in the widget and accepted from the query string -- so
+    embedded client-side in the widget and accepted from the query string or an
+    ``Authorization: Bearer`` header -- so
     it resolves to the owning ``user_id`` but stays **agent-scoped**: it may reach
     an artifact only when the request also carries that artifact's parent
     ``conversation_id`` (the unguessable per-visitor secret), confining it to a
@@ -58,15 +60,40 @@ def principal_for(decoded_token: Optional[dict], api_key: Optional[str]) -> Prin
     return Principal()
 
 
+def bearer_agent_key(headers: Mapping[str, str]) -> Optional[str]:
+    """The ``Authorization: Bearer`` value when it is an agent API key, else None.
+
+    Agent keys are UUIDs. A session JWT (dot-separated segments) or a personal
+    access token (its own prefix) never is, so those still go through the
+    regular decoder: a JWT authenticates its owner and a PAT stays barred from
+    the artifact routes. Callers that see a key here skip that decoder, which
+    would reject the key as an invalid JWT.
+
+    Args:
+        headers: The request headers.
+
+    Returns:
+        The key, or None.
+    """
+    header = headers.get("Authorization")
+    if not header or not isinstance(header, str):
+        return None
+    scheme, _, value = header.partition(" ")
+    value = value.strip()
+    if scheme.lower() != "bearer" or not looks_like_uuid(value):
+        return None
+    return value
+
+
 def resolve_principal() -> Principal:
     """Resolve the current Flask request's caller to a :class:`Principal`.
 
-    Reads the decoded JWT, then an ``api_key`` query/form param; see
-    :func:`principal_for`.
+    Reads the decoded JWT, then an agent API key sent as ``Authorization:
+    Bearer``, then an ``api_key`` query/form param; see :func:`principal_for`.
     """
     return principal_for(
         getattr(request, "decoded_token", None),
-        request.args.get("api_key") or request.form.get("api_key"),
+        bearer_agent_key(request.headers) or request.args.get("api_key") or request.form.get("api_key"),
     )
 
 

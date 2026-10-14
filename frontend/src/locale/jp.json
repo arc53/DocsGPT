@@ -1502,6 +1502,7 @@
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
         "mcp_drawio": "draw.io で編集可能なフローチャートやその他の図を作成します。",
+        "mcp_coingecko": "暗号資産のリアルタイム価格、時価総額、取引量、トレンドのコイン、価格履歴を調べます。",
         "mcp_clickup": "ClickUp のタスク、ドキュメント、リストを検索、閲覧、更新し、コメントを追加します。",
         "mcp_zapier": "Zapier MCP アカウントで有効にしたアクションを使って、接続済みアプリの情報を読み取ったり更新したりします。",
         "mcp_trello": "Trello のボードやカードを検索し、カードを作成・更新します。",
@@ -1836,8 +1837,8 @@
           "connect": "Google Driveに接続",
           "validateFailed": "サインインを確認できませんでした。もう一度お試しください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
-          "selectedFiles": "選択されたファイル",
-          "selectFiles": "ファイルを選択",
+          "selectedFiles": "選択された項目",
+          "selectFiles": "ファイルまたはフォルダを選択",
           "noFilesSelected": "まだファイルやフォルダが選択されていません。",
           "removeItem": "{{name}} を削除"
         }
