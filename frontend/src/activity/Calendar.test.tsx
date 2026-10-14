@@ -304,6 +304,40 @@ describe('Calendar page', () => {
     expect(slotButton('Daily support digest')).toBeDefined();
   });
 
+  it("does not carry one schedule's Run now over to another", async () => {
+    activity.planned.mockReset().mockResolvedValue({
+      ...WINDOW,
+      events: [
+        slot({}),
+        slot({
+          schedule_id: 's3',
+          name: 'Weekly carrier review',
+          at: at(0, 11),
+        }),
+      ],
+    });
+    schedules.runNow.mockReset().mockResolvedValue({ run: { id: 'r1' } });
+    await render();
+    const panel = () => document.querySelector('[data-slot="sheet-content"]');
+    const runNow = () =>
+      Array.from(panel()!.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('agents.schedules.runNow'),
+      )!;
+
+    await act(async () => slotButton('Daily support digest').click());
+    await act(async () => runNow().click());
+    expect(panel()?.textContent).toContain('activity.calendar.queued');
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    await act(async () => slotButton('Weekly carrier review').click());
+    expect(panel()?.textContent).not.toContain('activity.calendar.queued');
+    expect(runNow().disabled).toBe(false);
+    expect(schedules.runNow).toHaveBeenCalledTimes(1);
+  });
+
   it('opens a planned slot in the schedule panel', async () => {
     await render();
     await act(async () => slotButton('Daily support digest').click());

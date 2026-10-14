@@ -377,6 +377,15 @@ export default function Calendar() {
       )}
       {body}
       <EventPanel
+        // One panel per schedule: closing it or opening another schedule
+        // starts its Run now afresh, and a late result can't land elsewhere.
+        key={
+          selection
+            ? selection.kind === 'event'
+              ? selection.event.schedule_id
+              : selection.block.schedule_id
+            : 'closed'
+        }
         selection={selection}
         onClose={() => setSelection(null)}
         onRunNow={async (scheduleId) => {
