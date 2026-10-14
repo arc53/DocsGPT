@@ -24,7 +24,8 @@ import { formatDateTime } from '../../utils/dateTimeUtils';
 import { ACTIVITY_SCHEDULES_PATH } from '../paths';
 import { formatClock } from './dates';
 import type { FrequentBlock } from './layout';
-import type { CalendarEvent, EventState } from './types';
+import SyncPanel from './SyncPanel';
+import type { CalendarEvent, EventState, ScheduleEvent } from './types';
 
 const BADGE: Record<
   EventState,
@@ -42,7 +43,7 @@ const BADGE: Record<
 };
 
 export type EventPanelProps = {
-  /** A planned or paused slot, or a frequent schedule's day. */
+  /** A planned or paused slot, a knowledge sync, or a frequent schedule's day. */
   selection:
     | { kind: 'event'; event: CalendarEvent }
     | { kind: 'block'; block: FrequentBlock }
@@ -51,13 +52,14 @@ export type EventPanelProps = {
   /** Runs the schedule once now; resolves when the run is queued. */
   onRunNow: (scheduleId: string) => Promise<void>;
   /** Opens a past run's details (a slot of a frequent schedule's day). */
-  onOpenRun: (event: CalendarEvent) => void;
+  onOpenRun: (event: ScheduleEvent) => void;
 };
 
 /**
  * The calendar's side panel for a slot that hasn't run: when it runs, how it
  * repeats, whose it is, with Run now and the way to its schedule. For a
- * frequent schedule's day it lists every slot; a past one opens its run.
+ * frequent schedule's day it lists every slot; a past one opens its run. A
+ * knowledge sync opens its own panel (`SyncPanel`).
  */
 export default function EventPanel({
   selection,
@@ -69,8 +71,13 @@ export default function EventPanel({
   const [running, setRunning] = useState(false);
   const [queued, setQueued] = useState(false);
   if (!selection) return null;
-  const event =
-    selection.kind === 'event' ? selection.event : selection.block.events[0];
+  if (selection.kind === 'event' && selection.event.kind === 'sync') {
+    return <SyncPanel event={selection.event} onClose={onClose} />;
+  }
+  const event: ScheduleEvent =
+    selection.kind === 'block'
+      ? selection.block.events[0]
+      : (selection.event as ScheduleEvent);
   const state: EventState =
     selection.kind === 'event' ? event.state : 'planned';
   const schedulePath = event.agent_id

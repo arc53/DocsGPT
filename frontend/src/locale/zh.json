@@ -3540,19 +3540,11 @@
         "success": "成功",
         "failed": "失败",
         "paused": "已暂停或跳过",
-        "missed": "已错过"
+        "missed": "已错过",
+        "sync": "知识同步"
       },
       "truncated": "部分非常频繁的计划在此范围内只显示前几次运行。",
       "watching": "监控中",
-      "syncs": "同步",
-      "syncBar": "{{name}} · {{frequency}}，时间不固定",
-      "frequency": {
-        "daily": "每天",
-        "weekly": "每周",
-        "monthly": "每月"
-      },
-      "moreSyncs_one": "另有 {{count}} 个同步",
-      "moreSyncs_other": "另有 {{count}} 个同步",
       "state": {
         "planned": "计划中",
         "paused": "已暂停",
@@ -3584,7 +3576,16 @@
       "openSchedule": "打开计划",
       "timezone": "计划时区",
       "missedNote": "这次运行从未开始：当时调度器已停止或滞后。立即运行以补上，或检查 worker 是否带 beat 运行。",
-      "syncBarNext": "{{name}} · {{frequency}}，下次 {{time}}"
+      "syncRepeats": {
+        "daily": "每天，从调度器启动时开始计算",
+        "weekly": "每周，从调度器启动时开始计算",
+        "monthly": "每 30 天，从调度器启动时开始计算"
+      },
+      "sources": "来源",
+      "needsReconnecting": "需要重新连接",
+      "lastSynced": "已于 {{time}} 同步",
+      "notSyncedYet": "尚未同步",
+      "openKnowledge": "打开知识库"
     },
     "history": {
       "label": "历史",

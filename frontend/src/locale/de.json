@@ -3553,19 +3553,11 @@
         "success": "Erfolgreich",
         "failed": "Fehlgeschlagen",
         "paused": "Pausiert oder übersprungen",
-        "missed": "Verpasst"
+        "missed": "Verpasst",
+        "sync": "Wissenssynchronisierung"
       },
       "truncated": "Einige sehr häufige Zeitpläne zeigen in diesem Zeitraum nur ihre ersten Ausführungen.",
       "watching": "Beobachtet",
-      "syncs": "Syncs",
-      "syncBar": "{{name}} · {{frequency}}, Uhrzeit variiert",
-      "frequency": {
-        "daily": "täglich",
-        "weekly": "wöchentlich",
-        "monthly": "monatlich"
-      },
-      "moreSyncs_one": "+{{count}} weitere",
-      "moreSyncs_other": "+{{count}} weitere",
       "state": {
         "planned": "Geplant",
         "paused": "Pausiert",
@@ -3597,7 +3589,16 @@
       "openSchedule": "Zeitplan öffnen",
       "timezone": "Zeitzone des Zeitplans",
       "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft.",
-      "syncBarNext": "{{name}} · {{frequency}}, nächste {{time}}"
+      "syncRepeats": {
+        "daily": "Täglich, gezählt ab dem Start des Schedulers",
+        "weekly": "Wöchentlich, gezählt ab dem Start des Schedulers",
+        "monthly": "Alle 30 Tage, gezählt ab dem Start des Schedulers"
+      },
+      "sources": "Quellen",
+      "needsReconnecting": "Muss neu verbunden werden",
+      "lastSynced": "Synchronisiert {{time}}",
+      "notSyncedYet": "Noch nicht synchronisiert",
+      "openKnowledge": "Wissen öffnen"
     },
     "history": {
       "label": "Verlauf",

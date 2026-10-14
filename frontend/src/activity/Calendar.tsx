@@ -34,13 +34,14 @@ import AgendaList from './calendar/AgendaList';
 import { addDays, stepAnchor, viewWindow } from './calendar/dates';
 import EventPanel from './calendar/EventPanel';
 import type { FrequentBlock } from './calendar/layout';
-import { STATE_CLASS } from './calendar/layout';
+import { STATE_CLASS, SYNC_CLASS } from './calendar/layout';
 import MonthGrid from './calendar/MonthGrid';
 import type {
   CalendarEvent,
   CalendarView,
   MonitorRange,
   PlannedWindow,
+  ScheduleEvent,
 } from './calendar/types';
 import WeekGrid from './calendar/WeekGrid';
 import { ACTIVITY_MONITORS_PATH } from './paths';
@@ -60,9 +61,9 @@ const LEGEND = [
 
 /**
  * Activity › Calendar: planned runs (expanded from each schedule's cron),
- * past runs by status, monitors as ranges and knowledge syncs, as a day,
- * week, month or agenda. A slot opens its schedule; a past run opens its
- * details.
+ * past runs by status, knowledge syncs at their times and monitors as
+ * ranges, as a day, week, month or agenda. A slot opens its schedule, a past
+ * run its details and a sync its sources.
  */
 export default function Calendar() {
   const { t, i18n } = useTranslation();
@@ -127,6 +128,7 @@ export default function Calendar() {
     const byId = new Map<string, string>();
     let chat = false;
     for (const event of data?.events ?? []) {
+      if (event.kind === 'sync') continue;
       if (event.agent_id) byId.set(event.agent_id, event.agent_name ?? '');
       else chat = true;
     }
@@ -139,16 +141,17 @@ export default function Calendar() {
   const events = useMemo(
     () =>
       (data?.events ?? []).filter((event) => {
+        if (hidePast && Date.parse(event.at) < now) return false;
+        // Syncs belong to no agent: their chip shows or hides them.
+        if (event.kind === 'sync') return showSyncs;
         if (agent === CHAT && event.agent_id) return false;
         if (agent !== ALL && agent !== CHAT && event.agent_id !== agent)
           return false;
-        if (hidePast && Date.parse(event.at) < now) return false;
         return true;
       }),
-    [data, agent, hidePast, now],
+    [data, agent, hidePast, showSyncs, now],
   );
   const monitors = showMonitors ? (data?.monitors ?? []) : [];
-  const syncs = showSyncs ? (data?.syncs ?? []) : [];
 
   const locale = intlLocale(i18n.language);
   const rangeLabel = (() => {
@@ -175,7 +178,7 @@ export default function Calendar() {
   })();
 
   const openEvent = async (event: CalendarEvent) => {
-    if (event.run_id) {
+    if (event.kind === 'schedule' && event.run_id) {
       try {
         const { run } = await schedulesService.getRun(
           event.schedule_id,
@@ -240,7 +243,6 @@ export default function Calendar() {
       days={days}
       events={events}
       monitors={monitors}
-      syncs={syncs}
       now={now}
       onSelectEvent={(event) => void openEvent(event)}
       onSelectBlock={(block) => setSelection({ kind: 'block', block })}
@@ -327,11 +329,9 @@ export default function Calendar() {
         <ToggleChip pressed={showMonitors} onPressedChange={setShowMonitors}>
           {t('activity.calendar.monitors')}
         </ToggleChip>
-        {view !== 'month' && view !== 'agenda' && (
-          <ToggleChip pressed={showSyncs} onPressedChange={setShowSyncs}>
-            {t('activity.calendar.knowledgeSyncs')}
-          </ToggleChip>
-        )}
+        <ToggleChip pressed={showSyncs} onPressedChange={setShowSyncs}>
+          {t('activity.calendar.knowledgeSyncs')}
+        </ToggleChip>
         <ToggleChip pressed={hidePast} onPressedChange={setHidePast}>
           {t('activity.calendar.hidePast')}
         </ToggleChip>
@@ -345,6 +345,13 @@ export default function Calendar() {
               {t(`activity.calendar.legend.${key}`)}
             </li>
           ))}
+          <li className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className={cn('h-3 w-4 rounded-sm', SYNC_CLASS)}
+            />
+            {t('activity.calendar.legend.sync')}
+          </li>
         </ul>
       </div>
       {data && data.truncated.length > 0 && (
@@ -360,7 +367,7 @@ export default function Calendar() {
           await dispatch(runScheduleNow({ id: scheduleId, token })).unwrap();
           setReload((n) => n + 1);
         }}
-        onOpenRun={(event) => {
+        onOpenRun={(event: ScheduleEvent) => {
           setSelection(null);
           void openEvent(event);
         }}

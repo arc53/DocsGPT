@@ -1,4 +1,4 @@
-import { Radar, RefreshCw } from 'lucide-react';
+import { Radar, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,7 +6,6 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 import { intlLocale } from '../../utils/dateTimeUtils';
-import { formatRunTime } from '../format';
 import {
   addDays,
   dayKey,
@@ -18,13 +17,15 @@ import {
 import {
   blockState,
   byDay,
+  eventClass,
   hourRange,
   layoutDay,
   SLOT_HOURS,
   STATE_CLASS,
   type FrequentBlock,
 } from './layout';
-import type { CalendarEvent, MonitorRange, SyncEntry } from './types';
+import { eventTitle, syncSummary } from './labels';
+import type { CalendarEvent, MonitorRange } from './types';
 
 /** One hour's height in the grid, in px (the hour labels' `h-11`). */
 const HOUR_PX = 44;
@@ -33,14 +34,11 @@ const HOUR_PX = 44;
 // the elements' classes read (DESIGN.md "Inline styles").
 /** A frequent block's strip width, in px; strips sit at the column's right edge. */
 const STRIP_PX = 22;
-/** Syncs listed before the "+N" note. */
-const MAX_SYNC_BARS = 3;
 
 export type WeekGridProps = {
   days: Date[];
   events: CalendarEvent[];
   monitors: MonitorRange[];
-  syncs: SyncEntry[];
   now: number;
   onSelectEvent: (event: CalendarEvent) => void;
   onSelectBlock: (block: FrequentBlock) => void;
@@ -48,16 +46,16 @@ export type WeekGridProps = {
 };
 
 /**
- * The time grid of a day or a week: a header per day, the all-day lanes
- * (monitors as bars from creation to expiry, knowledge syncs by frequency),
- * then the hours with each slot coloured by its state. A schedule that runs
- * hourly or more often is one tall block per day instead of a slot per run.
+ * The time grid of a day or a week: a header per day, the all-day lane
+ * (monitors as bars from creation to expiry), then the hours with each slot
+ * coloured by its state and each knowledge sync batch at its time. A schedule
+ * that runs hourly or more often is one tall block per day instead of a slot
+ * per run.
  */
 export default function WeekGrid({
   days,
   events,
   monitors,
-  syncs,
   now,
   onSelectEvent,
   onSelectBlock,
@@ -92,7 +90,7 @@ export default function WeekGrid({
     return `${a + 2} / ${b + 3}`;
   };
 
-  const lane = (label: string, bars: ReactNode[], note?: string | null) => (
+  const lane = (label: string, bars: ReactNode[]) => (
     <div
       className="border-border grid grid-cols-(--cols) gap-y-1 border-b py-1.5"
       style={{ '--cols': columns } as CSSProperties}
@@ -106,14 +104,6 @@ export default function WeekGrid({
         {label}
       </div>
       {bars}
-      {note && (
-        <p
-          className="text-muted-foreground col-(--col) px-2 text-xs"
-          style={{ '--col': `2 / ${days.length + 2}` } as CSSProperties}
-        >
-          {note}
-        </p>
-      )}
     </div>
   );
 
@@ -140,30 +130,6 @@ export default function WeekGrid({
       </button>,
     ];
   });
-
-  const syncBars = syncs.slice(0, MAX_SYNC_BARS).map((sync) => (
-    <div
-      key={sync.source_id}
-      style={{ '--col': `2 / ${days.length + 2}` } as CSSProperties}
-      className="bg-muted text-foreground col-(--col) flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
-    >
-      <RefreshCw aria-hidden className="size-3 shrink-0" />
-      <span className="truncate">
-        {sync.next_sync_at
-          ? t('activity.calendar.syncBarNext', {
-              name: sync.name,
-              frequency: t(`activity.calendar.frequency.${sync.frequency}`),
-              time: formatRunTime(sync.next_sync_at),
-              interpolation: { escapeValue: false },
-            })
-          : t('activity.calendar.syncBar', {
-              name: sync.name,
-              frequency: t(`activity.calendar.frequency.${sync.frequency}`),
-              interpolation: { escapeValue: false },
-            })}
-      </span>
-    </div>
-  ));
 
   return (
     <Card variant="subtle" padding="none" className="overflow-hidden">
@@ -192,16 +158,6 @@ export default function WeekGrid({
       </div>
       {monitorBars.length > 0 &&
         lane(t('activity.calendar.watching'), monitorBars)}
-      {syncBars.length > 0 &&
-        lane(
-          t('activity.calendar.syncs'),
-          syncBars,
-          syncs.length > MAX_SYNC_BARS
-            ? t('activity.calendar.moreSyncs', {
-                count: syncs.length - MAX_SYNC_BARS,
-              })
-            : null,
-        )}
       <div
         className="grid grid-cols-(--cols)"
         style={{ '--cols': columns } as CSSProperties}
@@ -237,17 +193,23 @@ export default function WeekGrid({
               ))}
               {placed.map(({ event, hour, lane: index, lanes }) => {
                 const at = new Date(event.at);
-                const label = `${formatClock(at)} ${event.name ?? ''}`;
+                const title = eventTitle(event, t);
+                const label = `${formatClock(at)} ${title}`;
+                const detail =
+                  event.kind === 'sync'
+                    ? syncSummary(event, t)
+                    : t(`activity.calendar.state.${event.state}`);
                 return (
                   <button
                     key={`${event.schedule_id}:${event.at}`}
                     type="button"
+                    data-kind={event.kind}
                     data-state={event.state}
-                    title={`${label} · ${t(`activity.calendar.state.${event.state}`)}`}
-                    aria-label={`${label}, ${t(`activity.calendar.state.${event.state}`)}`}
+                    title={`${label} · ${detail}`}
+                    aria-label={`${label}, ${detail}`}
                     onClick={() => onSelectEvent(event)}
                     className={cn(
-                      STATE_CLASS[event.state],
+                      eventClass(event),
                       'absolute top-(--top) left-(--left) h-(--h) w-(--w) truncate rounded-md px-1.5 py-1 text-left text-xs leading-4 font-medium hover:brightness-95',
                     )}
                     style={
@@ -265,7 +227,20 @@ export default function WeekGrid({
                         className="bg-info me-1 inline-block size-1.5 animate-pulse rounded-full align-middle motion-reduce:animate-none"
                       />
                     )}
-                    {event.name}
+                    {event.kind === 'sync' && (
+                      <RefreshCw
+                        aria-hidden
+                        className="me-1 inline size-3 align-[-2px]"
+                      />
+                    )}
+                    {title}
+                    {event.kind === 'sync' &&
+                      event.sources.some((source) => source.blocked) && (
+                        <TriangleAlert
+                          aria-hidden
+                          className="text-warning ms-1 inline size-3 align-[-2px]"
+                        />
+                      )}
                   </button>
                 );
               })}

@@ -39,16 +39,16 @@ Stopping an answer from another page needs Redis, which every DocsGPT install ru
 
 ## Calendar
 
-**Calendar** shows your schedules over time as a **Day**, **Week**, **Month** or **Agenda** (a list of days, the default on a phone). Use **Today** and the arrows to move, and filter by agent.
+**Calendar** shows your schedules and knowledge syncs over time as a **Day**, **Week**, **Month** or **Agenda** (a list of days, the default on a phone). Use **Today** and the arrows to move, and filter by agent.
 
 - **Future slots** come from each schedule's repeat rule or one-time date. A paused schedule's slots are dashed: they will not run until you resume it.
 - **Past slots** show how the run went: green when it succeeded, red when it failed or timed out, dashed when it was skipped. A run in progress is blue.
 - **Missed slots** have an amber dashed border and the label **Missed**: a time an active schedule should have run but no run started, usually because the worker or its beat scheduler was down. They appear 10 minutes after the slot, and only since the schedule was created or last ran, so changing a schedule's time doesn't leave old times behind. A paused schedule's past times are never marked missed.
 - **Frequent schedules** (hourly or more often) are one tall block per day, such as **Inbox triage ×11**, instead of a slot per run. Select it to list the day's runs.
 - **Watching** shows each active monitor as a bar from when it was set up to when it expires. A monitor isn't drawn as slots: a page checked every 30 minutes would fill the week.
-- **Syncs** lists the knowledge sources that re-sync **daily**, **weekly** or **monthly**, with when their frequency syncs next. Every source of a frequency syncs together, when the worker's sync task for it runs; that time counts from when the scheduler first ran, not from a set time of day. Before the scheduler has run a frequency once, its time shows as "time varies".
+- **Knowledge syncs** are drawn at the time they run, one per frequency, such as **Daily sync** at 03:12 each day. They have their own grey dashed look and show a warning sign when a source needs its connection reconnected. Every source of a frequency syncs together when the worker's sync task for it runs; that time counts from when the scheduler first ran, not from a set time of day. Only coming syncs are shown, and none while the scheduler is behind or not running. The **Knowledge syncs** chip hides them, and the agent filter doesn't apply to them.
 
-Select a future slot to see when it runs and how it repeats, with **Run now** and **Open schedule**. Select a past slot to see that run's status, times, tokens, output and error, and **Open conversation** when the run wrote to one. **Hide past runs** leaves only what is still to come.
+Select a future slot to see when it runs and how it repeats, with **Run now** and **Open schedule**. Select a knowledge sync to see its sources, when each last synced and which need reconnecting, with **Open Knowledge**. Select a past slot to see that run's status, times, tokens, output and error, and **Open conversation** when the run wrote to one. **Hide past runs** leaves only what is still to come.
 
 <Callout type="info">
 The calendar shows times in your browser's time zone. A schedule's own time zone is in its details.
@@ -78,4 +78,4 @@ A chat in the sidebar shows at most one mark, the most urgent one. Hover over it
 
 ## Over the API
 
-`GET /api/activity/now` returns what the Now page shows. `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>` returns a calendar window of at most 62 days: `events` (planned slots with `state` `planned` or `paused`, and runs with their status and `run_id`), `monitors` and `syncs`. `GET /api/activity/history` returns one page of finished runs (`kind`, `status`, `q`, `days`, `limit`, `offset`). `POST /api/messages/<message_id>/cancel` stops a running answer. All four take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.
+`GET /api/activity/now` returns what the Now page shows. `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>` returns a calendar window of at most 62 days: `events` and `monitors`. Each event has a `kind`: `schedule` (planned slots with `state` `planned` or `paused`, and runs with their status and `run_id`) or `sync` (a frequency's coming sync, with its `frequency` and `sources`). `GET /api/activity/history` returns one page of finished runs (`kind`, `status`, `q`, `days`, `limit`, `offset`). `POST /api/messages/<message_id>/cancel` stops a running answer. All four take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.

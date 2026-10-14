@@ -69,8 +69,9 @@ class ActivityPlanned(Resource):
     @api.doc(
         description=(
             "The caller's calendar for a window: planned schedule runs (from cron or run_at), past "
-            "and in-flight runs with their status, monitors as date ranges, and knowledge syncs by "
-            "frequency. The window may span at most 62 days."
+            "and in-flight runs with their status, coming knowledge syncs (one event per frequency "
+            "each time it fires, kind sync), and monitors as date ranges. The window may span at "
+            "most 62 days."
         ),
         params={
             "from": {"description": "Window start, ISO 8601.", "required": True},
@@ -81,8 +82,9 @@ class ActivityPlanned(Resource):
         """Return the caller's calendar window.
 
         Returns:
-            A Flask response with ``from``, ``to``, ``events``, ``monitors``,
-            ``syncs`` and ``truncated``, or 400 for a bad window.
+            A Flask response with ``from``, ``to``, ``events`` (schedule and
+            sync events, by ``kind``), ``monitors`` and ``truncated``, or 400
+            for a bad window.
         """
         user_id = _user_id()
         if not user_id:

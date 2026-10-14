@@ -4,8 +4,8 @@ Future slots come from each schedule's cron (or one-time ``run_at``); past and
 in-flight slots come from ``schedule_runs`` with their real status, so a slot
 the scheduler already handled shows how it went. Monitors are ranges, not
 events: a check every 30 minutes would bury the week. Knowledge syncs are
-listed by frequency, each with when its frequency syncs next (every source of
-a frequency syncs when its beat entry fires; see ``activity.syncs``).
+events too: each frequency's batch, every time its beat entry fires in the
+window (future only; see ``activity.syncs``).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from docsgpt.activity.syncs import next_sync_at, next_sync_times
+from docsgpt.activity.syncs import calendar_slots, sync_schedule
 from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
     cron_interval_seconds,
@@ -149,6 +149,7 @@ def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> Lis
 def _base(row: Dict[str, Any], frequent: bool) -> Dict[str, Any]:
     schedule_id = row.get("schedule_id") or row.get("id")
     return {
+        "kind": "schedule",
         "schedule_id": str(schedule_id),
         "name": row.get("name") or (row.get("instruction") or "")[:80] or None,
         "agent_id": str(row["agent_id"]) if row.get("agent_id") else None,
@@ -251,30 +252,6 @@ def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) ->
     ]
 
 
-def _syncs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    times = next_sync_times()
-    rows = _rows(
-        conn,
-        """
-        SELECT id, name, sync_frequency, date
-        FROM sources
-        WHERE user_id = :user_id AND sync_frequency IN ('daily', 'weekly', 'monthly')
-        ORDER BY name ASC
-        """,
-        {"user_id": user_id},
-    )
-    return [
-        {
-            "source_id": str(r["id"]),
-            "name": r.get("name"),
-            "frequency": r.get("sync_frequency"),
-            "last_synced_at": r.get("date"),
-            "next_sync_at": next_sync_at(times, r.get("sync_frequency")),
-        }
-        for r in rows
-    ]
-
-
 def build_planned(
     conn: Connection,
     user_id: str,
@@ -293,7 +270,8 @@ def build_planned(
         now: The current time (tests).
 
     Returns:
-        ``{from, to, events, monitors, syncs, truncated}``. Each event has a
+        ``{from, to, events, monitors, truncated}``. Each event has a
+        ``kind`` (``schedule`` or ``sync``, see ``calendar_slots``) and a
         ``state``: ``planned`` or ``paused`` for a future slot, ``missed`` for
         a past slot of an active schedule that has no run, else the run's
         status (``pending``, ``running``, ``success``, ``failed``,
@@ -355,12 +333,12 @@ def build_planned(
                 continue
             events.append({**_base(row, frequent), "at": _iso(at), "state": "missed"})
 
+    events += calendar_slots(conn, user_id, start, end, sync_schedule(), now=current)
     events.sort(key=lambda event: event["at"])
     return {
         "from": _iso(start),
         "to": _iso(end),
         "events": events,
         "monitors": _monitors(conn, user_id, start, end),
-        "syncs": _syncs(conn, user_id),
         "truncated": list(dict.fromkeys(truncated)),
     }

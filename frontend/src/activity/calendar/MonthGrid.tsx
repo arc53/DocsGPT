@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Card } from '@/components/ui/card';
@@ -8,10 +9,12 @@ import { dayKey, formatClock, sameDay } from './dates';
 import {
   blockState,
   byDay,
+  eventClass,
   layoutDay,
   STATE_CLASS,
   type FrequentBlock,
 } from './layout';
+import { eventTitle } from './labels';
 import type { CalendarEvent } from './types';
 
 /** Items a day cell lists before its "+N" opens the day. */
@@ -108,17 +111,24 @@ export default function MonthGrid({
                   <button
                     key={`${item.event.schedule_id}:${item.event.at}`}
                     type="button"
+                    data-kind={item.event.kind}
                     data-state={item.event.state}
                     onClick={() => onSelectEvent(item.event)}
                     className={cn(
-                      STATE_CLASS[item.event.state],
+                      eventClass(item.event),
                       'truncate rounded-sm px-1.5 py-0.5 text-left text-xs hover:brightness-95',
                     )}
                   >
+                    {item.event.kind === 'sync' && (
+                      <RefreshCw
+                        aria-hidden
+                        className="me-1 inline size-3 align-[-2px]"
+                      />
+                    )}
                     <span className="tabular-nums">
                       {formatClock(new Date(item.event.at))}
                     </span>{' '}
-                    {item.event.name}
+                    {eventTitle(item.event, t)}
                   </button>
                 ) : (
                   <button

@@ -12,25 +12,49 @@ export type EventState =
   /** A past slot of an active schedule that never got a run. */
   | 'missed';
 
-export type CalendarEvent = {
+type EventCommon = {
+  /** The series: a schedule's id, or `sync:<frequency>` for a sync batch. */
   schedule_id: string;
   name: string | null;
   agent_id: string | null;
   agent_name: string | null;
+  /** Hourly or finer: drawn as one block per day. */
+  frequent: boolean;
+  at: string;
+  state: EventState;
+};
+
+/** A schedule's slot: planned, or a run with its status. */
+export type ScheduleEvent = EventCommon & {
+  kind: 'schedule';
   trigger_type: 'once' | 'recurring';
   cron: string | null;
   timezone: string | null;
   origin_conversation_id: string | null;
   origin_conversation_name: string | null;
-  /** Hourly or finer: drawn as one block per day. */
-  frequent: boolean;
-  at: string;
-  state: EventState;
   run_id?: string;
   trigger_source?: string;
   error_type?: string | null;
   conversation_id?: string | null;
 };
+
+export type SyncSource = {
+  id: string;
+  name: string;
+  type: string | null;
+  /** It needs its connection reconnected before it can sync. */
+  blocked: boolean;
+  last_synced_at: string | null;
+};
+
+/** One sync frequency's batch, each time it fires (future only). */
+export type SyncEvent = EventCommon & {
+  kind: 'sync';
+  frequency: 'daily' | 'weekly' | 'monthly';
+  sources: SyncSource[];
+};
+
+export type CalendarEvent = ScheduleEvent | SyncEvent;
 
 export type MonitorRange = {
   monitor_id: string;
@@ -44,21 +68,11 @@ export type MonitorRange = {
   last_checked_at: string | null;
 };
 
-export type SyncEntry = {
-  source_id: string;
-  name: string;
-  frequency: 'daily' | 'weekly' | 'monthly';
-  last_synced_at: string | null;
-  /** When its frequency syncs next; null when beat hasn't run it yet. */
-  next_sync_at: string | null;
-};
-
 export type PlannedWindow = {
   from: string;
   to: string;
   events: CalendarEvent[];
   monitors: MonitorRange[];
-  syncs: SyncEntry[];
   truncated: string[];
 };
 

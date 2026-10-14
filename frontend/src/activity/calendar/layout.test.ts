@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { blockState, hourRange, layoutDay } from './layout';
-import type { CalendarEvent } from './types';
+import {
+  blockState,
+  eventClass,
+  hourRange,
+  layoutDay,
+  STATE_CLASS,
+  SYNC_CLASS,
+} from './layout';
+import type { ScheduleEvent, SyncEvent } from './types';
 
 const event = (
   hour: number,
-  overrides: Partial<CalendarEvent> = {},
-): CalendarEvent => ({
+  overrides: Partial<ScheduleEvent> = {},
+): ScheduleEvent => ({
+  kind: 'schedule',
   schedule_id: 's1',
   name: 'Digest',
   agent_id: null,
@@ -67,5 +75,32 @@ describe('hourRange', () => {
   it('shows working hours by default and widens to fit', () => {
     expect(hourRange([])).toEqual([7, 19]);
     expect(hourRange([event(6), event(21.5)])).toEqual([6, 22]);
+  });
+});
+
+describe('sync events', () => {
+  const sync: SyncEvent = {
+    kind: 'sync',
+    schedule_id: 'sync:daily',
+    name: null,
+    agent_id: null,
+    agent_name: null,
+    frequent: false,
+    at: new Date(2026, 9, 13, 3, 12).toISOString(),
+    state: 'planned',
+    frequency: 'daily',
+    sources: [],
+  };
+
+  it('have their own look, not a run status', () => {
+    expect(eventClass(sync)).toBe(SYNC_CLASS);
+    expect(eventClass(event(8))).toBe(STATE_CLASS.planned);
+  });
+
+  it('are slots, and widen the day to their time', () => {
+    const { placed, blocks } = layoutDay([sync, event(15)]);
+    expect(placed.map((p) => p.event.kind)).toEqual(['sync', 'schedule']);
+    expect(blocks).toEqual([]);
+    expect(hourRange([sync])[0]).toBe(3);
   });
 });

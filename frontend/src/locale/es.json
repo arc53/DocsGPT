@@ -3553,19 +3553,11 @@
         "success": "Correcta",
         "failed": "Fallida",
         "paused": "En pausa u omitida",
-        "missed": "Perdida"
+        "missed": "Perdida",
+        "sync": "Sincronización de conocimiento"
       },
       "truncated": "Algunas programaciones muy frecuentes solo muestran sus primeras ejecuciones en este rango.",
       "watching": "Vigilando",
-      "syncs": "Sincron.",
-      "syncBar": "{{name}} · {{frequency}}, hora variable",
-      "frequency": {
-        "daily": "diaria",
-        "weekly": "semanal",
-        "monthly": "mensual"
-      },
-      "moreSyncs_one": "+{{count}} sincronización más",
-      "moreSyncs_other": "+{{count}} sincronizaciones más",
       "state": {
         "planned": "Prevista",
         "paused": "En pausa",
@@ -3597,7 +3589,16 @@
       "openSchedule": "Abrir programación",
       "timezone": "Zona horaria de la programación",
       "missedNote": "Esta ejecución nunca empezó: el planificador estaba parado o con retraso en ese momento. Ejecútala ahora o comprueba que el worker funciona con beat.",
-      "syncBarNext": "{{name}} · {{frequency}}, próxima {{time}}"
+      "syncRepeats": {
+        "daily": "Cada día, contado desde que se inició el planificador",
+        "weekly": "Cada semana, contado desde que se inició el planificador",
+        "monthly": "Cada 30 días, contado desde que se inició el planificador"
+      },
+      "sources": "Fuentes",
+      "needsReconnecting": "Necesita reconectarse",
+      "lastSynced": "Sincronizado {{time}}",
+      "notSyncedYet": "Aún sin sincronizar",
+      "openKnowledge": "Abrir Conocimiento"
     },
     "history": {
       "label": "Historial",

@@ -3541,19 +3541,11 @@
         "success": "成功",
         "failed": "失敗",
         "paused": "一時停止またはスキップ",
-        "missed": "未実行"
+        "missed": "未実行",
+        "sync": "ナレッジの同期"
       },
       "truncated": "非常に頻繁なスケジュールは、この期間の最初の実行のみ表示されます。",
       "watching": "監視中",
-      "syncs": "同期",
-      "syncBar": "{{name}} · {{frequency}}、時刻は不定",
-      "frequency": {
-        "daily": "毎日",
-        "weekly": "毎週",
-        "monthly": "毎月"
-      },
-      "moreSyncs_one": "他 {{count}} 件の同期",
-      "moreSyncs_other": "他 {{count}} 件の同期",
       "state": {
         "planned": "予定",
         "paused": "一時停止",
@@ -3585,7 +3577,16 @@
       "openSchedule": "スケジュールを開く",
       "timezone": "スケジュールのタイムゾーン",
       "missedNote": "この実行は開始されませんでした。その時点でスケジューラーが停止しているか遅れていました。今すぐ実行するか、ワーカーが beat 付きで動いているか確認してください。",
-      "syncBarNext": "{{name}} · {{frequency}}、次回 {{time}}"
+      "syncRepeats": {
+        "daily": "毎日（スケジューラーの起動時刻から計算）",
+        "weekly": "毎週（スケジューラーの起動時刻から計算）",
+        "monthly": "30日ごと（スケジューラーの起動時刻から計算）"
+      },
+      "sources": "ソース",
+      "needsReconnecting": "再接続が必要",
+      "lastSynced": "{{time}} に同期",
+      "notSyncedYet": "未同期",
+      "openKnowledge": "ナレッジを開く"
     },
     "history": {
       "label": "履歴",

@@ -165,10 +165,22 @@ class TestMonitorsAndSyncs:
         assert [m["description"] for m in week["monitors"]] == ["Rotterdam congestion"]
         assert week["monitors"][0]["interval_seconds"] == 1800
 
-    def test_syncs_are_listed_by_frequency(self, pg_conn):
+    def test_syncs_are_events_at_their_times(self, pg_conn, monkeypatch):
         SourcesRepository(pg_conn).create("Carrier contracts", user_id="u1", sync_frequency="daily")
         SourcesRepository(pg_conn).create("Static PDF", user_id="u1", sync_frequency="never")
-        assert [(s["name"], s["frequency"]) for s in _week(pg_conn)["syncs"]] == [("Carrier contracts", "daily")]
+        wednesday = MONDAY + timedelta(days=2, hours=3, minutes=12)
+        monkeypatch.setattr(planned, "sync_schedule", lambda: {"daily": (wednesday, timedelta(days=1))})
+        week = _week(pg_conn)
+        syncs = [e for e in week["events"] if e["kind"] == "sync"]
+        # Wed to Sun at 03:12; next Monday is outside the window.
+        assert [e["at"] for e in syncs] == [(wednesday + timedelta(days=n)).isoformat() for n in range(5)]
+        assert syncs[0]["frequency"] == "daily"
+        assert [source["name"] for source in syncs[0]["sources"]] == ["Carrier contracts"]
+        assert "syncs" not in week
+
+    def test_schedule_slots_are_marked_as_schedules(self, pg_conn):
+        _schedule(pg_conn)
+        assert {e["kind"] for e in _week(pg_conn)["events"]} == {"schedule"}
 
 
 class TestCap:

@@ -3541,19 +3541,11 @@
         "success": "成功",
         "failed": "失敗",
         "paused": "已暫停或略過",
-        "missed": "已錯過"
+        "missed": "已錯過",
+        "sync": "知識同步"
       },
       "truncated": "部分非常頻繁的排程在此範圍內只顯示前幾次執行。",
       "watching": "監控中",
-      "syncs": "同步",
-      "syncBar": "{{name}} · {{frequency}}，時間不固定",
-      "frequency": {
-        "daily": "每天",
-        "weekly": "每週",
-        "monthly": "每月"
-      },
-      "moreSyncs_one": "另有 {{count}} 個同步",
-      "moreSyncs_other": "另有 {{count}} 個同步",
       "state": {
         "planned": "已排定",
         "paused": "已暫停",
@@ -3585,7 +3577,16 @@
       "openSchedule": "開啟排程",
       "timezone": "排程時區",
       "missedNote": "這次執行從未開始：當時排程器已停止或落後。立即執行以補上，或檢查 worker 是否帶 beat 執行。",
-      "syncBarNext": "{{name}} · {{frequency}}，下次 {{time}}"
+      "syncRepeats": {
+        "daily": "每天，從排程器啟動時開始計算",
+        "weekly": "每週，從排程器啟動時開始計算",
+        "monthly": "每 30 天，從排程器啟動時開始計算"
+      },
+      "sources": "來源",
+      "needsReconnecting": "需要重新連線",
+      "lastSynced": "已於 {{time}} 同步",
+      "notSyncedYet": "尚未同步",
+      "openKnowledge": "開啟知識庫"
     },
     "history": {
       "label": "歷史",

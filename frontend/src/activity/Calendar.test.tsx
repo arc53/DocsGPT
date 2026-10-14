@@ -21,7 +21,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 import activityReducer from './activitySlice';
 import Calendar from './Calendar';
-import type { CalendarEvent, PlannedWindow } from './calendar/types';
+import type { PlannedWindow, ScheduleEvent, SyncEvent } from './calendar/types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -32,7 +32,8 @@ const at = (dayOffset: number, hour: number) => {
   return d.toISOString();
 };
 
-const slot = (overrides: Partial<CalendarEvent>): CalendarEvent => ({
+const slot = (overrides: Partial<ScheduleEvent>): ScheduleEvent => ({
+  kind: 'schedule',
   schedule_id: 's1',
   name: 'Daily support digest',
   agent_id: 'a1',
@@ -48,6 +49,34 @@ const slot = (overrides: Partial<CalendarEvent>): CalendarEvent => ({
   ...overrides,
 });
 
+const sync = (dayOffset: number): SyncEvent => ({
+  kind: 'sync',
+  schedule_id: 'sync:daily',
+  name: null,
+  agent_id: null,
+  agent_name: null,
+  frequent: false,
+  at: at(dayOffset, 3),
+  state: 'planned',
+  frequency: 'daily',
+  sources: [
+    {
+      id: 'k1',
+      name: 'Carrier portal',
+      type: 'crawler',
+      blocked: false,
+      last_synced_at: at(0, 3),
+    },
+    {
+      id: 'k2',
+      name: 'Shared drive',
+      type: 's3',
+      blocked: true,
+      last_synced_at: null,
+    },
+  ],
+});
+
 const WINDOW: PlannedWindow = {
   from: '',
   to: '',
@@ -60,6 +89,7 @@ const WINDOW: PlannedWindow = {
       state: 'failed',
       run_id: 'r9',
     }),
+    sync(1),
   ],
   monitors: [
     {
@@ -72,22 +102,6 @@ const WINDOW: PlannedWindow = {
       starts_at: at(-2, 0),
       ends_at: at(3, 0),
       last_checked_at: null,
-    },
-  ],
-  syncs: [
-    {
-      source_id: 'k1',
-      name: 'Carrier portal',
-      frequency: 'daily',
-      last_synced_at: null,
-      next_sync_at: at(1, 3),
-    },
-    {
-      source_id: 'k2',
-      name: 'Customs handbook',
-      frequency: 'monthly',
-      last_synced_at: null,
-      next_sync_at: null,
     },
   ],
   truncated: [],
@@ -155,13 +169,40 @@ describe('Calendar page', () => {
     expect(container.textContent).toContain('Rotterdam congestion');
   });
 
-  it('says when each knowledge sync runs next, when known', async () => {
+  const syncButton = () =>
+    container.querySelector<HTMLButtonElement>('button[data-kind="sync"]');
+
+  it('draws a knowledge sync at its time and opens its sources', async () => {
     await render();
-    const labels = Array.from(container.querySelectorAll('span')).map(
-      (span) => span.textContent,
-    );
-    expect(labels).toContain('activity.calendar.syncBarNext');
-    expect(labels).toContain('activity.calendar.syncBar');
+    const button = syncButton()!;
+    expect(button.textContent).toContain('activity.now.syncBatch.daily');
+    await act(async () => button.click());
+    const panel = document.querySelector('[data-slot="sheet-content"]')!;
+    expect(panel.textContent).toContain('Carrier portal');
+    expect(panel.textContent).toContain('Shared drive');
+    expect(panel.textContent).toContain('activity.calendar.needsReconnecting');
+    expect(panel.querySelector('a[href="/settings/knowledge"]')).not.toBeNull();
+    // A sync isn't a schedule: no Run now.
+    expect(panel.textContent).not.toContain('agents.schedules.runNow');
+  });
+
+  it('hides knowledge syncs with their chip, in every view', async () => {
+    await render();
+    const chip = () =>
+      Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent === 'activity.calendar.knowledgeSyncs',
+      ) as HTMLButtonElement;
+    await act(async () => chip().click());
+    expect(syncButton()).toBeNull();
+    await act(async () => chip().click());
+    const agenda = Array.from(
+      container.querySelectorAll('[role="radio"]'),
+    ).find(
+      (b) => b.textContent === 'activity.calendar.views.agenda',
+    ) as HTMLElement;
+    await act(async () => agenda.click());
+    expect(chip()).toBeDefined();
+    expect(container.textContent).toContain('activity.now.syncBatch.daily');
   });
 
   it('opens a planned slot in the schedule panel', async () => {

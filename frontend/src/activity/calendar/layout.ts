@@ -1,11 +1,11 @@
 import { dayKey, hourOf } from './dates';
-import type { CalendarEvent, EventState } from './types';
+import type { CalendarEvent, EventState, ScheduleEvent } from './types';
 
 /** A frequent schedule's runs of one day, drawn as one tall block. */
 export type FrequentBlock = {
   schedule_id: string;
   name: string | null;
-  events: CalendarEvent[];
+  events: ScheduleEvent[];
   /** Hours since local midnight of the first and last run. */
   from: number;
   to: number;
@@ -38,6 +38,15 @@ export const STATE_CLASS: Record<EventState, string> = {
   missed:
     'bg-background text-muted-foreground border border-dashed border-warning',
 };
+
+/** A knowledge sync: its own dashed fill, not a run status (it has none yet). */
+export const SYNC_CLASS =
+  'bg-muted text-foreground border border-dashed border-muted-foreground';
+
+/** An event's look: a sync's, else its state's. */
+export function eventClass(event: CalendarEvent): string {
+  return event.kind === 'sync' ? SYNC_CLASS : STATE_CLASS[event.state];
+}
 
 /** The worst state among a block's runs, which colours the block. */
 export function blockState(events: CalendarEvent[]): EventState {
@@ -80,7 +89,7 @@ export function layoutDay(events: CalendarEvent[]): {
   const points: { event: CalendarEvent; hour: number }[] = [];
   for (const event of events) {
     const hour = hourOf(new Date(event.at));
-    if (event.frequent) {
+    if (event.frequent && event.kind === 'schedule') {
       const block = blocks.get(event.schedule_id);
       if (block) {
         block.events.push(event);

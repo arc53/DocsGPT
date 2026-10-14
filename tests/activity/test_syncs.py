@@ -130,14 +130,48 @@ class TestUpNext:
         assert snap["stats"]["next_24h"] == 1
 
 
-class TestCalendarSyncs:
-    def test_each_sync_carries_its_next_time(self, pg_conn, monkeypatch):
-        from docsgpt.activity import planned
+class TestSyncSchedule:
+    def test_each_frequency_has_its_next_time_and_interval(self):
+        entries = {"schedule-syncs-weekly": _entry(NOW - timedelta(days=2), timedelta(weeks=1))}
+        schedule = syncs.sync_schedule(load=lambda name: entries.get(name))
+        assert schedule == {"weekly": (NOW + timedelta(days=5), timedelta(weeks=1))}
 
+
+class TestCalendarSlots:
+    WEEK = (NOW, NOW + timedelta(days=7))  # Wed 12:00 to the next Wed 12:00
+
+    def test_one_event_per_firing_with_its_sources(self, pg_conn):
         _source(pg_conn, "Carrier portal")
+        paused = _source(pg_conn, "Shared drive", type="s3")
+        _connect(pg_conn, paused, paused=True)
         _source(pg_conn, "Customs handbook", "weekly")
-        monkeypatch.setattr(planned, "next_sync_times", lambda: {"daily": NOW + timedelta(hours=3)})
-        result = planned.build_planned(pg_conn, "u1", NOW, NOW + timedelta(days=7), now=NOW)
-        by_name = {sync["name"]: sync for sync in result["syncs"]}
-        assert by_name["Carrier portal"]["next_sync_at"] == (NOW + timedelta(hours=3)).isoformat()
-        assert by_name["Customs handbook"]["next_sync_at"] is None
+        schedule = {
+            "daily": (NOW + timedelta(hours=15), timedelta(days=1)),
+            "weekly": (NOW + timedelta(days=1, hours=15), timedelta(weeks=1)),
+        }
+        events = syncs.calendar_slots(pg_conn, "u1", *self.WEEK, schedule, now=NOW)
+        daily = [e for e in events if e["frequency"] == "daily"]
+        weekly = [e for e in events if e["frequency"] == "weekly"]
+        assert len(daily) == 7
+        assert len(weekly) == 1
+        event = daily[0]
+        assert event["kind"] == "sync"
+        assert event["schedule_id"] == "sync:daily"
+        assert event["state"] == "planned"
+        assert event["frequent"] is False
+        assert event["at"] == (NOW + timedelta(hours=15)).isoformat()
+        by_name = {source["name"]: source for source in event["sources"]}
+        assert by_name["Shared drive"]["blocked"] is True
+        assert by_name["Carrier portal"]["blocked"] is False
+        assert by_name["Carrier portal"]["last_synced_at"]
+
+    def test_only_future_slots(self, pg_conn):
+        _source(pg_conn, "Carrier portal")
+        # Beat is behind: its next time already passed, so nothing is planned.
+        overdue = {"daily": (NOW - timedelta(hours=2), timedelta(days=1))}
+        assert syncs.calendar_slots(pg_conn, "u1", *self.WEEK, overdue, now=NOW) == []
+
+    def test_a_frequency_with_no_sources_has_no_slots(self, pg_conn):
+        _source(pg_conn, "Carrier portal")
+        schedule = {"weekly": (NOW + timedelta(hours=1), timedelta(weeks=1))}
+        assert syncs.calendar_slots(pg_conn, "u1", *self.WEEK, schedule, now=NOW) == []

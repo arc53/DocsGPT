@@ -3572,19 +3572,11 @@
         "success": "Succeeded",
         "failed": "Failed",
         "paused": "Paused or skipped",
-        "missed": "Missed"
+        "missed": "Missed",
+        "sync": "Knowledge sync"
       },
       "truncated": "Some very frequent schedules show only their first runs in this range.",
       "watching": "Watching",
-      "syncs": "Syncs",
-      "syncBar": "{{name}} · {{frequency}}, time varies",
-      "frequency": {
-        "daily": "daily",
-        "weekly": "weekly",
-        "monthly": "monthly"
-      },
-      "moreSyncs_one": "+{{count}} more sync",
-      "moreSyncs_other": "+{{count}} more syncs",
       "state": {
         "planned": "Planned",
         "paused": "Paused",
@@ -3616,7 +3608,16 @@
       "openSchedule": "Open schedule",
       "timezone": "Schedule time zone",
       "missedNote": "This run never started: the scheduler was down or behind at the time. Run now to catch up, or check that the worker runs with beat.",
-      "syncBarNext": "{{name}} · {{frequency}}, next {{time}}"
+      "syncRepeats": {
+        "daily": "Every day, counted from when the scheduler started",
+        "weekly": "Every week, counted from when the scheduler started",
+        "monthly": "Every 30 days, counted from when the scheduler started"
+      },
+      "sources": "Sources",
+      "needsReconnecting": "Needs reconnecting",
+      "lastSynced": "Synced {{time}}",
+      "notSyncedYet": "Not synced yet",
+      "openKnowledge": "Open Knowledge"
     },
     "history": {
       "label": "History",

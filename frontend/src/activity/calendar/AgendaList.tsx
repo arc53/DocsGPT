@@ -1,4 +1,4 @@
-import { Clock, Radar, Repeat } from 'lucide-react';
+import { Clock, Radar, RefreshCw, Repeat } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { intlLocale } from '../../utils/dateTimeUtils';
 import { dayKey, formatClock, sameDay, addDays } from './dates';
 import { blockState, byDay, layoutDay, type FrequentBlock } from './layout';
+import { eventTitle, syncSummary } from './labels';
 import type { CalendarEvent, EventState, MonitorRange } from './types';
 
 const BADGE: Partial<
@@ -129,24 +130,34 @@ export default function AgendaList({
                             {formatClock(new Date(row.event.at))}
                           </span>
                         }
-                        title={row.event.name ?? ''}
+                        data-kind={row.event.kind}
+                        title={eventTitle(row.event, t)}
                         description={
-                          row.event.agent_name ??
-                          t('activity.schedules.createdInChat')
+                          row.event.kind === 'sync'
+                            ? syncSummary(row.event, t)
+                            : (row.event.agent_name ??
+                              t('activity.schedules.createdInChat'))
                         }
                         trailing={
-                          stateBadge(row.event.state) ??
-                          (row.event.trigger_type === 'once' ? (
-                            <Clock
+                          row.event.kind === 'sync' ? (
+                            <RefreshCw
                               aria-hidden
                               className="text-muted-foreground size-3.5"
                             />
                           ) : (
-                            <Repeat
-                              aria-hidden
-                              className="text-muted-foreground size-3.5"
-                            />
-                          ))
+                            (stateBadge(row.event.state) ??
+                            (row.event.trigger_type === 'once' ? (
+                              <Clock
+                                aria-hidden
+                                className="text-muted-foreground size-3.5"
+                              />
+                            ) : (
+                              <Repeat
+                                aria-hidden
+                                className="text-muted-foreground size-3.5"
+                              />
+                            )))
+                          )
                         }
                       >
                         <button

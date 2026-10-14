@@ -12,4 +12,4 @@ def _no_beat(monkeypatch):
     from docsgpt.activity import now, planned
 
     monkeypatch.setattr(now, "next_sync_times", lambda: {})
-    monkeypatch.setattr(planned, "next_sync_times", lambda: {})
+    monkeypatch.setattr(planned, "sync_schedule", lambda: {})
