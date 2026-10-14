@@ -159,6 +159,28 @@ _PARTS = {
 }
 
 
+def _tools_labelled(conn: Connection, user_id: str, query: str) -> List[str]:
+    """The tool ids of the user's jobs whose readable label contains ``query``.
+
+    Args:
+        conn: A read-only connection.
+        user_id: Whose jobs.
+        query: The search text, matched case-insensitively and literally.
+
+    Returns:
+        Tool ids, as a job row's title holds them.
+    """
+    names = [
+        r[0]
+        for r in conn.execute(
+            text("SELECT DISTINCT COALESCE(tool_name, 'job') FROM background_jobs WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        ).fetchall()
+    ]
+    needle = query.casefold()
+    return [name for name, label in tool_labels(conn, user_id, names).items() if needle in label.casefold()]
+
+
 def list_history(
     conn: Connection,
     user_id: str,
@@ -178,8 +200,8 @@ def list_history(
         kind: One of ``KINDS``, or None for every kind.
         status: ``failed`` (failed or timed out), another of ``STATUSES``,
             or None for all.
-        query: Case-insensitive text matched against the run's title, agent
-            and conversation names.
+        query: Case-insensitive text matched against the run's title (a
+            job's as shown), agent and conversation names.
         days: How far back to look (clamped to ``1..MAX_DAYS``).
         limit: Rows per page (clamped to ``1..MAX_LIMIT``).
         offset: Rows to skip.
@@ -208,11 +230,14 @@ def list_history(
         where.append("status = :status")
         params["status"] = status
     if query and query.strip():
+        # A job is shown by its tool's label, not the id it is stored under,
+        # so it matches by the tools whose label holds the text.
         where.append(
-            "(title ILIKE :q ESCAPE '\\' OR agent_name ILIKE :q ESCAPE '\\' "
-            "OR conversation_name ILIKE :q ESCAPE '\\')"
+            "(CASE WHEN kind = 'job' THEN title = ANY(:job_tools) ELSE title ILIKE :q ESCAPE '\\' END "
+            "OR agent_name ILIKE :q ESCAPE '\\' OR conversation_name ILIKE :q ESCAPE '\\')"
         )
         params["q"] = f"%{like_escape(query.strip())}%"
+        params["job_tools"] = _tools_labelled(conn, user_id, query.strip())
     sql = (
         "SELECT * FROM (" + " UNION ALL ".join(parts) + ") runs"
         + (" WHERE " + " AND ".join(where) if where else "")

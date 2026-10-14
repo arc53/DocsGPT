@@ -165,6 +165,29 @@ class TestFilters:
         assert titles("q4_report") == ["q4_report"]
         assert titles("%") == []
 
+    def test_a_job_is_found_by_the_name_it_is_shown_with(self, pg_conn):
+        # Its title is the tool's id until it is labelled after the query.
+        jobs = BackgroundJobsRepository(pg_conn)
+        for tool in ("code_executor", "mcp_tool"):
+            job, _ = jobs.create(user_id="u1", tool_name=tool, action_name="run", max_seconds=60)
+            pg_conn.execute(
+                text("UPDATE background_jobs SET status = 'completed', finished_at = now() WHERE id = CAST(:id AS uuid)"),
+                {"id": str(job["id"])},
+            )
+        pg_conn.execute(
+            text(
+                "INSERT INTO user_tools (user_id, name, custom_name, display_name) "
+                "VALUES ('u1', 'mcp_tool', 'Carrier Portal', 'MCP Server')"
+            )
+        )
+
+        def titles(q: str) -> list:
+            return [r["title"] for r in history.list_history(pg_conn, "u1", query=q)["runs"]]
+
+        assert titles("code executor") == ["Code Executor"]
+        assert titles("carrier") == ["Carrier Portal"]
+        assert titles("mcp_tool") == []
+
     def test_pages(self, pg_conn):
         for i in range(5):
             _schedule_run(pg_conn, minutes_ago=i + 1, name=f"run {i}")
