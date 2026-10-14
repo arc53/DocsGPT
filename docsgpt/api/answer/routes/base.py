@@ -77,6 +77,15 @@ class ClientDisconnected(GeneratorExit):
     """
 
 
+class StreamStopped(ClientDisconnected):
+    """Raised inside a stream its user stopped from another page (Activity › Now).
+
+    Handled as a client abort, except that the client is still listening:
+    the stream sends it the terminal event the journal gets, so an open
+    chat tab ends cleanly instead of reconnecting to find it.
+    """
+
+
 class StreamSuperseded(Exception):
     """Raised to unwind a stream whose message row was deleted mid-flight.
 
@@ -1063,7 +1072,7 @@ class BaseAnswerResource:
                 # saving what the answer has so far.
                 if stop_asked.is_set():
                     logger.info("stream stopped by its user: message_id=%s", reserved_message_id)
-                    raise ClientDisconnected()
+                    raise StreamStopped()
                 # A client that cannot rejoin the stream went away (``/v1``):
                 # stop the agent here and save what there is, as an abort.
                 if _client_gone(agent):
@@ -1777,6 +1786,7 @@ class BaseAnswerResource:
                     )
             # Journal a terminal event so reconnecting clients stop tailing;
             # ``end`` only when the row is ``complete``, else ``error``.
+            terminal: Optional[dict] = None
             if reserved_message_id is not None:
                 try:
                     sequence_no += 1
@@ -1786,11 +1796,12 @@ class BaseAnswerResource:
                         # check at ``event_replay._payload_is_terminal``
                         # reads ``payload.type``, and the frontend parses
                         # the same key off ``data:``.
+                        terminal = {"type": "end"}
                         record_event(
                             reserved_message_id,
                             sequence_no,
                             "end",
-                            {"type": "end"},
+                            terminal,
                         )
                     else:
                         # Nothing was persisted under the complete status
@@ -1817,21 +1828,27 @@ class BaseAnswerResource:
                                 f"Failed to mark aborted message failed: {fin_err}",
                                 exc_info=True,
                             )
+                        terminal = {
+                            "type": "error",
+                            "error": "Stream aborted before any response was produced.",
+                            "code": "client_disconnect",
+                        }
                         record_event(
                             reserved_message_id,
                             sequence_no,
                             "error",
-                            {
-                                "type": "error",
-                                "error": "Stream aborted before any response was produced.",
-                                "code": "client_disconnect",
-                            },
+                            terminal,
                         )
                 except Exception as journal_err:
                     logger.error(
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if isinstance(stream_exit, StreamStopped) and terminal is not None:
+                # The client is still listening: send it the terminal event,
+                # numbered as journaled. Yielding is only safe because this
+                # was raised here; after a real close() it would fail.
+                yield format_sse_event(terminal, sequence_no)
             if isinstance(stream_exit, ClientDisconnected):
                 # Raised here, not by a close(): the generator ends normally.
                 return

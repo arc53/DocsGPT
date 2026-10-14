@@ -5,12 +5,14 @@ polls it and the emit loop ends the stream as a client abort, keeping the
 partial answer.
 """
 
+import json
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docsgpt.storage.db.repositories.conversations import HeartbeatState
+from docsgpt.storage.db.repositories.conversations import HeartbeatState, MessageUpdateOutcome
 
 MESSAGE_ID = "11111111-1111-1111-1111-111111111111"
 CONVERSATION_ID = "22222222-2222-2222-2222-222222222222"
@@ -24,6 +26,7 @@ def _service():
     }
     service.heartbeat_message.return_value = True
     service.heartbeat_message_state.return_value = HeartbeatState.STAMPED
+    service.finalize_message.return_value = MessageUpdateOutcome.UPDATED
     return service
 
 
@@ -36,7 +39,39 @@ def _chatty(chunks=200, gap=0.02):
     return _gen
 
 
-def _run(flask_app, gen, *, stop_after: float | None, visibility: str = "listed"):
+def _thinking(chunks=200, gap=0.02):
+    """A stream that never writes answer text: only metadata lines."""
+
+    def _gen(*args, **kwargs):
+        for _ in range(chunks):
+            time.sleep(gap)
+            yield {"metadata": {}}
+
+    return _gen
+
+
+def _frame_type(frame: str):
+    """The ``type`` of one SSE frame, or ``None`` for a non-JSON one."""
+    data = [line[len("data: "):] for line in frame.splitlines() if line.startswith("data: ")]
+    try:
+        return json.loads(data[0]).get("type") if data else None
+    except ValueError:
+        return None
+
+
+def _frame_id(frame: str) -> int:
+    """The ``id:`` of one SSE frame."""
+    return int(next(line for line in frame.splitlines() if line.startswith("id: "))[4:])
+
+
+def _run(
+    flask_app,
+    gen,
+    *,
+    stop_after: float | None,
+    visibility: str = "listed",
+    client_gone: threading.Event | None = None,
+):
     from docsgpt.api.answer.routes import base as base_mod
     from docsgpt.api.answer.routes.base import BaseAnswerResource
 
@@ -51,6 +86,8 @@ def _run(flask_app, gen, *, stop_after: float | None, visibility: str = "listed"
         resource.conversation_service = _service()
         agent = MagicMock()
         agent.gen.side_effect = gen
+        if client_gone is not None:
+            agent.client_disconnected = client_gone
         with patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
             base_mod, "STREAM_STOP_POLL_SECONDS", 0.02
         ), patch.object(base_mod, "stop_requested", side_effect=_requested), patch.object(
@@ -83,6 +120,33 @@ class TestStopFromActivity:
         # The abort path saved what was written.
         assert service.finalize_message.called
         cleared.assert_called_with(MESSAGE_ID)
+
+    def test_the_open_tab_gets_the_end(self, mock_mongo_db, flask_app):
+        # The chat tab is still listening: it must see the stream end, not
+        # just a closed socket it has to reconnect after.
+        _, out, _, _ = _run(flask_app, _chatty(), stop_after=0.2)
+        assert _frame_type(out[-1]) == "end"
+        # Numbered after the last frame, as the journal has it, so a tab
+        # that reconnects later resumes past it.
+        assert _frame_id(out[-1]) == _frame_id(out[-2]) + 1
+
+    def test_a_stop_before_any_text_ends_with_the_error(self, mock_mongo_db, flask_app):
+        _, out, _, _ = _run(flask_app, _thinking(), stop_after=0.2)
+        assert _frame_type(out[-1]) == "error"
+
+    def test_a_gone_client_gets_nothing_more(self, mock_mongo_db, flask_app):
+        # /v1: the route saw the client leave; nothing is written after.
+        gone = threading.Event()
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"answer": f"c{i} "}
+
+        _, out, _, _ = _run(flask_app, _gen, stop_after=None, client_gone=gone)
+        assert _frame_type(out[-1]) not in ("end", "error")
 
     def test_no_stop_runs_to_the_end(self, mock_mongo_db, flask_app):
         _, out, _, _ = _run(flask_app, _chatty(chunks=20, gap=0.005), stop_after=None)
