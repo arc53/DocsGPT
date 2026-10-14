@@ -1590,7 +1590,7 @@
     },
     "/api/activity/planned": {
       "get": {
-        "description": "The caller's calendar for a window: planned schedule runs (from cron or run_at), past and in-flight runs with their status, coming knowledge syncs (one event per frequency each time it fires, kind sync), and monitors as date ranges. The window may span at most 62 days.\nReturns:\n    A Flask response with ``from``, ``to``, ``events`` (schedule and\n    sync events, by ``kind``), ``monitors`` and ``truncated``, or 400\n    for a bad window.",
+        "description": "The caller's calendar for a window: planned schedule runs (from cron or run_at), past and in-flight runs with their status, coming knowledge syncs (one event per frequency each time it fires, kind sync), and monitors as date ranges. The window may span at most 62 days. A frequent schedule with more events than one schedule may list is summed up per day in tz: one event per day and routine state, with count and until.\nReturns:\n    A Flask response with ``from``, ``to``, ``events`` (schedule and\n    sync events, by ``kind``), ``monitors`` and ``truncated``, or 400\n    for a bad window or time zone.",
         "operationId": "get_activity_planned",
         "parameters": [
           {
@@ -1605,6 +1605,12 @@
             "in": "query",
             "name": "to",
             "required": true,
+            "type": "string"
+          },
+          {
+            "description": "The viewer's IANA time zone, which days are split in (default UTC).",
+            "in": "query",
+            "name": "tz",
             "type": "string"
           }
         ],

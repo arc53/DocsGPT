@@ -48,6 +48,13 @@ export function eventClass(event: CalendarEvent): string {
   return event.kind === 'sync' ? SYNC_CLASS : STATE_CLASS[event.state];
 }
 
+/** How many slots an event stands for: a summed-up day's count, else one. */
+export const eventCount = (event: CalendarEvent): number => event.count ?? 1;
+
+/** How many slots a frequent block's day has. */
+export const blockCount = (block: FrequentBlock): number =>
+  block.events.reduce((sum, event) => sum + eventCount(event), 0);
+
 /** The worst state among a block's runs, which colours the block. */
 export function blockState(events: CalendarEvent[]): EventState {
   const order: EventState[] = [
@@ -90,18 +97,19 @@ export function layoutDay(events: CalendarEvent[]): {
   for (const event of events) {
     const hour = hourOf(new Date(event.at));
     if (event.frequent && event.kind === 'schedule') {
+      const last = event.until ? hourOf(new Date(event.until)) : hour;
       const block = blocks.get(event.schedule_id);
       if (block) {
         block.events.push(event);
         block.from = Math.min(block.from, hour);
-        block.to = Math.max(block.to, hour);
+        block.to = Math.max(block.to, last);
       } else {
         blocks.set(event.schedule_id, {
           schedule_id: event.schedule_id,
           name: event.name,
           events: [event],
           from: hour,
-          to: hour,
+          to: last,
         });
       }
     } else {
@@ -143,8 +151,9 @@ export function hourRange(events: CalendarEvent[]): [number, number] {
   let [first, last] = DEFAULT_HOURS;
   for (const event of events) {
     const hour = hourOf(new Date(event.at));
+    const end = event.until ? hourOf(new Date(event.until)) : hour;
     first = Math.min(first, Math.floor(hour));
-    last = Math.max(last, Math.ceil(hour + SLOT_HOURS));
+    last = Math.max(last, Math.ceil(end + SLOT_HOURS));
   }
   return [Math.max(0, first), Math.min(24, last)];
 }

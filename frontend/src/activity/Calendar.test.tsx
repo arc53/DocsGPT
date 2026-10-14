@@ -228,6 +228,36 @@ describe('Calendar page', () => {
     expect(activity.planned).toHaveBeenCalledTimes(calls + 1);
   });
 
+  it('lists a summed-up day as one row with its span and count', async () => {
+    const frequent = {
+      schedule_id: 'f1',
+      name: 'Inbox triage',
+      frequent: true,
+    };
+    activity.planned.mockReset().mockResolvedValue({
+      ...WINDOW,
+      events: [
+        slot({
+          ...frequent,
+          state: 'success',
+          at: at(0, 0),
+          until: at(0, 9),
+          count: 10,
+        }),
+        slot({ ...frequent, state: 'failed', at: at(0, 10), run_id: 'r1' }),
+      ],
+    });
+    await render();
+    const block = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="activity.calendar.block"]',
+    )!;
+    await act(async () => block.click());
+    const panel = document.querySelector('[data-slot="sheet-content"]')!;
+    expect(panel.querySelector('[data-slot="count"]')?.textContent).toBe('11');
+    expect(panel.textContent).toContain('activity.calendar.slotCount');
+    expect(panel.textContent).toContain('–');
+  });
+
   it('opens a planned slot in the schedule panel', async () => {
     await render();
     await act(async () => slotButton('Daily support digest').click());

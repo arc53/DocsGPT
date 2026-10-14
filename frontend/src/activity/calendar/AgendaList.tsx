@@ -9,7 +9,14 @@ import { SectionHeader } from '@/components/ui/section-header';
 
 import { intlLocale } from '../../utils/dateTimeUtils';
 import { dayKey, formatClock, sameDay, addDays } from './dates';
-import { blockState, byDay, layoutDay, type FrequentBlock } from './layout';
+import {
+  blockCount,
+  blockState,
+  byDay,
+  eventCount,
+  layoutDay,
+  type FrequentBlock,
+} from './layout';
 import { eventTitle, syncSummary } from './labels';
 import type { CalendarEvent, EventState, MonitorRange } from './types';
 
@@ -177,11 +184,13 @@ export default function AgendaList({
                         }
                         title={row.block.name ?? ''}
                         description={t('activity.calendar.blockDone', {
-                          done: row.block.events.filter(
-                            (e) =>
-                              e.state !== 'planned' && e.state !== 'paused',
-                          ).length,
-                          count: row.block.events.length,
+                          done: row.block.events
+                            .filter(
+                              (e) =>
+                                e.state !== 'planned' && e.state !== 'paused',
+                            )
+                            .reduce((sum, e) => sum + eventCount(e), 0),
+                          count: blockCount(row.block),
                         })}
                         trailing={stateBadge(blockState(row.block.events))}
                       >

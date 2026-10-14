@@ -2,7 +2,9 @@
 
 Future slots come from each schedule's cron (or one-time ``run_at``); past and
 in-flight slots come from ``schedule_runs`` with their real status, so a slot
-the scheduler already handled shows how it went. Monitors are ranges, not
+the scheduler already handled shows how it went. A frequent schedule with more
+events than one schedule may list is summed up per day in the viewer's time
+zone (see ``_sum_up_days``). Monitors are ranges, not
 events: a check every 30 minutes would bury the week. Knowledge syncs are
 events too: each frequency's batch, every time its beat entry fires in the
 window (future only; see ``activity.syncs``).
@@ -11,6 +13,7 @@ window (future only; see ``activity.syncs``).
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,6 +25,7 @@ from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
     cron_interval_seconds,
     cron_runs,
+    resolve_timezone,
 )
 from docsgpt.storage.db.base_repository import row_to_dict
 
@@ -31,8 +35,20 @@ logger = logging.getLogger(__name__)
 MAX_WINDOW = timedelta(days=62)
 
 #: Planned slots, and past runs, one schedule may add to a window; a finer
-#: cron is truncated to its first ones.
+#: cron is truncated to its first ones. A frequent schedule with more is
+#: summed up per day instead.
 MAX_SLOTS_PER_SCHEDULE = 1_000
+
+#: Slots, and past runs, a frequent schedule may count in a window before it
+#: is cut (a 5-minute cron over the widest window has about 17,900).
+MAX_FREQUENT_SLOTS = 20_000
+
+#: The states a frequent schedule's day sums up: routine ones. A failure, a
+#: timeout and a run still going each stay an event of their own, to be opened.
+SUMMED_STATES = frozenset({"planned", "paused", "missed", "success", "skipped"})
+
+#: What only a single run has; a summed-up event leaves them out.
+_RUN_FIELDS = ("run_id", "trigger_source", "error_type", "conversation_id")
 
 #: A schedule this frequent or more is drawn as one block per day.
 FREQUENT_SECONDS = 60 * 60
@@ -43,7 +59,7 @@ MISSED_GRACE = timedelta(minutes=10)
 
 
 class WindowError(ValueError):
-    """The requested window is missing, malformed, reversed or too wide."""
+    """The requested window is missing, malformed, reversed or too wide, or its time zone unknown."""
 
 
 def parse_window(raw_from: Optional[str], raw_to: Optional[str]) -> Tuple[datetime, datetime]:
@@ -70,6 +86,26 @@ def parse_window(raw_from: Optional[str], raw_to: Optional[str]) -> Tuple[dateti
     if end - start > MAX_WINDOW:
         raise WindowError(f"the window can span at most {MAX_WINDOW.days} days")
     return start, end
+
+
+def parse_zone(raw: Optional[str]) -> str:
+    """Check the viewer's IANA time zone, the one days are split in.
+
+    Args:
+        raw: The zone name; empty means UTC.
+
+    Returns:
+        The zone name.
+
+    Raises:
+        WindowError: When the zone is unknown.
+    """
+    name = (raw or "UTC").strip() or "UTC"
+    try:
+        resolve_timezone(name)
+    except ScheduleValidationError as exc:
+        raise WindowError(str(exc)) from exc
+    return name
 
 
 def _parse(value: Any) -> datetime:
@@ -131,8 +167,9 @@ def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, 
 def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
     """The user's schedule runs whose slot falls in the window, oldest first.
 
-    Each schedule keeps its first ``MAX_SLOTS_PER_SCHEDULE``, as its planned
-    slots do; ``in_window`` on every row says how many it had in all.
+    Each schedule keeps its first ``MAX_FREQUENT_SLOTS``; ``rank`` numbers a
+    schedule's runs and ``in_window`` says how many it had in all, so the
+    caller cuts a schedule that is not frequent sooner.
     """
     return _rows(
         conn,
@@ -155,7 +192,7 @@ def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> Lis
         WHERE rank <= :limit
         ORDER BY scheduled_for ASC
         """,
-        {"user_id": user_id, "start": start, "end": end, "limit": MAX_SLOTS_PER_SCHEDULE},
+        {"user_id": user_id, "start": start, "end": end, "limit": MAX_FREQUENT_SLOTS},
     )
 
 
@@ -197,12 +234,21 @@ def _is_frequent(row: Dict[str, Any], cache: Dict[str, bool]) -> bool:
     return cache[key]
 
 
-def _planned_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple[List[datetime], bool]:
+def _planned_slots(
+    row: Dict[str, Any], start: datetime, end: datetime, limit: Optional[int] = None,
+) -> Tuple[List[datetime], bool]:
     """Future fire times of one schedule inside ``[start, end)``.
+
+    Args:
+        row: The schedule.
+        start: Window start.
+        end: Window end (exclusive).
+        limit: The most times listed (default ``MAX_SLOTS_PER_SCHEDULE``).
 
     Returns:
         ``(times, truncated)``; ``truncated`` when the cap cut the list.
     """
+    limit = MAX_SLOTS_PER_SCHEDULE if limit is None else limit
     stop = end
     end_at = _as_datetime(row.get("end_at"))
     if end_at is not None:
@@ -218,24 +264,64 @@ def _planned_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple
         # One past the cap tells a full window from a cut one.
         times = cron_runs(
             row["cron"], row.get("timezone"),
-            after=start - timedelta(seconds=1), until=stop, limit=MAX_SLOTS_PER_SCHEDULE + 1,
+            after=start - timedelta(seconds=1), until=stop, limit=limit + 1,
         )
     except ScheduleValidationError:
         logger.warning("activity: schedule %s has an invalid cron", row.get("id"))
         return [], False
-    return times[:MAX_SLOTS_PER_SCHEDULE], len(times) > MAX_SLOTS_PER_SCHEDULE
+    return times[:limit], len(times) > limit
 
 
-def _past_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple[List[datetime], bool]:
+def _past_slots(
+    row: Dict[str, Any], start: datetime, end: datetime, limit: Optional[int] = None,
+) -> Tuple[List[datetime], bool]:
     """Fire times a schedule should have had in ``[start, end)``.
 
     A one-time task counts only while it is still waiting (``next_run_at``
-    set): once it ran, its run row covers the slot.
+    set): once it ran, its run row covers the slot. ``limit`` is as for
+    ``_planned_slots``.
     """
     if row.get("trigger_type") == "once":
         fire = _as_datetime(row.get("next_run_at"))
         return ([fire] if fire is not None and start <= fire < end else []), False
-    return _planned_slots({**row, "trigger_type": "recurring"}, start, end)
+    return _planned_slots({**row, "trigger_type": "recurring"}, start, end, limit)
+
+
+def _sum_up_days(events: List[Dict[str, Any]], zone: Any) -> List[Dict[str, Any]]:
+    """Sum up each frequent schedule over the cap: one event per local day and state.
+
+    Only the states in ``SUMMED_STATES`` are summed; each such event keeps
+    the day's first ``at``, adds ``until`` (the last) and ``count``, and
+    drops the fields only a single run has. A schedule under the cap keeps
+    an event per slot, so a week stays one event per run.
+
+    Args:
+        events: The window's schedule events.
+        zone: The viewer's time zone, which days are split in.
+
+    Returns:
+        The events, oldest first.
+    """
+    per_schedule = Counter(e["schedule_id"] for e in events if e.get("frequent"))
+    over = {schedule_id for schedule_id, n in per_schedule.items() if n > MAX_SLOTS_PER_SCHEDULE}
+    if not over:
+        return events
+    out: List[Dict[str, Any]] = []
+    days: Dict[Tuple[str, Any, str], Dict[str, Any]] = {}
+    for event in sorted(events, key=lambda e: e["at"]):
+        if event["schedule_id"] not in over or event["state"] not in SUMMED_STATES:
+            out.append(event)
+            continue
+        key = (event["schedule_id"], _parse(event["at"]).astimezone(zone).date(), event["state"])
+        day = days.get(key)
+        if day is None:
+            day = {k: v for k, v in event.items() if k not in _RUN_FIELDS}
+            day["count"] = 0
+            days[key] = day
+            out.append(day)
+        day["count"] += 1
+        day["until"] = event["at"]
+    return out
 
 
 def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
@@ -279,6 +365,7 @@ def build_planned(
     end: datetime,
     *,
     now: Optional[datetime] = None,
+    tz: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Collect the calendar of one window.
 
@@ -288,6 +375,8 @@ def build_planned(
         start: Window start.
         end: Window end (exclusive).
         now: The current time (tests).
+        tz: The viewer's IANA time zone (default UTC); a frequent schedule's
+            days are summed up in it.
 
     Returns:
         ``{from, to, events, monitors, truncated}``. Each event has a
@@ -295,8 +384,13 @@ def build_planned(
         ``state``: ``planned`` or ``paused`` for a future slot, ``missed`` for
         a past slot of an active schedule that has no run, else the run's
         status (``pending``, ``running``, ``success``, ``failed``,
-        ``skipped``, ``timeout``), plus ``run_id`` for a run.
+        ``skipped``, ``timeout``), plus ``run_id`` for a run. A summed-up
+        event (see ``_sum_up_days``) has ``count`` and ``until`` instead.
+
+    Raises:
+        WindowError: When ``tz`` is unknown.
     """
+    zone = resolve_timezone(parse_zone(tz))
     current = now or datetime.now(timezone.utc)
     frequent_cache: Dict[str, bool] = {}
     events: List[Dict[str, Any]] = []
@@ -311,13 +405,17 @@ def build_planned(
         if at is None:
             continue
         schedule_id = str(run["schedule_id"])
-        if (run.get("in_window") or 0) > MAX_SLOTS_PER_SCHEDULE:
+        frequent = _is_frequent(run, frequent_cache)
+        cap = MAX_FREQUENT_SLOTS if frequent else MAX_SLOTS_PER_SCHEDULE
+        if (run.get("rank") or 0) > cap:
+            continue
+        if (run.get("in_window") or 0) > cap:
             truncated.append(schedule_id)
             runs_cut_at[schedule_id] = max(at, runs_cut_at.get(schedule_id, at))
         taken.add((schedule_id, _minute(at)))
         events.append(
             {
-                **_base(run, _is_frequent(run, frequent_cache)),
+                **_base(run, frequent),
                 "at": _iso(at),
                 "state": run.get("status"),
                 "run_id": str(run["id"]),
@@ -330,10 +428,11 @@ def build_planned(
     future_start = max(start, current)
     missed_until = min(end, current - MISSED_GRACE)
     for row in _schedules(conn, user_id, end):
-        slots, cut = _planned_slots(row, future_start, end)
+        frequent = _is_frequent(row, frequent_cache)
+        limit = MAX_FREQUENT_SLOTS if frequent else MAX_SLOTS_PER_SCHEDULE
+        slots, cut = _planned_slots(row, future_start, end, limit)
         if cut:
             truncated.append(str(row["id"]))
-        frequent = _is_frequent(row, frequent_cache)
         state = "paused" if row.get("status") == "paused" else "planned"
         for at in slots:
             if (str(row["id"]), _minute(at)) in taken:
@@ -352,7 +451,7 @@ def build_planned(
         )
         if since >= missed_until:
             continue
-        past, cut = _past_slots(row, since, missed_until)
+        past, cut = _past_slots(row, since, missed_until, limit)
         if cut:
             truncated.append(str(row["id"]))
         cut_at = runs_cut_at.get(str(row["id"]))
@@ -361,6 +460,7 @@ def build_planned(
                 continue
             events.append({**_base(row, frequent), "at": _iso(at), "state": "missed"})
 
+    events = _sum_up_days(events, zone)
     events += calendar_slots(conn, user_id, start, end, sync_schedule(), now=current)
     events.sort(key=lambda event: event["at"])
     return {

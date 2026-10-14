@@ -21,6 +21,7 @@ import {
   hourRange,
   layoutDay,
   SLOT_HOURS,
+  blockCount,
   STATE_CLASS,
   type FrequentBlock,
 } from './layout';
@@ -247,7 +248,7 @@ export default function WeekGrid({
               {blocks.map((block, i) => {
                 const label = t('activity.calendar.block', {
                   name: block.name ?? '',
-                  count: block.events.length,
+                  count: blockCount(block),
                   interpolation: { escapeValue: false },
                 });
                 return (

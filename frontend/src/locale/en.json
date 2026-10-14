@@ -3601,6 +3601,8 @@
       "empty": "Nothing is planned in these days",
       "blockDone_one": "{{done}} of {{count}} run done",
       "blockDone_other": "{{done}} of {{count}} runs done",
+      "slotCount_one": "{{count}} run",
+      "slotCount_other": "{{count}} runs",
       "oneTime": "One-time",
       "recurring": "Recurring",
       "when": "When",

@@ -17,7 +17,7 @@ from sqlalchemy import text
 from docsgpt.activity.flags import request_stop
 from docsgpt.activity.history import KINDS, STATUSES, list_history
 from docsgpt.activity.now import build_now
-from docsgpt.activity.planned import WindowError, build_planned, parse_window
+from docsgpt.activity.planned import WindowError, build_planned, parse_window, parse_zone
 from docsgpt.api import api
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.session import db_readonly
@@ -73,11 +73,13 @@ class ActivityPlanned(Resource):
             "The caller's calendar for a window: planned schedule runs (from cron or run_at), past "
             "and in-flight runs with their status, coming knowledge syncs (one event per frequency "
             "each time it fires, kind sync), and monitors as date ranges. The window may span at "
-            "most 62 days."
+            "most 62 days. A frequent schedule with more events than one schedule may list is "
+            "summed up per day in tz: one event per day and routine state, with count and until."
         ),
         params={
             "from": {"description": "Window start, ISO 8601.", "required": True},
             "to": {"description": "Window end (exclusive), ISO 8601.", "required": True},
+            "tz": {"description": "The viewer's IANA time zone, which days are split in (default UTC)."},
         },
     )
     def get(self):
@@ -86,18 +88,19 @@ class ActivityPlanned(Resource):
         Returns:
             A Flask response with ``from``, ``to``, ``events`` (schedule and
             sync events, by ``kind``), ``monitors`` and ``truncated``, or 400
-            for a bad window.
+            for a bad window or time zone.
         """
         user_id = _user_id()
         if not user_id:
             return _err("Unauthorized", 401)
         try:
             start, end = parse_window(request.args.get("from"), request.args.get("to"))
+            tz = parse_zone(request.args.get("tz"))
         except WindowError as exc:
             return _err(str(exc), 400)
         try:
             with db_readonly() as conn:
-                window = build_planned(conn, user_id, start, end)
+                window = build_planned(conn, user_id, start, end, tz=tz)
         except Exception:
             logger.exception("activity: building the calendar failed")
             return _err("Failed to load the calendar", 500)

@@ -23,7 +23,7 @@ import { formatCron } from '../../agents/schedules/cronBuilder';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import { ACTIVITY_SCHEDULES_PATH } from '../paths';
 import { formatClock } from './dates';
-import type { FrequentBlock } from './layout';
+import { blockCount, type FrequentBlock } from './layout';
 import SyncPanel from './SyncPanel';
 import type { CalendarEvent, EventState, ScheduleEvent } from './types';
 
@@ -163,18 +163,30 @@ export default function EventPanel({
               as="h3"
               size="xs"
               title={t('activity.calendar.dayRuns')}
-              count={selection.block.events.length}
+              count={blockCount(selection.block)}
             />
             <div className="overflow-hidden rounded-2xl border">
               <ListRows>
                 {selection.block.events.map((slot) => {
                   const past = Boolean(slot.run_id);
+                  // A summed-up day's row spans its first to its last slot.
                   return (
                     <ListRow
-                      key={slot.at}
+                      key={`${slot.at}-${slot.state}`}
                       interactive={past}
                       asChild={past}
-                      title={formatClock(new Date(slot.at))}
+                      title={
+                        slot.until
+                          ? `${formatClock(new Date(slot.at))}–${formatClock(new Date(slot.until))}`
+                          : formatClock(new Date(slot.at))
+                      }
+                      description={
+                        slot.count
+                          ? t('activity.calendar.slotCount', {
+                              count: slot.count,
+                            })
+                          : undefined
+                      }
                       trailing={
                         <Badge variant={BADGE[slot.state]}>
                           {t(`activity.calendar.state.${slot.state}`)}

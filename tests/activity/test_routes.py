@@ -85,6 +85,28 @@ class TestPlanned:
         assert resp.status_code == 200
         assert build.call_args.args[1] == "u1"
 
+    def test_passes_the_viewers_time_zone(self, app, pg_conn):
+        from docsgpt.api.user.activity.routes import ActivityPlanned
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.activity.routes.build_planned", return_value={"events": []}
+        ) as build:
+            _call(
+                app, "/api/activity/planned?from=2030-03-04T00:00:00Z&to=2030-03-11T00:00:00Z&tz=Europe/Warsaw",
+                "GET", ActivityPlanned().get,
+            )
+        assert build.call_args.kwargs["tz"] == "Europe/Warsaw"
+
+    def test_rejects_an_unknown_time_zone(self, app, pg_conn):
+        from docsgpt.api.user.activity.routes import ActivityPlanned
+
+        with _patch_db(pg_conn):
+            resp = _call(
+                app, "/api/activity/planned?from=2030-03-04T00:00:00Z&to=2030-03-11T00:00:00Z&tz=Mars/Olympus",
+                "GET", ActivityPlanned().get,
+            )
+        assert resp.status_code == 400
+
 
 class TestHistory:
     def test_unauthorized(self, app):

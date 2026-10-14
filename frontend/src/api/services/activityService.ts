@@ -15,14 +15,22 @@ const activityService = {
     return (await r.json()) as NowSnapshot;
   },
 
-  /** Planned runs, past runs, monitors and syncs of a window (at most 62 days). */
+  /**
+   * Planned runs, past runs, monitors and syncs of a window (at most 62
+   * days). The browser's time zone goes along: the server sums up a frequent
+   * schedule per day in it, so its days are the ones the Calendar draws.
+   */
   planned: async (
     from: Date,
     to: Date,
     token: string | null,
   ): Promise<PlannedWindow> => {
     const r = (await apiClient.get(
-      endpoints.USER.ACTIVITY_PLANNED(from.toISOString(), to.toISOString()),
+      endpoints.USER.ACTIVITY_PLANNED(
+        from.toISOString(),
+        to.toISOString(),
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ),
       token,
     )) as Response;
     if (!r.ok) throw new Error(`Calendar failed: ${r.status}`);

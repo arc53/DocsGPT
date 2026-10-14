@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  blockCount,
   blockState,
   eventClass,
   hourRange,
@@ -31,6 +32,32 @@ const event = (
 });
 
 describe('layoutDay', () => {
+  it('counts a summed-up day by its runs and spans it to its last', () => {
+    const { blocks } = layoutDay([
+      event(0, {
+        frequent: true,
+        state: 'success',
+        count: 10,
+        until: event(9).at,
+      }),
+      event(10, { frequent: true, state: 'failed' }),
+    ]);
+    expect(blockCount(blocks[0])).toBe(11);
+    expect([blocks[0].from, blocks[0].to]).toEqual([0, 10]);
+    const {
+      blocks: [only],
+    } = layoutDay([
+      event(0, { frequent: true, count: 24, until: event(23).at }),
+    ]);
+    expect(only.to).toBe(23);
+  });
+
+  it('fits a summed-up day into the hours shown', () => {
+    expect(hourRange([event(8, { count: 3, until: event(21).at })])[1]).toBe(
+      22,
+    );
+  });
+
   it('puts overlapping slots side by side and lone ones full width', () => {
     const { placed } = layoutDay([
       event(8, { schedule_id: 'a' }),

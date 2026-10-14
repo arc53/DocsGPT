@@ -185,40 +185,101 @@ class TestMonitorsAndSyncs:
 
 class TestCap:
     def test_a_minute_cron_is_truncated(self, pg_conn, monkeypatch):
+        # Even summed up per day, a frequent schedule lists at most
+        # MAX_FREQUENT_SLOTS slots.
         monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 50)
+        monkeypatch.setattr(planned, "MAX_FREQUENT_SLOTS", 100)
         schedule = _schedule(pg_conn, cron="* * * * *")
         week = _week(pg_conn)
-        assert len([e for e in week["events"] if e["state"] == "planned"]) == 50
+        assert sum(e.get("count", 1) for e in week["events"] if e["state"] == "planned") == 100
         assert str(schedule["id"]) in week["truncated"]
 
     def test_past_runs_are_capped_per_schedule_and_reported(self, pg_conn, monkeypatch):
-        # A frequent schedule's runs must not crowd out another's, nor leave
-        # the days after the cut looking empty with no word of it.
+        # A busy schedule's runs must not crowd out another's, nor leave the
+        # days after the cut looking empty with no word of it.
         monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 5)
-        busy = _schedule(pg_conn, cron="0 * * * *", name="Inbox triage")
+        busy = _schedule(pg_conn, cron="0 */2 * * *", name="Inbox triage")  # not frequent
         daily = _schedule(pg_conn, cron="0 15 * * 1-5", name="Daily digest")
         runs = ScheduleRunsRepository(pg_conn)
-        for hour in range(10):
+        for hour in range(0, 20, 2):
             run = runs.record_pending(str(busy["id"]), "u1", None, MONDAY + timedelta(hours=hour))
             runs.update(str(run["id"]), {"status": "success"})
         run = runs.record_pending(str(daily["id"]), "u1", None, MONDAY + timedelta(hours=15))
         runs.update(str(run["id"]), {"status": "success"})
         week = _week(pg_conn)
         busy_runs = [e for e in week["events"] if e["schedule_id"] == str(busy["id"]) and e.get("run_id")]
-        assert [e["at"][11:16] for e in busy_runs] == ["00:00", "01:00", "02:00", "03:00", "04:00"]
+        assert [e["at"][11:16] for e in busy_runs] == ["00:00", "02:00", "04:00", "06:00", "08:00"]
         assert str(busy["id"]) in week["truncated"]
         assert [e["state"] for e in week["events"] if e["schedule_id"] == str(daily["id"])][0] == "success"
 
     def test_slots_past_the_cut_runs_are_not_missed(self, pg_conn, monkeypatch):
         # The runs after the cut exist; their slots must not read as missed.
         monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 5)
-        busy = _schedule(pg_conn, cron="0 * * * *", name="Inbox triage")
+        busy = _schedule(pg_conn, cron="0 */2 * * *", name="Inbox triage")
         pg_conn.execute(
             text("UPDATE schedules SET created_at = :t WHERE id = CAST(:id AS uuid)"),
-            {"t": MONDAY + timedelta(hours=3), "id": str(busy["id"])},
+            {"t": MONDAY + timedelta(hours=6), "id": str(busy["id"])},
         )
         runs = ScheduleRunsRepository(pg_conn)
-        for hour in range(10):
+        for hour in range(0, 20, 2):
             run = runs.record_pending(str(busy["id"]), "u1", None, MONDAY + timedelta(hours=hour))
             runs.update(str(run["id"]), {"status": "success"})
         assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
+
+
+class TestFrequentDays:
+    """A frequent schedule over the cap is summed up per day, not cut."""
+
+    def _hourly_with_runs(self, conn):
+        schedule = _schedule(conn, cron="0 * * * *", name="Inbox triage")
+        runs = ScheduleRunsRepository(conn)
+        for hour in range(10):
+            run = runs.record_pending(str(schedule["id"]), "u1", None, MONDAY + timedelta(hours=hour))
+            runs.update(str(run["id"]), {"status": "success"})
+        failed = runs.record_pending(str(schedule["id"]), "u1", None, MONDAY + timedelta(hours=10))
+        runs.update(str(failed["id"]), {"status": "failed"})
+        return str(schedule["id"]), str(failed["id"])
+
+    def test_every_day_is_there_with_its_count(self, pg_conn, monkeypatch):
+        monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 5)
+        schedule_id, failed_id = self._hourly_with_runs(pg_conn)
+        week = _week(pg_conn)
+        assert week["truncated"] == []
+        mine = [e for e in week["events"] if e["schedule_id"] == schedule_id]
+        monday_ok = next(e for e in mine if e["state"] == "success")
+        assert (monday_ok["count"], monday_ok["at"], monday_ok["until"]) == (
+            10, (MONDAY).isoformat(), (MONDAY + timedelta(hours=9)).isoformat(),
+        )
+        assert "run_id" not in monday_ok
+        # A failure stays its own event, so it can still be opened.
+        failures = [e for e in mine if e["state"] == "failed"]
+        assert [(e["run_id"], e.get("count")) for e in failures] == [(failed_id, None)]
+        # Monday 11:00 to 23:00 never ran: one summed-up missed event.
+        monday_missed = [e for e in mine if e["state"] == "missed" and e["at"].startswith("2030-03-04")]
+        assert [e["count"] for e in monday_missed] == [13]
+        # Every later day is there in full.
+        planned_days = {e["at"][:10]: e["count"] for e in mine if e["state"] == "planned"}
+        assert [planned_days[f"2030-03-{d:02d}"] for d in range(6, 11)] == [24] * 5
+
+    def test_under_the_cap_every_run_is_its_own_event(self, pg_conn):
+        schedule_id, _ = self._hourly_with_runs(pg_conn)
+        mine = [e for e in _week(pg_conn)["events"] if e["schedule_id"] == schedule_id]
+        assert all("count" not in e for e in mine)
+        assert len([e for e in mine if e["state"] == "success"]) == 10
+
+    def test_days_split_in_the_viewers_time_zone(self, pg_conn, monkeypatch):
+        monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 5)
+        schedule = _schedule(pg_conn, cron="0 * * * *", name="Inbox triage")
+        week = planned.build_planned(
+            pg_conn, "u1", MONDAY, MONDAY + timedelta(days=7), now=NOW, tz="America/New_York",
+        )
+        thursday = [
+            e for e in week["events"]
+            if e["schedule_id"] == str(schedule["id"]) and e["at"].startswith("2030-03-07T05")
+        ]
+        # Midnight in New York is 05:00 UTC (EST), and the local day has 24 runs.
+        assert [(e["state"], e["count"]) for e in thursday] == [("planned", 24)]
+
+    def test_rejects_an_unknown_time_zone(self, pg_conn):
+        with pytest.raises(planned.WindowError):
+            planned.build_planned(pg_conn, "u1", MONDAY, MONDAY + timedelta(days=7), now=NOW, tz="Mars/Olympus")

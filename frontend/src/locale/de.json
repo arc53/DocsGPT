@@ -3582,6 +3582,8 @@
       "empty": "In diesen Tagen ist nichts geplant",
       "blockDone_one": "{{done}} von {{count}} Ausführung erledigt",
       "blockDone_other": "{{done}} von {{count}} Ausführungen erledigt",
+      "slotCount_one": "{{count}} Lauf",
+      "slotCount_other": "{{count}} Läufe",
       "oneTime": "Einmalig",
       "recurring": "Wiederkehrend",
       "when": "Wann",

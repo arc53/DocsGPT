@@ -1,7 +1,7 @@
 ---
 title: Activity
 description: See what runs in DocsGPT right now, what waits for you and what runs next, browse planned and past runs on a calendar and in a history list, stop a running answer, and read the status marks on sidebar chats.
-lastUpdated: 2026-10-14
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -44,7 +44,7 @@ Stopping an answer from another page needs Redis, which every DocsGPT install ru
 - **Future slots** come from each schedule's repeat rule or one-time date. A paused schedule's slots are dashed: they will not run until you resume it.
 - **Past slots** show how the run went: green when it succeeded, red when it failed or timed out, dashed when it was skipped. A run in progress is blue.
 - **Missed slots** have an amber dashed border and the label **Missed**: a time an active schedule should have run but no run started, usually because the worker or its beat scheduler was down. They appear 10 minutes after the slot, and only since the schedule was created or last ran, so changing a schedule's time doesn't leave old times behind. A paused schedule's past times are never marked missed.
-- **Frequent schedules** (hourly or more often) are one tall block per day, such as **Inbox triage ×11**, instead of a slot per run. Select it to list the day's runs.
+- **Frequent schedules** (hourly or more often) are one tall block per day, such as **Inbox triage ×11**, instead of a slot per run. Select it to list the day's runs. When the range holds more than 1,000 of a schedule's runs, as a month of an hourly schedule does, the list sums up each status into one row with its time span and count, such as 00:00–23:00 with 24 runs. Failed and timed-out runs, and runs in progress, stay listed one by one so you can open them.
 - **Watching** shows each active monitor as a bar from when it was set up to when it expires. A monitor isn't drawn as slots: a page checked every 30 minutes would fill the week.
 - **Knowledge syncs** are drawn at the time they run, one per frequency, such as **Daily sync** at 03:12 each day. They have their own grey dashed look and show a warning sign when a source needs its connection reconnected. Every source of a frequency syncs together when the worker's sync task for it runs; that time counts from when the scheduler first ran, not from a set time of day. Only coming syncs are shown, and none while the scheduler is behind or not running. The **Knowledge syncs** chip hides them, and the agent filter doesn't apply to them.
 

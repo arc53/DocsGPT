@@ -211,8 +211,8 @@ const endpoints = {
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     ACTIVITY_NOW: '/api/activity/now',
     ACTIVITY_HISTORY: (params: string) => `/api/activity/history?${params}`,
-    ACTIVITY_PLANNED: (from: string, to: string) =>
-      `/api/activity/planned?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ACTIVITY_PLANNED: (from: string, to: string, tz: string) =>
+      `/api/activity/planned?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&tz=${encodeURIComponent(tz)}`,
     MESSAGE_CANCEL: (messageId: string) =>
       `/api/messages/${encodeURIComponent(messageId)}/cancel`,
     USER_SCHEDULES: '/api/schedules',

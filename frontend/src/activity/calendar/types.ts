@@ -22,6 +22,12 @@ type EventCommon = {
   frequent: boolean;
   at: string;
   state: EventState;
+  /**
+   * A frequent schedule over the server's cap is summed up per day: one event
+   * per state, standing for `count` slots from `at` to `until`.
+   */
+  count?: number;
+  until?: string;
 };
 
 /** A schedule's slot: planned, or a run with its status. */

@@ -11,6 +11,7 @@ import {
   byDay,
   eventClass,
   layoutDay,
+  blockCount,
   STATE_CLASS,
   type FrequentBlock,
 } from './layout';
@@ -142,7 +143,7 @@ export default function MonthGrid({
                   >
                     {t('activity.calendar.block', {
                       name: item.block.name ?? '',
-                      count: item.block.events.length,
+                      count: blockCount(item.block),
                       interpolation: { escapeValue: false },
                     })}
                   </button>

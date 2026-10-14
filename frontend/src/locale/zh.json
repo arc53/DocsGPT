@@ -3569,6 +3569,8 @@
       "empty": "这些天没有计划",
       "blockDone_one": "已完成 {{done}}/{{count}} 次",
       "blockDone_other": "已完成 {{done}}/{{count}} 次",
+      "slotCount_one": "{{count}} 次",
+      "slotCount_other": "{{count}} 次",
       "oneTime": "一次性",
       "recurring": "定期",
       "when": "时间",

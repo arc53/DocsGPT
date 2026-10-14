@@ -3570,6 +3570,8 @@
       "empty": "この期間に予定はありません",
       "blockDone_one": "{{count}} 回中 {{done}} 回完了",
       "blockDone_other": "{{count}} 回中 {{done}} 回完了",
+      "slotCount_one": "{{count}} 回",
+      "slotCount_other": "{{count}} 回",
       "oneTime": "1回限り",
       "recurring": "定期",
       "when": "日時",
