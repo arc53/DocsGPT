@@ -746,6 +746,8 @@
       },
       "loadError": "無法載入日誌。",
       "running": "執行中",
+      "failedAtStep": "在第 {{step}} 步失敗",
+      "failedAtStepOf": "在第 {{step}} 步失敗（共 {{total}} 步）",
       "origin": {
         "api": "API",
         "shared": "共用",

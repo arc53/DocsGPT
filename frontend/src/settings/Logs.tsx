@@ -371,6 +371,11 @@ function Log({
   const bodyId = useId();
   const clock = useClock(Boolean(log.running));
   const step = log.running ? workflowStep(log.workflow_progress) : null;
+  // A failed workflow run keeps the step it was on (0053): say where it stopped.
+  const failedStep =
+    log.event_type === 'workflow' && log.status === 'failed'
+      ? workflowStep(log.workflow_progress)
+      : null;
   // The details mount on first open (a long list stays light), then stay so
   // closing can animate.
   const [opened, setOpened] = useState(isOpen);
@@ -553,6 +558,23 @@ function Log({
                   ]
                     .filter(Boolean)
                     .join(' · ')}
+                </span>
+              )}
+            </>
+          )}
+          {failedStep && (
+            <>
+              <span className="text-destructive text-xs">
+                {failedStep.total
+                  ? t('settings.logs.failedAtStepOf', {
+                      step: failedStep.step,
+                      total: failedStep.total,
+                    })
+                  : t('settings.logs.failedAtStep', { step: failedStep.step })}
+              </span>
+              {failedStep.title && (
+                <span className="text-muted-foreground text-xs">
+                  {failedStep.title}
                 </span>
               )}
             </>

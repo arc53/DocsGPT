@@ -747,6 +747,8 @@
       },
       "loadError": "Die Protokolle konnten nicht geladen werden.",
       "running": "läuft",
+      "failedAtStep": "fehlgeschlagen bei Schritt {{step}}",
+      "failedAtStepOf": "fehlgeschlagen bei Schritt {{step}} von {{total}}",
       "origin": {
         "api": "API",
         "shared": "Geteilt",

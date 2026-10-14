@@ -747,6 +747,8 @@
       },
       "loadError": "Could not load the logs.",
       "running": "running",
+      "failedAtStep": "failed at step {{step}}",
+      "failedAtStepOf": "failed at step {{step}} of {{total}}",
       "origin": {
         "api": "API",
         "shared": "Shared",

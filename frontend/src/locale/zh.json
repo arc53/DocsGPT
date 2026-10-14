@@ -746,6 +746,8 @@
       },
       "loadError": "无法加载日志。",
       "running": "运行中",
+      "failedAtStep": "在第 {{step}} 步失败",
+      "failedAtStepOf": "在第 {{step}} 步失败（共 {{total}} 步）",
       "origin": {
         "api": "API",
         "shared": "共享",

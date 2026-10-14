@@ -747,6 +747,8 @@
       },
       "loadError": "No se pudieron cargar los registros.",
       "running": "en curso",
+      "failedAtStep": "falló en el paso {{step}}",
+      "failedAtStepOf": "falló en el paso {{step}} de {{total}}",
       "origin": {
         "api": "API",
         "shared": "Compartido",

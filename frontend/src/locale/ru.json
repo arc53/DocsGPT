@@ -795,6 +795,8 @@
       },
       "loadError": "Не удалось загрузить журналы.",
       "running": "выполняется",
+      "failedAtStep": "сбой на шаге {{step}}",
+      "failedAtStepOf": "сбой на шаге {{step}} из {{total}}",
       "origin": {
         "api": "API",
         "shared": "Общий доступ",

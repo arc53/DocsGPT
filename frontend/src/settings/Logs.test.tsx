@@ -234,6 +234,34 @@ describe('Logs running rows', () => {
     expect(rows[1].textContent).toContain('Draft reply');
   });
 
+  it('says which step a failed workflow run stopped at, and nothing for a finished one', async () => {
+    const ended = {
+      ...workflow,
+      running: false,
+      finished_at: started,
+      workflow_progress: {
+        done: 3,
+        total: null,
+        current: { node_id: 'n4', title: 'Engineering answer', type: 'agent' },
+      },
+    };
+    getLogs.mockResolvedValue(
+      page([
+        { ...ended, id: 'workflow-f1', level: 'error', status: 'failed' },
+        { ...ended, id: 'workflow-c1', status: 'completed' },
+      ]),
+    );
+    await act(async () => root.render(<Logs />));
+    const rows = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).filter((el) => el.textContent?.includes('['));
+    expect(rows[0].textContent).toContain('settings.logs.failedAtStep');
+    expect(rows[0].textContent).toContain('Engineering answer');
+    expect(rows[0].textContent).not.toContain('settings.logs.running');
+    expect(rows[1].textContent).not.toContain('settings.logs.failedAt');
+    expect(rows[1].textContent).not.toContain('Engineering answer');
+  });
+
   it('refreshes the first page when activity changes', async () => {
     getLogs.mockResolvedValue(page([answer]));
     await act(async () => root.render(<Logs />));

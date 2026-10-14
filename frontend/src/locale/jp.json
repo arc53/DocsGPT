@@ -746,6 +746,8 @@
       },
       "loadError": "ログを読み込めませんでした。",
       "running": "実行中",
+      "failedAtStep": "ステップ {{step}} で失敗",
+      "failedAtStepOf": "ステップ {{step}}/{{total}} で失敗",
       "origin": {
         "api": "API",
         "shared": "共有",
