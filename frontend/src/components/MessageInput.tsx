@@ -83,7 +83,7 @@ import {
 } from './message-input/attachmentUpload';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { exceedsAttachmentBudget } from './message-input/attachmentBudget';
-import { handleAbort } from '../conversation/conversationSlice';
+import { stopAnswer } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   getFileExtension,
@@ -1535,7 +1535,7 @@ export default function MessageInput({
   };
 
   const handleCancel = () => {
-    handleAbort();
+    void (dispatch as AppDispatch)(stopAnswer());
   };
 
   const [draggingId, setDraggingId] = useState<string | null>(null);

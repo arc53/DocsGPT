@@ -1811,10 +1811,14 @@ class BaseAnswerResource:
                         # — mark the row failed so the reconciler doesn't
                         # need to sweep it, and journal an ``error`` so a
                         # reconnecting client surfaces the same failure
-                        # the UI would show on a live error. A Stop from
-                        # Activity says so: its code keeps the chat out of
-                        # the failed ones the sidebar marks.
-                        stopped = isinstance(stream_exit, StreamStopped)
+                        # the UI would show on a live error. A Stop says
+                        # so: its code keeps the chat out of the failed ones
+                        # the sidebar marks. The chat's own Stop stores the
+                        # request and then closes the stream, so a close can
+                        # arrive before the ticker has seen it.
+                        stopped = isinstance(stream_exit, StreamStopped) or stop_requested(
+                            reserved_message_id
+                        )
                         failure_metadata = dict(query_metadata or {})
                         if stopped:
                             failure_metadata["error"] = "Stopped by its user before any response was produced."

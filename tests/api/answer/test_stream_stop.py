@@ -155,6 +155,30 @@ class TestStopFromActivity:
         assert len(failed) == 1
         assert failed[0].kwargs["metadata"]["error_code"] == "stopped"
 
+    def test_a_close_after_a_stop_request_is_a_stop(self, mock_mongo_db, flask_app):
+        # The chat's own Stop stores the request, then closes the stream; the
+        # close can reach the stream before its ticker sees the request.
+        gone = threading.Event()
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"metadata": {}}
+
+        def _requested(message_id):
+            # Only the abort handler, on the stream's own thread, sees it: the
+            # close wins the race.
+            return gone.is_set() and threading.current_thread() is threading.main_thread()
+
+        service, _, _, _ = _run(flask_app, _gen, stop_after=None, client_gone=gone, requested=_requested)
+        failed = [
+            call for call in service.finalize_message.call_args_list if call.kwargs.get("status") == "failed"
+        ]
+        assert len(failed) == 1
+        assert failed[0].kwargs["metadata"]["error_code"] == "stopped"
+
     def test_a_disconnect_before_any_text_is_still_a_disconnect(self, mock_mongo_db, flask_app):
         gone = threading.Event()
 

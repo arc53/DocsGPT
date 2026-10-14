@@ -7,6 +7,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import type { Agent } from '../agents/types';
+import activityService from '../api/services/activityService';
 import conversationService from '../api/services/conversationService';
 import {
   sseEventReceived,
@@ -164,6 +165,50 @@ export function handleAbort() {
     abortController = null;
   }
 }
+
+/** How long the chat's Stop waits for the server to take it before closing. */
+export const STOP_REQUEST_TIMEOUT_MS = 1000;
+
+/**
+ * The chat's Stop. Tells the server first, so the answer is saved as stopped
+ * rather than as a dropped connection, then closes the stream. An answer
+ * stopped before it wrote anything says so at once, as it will after a
+ * reload.
+ */
+export const stopAnswer = createAsyncThunk<void, void>(
+  'conversation/stopAnswer',
+  async (_arg, { dispatch, getState }) => {
+    const controller = abortController;
+    const { conversation, preference } = getState() as RootState;
+    const index = conversation.queries.length - 1;
+    const messageId = conversation.queries[index]?.messageId;
+    let taken = false;
+    if (controller && messageId && conversation.status === 'loading') {
+      taken = await Promise.race([
+        activityService.stopMessage(messageId, preference.token).then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), STOP_REQUEST_TIMEOUT_MS),
+        ),
+      ]);
+    }
+    if (abortController === controller) handleAbort();
+    const after = (getState() as RootState).conversation;
+    const query = after.queries[index];
+    if (taken && query && !query.response && !query.error) {
+      dispatch(
+        conversationSlice.actions.raiseError({
+          conversationId: after.conversationId,
+          index,
+          message: 'Stopped before any response was produced.',
+          code: 'stopped',
+        }),
+      );
+    }
+  },
+);
 
 // Loads a conversation and applies it to the slice. Returns
 // ``{data, stale}``: ``stale`` true means a newer load has superseded
