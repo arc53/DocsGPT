@@ -914,6 +914,24 @@ class TestDownloadFailureIsolation:
         assert result["sync_fingerprint"]
 
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "status, reason",
+        [(403, "cannotDownloadFile"), (403, "insufficientFilePermissions"), (404, "notFound")],
+    )
+    def test_access_refusal_withholds_fingerprint(self, drive_loader, tmp_path, status, reason):
+        # Sharing settings can change without touching modifiedTime, so a file
+        # refused for access must not be fingerprinted as if it were indexed.
+        loader, _ = drive_loader(
+            {"f1": {"name": "a.pdf", "mimeType": "application/pdf"}, "f2": {"name": "b.txt", "mimeType": "text/plain"}},
+            errors={"f1": _http_error(status, reason)},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1", "f2"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+        assert result["files_failed"] == 0
+        assert result["sync_fingerprint"] is None
+
+    @pytest.mark.unit
     def test_transient_failure_withholds_fingerprint(self, drive_loader, tmp_path):
         loader, _ = drive_loader(
             {"f1": {"name": "a.txt", "mimeType": "text/plain"}, "f2": {"name": "b.txt", "mimeType": "text/plain"}},
@@ -942,6 +960,7 @@ class TestDownloadFailureIsolation:
         result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
         assert result["files_downloaded"] == 1
         assert result["files_failed"] == 1
+        assert result["sync_fingerprint"] is None
 
     @pytest.mark.unit
     def test_missing_selected_item_skipped(self, drive_loader, tmp_path):

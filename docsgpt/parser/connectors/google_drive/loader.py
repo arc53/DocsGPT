@@ -26,6 +26,10 @@ _ITEM_FIELDS = 'id,name,mimeType,modifiedTime,driveId,shortcutDetails(targetId,t
 # 403s and dropped connections with exponential backoff and jitter (1s, 2s, 4s...).
 _NUM_RETRIES = 5
 _RATE_LIMIT_REASONS = {'rateLimitExceeded', 'userRateLimitExceeded'}
+# Download refusals that follow from the file's content, which only changes
+# with its modifiedTime. Other refusals (sharing, permissions) can lift
+# without it changing, so they keep the selection from being fingerprinted.
+_CONTENT_REFUSAL_REASONS = {'exportSizeLimitExceeded', 'fileNotDownloadable'}
 # Longest file name most filesystems accept, in bytes.
 _MAX_NAME_BYTES = 255
 
@@ -633,9 +637,12 @@ class GoogleDriveLoader(BaseConnectorLoader):
 
         Returns:
             The download summary: ``files_downloaded``, ``files_failed``,
-            ``files_skipped``, ``sync_fingerprint`` (``None`` when anything
-            failed), ``directory_path``, ``empty_result``, ``source_type`` and
-            ``config_used``, plus ``error`` when the download could not run.
+            ``files_skipped``, ``sync_fingerprint``, ``directory_path``,
+            ``empty_result``, ``source_type`` and ``config_used``, plus
+            ``error`` when the download could not run. ``sync_fingerprint``
+            is ``None`` when a file or folder failed, or a file was refused
+            for a reason other than its content (sharing, permissions), since
+            that can change without the file's ``modifiedTime`` changing.
         """
         if source_config is None:
             source_config = {}
@@ -644,6 +651,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
         stats = _WalkStats()
         files_downloaded = 0
         entries = []
+        fingerprintable = True
 
         try:
             if not config.get('file_ids') and not config.get('folder_ids'):
@@ -659,12 +667,14 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     files_downloaded += 1
                 except Exception as e:
                     stats.record_failure(file_metadata.get('name'), e)
+                    if not _error_reasons(e) & _CONTENT_REFUSAL_REASONS:
+                        fingerprintable = False
 
             return {
                 "files_downloaded": files_downloaded,
                 "files_failed": stats.failed,
                 "files_skipped": stats.skipped,
-                "sync_fingerprint": None if stats.failed else _fingerprint(entries),
+                "sync_fingerprint": _fingerprint(entries) if fingerprintable and not stats.failed else None,
                 "directory_path": local_dir,
                 "empty_result": files_downloaded == 0,
                 "source_type": "google_drive",
@@ -713,9 +723,15 @@ def _is_permanent_error(error: Exception) -> bool:
     status = error.resp.status
     if status in (401, 429) or status >= 500:
         return False
-    details = error.error_details if isinstance(error.error_details, list) else []
-    reasons = {d.get('reason') for d in details if isinstance(d, dict)}
-    return not reasons & _RATE_LIMIT_REASONS
+    return not _error_reasons(error) & _RATE_LIMIT_REASONS
+
+
+def _error_reasons(error: Exception) -> Set[str]:
+    """The ``reason`` codes of a Drive API error (``exportSizeLimitExceeded``...); empty for other errors."""
+    details = getattr(error, 'error_details', None)
+    if not isinstance(error, HttpError) or not isinstance(details, list):
+        return set()
+    return {d.get('reason') for d in details if isinstance(d, dict) and d.get('reason')}
 
 
 def _safe_name(name: Optional[str]) -> str:

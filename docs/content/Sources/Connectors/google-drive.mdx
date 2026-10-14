@@ -85,7 +85,7 @@ Calls to Google are retried, waiting longer after each attempt, when Google rate
 
 ### Sync
 
-A scheduled sync, or **Sync now**, first compares each file's name, location and modified time with the last ingest. When nothing changed, it keeps the existing index and downloads nothing. Otherwise it downloads and indexes the whole selection again. Changing the source's chunking settings also counts as a change. If a file could not be downloaded last time, the next sync reprocesses the source in full.
+A scheduled sync, or **Sync now**, first compares each file's name, location and modified time with the last ingest. When nothing changed, it keeps the existing index and downloads nothing. Otherwise it downloads and indexes the whole selection again. Changing the source's chunking settings also counts as a change. If a file could not be downloaded last time, the next sync reprocesses the source in full. The exception is a file Google will never export, such as one over the size limit: it does not force a full sync until it is edited.
 
 ## Troubleshooting
 
