@@ -29,6 +29,11 @@ FREQUENCIES = ("daily", "weekly", "monthly")
 #: Sync slots one frequency may add to a calendar window.
 MAX_SLOTS_PER_FREQUENCY = 100
 
+#: How late a next time may be and still count as about to fire: beat runs an
+#: entry a little after its time and only then moves ``last_run_at``. Later
+#: than this, beat is taken as behind or stopped.
+LATE_GRACE = timedelta(minutes=15)
+
 #: Remote loaders that can only read with a connection; mirrors
 #: ``docsgpt.worker._CONNECTION_ONLY_LOADERS`` (a test keeps them equal).
 CONNECTION_ONLY_LOADERS = frozenset({"linear"})
@@ -183,7 +188,8 @@ def calendar_slots(
     """The user's sync batches as calendar events, each time one fires in the window.
 
     Only future firings: a sync's outcome isn't recorded per run, and a next
-    time already past (beat behind or stopped) plans nothing.
+    time past by more than ``LATE_GRACE`` (beat behind or stopped) plans
+    nothing. One less late is about to fire and keeps its time.
 
     Args:
         conn: A read-only connection.
@@ -199,7 +205,9 @@ def calendar_slots(
         "planned"``) plus ``frequency`` and ``sources``: ``{id, name, type,
         blocked, last_synced_at}`` per source.
     """
-    upcoming = {frequency: plan for frequency, plan in schedule.items() if plan[0] >= now and plan[0] < end}
+    upcoming = {
+        frequency: plan for frequency, plan in schedule.items() if now - LATE_GRACE <= plan[0] < end
+    }
     if not upcoming:
         return []
     rows = _members(conn, user_id, list(upcoming))

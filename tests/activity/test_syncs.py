@@ -171,6 +171,16 @@ class TestCalendarSlots:
         overdue = {"daily": (NOW - timedelta(hours=2), timedelta(days=1))}
         assert syncs.calendar_slots(pg_conn, "u1", *self.WEEK, overdue, now=NOW) == []
 
+    def test_a_beat_tick_late_keeps_the_series(self, pg_conn):
+        # Beat fires a little after the time and only then moves last_run_at;
+        # a calendar loaded in between must still show the frequency.
+        _source(pg_conn, "Carrier portal")
+        late = NOW - timedelta(minutes=1)
+        schedule = {"daily": (late, timedelta(days=1))}
+        window = (NOW - timedelta(days=1), NOW + timedelta(days=6))
+        events = syncs.calendar_slots(pg_conn, "u1", *window, schedule, now=NOW)
+        assert [e["at"] for e in events] == [(late + timedelta(days=n)).isoformat() for n in range(7)]
+
     def test_a_frequency_with_no_sources_has_no_slots(self, pg_conn):
         _source(pg_conn, "Carrier portal")
         schedule = {"weekly": (NOW + timedelta(hours=1), timedelta(weeks=1))}
