@@ -360,3 +360,30 @@ class TestListOwnedWithContext:
         assert team_row["origin_conversation_name"] is None
         [own_row] = repo.list_owned_with_context("owner1")
         assert own_row["origin_conversation_name"] == "Confidential deal"
+
+    def _older_live_then_newer_finished(self, conn, agent=None, user_id="u1"):
+        repo = SchedulesRepository(conn)
+        live = repo.create(user_id, agent, "recurring", "weekly check", cron="0 9 * * 1")
+        conn.execute(
+            text("UPDATE schedules SET created_at = now() - interval '1 year' WHERE id = CAST(:id AS uuid)"),
+            {"id": str(live["id"])},
+        )
+        for n in range(3):
+            done = repo.create(user_id, agent, "once", f"reminder {n}", run_at=_now(), next_run_at=_now())
+            conn.execute(
+                text("UPDATE schedules SET status = 'completed' WHERE id = CAST(:id AS uuid)"),
+                {"id": str(done["id"])},
+            )
+        return str(live["id"])
+
+    def test_a_live_schedule_is_listed_past_newer_finished_ones(self, pg_conn):
+        # Finished tasks are kept, so enough of them would fill the limit.
+        live = self._older_live_then_newer_finished(pg_conn)
+        rows = SchedulesRepository(pg_conn).list_owned_with_context("u1", limit=2)
+        assert str(rows[0]["id"]) == live
+
+    def test_a_team_agents_live_schedule_is_listed_past_newer_finished_ones(self, pg_conn):
+        agent = _insert_agent(pg_conn, "owner1")
+        live = self._older_live_then_newer_finished(pg_conn, agent, "owner1")
+        rows = SchedulesRepository(pg_conn).list_for_agents_with_context([agent], limit=2)
+        assert str(rows[0]["id"]) == live

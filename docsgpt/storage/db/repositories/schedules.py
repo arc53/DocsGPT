@@ -220,6 +220,11 @@ class SchedulesRepository:
         and label rows without a lookup per agent. ``agent_image`` is the raw
         storage value: callers must turn it into a URL before returning it.
 
+        Live (active and paused) schedules come first, newest first, then
+        finished ones: finished tasks are kept, so the newest of them would
+        otherwise fill ``limit`` and hide an older live schedule. Live ones
+        are capped per user (``SCHEDULE_MAX_PER_USER``), so they fit.
+
         Args:
             user_id: The owner.
             limit: Maximum rows returned.
@@ -237,7 +242,7 @@ class SchedulesRepository:
                 LEFT JOIN agents a ON a.id = s.agent_id
                 LEFT JOIN conversations c ON c.id = s.origin_conversation_id
                 WHERE s.user_id = :user_id AND s.trigger_type <> 'monitor'
-                ORDER BY s.created_at DESC
+                ORDER BY s.status IN ('active', 'paused') DESC, s.created_at DESC
                 LIMIT :limit
                 """
             ),
@@ -252,7 +257,8 @@ class SchedulesRepository:
         Schedules tab is stored under the agent's owner. A member's own chat
         task on the agent (stored under that member) is not returned.
         ``origin_conversation_name`` is always ``None``: the chat a schedule
-        came from is the owner's own, and its title stays with them.
+        came from is the owner's own, and its title stays with them. Live
+        schedules come first, as in ``list_owned_with_context``.
 
         Args:
             agent_ids: Agent UUIDs.
@@ -274,7 +280,7 @@ class SchedulesRepository:
                 JOIN agents a ON a.id = s.agent_id AND a.user_id = s.user_id
                 WHERE s.agent_id = ANY(CAST(:ids AS uuid[]))
                   AND s.trigger_type <> 'monitor'
-                ORDER BY s.created_at DESC
+                ORDER BY s.status IN ('active', 'paused') DESC, s.created_at DESC
                 LIMIT :limit
                 """
             ),
