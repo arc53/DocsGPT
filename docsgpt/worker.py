@@ -3615,6 +3615,7 @@ def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: An
         try:
             config = json.loads(config)
         except ValueError:
+            # Not JSON: hash the raw string, which still changes when the settings do.
             pass
     payload = json.dumps({"selection": selection_fingerprint, "config": config or {}}, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
