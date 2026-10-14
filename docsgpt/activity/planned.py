@@ -75,6 +75,7 @@ def parse_window(raw_from: Optional[str], raw_to: Optional[str]) -> Tuple[dateti
 
 
 def _parse(value: Any) -> datetime:
+    """``value`` (a datetime or ISO text) as an aware datetime; naive means UTC. Raises on bad text."""
     if isinstance(value, datetime):
         parsed = value
     else:
@@ -83,6 +84,7 @@ def _parse(value: Any) -> datetime:
 
 
 def _as_datetime(value: Any) -> Optional[datetime]:
+    """Like ``_parse``, but ``None`` for an empty or unreadable value."""
     if value in (None, ""):
         return None
     try:
@@ -92,18 +94,22 @@ def _as_datetime(value: Any) -> Optional[datetime]:
 
 
 def _iso(value: datetime) -> str:
+    """``value`` as ISO text in UTC."""
     return value.astimezone(timezone.utc).isoformat()
 
 
 def _minute(value: datetime) -> datetime:
+    """``value`` in UTC, cut to the minute, to line slots up with the runs that filled them."""
     return value.astimezone(timezone.utc).replace(second=0, microsecond=0)
 
 
 def _rows(conn: Connection, sql: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Run ``sql`` and return its rows as dicts."""
     return [row_to_dict(r) for r in conn.execute(text(sql), params).fetchall()]
 
 
 def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, Any]]:
+    """The user's active and paused schedules, monitors left out, created before the window ends."""
     return _rows(
         conn,
         """
@@ -125,6 +131,7 @@ def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, 
 
 
 def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
+    """The user's schedule runs whose slot falls in the window, capped at ``MAX_RUNS``."""
     return _rows(
         conn,
         """
@@ -147,6 +154,7 @@ def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> Lis
 
 
 def _base(row: Dict[str, Any], frequent: bool) -> Dict[str, Any]:
+    """The fields every calendar event of one schedule shares, from a schedule or run row."""
     schedule_id = row.get("schedule_id") or row.get("id")
     return {
         "kind": "schedule",
@@ -166,6 +174,12 @@ def _base(row: Dict[str, Any], frequent: bool) -> Dict[str, Any]:
 
 
 def _is_frequent(row: Dict[str, Any], cache: Dict[str, bool]) -> bool:
+    """Whether a recurring schedule fires every ``FREQUENT_SECONDS`` or more often.
+
+    Such a schedule is drawn as one block rather than a slot per run. The
+    answer is cached per cron and timezone; an invalid cron counts as not
+    frequent.
+    """
     if row.get("trigger_type") != "recurring" or not row.get("cron"):
         return False
     key = f"{row['cron']}|{row.get('timezone')}"
@@ -219,6 +233,7 @@ def _past_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple[Li
 
 
 def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
+    """The user's monitors that overlap the window, drawn as ranges."""
     rows = _rows(
         conn,
         """

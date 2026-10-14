@@ -32,6 +32,7 @@ _FOUND: Dict[str, str] = {}
 
 
 def _fallback(tool_name: str) -> str:
+    """A readable name from a tool's own: ``web_search`` becomes "Web search", ``mcp_tool`` "MCP tool"."""
     words = [w for w in tool_name.split("_") if w]
     if not words:
         return tool_name

@@ -41,20 +41,28 @@ MAX_OCCURRENCES = 500
 
 
 def _iso(value: Any) -> Optional[str]:
+    """A timestamp as ISO text; any other value as text, ``None`` kept."""
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value) if value is not None else None
 
 
 def _str(value: Any) -> Optional[str]:
+    """``value`` as text (a UUID, say), ``None`` kept."""
     return str(value) if value is not None else None
 
 
 def _rows(conn: Connection, sql: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Run ``sql`` and return its rows as dicts."""
     return [row_to_dict(r) for r in conn.execute(text(sql), params).fetchall()]
 
 
 def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Answers being written in the user's listed chats.
+
+    A row counts while its heartbeat (or, before the first one, its start) is
+    fresh, so an answer whose stream died without ending drops off.
+    """
     rows = _rows(
         conn,
         """
@@ -137,6 +145,7 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 
 def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Background jobs still working, with their tool's label and the job's progress."""
     rows = _rows(
         conn,
         """
@@ -179,6 +188,7 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 
 def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Scheduled runs pending or running, oldest slot first."""
     rows = _rows(
         conn,
         """
@@ -214,6 +224,11 @@ def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any
 
 
 def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Workflow runs still going, with the step they are on.
+
+    Most are folded into the chat, scheduled run or webhook that started them
+    (``_fold_workflows``); the agent is the oldest one built on the workflow.
+    """
     rows = _rows(
         conn,
         """
@@ -248,6 +263,7 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 
 def _marker_started(marker: Dict[str, Any]) -> Optional[str]:
+    """When a Redis run marker was set, as ISO text, or ``None`` when it has no start."""
     started = marker.get("started_at")
     if started is None:
         return None
@@ -331,6 +347,7 @@ def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any
 
 
 def _running_webhooks(markers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Agent webhook runs in flight, from their Redis markers (they write no row until they end)."""
     out = []
     for marker in markers:
         if marker.get("kind", "webhook") != "webhook":
@@ -379,6 +396,7 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
 
 
 def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Paused turns waiting for the user to approve a tool call, soonest to expire first."""
     rows = _rows(
         conn,
         """
@@ -425,6 +443,11 @@ def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 
 def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Schedules the scheduler paused after repeated failures, with their last error.
+
+    Only a paused schedule at or past ``SCHEDULE_AUTOPAUSE_FAILURES``
+    consecutive failures counts, so a healthy one paused by hand stays out.
+    """
     threshold = max(1, int(settings.SCHEDULE_AUTOPAUSE_FAILURES or 1))
     rows = _rows(
         conn,
@@ -513,6 +536,7 @@ def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
 
 
 def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, Any]]:
+    """Active schedules due in the next ``UP_NEXT_WINDOW``, with how often each fires in it."""
     end = now + UP_NEXT_WINDOW
     rows = _rows(
         conn,
@@ -556,6 +580,7 @@ def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, An
 
 
 def _failed_last_day(conn: Connection, user_id: str) -> int:
+    """How many scheduled runs and background jobs failed in the last 24 hours."""
     scalar = conn.execute(
         text(
             """

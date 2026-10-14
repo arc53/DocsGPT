@@ -28,11 +28,13 @@ activity_ns = Namespace("activity", description="What runs now and what is plann
 
 
 def _user_id() -> Optional[str]:
+    """The caller's user id from the decoded token, or ``None``."""
     decoded = getattr(request, "decoded_token", None)
     return decoded.get("sub") if isinstance(decoded, dict) else None
 
 
 def _err(message: str, status: int):
+    """A ``{"success": false, "message": ...}`` response with ``status``."""
     return make_response(jsonify({"success": False, "message": message}), status)
 
 
@@ -103,6 +105,7 @@ class ActivityPlanned(Resource):
 
 
 def _int_arg(name: str, default: int) -> int:
+    """Query parameter ``name`` as an int, ``default`` when absent or not a number."""
     try:
         return int(request.args.get(name, default))
     except (TypeError, ValueError):
