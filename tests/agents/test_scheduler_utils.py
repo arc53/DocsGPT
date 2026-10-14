@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from docsgpt.agents import scheduler_utils
 from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
     clamp_once_horizon,
     cron_interval_seconds,
+    cron_runs,
     next_cron_run,
     parse_cron,
     parse_delay,
@@ -56,6 +59,65 @@ class TestNextCronRunDST:
         nxt = next_cron_run("0 9 * * *", "Europe/Warsaw", after=anchor)
         assert nxt.tzinfo is not None
         assert nxt.utcoffset() == timedelta(0)
+
+
+def _one_at_a_time(expression, tz_name, after, until, limit):
+    """The reference: ``next_cron_run`` re-anchored at every fire time."""
+    out = []
+    fire = next_cron_run(expression, tz_name, after=after)
+    while fire < until and len(out) < limit:
+        out.append(fire)
+        fire = next_cron_run(expression, tz_name, after=fire)
+    return out
+
+
+def _utc(*args):
+    return datetime(*args, tzinfo=timezone.utc)
+
+
+class TestCronRuns:
+    """One iterator over a window, as Calendar and Now expand schedules."""
+
+    @pytest.mark.parametrize(
+        "expression",
+        ["0 9 * * *", "30 2 * * *", "*/15 * * * *", "* * * * *", "0 1-3 * * *", "0 9 * * 1-5"],
+    )
+    @pytest.mark.parametrize(
+        "tz_name", ["Europe/Warsaw", "America/New_York", "Australia/Lord_Howe", "UTC"]
+    )
+    @pytest.mark.parametrize(
+        "after",
+        [
+            _utc(2026, 3, 6),  # US spring forward
+            _utc(2026, 3, 27),  # EU spring forward
+            _utc(2026, 4, 3),  # Lord Howe falls back half an hour
+            _utc(2026, 10, 23),  # EU fall back
+            _utc(2026, 10, 30),  # US fall back
+        ],
+    )
+    def test_matches_next_cron_run_across_dst(self, expression, tz_name, after):
+        until = after + timedelta(days=4)
+        expected = _one_at_a_time(expression, tz_name, after, until, 2000)
+        assert cron_runs(expression, tz_name, after=after, until=until, limit=2000) == expected
+
+    def test_keeps_to_the_window_and_the_limit(self):
+        after = _utc(2026, 5, 1, 9)
+        runs = cron_runs("0 * * * *", "UTC", after=after, until=_utc(2026, 5, 1, 12), limit=10)
+        # Strictly after ``after``: 9:00 itself is not included.
+        assert runs == [_utc(2026, 5, 1, 10), _utc(2026, 5, 1, 11)]
+        assert len(cron_runs("* * * * *", "UTC", after=after, until=_utc(2026, 5, 2), limit=7)) == 7
+
+    def test_validates_once(self):
+        with patch.object(scheduler_utils, "parse_cron", wraps=parse_cron) as parsed:
+            runs = cron_runs("* * * * *", "UTC", after=_utc(2026, 5, 1), until=_utc(2026, 5, 2), limit=500)
+        assert len(runs) == 500
+        assert parsed.call_count == 1
+
+    def test_a_bad_cron_still_raises(self):
+        with pytest.raises(ScheduleValidationError):
+            cron_runs("not a cron", "UTC", after=_utc(2026, 5, 1), until=_utc(2026, 5, 2), limit=5)
+        with pytest.raises(ScheduleValidationError):
+            cron_runs("0 9 * * *", "Mars/Olympus", after=_utc(2026, 5, 1), until=_utc(2026, 5, 2), limit=5)
 
 
 class TestResolveTimezone:

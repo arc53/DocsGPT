@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
@@ -86,6 +86,48 @@ def next_cron_run(
     itr = croniter(expression, anchor_local)
     nxt_local = itr.get_next(datetime)
     return nxt_local.astimezone(timezone.utc)
+
+
+def cron_runs(
+    expression: str,
+    tz_name: Optional[str],
+    *,
+    after: datetime,
+    until: datetime,
+    limit: int,
+) -> List[datetime]:
+    """Return the fire times strictly after ``after`` and before ``until`` (UTC, tz-aware).
+
+    The same times as calling ``next_cron_run`` from each fire time in turn,
+    for expanding a schedule over a window: the expression is validated and
+    the zone resolved once, and one iterator walks the local clock, so DST
+    lands as it does there.
+
+    Args:
+        expression: A 5-field cron expression.
+        tz_name: The schedule's IANA zone (default UTC).
+        after: Exclusive lower bound.
+        until: Exclusive upper bound.
+        limit: The most times returned.
+
+    Returns:
+        Up to ``limit`` fire times, oldest first.
+
+    Raises:
+        ScheduleValidationError: The expression or the zone is invalid.
+    """
+    parse_cron(expression)
+    tz = resolve_timezone(tz_name)
+    if after.tzinfo is None:
+        after = after.replace(tzinfo=timezone.utc)
+    itr = croniter(expression, after.astimezone(tz))
+    out: List[datetime] = []
+    while len(out) < limit:
+        fire = itr.get_next(datetime).astimezone(timezone.utc)
+        if fire >= until:
+            break
+        out.append(fire)
+    return out
 
 
 def parse_delay(delay: str) -> timedelta:

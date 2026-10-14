@@ -304,6 +304,46 @@ class TestIngest:
         monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(source_id)])
         assert activity_now.build_now(pg_conn, "u1")["running"] == []
 
+    def test_stalled_ingests_do_not_crowd_out_a_running_one(self, pg_conn):
+        # Stalled rows stay and are old; they must not fill the list's slots.
+        sources = SourcesRepository(pg_conn)
+        progress = IngestChunkProgressRepository(pg_conn)
+        for i in range(activity_now.PER_KIND_LIMIT):
+            old = str(sources.create(f"old {i}", user_id="u1")["id"])
+            progress.init_progress(old, 10)
+            progress.mark_failed(old)
+        pg_conn.execute(text("UPDATE ingest_chunk_progress SET last_updated = now() - interval '2 days'"))
+        live = str(sources.create("Carrier handbook 2026.pdf", user_id="u1")["id"])
+        progress.init_progress(live, 120)
+        ingests = [i for i in activity_now.build_now(pg_conn, "u1")["running"] if i["kind"] == "ingest"]
+        assert [i["source_id"] for i in ingests] == [live]
+
+    def test_reindexing_a_stalled_source_shows_reading(self, pg_conn, monkeypatch):
+        source = SourcesRepository(pg_conn).create("Carrier handbook 2026.pdf", user_id="u1")
+        source_id = str(source["id"])
+        progress = IngestChunkProgressRepository(pg_conn)
+        progress.init_progress(source_id, 120)
+        progress.mark_failed(source_id)
+        pg_conn.execute(
+            text("UPDATE ingest_chunk_progress SET last_updated = now() - interval '1 day' "
+                 "WHERE source_id = CAST(:id AS uuid)"),
+            {"id": source_id},
+        )
+        monkeypatch.setattr(
+            activity_now, "list_runs", lambda user_id: [self._marker(source_id, name=None, operation="reingest")]
+        )
+        [item] = activity_now.build_now(pg_conn, "u1")["running"]
+        assert item["stage"] == "reading"
+        assert item["title"] == "Carrier handbook 2026.pdf"
+
+    def test_a_marker_that_is_not_a_uuid_is_ignored(self, pg_conn, monkeypatch):
+        source = SourcesRepository(pg_conn).create("Carrier handbook 2026.pdf", user_id="u1")
+        IngestChunkProgressRepository(pg_conn).init_progress(str(source["id"]), 120)
+        monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker("not-a-uuid")])
+        ingests = [i for i in activity_now.build_now(pg_conn, "u1")["running"] if i["kind"] == "ingest"]
+        # The junk marker still shows as reading; the query just doesn't choke on it.
+        assert {i["source_id"] for i in ingests} == {"not-a-uuid", str(source["id"])}
+
     def test_a_failed_ingest_is_not_running(self, pg_conn):
         # The failure cleared the marker; the closed row must not fall back
         # to "embedding" until the reconciler notices.
@@ -429,3 +469,51 @@ class TestFailures:
             text("UPDATE conversations SET unread_at = now() WHERE id = CAST(:id AS uuid)"), {"id": conv},
         )
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
+
+
+class TestOccurrences:
+    """Counting a schedule's runs in a window, against one-at-a-time stepping."""
+
+    START = datetime(2026, 5, 4, 8, tzinfo=timezone.utc)
+    END = START + timedelta(hours=24)
+
+    @staticmethod
+    def _stepped(row: dict, start: datetime, end: datetime) -> int:
+        from docsgpt.agents.scheduler_utils import next_cron_run
+
+        stop = min(end, row["end_at"]) if row.get("end_at") else end
+        fire = row["next_run_at"]
+        if fire >= end:
+            return 0
+        if fire < start:
+            fire = next_cron_run(row["cron"], row["timezone"], after=start - timedelta(seconds=1))
+        count = 0
+        while fire < stop and count < activity_now.MAX_OCCURRENCES:
+            count += 1
+            fire = next_cron_run(row["cron"], row["timezone"], after=fire)
+        return count
+
+    @pytest.mark.parametrize(
+        "next_run_at, cron, end_at",
+        [
+            (START + timedelta(minutes=30), "30 * * * *", None),  # due in the window
+            (START - timedelta(minutes=30), "30 * * * *", None),  # overdue: counted from the start
+            (START + timedelta(hours=2), "0 */3 * * *", START + timedelta(hours=10)),  # ends inside
+            (START + timedelta(hours=1), "* * * * *", None),  # hits the cap
+            (START + timedelta(hours=30), "0 * * * *", None),  # after the window
+        ],
+    )
+    def test_matches_stepping(self, next_run_at, cron, end_at):
+        row = {
+            "trigger_type": "recurring", "cron": cron, "timezone": "Europe/Warsaw",
+            "next_run_at": next_run_at, "end_at": end_at,
+        }
+        expected = self._stepped(row, self.START, self.END)
+        assert activity_now._occurrences(row, self.START, self.END) == expected
+
+    def test_a_bad_cron_counts_once(self):
+        row = {
+            "trigger_type": "recurring", "cron": "nope", "timezone": "UTC",
+            "next_run_at": self.START + timedelta(hours=1), "end_at": None,
+        }
+        assert activity_now._occurrences(row, self.START, self.END) == 1

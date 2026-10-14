@@ -21,7 +21,7 @@ from docsgpt.activity.syncs import calendar_slots, sync_schedule
 from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
     cron_interval_seconds,
-    next_cron_run,
+    cron_runs,
 )
 from docsgpt.storage.db.base_repository import row_to_dict
 
@@ -194,17 +194,16 @@ def _planned_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple
         return ([fire] if fire is not None and start <= fire < stop else []), False
     if not row.get("cron"):
         return [], False
-    times: List[datetime] = []
     try:
-        fire = next_cron_run(row["cron"], row.get("timezone"), after=start - timedelta(seconds=1))
-        while fire < stop:
-            if len(times) >= MAX_SLOTS_PER_SCHEDULE:
-                return times, True
-            times.append(fire)
-            fire = next_cron_run(row["cron"], row.get("timezone"), after=fire)
+        # One past the cap tells a full window from a cut one.
+        times = cron_runs(
+            row["cron"], row.get("timezone"),
+            after=start - timedelta(seconds=1), until=stop, limit=MAX_SLOTS_PER_SCHEDULE + 1,
+        )
     except ScheduleValidationError:
         logger.warning("activity: schedule %s has an invalid cron", row.get("id"))
-    return times, False
+        return [], False
+    return times[:MAX_SLOTS_PER_SCHEDULE], len(times) > MAX_SLOTS_PER_SCHEDULE
 
 
 def _past_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple[List[datetime], bool]:

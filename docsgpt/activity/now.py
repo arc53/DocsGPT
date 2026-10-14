@@ -19,10 +19,10 @@ from sqlalchemy.engine import Connection
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.labels import tool_labels
 from docsgpt.activity.syncs import due_batches, next_sync_times
-from docsgpt.agents.scheduler_utils import ScheduleValidationError, next_cron_run
+from docsgpt.agents.scheduler_utils import ScheduleValidationError, cron_runs
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -268,18 +268,34 @@ def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any
         for marker in markers
         if marker.get("kind") == "ingest" and marker.get("source_id")
     }
+    # Two lookups an index can serve, rather than one OR that scans every
+    # source's row: the marked sources by key, whatever their status (a
+    # re-index of a stalled source needs its row), and the user's unfinished
+    # ingests that are still active (stalled ones would fill the limit).
     rows = _rows(
         conn,
         """
-        SELECT p.source_id, s.name, p.status, p.total_chunks, p.embedded_chunks, p.last_updated
-        FROM ingest_chunk_progress p
-        LEFT JOIN sources s ON s.id = p.source_id
-        WHERE (s.user_id = :user_id OR CAST(p.source_id AS text) = ANY(:marked))
-          AND (p.embedded_chunks < p.total_chunks OR CAST(p.source_id AS text) = ANY(:marked))
-        ORDER BY p.last_updated ASC
+        SELECT * FROM (
+            SELECT p.source_id, s.name, p.status, p.total_chunks, p.embedded_chunks, p.last_updated
+            FROM ingest_chunk_progress p
+            LEFT JOIN sources s ON s.id = p.source_id
+            WHERE p.source_id = ANY(CAST(:marked AS uuid[]))
+            UNION
+            SELECT p.source_id, s.name, p.status, p.total_chunks, p.embedded_chunks, p.last_updated
+            FROM sources s
+            JOIN ingest_chunk_progress p ON p.source_id = s.id
+            WHERE s.user_id = :user_id
+              AND p.status = 'active'
+              AND p.embedded_chunks < p.total_chunks
+        ) progress
+        ORDER BY last_updated ASC
         LIMIT :limit
         """,
-        {"user_id": user_id, "marked": list(by_source), "limit": PER_KIND_LIMIT},
+        {
+            "user_id": user_id,
+            "marked": [sid for sid in by_source if looks_like_uuid(sid)],
+            "limit": PER_KIND_LIMIT,
+        },
     )
     progress = {str(r["source_id"]): r for r in rows}
     out = []
@@ -479,16 +495,21 @@ def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
     end_at = _as_datetime(row.get("end_at"))
     if end_at is not None:
         stop = min(stop, end_at)
-    count, fire = 0, first
     try:
-        if fire < start:
-            fire = next_cron_run(row["cron"], row.get("timezone"), after=start - timedelta(seconds=1))
-        while fire < stop and count < MAX_OCCURRENCES:
-            count += 1
-            fire = next_cron_run(row["cron"], row.get("timezone"), after=fire)
+        if first >= start:
+            # The stored next run counts itself, then the cron from there.
+            if first >= stop:
+                return 0
+            rest = cron_runs(row["cron"], row.get("timezone"), after=first, until=stop, limit=MAX_OCCURRENCES - 1)
+            return 1 + len(rest)
+        return len(
+            cron_runs(
+                row["cron"], row.get("timezone"),
+                after=start - timedelta(seconds=1), until=stop, limit=MAX_OCCURRENCES,
+            )
+        )
     except ScheduleValidationError:
-        return max(count, 1)
-    return count
+        return 1
 
 
 def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, Any]]:
