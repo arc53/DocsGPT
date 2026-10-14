@@ -107,6 +107,16 @@ def _set_date(conn, conv_id: str, when: datetime) -> None:
     )
 
 
+class TestSearchForUser:
+    def test_matches_text_literally(self, pg_conn):
+        # A search box takes a substring: "_" and "%" are not wildcards.
+        repo = _repo(pg_conn)
+        repo.create("u1", "q4_report")
+        repo.create("u1", "q4-report")
+        assert [c["name"] for c in repo.search_for_user("u1", "q4_report")] == ["q4_report"]
+        assert repo.search_for_user("u1", "%") == []
+
+
 class TestListForUserKeyset:
     def test_orders_by_date_then_id_desc(self, pg_conn):
         repo = _repo(pg_conn)

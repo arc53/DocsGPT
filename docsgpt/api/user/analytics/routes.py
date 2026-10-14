@@ -16,6 +16,7 @@ from docsgpt.api.user.base import (
     generate_hourly_range,
     generate_minute_range,
 )
+from docsgpt.storage.db.base_repository import like_escape
 from docsgpt.storage.db.redaction import redact_secrets
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.request_traces import (
@@ -1309,12 +1310,7 @@ class GetUserLogs(Resource):
                 if level:
                     params["level"] = level
                 if search:
-                    escaped = (
-                        search.replace("\\", "\\\\")
-                        .replace("%", "\\%")
-                        .replace("_", "\\_")
-                    )
-                    params["search"] = f"%{escaped}%"
+                    params["search"] = f"%{like_escape(search)}%"
 
                 branch_sqls = []
                 for branch in branches:
