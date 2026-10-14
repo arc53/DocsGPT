@@ -1035,8 +1035,15 @@ class BaseAnswerResource:
             # The seed above covers t=0; the ticker takes over from the first
             # interval onwards, independently of whether anything is flowing.
             heartbeat_stop = _start_heartbeat_ticker()
-            # The sidebar's working mark and Activity › Now follow these.
-            if heartbeat_stop is not None and event_user_id and conversation_id:
+            # The sidebar's working mark and Activity › Now follow these. Only
+            # listed chats: API, /v1 and shared-agent answers run under the
+            # agent owner, and Now shows them as one row per agent instead.
+            if (
+                heartbeat_stop is not None
+                and event_user_id
+                and conversation_id
+                and visibility == "listed"
+            ):
                 publish_user_event(
                     event_user_id,
                     "message.started",

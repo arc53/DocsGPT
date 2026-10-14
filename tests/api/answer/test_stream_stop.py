@@ -36,7 +36,7 @@ def _chatty(chunks=200, gap=0.02):
     return _gen
 
 
-def _run(flask_app, gen, *, stop_after: float | None):
+def _run(flask_app, gen, *, stop_after: float | None, visibility: str = "listed"):
     from docsgpt.api.answer.routes import base as base_mod
     from docsgpt.api.answer.routes.base import BaseAnswerResource
 
@@ -68,6 +68,7 @@ def _run(flask_app, gen, *, stop_after: float | None):
                     user_api_key=None,
                     decoded_token={"sub": "u"},
                     should_persist=True,
+                    visibility=visibility,
                 )
             )
     return resource.conversation_service, out, published, cleared
@@ -95,3 +96,11 @@ class TestStartFinishEvents:
         kinds = [kind for _, kind, _ in published if kind.startswith("message.")]
         assert kinds == ["message.started", "message.finished"]
         assert all(payload["conversation_id"] == CONVERSATION_ID for _, kind, payload in published if kind.startswith("message."))
+
+    def test_hidden_streams_publish_nothing(self, mock_mongo_db, flask_app):
+        # API, /v1 and shared-agent answers run under the agent owner; their
+        # tabs must not count or refetch for each call.
+        _, _, published, _ = _run(
+            flask_app, _chatty(chunks=3, gap=0.0), stop_after=None, visibility="hidden"
+        )
+        assert [kind for _, kind, _ in published if kind.startswith("message.")] == []
