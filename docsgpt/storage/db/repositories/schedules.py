@@ -251,6 +251,8 @@ class SchedulesRepository:
         For a team editor's cross-agent list: a schedule created on an agent's
         Schedules tab is stored under the agent's owner. A member's own chat
         task on the agent (stored under that member) is not returned.
+        ``origin_conversation_name`` is always ``None``: the chat a schedule
+        came from is the owner's own, and its title stays with them.
 
         Args:
             agent_ids: Agent UUIDs.
@@ -267,10 +269,9 @@ class SchedulesRepository:
                 """
                 SELECT s.*, a.name AS agent_name, a.image AS agent_image,
                        a.user_id AS agent_user_id,
-                       c.name AS origin_conversation_name
+                       NULL AS origin_conversation_name
                 FROM schedules s
                 JOIN agents a ON a.id = s.agent_id AND a.user_id = s.user_id
-                LEFT JOIN conversations c ON c.id = s.origin_conversation_id
                 WHERE s.agent_id = ANY(CAST(:ids AS uuid[]))
                   AND s.trigger_type <> 'monitor'
                 ORDER BY s.created_at DESC

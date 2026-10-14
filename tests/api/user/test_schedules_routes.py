@@ -323,6 +323,21 @@ class TestListForUserTeamAgents:
         assert [r["instruction"] for r in rows] == ["team digest"]
         assert rows[0]["team"] is True
 
+    def test_the_owners_chat_name_stays_with_the_owner(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "editor")
+        conv = ConversationsRepository(pg_conn).create("owner1", "Confidential deal")
+        SchedulesRepository(pg_conn).create(
+            user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+            instruction="weekly check", cron="0 9 * * 1",
+            origin_conversation_id=str(conv["id"]), created_via="chat",
+        )
+        [row] = self._list(app, pg_conn)
+        assert row["team"] is True
+        assert row["origin_conversation_name"] is None
+
     def test_a_viewer_does_not_see_them(self, app, pg_conn):
         agent_id = _make_agent(pg_conn, "owner1")
         self._share(pg_conn, agent_id, "viewer")

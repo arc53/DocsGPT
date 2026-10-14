@@ -344,3 +344,19 @@ class TestListOwnedWithContext:
         )
         repo.create("u2", _insert_agent(pg_conn, "u2"), "recurring", "theirs", cron="* * * * *")
         assert repo.list_owned_with_context("u1") == []
+
+    def test_team_rows_leave_out_the_owners_chat_name(self, pg_conn):
+        # A team editor reads these rows; the chat that created the schedule
+        # is the owner's own and its title stays with them.
+        repo = SchedulesRepository(pg_conn)
+        agent = _insert_agent(pg_conn, "owner1")
+        conv = self._conversation(pg_conn, user_id="owner1", name="Confidential deal")
+        repo.create(
+            "owner1", agent, "recurring", "weekly check", cron="0 9 * * 1",
+            origin_conversation_id=conv, created_via="chat",
+        )
+        [team_row] = repo.list_for_agents_with_context([agent])
+        assert team_row["instruction"] == "weekly check"
+        assert team_row["origin_conversation_name"] is None
+        [own_row] = repo.list_owned_with_context("owner1")
+        assert own_row["origin_conversation_name"] == "Confidential deal"
