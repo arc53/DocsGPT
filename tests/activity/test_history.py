@@ -141,6 +141,17 @@ class TestFilters:
         assert {r["title"] for r in only["runs"]} == {"Inbox triage", "Prospect news scan"}
         assert [r["title"] for r in history.list_history(pg_conn, "u1", query="DIGEST")["runs"]] == ["Daily digest"]
 
+    def test_text_matches_literally(self, pg_conn):
+        # A search box takes a substring: "_" and "%" are not wildcards.
+        _schedule_run(pg_conn, name="q4_report")
+        _schedule_run(pg_conn, name="q4-report")
+
+        def titles(q: str) -> list:
+            return [r["title"] for r in history.list_history(pg_conn, "u1", query=q)["runs"]]
+
+        assert titles("q4_report") == ["q4_report"]
+        assert titles("%") == []
+
     def test_pages(self, pg_conn):
         for i in range(5):
             _schedule_run(pg_conn, minutes_ago=i + 1, name=f"run {i}")

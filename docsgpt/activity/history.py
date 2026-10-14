@@ -24,7 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from docsgpt.activity.labels import tool_labels
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 
 KINDS = ("schedule", "webhook", "workflow", "job", "monitor")
 STATUSES = ("success", "failed", "timeout", "skipped", "cancelled")
@@ -209,9 +209,10 @@ def list_history(
         params["status"] = status
     if query and query.strip():
         where.append(
-            "(title ILIKE :q OR agent_name ILIKE :q OR conversation_name ILIKE :q)"
+            "(title ILIKE :q ESCAPE '\\' OR agent_name ILIKE :q ESCAPE '\\' "
+            "OR conversation_name ILIKE :q ESCAPE '\\')"
         )
-        params["q"] = f"%{query.strip()}%"
+        params["q"] = f"%{like_escape(query.strip())}%"
     sql = (
         "SELECT * FROM (" + " UNION ALL ".join(parts) + ") runs"
         + (" WHERE " + " AND ".join(where) if where else "")
