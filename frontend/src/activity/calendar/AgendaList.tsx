@@ -1,4 +1,4 @@
-import { Clock, Radar, RefreshCw, Repeat } from 'lucide-react';
+import { Clock, RefreshCw, Repeat } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,7 @@ import {
   type FrequentBlock,
 } from './layout';
 import { eventTitle, syncSummary } from './labels';
+import MonitorChips from './MonitorChips';
 import type { CalendarEvent, EventState, MonitorRange } from './types';
 
 const BADGE: Partial<
@@ -86,23 +87,7 @@ export default function AgendaList({
 
   return (
     <div className="flex flex-col gap-6">
-      {monitors.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {monitors.map((monitor) => (
-            <button
-              key={monitor.monitor_id}
-              type="button"
-              onClick={() => onSelectMonitor(monitor)}
-              className="bg-muted hover:bg-accent inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
-            >
-              <Radar aria-hidden className="size-3 shrink-0" />
-              <span className="truncate">
-                {monitor.description || t('monitors.untitled')}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <MonitorChips monitors={monitors} onSelectMonitor={onSelectMonitor} />
       {filled.length === 0 ? (
         <Card variant="subtle" padding="lg">
           <EmptyState

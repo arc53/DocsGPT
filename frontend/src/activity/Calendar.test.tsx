@@ -207,6 +207,20 @@ describe('Calendar page', () => {
     expect(container.textContent).toContain('activity.now.syncBatch.daily');
   });
 
+  it('shows monitors in the month too, and hides them with their chip', async () => {
+    await render();
+    const month = Array.from(container.querySelectorAll('[role="radio"]')).find(
+      (b) => b.textContent === 'activity.calendar.views.month',
+    ) as HTMLElement;
+    await act(async () => month.click());
+    expect(container.textContent).toContain('Rotterdam congestion');
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'activity.calendar.monitors',
+    ) as HTMLButtonElement;
+    await act(async () => chip.click());
+    expect(container.textContent).not.toContain('Rotterdam congestion');
+  });
+
   it('asks again only when activity may have changed', async () => {
     const store = await render();
     const fetched = (reason: 'event' | 'poll') =>

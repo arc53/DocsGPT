@@ -244,6 +244,8 @@ export default function Calendar() {
         setAnchor(day);
         setView(isMobile ? 'agenda' : 'day');
       }}
+      monitors={monitors}
+      onSelectMonitor={openMonitor}
     />
   ) : view === 'agenda' ? (
     <AgendaList
