@@ -195,6 +195,36 @@ def _resolve_workflow_for_user(conn, workflow_value, user):
     return str(workflow["id"]), None
 
 
+def _workflow_taken(conn, workflow_id: str, agent_id: str | None = None):
+    """A 409 response when another agent already uses ``workflow_id``, else None.
+
+    A workflow belongs to one agent: deleting a workflow agent deletes its
+    workflow, and Activity names a run after the agent the workflow is on.
+
+    Args:
+        conn: An open connection.
+        workflow_id: The workflow's PG UUID.
+        agent_id: The agent being saved, which may already use it.
+
+    Returns:
+        The error response, or None when the workflow is free.
+    """
+    from sqlalchemy import text as _sql_text
+
+    taken = conn.execute(
+        _sql_text(
+            "SELECT 1 FROM agents WHERE workflow_id = CAST(:workflow_id AS uuid) "
+            "AND (CAST(:agent_id AS uuid) IS NULL OR id <> CAST(:agent_id AS uuid)) LIMIT 1"
+        ),
+        {"workflow_id": workflow_id, "agent_id": agent_id},
+    ).first()
+    if taken is None:
+        return None
+    return make_response(
+        jsonify({"success": False, "message": "This workflow belongs to another agent"}), 409,
+    )
+
+
 def _resolve_folder_id(conn, folder_id, user):
     """Resolve a folder id (UUID or legacy) to its PG UUID; error response otherwise."""
     if not folder_id:
@@ -857,6 +887,10 @@ class CreateAgent(Resource):
                             jsonify({"success": False, "message": "Workflow is required"}),
                             400,
                         )
+                    if pg_workflow_id is not None:
+                        taken = _workflow_taken(conn, pg_workflow_id)
+                        if taken is not None:
+                            return taken
 
                 # Resolve sources — only UUIDs accepted post-cutover.
                 source_id_resolved = None
@@ -1307,6 +1341,14 @@ class UpdateAgent(Resource):
                             return _denied(
                                 AccessDenied(403, "Only the owner can change this agent's workflow")
                             )
+                        # Checked only on a change, so an agent that already
+                        # shares its workflow (made before this check) saves.
+                        if pg_workflow_id is not None and pg_workflow_id != (
+                            str(current_workflow) if current_workflow else None
+                        ):
+                            taken = _workflow_taken(conn, pg_workflow_id, agent_id)
+                            if taken is not None:
+                                return taken
                         update_fields["workflow_id"] = pg_workflow_id
                     elif field == "prompt_id":
                         value = data["prompt_id"]
