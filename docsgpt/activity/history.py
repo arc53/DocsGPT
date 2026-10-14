@@ -131,7 +131,7 @@ _JOB = """
 
 _MONITOR = """
     SELECT 'monitor' AS kind, wk.id::text AS id,
-           COALESCE(wk.title, c.name) AS title,
+           COALESCE(NULLIF(wk.title, ''), c.name) AS title,
            c.agent_id::text AS agent_id, a.name AS agent_name,
            wk.conversation_id::text AS conversation_id, c.name AS conversation_name,
            wk.source AS trigger,

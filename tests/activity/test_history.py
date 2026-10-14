@@ -122,6 +122,19 @@ class TestKinds:
         ScheduleRunsRepository(pg_conn).update(str(run["id"]), {"status": "success", "finished_at": _now()})
         assert history.list_history(pg_conn, "u1")["runs"] == []
 
+    def test_a_monitor_without_a_title_takes_the_chats_name(self, pg_conn):
+        # conversation_wakes.title is NOT NULL, defaulting to ''.
+        conv = str(ConversationsRepository(pg_conn).create("u1", "Halvorsen QBR")["id"])
+        pg_conn.execute(
+            text(
+                "INSERT INTO conversation_wakes (user_id, conversation_id, source, status, delivered_at, dedupe_key) "
+                "VALUES ('u1', CAST(:c AS uuid), 'monitor', 'delivered', now(), 'monitor:1')"
+            ),
+            {"c": conv},
+        )
+        [run] = history.list_history(pg_conn, "u1")["runs"]
+        assert run["title"] == "Halvorsen QBR"
+
     def test_a_workflow_run_of_a_webhook_is_listed_once(self, pg_conn):
         agent, run = _workflow_run(pg_conn)
         _trace(pg_conn, agent=agent, workflow_run_id=run)
