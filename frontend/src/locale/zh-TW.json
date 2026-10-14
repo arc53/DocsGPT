@@ -3499,7 +3499,13 @@
       "step": "第 {{step}} 步",
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
       "apiRequests_one": "{{count}} 個請求",
-      "apiRequests_other": "{{count}} 個請求"
+      "apiRequests_other": "{{count}} 個請求",
+      "reading": "正在讀取內容",
+      "operation": {
+        "upload": "上傳",
+        "sync": "同步",
+        "reingest": "重新索引"
+      }
     },
     "calendar": {
       "label": "行事曆",

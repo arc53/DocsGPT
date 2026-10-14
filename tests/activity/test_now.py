@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -239,6 +240,73 @@ class TestIngest:
         assert len(ingests) == 1
         assert ingests[0]["title"] == "Carrier handbook 2026.pdf"
         assert ingests[0]["progress"] == pytest.approx(34 / 120)
+        # No marker (the run started before markers, or Redis lost it): no start time.
+        assert ingests[0]["started_at"] is None
+        assert ingests[0]["stage"] == "embedding"
+
+    def _marker(self, source_id: str, age: int = 90, **extra) -> dict:
+        return {
+            "kind": "ingest", "id": f"ingest:{source_id}", "source_id": source_id,
+            "name": "Rate cards Q4", "operation": "upload",
+            "started_at": datetime.now(timezone.utc).timestamp() - age, **extra,
+        }
+
+    def test_a_new_upload_shows_while_its_files_are_read(self, pg_conn, monkeypatch):
+        source_id = str(uuid.uuid4())
+        monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(source_id)])
+        snap = activity_now.build_now(pg_conn, "u1")
+        assert _kinds(snap) == ["ingest"]
+        item = snap["running"][0]
+        assert item["source_id"] == source_id
+        assert item["title"] == "Rate cards Q4"
+        assert item["operation"] == "upload"
+        assert item["stage"] == "reading"
+        assert item["progress"] is None
+        assert item["started_at"]
+
+    def test_a_new_upload_embedding_has_chunks_and_a_start(self, pg_conn, monkeypatch):
+        source_id = str(uuid.uuid4())
+        IngestChunkProgressRepository(pg_conn).init_progress(source_id, 200)
+        monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(source_id)])
+        item = activity_now.build_now(pg_conn, "u1")["running"][0]
+        assert item["stage"] == "embedding"
+        assert item["total_chunks"] == 200
+        assert item["title"] == "Rate cards Q4"
+        assert item["started_at"]
+
+    def test_a_resync_ignores_the_last_runs_progress(self, pg_conn, monkeypatch):
+        source = SourcesRepository(pg_conn).create("Carrier handbook 2026.pdf", user_id="u1")
+        source_id = str(source["id"])
+        IngestChunkProgressRepository(pg_conn).init_progress(source_id, 120)
+        pg_conn.execute(
+            text(
+                "UPDATE ingest_chunk_progress SET embedded_chunks = 120, "
+                "last_updated = now() - interval '1 day' WHERE source_id = CAST(:id AS uuid)"
+            ),
+            {"id": source_id},
+        )
+        monkeypatch.setattr(
+            activity_now, "list_runs", lambda user_id: [self._marker(source_id, name=None, operation="sync")]
+        )
+        item = activity_now.build_now(pg_conn, "u1")["running"][0]
+        assert item["stage"] == "reading"
+        assert item["progress"] is None
+        assert item["operation"] == "sync"
+        assert item["title"] == "Carrier handbook 2026.pdf"
+
+    def test_a_stalled_ingest_is_not_running(self, pg_conn, monkeypatch):
+        source_id = str(uuid.uuid4())
+        IngestChunkProgressRepository(pg_conn).init_progress(source_id, 200)
+        pg_conn.execute(
+            text("UPDATE ingest_chunk_progress SET status = 'stalled' WHERE source_id = CAST(:id AS uuid)"),
+            {"id": source_id},
+        )
+        monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(source_id)])
+        assert activity_now.build_now(pg_conn, "u1")["running"] == []
+
+    def test_an_ingest_marker_is_not_a_webhook_run(self, pg_conn, monkeypatch):
+        monkeypatch.setattr(activity_now, "list_runs", lambda user_id: [self._marker(str(uuid.uuid4()))])
+        assert _kinds(activity_now.build_now(pg_conn, "u1")) == ["ingest"]
 
 
 class TestWebhookRuns:

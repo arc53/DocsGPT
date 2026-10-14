@@ -3671,7 +3671,13 @@
       "apiRequests_one": "{{count}} запрос",
       "apiRequests_other": "{{count}} запросов",
       "apiRequests_few": "{{count}} запроса",
-      "apiRequests_many": "{{count}} запросов"
+      "apiRequests_many": "{{count}} запросов",
+      "reading": "читает содержимое",
+      "operation": {
+        "upload": "Загрузка",
+        "sync": "Синхронизация",
+        "reingest": "Переиндексация"
+      }
     },
     "calendar": {
       "label": "Календарь",

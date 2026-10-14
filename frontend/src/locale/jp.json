@@ -3499,7 +3499,13 @@
       "step": "ステップ {{step}}",
       "stepOf": "ステップ {{step}}/{{total}}",
       "apiRequests_one": "{{count}} 件のリクエスト",
-      "apiRequests_other": "{{count}} 件のリクエスト"
+      "apiRequests_other": "{{count}} 件のリクエスト",
+      "reading": "コンテンツを読み込み中",
+      "operation": {
+        "upload": "アップロード",
+        "sync": "同期",
+        "reingest": "再インデックス"
+      }
     },
     "calendar": {
       "label": "カレンダー",

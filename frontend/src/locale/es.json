@@ -3511,7 +3511,13 @@
       "step": "paso {{step}}",
       "stepOf": "paso {{step}} de {{total}}",
       "apiRequests_one": "{{count}} solicitud",
-      "apiRequests_other": "{{count}} solicitudes"
+      "apiRequests_other": "{{count}} solicitudes",
+      "reading": "leyendo el contenido",
+      "operation": {
+        "upload": "Subida",
+        "sync": "Sincronización",
+        "reingest": "Reindexación"
+      }
     },
     "calendar": {
       "label": "Calendario",

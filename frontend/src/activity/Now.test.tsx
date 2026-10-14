@@ -72,9 +72,21 @@ const SNAPSHOT: NowSnapshot = {
       id: 's1',
       source_id: 's1',
       title: 'Carrier handbook 2026.pdf',
+      operation: 'sync',
+      stage: 'embedding',
       progress: 0.28,
       embedded_chunks: 34,
       total_chunks: 120,
+    },
+    {
+      kind: 'ingest',
+      id: 's2',
+      source_id: 's2',
+      title: 'Rate cards Q4',
+      operation: 'upload',
+      stage: 'reading',
+      progress: null,
+      started_at: new Date(Date.now() - 95_000).toISOString(),
     },
   ],
   needs_you: [
@@ -213,6 +225,19 @@ describe('Now page', () => {
     expect(row.textContent).not.toContain('activity.now.stop');
   });
 
+  it('says what an ingest is doing and how long it has run', async () => {
+    await render();
+    const [embedding, reading] = Array.from(
+      container.querySelectorAll('li[data-kind="ingest"]'),
+    ) as HTMLElement[];
+    expect(embedding.textContent).toContain('activity.now.operation.sync');
+    expect(embedding.textContent).toContain('activity.now.chunks');
+    expect(reading.textContent).toContain('activity.now.operation.upload');
+    expect(reading.textContent).toContain('activity.now.reading');
+    expect(reading.textContent).toContain('1:35');
+    expect(reading.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
   it('stops a running answer', async () => {
     await render();
     await act(async () => button('activity.now.stop').click());
@@ -236,6 +261,6 @@ describe('Now page', () => {
     const kinds = Array.from(container.querySelectorAll('li[data-kind]')).map(
       (li) => li.getAttribute('data-kind'),
     );
-    expect(kinds).toEqual(['ingest']);
+    expect(kinds).toEqual(['ingest', 'ingest']);
   });
 });

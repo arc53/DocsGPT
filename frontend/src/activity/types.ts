@@ -53,10 +53,12 @@ export type RunningItem = {
   scheduled_for?: string | null;
   /** ingest */
   source_id?: string;
+  /** What started it: `upload`, `sync` or `reingest` (null when unknown). */
+  operation?: string | null;
+  /** `reading` the content, then `embedding` its chunks. */
+  stage?: 'reading' | 'embedding';
   embedded_chunks?: number;
   total_chunks?: number;
-  /** ingest: when the index last moved (it has no start time). */
-  updated_at?: string | null;
 };
 
 export type ApprovalItem = {

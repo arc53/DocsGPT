@@ -3530,7 +3530,13 @@
       "step": "step {{step}}",
       "stepOf": "step {{step}} of {{total}}",
       "apiRequests_one": "{{count}} request",
-      "apiRequests_other": "{{count}} requests"
+      "apiRequests_other": "{{count}} requests",
+      "reading": "reading the content",
+      "operation": {
+        "upload": "Upload",
+        "sync": "Sync",
+        "reingest": "Re-index"
+      }
     },
     "calendar": {
       "label": "Calendar",

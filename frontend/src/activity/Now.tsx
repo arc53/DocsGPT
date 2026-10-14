@@ -275,12 +275,18 @@ export default function Now() {
       case 'ingest':
         return meta(
           kind,
-          item.total_chunks
-            ? t('activity.now.chunks', {
-                done: item.embedded_chunks ?? 0,
-                total: item.total_chunks,
-              })
-            : null,
+          item.operation &&
+            t(`activity.now.operation.${item.operation}`, {
+              defaultValue: '',
+            }),
+          item.stage === 'reading'
+            ? t('activity.now.reading')
+            : item.total_chunks
+              ? t('activity.now.chunks', {
+                  done: item.embedded_chunks ?? 0,
+                  total: item.total_chunks,
+                })
+              : null,
         );
       default:
         return meta(

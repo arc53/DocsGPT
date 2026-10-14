@@ -6,8 +6,10 @@ Two kinds live here:
   connection closes, so a Stop from another page sets a flag the stream's
   heartbeat thread polls; the stream then ends as a client abort would,
   saving what it has.
-- **Webhook run markers.** A webhook run is a Celery task with no database row
-  until it finishes, so the worker marks it here for the Now page.
+- **Run markers.** A webhook run is a Celery task with no database row until
+  it finishes, so the worker marks it here for the Now page. An ingest has no
+  row of its own until its chunks are embedding (and a new upload has no
+  source row until it ends), so its queued event marks it here too.
 
 Every helper is best-effort: without Redis, a stop request reports failure and
 markers are simply not listed.
@@ -29,8 +31,16 @@ STOP_TTL_SECONDS = 15 * 60
 
 #: Key prefix of a chat answer's stop request.
 _STOP_PREFIX = "activity:stop:"
-#: Hash of a user's in-flight webhook runs: field = run id, value = JSON.
+#: Hash of a user's in-flight runs: field = run id, value = JSON.
 _RUNS_PREFIX = "activity:runs:"
+
+#: The longest an ingest marker lasts. Ingest tasks have no time limit; a
+#: dead ingest is caught sooner by the reconciler marking its progress
+#: stalled (30 idle minutes), so this only bounds one that dies before its
+#: chunks start embedding.
+INGEST_MARKER_TTL_SECONDS = 6 * 3600
+
+_INGEST_END_EVENTS = frozenset({"source.ingest.completed", "source.ingest.failed"})
 
 
 def request_stop(message_id: str) -> bool:
@@ -104,7 +114,10 @@ def mark_run_started(user_id: str, run_id: str, info: Dict[str, Any], *, ttl_sec
     key = f"{_RUNS_PREFIX}{user_id}"
     try:
         redis.hset(key, run_id, json.dumps(value))
-        redis.expire(key, ttl_seconds)
+        # The hash holds runs of every kind: only ever lengthen its life, so
+        # a short webhook marker can't drop a long ingest's.
+        if redis.ttl(key) < ttl_seconds:
+            redis.expire(key, ttl_seconds)
     except Exception:
         logger.exception("activity: marking run %s failed", run_id)
 
@@ -152,3 +165,36 @@ def list_runs(user_id: str, *, now: Optional[float] = None) -> List[Dict[str, An
         if isinstance(item, dict) and float(item.get("expires_at") or 0) > current:
             out.append(item)
     return sorted(out, key=lambda item: item.get("started_at") or 0)
+
+
+def track_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> None:
+    """Mark an ingest when it is queued and clear it when it ends.
+
+    Called for every published event; only ``source.ingest.*`` ones with a
+    ``source_id`` count. Every ingest path (upload, remote, connector,
+    re-index and sync) publishes these, the end ones including the poison
+    guard's failure.
+
+    Args:
+        user_id: The source's owner.
+        event_type: The event's type.
+        payload: The event's payload.
+    """
+    source_id = payload.get("source_id") if isinstance(payload, dict) else None
+    if not source_id or not event_type.startswith("source.ingest."):
+        return
+    run_id = f"ingest:{source_id}"
+    if event_type == "source.ingest.queued":
+        mark_run_started(
+            user_id,
+            run_id,
+            {
+                "kind": "ingest",
+                "source_id": str(source_id),
+                "name": payload.get("name") or payload.get("job_name") or payload.get("filename"),
+                "operation": payload.get("operation"),
+            },
+            ttl_seconds=INGEST_MARKER_TTL_SECONDS,
+        )
+    elif event_type in _INGEST_END_EVENTS:
+        mark_run_finished(user_id, run_id)

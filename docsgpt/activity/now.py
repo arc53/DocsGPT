@@ -246,56 +246,86 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     ]
 
 
-def _running_ingests(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+def _marker_started(marker: Dict[str, Any]) -> Optional[str]:
+    started = marker.get("started_at")
+    if started is None:
+        return None
+    return datetime.fromtimestamp(float(started), tz=timezone.utc).isoformat()
+
+
+def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Knowledge being indexed: each source's marker and its chunk progress.
+
+    The marker (set when the ingest is queued) gives the start, the name and
+    what kind of ingest it is; it is the only trace of a new upload, which has
+    no source row until it ends, while its files are being read. The progress
+    row, once chunks are embedding, gives how far along it is. A source with
+    progress but no marker (Redis lost it) still shows, without a start.
+    """
+    by_source = {
+        str(marker["source_id"]): marker
+        for marker in markers
+        if marker.get("kind") == "ingest" and marker.get("source_id")
+    }
     rows = _rows(
         conn,
         """
-        SELECT s.id, s.name, p.total_chunks, p.embedded_chunks, p.last_updated
-        FROM sources s
-        JOIN ingest_chunk_progress p ON p.source_id = s.id
-        WHERE s.user_id = :user_id
-          AND p.status <> 'stalled'
-          AND p.embedded_chunks < p.total_chunks
+        SELECT p.source_id, s.name, p.status, p.total_chunks, p.embedded_chunks, p.last_updated
+        FROM ingest_chunk_progress p
+        LEFT JOIN sources s ON s.id = p.source_id
+        WHERE (s.user_id = :user_id OR CAST(p.source_id AS text) = ANY(:marked))
+          AND (p.embedded_chunks < p.total_chunks OR CAST(p.source_id AS text) = ANY(:marked))
         ORDER BY p.last_updated ASC
         LIMIT :limit
         """,
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+        {"user_id": user_id, "marked": list(by_source), "limit": PER_KIND_LIMIT},
     )
+    progress = {str(r["source_id"]): r for r in rows}
     out = []
-    for r in rows:
-        total = int(r.get("total_chunks") or 0)
-        done = int(r.get("embedded_chunks") or 0)
+    for source_id in list(by_source) + [sid for sid in progress if sid not in by_source]:
+        marker = by_source.get(source_id) or {}
+        row = progress.get(source_id)
+        name = (row or {}).get("name")
+        started = _as_datetime(_marker_started(marker))
+        updated = _as_datetime((row or {}).get("last_updated"))
+        if row is not None and started is not None and updated is not None and updated < started:
+            # A re-index or sync: the row is the last run's until this one
+            # starts embedding.
+            row = None
+        if row is not None and row.get("status") == "stalled":
+            continue
+        total = int(row.get("total_chunks") or 0) if row else 0
+        done = int(row.get("embedded_chunks") or 0) if row else 0
         out.append(
             {
                 "kind": "ingest",
-                "id": _str(r["id"]),
-                "source_id": _str(r["id"]),
-                "title": r.get("name"),
+                "id": source_id,
+                "source_id": source_id,
+                "title": marker.get("name") or name,
+                "operation": marker.get("operation"),
+                "stage": "embedding" if total else "reading",
                 "progress": (done / total) if total else None,
                 "embedded_chunks": done,
                 "total_chunks": total,
-                "updated_at": _iso(r.get("last_updated")),
+                "started_at": _marker_started(marker),
             }
         )
     return out
 
 
-def _running_webhooks(user_id: str) -> List[Dict[str, Any]]:
+def _running_webhooks(markers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     out = []
-    for marker in list_runs(user_id):
-        started = marker.get("started_at")
+    for marker in markers:
+        if marker.get("kind", "webhook") != "webhook":
+            continue
         out.append(
             {
-                "kind": marker.get("kind") or "webhook",
+                "kind": "webhook",
                 "id": _str(marker.get("id")),
                 "title": marker.get("agent_name"),
                 "agent_id": _str(marker.get("agent_id")),
                 "agent_name": marker.get("agent_name"),
-                "started_at": (
-                    datetime.fromtimestamp(float(started), tz=timezone.utc).isoformat()
-                    if started is not None
-                    else None
-                ),
+                "started_at": _marker_started(marker),
             }
         )
     return out
@@ -566,9 +596,10 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     running += _running_api(conn, user_id)
     running += _running_jobs(conn, user_id)
     running += _running_schedule_runs(conn, user_id)
-    running += _running_webhooks(user_id)
+    markers = list_runs(user_id)
+    running += _running_webhooks(markers)
     running += _fold_workflows(running, _running_workflows(conn, user_id))
-    running += _running_ingests(conn, user_id)
+    running += _running_ingests(conn, user_id, markers)
 
     approvals = _approvals(conn, user_id)
     needs_you = approvals + _autopaused_schedules(conn, user_id)
