@@ -3524,6 +3524,7 @@
       "label": "日历",
       "subtitle": "计划中的运行、按结果显示的过往运行，以及正在监控的内容。",
       "loadError": "无法加载日历",
+      "runLoadError": "无法打开此次运行。请重试。",
       "todayButton": "今天",
       "previous": "上一页",
       "next": "下一页",

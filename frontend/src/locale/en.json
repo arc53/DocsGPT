@@ -3556,6 +3556,7 @@
       "label": "Calendar",
       "subtitle": "Planned runs, past runs by how they went, and what is being watched.",
       "loadError": "Couldn't load the calendar",
+      "runLoadError": "Couldn't open the run. Try again.",
       "todayButton": "Today",
       "previous": "Previous",
       "next": "Next",

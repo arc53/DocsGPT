@@ -3537,6 +3537,7 @@
       "label": "Kalender",
       "subtitle": "Geplante Ausführungen, vergangene nach Ergebnis und was beobachtet wird.",
       "loadError": "Der Kalender konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
       "todayButton": "Heute",
       "previous": "Zurück",
       "next": "Weiter",

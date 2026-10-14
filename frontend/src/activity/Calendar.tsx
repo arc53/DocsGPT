@@ -27,6 +27,7 @@ import activityService from '../api/services/activityService';
 import schedulesService from '../api/services/schedulesService';
 import { useMediaQuery } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { showActionToast } from '../notifications/actionToastSlice';
 import type { AppDispatch } from '../store';
 import { intlLocale } from '../utils/dateTimeUtils';
 import { selectActivityRevision } from './activitySlice';
@@ -80,8 +81,13 @@ export default function Calendar() {
   const [showMonitors, setShowMonitors] = useState(true);
   const [showSyncs, setShowSyncs] = useState(true);
   const [hidePast, setHidePast] = useState(false);
-  const [data, setData] = useState<PlannedWindow | null>(null);
-  const [failed, setFailed] = useState(false);
+  // The last window loaded, and the window whose load failed: data for
+  // another window is not shown (a new week loads, then fails, on its own).
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    data: PlannedWindow;
+  } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [selection, setSelection] = useState<
     | { kind: 'event'; event: CalendarEvent }
@@ -107,16 +113,20 @@ export default function Calendar() {
     [view, anchor],
   );
 
+  const windowKey = `${start.toISOString()}|${end.toISOString()}`;
+  const data = loaded?.key === windowKey ? loaded.data : null;
+  const failed = failedKey === windowKey;
+
   useEffect(() => {
     let cancelled = false;
-    setFailed(false);
+    setFailedKey(null);
     activityService
       .planned(start, end, token)
       .then((next) => {
-        if (!cancelled) setData(next);
+        if (!cancelled) setLoaded({ key: windowKey, data: next });
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) setFailedKey(windowKey);
       });
     return () => {
       cancelled = true;
@@ -187,7 +197,12 @@ export default function Calendar() {
         );
         setActiveRun(run);
       } catch {
-        setFailed(true);
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('activity.calendar.runLoadError'),
+          }),
+        );
       }
       return;
     }
@@ -209,6 +224,7 @@ export default function Calendar() {
     failed ? (
       <EmptyState
         tone="destructive"
+        illustration="none"
         title={t('activity.calendar.loadError')}
         onRetry={() => setReload((n) => n + 1)}
       />

@@ -3537,6 +3537,7 @@
       "label": "Calendario",
       "subtitle": "Ejecuciones previstas, ejecuciones pasadas según su resultado y lo que se vigila.",
       "loadError": "No se pudo cargar el calendario",
+      "runLoadError": "No se pudo abrir la ejecución. Inténtalo de nuevo.",
       "todayButton": "Hoy",
       "previous": "Anterior",
       "next": "Siguiente",

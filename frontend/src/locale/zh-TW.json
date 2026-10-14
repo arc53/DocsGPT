@@ -3525,6 +3525,7 @@
       "label": "行事曆",
       "subtitle": "排定的執行、依結果顯示的過往執行，以及正在監控的內容。",
       "loadError": "無法載入行事曆",
+      "runLoadError": "無法開啟此次執行。請重試。",
       "todayButton": "今天",
       "previous": "上一頁",
       "next": "下一頁",

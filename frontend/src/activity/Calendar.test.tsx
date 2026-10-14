@@ -258,6 +258,52 @@ describe('Calendar page', () => {
     expect(panel.textContent).toContain('–');
   });
 
+  const next = () =>
+    container.querySelector<HTMLButtonElement>(
+      'button[aria-label="activity.calendar.next"]',
+    )!;
+
+  it('shows loading, not an empty week, while another week loads', async () => {
+    await render();
+    activity.planned.mockReturnValueOnce(new Promise(() => undefined));
+    await act(async () => next().click());
+    expect(
+      container.querySelector('[data-slot="loading-state"]'),
+    ).not.toBeNull();
+    expect(slotButton('Daily support digest')).toBeUndefined();
+  });
+
+  it('shows the error with Retry when another week fails to load', async () => {
+    await render();
+    activity.planned.mockRejectedValueOnce(new Error('down'));
+    await act(async () => next().click());
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('activity.calendar.loadError');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    // The next week loads: no error, no spinner (its slots are elsewhere).
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[data-slot="loading-state"]')).toBeNull();
+  });
+
+  it('keeps the week when a refresh of it fails', async () => {
+    const store = await render();
+    activity.planned.mockRejectedValueOnce(new Error('down'));
+    await act(async () => {
+      store.dispatch(
+        loadActivityNow.fulfilled(
+          { running: [] } as unknown as NowSnapshot,
+          'r2',
+          'event',
+        ),
+      );
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(slotButton('Daily support digest')).toBeDefined();
+  });
+
   it('opens a planned slot in the schedule panel', async () => {
     await render();
     await act(async () => slotButton('Daily support digest').click());
