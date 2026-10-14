@@ -68,11 +68,7 @@ export type ActivityRefresh = 'event' | 'progress' | 'poll';
 
 /** The snapshot without what is running, which the other pages don't show. */
 const settledKey = (now: NowSnapshot) =>
-  JSON.stringify({
-    ...now,
-    running: undefined,
-    stats: { ...now.stats, running: undefined },
-  });
+  JSON.stringify({ ...now, running: undefined });
 
 export const loadActivityNow = createAsyncThunk<
   NowSnapshot,

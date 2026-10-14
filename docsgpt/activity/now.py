@@ -648,8 +648,9 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     Returns:
         ``{running, needs_you, up_next, approval_conversations,
         failed_conversations, stats}``. ``running`` and ``needs_you`` items
-        carry a ``kind``; ``stats`` holds ``running``, ``needs_you``,
-        ``next_24h`` and ``failed_24h``.
+        carry a ``kind``; ``stats`` holds ``next_24h`` and ``failed_24h``.
+        The running and needs-you counts are the client's: it adds what it
+        alone knows (answers started since, connections to sign in to).
     """
     current = now or datetime.now(timezone.utc)
     running: List[Dict[str, Any]] = []
@@ -677,9 +678,6 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
         "approval_conversations": [item["conversation_id"] for item in approvals],
         "failed_conversations": _failed_conversations(conn, user_id),
         "stats": {
-            # An API row stands for its requests.
-            "running": sum(item.get("count", 1) for item in running),
-            "needs_you": len(needs_you),
             "next_24h": sum(item["runs_in_window"] for item in up_next),
             "failed_24h": _failed_last_day(conn, user_id),
         },

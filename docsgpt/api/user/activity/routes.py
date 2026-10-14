@@ -44,7 +44,7 @@ class ActivityNow(Resource):
         description=(
             "What runs for the caller now (chat answers, background jobs, scheduled, webhook and "
             "workflow runs, ingests), what waits for them (tool approvals, schedules paused after "
-            "failures), what runs in the next 24 hours, and the counts the sidebar shows."
+            "failures), what runs in the next 24 hours, and the 24-hour counts."
         ),
     )
     def get(self):

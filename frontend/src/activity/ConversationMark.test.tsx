@@ -31,7 +31,7 @@ const store = (marks: Marks) =>
           up_next: [],
           approval_conversations: marks.approval ? ['c1'] : [],
           failed_conversations: marks.failed ? ['c1'] : [],
-          stats: { running: 0, needs_you: 0, next_24h: 0, failed_24h: 0 },
+          stats: { next_24h: 0, failed_24h: 0 },
         },
         loading: false,
         error: false,

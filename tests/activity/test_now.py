@@ -73,7 +73,6 @@ class TestRunningChats:
         assert chats[0]["message_id"] == message_id
         assert chats[0]["conversation_id"] == conv
         assert chats[0]["title"] == "Nordhaven renewal prep"
-        assert snap["stats"]["running"] == 1
 
     def test_skips_stale_hidden_and_finished_answers(self, pg_conn):
         _message(pg_conn, _chat(pg_conn), "streaming", heartbeat_age=600)
@@ -120,8 +119,6 @@ class TestApiRequests:
         assert rows[0]["agent_name"] == "Support bot"
         assert rows[0]["count"] == 3
         assert rows[0]["started_at"]
-        # The badge counts requests, not rows.
-        assert snap["stats"]["running"] == 3
 
     def test_skips_other_owners_agents_and_finished_answers(self, pg_conn):
         theirs = _agent(pg_conn, "Their bot", user_id="u2")

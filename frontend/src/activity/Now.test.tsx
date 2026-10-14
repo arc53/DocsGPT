@@ -14,6 +14,10 @@ vi.mock('react-i18next', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+import {
+  sseEventReceived,
+  type SSEEvent,
+} from '../notifications/notificationsSlice';
 import activityReducer, { loadActivityNow } from './activitySlice';
 import Now from './Now';
 import type { NowSnapshot } from './types';
@@ -131,7 +135,7 @@ const SNAPSHOT: NowSnapshot = {
   ],
   approval_conversations: ['c2'],
   failed_conversations: [],
-  stats: { running: 2, needs_you: 2, next_24h: 1, failed_24h: 1 },
+  stats: { next_24h: 1, failed_24h: 1 },
 };
 
 const makeStore = () => {
@@ -200,6 +204,41 @@ describe('Now page', () => {
     expect(container.textContent).toContain('activity.now.approve');
     expect(container.textContent).toContain('activity.now.pausedAfter');
     expect(container.textContent).toContain('activity.now.reconnect');
+  });
+
+  it('counts what runs as the sidebar does, a chat just started included', async () => {
+    const store = makeStore();
+    await act(async () => {
+      root.render(
+        <Provider store={store}>
+          <TooltipProvider>
+            <MemoryRouter>
+              <Now />
+            </MemoryRouter>
+          </TooltipProvider>
+        </Provider>,
+      );
+    });
+    const stat = (label: string) =>
+      Array.from(container.querySelectorAll('p')).find(
+        (p) => p.textContent === label,
+      )?.parentElement?.textContent;
+    // An API row stands for its requests.
+    const requests = SNAPSHOT.running.reduce(
+      (sum, item) => sum + (item.count ?? 1),
+      0,
+    );
+    expect(stat('activity.now.stats.running')).toContain(String(requests));
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'e',
+          type: 'message.started',
+          payload: { conversation_id: 'c9' },
+        } as SSEEvent),
+      );
+    });
+    expect(stat('activity.now.stats.running')).toContain(String(requests + 1));
   });
 
   it('lists running work and what runs next', async () => {

@@ -34,7 +34,7 @@ const snapshot = (overrides: Partial<NowSnapshot> = {}): NowSnapshot => ({
   up_next: [],
   approval_conversations: ['c3'],
   failed_conversations: ['c4'],
-  stats: { running: 3, needs_you: 0, next_24h: 0, failed_24h: 0 },
+  stats: { next_24h: 0, failed_24h: 0 },
   ...overrides,
 });
 
@@ -202,7 +202,7 @@ describe('activitySlice', () => {
           ...snapshot().running,
           { kind: 'chat', id: 'm9', title: 'New', conversation_id: 'c9' },
         ],
-        stats: { running: 4, needs_you: 0, next_24h: 0, failed_24h: 0 },
+        stats: { next_24h: 0, failed_24h: 0 },
       });
       expect(revision(fetched(first, started, 'progress'))).toBe(
         revision(first),

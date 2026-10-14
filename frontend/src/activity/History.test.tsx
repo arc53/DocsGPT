@@ -152,7 +152,7 @@ describe('History page', () => {
     up_next: [],
     approval_conversations: [],
     failed_conversations: [],
-    stats: { running: 0, needs_you: 0, next_24h: 0, failed_24h: 0 },
+    stats: { next_24h: 0, failed_24h: 0 },
   };
   const newSnapshot = (store: Awaited<ReturnType<typeof render>>) =>
     act(async () => {

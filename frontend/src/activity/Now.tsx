@@ -54,6 +54,7 @@ import {
   selectActivityError,
   selectActivityNow,
 } from './activitySlice';
+import { useActivitySummary } from './ActivityNavBadge';
 import { formatElapsed, formatRunTime, workflowStep } from './format';
 import { useClock } from './useClock';
 import {
@@ -155,6 +156,7 @@ export default function Now() {
   const failed = useSelector(selectActivityError);
   const connections = useSelector(selectConnections);
   const monitors = useSelector(selectMonitors);
+  const summary = useActivitySummary();
   const clock = useClock();
   const [filter, setFilter] = useState<Filter>('all');
   // Rows whose Stop / Cancel / Resume is on its way.
@@ -195,7 +197,6 @@ export default function Now() {
       : snapshot.running.filter((item) =>
           FILTER_KINDS[filter].includes(item.kind),
         );
-  const needsYouCount = snapshot.needs_you.length + reconnects.length;
   const firstApproval = snapshot.needs_you.find(
     (item): item is ApprovalItem => item.kind === 'approval',
   );
@@ -638,7 +639,7 @@ export default function Now() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <StatCard
             label={t('activity.now.stats.running')}
-            value={snapshot.running.length}
+            value={summary.running}
             sub={
               background > 0
                 ? t('activity.now.stats.background', { count: background })
@@ -647,8 +648,8 @@ export default function Now() {
           />
           <StatCard
             label={t('activity.now.stats.needsYou')}
-            value={needsYouCount}
-            valueTone={needsYouCount > 0 ? 'warning' : undefined}
+            value={summary.needsYou}
+            valueTone={summary.needsYou > 0 ? 'warning' : undefined}
             sub={
               firstApproval?.expires_at
                 ? t('activity.now.stats.approvalExpires', {
@@ -683,12 +684,12 @@ export default function Now() {
           />
         </div>
 
-        {needsYouCount > 0 && (
+        {summary.needsYou > 0 && (
           <section>
             <SectionHeader
               className="mb-3"
               title={t('activity.now.needsYou')}
-              count={needsYouCount}
+              count={summary.needsYou}
             />
             <Card variant="subtle" padding="none" className="overflow-hidden">
               <ListRows>

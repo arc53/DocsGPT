@@ -1574,7 +1574,7 @@
     },
     "/api/activity/now": {
       "get": {
-        "description": "What runs for the caller now (chat answers, background jobs, scheduled, webhook and workflow runs, ingests), what waits for them (tool approvals, schedules paused after failures), what runs in the next 24 hours, and the counts the sidebar shows.\nReturns:\n    A Flask response with ``running``, ``needs_you``, ``up_next``,\n    ``approval_conversations``, ``failed_conversations`` and ``stats``.",
+        "description": "What runs for the caller now (chat answers, background jobs, scheduled, webhook and workflow runs, ingests), what waits for them (tool approvals, schedules paused after failures), what runs in the next 24 hours, and the 24-hour counts.\nReturns:\n    A Flask response with ``running``, ``needs_you``, ``up_next``,\n    ``approval_conversations``, ``failed_conversations`` and ``stats``.",
         "operationId": "get_activity_now",
         "responses": {
           "200": {

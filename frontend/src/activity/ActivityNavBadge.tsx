@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 
 import { cn } from '@/lib/utils';
 
-import { selectConnectionsNeedAttention } from '../connectors/connectorsSlice';
+import { selectSignInNeededCount } from '../connectors/connectorsSlice';
 import { selectActivityNow, selectLiveConversations } from './activitySlice';
 
 export type ActivitySummary = {
@@ -13,11 +13,16 @@ export type ActivitySummary = {
   failed: boolean;
 };
 
-/** The counts the sidebar shows for Activity. */
+/**
+ * The Activity counts, one definition for the sidebar and Now: running is
+ * what Now lists (an API row standing for its requests) plus chats that
+ * started since the snapshot; needs-you is its items plus each connection to
+ * sign in to again.
+ */
 export function useActivitySummary(): ActivitySummary {
   const now = useSelector(selectActivityNow);
   const live = useSelector(selectLiveConversations);
-  const reconnect = useSelector(selectConnectionsNeedAttention);
+  const reconnects = useSelector(selectSignInNeededCount);
   const runningChats = new Set(
     (now?.running ?? [])
       .filter((item) => item.kind === 'chat' && item.conversation_id)
@@ -29,8 +34,10 @@ export function useActivitySummary(): ActivitySummary {
   ).length;
   const needs = now?.needs_you ?? [];
   return {
-    running: (now?.running.length ?? 0) + started,
-    needsYou: needs.length + (reconnect ? 1 : 0),
+    running:
+      (now?.running ?? []).reduce((sum, item) => sum + (item.count ?? 1), 0) +
+      started,
+    needsYou: needs.length + reconnects,
     failed: needs.some((item) => item.kind === 'schedule_paused'),
   };
 }

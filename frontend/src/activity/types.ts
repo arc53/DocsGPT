@@ -127,8 +127,6 @@ export type NowSnapshot = {
   approval_conversations: string[];
   failed_conversations: string[];
   stats: {
-    running: number;
-    needs_you: number;
     next_24h: number;
     failed_24h: number;
   };

@@ -15,7 +15,11 @@ import type { NeedsYouItem } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const store = (needs: NeedsYouItem[], running = 2, reconnect = false) =>
+const store = (
+  needs: NeedsYouItem[],
+  running = 2,
+  reconnect: boolean | number = false,
+) =>
   configureStore({
     reducer: {
       activity: () => ({
@@ -30,8 +34,6 @@ const store = (needs: NeedsYouItem[], running = 2, reconnect = false) =>
           approval_conversations: [],
           failed_conversations: [],
           stats: {
-            running,
-            needs_you: needs.length,
             next_24h: 0,
             failed_24h: 0,
           },
@@ -41,7 +43,9 @@ const store = (needs: NeedsYouItem[], running = 2, reconnect = false) =>
         live: {},
       }),
       connectors: () => ({
-        connections: reconnect ? [{ status: 'reconnect_needed' }] : [],
+        connections: Array.from({ length: Number(reconnect) }, () => ({
+          status: 'reconnect_needed',
+        })),
       }),
     },
   });
@@ -100,6 +104,33 @@ describe('ActivityNavBadge', () => {
     render(store([approval, paused]));
     expect(dot()?.className).toContain('bg-destructive');
     expect(container.textContent).toContain('activity.nav.needsYou:2');
+  });
+
+  it("counts an agent's API requests, not its one row", () => {
+    const s = store([], 1);
+    const base = s.getState().activity;
+    const withApi = configureStore({
+      reducer: {
+        activity: () => ({
+          ...base,
+          now: {
+            ...base.now,
+            running: [
+              ...base.now.running,
+              { kind: 'api', id: 'api:a1', title: null, count: 5 },
+            ],
+          },
+        }),
+        connectors: () => ({ connections: [] }),
+      },
+    });
+    render(withApi);
+    expect(container.textContent).toContain('activity.nav.running:6');
+  });
+
+  it('counts each connection to reconnect, as Now does', () => {
+    render(store([approval], 0, 3));
+    expect(container.textContent).toContain('activity.nav.needsYou:4');
   });
 
   it('adds a chat whose answer started since the snapshot, once', () => {
