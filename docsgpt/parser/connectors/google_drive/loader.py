@@ -698,9 +698,13 @@ class GoogleDriveLoader(BaseConnectorLoader):
 class _WalkStats:
     """Counts the items a walk could not read (``failed``) or left out on purpose (``skipped``).
 
-    Items that Google will never serve (a file type it cannot download, an
-    export over its size limit, a deleted shortcut target) count as skipped:
-    trying again would not help, so they do not block the sync fingerprint.
+    Refusals that retrying would not change (a deleted item, an unreadable
+    folder, an export over Google's size limit) count as skipped and do not
+    block the sync fingerprint on their own. An item the walk could not read
+    is absent from the fingerprint, and every sync walks again, so its files
+    change the fingerprint once it can be read. A refused *download* is
+    different, since the fingerprint walk never downloads: ``download_to_directory``
+    withholds the fingerprint unless the refusal is about the file's content.
     """
 
     def __init__(self) -> None:

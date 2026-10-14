@@ -1198,6 +1198,36 @@ class TestSyncFingerprint:
         assert before != after
 
     @pytest.mark.unit
+    @pytest.mark.parametrize("target", ["sub", "s1"])
+    def test_access_granted_later_changes_it(self, drive_loader, target):
+        # A folder or shortcut target refused for access is left out of the
+        # walk, not failed. The preflight walks again on every sync, so once
+        # access is granted its files join the fingerprint and the sync runs.
+        tree = copy.deepcopy(self.TREE)
+        tree["sub"] = {"name": "Locked", "mimeType": FOLDER, "parent": "root"}
+        tree["s1"] = {"name": "link", "mimeType": SHORTCUT, "parent": "root", "shortcutDetails": {"targetId": "t1"}}
+        tree["t1"] = {"name": "t.txt", "mimeType": "text/plain", "parent": "elsewhere"}
+        tree["f3"] = {"name": "c.txt", "mimeType": "text/plain", "parent": "sub"}
+        loader, drive = drive_loader(copy.deepcopy(tree))
+        if target == "sub":
+            original_list = drive.list
+
+            def list_or_refuse(q, **kwargs):
+                if "'sub'" in q:
+                    raise _http_error(403, "insufficientFilePermissions")
+                return original_list(q=q, **kwargs)
+
+            drive.list = list_or_refuse
+        else:
+            drive.get_errors = {"t1": _http_error(404, "notFound")}
+        refused = loader.sync_fingerprint(self.CONFIG)
+
+        granted, _ = self._fingerprint(drive_loader, copy.deepcopy(tree))
+
+        assert refused is not None
+        assert refused != granted
+
+    @pytest.mark.unit
     def test_none_when_part_of_the_selection_unreadable(self, drive_loader):
         fingerprint, _ = self._fingerprint(
             drive_loader, copy.deepcopy(self.TREE), get_errors={"root": _http_error(500, "backendError")}
