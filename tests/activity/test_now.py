@@ -493,6 +493,22 @@ class TestFailures:
         )
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
 
+    def test_an_answer_the_user_stopped_is_not_a_failure(self, pg_conn):
+        conv = _chat(pg_conn)
+        message_id = _message(pg_conn, conv, "failed")
+        pg_conn.execute(
+            text("UPDATE conversations SET unread_at = now() WHERE id = CAST(:id AS uuid)"), {"id": conv},
+        )
+        assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
+        pg_conn.execute(
+            text(
+                "UPDATE conversation_messages SET message_metadata = message_metadata || "
+                "'{\"error_code\": \"stopped\"}'::jsonb WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": message_id},
+        )
+        assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == []
+
 
 class TestOccurrences:
     """Counting a schedule's runs in a window, against one-at-a-time stepping."""

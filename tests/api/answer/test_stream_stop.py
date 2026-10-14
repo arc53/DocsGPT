@@ -59,6 +59,11 @@ def _frame_type(frame: str):
         return None
 
 
+def _frame_payload(frame: str) -> dict:
+    """The JSON payload of one SSE frame."""
+    return json.loads(next(line for line in frame.splitlines() if line.startswith("data: "))[len("data: "):])
+
+
 def _frame_id(frame: str) -> int:
     """The ``id:`` of one SSE frame."""
     return int(next(line for line in frame.splitlines() if line.startswith("id: "))[4:])
@@ -138,6 +143,34 @@ class TestStopFromActivity:
     def test_a_stop_before_any_text_ends_with_the_error(self, mock_mongo_db, flask_app):
         _, out, _, _ = _run(flask_app, _thinking(), stop_after=0.2)
         assert _frame_type(out[-1]) == "error"
+
+    def test_a_stop_before_any_text_is_named_a_stop(self, mock_mongo_db, flask_app):
+        # Not a disconnect: the chat says the user stopped it, and the stored
+        # row carries the code so the sidebar does not mark the chat failed.
+        service, out, _, _ = _run(flask_app, _thinking(), stop_after=0.2)
+        assert _frame_payload(out[-1])["code"] == "stopped"
+        failed = [
+            call for call in service.finalize_message.call_args_list if call.kwargs.get("status") == "failed"
+        ]
+        assert len(failed) == 1
+        assert failed[0].kwargs["metadata"]["error_code"] == "stopped"
+
+    def test_a_disconnect_before_any_text_is_still_a_disconnect(self, mock_mongo_db, flask_app):
+        gone = threading.Event()
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"metadata": {}}
+
+        service, _, _, _ = _run(flask_app, _gen, stop_after=None, client_gone=gone)
+        failed = [
+            call for call in service.finalize_message.call_args_list if call.kwargs.get("status") == "failed"
+        ]
+        assert len(failed) == 1
+        assert (failed[0].kwargs.get("metadata") or {}).get("error_code") != "stopped"
 
     def test_a_gone_client_gets_nothing_more(self, mock_mongo_db, flask_app):
         # /v1: the route saw the client leave; nothing is written after.

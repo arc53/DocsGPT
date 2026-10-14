@@ -608,7 +608,8 @@ def _failed_last_day(conn: Connection, user_id: str) -> int:
 def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
     """Unread chats whose latest answer, or latest background job, failed.
 
-    Cleared the way the unread mark is: by opening the chat.
+    An answer its user stopped before it wrote anything is failed too, but
+    not counted. Cleared the way the unread mark is: by opening the chat.
     """
     rows = conn.execute(
         text(
@@ -620,7 +621,11 @@ def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
                 (SELECT status FROM background_jobs j
                  WHERE j.conversation_id = c.id
                  ORDER BY j.created_at DESC LIMIT 1) IN ('failed', 'lost')
-                OR (SELECT status FROM conversation_messages m
+                OR (SELECT CASE
+                               WHEN m.message_metadata ->> 'error_code' = 'stopped' THEN 'stopped'
+                               ELSE m.status
+                           END
+                    FROM conversation_messages m
                     WHERE m.conversation_id = c.id
                     ORDER BY m.position DESC LIMIT 1) = 'failed'
               )

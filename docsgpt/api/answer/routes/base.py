@@ -1811,7 +1811,14 @@ class BaseAnswerResource:
                         # — mark the row failed so the reconciler doesn't
                         # need to sweep it, and journal an ``error`` so a
                         # reconnecting client surfaces the same failure
-                        # the UI would show on a live error.
+                        # the UI would show on a live error. A Stop from
+                        # Activity says so: its code keeps the chat out of
+                        # the failed ones the sidebar marks.
+                        stopped = isinstance(stream_exit, StreamStopped)
+                        failure_metadata = dict(query_metadata or {})
+                        if stopped:
+                            failure_metadata["error"] = "Stopped by its user before any response was produced."
+                            failure_metadata["error_code"] = "stopped"
                         try:
                             self.conversation_service.finalize_message(
                                 reserved_message_id,
@@ -1820,9 +1827,9 @@ class BaseAnswerResource:
                                 sources=source_log_docs,
                                 tool_calls=tool_calls,
                                 model_id=model_id or self.default_model_id,
-                                metadata=query_metadata if query_metadata else None,
+                                metadata=failure_metadata or None,
                                 status="failed",
-                                error=ConnectionError(
+                                error=None if stopped else ConnectionError(
                                     "client disconnected before response was persisted"
                                 ),
                             )
@@ -1831,11 +1838,19 @@ class BaseAnswerResource:
                                 f"Failed to mark aborted message failed: {fin_err}",
                                 exc_info=True,
                             )
-                        terminal = {
-                            "type": "error",
-                            "error": "Stream aborted before any response was produced.",
-                            "code": "client_disconnect",
-                        }
+                        terminal = (
+                            {
+                                "type": "error",
+                                "error": "Stopped before any response was produced.",
+                                "code": "stopped",
+                            }
+                            if stopped
+                            else {
+                                "type": "error",
+                                "error": "Stream aborted before any response was produced.",
+                                "code": "client_disconnect",
+                            }
+                        )
                         record_event(
                             reserved_message_id,
                             sequence_no,

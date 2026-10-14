@@ -2157,7 +2157,8 @@
       "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
       "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
       "serverError": "Please try again later. We apologize for any inconvenience.",
-      "clientDisconnect": "The response stopped before anything was produced. Try again."
+      "clientDisconnect": "The response stopped before anything was produced. Try again.",
+      "stopped": "You stopped this answer before it wrote anything. Try again to get one."
     },
     "reasoning": "Reasoning",
     "wikiWrite": {

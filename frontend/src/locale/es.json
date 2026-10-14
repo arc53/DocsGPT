@@ -2157,7 +2157,8 @@
       "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
       "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
       "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
-      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo."
+      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo.",
+      "stopped": "Detuviste esta respuesta antes de que escribiera nada. Inténtalo de nuevo para obtener una."
     },
     "reasoning": "Razonamiento",
     "wikiWrite": {
