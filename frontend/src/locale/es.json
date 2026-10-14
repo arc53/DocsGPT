@@ -1842,8 +1842,8 @@
           "connect": "Conectar a Google Drive",
           "validateFailed": "No se pudo comprobar el inicio de sesión. Inténtalo de nuevo.",
           "pickerFailed": "No se pudo abrir el selector de archivos. Inténtalo de nuevo.",
-          "selectedFiles": "Archivos seleccionados",
-          "selectFiles": "Seleccionar archivos",
+          "selectedFiles": "Elementos seleccionados",
+          "selectFiles": "Seleccionar archivos o carpetas",
           "noFilesSelected": "Aún no hay archivos ni carpetas seleccionados.",
           "removeItem": "Quitar {{name}}"
         }

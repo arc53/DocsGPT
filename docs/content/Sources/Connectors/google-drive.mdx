@@ -1,7 +1,7 @@
 ---
 title: Google Drive Connector
 description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components'
@@ -69,9 +69,23 @@ DocsGPT requests the `https://www.googleapis.com/auth/drive.readonly` scope, whi
 
 ### Step 4: Restart and Use
 
-Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files to process.
+Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files and folders to process.
 
 </Steps>
+
+## Files, folders and shared drives
+
+- **Folders**: a selected folder is ingested with everything inside it, the folders inside it included, and keeps its layout. A sync picks up files added to it later.
+- **Shared drives**: Google's file picker has a **Shared drives** tab, and DocsGPT's own picker lists shared drives you are a member of.
+- **Shortcuts**: a shortcut is followed to the file or folder it points to, and saved under the shortcut's name. Something reached twice, such as a shortcut to a folder that is already selected, is read once.
+- **Names**: two files with the same name in one folder are kept apart as `report.pdf` and `report_1.pdf`. Google Docs, Sheets and Slides are converted to `.docx`, `.xlsx` and `.pptx`.
+- **Skipped files**: types DocsGPT cannot read (Forms, Drawings, archives, video) are left out. So are files Google will not export, such as a Google Doc over Google's 10 MB export limit. One skipped or failed file does not stop the rest of the folder.
+
+Calls to Google are retried, waiting longer after each attempt, when Google rate-limits them or has a temporary error.
+
+### Sync
+
+A scheduled sync, or **Sync now**, first compares each file's name, location and modified time with the last ingest. When nothing changed, it keeps the existing index and downloads nothing. Otherwise it downloads and indexes the whole selection again. Changing the source's chunking settings also counts as a change. If a file could not be downloaded last time, the next sync reprocesses the source in full.
 
 ## Troubleshooting
 
