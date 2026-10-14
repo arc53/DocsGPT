@@ -106,6 +106,15 @@ class TestIngestEvents:
         flags.track_ingest_event("u1", "source.ingest.queued", {"source_id": "s1", **payload})
         assert flags.list_runs("u1")[0]["name"] == name
 
+    def test_a_retry_marks_the_ingest_again(self, redis):
+        # A failed attempt clears the marker; Celery's retry publishes no
+        # ``queued``, so the worker marks the ingest itself.
+        flags.track_ingest_event("u1", "source.ingest.queued", {"source_id": "s1", "job_name": "Rates"})
+        flags.track_ingest_event("u1", "source.ingest.failed", {"source_id": "s1"})
+        flags.mark_ingest_running("u1", {"source_id": "s1", "job_name": "Rates", "operation": "upload"})
+        runs = flags.list_runs("u1")
+        assert [(r["id"], r["name"]) for r in runs] == [("ingest:s1", "Rates")]
+
     def test_a_failure_clears(self, redis):
         flags.track_ingest_event("u1", "source.ingest.queued", {"source_id": "s1"})
         flags.track_ingest_event("u1", "source.ingest.failed", {"source_id": "s1"})

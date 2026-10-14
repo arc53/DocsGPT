@@ -219,18 +219,35 @@ def track_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -
     source_id = payload.get("source_id") if isinstance(payload, dict) else None
     if not source_id or not event_type.startswith("source.ingest."):
         return
-    run_id = f"ingest:{source_id}"
     if event_type == "source.ingest.queued":
-        mark_run_started(
-            user_id,
-            run_id,
-            {
-                "kind": "ingest",
-                "source_id": str(source_id),
-                "name": payload.get("name") or payload.get("job_name") or payload.get("filename"),
-                "operation": payload.get("operation"),
-            },
-            ttl_seconds=INGEST_MARKER_TTL_SECONDS,
-        )
+        mark_ingest_running(user_id, payload)
     elif event_type in _INGEST_END_EVENTS:
-        mark_run_finished(user_id, run_id)
+        mark_run_finished(user_id, f"ingest:{source_id}")
+
+
+def mark_ingest_running(user_id: str, payload: Dict[str, Any]) -> None:
+    """Mark an ingest as running, from its ``source.ingest.queued`` payload.
+
+    The ``queued`` event marks the first attempt. A failed attempt clears the
+    marker, and Celery's retry publishes no ``queued`` (the upload toast would
+    go back to queued), so the worker calls this itself on every retry.
+
+    Args:
+        user_id: The source's owner.
+        payload: The ``queued`` payload: ``source_id``, a name (``name``,
+            ``job_name`` or ``filename``) and ``operation``.
+    """
+    source_id = payload.get("source_id") if isinstance(payload, dict) else None
+    if not source_id:
+        return
+    mark_run_started(
+        user_id,
+        f"ingest:{source_id}",
+        {
+            "kind": "ingest",
+            "source_id": str(source_id),
+            "name": payload.get("name") or payload.get("job_name") or payload.get("filename"),
+            "operation": payload.get("operation"),
+        },
+        ttl_seconds=INGEST_MARKER_TTL_SECONDS,
+    )
