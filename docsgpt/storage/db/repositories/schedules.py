@@ -8,7 +8,7 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 _ALLOWED_UPDATES = frozenset(
@@ -242,6 +242,42 @@ class SchedulesRepository:
                 """
             ),
             {"user_id": user_id, "limit": int(limit)},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
+    def list_for_agents_with_context(self, agent_ids: Iterable[str], *, limit: int = 500) -> list[dict]:
+        """The agent owners' schedules of these agents, with the same extra keys.
+
+        For a team editor's cross-agent list: a schedule created on an agent's
+        Schedules tab is stored under the agent's owner. A member's own chat
+        task on the agent (stored under that member) is not returned.
+
+        Args:
+            agent_ids: Agent UUIDs.
+            limit: Maximum rows returned.
+
+        Returns:
+            Rows shaped like ``list_owned_with_context``.
+        """
+        ids = [str(a) for a in agent_ids if looks_like_uuid(str(a))]
+        if not ids:
+            return []
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                       a.user_id AS agent_user_id,
+                       c.name AS origin_conversation_name
+                FROM schedules s
+                JOIN agents a ON a.id = s.agent_id AND a.user_id = s.user_id
+                LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+                WHERE s.agent_id = ANY(CAST(:ids AS uuid[]))
+                  AND s.trigger_type <> 'monitor'
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"ids": ids, "limit": int(limit)},
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 

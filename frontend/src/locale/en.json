@@ -2807,7 +2807,18 @@
           "oct": "October",
           "nov": "November",
           "dec": "December"
-        }
+        },
+        "weekdays": "Every weekday at {{time}}",
+        "weekends": "Every weekend day at {{time}}",
+        "days": "Every {{days}} at {{time}}",
+        "hourly": "Every hour",
+        "hourlyAt": "Every hour at :{{minute}}",
+        "hourlyRange": "Every hour from {{from}} to {{to}}",
+        "hourlyRangeWeekdays": "Every hour from {{from}} to {{to}} on weekdays",
+        "everyMinutes_one": "Every {{count}} minute",
+        "everyMinutes_other": "Every {{count}} minutes",
+        "everyHours_one": "Every {{count}} hour",
+        "everyHours_other": "Every {{count}} hours"
       },
       "runLog": {
         "when": "When",
@@ -3416,7 +3427,8 @@
       "agentLabel": "Agent",
       "agentPlaceholder": "Choose an agent",
       "agentSearch": "Search agents",
-      "agentEmpty": "No agents you can schedule"
+      "agentEmpty": "No agents you can schedule",
+      "teamAgent": "A teammate's agent you manage through a team"
     },
     "marks": {
       "failed": "Something failed",
@@ -3533,7 +3545,8 @@
         "running": "Running",
         "success": "Succeeded",
         "failed": "Failed",
-        "paused": "Paused or skipped"
+        "paused": "Paused or skipped",
+        "missed": "Missed"
       },
       "truncated": "Some very frequent schedules show only their first runs in this range.",
       "watching": "Watching",
@@ -3554,7 +3567,8 @@
         "success": "Succeeded",
         "failed": "Failed",
         "skipped": "Skipped",
-        "timeout": "Timed out"
+        "timeout": "Timed out",
+        "missed": "Missed"
       },
       "block_one": "{{name}} ×{{count}}",
       "block_other": "{{name}} ×{{count}}",
@@ -3574,7 +3588,8 @@
       "dayRuns": "This day's runs",
       "queued": "Run started. It shows in Now and in the run log.",
       "openSchedule": "Open schedule",
-      "timezone": "Schedule time zone"
+      "timezone": "Schedule time zone",
+      "missedNote": "This run never started: the scheduler was down or behind at the time. Run now to catch up, or check that the worker runs with beat."
     },
     "history": {
       "label": "History",

@@ -38,6 +38,10 @@ FREQUENT_SECONDS = 60 * 60
 #: Past runs one window lists.
 MAX_RUNS = 5_000
 
+#: A past slot with no run is "missed" once it is this late: the dispatcher
+#: ticks every minute and a run row appears as soon as it claims the slot.
+MISSED_GRACE = timedelta(minutes=10)
+
 
 class WindowError(ValueError):
     """The requested window is missing, malformed, reversed or too wide."""
@@ -104,6 +108,7 @@ def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, 
         """
         SELECT s.id, s.name, s.instruction, s.agent_id, s.trigger_type, s.status,
                s.cron, s.timezone, s.run_at, s.next_run_at, s.end_at,
+               s.created_at, s.updated_at,
                s.origin_conversation_id, a.name AS agent_name,
                c.name AS origin_conversation_name
         FROM schedules s
@@ -200,6 +205,18 @@ def _planned_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple
     return times, False
 
 
+def _past_slots(row: Dict[str, Any], start: datetime, end: datetime) -> Tuple[List[datetime], bool]:
+    """Fire times a schedule should have had in ``[start, end)``.
+
+    A one-time task counts only while it is still waiting (``next_run_at``
+    set): once it ran, its run row covers the slot.
+    """
+    if row.get("trigger_type") == "once":
+        fire = _as_datetime(row.get("next_run_at"))
+        return ([fire] if fire is not None and start <= fire < end else []), False
+    return _planned_slots({**row, "trigger_type": "recurring"}, start, end)
+
+
 def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
     rows = _rows(
         conn,
@@ -274,7 +291,8 @@ def build_planned(
 
     Returns:
         ``{from, to, events, monitors, syncs, truncated}``. Each event has a
-        ``state``: ``planned`` or ``paused`` for a future slot, else the run's
+        ``state``: ``planned`` or ``paused`` for a future slot, ``missed`` for
+        a past slot of an active schedule that has no run, else the run's
         status (``pending``, ``running``, ``success``, ``failed``,
         ``skipped``, ``timeout``), plus ``run_id`` for a run.
     """
@@ -302,6 +320,7 @@ def build_planned(
 
     truncated: List[str] = []
     future_start = max(start, current)
+    missed_until = min(end, current - MISSED_GRACE)
     for row in _schedules(conn, user_id, end):
         slots, cut = _planned_slots(row, future_start, end)
         if cut:
@@ -312,6 +331,26 @@ def build_planned(
             if (str(row["id"]), _minute(at)) in taken:
                 continue
             events.append({**_base(row, frequent), "at": _iso(at), "state": state})
+        # Past slots that never got a run: the scheduler was down or behind.
+        # Only for active schedules (pause history isn't kept, so a paused
+        # one's quiet slots may be its pause), and only since its last edit
+        # (an older cron fired at other times).
+        if row.get("status") != "active":
+            continue
+        since = max(
+            start,
+            _as_datetime(row.get("updated_at")) or start,
+            _as_datetime(row.get("created_at")) or start,
+        )
+        if since >= missed_until:
+            continue
+        past, cut = _past_slots(row, since, missed_until)
+        if cut:
+            truncated.append(str(row["id"]))
+        for at in past:
+            if (str(row["id"]), _minute(at)) in taken:
+                continue
+            events.append({**_base(row, frequent), "at": _iso(at), "state": "missed"})
 
     events.sort(key=lambda event: event["at"])
     return {
@@ -320,5 +359,5 @@ def build_planned(
         "events": events,
         "monitors": _monitors(conn, user_id, start, end),
         "syncs": _syncs(conn, user_id),
-        "truncated": truncated,
+        "truncated": list(dict.fromkeys(truncated)),
     }

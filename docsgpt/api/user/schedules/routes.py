@@ -27,7 +27,13 @@ from docsgpt.agents.scheduler_utils import (
     resolve_timezone,
 )
 from docsgpt.api import api
-from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    allowed_actions,
+    require,
+    settings_many,
+)
+from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -253,12 +259,34 @@ def _publish_schedule_event(
         )
 
 
+def _team_schedule_agents(conn, user_id: str) -> list[str]:
+    """Agents shared to the caller's teams on which their role may manage schedules.
+
+    Args:
+        conn: Open database connection.
+        user_id: The caller.
+
+    Returns:
+        Agent ids (the caller's own agents are not included).
+    """
+    grants = visible_with_access(conn, user_id, "agent")
+    if not grants:
+        return []
+    switches = settings_many(conn, "agent", grants.keys())
+    return [
+        agent_id
+        for agent_id, access in grants.items()
+        if "manage_schedules" in allowed_actions("agent", access, switches.get(agent_id))
+    ]
+
+
 @schedules_ns.route("/schedules")
 class UserSchedules(Resource):
     @api.doc(
         description=(
-            "List the caller's own schedules across every agent, including "
-            "agentless ones created in chat. Monitors are not included."
+            "List the caller's schedules across every agent: their own, agentless ones created in "
+            "chat, and those of teammates' agents they manage through a team (team: true). "
+            "Monitors are not included."
         ),
     )
     @_safe_route
@@ -268,13 +296,20 @@ class UserSchedules(Resource):
         Returns:
             A Flask response with ``schedules``: schedule rows plus
             ``agent_name``, ``agent_image`` (a signed URL, never a storage
-            path) and ``origin_conversation_name``.
+            path), ``origin_conversation_name`` and ``team`` (a schedule of a
+            teammate's agent the caller manages through a team).
         """
         user_id = _user_id()
         if not user_id:
             return _err("unauthorized", 401)
         with db_readonly() as conn:
-            rows = SchedulesRepository(conn).list_owned_with_context(user_id)
+            repo = SchedulesRepository(conn)
+            own = repo.list_owned_with_context(user_id)
+            team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
+        seen = {str(row["id"]) for row in own}
+        rows = [{**row, "team": False} for row in own] + [
+            {**row, "team": True} for row in team if str(row["id"]) not in seen
+        ]
         out = []
         for row in rows:
             image = row.get("agent_image")

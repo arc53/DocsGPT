@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from docsgpt.activity.labels import tool_labels
 from docsgpt.storage.db.base_repository import row_to_dict
 
 KINDS = ("schedule", "webhook", "workflow", "job", "monitor")
@@ -217,6 +218,10 @@ def list_history(
         + " ORDER BY at DESC, id DESC LIMIT :limit OFFSET :offset"
     )
     rows = [row_to_dict(r) for r in conn.execute(text(sql), params).fetchall()]
+    # A job's title is its tool's id; show the name the user knows it by.
+    labels = tool_labels(conn, user_id, [r["title"] for r in rows if r.get("kind") == "job"])
     for row in rows:
         row.pop("_id", None)
+        if row.get("kind") == "job" and row.get("title") in labels:
+            row["title"] = labels[row["title"]]
     return {"runs": rows[:limit], "has_more": len(rows) > limit}

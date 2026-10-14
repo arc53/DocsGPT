@@ -1,7 +1,7 @@
 ---
 title: Agent Schedules
 description: Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
-lastUpdated: 2026-10-13
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components';
@@ -58,7 +58,7 @@ If you later mark one of a tool's actions as needing approval, schedules that do
 
 **Activity → Schedules** in the sidebar lists every schedule you own, across all your agents, grouped by agent. Tasks the assistant set up in a chat without an agent are grouped last under **Created in chat**, each with a link to its chat. The page has the same **Recurring** and **One-time** tabs, row actions and run log as an agent's Schedules tab. **New schedule** there asks you to choose the agent first.
 
-A schedule you create on a teammate's agent as an editor belongs to the agent's owner (see [Who owns a schedule](#who-owns-a-schedule-and-whose-quota-it-uses)), so it's listed on that agent's Schedules tab rather than in your Activity list.
+It also lists the schedules of teammates' agents you manage through a team (an **Editor** badge marks those groups). Those schedules belong to the agent's owner (see [Who owns a schedule](#who-owns-a-schedule-and-whose-quota-it-uses)); a teammate's own one-time task set from a chat stays private to them.
 
 ## Run now and the run log
 
@@ -111,7 +111,7 @@ Schedules have their own endpoints. Call them with a session token or a [persona
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/schedules` | List your own schedules across every agent, agentless ones included, with `agent_name`, `agent_image` and `origin_conversation_name` |
+| `GET /api/schedules` | List your schedules across every agent: your own, agentless ones, and those of teammates' agents you manage (`team: true`), with `agent_name`, `agent_image` and `origin_conversation_name` |
 | `GET /api/agents/<agent_id>/schedules` | List an agent's schedules |
 | `POST /api/agents/<agent_id>/schedules` | Create a schedule |
 | `GET /api/agents/<agent_id>/schedules/stats?days=30` | Runs, failures and tokens over a window |

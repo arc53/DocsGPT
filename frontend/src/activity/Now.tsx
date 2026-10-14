@@ -241,7 +241,7 @@ export default function Now() {
       case 'job':
         return meta(
           item.job_kind === 'code_exec' ? t('activity.kind.code') : kind,
-          item.tool_name,
+          item.tool_label ?? item.tool_name,
           item.agent_name,
         );
       case 'schedule':

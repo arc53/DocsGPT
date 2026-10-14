@@ -1,3 +1,4 @@
+import en from '../../locale/en.json';
 import i18next from 'i18next';
 import { describe, expect, it } from 'vitest';
 
@@ -316,7 +317,7 @@ describe('formatCron', () => {
   });
 
   it('falls back to custom for unsupported cron', () => {
-    expect(formatCron('0 9 * * 1-5')).toBe('Custom: 0 9 * * 1-5');
+    expect(formatCron('5 4 1-7 * 2')).toBe('Custom: 5 4 1-7 * 2');
   });
 
   it('returns empty string for null/undefined', () => {
@@ -326,8 +327,8 @@ describe('formatCron', () => {
 });
 
 describe('formatCron with a translate function', () => {
-  // The English locale strings (agents.schedules.cron) must read exactly like
-  // the untranslated fallback.
+  // The English locale strings (agents.schedules.cron, read from en.json) must
+  // read exactly like the untranslated fallback.
   const t = i18next.createInstance();
   void t.init({
     lng: 'en',
@@ -335,40 +336,7 @@ describe('formatCron with a translate function', () => {
     resources: {
       en: {
         translation: {
-          agents: {
-            schedules: {
-              cron: {
-                daily: 'Daily at {{time}}',
-                weekly: 'Weekly on {{day}} at {{time}}',
-                monthly: 'Monthly on day {{day}} at {{time}}',
-                yearly: 'Yearly on {{month}} {{day}} at {{time}}',
-                custom: 'Custom: {{expression}}',
-                dayNames: {
-                  sun: 'Sunday',
-                  mon: 'Monday',
-                  tue: 'Tuesday',
-                  wed: 'Wednesday',
-                  thu: 'Thursday',
-                  fri: 'Friday',
-                  sat: 'Saturday',
-                },
-                monthNames: {
-                  jan: 'January',
-                  feb: 'February',
-                  mar: 'March',
-                  apr: 'April',
-                  may: 'May',
-                  jun: 'June',
-                  jul: 'July',
-                  aug: 'August',
-                  sep: 'September',
-                  oct: 'October',
-                  nov: 'November',
-                  dec: 'December',
-                },
-              },
-            },
-          },
+          agents: { schedules: { cron: en.agents.schedules.cron } },
         },
       },
     },
@@ -381,7 +349,52 @@ describe('formatCron with a translate function', () => {
     '0 10 15 * *',
     '0 8 15 3 *',
     '0 9 * * 1-5',
+    '30 10 * * 0,6',
+    '0 9 * * 1,3,5',
+    '0 * * * *',
+    '15 * * * *',
+    '0 8-18 * * *',
+    '0 8-18 * * 1-5',
+    '*/15 * * * *',
+    '0 */6 * * *',
+    '5 4 1-7 * 2',
   ])('matches the English fallback for %s', (cron) => {
     expect(formatCron(cron, t.t)).toBe(formatCron(cron));
+  });
+});
+
+describe('formatCron common patterns', () => {
+  it.each([
+    ['0 15 * * 1-5', 'Every weekday at 3:00 PM'],
+    ['0 7 * * MON-FRI', 'Every weekday at 7:00 AM'],
+    ['30 10 * * 0,6', 'Every weekend day at 10:30 AM'],
+    ['0 9 * * 1,3,5', 'Every Monday, Wednesday and Friday at 9:00 AM'],
+    ['0 * * * *', 'Every hour'],
+    ['15 * * * *', 'Every hour at :15'],
+    ['0 8-18 * * *', 'Every hour from 8:00 AM to 6:00 PM'],
+    ['0 8-18 * * 1-5', 'Every hour from 8:00 AM to 6:00 PM on weekdays'],
+    ['*/15 * * * *', 'Every 15 minutes'],
+    ['0 */6 * * *', 'Every 6 hours'],
+  ])('reads %s as "%s"', (expression, label) => {
+    expect(formatCron(expression)).toBe(label);
+  });
+
+  it('still falls back for shapes it cannot read', () => {
+    expect(formatCron('5 4 1-7 * 2')).toBe('Custom: 5 4 1-7 * 2');
+  });
+
+  it('keeps reading the form’s own shapes as before', () => {
+    expect(formatCron('0 9 * * 1')).toBe('Weekly on Monday at 9:00 AM');
+  });
+
+  it('translates the new patterns', () => {
+    const t = ((key: string, opts?: Record<string, unknown>) =>
+      `${key}${opts ? JSON.stringify(opts) : ''}`) as never;
+    expect(formatCron('0 15 * * 1-5', t)).toContain(
+      'agents.schedules.cron.weekdays',
+    );
+    expect(formatCron('*/15 * * * *', t)).toContain(
+      'agents.schedules.cron.everyMinutes',
+    );
   });
 });

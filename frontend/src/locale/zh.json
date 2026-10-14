@@ -2794,7 +2794,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "每个工作日 {{time}}",
+        "weekends": "每个周末 {{time}}",
+        "days": "每{{days}} {{time}}",
+        "hourly": "每小时",
+        "hourlyAt": "每小时第 {{minute}} 分",
+        "hourlyRange": "{{from}} 至 {{to}} 每小时",
+        "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小时",
+        "everyMinutes_one": "每 {{count}} 分钟",
+        "everyMinutes_other": "每 {{count}} 分钟",
+        "everyHours_one": "每 {{count}} 小时",
+        "everyHours_other": "每 {{count}} 小时"
       },
       "runLog": {
         "when": "时间",
@@ -3384,7 +3395,8 @@
       "agentLabel": "代理",
       "agentPlaceholder": "选择代理",
       "agentSearch": "搜索代理",
-      "agentEmpty": "没有可以安排计划的代理"
+      "agentEmpty": "没有可以安排计划的代理",
+      "teamAgent": "你通过团队管理的队友代理"
     },
     "marks": {
       "failed": "有失败",
@@ -3501,7 +3513,8 @@
         "running": "运行中",
         "success": "成功",
         "failed": "失败",
-        "paused": "已暂停或跳过"
+        "paused": "已暂停或跳过",
+        "missed": "已错过"
       },
       "truncated": "部分非常频繁的计划在此范围内只显示前几次运行。",
       "watching": "监控中",
@@ -3522,7 +3535,8 @@
         "success": "成功",
         "failed": "失败",
         "skipped": "已跳过",
-        "timeout": "超时"
+        "timeout": "超时",
+        "missed": "已错过"
       },
       "block_one": "{{name}} ×{{count}}",
       "block_other": "{{name}} ×{{count}}",
@@ -3542,7 +3556,8 @@
       "dayRuns": "当天的运行",
       "queued": "已开始运行。它会显示在“当前”和运行日志中。",
       "openSchedule": "打开计划",
-      "timezone": "计划时区"
+      "timezone": "计划时区",
+      "missedNote": "这次运行从未开始：当时调度器已停止或滞后。立即运行以补上，或检查 worker 是否带 beat 运行。"
     },
     "history": {
       "label": "历史",

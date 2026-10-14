@@ -62,9 +62,9 @@ class TestWindow:
 class TestPlannedSlots:
     def test_expands_future_weekday_runs_only(self, pg_conn):
         _schedule(pg_conn, agent_id=_agent(pg_conn, "Support"), name="Daily support digest")
-        events = _week(pg_conn)["events"]
+        events = [e for e in _week(pg_conn)["events"] if e["state"] != "missed"]
         times = [e["at"] for e in events]
-        # Tue 15:00 (after now) through Fri; Mon's slot is past and had no run.
+        # Tue 15:00 (after now) through Fri; Monday's past slot is "missed".
         assert len(times) == 4
         assert times[0].startswith("2030-03-05T15:00")
         assert {e["state"] for e in events} == {"planned"}
@@ -96,7 +96,8 @@ class TestPlannedSlots:
 
     def test_end_at_stops_the_slots(self, pg_conn):
         _schedule(pg_conn, end_at=MONDAY + timedelta(days=3))
-        assert len(_week(pg_conn)["events"]) == 2  # Tue and Wed only
+        planned_slots = [e for e in _week(pg_conn)["events"] if e["state"] == "planned"]
+        assert len(planned_slots) == 2  # Tue and Wed only
 
 
 class TestPastRuns:
@@ -110,7 +111,44 @@ class TestPastRuns:
         assert first["state"] == "failed"
         assert first["run_id"] == str(monday_run["id"])
         assert first["error_type"] == "auth_expired"
-        assert [e["state"] for e in events[1:]] == ["planned"] * 3
+        # Tuesday 07:00 is before "now" with no run: missed. Wed to Fri are ahead.
+        assert [e["state"] for e in events[1:]] == ["missed", "planned", "planned", "planned"]
+
+
+class TestMissedRuns:
+    def test_a_past_slot_with_no_run_is_missed(self, pg_conn):
+        _schedule(pg_conn, name="Daily digest")  # weekdays 15:00, created a month ago
+        events = _week(pg_conn)["events"]
+        monday = [e for e in events if e["at"].startswith("2030-03-04")]
+        assert [e["state"] for e in monday] == ["missed"]
+        assert all(e["state"] == "planned" for e in events if e["at"] >= "2030-03-05T15")
+
+    def test_a_slot_that_ran_is_not_missed(self, pg_conn):
+        schedule = _schedule(pg_conn, name="Daily digest")
+        runs = ScheduleRunsRepository(pg_conn)
+        run = runs.record_pending(str(schedule["id"]), "u1", None, MONDAY + timedelta(hours=15))
+        runs.update(str(run["id"]), {"status": "success"})
+        monday = [e for e in _week(pg_conn)["events"] if e["at"].startswith("2030-03-04")]
+        assert [e["state"] for e in monday] == ["success"]
+
+    def test_slots_before_the_schedule_existed_are_not_missed(self, pg_conn):
+        schedule = _schedule(pg_conn, name="Daily digest")
+        # ``updated_at`` follows every write (a trigger), so the dispatcher's
+        # own update after each run also bounds the window: slots older than
+        # the last run were handled then. Here the schedule is created Tuesday.
+        pg_conn.execute(
+            text("UPDATE schedules SET created_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": MONDAY + timedelta(days=1), "id": str(schedule["id"])},
+        )
+        assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
+
+    def test_a_paused_schedule_has_no_missed_slots(self, pg_conn):
+        _schedule(pg_conn, name="Scan", status="paused")
+        assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
+
+    def test_a_slot_inside_the_grace_period_is_not_missed_yet(self, pg_conn):
+        _schedule(pg_conn, cron="55 13 * * 2")  # Tue 13:55, five minutes before NOW
+        assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
 
 
 class TestMonitorsAndSyncs:
@@ -138,5 +176,5 @@ class TestCap:
         monkeypatch.setattr(planned, "MAX_SLOTS_PER_SCHEDULE", 50)
         schedule = _schedule(pg_conn, cron="* * * * *")
         week = _week(pg_conn)
-        assert len(week["events"]) == 50
-        assert week["truncated"] == [str(schedule["id"])]
+        assert len([e for e in week["events"] if e["state"] == "planned"]) == 50
+        assert str(schedule["id"]) in week["truncated"]

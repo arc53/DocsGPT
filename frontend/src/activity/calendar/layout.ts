@@ -34,6 +34,9 @@ export const STATE_CLASS: Record<EventState, string> = {
     'bg-background text-muted-foreground border border-dashed border-muted-foreground',
   paused:
     'bg-background text-muted-foreground border border-dashed border-muted-foreground',
+  // Dashed like a skip, amber because nobody chose it: the scheduler was down.
+  missed:
+    'bg-background text-muted-foreground border border-dashed border-warning',
 };
 
 /** The worst state among a block's runs, which colours the block. */
@@ -41,6 +44,7 @@ export function blockState(events: CalendarEvent[]): EventState {
   const order: EventState[] = [
     'failed',
     'timeout',
+    'missed',
     'running',
     'pending',
     'planned',

@@ -20,6 +20,8 @@ export type RunningItem = {
   /** job */
   job_id?: string;
   tool_name?: string | null;
+  /** The tool as the user knows it (its own or the catalog's name). */
+  tool_label?: string | null;
   action_name?: string | null;
   job_kind?: string | null;
   status_message?: string | null;

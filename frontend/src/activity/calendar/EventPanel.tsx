@@ -28,7 +28,7 @@ import type { CalendarEvent, EventState } from './types';
 
 const BADGE: Record<
   EventState,
-  'default' | 'success' | 'destructive' | 'info' | 'neutral'
+  'default' | 'success' | 'destructive' | 'info' | 'neutral' | 'warning'
 > = {
   planned: 'default',
   paused: 'neutral',
@@ -38,6 +38,7 @@ const BADGE: Record<
   success: 'success',
   failed: 'destructive',
   timeout: 'destructive',
+  missed: 'warning',
 };
 
 export type EventPanelProps = {
@@ -142,6 +143,11 @@ export default function EventPanel({
         {state === 'paused' && (
           <p className="text-muted-foreground text-sm">
             {t('activity.calendar.pausedNote')}
+          </p>
+        )}
+        {state === 'missed' && (
+          <p className="text-muted-foreground text-sm">
+            {t('activity.calendar.missedNote')}
           </p>
         )}
         {selection.kind === 'block' && (

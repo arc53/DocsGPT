@@ -8,7 +8,9 @@ export type EventState =
   | 'success'
   | 'failed'
   | 'skipped'
-  | 'timeout';
+  | 'timeout'
+  /** A past slot of an active schedule that never got a run. */
+  | 'missed';
 
 export type CalendarEvent = {
   schedule_id: string;

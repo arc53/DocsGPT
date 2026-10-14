@@ -288,6 +288,58 @@ class TestListForUserImages:
         signer.assert_called_once_with("inputs/u1/attachments/avatar.png", agent_id, "u1")
 
 
+class TestListForUserTeamAgents:
+    def _share(self, conn, agent_id: str, access: str):
+        import uuid
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        team = TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:8]}", "owner1")
+        TeamMembersRepository(conn).add_member(team["id"], "u1", role="team_member")
+        TeamResourceGrantsRepository(conn).grant(
+            team["id"], "agent", agent_id, owner_id="owner1", granted_by="owner1", access_level=access,
+        )
+
+    def _list(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+
+        with _patch_db(pg_conn), app.test_request_context("/api/schedules", method="GET"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            return UserSchedules().get().get_json()["schedules"]
+
+    def test_lists_schedules_of_agents_the_caller_edits_on_a_team(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "editor")
+        repo = SchedulesRepository(pg_conn)
+        repo.create(user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+                    instruction="team digest", cron="0 9 * * 1")
+        # A teammate's own chat task on the agent stays private to them.
+        repo.create(user_id="u3", agent_id=agent_id, trigger_type="once",
+                    instruction="their task", run_at=_now() + timedelta(hours=1))
+        rows = self._list(app, pg_conn)
+        assert [r["instruction"] for r in rows] == ["team digest"]
+        assert rows[0]["team"] is True
+
+    def test_a_viewer_does_not_see_them(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "viewer")
+        SchedulesRepository(pg_conn).create(
+            user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+            instruction="team digest", cron="0 9 * * 1",
+        )
+        assert self._list(app, pg_conn) == []
+
+    def test_own_schedules_are_not_marked_team(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn)
+        SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring", instruction="mine", cron="0 9 * * 1",
+        )
+        assert self._list(app, pg_conn)[0]["team"] is False
+
+
 class TestGetEditPatchDelete:
     def _make(self, conn, **kwargs):
         return SchedulesRepository(conn).create(**kwargs)

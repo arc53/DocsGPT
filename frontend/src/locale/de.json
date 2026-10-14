@@ -2807,7 +2807,18 @@
           "oct": "Oktober",
           "nov": "November",
           "dec": "Dezember"
-        }
+        },
+        "weekdays": "Jeden Werktag um {{time}}",
+        "weekends": "Jeden Wochenendtag um {{time}}",
+        "days": "Jeden {{days}} um {{time}}",
+        "hourly": "Jede Stunde",
+        "hourlyAt": "Jede Stunde um :{{minute}}",
+        "hourlyRange": "Jede Stunde von {{from}} bis {{to}}",
+        "hourlyRangeWeekdays": "Werktags jede Stunde von {{from}} bis {{to}}",
+        "everyMinutes_one": "Jede {{count}} Minute",
+        "everyMinutes_other": "Alle {{count}} Minuten",
+        "everyHours_one": "Jede {{count}} Stunde",
+        "everyHours_other": "Alle {{count}} Stunden"
       },
       "runLog": {
         "when": "Wann",
@@ -3397,7 +3408,8 @@
       "agentLabel": "Agent",
       "agentPlaceholder": "Agenten wählen",
       "agentSearch": "Agenten suchen",
-      "agentEmpty": "Keine Agenten, die du planen kannst"
+      "agentEmpty": "Keine Agenten, die du planen kannst",
+      "teamAgent": "Agent eines Teammitglieds, den du über ein Team verwaltest"
     },
     "marks": {
       "failed": "Etwas ist fehlgeschlagen",
@@ -3514,7 +3526,8 @@
         "running": "Läuft",
         "success": "Erfolgreich",
         "failed": "Fehlgeschlagen",
-        "paused": "Pausiert oder übersprungen"
+        "paused": "Pausiert oder übersprungen",
+        "missed": "Verpasst"
       },
       "truncated": "Einige sehr häufige Zeitpläne zeigen in diesem Zeitraum nur ihre ersten Ausführungen.",
       "watching": "Beobachtet",
@@ -3535,7 +3548,8 @@
         "success": "Erfolgreich",
         "failed": "Fehlgeschlagen",
         "skipped": "Übersprungen",
-        "timeout": "Zeitüberschreitung"
+        "timeout": "Zeitüberschreitung",
+        "missed": "Verpasst"
       },
       "block_one": "{{name}} ×{{count}}",
       "block_other": "{{name}} ×{{count}}",
@@ -3555,7 +3569,8 @@
       "dayRuns": "Ausführungen an diesem Tag",
       "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
       "openSchedule": "Zeitplan öffnen",
-      "timezone": "Zeitzone des Zeitplans"
+      "timezone": "Zeitzone des Zeitplans",
+      "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft."
     },
     "history": {
       "label": "Verlauf",

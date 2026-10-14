@@ -2795,7 +2795,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "每個工作日 {{time}}",
+        "weekends": "每個週末 {{time}}",
+        "days": "每{{days}} {{time}}",
+        "hourly": "每小時",
+        "hourlyAt": "每小時第 {{minute}} 分",
+        "hourlyRange": "{{from}} 至 {{to}} 每小時",
+        "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小時",
+        "everyMinutes_one": "每 {{count}} 分鐘",
+        "everyMinutes_other": "每 {{count}} 分鐘",
+        "everyHours_one": "每 {{count}} 小時",
+        "everyHours_other": "每 {{count}} 小時"
       },
       "runLog": {
         "when": "時間",
@@ -3385,7 +3396,8 @@
       "agentLabel": "代理",
       "agentPlaceholder": "選擇代理",
       "agentSearch": "搜尋代理",
-      "agentEmpty": "沒有可以設定排程的代理"
+      "agentEmpty": "沒有可以設定排程的代理",
+      "teamAgent": "你透過團隊管理的隊友代理"
     },
     "marks": {
       "failed": "有失敗",
@@ -3502,7 +3514,8 @@
         "running": "執行中",
         "success": "成功",
         "failed": "失敗",
-        "paused": "已暫停或略過"
+        "paused": "已暫停或略過",
+        "missed": "已錯過"
       },
       "truncated": "部分非常頻繁的排程在此範圍內只顯示前幾次執行。",
       "watching": "監控中",
@@ -3523,7 +3536,8 @@
         "success": "成功",
         "failed": "失敗",
         "skipped": "已略過",
-        "timeout": "逾時"
+        "timeout": "逾時",
+        "missed": "已錯過"
       },
       "block_one": "{{name}} ×{{count}}",
       "block_other": "{{name}} ×{{count}}",
@@ -3543,7 +3557,8 @@
       "dayRuns": "當天的執行",
       "queued": "已開始執行。它會顯示在「目前」和執行記錄中。",
       "openSchedule": "開啟排程",
-      "timezone": "排程時區"
+      "timezone": "排程時區",
+      "missedNote": "這次執行從未開始：當時排程器已停止或落後。立即執行以補上，或檢查 worker 是否帶 beat 執行。"
     },
     "history": {
       "label": "歷史",

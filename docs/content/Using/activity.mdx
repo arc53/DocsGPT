@@ -43,6 +43,7 @@ Stopping an answer from another page needs Redis, which every DocsGPT install ru
 
 - **Future slots** come from each schedule's repeat rule or one-time date. A paused schedule's slots are dashed: they will not run until you resume it.
 - **Past slots** show how the run went: green when it succeeded, red when it failed or timed out, dashed when it was skipped. A run in progress is blue.
+- **Missed slots** have an amber dashed border and the label **Missed**: a time an active schedule should have run but no run started, usually because the worker or its beat scheduler was down. They appear 10 minutes after the slot, and only since the schedule was created or last ran, so changing a schedule's time doesn't leave old times behind. A paused schedule's past times are never marked missed.
 - **Frequent schedules** (hourly or more often) are one tall block per day, such as **Inbox triage ×11**, instead of a slot per run. Select it to list the day's runs.
 - **Watching** shows each active monitor as a bar from when it was set up to when it expires. A monitor isn't drawn as slots: a page checked every 30 minutes would fill the week.
 - **Syncs** lists the knowledge sources that re-sync **daily**, **weekly** or **monthly**. They have no clock time: every source of a frequency syncs when the worker's sync task for it runs, counted from when the worker started.

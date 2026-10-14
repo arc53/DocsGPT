@@ -110,6 +110,7 @@ class TestKinds:
         assert by_kind["webhook"]["trace_id"]
         assert by_kind["workflow"]["title"] == "Renewal Desk"
         assert by_kind["job"]["status"] == "cancelled"
+        assert by_kind["job"]["title"] == "Code Executor"
         assert by_kind["job"]["conversation_name"] == "Halvorsen QBR"
 
     def test_running_runs_and_other_users_are_left_out(self, pg_conn):

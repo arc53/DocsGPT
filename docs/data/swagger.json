@@ -4835,7 +4835,7 @@
     },
     "/api/schedules": {
       "get": {
-        "description": "List the caller's own schedules across every agent, including agentless ones created in chat. Monitors are not included.\nReturns:\n    A Flask response with ``schedules``: schedule rows plus\n    ``agent_name``, ``agent_image`` (a signed URL, never a storage\n    path) and ``origin_conversation_name``.",
+        "description": "List the caller's schedules across every agent: their own, agentless ones created in chat, and those of teammates' agents they manage through a team (team: true). Monitors are not included.\nReturns:\n    A Flask response with ``schedules``: schedule rows plus\n    ``agent_name``, ``agent_image`` (a signed URL, never a storage\n    path), ``origin_conversation_name`` and ``team`` (a schedule of a\n    teammate's agent the caller manages through a team).",
         "operationId": "get_user_schedules",
         "responses": {
           "200": {

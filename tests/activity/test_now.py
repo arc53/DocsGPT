@@ -94,6 +94,7 @@ class TestBackgroundJobs:
         assert jobs[0]["job_id"] == str(job["id"])
         assert jobs[0]["conversation_name"] == "Halvorsen QBR"
         assert jobs[0]["tool_name"] == "code_executor"
+        assert jobs[0]["tool_label"] == "Code Executor"
 
 
 class TestScheduledRuns:

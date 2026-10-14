@@ -22,6 +22,7 @@ const BADGE: Partial<
   pending: 'info',
   skipped: 'neutral',
   paused: 'neutral',
+  missed: 'warning',
 };
 
 export type AgendaListProps = {

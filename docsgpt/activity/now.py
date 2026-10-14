@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from docsgpt.activity.flags import list_runs
+from docsgpt.activity.labels import tool_labels
 from docsgpt.agents.scheduler_utils import ScheduleValidationError, next_cron_run
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
@@ -104,6 +105,7 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         """,
         {"user_id": user_id, "limit": PER_KIND_LIMIT},
     )
+    labels = tool_labels(conn, user_id, [r.get("tool_name") for r in rows])
     out = []
     for r in rows:
         summary = job_summary(r)
@@ -118,6 +120,7 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
                 "agent_id": _str(r.get("agent_id")),
                 "agent_name": r.get("agent_name"),
                 "tool_name": summary.get("tool_name"),
+                "tool_label": labels.get(summary.get("tool_name") or ""),
                 "action_name": summary.get("action_name"),
                 "job_kind": r.get("kind"),
                 "status_message": summary.get("status_message"),

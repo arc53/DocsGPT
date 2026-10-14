@@ -90,7 +90,12 @@ describe('AllSchedules', () => {
           origin_conversation_id: 'c1',
           origin_conversation_name: 'Rotterdam market check',
         }),
-        schedule({ id: 's2', agent_id: 'a2', agent_name: 'Support' }),
+        schedule({
+          id: 's2',
+          agent_id: 'a2',
+          agent_name: 'Support',
+          team: true,
+        }),
         schedule({ id: 's1', agent_id: 'a1', agent_name: 'Deal Desk' }),
       ],
     });
@@ -105,6 +110,10 @@ describe('AllSchedules', () => {
     expect(
       container.querySelector('a[href="/agents/manage/schedules/a1"]'),
     ).not.toBeNull();
+    // A teammate's agent is marked as managed through a team.
+    const sections = Array.from(container.querySelectorAll('section'));
+    expect(sections[1].textContent).toContain('teamAccess.editor');
+    expect(sections[0].textContent).not.toContain('teamAccess.editor');
   });
 
   it('shows the empty state when there are no schedules', async () => {

@@ -54,6 +54,7 @@ const LEGEND = [
   ['running', 'running'],
   ['success', 'success'],
   ['failed', 'failed'],
+  ['missed', 'missed'],
   ['paused', 'paused'],
 ] as const;
 

@@ -1,4 +1,4 @@
-import { ArrowRight, MessageSquare, Plus } from 'lucide-react';
+import { ArrowRight, MessageSquare, Plus, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -53,6 +53,8 @@ type ScheduleGroup = {
   agentId: string | null;
   name: string;
   image?: string | null;
+  /** A teammate's agent the caller manages through a team. */
+  team: boolean;
   schedules: UserSchedule[];
 };
 
@@ -142,6 +144,7 @@ export default function AllSchedules() {
               t('agents.pageHeader.fallbackName')
             : t('activity.schedules.createdInChat'),
           image: schedule.agent_image,
+          team: Boolean(schedule.team),
           schedules: [],
         };
         byKey.set(key, group);
@@ -250,12 +253,28 @@ export default function AllSchedules() {
                 }
                 actions={
                   group.agentId ? (
-                    <Button variant="link" size="sm" className="-mr-3" asChild>
-                      <Link to={agentSchedulesPath(group.agentId)}>
-                        {t('activity.schedules.agentSchedules')}
-                        <ArrowRight aria-hidden className="size-3" />
-                      </Link>
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {group.team && (
+                        <Badge
+                          variant="neutral"
+                          title={t('activity.schedules.teamAgent')}
+                        >
+                          <Users aria-hidden />
+                          {t('teamAccess.editor')}
+                        </Badge>
+                      )}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="-mr-3"
+                        asChild
+                      >
+                        <Link to={agentSchedulesPath(group.agentId)}>
+                          {t('activity.schedules.agentSchedules')}
+                          <ArrowRight aria-hidden className="size-3" />
+                        </Link>
+                      </Button>
+                    </div>
                   ) : undefined
                 }
               />

@@ -2795,7 +2795,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "平日の毎日 {{time}}",
+        "weekends": "週末の毎日 {{time}}",
+        "days": "毎週 {{days}} {{time}}",
+        "hourly": "1時間ごと",
+        "hourlyAt": "毎時 {{minute}} 分",
+        "hourlyRange": "{{from}}から{{to}}まで1時間ごと",
+        "hourlyRangeWeekdays": "平日の{{from}}から{{to}}まで1時間ごと",
+        "everyMinutes_one": "{{count}} 分ごと",
+        "everyMinutes_other": "{{count}} 分ごと",
+        "everyHours_one": "{{count}} 時間ごと",
+        "everyHours_other": "{{count}} 時間ごと"
       },
       "runLog": {
         "when": "日時",
@@ -3385,7 +3396,8 @@
       "agentLabel": "エージェント",
       "agentPlaceholder": "エージェントを選択",
       "agentSearch": "エージェントを検索",
-      "agentEmpty": "スケジュールできるエージェントはありません"
+      "agentEmpty": "スケジュールできるエージェントはありません",
+      "teamAgent": "チームを通じて管理しているメンバーのエージェント"
     },
     "marks": {
       "failed": "失敗があります",
@@ -3502,7 +3514,8 @@
         "running": "実行中",
         "success": "成功",
         "failed": "失敗",
-        "paused": "一時停止またはスキップ"
+        "paused": "一時停止またはスキップ",
+        "missed": "未実行"
       },
       "truncated": "非常に頻繁なスケジュールは、この期間の最初の実行のみ表示されます。",
       "watching": "監視中",
@@ -3523,7 +3536,8 @@
         "success": "成功",
         "failed": "失敗",
         "skipped": "スキップ",
-        "timeout": "タイムアウト"
+        "timeout": "タイムアウト",
+        "missed": "未実行"
       },
       "block_one": "{{name}} ×{{count}}",
       "block_other": "{{name}} ×{{count}}",
@@ -3543,7 +3557,8 @@
       "dayRuns": "この日の実行",
       "queued": "実行を開始しました。「現在」と実行ログに表示されます。",
       "openSchedule": "スケジュールを開く",
-      "timezone": "スケジュールのタイムゾーン"
+      "timezone": "スケジュールのタイムゾーン",
+      "missedNote": "この実行は開始されませんでした。その時点でスケジューラーが停止しているか遅れていました。今すぐ実行するか、ワーカーが beat 付きで動いているか確認してください。"
     },
     "history": {
       "label": "履歴",

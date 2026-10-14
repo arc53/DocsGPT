@@ -2807,7 +2807,18 @@
           "oct": "octubre",
           "nov": "noviembre",
           "dec": "diciembre"
-        }
+        },
+        "weekdays": "Todos los días laborables a las {{time}}",
+        "weekends": "Cada día del fin de semana a las {{time}}",
+        "days": "Cada {{days}} a las {{time}}",
+        "hourly": "Cada hora",
+        "hourlyAt": "Cada hora a los :{{minute}}",
+        "hourlyRange": "Cada hora de {{from}} a {{to}}",
+        "hourlyRangeWeekdays": "Cada hora de {{from}} a {{to}} los días laborables",
+        "everyMinutes_one": "Cada {{count}} minuto",
+        "everyMinutes_other": "Cada {{count}} minutos",
+        "everyHours_one": "Cada {{count}} hora",
+        "everyHours_other": "Cada {{count}} horas"
       },
       "runLog": {
         "when": "Cuándo",
@@ -3397,7 +3408,8 @@
       "agentLabel": "Agente",
       "agentPlaceholder": "Elige un agente",
       "agentSearch": "Buscar agentes",
-      "agentEmpty": "No hay agentes que puedas programar"
+      "agentEmpty": "No hay agentes que puedas programar",
+      "teamAgent": "Agente de un compañero que gestionas a través de un equipo"
     },
     "marks": {
       "failed": "Algo falló",
@@ -3514,7 +3526,8 @@
         "running": "En curso",
         "success": "Correcta",
         "failed": "Fallida",
-        "paused": "En pausa u omitida"
+        "paused": "En pausa u omitida",
+        "missed": "Perdida"
       },
       "truncated": "Algunas programaciones muy frecuentes solo muestran sus primeras ejecuciones en este rango.",
       "watching": "Vigilando",
@@ -3535,7 +3548,8 @@
         "success": "Correcta",
         "failed": "Fallida",
         "skipped": "Omitida",
-        "timeout": "Tiempo agotado"
+        "timeout": "Tiempo agotado",
+        "missed": "Perdida"
       },
       "block_one": "{{name}} ×{{count}}",
       "block_other": "{{name}} ×{{count}}",
@@ -3555,7 +3569,8 @@
       "dayRuns": "Ejecuciones de este día",
       "queued": "Ejecución iniciada. Aparece en Ahora y en el registro de ejecuciones.",
       "openSchedule": "Abrir programación",
-      "timezone": "Zona horaria de la programación"
+      "timezone": "Zona horaria de la programación",
+      "missedNote": "Esta ejecución nunca empezó: el planificador estaba parado o con retraso en ese momento. Ejecútala ahora o comprueba que el worker funciona con beat."
     },
     "history": {
       "label": "Historial",
