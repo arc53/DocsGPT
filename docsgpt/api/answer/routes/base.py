@@ -702,6 +702,9 @@ class BaseAnswerResource:
                 )
         elif _continuation and _continuation.get("reserved_message_id"):
             reserved_message_id = _continuation["reserved_message_id"]
+            # A Stop that reached the paused turn after its stream ended is
+            # still stored; the resume is the user carrying on, not stopping.
+            clear_stop(reserved_message_id)
 
         # Bind the row now so an audit flush that happens before the ``finally``
         # below — an input block returns from ``gen`` immediately and flushes

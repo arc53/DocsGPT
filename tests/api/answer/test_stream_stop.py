@@ -71,6 +71,9 @@ def _run(
     stop_after: float | None,
     visibility: str = "listed",
     client_gone: threading.Event | None = None,
+    continuation: dict | None = None,
+    requested=None,
+    clear=None,
 ):
     from docsgpt.api.answer.routes import base as base_mod
     from docsgpt.api.answer.routes.base import BaseAnswerResource
@@ -86,12 +89,13 @@ def _run(
         resource.conversation_service = _service()
         agent = MagicMock()
         agent.gen.side_effect = gen
+        agent.gen_continuation.side_effect = gen
         if client_gone is not None:
             agent.client_disconnected = client_gone
         with patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
             base_mod, "STREAM_STOP_POLL_SECONDS", 0.02
-        ), patch.object(base_mod, "stop_requested", side_effect=_requested), patch.object(
-            base_mod, "clear_stop"
+        ), patch.object(base_mod, "stop_requested", side_effect=requested or _requested), patch.object(
+            base_mod, "clear_stop", side_effect=clear
         ) as cleared, patch.object(
             base_mod,
             "publish_user_event",
@@ -106,6 +110,7 @@ def _run(
                     decoded_token={"sub": "u"},
                     should_persist=True,
                     visibility=visibility,
+                    _continuation=continuation,
                 )
             )
     return resource.conversation_service, out, published, cleared
@@ -147,6 +152,26 @@ class TestStopFromActivity:
 
         _, out, _, _ = _run(flask_app, _gen, stop_after=None, client_gone=gone)
         assert _frame_type(out[-1]) not in ("end", "error")
+
+    def test_a_resumed_answer_drops_a_stop_left_from_before(self, mock_mongo_db, flask_app):
+        # A Stop that reached the paused turn after its stream ended is still
+        # stored; the resumed turn reuses the message id and must not obey it.
+        stored = {MESSAGE_ID}
+        _, out, _, _ = _run(
+            flask_app,
+            _chatty(chunks=20, gap=0.01),
+            stop_after=None,
+            continuation={
+                "reserved_message_id": MESSAGE_ID,
+                "messages": [],
+                "tools_dict": {},
+                "pending_tool_calls": [],
+                "tool_actions": [],
+            },
+            requested=lambda message_id: message_id in stored,
+            clear=stored.discard,
+        )
+        assert len([line for line in out if '"type": "answer"' in line]) == 20
 
     def test_no_stop_runs_to_the_end(self, mock_mongo_db, flask_app):
         _, out, _, _ = _run(flask_app, _chatty(chunks=20, gap=0.005), stop_after=None)

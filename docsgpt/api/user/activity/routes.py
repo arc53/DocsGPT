@@ -175,7 +175,8 @@ class MessageCancel(Resource):
 
         Returns:
             202 when the stop was requested, 404 when the caller has no such
-            message, 409 when it is not running, 503 without Redis.
+            message, 409 when it is not running (finished, or paused for a
+            tool approval), 503 without Redis.
         """
         user_id = _user_id()
         if not user_id:
@@ -183,16 +184,24 @@ class MessageCancel(Resource):
         if not looks_like_uuid(message_id):
             return _err("Message not found", 404)
         with db_readonly() as conn:
-            status = conn.execute(
+            row = conn.execute(
                 text(
-                    "SELECT status FROM conversation_messages "
-                    "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                    "SELECT m.status, EXISTS ("
+                    "  SELECT 1 FROM pending_tool_state p"
+                    "  WHERE p.conversation_id = m.conversation_id AND p.user_id = m.user_id"
+                    "    AND p.status = 'pending'"
+                    "    AND p.agent_config ->> 'reserved_message_id' = m.id::text"
+                    ") AS paused "
+                    "FROM conversation_messages m "
+                    "WHERE m.id = CAST(:id AS uuid) AND m.user_id = :user_id"
                 ),
                 {"id": message_id, "user_id": user_id},
-            ).scalar()
-        if status is None:
+            ).first()
+        if row is None:
             return _err("Message not found", 404)
-        if status not in ("pending", "streaming"):
+        # A paused answer has no stream to see the request; the flag would
+        # outlive it and stop the resumed answer, which reuses the message id.
+        if row.status not in ("pending", "streaming") or row.paused:
             return _err("The answer is not running", 409)
         if not request_stop(message_id):
             return _err("Stopping is unavailable right now", 503)

@@ -61,7 +61,8 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Answers being written in the user's listed chats.
 
     A row counts while its heartbeat (or, before the first one, its start) is
-    fresh, so an answer whose stream died without ending drops off.
+    fresh, so an answer whose stream died without ending drops off. An answer
+    paused for a tool approval is left out: it waits under ``needs_you``.
     """
     rows = _rows(
         conn,
@@ -74,6 +75,12 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         WHERE m.user_id = :user_id
           AND m.status IN ('pending', 'streaming')
           AND c.visibility = 'listed'
+          AND NOT EXISTS (
+              SELECT 1 FROM pending_tool_state p
+              WHERE p.conversation_id = m.conversation_id AND p.user_id = m.user_id
+                AND p.status = 'pending'
+                AND p.agent_config ->> 'reserved_message_id' = m.id::text
+          )
           AND COALESCE(
                 (m.message_metadata ->> 'last_heartbeat_at')::timestamptz,
                 m.timestamp

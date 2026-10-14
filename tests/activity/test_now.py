@@ -82,6 +82,29 @@ class TestRunningChats:
         _message(pg_conn, _chat(pg_conn, user_id="u2"), "streaming")
         assert activity_now.build_now(pg_conn, "u1")["running"] == []
 
+    def test_an_answer_paused_for_approval_is_not_running(self, pg_conn):
+        # It waits under needs_you; listed here it would offer a Stop.
+        conv = _chat(pg_conn)
+        message_id = _message(pg_conn, conv, "streaming")
+        PendingToolStateRepository(pg_conn).save_state(
+            conv, "u1",
+            messages=[], tools_dict={}, tool_schemas=[], agent_config={"reserved_message_id": message_id},
+            pending_tool_calls=[{"call_id": "c1", "tool_name": "send_email", "pause_type": "awaiting_approval"}],
+        )
+        assert _kinds(activity_now.build_now(pg_conn, "u1")) == []
+
+    def test_a_resuming_answer_is_running(self, pg_conn):
+        conv = _chat(pg_conn)
+        message_id = _message(pg_conn, conv, "streaming")
+        repo = PendingToolStateRepository(pg_conn)
+        repo.save_state(
+            conv, "u1",
+            messages=[], tools_dict={}, tool_schemas=[], agent_config={"reserved_message_id": message_id},
+            pending_tool_calls=[{"call_id": "c1", "tool_name": "send_email", "pause_type": "awaiting_approval"}],
+        )
+        repo.mark_resuming(conv, "u1")
+        assert _kinds(activity_now.build_now(pg_conn, "u1")) == ["chat"]
+
 
 class TestApiRequests:
     def test_api_answers_on_an_agent_are_one_row(self, pg_conn):

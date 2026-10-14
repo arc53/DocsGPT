@@ -7,8 +7,10 @@ from unittest.mock import patch
 
 import pytest
 from flask import Flask
+from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.pending_tool_state import PendingToolStateRepository
 
 
 @pytest.fixture
@@ -147,6 +149,44 @@ class TestCancel:
             resp = _call(app, f"/api/messages/{message_id}/cancel", "POST", MessageCancel().post, message_id)
         assert resp.status_code == 409
         stop.assert_not_called()
+
+    def _pause(self, conn, message_id: str) -> str:
+        conv = str(conn.execute(
+            text("SELECT conversation_id FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+            {"id": message_id},
+        ).scalar())
+        repo = PendingToolStateRepository(conn)
+        repo.save_state(
+            conv, "u1",
+            messages=[], tools_dict={}, tool_schemas=[], agent_config={"reserved_message_id": message_id},
+            pending_tool_calls=[{"call_id": "c1", "tool_name": "send_email", "pause_type": "awaiting_approval"}],
+        )
+        return conv
+
+    def test_an_answer_paused_for_approval_conflicts(self, app, pg_conn):
+        # Its stream has ended: nothing would clear the flag, and the resumed
+        # answer (same message id) would stop on it after the user approves.
+        from docsgpt.api.user.activity.routes import MessageCancel
+
+        message_id = _message(pg_conn, "streaming")
+        self._pause(pg_conn, message_id)
+        with _patch_db(pg_conn), patch("docsgpt.api.user.activity.routes.request_stop") as stop:
+            resp = _call(app, f"/api/messages/{message_id}/cancel", "POST", MessageCancel().post, message_id)
+        assert resp.status_code == 409
+        stop.assert_not_called()
+
+    def test_a_resuming_answer_can_be_stopped(self, app, pg_conn):
+        from docsgpt.api.user.activity.routes import MessageCancel
+
+        message_id = _message(pg_conn, "streaming")
+        conv = self._pause(pg_conn, message_id)
+        PendingToolStateRepository(pg_conn).mark_resuming(conv, "u1")
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.activity.routes.request_stop", return_value=True
+        ) as stop:
+            resp = _call(app, f"/api/messages/{message_id}/cancel", "POST", MessageCancel().post, message_id)
+        assert resp.status_code == 202
+        stop.assert_called_once_with(message_id)
 
     def test_without_redis_it_is_unavailable(self, app, pg_conn):
         from docsgpt.api.user.activity.routes import MessageCancel

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fakeredis
 import pytest
+import redis as redis_lib
 
 from docsgpt.activity import flags
 
@@ -12,6 +13,7 @@ from docsgpt.activity import flags
 def redis(monkeypatch):
     fake = fakeredis.FakeRedis()
     monkeypatch.setattr(flags, "get_redis_instance", lambda: fake)
+    monkeypatch.setattr(flags, "_stop_redis", lambda: fake)
     return fake
 
 
@@ -29,8 +31,20 @@ class TestStopRequests:
 
     def test_without_redis_nothing_is_stored(self, monkeypatch):
         monkeypatch.setattr(flags, "get_redis_instance", lambda: None)
+        monkeypatch.setattr(flags, "_stop_redis_instance", None)
         assert flags.request_stop("m1") is False
         assert flags.stop_requested("m1") is False
+
+    def test_the_stop_client_bounds_its_reads(self, monkeypatch):
+        # The stream's heartbeat thread polls the flag: a read that never
+        # returns would stop its heartbeats and get a live answer swept.
+        shared = redis_lib.Redis.from_url("redis://cache.internal:6380/3", socket_connect_timeout=2)
+        monkeypatch.setattr(flags, "get_redis_instance", lambda: shared)
+        monkeypatch.setattr(flags, "_stop_redis_instance", None)
+        kwargs = flags._stop_redis().connection_pool.connection_kwargs
+        assert kwargs["socket_timeout"] == flags.STOP_SOCKET_TIMEOUT_SECONDS
+        assert (kwargs["host"], kwargs["port"], kwargs["db"]) == ("cache.internal", 6380, 3)
+        assert shared.connection_pool.connection_kwargs.get("socket_timeout") is None
 
 
 class TestRunMarkers:

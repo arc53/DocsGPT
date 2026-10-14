@@ -20,7 +20,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from threading import Lock
 from typing import Any, Dict, List, Optional
+
+import redis
 
 from docsgpt.cache import get_redis_instance
 
@@ -28,6 +31,12 @@ logger = logging.getLogger(__name__)
 
 #: How long a stop request waits for its stream to see it.
 STOP_TTL_SECONDS = 15 * 60
+
+#: Read timeout of the stop-request client. The stream's heartbeat thread
+#: polls the flag every few seconds, and the shared client has no read
+#: timeout: a half-open socket would block that thread, its heartbeats would
+#: stop, and the reconciler would fail an answer that is still being written.
+STOP_SOCKET_TIMEOUT_SECONDS = 2
 
 #: Key prefix of a chat answer's stop request.
 _STOP_PREFIX = "activity:stop:"
@@ -43,6 +52,33 @@ INGEST_MARKER_TTL_SECONDS = 6 * 3600
 _INGEST_END_EVENTS = frozenset({"source.ingest.completed", "source.ingest.failed"})
 
 
+_stop_redis_instance: Optional[redis.Redis] = None
+_stop_redis_lock = Lock()
+
+
+def _stop_redis() -> Optional[redis.Redis]:
+    """The client for stop requests: the shared one's settings, reads bounded.
+
+    Returns:
+        The client, or None when the shared client is unavailable.
+    """
+    global _stop_redis_instance
+    if _stop_redis_instance is None:
+        shared = get_redis_instance()
+        if shared is None:
+            return None
+        with _stop_redis_lock:
+            if _stop_redis_instance is None:
+                pool = shared.connection_pool
+                _stop_redis_instance = redis.Redis(
+                    connection_pool=redis.ConnectionPool(
+                        connection_class=pool.connection_class,
+                        **{**pool.connection_kwargs, "socket_timeout": STOP_SOCKET_TIMEOUT_SECONDS},
+                    )
+                )
+    return _stop_redis_instance
+
+
 def request_stop(message_id: str) -> bool:
     """Ask the stream writing ``message_id`` to stop.
 
@@ -52,11 +88,11 @@ def request_stop(message_id: str) -> bool:
     Returns:
         True when the request was stored.
     """
-    redis = get_redis_instance()
-    if redis is None:
+    client = _stop_redis()
+    if client is None:
         return False
     try:
-        redis.set(f"{_STOP_PREFIX}{message_id}", "1", ex=STOP_TTL_SECONDS)
+        client.set(f"{_STOP_PREFIX}{message_id}", "1", ex=STOP_TTL_SECONDS)
         return True
     except Exception:
         logger.exception("activity: storing a stop request failed for %s", message_id)
@@ -72,11 +108,11 @@ def stop_requested(message_id: str) -> bool:
     Returns:
         True when a stop request is waiting. False when Redis is unreachable.
     """
-    redis = get_redis_instance()
-    if redis is None:
+    client = _stop_redis()
+    if client is None:
         return False
     try:
-        return bool(redis.exists(f"{_STOP_PREFIX}{message_id}"))
+        return bool(client.exists(f"{_STOP_PREFIX}{message_id}"))
     except Exception:
         return False
 
@@ -87,11 +123,11 @@ def clear_stop(message_id: str) -> None:
     Args:
         message_id: The message row the stream was writing.
     """
-    redis = get_redis_instance()
-    if redis is None:
+    client = _stop_redis()
+    if client is None:
         return
     try:
-        redis.delete(f"{_STOP_PREFIX}{message_id}")
+        client.delete(f"{_STOP_PREFIX}{message_id}")
     except Exception:
         pass
 

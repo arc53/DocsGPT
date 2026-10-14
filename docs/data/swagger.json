@@ -4343,7 +4343,7 @@
         }
       ],
       "post": {
-        "description": "Stop the caller's chat answer that is still being written. The stream ends as if its client had disconnected and keeps what it wrote. Answers 202 once the request is stored; the stream sees it within a few seconds, or when a long tool call returns.\nArgs:\n    message_id: The answer's message id.\n\nReturns:\n    202 when the stop was requested, 404 when the caller has no such\n    message, 409 when it is not running, 503 without Redis.",
+        "description": "Stop the caller's chat answer that is still being written. The stream ends as if its client had disconnected and keeps what it wrote. Answers 202 once the request is stored; the stream sees it within a few seconds, or when a long tool call returns.\nArgs:\n    message_id: The answer's message id.\n\nReturns:\n    202 when the stop was requested, 404 when the caller has no such\n    message, 409 when it is not running (finished, or paused for a\n    tool approval), 503 without Redis.",
         "operationId": "post_message_cancel",
         "responses": {
           "200": {
