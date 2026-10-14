@@ -32,13 +32,19 @@ import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
-import { mergeFirstPage, uniqueLogs } from './logsPage';
+import { mergeLoadedPages, uniqueLogs } from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
 import { LogData, TraceRef } from './types';
 
 /** How often page 1 reloads while it shows a run: runs by other people on a
  * shared agent send their events to them, not to the owner. */
 const RUNNING_POLL_MS = 30_000;
+
+/** Rows per page. */
+const PAGE_SIZE = 10;
+
+/** The most pages one refresh reads again: the endpoint's largest page is 100 rows. */
+const MAX_REFRESH_PAGES = 10;
 
 type LogsProps = {
   agentId?: string;
@@ -94,12 +100,12 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     setHasMore(true);
   }, [levelFilter, typeFilter, search, agentId]);
 
-  const requestPage = (pageNumber: number) =>
+  const requestPage = (pageNumber: number, pageSize = PAGE_SIZE) =>
     userService.getLogs(
       {
         page: pageNumber,
         api_key_id: agentId,
-        page_size: 10,
+        page_size: pageSize,
         level: levelFilter === 'all' ? undefined : levelFilter,
         event_type: typeFilter === 'all' ? undefined : typeFilter,
         search: search || undefined,
@@ -146,17 +152,31 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     if (hasMore) fetchLogs();
   }, [page, agentId, levelFilter, typeFilter, search, logsByPage]);
 
-  // Reloads page 1 in place: new rows come in on top, runs that ended give
-  // way to their finished rows, and the pages below stay as they are.
-  const refreshFirstPage = async () => {
+  // Reloads the loaded pages in place: new rows come in on top and runs that
+  // ended give way to their finished rows. Only page 1 while no loaded page
+  // shows a run; while one does, every loaded page (a run can sit on any of
+  // them), read as one request.
+  const logsByPageRef = useRef(logsByPage);
+  logsByPageRef.current = logsByPage;
+  const refreshLoadedPages = async () => {
     const issuedKey = filterKey;
+    const loaded = logsByPageRef.current;
+    const running = Object.values(loaded).some((rows) =>
+      rows.some((log) => log.running),
+    );
+    const pages = running
+      ? Math.min(
+          Math.max(1, ...Object.keys(loaded).map(Number)),
+          MAX_REFRESH_PAGES,
+        )
+      : 1;
     try {
-      const response = await requestPage(1);
+      const response = await requestPage(1, pages * PAGE_SIZE);
       if (!response.ok) return;
       const data = await response.json();
       if (issuedKey !== filterKeyRef.current) return;
       setLogsByPage((prev) =>
-        prev[1] ? { ...prev, 1: mergeFirstPage(prev[1], data.logs) } : prev,
+        prev[1] ? mergeLoadedPages(prev, data.logs, pages, PAGE_SIZE) : prev,
       );
     } catch (error) {
       // The next event or poll tries again.
@@ -170,14 +190,14 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   useEffect(() => {
     if (seenRevision.current === activityRevision) return;
     seenRevision.current = activityRevision;
-    void refreshFirstPage();
+    void refreshLoadedPages();
   }, [activityRevision]);
 
-  const showsRunning = (logsByPage[1] ?? []).some((log) => log.running);
+  const showsRunning = logs.some((log) => log.running);
   useEffect(() => {
     if (!showsRunning) return;
     const timer = window.setInterval(
-      () => void refreshFirstPage(),
+      () => void refreshLoadedPages(),
       RUNNING_POLL_MS,
     );
     return () => window.clearInterval(timer);

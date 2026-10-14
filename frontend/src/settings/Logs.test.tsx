@@ -23,7 +23,14 @@ vi.mock('../hooks', async (importOriginal) => ({
   useLoaderState: (initial: boolean) => useState(initial),
 }));
 
-vi.mock('../hooks/useLoadMore', () => ({ useScrollSentinel: () => vi.fn() }));
+// A test calls `sentinel.reach()` to stand for scrolling to the list's end.
+const sentinel = vi.hoisted(() => ({ reach: () => undefined as void }));
+vi.mock('../hooks/useLoadMore', () => ({
+  useScrollSentinel: (onReach: () => void) => {
+    sentinel.reach = onReach;
+    return vi.fn();
+  },
+}));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 
@@ -279,6 +286,41 @@ describe('Logs running rows', () => {
     // The run ended: its row gives way to the finished one.
     expect(container.textContent).not.toContain('settings.logs.running');
     expect(container.textContent).toContain('[stream_answer]');
+  });
+
+  it('refreshes a run on a later page when activity changes', async () => {
+    const finished = (n: number) => ({
+      ...log,
+      id: `chat-${n}`,
+      timestamp: new Date(Date.now() - n * 1000).toISOString(),
+    });
+    const firstPage = Array.from({ length: 10 }, (_, i) => finished(i));
+    const schedule = {
+      ...workflow,
+      id: 'schedule-77',
+      action: 'schedule_run',
+      event_type: 'schedule',
+      timestamp: started,
+      workflow_progress: undefined,
+    };
+    getLogs.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ logs: firstPage, has_more: true }),
+    });
+    await act(async () => root.render(<Logs />));
+    getLogs.mockResolvedValueOnce(page([schedule]));
+    await act(async () => sentinel.reach());
+    expect(container.textContent).toContain('settings.logs.running');
+
+    // The schedule run ended; the refresh reads both loaded pages at once.
+    getLogs.mockResolvedValueOnce(
+      page([...firstPage, { ...schedule, running: false }]),
+    );
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    const refresh = getLogs.mock.calls[2][0];
+    expect([refresh.page, refresh.page_size]).toEqual([1, 20]);
+    expect(container.textContent).not.toContain('settings.logs.running');
   });
 
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {

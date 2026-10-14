@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeFirstPage, uniqueLogs } from './logsPage';
+import { mergeLoadedPages, uniqueLogs } from './logsPage';
 import type { LogData } from './types';
 
 const row = (id: string, timestamp: string, running = false): LogData => ({
@@ -13,26 +13,37 @@ const row = (id: string, timestamp: string, running = false): LogData => ({
   running,
 });
 
-describe('mergeFirstPage', () => {
-  it('takes the fresh page when nothing was loaded', () => {
-    const fresh = [row('a', '2026-10-14T10:05:00Z')];
-    expect(mergeFirstPage(undefined, fresh)).toEqual(fresh);
+describe('mergeLoadedPages', () => {
+  it('refreshes every loaded page in place', () => {
+    const previous = {
+      1: [row('b', '2026-10-14T10:05:00Z'), row('a', '2026-10-14T10:04:00Z')],
+      2: [
+        row('run', '2026-10-14T10:03:00Z', true),
+        row('old', '2026-10-14T10:00:00Z'),
+      ],
+    };
+    // Two new rows came in on top; the run on page 2 ended.
+    const fresh = [
+      row('d', '2026-10-14T10:07:00Z'),
+      row('c', '2026-10-14T10:06:00Z'),
+      row('b', '2026-10-14T10:05:00Z'),
+      row('a', '2026-10-14T10:04:00Z'),
+    ];
+    const next = mergeLoadedPages(previous, fresh, 2, 2);
+    expect(next[1].map((log) => log.id)).toEqual(['d', 'c']);
+    // The run gives way; a finished row pushed past the pages stays.
+    expect(next[2].map((log) => log.id)).toEqual(['b', 'a', 'old']);
   });
 
-  it('drops runs that ended and keeps finished rows pushed off the page', () => {
-    const previous = [
-      row('run', '2026-10-14T10:04:00Z', true),
-      row('old', '2026-10-14T10:00:00Z'),
-    ];
-    const fresh = [
-      row('new', '2026-10-14T10:06:00Z'),
-      row('done', '2026-10-14T10:04:30Z'),
-    ];
-    expect(mergeFirstPage(previous, fresh).map((log) => log.id)).toEqual([
-      'new',
-      'done',
-      'old',
-    ]);
+  it('leaves pages past the refreshed ones as they are', () => {
+    const third = [row('z', '2026-10-14T09:00:00Z')];
+    const next = mergeLoadedPages(
+      { 1: [row('a', '2026-10-14T10:04:00Z')], 3: third },
+      [row('a', '2026-10-14T10:04:00Z')],
+      1,
+      10,
+    );
+    expect(next[3]).toBe(third);
   });
 });
 

@@ -3,24 +3,37 @@ import type { LogData } from './types';
 const at = (log: LogData) => Date.parse(log.timestamp) || 0;
 
 /**
- * The first Logs page after a live refresh.
+ * The loaded Logs pages after a live refresh read pages 1 to `pages` again.
  *
- * Runs that were still going drop out (their finished row is in the fresh
- * page, or will be on its next refresh); finished rows that newer ones pushed
- * off the page stay, so nothing vanishes from a list being read. Newest first.
+ * Each refreshed page takes its slice of `fresh`. Runs that were still going
+ * drop out (their finished row is in `fresh`, or past it once paging moved
+ * on); finished rows that newer ones pushed past the refreshed pages stay at
+ * the end of the last one, so nothing vanishes from a list being read. Pages
+ * after `pages` are left as they are.
  *
  * Args:
- *   previous: The page as shown, if loaded.
- *   fresh: Page 1 as the server returns it now.
+ *   previous: The loaded pages, by number.
+ *   fresh: Rows 1 to `pages * pageSize` as the server returns them now.
+ *   pages: How many pages were read again.
+ *   pageSize: Rows per page.
  */
-export function mergeFirstPage(
-  previous: LogData[] | undefined,
+export function mergeLoadedPages(
+  previous: Record<number, LogData[]>,
   fresh: LogData[],
-): LogData[] {
-  if (!previous) return fresh;
+  pages: number,
+  pageSize: number,
+): Record<number, LogData[]> {
   const ids = new Set(fresh.map((log) => log.id));
-  const kept = previous.filter((log) => !log.running && !ids.has(log.id));
-  return [...fresh, ...kept].sort((a, b) => at(b) - at(a));
+  const kept: LogData[] = [];
+  const next = { ...previous };
+  for (let n = 1; n <= pages; n++) {
+    kept.push(
+      ...(previous[n] ?? []).filter((log) => !log.running && !ids.has(log.id)),
+    );
+    next[n] = fresh.slice((n - 1) * pageSize, n * pageSize);
+  }
+  next[pages] = [...next[pages], ...kept].sort((a, b) => at(b) - at(a));
+  return next;
 }
 
 /** Pages in order, flattened; a row on two pages (paging shifted) shows once. */
