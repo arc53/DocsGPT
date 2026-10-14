@@ -252,7 +252,9 @@ def _planned_slots(
     stop = end
     end_at = _as_datetime(row.get("end_at"))
     if end_at is not None:
-        stop = min(stop, end_at)
+        # The dispatcher still runs a slot at end_at itself; the window's
+        # own end stays exclusive.
+        stop = min(stop, end_at + timedelta(microseconds=1))
     if row.get("trigger_type") == "once":
         fire = _as_datetime(row.get("next_run_at") or row.get("run_at"))
         if row.get("status") == "paused":

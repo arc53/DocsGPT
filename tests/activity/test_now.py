@@ -517,14 +517,15 @@ class TestOccurrences:
     def _stepped(row: dict, start: datetime, end: datetime) -> int:
         from docsgpt.agents.scheduler_utils import next_cron_run
 
-        stop = min(end, row["end_at"]) if row.get("end_at") else end
+        # The dispatcher's rule: a run exactly at end_at still happens.
+        end_at = row.get("end_at")
         fire = row["next_run_at"]
         if fire >= end:
             return 0
         if fire < start:
             fire = next_cron_run(row["cron"], row["timezone"], after=start - timedelta(seconds=1))
         count = 0
-        while fire < stop and count < activity_now.MAX_OCCURRENCES:
+        while fire < end and (end_at is None or fire <= end_at) and count < activity_now.MAX_OCCURRENCES:
             count += 1
             fire = next_cron_run(row["cron"], row["timezone"], after=fire)
         return count
@@ -535,6 +536,8 @@ class TestOccurrences:
             (START + timedelta(minutes=30), "30 * * * *", None),  # due in the window
             (START - timedelta(minutes=30), "30 * * * *", None),  # overdue: counted from the start
             (START + timedelta(hours=2), "0 */3 * * *", START + timedelta(hours=10)),  # ends inside
+            (START + timedelta(hours=2), "0 */3 * * *", START + timedelta(hours=11)),  # ends on a run
+            (START + timedelta(hours=2), "0 */3 * * *", START + timedelta(hours=2)),  # ends on the first
             (START + timedelta(hours=1), "* * * * *", None),  # hits the cap
             (START + timedelta(hours=30), "0 * * * *", None),  # after the window
         ],

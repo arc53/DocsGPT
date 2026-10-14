@@ -99,6 +99,12 @@ class TestPlannedSlots:
         planned_slots = [e for e in _week(pg_conn)["events"] if e["state"] == "planned"]
         assert len(planned_slots) == 2  # Tue and Wed only
 
+    def test_a_run_exactly_at_end_at_is_planned(self, pg_conn):
+        # The dispatcher still runs a slot at end_at itself.
+        _schedule(pg_conn, end_at=MONDAY + timedelta(days=3, hours=15))
+        planned_slots = [e for e in _week(pg_conn)["events"] if e["state"] == "planned"]
+        assert [e["at"][:10] for e in planned_slots] == ["2030-03-05", "2030-03-06", "2030-03-07"]
+
 
 class TestPastRuns:
     def test_a_run_replaces_its_slot_and_keeps_its_status(self, pg_conn):

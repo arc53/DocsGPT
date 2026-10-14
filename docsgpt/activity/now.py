@@ -524,7 +524,9 @@ def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
     stop = end
     end_at = _as_datetime(row.get("end_at"))
     if end_at is not None:
-        stop = min(stop, end_at)
+        # The dispatcher still runs a slot at end_at itself; the window's
+        # own end stays exclusive.
+        stop = min(stop, end_at + timedelta(microseconds=1))
     try:
         if first >= start:
             # The stored next run counts itself, then the cron from there.
