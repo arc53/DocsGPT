@@ -490,6 +490,38 @@ class TestFailures:
         )
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
 
+    def _failed_job(self, conn, conv, minutes_ago):
+        job, _ = BackgroundJobsRepository(conn).create(
+            user_id="u1", tool_name="code_executor", action_name="run", max_seconds=60, conversation_id=conv,
+        )
+        conn.execute(
+            text(
+                "UPDATE background_jobs SET status = 'failed', "
+                "finished_at = now() - make_interval(mins => :m) WHERE id = CAST(:id AS uuid)"
+            ),
+            {"m": minutes_ago, "id": str(job["id"])},
+        )
+
+    def _unread_since(self, conn, conv, minutes_ago):
+        conn.execute(
+            text("UPDATE conversations SET unread_at = now() - make_interval(mins => :m) WHERE id = CAST(:id AS uuid)"),
+            {"m": minutes_ago, "id": conv},
+        )
+
+    def test_a_failure_seen_before_does_not_come_back(self, pg_conn):
+        # The job failed, the user opened the chat, then a later reply
+        # marked it unread again: the failure was already seen.
+        conv = _chat(pg_conn)
+        self._failed_job(pg_conn, conv, minutes_ago=30)
+        self._unread_since(pg_conn, conv, minutes_ago=5)
+        assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == []
+
+    def test_a_failure_while_unread_is_marked(self, pg_conn):
+        conv = _chat(pg_conn)
+        self._unread_since(pg_conn, conv, minutes_ago=30)
+        self._failed_job(pg_conn, conv, minutes_ago=5)
+        assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
+
     def test_an_answer_the_user_stopped_is_not_a_failure(self, pg_conn):
         conv = _chat(pg_conn)
         message_id = _message(pg_conn, conv, "failed")

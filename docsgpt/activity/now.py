@@ -611,7 +611,10 @@ def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
     """Unread chats whose latest answer, or latest background job, failed.
 
     An answer its user stopped before it wrote anything is failed too, but
-    not counted. Cleared the way the unread mark is: by opening the chat.
+    not counted. A job counts only if it ended while the chat was unread
+    (``unread_at`` holds when it became unread): one that failed before the
+    user last opened the chat was seen, and a later reply must not bring it
+    back. Cleared the way the unread mark is: by opening the chat.
     """
     rows = conn.execute(
         text(
@@ -620,7 +623,11 @@ def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
             WHERE c.user_id = :user_id
               AND c.unread_at IS NOT NULL
               AND (
-                (SELECT status FROM background_jobs j
+                (SELECT CASE
+                            WHEN COALESCE(j.finished_at, j.last_updated_at) >= c.unread_at
+                            THEN j.status
+                        END
+                 FROM background_jobs j
                  WHERE j.conversation_id = c.id
                  ORDER BY j.created_at DESC LIMIT 1) IN ('failed', 'lost')
                 OR (SELECT CASE

@@ -1,8 +1,11 @@
 """The unread mark on a conversation (``conversations.unread_at``).
 
 Set when a message lands that the owner has not seen (a continuation turn
-while they were elsewhere), cleared when they open the conversation. Neither
-write touches ``date`` or ``updated_at``, so marking never reorders the sidebar.
+while they were elsewhere), cleared when they open the conversation. It holds
+when the conversation became unread: a later unseen message leaves it, so
+Activity can tell a failure that came while unread from one seen before.
+Neither write touches ``date`` or ``updated_at``, so marking never reorders
+the sidebar.
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ class ConversationUnreadRepository:
             return False
         result = self._conn.execute(
             text(
-                "UPDATE conversations SET unread_at = now() "
+                "UPDATE conversations SET unread_at = COALESCE(unread_at, now()) "
                 "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
             ),
             {"id": conversation_id, "user_id": user_id},
