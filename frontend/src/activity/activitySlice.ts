@@ -23,6 +23,15 @@ export type ActivityState = {
    * so the sidebar spins at once instead of after the refetch.
    */
   live: Record<string, true>;
+  /**
+   * Moves when what Calendar, Logs and History show may have changed: after
+   * a refetch an event asked for, or a poll that brought something new.
+   * Local patches and a poll that brought the same snapshot leave it, so an
+   * idle page doesn't reload them every minute.
+   */
+  revision: number;
+  /** The last fetched snapshot, serialized, for telling a poll's news. */
+  fetched: string | null;
 };
 
 const initialState: ActivityState = {
@@ -30,13 +39,21 @@ const initialState: ActivityState = {
   loading: false,
   error: false,
   live: {},
+  revision: 0,
+  fetched: null,
 };
+
+/**
+ * Why a refetch runs: `event` after a live event (something started, moved
+ * or ended), `poll` for the slow refresh. Without one it counts as a poll.
+ */
+export type ActivityRefresh = 'event' | 'poll';
 
 export const loadActivityNow = createAsyncThunk<
   NowSnapshot,
-  void,
+  ActivityRefresh | void,
   { state: { preference: { token: string | null } } }
->('activity/loadNow', async (_, { getState }) =>
+>('activity/loadNow', async (_reason, { getState }) =>
   activityService.now(getState().preference.token),
 );
 
@@ -52,6 +69,13 @@ const activitySlice = createSlice({
         state.loading = true;
       })
       .addCase(loadActivityNow.fulfilled, (state, action) => {
+        // An event says something happened even when the snapshot reads the
+        // same: a run can start and end between two fetches.
+        const fetched = JSON.stringify(action.payload);
+        if (action.meta.arg === 'event' || fetched !== state.fetched) {
+          state.revision += 1;
+        }
+        state.fetched = fetched;
         state.now = action.payload;
         state.loading = false;
         state.error = false;
@@ -133,7 +157,7 @@ activityListenerMiddleware.startListening({
   effect: async (_action, api) => {
     api.cancelActiveListeners();
     await api.delay(REFRESH_DEBOUNCE_MS);
-    await api.dispatch(loadActivityNow() as never);
+    await api.dispatch(loadActivityNow('event') as never);
   },
 });
 
@@ -145,6 +169,9 @@ export const selectActivityLoading = (state: WithActivity) =>
   state.activity?.loading ?? false;
 export const selectActivityError = (state: WithActivity) =>
   state.activity?.error ?? false;
+/** Follow this, not the snapshot, to reload when activity may have changed. */
+export const selectActivityRevision = (state: WithActivity) =>
+  state.activity?.revision ?? 0;
 
 const NO_LIVE: Record<string, true> = {};
 /** Chats whose answer started after the last snapshot. */

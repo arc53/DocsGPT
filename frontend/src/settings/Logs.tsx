@@ -3,7 +3,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { selectActivityNow } from '../activity/activitySlice';
+import { selectActivityRevision } from '../activity/activitySlice';
 import { formatElapsed, workflowStep } from '../activity/format';
 import { useClock } from '../activity/useClock';
 import userService from '../api/services/userService';
@@ -62,7 +62,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
   const logs = uniqueLogs(Object.values(logsByPage));
-  const activityNow = useSelector(selectActivityNow);
+  const activityRevision = useSelector(selectActivityRevision);
 
   // Identifies the filter combination a request was issued under, so a
   // slow response from a previous combination is discarded instead of
@@ -164,14 +164,14 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     }
   };
 
-  // The app-wide Now snapshot reloads after every event that starts, moves
-  // or ends a run (debounced), so its change is the cue to refresh.
-  const seenSnapshot = useRef(activityNow);
+  // The activity revision moves after every event that starts, moves or
+  // ends a run (debounced), or a poll that found news: the cue to refresh.
+  const seenRevision = useRef(activityRevision);
   useEffect(() => {
-    if (seenSnapshot.current === activityNow) return;
-    seenSnapshot.current = activityNow;
+    if (seenRevision.current === activityRevision) return;
+    seenRevision.current = activityRevision;
     void refreshFirstPage();
-  }, [activityNow]);
+  }, [activityRevision]);
 
   const showsRunning = (logsByPage[1] ?? []).some((log) => log.running);
   useEffect(() => {

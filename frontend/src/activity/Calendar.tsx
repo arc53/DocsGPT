@@ -29,7 +29,7 @@ import { useMediaQuery } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { intlLocale } from '../utils/dateTimeUtils';
-import { selectActivityNow } from './activitySlice';
+import { selectActivityRevision } from './activitySlice';
 import AgendaList from './calendar/AgendaList';
 import { addDays, stepAnchor, viewWindow } from './calendar/dates';
 import EventPanel from './calendar/EventPanel';
@@ -70,8 +70,8 @@ export default function Calendar() {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
-  // Refetch whenever the Now snapshot does: it follows the same events.
-  const snapshot = useSelector(selectActivityNow);
+  // Refetch when activity may have changed: an event, or a poll with news.
+  const revision = useSelector(selectActivityRevision);
   const { isMobile } = useMediaQuery();
 
   const [view, setView] = useState<CalendarView>(isMobile ? 'agenda' : 'week');
@@ -121,7 +121,7 @@ export default function Calendar() {
     return () => {
       cancelled = true;
     };
-  }, [start, end, token, snapshot, reload]);
+  }, [start, end, token, revision, reload]);
 
   // Agents that have a slot in the window, for the filter.
   const agents = useMemo(() => {

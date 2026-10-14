@@ -11,6 +11,7 @@ import {
 } from '../notifications/notificationsSlice';
 import reducer, {
   loadActivityNow,
+  selectActivityRevision,
   selectApprovalConversations,
   selectFailedConversations,
   selectWorkingConversations,
@@ -72,6 +73,51 @@ describe('activitySlice', () => {
   it('clears the failed mark when the chat is opened', () => {
     const state = reducer(loaded(), markConversationRead.pending('req', 'c4'));
     expect(selectFailedConversations(wrap(state)).size).toBe(0);
+  });
+
+  describe('revision', () => {
+    // Calendar, Logs and History reload when it moves, so it moves only
+    // when their data may have changed.
+    const fetched = (
+      state: ActivityState,
+      now: NowSnapshot,
+      reason?: 'event' | 'poll',
+    ) => reducer(state, loadActivityNow.fulfilled(now, 'req', reason));
+    const revision = (state: ActivityState) =>
+      selectActivityRevision(wrap(state));
+    const polled = () =>
+      fetched(reducer(undefined, { type: '@@init' }), snapshot(), 'poll');
+
+    it('stays put when a poll brings the same snapshot', () => {
+      const first = polled();
+      const again = fetched(first, snapshot(), 'poll');
+      expect(revision(again)).toBe(revision(first));
+    });
+
+    it('moves when a poll brings a different one', () => {
+      const first = polled();
+      const next = fetched(first, snapshot({ running: [] }), 'poll');
+      expect(revision(next)).toBe(revision(first) + 1);
+    });
+
+    it('moves after an event even when the snapshot reads the same', () => {
+      // A run that started and ended between two fetches leaves no trace
+      // in the snapshot, but History and Logs have a new row.
+      const first = polled();
+      const next = fetched(first, snapshot(), 'event');
+      expect(revision(next)).toBe(revision(first) + 1);
+    });
+
+    it('stays put when the snapshot is patched locally', () => {
+      const first = polled();
+      let state = reducer(first, markConversationRead.pending('req', 'c4'));
+      state = reducer(state, sseEventReceived(event('message.finished', 'c1')));
+      expect(revision(state)).toBe(revision(first));
+      // Nor does the patch make the next identical poll look new.
+      expect(revision(fetched(state, snapshot(), 'poll'))).toBe(
+        revision(first),
+      );
+    });
   });
 
   it('reads as empty in a store without the slice', () => {

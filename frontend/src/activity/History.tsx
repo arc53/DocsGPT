@@ -44,7 +44,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import TraceSheet from '../settings/traces/TraceSheet';
 import type { TraceRef } from '../settings/types';
 import { formatCount, intlLocale } from '../utils/dateTimeUtils';
-import { selectActivityNow } from './activitySlice';
+import { selectActivityRevision } from './activitySlice';
 import { addDays, dayKey, formatClock, startOfDay } from './calendar/dates';
 import type { HistoryKind, HistoryRun, HistoryStatus } from './historyTypes';
 
@@ -118,7 +118,7 @@ export default function History() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
-  const snapshot = useSelector(selectActivityNow);
+  const revision = useSelector(selectActivityRevision);
 
   const [kind, setKind] = useState<(typeof KIND_FILTERS)[number]>('all');
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]>('all');
@@ -214,7 +214,7 @@ export default function History() {
         return { ...current, runs: [...fresh, ...current.runs] };
       });
     } catch {
-      // The next snapshot change tries again.
+      // The next change in activity tries again.
     }
   }, [fetchPage]);
 
@@ -222,16 +222,16 @@ export default function History() {
     void load(0);
   }, [load]);
 
-  // New runs land after the events that refetch the Now snapshot. Only a new
-  // snapshot acts here; filter changes reload through `load` above.
-  const seenSnapshot = useRef(snapshot);
+  // New runs land after the events that refetch the Now snapshot, which
+  // moves `revision`. Only that acts here; filters reload through `load`.
+  const seenRevision = useRef(revision);
   const loaded = list !== null;
   useEffect(() => {
-    if (snapshot === seenSnapshot.current) return;
-    seenSnapshot.current = snapshot;
+    if (revision === seenRevision.current) return;
+    seenRevision.current = revision;
     if (loaded) void refreshHead();
     else void load(0);
-  }, [snapshot, loaded, load, refreshHead]);
+  }, [revision, loaded, load, refreshHead]);
 
   const open = async (run: HistoryRun) => {
     if (run.kind === 'schedule' && run.schedule_id) {

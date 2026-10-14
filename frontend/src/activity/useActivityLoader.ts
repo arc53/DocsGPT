@@ -25,9 +25,9 @@ export default function useActivityLoader(): void {
 
   useEffect(() => {
     if (!visible) return;
-    void dispatch(loadActivityNow());
+    void dispatch(loadActivityNow('poll'));
     const timer = window.setInterval(
-      () => void dispatch(loadActivityNow()),
+      () => void dispatch(loadActivityNow('poll')),
       ACTIVITY_REFRESH_MS,
     );
     return () => window.clearInterval(timer);

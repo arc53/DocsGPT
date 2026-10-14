@@ -149,7 +149,7 @@ describe('History page', () => {
   const newSnapshot = (store: Awaited<ReturnType<typeof render>>) =>
     act(async () => {
       store.dispatch(
-        loadActivityNow.fulfilled({} as NowSnapshot, 'req', undefined),
+        loadActivityNow.fulfilled({} as NowSnapshot, 'req', 'event'),
       );
     });
 

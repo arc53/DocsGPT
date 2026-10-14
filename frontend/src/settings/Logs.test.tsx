@@ -1,12 +1,12 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-// Selectors read this state; a test swaps `activity.now` to stand for the
-// app-wide Now snapshot reloading after a live event.
+// Selectors read this state; a test bumps `activity.revision` to stand for
+// the app-wide Now snapshot reloading after a live event.
 const store = vi.hoisted(() => ({
   state: {
     preference: { token: 'token' },
-    activity: { now: null as object | null },
+    activity: { now: null as object | null, revision: 0 },
   },
 }));
 vi.mock('react-redux', () => ({
@@ -210,6 +210,7 @@ describe('Logs running rows', () => {
   beforeEach(() => {
     getLogs.mockReset();
     store.state.activity.now = null;
+    store.state.activity.revision = 0;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -271,11 +272,22 @@ describe('Logs running rows', () => {
       page([{ ...log, id: 'chat-9', timestamp: new Date().toISOString() }]),
     );
     store.state.activity.now = { running: [] };
+    store.state.activity.revision += 1;
     await act(async () => root.render(<Logs />));
     expect(getLogs).toHaveBeenCalledTimes(2);
     expect(getLogs.mock.calls[1][0].page).toBe(1);
     // The run ended: its row gives way to the finished one.
     expect(container.textContent).not.toContain('settings.logs.running');
     expect(container.textContent).toContain('[stream_answer]');
+  });
+
+  it('leaves the first page alone when the snapshot changes but activity did not', async () => {
+    // Opening a chat patches the snapshot; the minute poll may replace it
+    // with an equal one. Neither is news for the logs.
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+    store.state.activity.now = { running: [] };
+    await act(async () => root.render(<Logs />));
+    expect(getLogs).toHaveBeenCalledTimes(1);
   });
 });

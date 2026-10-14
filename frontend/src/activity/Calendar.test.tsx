@@ -19,9 +19,10 @@ vi.mock('react-i18next', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-import activityReducer from './activitySlice';
+import activityReducer, { loadActivityNow } from './activitySlice';
 import Calendar from './Calendar';
 import type { PlannedWindow, ScheduleEvent, SyncEvent } from './calendar/types';
+import type { NowSnapshot } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -152,6 +153,7 @@ describe('Calendar page', () => {
         </Provider>,
       );
     });
+    return store;
   };
   const slotButton = (name: string) =>
     Array.from(
@@ -203,6 +205,27 @@ describe('Calendar page', () => {
     await act(async () => agenda.click());
     expect(chip()).toBeDefined();
     expect(container.textContent).toContain('activity.now.syncBatch.daily');
+  });
+
+  it('asks again only when activity may have changed', async () => {
+    const store = await render();
+    const fetched = (reason: 'event' | 'poll') =>
+      act(async () => {
+        store.dispatch(
+          loadActivityNow.fulfilled(
+            { running: [] } as unknown as NowSnapshot,
+            'req',
+            reason,
+          ),
+        );
+      });
+    await fetched('poll');
+    const calls = activity.planned.mock.calls.length;
+    // The minute poll brings the same snapshot: nothing to recompute.
+    await fetched('poll');
+    expect(activity.planned).toHaveBeenCalledTimes(calls);
+    await fetched('event');
+    expect(activity.planned).toHaveBeenCalledTimes(calls + 1);
   });
 
   it('opens a planned slot in the schedule panel', async () => {
