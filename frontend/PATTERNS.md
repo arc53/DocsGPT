@@ -180,6 +180,9 @@ that fixes the error (Add to Knowledge, when a turn's files overflowed the
 model) is an `outline sm pill` Button with a leading lucide icon under the
 message, in a `text-foreground` wrapper so its label is body text rather than
 the alert's red; a link in the alert's colour does not read as a control.
+An answer its user stopped before it wrote anything (`error_code: "stopped"`)
+is the same block as a note, `Alert variant="info" role="note"` titled
+`conversation.stoppedTitle`, with the same Retry and Copy: nothing failed.
 
 The rows in an answer's step column (Sources, Reasoning, each tool step) are
 one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a

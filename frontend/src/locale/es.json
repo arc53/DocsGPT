@@ -2151,6 +2151,7 @@
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",
+    "stoppedTitle": "Detenida",
     "errors": {
       "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
       "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",

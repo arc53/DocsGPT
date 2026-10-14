@@ -2151,6 +2151,7 @@
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",
+    "stoppedTitle": "Stopped",
     "errors": {
       "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
       "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",

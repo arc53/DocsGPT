@@ -2140,6 +2140,7 @@
     },
     "retry": "重试",
     "failedTitle": "无法生成回复",
+    "stoppedTitle": "已停止",
     "errors": {
       "contextLength": "此消息及其附件太大，超出了模型的上下文窗口。请发送更少或更小的文件。",
       "contextLengthKnowledge": "此消息及其附件太大，超出了模型的上下文窗口。请发送更少或更小的文件，或使用“添加到知识库”来检索它们，而不是整个发送。",

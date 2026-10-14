@@ -2141,6 +2141,7 @@
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",
+    "stoppedTitle": "已停止",
     "errors": {
       "contextLength": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案。",
       "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
