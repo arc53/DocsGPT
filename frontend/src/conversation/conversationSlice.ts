@@ -180,6 +180,7 @@ export const stopAnswer = createAsyncThunk<void, void>(
   async (_arg, { dispatch, getState }) => {
     const controller = abortController;
     const { conversation, preference } = getState() as RootState;
+    const conversationId = conversation.conversationId;
     const index = conversation.queries.length - 1;
     const messageId = conversation.queries[index]?.messageId;
     let taken = false;
@@ -195,13 +196,19 @@ export const stopAnswer = createAsyncThunk<void, void>(
       ]);
     }
     if (abortController === controller) handleAbort();
+    // The user may have opened another chat while the request was out: mark
+    // only the answer that was stopped, in the chat it belongs to.
     const after = (getState() as RootState).conversation;
-    const query = after.queries[index];
-    if (taken && query && !query.response && !query.error) {
+    if (!taken || after.conversationId !== conversationId) return;
+    const at = after.queries.findIndex(
+      (query) => query.messageId === messageId,
+    );
+    const query = after.queries[at];
+    if (query && !query.response && !query.error) {
       dispatch(
         conversationSlice.actions.raiseError({
-          conversationId: after.conversationId,
-          index,
+          conversationId,
+          index: at,
           message: 'Stopped before any response was produced.',
           code: 'stopped',
         }),

@@ -960,6 +960,26 @@ describe('stopAnswer', () => {
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
   });
 
+  it('leaves another chat alone when the stop returns after a switch', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    store.dispatch(setConversationId('chat-a'));
+    const stopping = store.dispatch(stopAnswer());
+    // The user opens chat B, whose question has no answer yet, then the
+    // server takes A's stop.
+    store.dispatch(setConversation([{ prompt: 'b', messageId: 'm2' }]));
+    store.dispatch(setConversationId('chat-b'));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+  });
+
   it('still closes the stream when the server could not take the stop', async () => {
     const events: string[] = [];
     streamUntilClosed(events);
