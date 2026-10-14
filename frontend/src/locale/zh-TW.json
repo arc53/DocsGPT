@@ -2735,6 +2735,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "頻率",
+        "customTiming": "此排程使用自訂時間：{{pattern}}。變更下方的時間即可取代它。",
         "dayOfWeek": "星期"
       },
       "status": {

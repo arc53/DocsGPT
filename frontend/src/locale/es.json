@@ -2747,6 +2747,7 @@
           "dec": "Dic"
         },
         "frequencyLabel": "Frecuencia",
+        "customTiming": "Esta programación usa un horario personalizado: {{pattern}}. Cambia el horario de abajo para reemplazarlo.",
         "dayOfWeek": "Día de la semana"
       },
       "status": {

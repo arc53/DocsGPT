@@ -2747,6 +2747,7 @@
           "dec": "Dez"
         },
         "frequencyLabel": "Häufigkeit",
+        "customTiming": "Dieser Zeitplan läuft nach einem eigenen Takt: {{pattern}}. Ändere die Zeit unten, um ihn zu ersetzen.",
         "dayOfWeek": "Wochentag"
       },
       "status": {

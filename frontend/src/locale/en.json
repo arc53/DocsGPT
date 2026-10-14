@@ -2747,6 +2747,7 @@
           "dec": "Dec"
         },
         "frequencyLabel": "Frequency",
+        "customTiming": "This schedule runs on a custom timing: {{pattern}}. Change the timing below to replace it.",
         "dayOfWeek": "Day of the week"
       },
       "status": {

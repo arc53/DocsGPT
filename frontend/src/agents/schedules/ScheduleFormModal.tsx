@@ -32,6 +32,8 @@ import {
   browserTimezone,
   buildCron,
   buildRunAtUtc,
+  formatCron,
+  parseCron,
   parseScheduleToFormValues,
   supportedTimezones,
   todayDate,
@@ -116,6 +118,14 @@ const sameMinute = (a: string, b: string): boolean =>
   Math.floor(new Date(a).getTime() / 60000) ===
   Math.floor(new Date(b).getTime() / 60000);
 
+/** Whether two recurring timings are alike: the fields a cron is built from. */
+const sameTiming = (a: ScheduleFormValues, b: ScheduleFormValues): boolean =>
+  a.frequency === b.frequency &&
+  a.time === b.time &&
+  a.dayOfWeek === b.dayOfWeek &&
+  a.dayOfMonth === b.dayOfMonth &&
+  a.month === b.month;
+
 /** Create/edit a Schedule via a modal dialog. */
 export default function ScheduleFormModal({
   open,
@@ -188,6 +198,16 @@ export default function ScheduleFormModal({
   const setFrequency = (frequency: ScheduleFrequency) =>
     setValues((current) => ({ ...current, frequency }));
 
+  const isEdit = Boolean(initial?.id);
+  const editsRecurring = isEdit && initial?.trigger_type === 'recurring';
+  const timingUnchanged = sameTiming(values, defaults);
+  // A saved timing the form can't show (an API cron such as weekdays at 9)
+  // loads as the form's fallback; it is kept until a timing field changes.
+  const customCron =
+    editsRecurring && initial?.cron && !parseCron(initial.cron)
+      ? initial.cron
+      : null;
+
   const submit = async () => {
     if (!instruction.trim()) {
       setError(
@@ -239,7 +259,9 @@ export default function ScheduleFormModal({
         return;
       }
       payload.trigger_type = 'recurring';
-      payload.cron = cron;
+      // An edit that keeps the timing leaves cron out, so the saved one stays:
+      // the form can't show every cron, and would replace it with its own.
+      if (!(editsRecurring && timingUnchanged)) payload.cron = cron;
     }
     setInstructionError(null);
     setRunAtError(null);
@@ -253,8 +275,6 @@ export default function ScheduleFormModal({
       setSaveError(typeof message === 'string' ? message : '');
     }
   };
-
-  const isEdit = Boolean(initial?.id);
 
   return (
     <Modal
@@ -318,6 +338,17 @@ export default function ScheduleFormModal({
           }}
           ariaLabel={t('agents.schedules.modal.frequencyLabel')}
         />
+
+        {customCron && timingUnchanged && (
+          <Alert variant="info" role="note">
+            <AlertDescription>
+              {t('agents.schedules.modal.customTiming', {
+                pattern: formatCron(customCron, t),
+                interpolation: { escapeValue: false },
+              })}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <OnPicker
           values={values}

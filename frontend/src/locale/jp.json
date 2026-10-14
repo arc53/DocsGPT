@@ -2735,6 +2735,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "頻度",
+        "customTiming": "このスケジュールはカスタムのタイミングで実行されます: {{pattern}}。下のタイミングを変更すると置き換わります。",
         "dayOfWeek": "曜日"
       },
       "status": {

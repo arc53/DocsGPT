@@ -2734,6 +2734,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "频率",
+        "customTiming": "此计划使用自定义时间：{{pattern}}。更改下方的时间即可替换它。",
         "dayOfWeek": "星期"
       },
       "status": {
