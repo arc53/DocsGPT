@@ -175,3 +175,18 @@ class BaseConnectorLoader(ABC):
                 - error: Error message if download failed (optional)
         """
         pass
+
+    def sync_fingerprint(self, source_config: Dict[str, Any]) -> Optional[str]:
+        """Fingerprint what a sync would download, without downloading it.
+
+        A sync compares this with the value stored at the last
+        ingest and skips the re-ingest when they match. Connectors that cannot
+        tell cheaply return ``None``, and every sync re-ingests.
+
+        Args:
+            source_config: The source's stored selection (``file_ids``, ``folder_ids``...).
+
+        Returns:
+            A string that changes whenever the selected content changes, or ``None``.
+        """
+        return None
