@@ -3506,7 +3506,75 @@
       "watching": "Watching",
       "allMonitors": "All monitors",
       "nothingWatched": "Nothing is being watched",
-      "checked": "checked {{time}}"
+      "checked": "checked {{time}}",
+      "openCalendar": "Open calendar"
+    },
+    "calendar": {
+      "label": "Calendar",
+      "subtitle": "Planned runs, past runs by how they went, and what is being watched.",
+      "loadError": "Couldn't load the calendar",
+      "todayButton": "Today",
+      "previous": "Previous",
+      "next": "Next",
+      "agentFilter": "Agent",
+      "allAgents": "All agents",
+      "viewLabel": "View",
+      "views": {
+        "day": "Day",
+        "week": "Week",
+        "month": "Month",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitors",
+      "knowledgeSyncs": "Knowledge syncs",
+      "hidePast": "Hide past runs",
+      "legend": {
+        "planned": "Planned",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "paused": "Paused or skipped"
+      },
+      "truncated": "Some very frequent schedules show only their first runs in this range.",
+      "watching": "Watching",
+      "syncs": "Syncs",
+      "syncBar": "{{name}} · {{frequency}}, time varies",
+      "frequency": {
+        "daily": "daily",
+        "weekly": "weekly",
+        "monthly": "monthly"
+      },
+      "moreSyncs_one": "+{{count}} more sync",
+      "moreSyncs_other": "+{{count}} more syncs",
+      "state": {
+        "planned": "Planned",
+        "paused": "Paused",
+        "pending": "Starting",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "timeout": "Timed out"
+      },
+      "block_one": "{{name}} ×{{count}}",
+      "block_other": "{{name}} ×{{count}}",
+      "more_one": "+{{count}} more",
+      "more_other": "+{{count}} more",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "empty": "Nothing is planned in these days",
+      "blockDone_one": "{{done}} of {{count}} run done",
+      "blockDone_other": "{{done}} of {{count}} runs done",
+      "oneTime": "One-time",
+      "recurring": "Recurring",
+      "when": "When",
+      "repeats": "Repeats",
+      "fromChat": "From chat",
+      "pausedNote": "This schedule is paused, so this run will not happen. Resume it on its schedule page.",
+      "dayRuns": "This day's runs",
+      "queued": "Run started. It shows in Now and in the run log.",
+      "openSchedule": "Open schedule",
+      "timezone": "Schedule time zone"
     }
   }
 }

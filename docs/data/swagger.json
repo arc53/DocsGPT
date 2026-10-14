@@ -1534,6 +1534,38 @@
         "x-pat-denied": true
       }
     },
+    "/api/activity/planned": {
+      "get": {
+        "description": "The caller's calendar for a window: planned schedule runs (from cron or run_at), past and in-flight runs with their status, monitors as date ranges, and knowledge syncs by frequency. The window may span at most 62 days.\nReturns:\n    A Flask response with ``from``, ``to``, ``events``, ``monitors``,\n    ``syncs`` and ``truncated``, or 400 for a bad window.",
+        "operationId": "get_activity_planned",
+        "parameters": [
+          {
+            "description": "Window start, ISO 8601.",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Window end (exclusive), ISO 8601.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's calendar window",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/add_chunk": {
       "post": {
         "description": "Adds a new chunk to the document",

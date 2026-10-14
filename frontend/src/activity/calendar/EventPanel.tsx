@@ -1,0 +1,210 @@
+import { ArrowRight, Play } from 'lucide-react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '@/components/ui/description-list';
+import { ListRow, ListRows } from '@/components/ui/list-row';
+import { SectionHeader } from '@/components/ui/section-header';
+import {
+  PanelBody,
+  PanelFooter,
+  PanelHeader,
+  SidePanel,
+} from '@/components/ui/side-panel';
+
+import { agentSchedulesPath } from '../../agents/paths';
+import { formatCron } from '../../agents/schedules/cronBuilder';
+import { formatDateTime } from '../../utils/dateTimeUtils';
+import { ACTIVITY_SCHEDULES_PATH } from '../paths';
+import { formatClock } from './dates';
+import type { FrequentBlock } from './layout';
+import type { CalendarEvent, EventState } from './types';
+
+const BADGE: Record<
+  EventState,
+  'default' | 'success' | 'destructive' | 'info' | 'neutral'
+> = {
+  planned: 'default',
+  paused: 'neutral',
+  skipped: 'neutral',
+  pending: 'info',
+  running: 'info',
+  success: 'success',
+  failed: 'destructive',
+  timeout: 'destructive',
+};
+
+export type EventPanelProps = {
+  /** A planned or paused slot, or a frequent schedule's day. */
+  selection:
+    | { kind: 'event'; event: CalendarEvent }
+    | { kind: 'block'; block: FrequentBlock }
+    | null;
+  onClose: () => void;
+  /** Runs the schedule once now; resolves when the run is queued. */
+  onRunNow: (scheduleId: string) => Promise<void>;
+  /** Opens a past run's details (a slot of a frequent schedule's day). */
+  onOpenRun: (event: CalendarEvent) => void;
+};
+
+/**
+ * The calendar's side panel for a slot that hasn't run: when it runs, how it
+ * repeats, whose it is, with Run now and the way to its schedule. For a
+ * frequent schedule's day it lists every slot; a past one opens its run.
+ */
+export default function EventPanel({
+  selection,
+  onClose,
+  onRunNow,
+  onOpenRun,
+}: EventPanelProps) {
+  const { t } = useTranslation();
+  const [running, setRunning] = useState(false);
+  const [queued, setQueued] = useState(false);
+  if (!selection) return null;
+  const event =
+    selection.kind === 'event' ? selection.event : selection.block.events[0];
+  const state: EventState =
+    selection.kind === 'event' ? event.state : 'planned';
+  const schedulePath = event.agent_id
+    ? agentSchedulesPath(event.agent_id)
+    : ACTIVITY_SCHEDULES_PATH;
+  const owner = event.agent_name
+    ? event.agent_name
+    : t('activity.schedules.createdInChat');
+
+  const runNow = async () => {
+    setRunning(true);
+    try {
+      await onRunNow(event.schedule_id);
+      setQueued(true);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <SidePanel
+      open
+      onOpenChange={(open) => !open && onClose()}
+      aria-describedby={undefined}
+    >
+      <PanelHeader
+        title={event.name ?? ''}
+        description={`${owner} · ${
+          event.trigger_type === 'once'
+            ? t('activity.calendar.oneTime')
+            : t('activity.calendar.recurring')
+        }`}
+        actions={
+          selection.kind === 'event' ? (
+            <Badge variant={BADGE[state]}>
+              {t(`activity.calendar.state.${state}`)}
+            </Badge>
+          ) : undefined
+        }
+      />
+      <PanelBody>
+        <DescriptionList size="sm">
+          {selection.kind === 'event' && (
+            <DescriptionItem label={t('activity.calendar.when')}>
+              {formatDateTime(event.at)}
+            </DescriptionItem>
+          )}
+          {event.trigger_type === 'recurring' && event.cron && (
+            <DescriptionItem label={t('activity.calendar.repeats')}>
+              {formatCron(event.cron, t)}
+            </DescriptionItem>
+          )}
+          {event.timezone && (
+            <DescriptionItem label={t('activity.calendar.timezone')}>
+              {event.timezone}
+            </DescriptionItem>
+          )}
+          {event.origin_conversation_id && (
+            <DescriptionItem label={t('activity.calendar.fromChat')}>
+              <Link
+                to={`/c/${event.origin_conversation_id}`}
+                className="text-primary hover:underline"
+              >
+                {event.origin_conversation_name ||
+                  t('activity.schedules.openChat')}
+              </Link>
+            </DescriptionItem>
+          )}
+        </DescriptionList>
+        {state === 'paused' && (
+          <p className="text-muted-foreground text-sm">
+            {t('activity.calendar.pausedNote')}
+          </p>
+        )}
+        {selection.kind === 'block' && (
+          <section className="flex flex-col gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('activity.calendar.dayRuns')}
+              count={selection.block.events.length}
+            />
+            <div className="overflow-hidden rounded-2xl border">
+              <ListRows>
+                {selection.block.events.map((slot) => {
+                  const past = Boolean(slot.run_id);
+                  return (
+                    <ListRow
+                      key={slot.at}
+                      interactive={past}
+                      asChild={past}
+                      title={formatClock(new Date(slot.at))}
+                      trailing={
+                        <Badge variant={BADGE[slot.state]}>
+                          {t(`activity.calendar.state.${slot.state}`)}
+                        </Badge>
+                      }
+                    >
+                      {past ? (
+                        <button type="button" onClick={() => onOpenRun(slot)} />
+                      ) : undefined}
+                    </ListRow>
+                  );
+                })}
+              </ListRows>
+            </div>
+          </section>
+        )}
+        {queued && (
+          <p role="status" className="text-success text-sm">
+            {t('activity.calendar.queued')}
+          </p>
+        )}
+      </PanelBody>
+      <PanelFooter>
+        {state !== 'paused' && (
+          <Button
+            type="button"
+            variant="outline"
+            shape="pill"
+            loading={running}
+            disabled={queued}
+            onClick={() => void runNow()}
+          >
+            <Play />
+            {t('agents.schedules.runNow')}
+          </Button>
+        )}
+        <Button shape="pill" asChild>
+          <Link to={schedulePath}>
+            {t('activity.calendar.openSchedule')}
+            <ArrowRight aria-hidden />
+          </Link>
+        </Button>
+      </PanelFooter>
+    </SidePanel>
+  );
+}

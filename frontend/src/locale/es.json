@@ -3487,7 +3487,75 @@
       "watching": "Vigilando",
       "allMonitors": "Todos los monitores",
       "nothingWatched": "No se está vigilando nada",
-      "checked": "revisado {{time}}"
+      "checked": "revisado {{time}}",
+      "openCalendar": "Abrir calendario"
+    },
+    "calendar": {
+      "label": "Calendario",
+      "subtitle": "Ejecuciones previstas, ejecuciones pasadas según su resultado y lo que se vigila.",
+      "loadError": "No se pudo cargar el calendario",
+      "todayButton": "Hoy",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "agentFilter": "Agente",
+      "allAgents": "Todos los agentes",
+      "viewLabel": "Vista",
+      "views": {
+        "day": "Día",
+        "week": "Semana",
+        "month": "Mes",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitores",
+      "knowledgeSyncs": "Sincronizaciones",
+      "hidePast": "Ocultar ejecuciones pasadas",
+      "legend": {
+        "planned": "Prevista",
+        "running": "En curso",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "paused": "En pausa u omitida"
+      },
+      "truncated": "Algunas programaciones muy frecuentes solo muestran sus primeras ejecuciones en este rango.",
+      "watching": "Vigilando",
+      "syncs": "Sincron.",
+      "syncBar": "{{name}} · {{frequency}}, hora variable",
+      "frequency": {
+        "daily": "diaria",
+        "weekly": "semanal",
+        "monthly": "mensual"
+      },
+      "moreSyncs_one": "+{{count}} sincronización más",
+      "moreSyncs_other": "+{{count}} sincronizaciones más",
+      "state": {
+        "planned": "Prevista",
+        "paused": "En pausa",
+        "pending": "Iniciando",
+        "running": "En curso",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "skipped": "Omitida",
+        "timeout": "Tiempo agotado"
+      },
+      "block_one": "{{name}} ×{{count}}",
+      "block_other": "{{name}} ×{{count}}",
+      "more_one": "+{{count}} más",
+      "more_other": "+{{count}} más",
+      "today": "Hoy",
+      "tomorrow": "Mañana",
+      "empty": "No hay nada previsto en estos días",
+      "blockDone_one": "{{done}} de {{count}} ejecución hecha",
+      "blockDone_other": "{{done}} de {{count}} ejecuciones hechas",
+      "oneTime": "Única",
+      "recurring": "Recurrente",
+      "when": "Cuándo",
+      "repeats": "Se repite",
+      "fromChat": "Del chat",
+      "pausedNote": "Esta programación está en pausa, así que esta ejecución no se hará. Reanúdala en su página.",
+      "dayRuns": "Ejecuciones de este día",
+      "queued": "Ejecución iniciada. Aparece en Ahora y en el registro de ejecuciones.",
+      "openSchedule": "Abrir programación",
+      "timezone": "Zona horaria de la programación"
     }
   }
 }

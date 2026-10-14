@@ -3475,7 +3475,75 @@
       "watching": "監控中",
       "allMonitors": "所有監控",
       "nothingWatched": "沒有正在監控的內容",
-      "checked": "{{time}}檢查過"
+      "checked": "{{time}}檢查過",
+      "openCalendar": "開啟行事曆"
+    },
+    "calendar": {
+      "label": "行事曆",
+      "subtitle": "排定的執行、依結果顯示的過往執行，以及正在監控的內容。",
+      "loadError": "無法載入行事曆",
+      "todayButton": "今天",
+      "previous": "上一頁",
+      "next": "下一頁",
+      "agentFilter": "代理",
+      "allAgents": "所有代理",
+      "viewLabel": "檢視",
+      "views": {
+        "day": "日",
+        "week": "週",
+        "month": "月",
+        "agenda": "議程"
+      },
+      "monitors": "監控",
+      "knowledgeSyncs": "知識同步",
+      "hidePast": "隱藏過往執行",
+      "legend": {
+        "planned": "已排定",
+        "running": "執行中",
+        "success": "成功",
+        "failed": "失敗",
+        "paused": "已暫停或略過"
+      },
+      "truncated": "部分非常頻繁的排程在此範圍內只顯示前幾次執行。",
+      "watching": "監控中",
+      "syncs": "同步",
+      "syncBar": "{{name}} · {{frequency}}，時間不固定",
+      "frequency": {
+        "daily": "每天",
+        "weekly": "每週",
+        "monthly": "每月"
+      },
+      "moreSyncs_one": "另有 {{count}} 個同步",
+      "moreSyncs_other": "另有 {{count}} 個同步",
+      "state": {
+        "planned": "已排定",
+        "paused": "已暫停",
+        "pending": "啟動中",
+        "running": "執行中",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "已略過",
+        "timeout": "逾時"
+      },
+      "block_one": "{{name}} ×{{count}}",
+      "block_other": "{{name}} ×{{count}}",
+      "more_one": "另有 {{count}} 項",
+      "more_other": "另有 {{count}} 項",
+      "today": "今天",
+      "tomorrow": "明天",
+      "empty": "這些天沒有排定項目",
+      "blockDone_one": "已完成 {{done}}/{{count}} 次",
+      "blockDone_other": "已完成 {{done}}/{{count}} 次",
+      "oneTime": "一次性",
+      "recurring": "週期性",
+      "when": "時間",
+      "repeats": "重複",
+      "fromChat": "來自聊天",
+      "pausedNote": "此排程已暫停，因此這次執行不會發生。請在排程頁面恢復它。",
+      "dayRuns": "當天的執行",
+      "queued": "已開始執行。它會顯示在「目前」和執行記錄中。",
+      "openSchedule": "開啟排程",
+      "timezone": "排程時區"
     }
   }
 }

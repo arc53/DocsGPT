@@ -210,6 +210,8 @@ const endpoints = {
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     ACTIVITY_NOW: '/api/activity/now',
+    ACTIVITY_PLANNED: (from: string, to: string) =>
+      `/api/activity/planned?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     MESSAGE_CANCEL: (messageId: string) =>
       `/api/messages/${encodeURIComponent(messageId)}/cancel`,
     USER_SCHEDULES: '/api/schedules',

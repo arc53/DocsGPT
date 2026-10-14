@@ -1,0 +1,191 @@
+import { Clock, Radar, Repeat } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ListRow, ListRows } from '@/components/ui/list-row';
+import { SectionHeader } from '@/components/ui/section-header';
+
+import { intlLocale } from '../../utils/dateTimeUtils';
+import { dayKey, formatClock, sameDay, addDays } from './dates';
+import { blockState, byDay, layoutDay, type FrequentBlock } from './layout';
+import type { CalendarEvent, EventState, MonitorRange } from './types';
+
+const BADGE: Partial<
+  Record<EventState, 'success' | 'destructive' | 'info' | 'warning' | 'neutral'>
+> = {
+  success: 'success',
+  failed: 'destructive',
+  timeout: 'destructive',
+  running: 'info',
+  pending: 'info',
+  skipped: 'neutral',
+  paused: 'neutral',
+};
+
+export type AgendaListProps = {
+  days: Date[];
+  events: CalendarEvent[];
+  monitors: MonitorRange[];
+  now: number;
+  onSelectEvent: (event: CalendarEvent) => void;
+  onSelectBlock: (block: FrequentBlock) => void;
+  onSelectMonitor: (monitor: MonitorRange) => void;
+};
+
+/**
+ * The calendar as a list of days, the phone's default: each day's slots by
+ * time, a frequent schedule as one row with how many of its runs are done.
+ */
+export default function AgendaList({
+  days,
+  events,
+  monitors,
+  now,
+  onSelectEvent,
+  onSelectBlock,
+  onSelectMonitor,
+}: AgendaListProps) {
+  const { t, i18n } = useTranslation();
+  const grouped = byDay(events);
+  const today = new Date(now);
+  const dayName = new Intl.DateTimeFormat(intlLocale(i18n.language), {
+    weekday: 'short',
+  });
+  const date = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+  });
+  const filled = days.filter((day) => grouped.has(dayKey(day)));
+
+  const heading = (day: Date) => {
+    const label = `${dayName.format(day)} ${date.format(day)}`;
+    if (sameDay(day, today))
+      return `${t('activity.calendar.today')} · ${label}`;
+    if (sameDay(day, addDays(today, 1)))
+      return `${t('activity.calendar.tomorrow')} · ${label}`;
+    return label;
+  };
+
+  const stateBadge = (state: EventState) =>
+    BADGE[state] ? (
+      <Badge variant={BADGE[state]}>
+        {t(`activity.calendar.state.${state}`)}
+      </Badge>
+    ) : null;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {monitors.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {monitors.map((monitor) => (
+            <button
+              key={monitor.monitor_id}
+              type="button"
+              onClick={() => onSelectMonitor(monitor)}
+              className="bg-muted hover:bg-accent inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
+            >
+              <Radar aria-hidden className="size-3 shrink-0" />
+              <span className="truncate">
+                {monitor.description || t('monitors.untitled')}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {filled.length === 0 ? (
+        <Card variant="subtle" padding="lg">
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title={t('activity.calendar.empty')}
+          />
+        </Card>
+      ) : (
+        filled.map((day) => {
+          const { placed, blocks } = layoutDay(grouped.get(dayKey(day)) ?? []);
+          type Row =
+            | { at: number; event: CalendarEvent }
+            | { at: number; block: FrequentBlock };
+          const rows: Row[] = [
+            ...placed.map(({ event, hour }) => ({ at: hour, event })),
+            ...blocks.map((block) => ({ at: block.from, block })),
+          ].sort((a, b) => a.at - b.at);
+          return (
+            <section key={dayKey(day)} className="flex flex-col gap-2">
+              <SectionHeader as="h2" size="sm" title={heading(day)} />
+              <Card variant="subtle" padding="none" className="overflow-hidden">
+                <ListRows>
+                  {rows.map((row) =>
+                    'event' in row ? (
+                      <ListRow
+                        key={`${row.event.schedule_id}:${row.event.at}`}
+                        interactive
+                        asChild
+                        leading={
+                          <span className="text-foreground w-12 shrink-0 text-xs font-medium tabular-nums">
+                            {formatClock(new Date(row.event.at))}
+                          </span>
+                        }
+                        title={row.event.name ?? ''}
+                        description={
+                          row.event.agent_name ??
+                          t('activity.schedules.createdInChat')
+                        }
+                        trailing={
+                          stateBadge(row.event.state) ??
+                          (row.event.trigger_type === 'once' ? (
+                            <Clock
+                              aria-hidden
+                              className="text-muted-foreground size-3.5"
+                            />
+                          ) : (
+                            <Repeat
+                              aria-hidden
+                              className="text-muted-foreground size-3.5"
+                            />
+                          ))
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onSelectEvent(row.event)}
+                        />
+                      </ListRow>
+                    ) : (
+                      <ListRow
+                        key={row.block.schedule_id}
+                        interactive
+                        asChild
+                        leading={
+                          <span className="text-foreground w-12 shrink-0 text-xs font-medium tabular-nums">
+                            {`${formatClock(new Date(row.block.events[0].at))}`}
+                          </span>
+                        }
+                        title={row.block.name ?? ''}
+                        description={t('activity.calendar.blockDone', {
+                          done: row.block.events.filter(
+                            (e) =>
+                              e.state !== 'planned' && e.state !== 'paused',
+                          ).length,
+                          count: row.block.events.length,
+                        })}
+                        trailing={stateBadge(blockState(row.block.events))}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onSelectBlock(row.block)}
+                        />
+                      </ListRow>
+                    ),
+                  )}
+                </ListRows>
+              </Card>
+            </section>
+          );
+        })
+      )}
+    </div>
+  );
+}

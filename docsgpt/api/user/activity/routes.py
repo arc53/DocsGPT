@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from docsgpt.activity.flags import request_stop
 from docsgpt.activity.now import build_now
+from docsgpt.activity.planned import WindowError, build_planned, parse_window
 from docsgpt.api import api
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.session import db_readonly
@@ -60,6 +61,42 @@ class ActivityNow(Resource):
             logger.exception("activity: building the Now snapshot failed")
             return _err("Failed to load activity", 500)
         return make_response(jsonify(snapshot), 200)
+
+
+@activity_ns.route("/activity/planned")
+class ActivityPlanned(Resource):
+    @api.doc(
+        description=(
+            "The caller's calendar for a window: planned schedule runs (from cron or run_at), past "
+            "and in-flight runs with their status, monitors as date ranges, and knowledge syncs by "
+            "frequency. The window may span at most 62 days."
+        ),
+        params={
+            "from": {"description": "Window start, ISO 8601.", "required": True},
+            "to": {"description": "Window end (exclusive), ISO 8601.", "required": True},
+        },
+    )
+    def get(self):
+        """Return the caller's calendar window.
+
+        Returns:
+            A Flask response with ``from``, ``to``, ``events``, ``monitors``,
+            ``syncs`` and ``truncated``, or 400 for a bad window.
+        """
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        try:
+            start, end = parse_window(request.args.get("from"), request.args.get("to"))
+        except WindowError as exc:
+            return _err(str(exc), 400)
+        try:
+            with db_readonly() as conn:
+                window = build_planned(conn, user_id, start, end)
+        except Exception:
+            logger.exception("activity: building the calendar failed")
+            return _err("Failed to load the calendar", 500)
+        return make_response(jsonify(window), 200)
 
 
 @activity_ns.route("/messages/<string:message_id>/cancel")

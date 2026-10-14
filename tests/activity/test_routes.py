@@ -58,6 +58,32 @@ class TestNow:
         build.assert_called_once_with(pg_conn, "u1")
 
 
+class TestPlanned:
+    def test_unauthorized(self, app):
+        from docsgpt.api.user.activity.routes import ActivityPlanned
+
+        assert _call(app, "/api/activity/planned", "GET", ActivityPlanned().get, user=None).status_code == 401
+
+    def test_rejects_a_bad_window(self, app):
+        from docsgpt.api.user.activity.routes import ActivityPlanned
+
+        resp = _call(app, "/api/activity/planned?from=2030-03-11&to=2030-03-04", "GET", ActivityPlanned().get)
+        assert resp.status_code == 400
+
+    def test_returns_the_window(self, app, pg_conn):
+        from docsgpt.api.user.activity.routes import ActivityPlanned
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.activity.routes.build_planned", return_value={"events": []}
+        ) as build:
+            resp = _call(
+                app, "/api/activity/planned?from=2030-03-04T00:00:00Z&to=2030-03-11T00:00:00Z",
+                "GET", ActivityPlanned().get,
+            )
+        assert resp.status_code == 200
+        assert build.call_args.args[1] == "u1"
+
+
 class TestCancel:
     def test_unauthorized(self, app):
         from docsgpt.api.user.activity.routes import MessageCancel

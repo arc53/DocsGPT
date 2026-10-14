@@ -3475,7 +3475,75 @@
       "watching": "監視中",
       "allMonitors": "すべてのモニター",
       "nothingWatched": "監視中のものはありません",
-      "checked": "{{time}}に確認"
+      "checked": "{{time}}に確認",
+      "openCalendar": "カレンダーを開く"
+    },
+    "calendar": {
+      "label": "カレンダー",
+      "subtitle": "予定された実行、結果ごとの過去の実行、監視中のもの。",
+      "loadError": "カレンダーを読み込めませんでした",
+      "todayButton": "今日",
+      "previous": "前へ",
+      "next": "次へ",
+      "agentFilter": "エージェント",
+      "allAgents": "すべてのエージェント",
+      "viewLabel": "表示",
+      "views": {
+        "day": "日",
+        "week": "週",
+        "month": "月",
+        "agenda": "予定リスト"
+      },
+      "monitors": "モニター",
+      "knowledgeSyncs": "ナレッジ同期",
+      "hidePast": "過去の実行を隠す",
+      "legend": {
+        "planned": "予定",
+        "running": "実行中",
+        "success": "成功",
+        "failed": "失敗",
+        "paused": "一時停止またはスキップ"
+      },
+      "truncated": "非常に頻繁なスケジュールは、この期間の最初の実行のみ表示されます。",
+      "watching": "監視中",
+      "syncs": "同期",
+      "syncBar": "{{name}} · {{frequency}}、時刻は不定",
+      "frequency": {
+        "daily": "毎日",
+        "weekly": "毎週",
+        "monthly": "毎月"
+      },
+      "moreSyncs_one": "他 {{count}} 件の同期",
+      "moreSyncs_other": "他 {{count}} 件の同期",
+      "state": {
+        "planned": "予定",
+        "paused": "一時停止",
+        "pending": "開始中",
+        "running": "実行中",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "スキップ",
+        "timeout": "タイムアウト"
+      },
+      "block_one": "{{name}} ×{{count}}",
+      "block_other": "{{name}} ×{{count}}",
+      "more_one": "他 {{count}} 件",
+      "more_other": "他 {{count}} 件",
+      "today": "今日",
+      "tomorrow": "明日",
+      "empty": "この期間に予定はありません",
+      "blockDone_one": "{{count}} 回中 {{done}} 回完了",
+      "blockDone_other": "{{count}} 回中 {{done}} 回完了",
+      "oneTime": "1回限り",
+      "recurring": "定期",
+      "when": "日時",
+      "repeats": "繰り返し",
+      "fromChat": "チャットから",
+      "pausedNote": "このスケジュールは一時停止中のため、この実行は行われません。スケジュールのページで再開してください。",
+      "dayRuns": "この日の実行",
+      "queued": "実行を開始しました。「現在」と実行ログに表示されます。",
+      "openSchedule": "スケジュールを開く",
+      "timezone": "スケジュールのタイムゾーン"
     }
   }
 }

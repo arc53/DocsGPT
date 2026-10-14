@@ -358,6 +358,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
     # Spans every chat, agent and run of the user, like conversations do.
     "/api/activity/now": ("*",),
+    "/api/activity/planned": ("*",),
     "/api/messages/<string:message_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),

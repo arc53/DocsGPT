@@ -10,6 +10,9 @@ export const ACTIVITY_ROOT = '/activity';
 /** What runs this minute, what waits for the user, what runs next. */
 export const ACTIVITY_NOW_PATH = `${ACTIVITY_ROOT}/now`;
 
+/** Planned and past runs, monitors and syncs over time. */
+export const ACTIVITY_CALENDAR_PATH = `${ACTIVITY_ROOT}/calendar`;
+
 /** Every schedule across agents, agentless ones included. */
 export const ACTIVITY_SCHEDULES_PATH = `${ACTIVITY_ROOT}/schedules`;
 

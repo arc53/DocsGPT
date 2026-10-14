@@ -3487,7 +3487,75 @@
       "watching": "Beobachtet",
       "allMonitors": "Alle Monitore",
       "nothingWatched": "Nichts wird beobachtet",
-      "checked": "geprüft {{time}}"
+      "checked": "geprüft {{time}}",
+      "openCalendar": "Kalender öffnen"
+    },
+    "calendar": {
+      "label": "Kalender",
+      "subtitle": "Geplante Ausführungen, vergangene nach Ergebnis und was beobachtet wird.",
+      "loadError": "Der Kalender konnte nicht geladen werden",
+      "todayButton": "Heute",
+      "previous": "Zurück",
+      "next": "Weiter",
+      "agentFilter": "Agent",
+      "allAgents": "Alle Agenten",
+      "viewLabel": "Ansicht",
+      "views": {
+        "day": "Tag",
+        "week": "Woche",
+        "month": "Monat",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitore",
+      "knowledgeSyncs": "Wissenssynchronisierung",
+      "hidePast": "Vergangene ausblenden",
+      "legend": {
+        "planned": "Geplant",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "paused": "Pausiert oder übersprungen"
+      },
+      "truncated": "Einige sehr häufige Zeitpläne zeigen in diesem Zeitraum nur ihre ersten Ausführungen.",
+      "watching": "Beobachtet",
+      "syncs": "Syncs",
+      "syncBar": "{{name}} · {{frequency}}, Uhrzeit variiert",
+      "frequency": {
+        "daily": "täglich",
+        "weekly": "wöchentlich",
+        "monthly": "monatlich"
+      },
+      "moreSyncs_one": "+{{count}} weitere",
+      "moreSyncs_other": "+{{count}} weitere",
+      "state": {
+        "planned": "Geplant",
+        "paused": "Pausiert",
+        "pending": "Startet",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "skipped": "Übersprungen",
+        "timeout": "Zeitüberschreitung"
+      },
+      "block_one": "{{name}} ×{{count}}",
+      "block_other": "{{name}} ×{{count}}",
+      "more_one": "+{{count}} weitere",
+      "more_other": "+{{count}} weitere",
+      "today": "Heute",
+      "tomorrow": "Morgen",
+      "empty": "In diesen Tagen ist nichts geplant",
+      "blockDone_one": "{{done}} von {{count}} Ausführung erledigt",
+      "blockDone_other": "{{done}} von {{count}} Ausführungen erledigt",
+      "oneTime": "Einmalig",
+      "recurring": "Wiederkehrend",
+      "when": "Wann",
+      "repeats": "Wiederholt",
+      "fromChat": "Aus Chat",
+      "pausedNote": "Dieser Zeitplan ist pausiert, diese Ausführung findet also nicht statt. Setze ihn auf seiner Seite fort.",
+      "dayRuns": "Ausführungen an diesem Tag",
+      "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
+      "openSchedule": "Zeitplan öffnen",
+      "timezone": "Zeitzone des Zeitplans"
     }
   }
 }

@@ -54,7 +54,11 @@ import {
   selectActivityNow,
 } from './activitySlice';
 import { formatElapsed, formatRunTime } from './format';
-import { ACTIVITY_MONITORS_PATH, ACTIVITY_SCHEDULES_PATH } from './paths';
+import {
+  ACTIVITY_CALENDAR_PATH,
+  ACTIVITY_MONITORS_PATH,
+  ACTIVITY_SCHEDULES_PATH,
+} from './paths';
 import type {
   ApprovalItem,
   PausedScheduleItem,
@@ -693,8 +697,8 @@ export default function Now() {
           <section>
             {sideHeader(
               t('activity.now.upNext'),
-              ACTIVITY_SCHEDULES_PATH,
-              t('agents.schedules.allSchedules'),
+              ACTIVITY_CALENDAR_PATH,
+              t('activity.now.openCalendar'),
             )}
             <Card variant="subtle" padding="none" className="overflow-hidden">
               {snapshot.up_next.length === 0 ? (

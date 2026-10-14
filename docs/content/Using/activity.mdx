@@ -1,6 +1,6 @@
 ---
 title: Activity
-description: See what runs in DocsGPT right now, what waits for you and what runs next on the Activity page, stop a running answer from there, and read the status marks on sidebar chats.
+description: See what runs in DocsGPT right now, what waits for you and what runs next, browse planned and past runs on a calendar, stop a running answer, and read the status marks on sidebar chats.
 lastUpdated: 2026-10-14
 ---
 
@@ -13,6 +13,7 @@ import { Callout } from 'nextra/components'
 Activity has these pages:
 
 - **Now**: what runs this minute, what waits for you and what runs next.
+- **Calendar**: planned and past runs over a day, a week or a month.
 - **Schedules**: every schedule across your agents (see [Agent Schedules](/Agents/schedules#all-your-schedules-in-activity)).
 - **Monitors**: what the assistant is watching for you (see [Monitors](/Tools/monitors#managing-monitors)).
 
@@ -35,6 +36,22 @@ The cards on top count what is running, what needs you, the runs due in the next
 Stopping an answer from another page needs Redis, which every DocsGPT install runs. Without it, **Stop** reports that it couldn't stop the answer; stop it in the chat instead.
 </Callout>
 
+## Calendar
+
+**Calendar** shows your schedules over time as a **Day**, **Week**, **Month** or **Agenda** (a list of days, the default on a phone). Use **Today** and the arrows to move, and filter by agent.
+
+- **Future slots** come from each schedule's repeat rule or one-time date. A paused schedule's slots are dashed: they will not run until you resume it.
+- **Past slots** show how the run went: green when it succeeded, red when it failed or timed out, dashed when it was skipped. A run in progress is blue.
+- **Frequent schedules** (hourly or more often) are one tall block per day, such as **Inbox triage ×11**, instead of a slot per run. Select it to list the day's runs.
+- **Watching** shows each active monitor as a bar from when it was set up to when it expires. A monitor isn't drawn as slots: a page checked every 30 minutes would fill the week.
+- **Syncs** lists the knowledge sources that re-sync **daily**, **weekly** or **monthly**. They have no clock time: every source of a frequency syncs when the worker's sync task for it runs, counted from when the worker started.
+
+Select a future slot to see when it runs and how it repeats, with **Run now** and **Open schedule**. Select a past slot to see that run's status, times, tokens, output and error, and **Open conversation** when the run wrote to one. **Hide past runs** leaves only what is still to come.
+
+<Callout type="info">
+The calendar shows times in your browser's time zone. A schedule's own time zone is in its details.
+</Callout>
+
 ## Status marks on sidebar chats
 
 A chat in the sidebar shows at most one mark, the most urgent one. Hover over it to see every state the chat is in.
@@ -49,4 +66,4 @@ A chat in the sidebar shows at most one mark, the most urgent one. Hover over it
 
 ## Over the API
 
-`GET /api/activity/now` returns what the Now page shows, and `POST /api/messages/<message_id>/cancel` stops a running answer. Both take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.
+`GET /api/activity/now` returns what the Now page shows. `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>` returns a calendar window of at most 62 days: `events` (planned slots with `state` `planned` or `paused`, and runs with their status and `run_id`), `monitors` and `syncs`. `POST /api/messages/<message_id>/cancel` stops a running answer. All three take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.

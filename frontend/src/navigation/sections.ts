@@ -3,6 +3,7 @@ import {
   BarChart3,
   Blocks,
   CalendarClock,
+  CalendarDays,
   ChartNoAxesColumn,
   Database,
   FileClock,
@@ -25,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import {
+  ACTIVITY_CALENDAR_PATH,
   ACTIVITY_MONITORS_PATH,
   ACTIVITY_NOW_PATH,
   ACTIVITY_ROOT,
@@ -209,6 +211,12 @@ export const ACTIVITY_SECTION: Section = {
           labelKey: 'activity.now.label',
           icon: Activity,
           aliases: [ACTIVITY_ROOT],
+        },
+        {
+          key: 'calendar',
+          path: ACTIVITY_CALENDAR_PATH,
+          labelKey: 'activity.calendar.label',
+          icon: CalendarDays,
         },
       ],
     },
