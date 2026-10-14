@@ -179,8 +179,26 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       if (!response.ok) return;
       const data = await response.json();
       if (issuedKey !== filterKeyRef.current) return;
-      setLogsByPage((prev) =>
-        prev[1] ? mergeLoadedPages(prev, data.logs, pages, PAGE_SIZE) : prev,
+      const previous = logsByPageRef.current;
+      if (!previous[1]) return;
+      const merged = mergeLoadedPages(
+        previous,
+        data.logs,
+        pages,
+        PAGE_SIZE,
+        Boolean(data.has_more),
+      );
+      if (merged.reset) {
+        // Loading more goes on from the refreshed pages.
+        setLogsByPage(merged.pages);
+        setPage(pages);
+        setHasMore(true);
+        return;
+      }
+      // Merged against the latest state: a page may have landed meanwhile.
+      setLogsByPage(
+        (prev) =>
+          mergeLoadedPages(prev, data.logs, pages, PAGE_SIZE, false).pages,
       );
     } catch (error) {
       // The next event or poll tries again.

@@ -29,7 +29,14 @@ describe('mergeLoadedPages', () => {
       row('b', '2026-10-14T10:05:00Z'),
       row('a', '2026-10-14T10:04:00Z'),
     ];
-    const next = mergeLoadedPages(previous, fresh, 2, 2);
+    const { pages: next, reset } = mergeLoadedPages(
+      previous,
+      fresh,
+      2,
+      2,
+      true,
+    );
+    expect(reset).toBe(false);
     expect(next[1].map((log) => log.id)).toEqual(['d', 'c']);
     // The run gives way; a finished row pushed past the pages stays.
     expect(next[2].map((log) => log.id)).toEqual(['b', 'a', 'old']);
@@ -43,21 +50,58 @@ describe('mergeLoadedPages', () => {
       row('d1', '2026-10-14T10:06:00Z'),
       row('webhook-run-1', '2026-10-14T09:00:00Z', true),
     ];
-    const next = mergeLoadedPages({ 1: [] }, fresh, 1, 2);
-    expect(next[1].map((log) => log.id)).toEqual([
-      'd2',
-      'd1',
-      'webhook-run-1',
-    ]);
+    const { pages: next } = mergeLoadedPages({ 1: [] }, fresh, 1, 2, false);
+    expect(next[1].map((log) => log.id)).toEqual(['d2', 'd1', 'webhook-run-1']);
+  });
+
+  it('starts over when more rows came in than the refresh read', () => {
+    // 3 new rows, 2 read: the third is in neither, and paging moved on.
+    const previous = {
+      1: [row('b', '2026-10-14T10:05:00Z'), row('a', '2026-10-14T10:04:00Z')],
+      2: [row('old', '2026-10-14T10:00:00Z')],
+    };
+    const fresh = [
+      row('n3', '2026-10-14T10:08:00Z'),
+      row('n2', '2026-10-14T10:07:00Z'),
+    ];
+    const { pages: next, reset } = mergeLoadedPages(
+      previous,
+      fresh,
+      1,
+      2,
+      true,
+    );
+    expect(reset).toBe(true);
+    expect(next).toEqual({ 1: fresh });
+  });
+
+  it('merges when the refresh reached the loaded rows', () => {
+    const previous = {
+      1: [row('b', '2026-10-14T10:05:00Z'), row('a', '2026-10-14T10:04:00Z')],
+    };
+    const fresh = [
+      row('n1', '2026-10-14T10:06:00Z'),
+      row('b', '2026-10-14T10:05:00Z'),
+    ];
+    const { pages: next, reset } = mergeLoadedPages(
+      previous,
+      fresh,
+      1,
+      2,
+      true,
+    );
+    expect(reset).toBe(false);
+    expect(next[1].map((log) => log.id)).toEqual(['n1', 'b', 'a']);
   });
 
   it('leaves pages past the refreshed ones as they are', () => {
     const third = [row('z', '2026-10-14T09:00:00Z')];
-    const next = mergeLoadedPages(
+    const { pages: next } = mergeLoadedPages(
       { 1: [row('a', '2026-10-14T10:04:00Z')], 3: third },
       [row('a', '2026-10-14T10:04:00Z')],
       1,
       10,
+      false,
     );
     expect(next[3]).toBe(third);
   });

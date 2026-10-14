@@ -23,11 +23,16 @@ vi.mock('../hooks', async (importOriginal) => ({
   useLoaderState: (initial: boolean) => useState(initial),
 }));
 
-// A test calls `sentinel.reach()` to stand for scrolling to the list's end.
-const sentinel = vi.hoisted(() => ({ reach: () => undefined as void }));
+// A test calls `sentinel.reach()` to stand for scrolling to the list's end;
+// `enabled` says whether the list would load more there.
+const sentinel = vi.hoisted(() => ({
+  reach: () => undefined as void,
+  enabled: false,
+}));
 vi.mock('../hooks/useLoadMore', () => ({
-  useScrollSentinel: (onReach: () => void) => {
+  useScrollSentinel: (onReach: () => void, enabled: boolean) => {
     sentinel.reach = onReach;
+    sentinel.enabled = enabled;
     return vi.fn();
   },
 }));
@@ -355,6 +360,34 @@ describe('Logs running rows', () => {
     };
     await act(async () => root.render(<Logs />));
     expect(getLogs).toHaveBeenCalledTimes(1);
+  });
+
+  it('can reach every row again after more came in than a refresh reads', async () => {
+    const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
+    getLogs.mockResolvedValueOnce(
+      page([{ ...log, id: 'old', timestamp: at(600) }]),
+    );
+    await act(async () => root.render(<Logs />));
+    expect(sentinel.enabled).toBe(false);
+
+    // Eleven answers finished; the refresh reads the newest ten.
+    const newest = Array.from({ length: 10 }, (_, i) => ({
+      ...log,
+      id: `new-${i}`,
+      timestamp: at(i),
+    }));
+    getLogs.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ logs: newest, has_more: true }),
+    });
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    expect(sentinel.enabled).toBe(true);
+    getLogs.mockResolvedValueOnce(
+      page([{ ...log, id: 'new-10', timestamp: at(10) }]),
+    );
+    await act(async () => sentinel.reach());
+    expect(getLogs.mock.calls[2][0]).toMatchObject({ page: 2, page_size: 10 });
   });
 
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
