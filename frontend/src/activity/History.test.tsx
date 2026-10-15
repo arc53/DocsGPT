@@ -297,6 +297,29 @@ describe('History page', () => {
       expect(titles()).toEqual(['n', 'a', 'b', 'c']);
     },
   );
+
+  it('drops a pending Load more when a refresh starts the list over', async () => {
+    activity.history
+      .mockReset()
+      .mockResolvedValueOnce({ runs: named('a', 'b'), has_more: true });
+    const store = await render();
+    const more = deferred();
+    activity.history.mockReturnValueOnce(more.promise);
+    await clickLoadMore();
+
+    // A full page of new runs: nothing in common, so the list starts over.
+    activity.history.mockResolvedValueOnce({
+      runs: named('x', 'y'),
+      has_more: true,
+    });
+    await newSnapshot(store);
+    expect(titles()).toEqual(['x', 'y']);
+
+    // Load more asked for offset 2 of the old list; its answer is stale.
+    await act(async () => more.resolve({ runs: named('c'), has_more: false }));
+    expect(titles()).toEqual(['x', 'y']);
+    expect(container.textContent).toContain('activity.history.loadMore');
+  });
 });
 
 describe('formatDuration', () => {

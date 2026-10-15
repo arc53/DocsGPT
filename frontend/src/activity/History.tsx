@@ -202,21 +202,36 @@ export default function History() {
    * Puts runs that finished since the last look on top, keeping the pages
    * already loaded. Quiet: no spinner, and a failure waits for the next one.
    */
+  const listRef = useRef(list);
+  listRef.current = list;
   const refreshHead = useCallback(async () => {
     const gen = generation.current;
     try {
       const page = await fetchPage(0);
       if (gen !== generation.current) return;
-      setList((current) => {
-        if (current !== null && current.key !== filterKey) return current;
-        const fresh = unseen(current?.runs ?? [], page.runs);
-        if (current !== null && fresh.length === 0) return current;
-        // Nothing in common: more than a page landed (or nothing was listed),
-        // so a merge would leave a gap. Start over from this page.
-        if (current === null || fresh.length === page.runs.length) {
-          return { key: filterKey, runs: page.runs, hasMore: page.has_more };
-        }
-        return { ...current, runs: [...fresh, ...current.runs] };
+      const current = listRef.current;
+      if (current !== null && current.key !== filterKey) return;
+      // Nothing in common: more than a page landed (or nothing was listed),
+      // so a merge would leave a gap. Start over from this page, as a new
+      // generation: a Load more still out asked for an offset of the old
+      // list, and its answer would skip the runs in between.
+      if (
+        current === null ||
+        (page.runs.length > 0 &&
+          unseen(current.runs, page.runs).length === page.runs.length)
+      ) {
+        generation.current += 1;
+        setList({ key: filterKey, runs: page.runs, hasMore: page.has_more });
+        setLoading(false);
+        setFailed(false);
+        return;
+      }
+      // Merged against the latest list: a page may have landed meanwhile.
+      setList((latest) => {
+        if (latest === null || latest.key !== filterKey) return latest;
+        const fresh = unseen(latest.runs, page.runs);
+        if (fresh.length === 0) return latest;
+        return { ...latest, runs: [...fresh, ...latest.runs] };
       });
     } catch {
       // The next change in activity tries again.
