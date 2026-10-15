@@ -43,6 +43,7 @@ export type RunningItem = {
   action_name?: string | null;
   job_kind?: string | null;
   status_message?: string | null;
+  /** job / ingest: done so far, 0 to 1 (null when the job prints none). */
   progress?: number | null;
   output_tail?: string | null;
   cancel_requested?: boolean;

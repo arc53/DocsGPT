@@ -149,6 +149,21 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     ]
 
 
+def _job_fraction(progress: Any) -> Optional[float]:
+    """A job's ``{"last", "percent"}`` progress as the 0-1 fraction every Now row carries.
+
+    Args:
+        progress: The job's stored progress (see ``background/watch.py``).
+
+    Returns:
+        ``percent / 100`` clamped to 0-1, or ``None`` when the job prints none.
+    """
+    percent = progress.get("percent") if isinstance(progress, dict) else None
+    if not isinstance(percent, (int, float)) or isinstance(percent, bool):
+        return None
+    return min(max(percent / 100, 0.0), 1.0)
+
+
 def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Background jobs still working, with their tool's label and the job's progress."""
     rows = query_rows(
@@ -183,7 +198,7 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
                 "action_name": summary.get("action_name"),
                 "job_kind": r.get("kind"),
                 "status_message": summary.get("status_message"),
-                "progress": summary.get("progress"),
+                "progress": _job_fraction(summary.get("progress")),
                 "output_tail": summary.get("output_tail"),
                 "cancel_requested": summary.get("cancel_requested"),
                 "started_at": summary.get("started_at") or _iso(r.get("created_at")),

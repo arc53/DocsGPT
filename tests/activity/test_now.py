@@ -152,6 +152,19 @@ class TestBackgroundJobs:
         assert jobs[0]["conversation_name"] == "Halvorsen QBR"
         assert jobs[0]["tool_name"] == "code_executor"
         assert jobs[0]["tool_label"] == "Code Executor"
+        assert jobs[0]["progress"] is None
+
+    def test_a_jobs_progress_is_a_fraction_like_every_other_rows(self, pg_conn):
+        # The job stores {"last", "percent"} (background/watch.py); Now's
+        # bar reads one 0-1 number for every kind.
+        repo = BackgroundJobsRepository(pg_conn)
+        job, _ = repo.create(
+            user_id="u1", tool_name="code_executor", action_name="run",
+            max_seconds=600, conversation_id=_chat(pg_conn), kind="code_exec",
+        )
+        repo.update_progress(str(job["id"]), progress={"last": "PROGRESS 42%", "percent": 42})
+        [item] = [i for i in activity_now.build_now(pg_conn, "u1")["running"] if i["kind"] == "job"]
+        assert item["progress"] == 0.42
 
 
 class TestScheduledRuns:
