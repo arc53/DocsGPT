@@ -154,6 +154,21 @@ class TestSyncSchedule:
         schedule = syncs.sync_schedule(load=lambda name: entries.get(name))
         assert schedule == {"weekly": (NOW + timedelta(days=5), timedelta(weeks=1))}
 
+    def test_beat_is_read_once_a_minute(self, monkeypatch):
+        # Every Now load and calendar window asks; the entries move once a day.
+        reads = []
+        clock = [1000.0]
+        entry = _entry(NOW - timedelta(hours=20))
+        monkeypatch.setattr(syncs, "_load_entry", lambda name: reads.append(name) or entry)
+        monkeypatch.setattr(syncs.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(syncs, "_cached", None)
+        first = syncs.sync_schedule()
+        assert syncs.sync_schedule() == first
+        assert len(reads) == len(syncs.FREQUENCIES)
+        clock[0] += syncs.SCHEDULE_CACHE_SECONDS + 1
+        syncs.sync_schedule()
+        assert len(reads) == 2 * len(syncs.FREQUENCIES)
+
 
 class TestCalendarSlots:
     WEEK = (NOW, NOW + timedelta(days=7))  # Wed 12:00 to the next Wed 12:00

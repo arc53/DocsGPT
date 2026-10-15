@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -34,6 +35,13 @@ MAX_SLOTS_PER_FREQUENCY = 100
 #: than this, beat is taken as behind or stopped.
 LATE_GRACE = timedelta(minutes=15)
 
+#: How long one process reuses what it read from beat: every Now load and
+#: calendar window asks, and the entries move at most once a day.
+SCHEDULE_CACHE_SECONDS = 60
+
+#: ``(read at, schedule)`` from the last read of beat, on ``time.monotonic``.
+_cached: Optional[Tuple[float, Dict[str, Tuple[datetime, timedelta]]]] = None
+
 #: Remote loaders that can only read with a connection; mirrors
 #: ``docsgpt.worker._CONNECTION_ONLY_LOADERS`` (a test keeps them equal).
 CONNECTION_ONLY_LOADERS = frozenset({"linear"})
@@ -52,11 +60,12 @@ def _load_entry(name: str) -> Any:
         return None
 
 
-def sync_schedule(load: Callable[[str], Any] = _load_entry) -> Dict[str, Tuple[datetime, timedelta]]:
+def sync_schedule(load: Optional[Callable[[str], Any]] = None) -> Dict[str, Tuple[datetime, timedelta]]:
     """When each sync frequency fires next, and how often it fires.
 
     Args:
-        load: Reads a beat entry by name (tests).
+        load: Reads a beat entry by name (tests). Without it, RedBeat is read
+            at most once per ``SCHEDULE_CACHE_SECONDS``.
 
     Returns:
         ``{frequency: (next time, interval)}`` for the frequencies beat has
@@ -65,6 +74,20 @@ def sync_schedule(load: Callable[[str], Any] = _load_entry) -> Dict[str, Tuple[d
         Unknown frequencies are left out: no beat, no Redis, or an entry
         that never ran.
     """
+    global _cached
+    if load is not None:
+        return _read_schedule(load)
+    current = time.monotonic()
+    cached = _cached
+    if cached is not None and current - cached[0] < SCHEDULE_CACHE_SECONDS:
+        return dict(cached[1])
+    schedule = _read_schedule(_load_entry)
+    _cached = (current, schedule)
+    return dict(schedule)
+
+
+def _read_schedule(load: Callable[[str], Any]) -> Dict[str, Tuple[datetime, timedelta]]:
+    """``sync_schedule`` read through ``load``, uncached."""
     schedule: Dict[str, Tuple[datetime, timedelta]] = {}
     for frequency in FREQUENCIES:
         try:
@@ -81,11 +104,11 @@ def sync_schedule(load: Callable[[str], Any] = _load_entry) -> Dict[str, Tuple[d
     return schedule
 
 
-def next_sync_times(load: Callable[[str], Any] = _load_entry) -> Dict[str, datetime]:
+def next_sync_times(load: Optional[Callable[[str], Any]] = None) -> Dict[str, datetime]:
     """When each sync frequency fires next (see ``sync_schedule``).
 
     Args:
-        load: Reads a beat entry by name (tests).
+        load: Reads a beat entry by name (tests); without it, the cached read.
 
     Returns:
         ``{frequency: time}`` for the frequencies with a known time.
