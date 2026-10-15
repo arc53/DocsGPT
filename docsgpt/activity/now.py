@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.labels import tool_labels
-from docsgpt.activity.syncs import due_batches, next_sync_times
+from docsgpt.activity.syncs import LATE_GRACE, due_batches, next_sync_times
 from docsgpt.agents.scheduler_utils import ScheduleValidationError, cron_runs
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
@@ -679,7 +679,10 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     # Knowledge syncs join the schedules: one batch per frequency due today.
     syncs = due_batches(conn, user_id, current, current + UP_NEXT_WINDOW, next_sync_times())
     for batch in syncs:
-        batch["runs_in_window"] = 1
+        # As on the calendar: a time more than LATE_GRACE late (beat behind or
+        # stopped) plans nothing. It is still listed, as overdue.
+        at = _as_datetime(batch["next_run_at"])
+        batch["runs_in_window"] = 0 if at is not None and at < current - LATE_GRACE else 1
     up_next = sorted(up_next + syncs, key=lambda item: _as_datetime(item["next_run_at"]) or current)
     return {
         "running": running,

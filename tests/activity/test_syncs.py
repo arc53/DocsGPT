@@ -129,6 +129,24 @@ class TestUpNext:
         assert snap["up_next"][0]["sources"] == ["Carrier portal"]
         assert snap["stats"]["next_24h"] == 1
 
+    def test_a_long_overdue_sync_is_listed_but_not_counted(self, pg_conn, monkeypatch):
+        # Beat stopped two days ago: Up next says so, but, as on the
+        # calendar, nothing is planned for the next 24 hours.
+        _source(pg_conn, "Carrier portal")
+        current = datetime.now(timezone.utc)
+        monkeypatch.setattr(activity_now, "next_sync_times", lambda: {"daily": current - timedelta(days=2)})
+        snap = activity_now.build_now(pg_conn, "u1", now=current)
+        assert [item["kind"] for item in snap["up_next"]] == ["sync"]
+        assert snap["up_next"][0]["runs_in_window"] == 0
+        assert snap["stats"]["next_24h"] == 0
+
+    def test_a_sync_just_late_still_counts(self, pg_conn, monkeypatch):
+        _source(pg_conn, "Carrier portal")
+        current = datetime.now(timezone.utc)
+        monkeypatch.setattr(activity_now, "next_sync_times", lambda: {"daily": current - timedelta(minutes=5)})
+        snap = activity_now.build_now(pg_conn, "u1", now=current)
+        assert snap["stats"]["next_24h"] == 1
+
 
 class TestSyncSchedule:
     def test_each_frequency_has_its_next_time_and_interval(self):
