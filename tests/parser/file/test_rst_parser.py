@@ -282,3 +282,63 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
     assert "+-----+" not in joined_result  # table excess removed
     assert ".. note::" not in joined_result
     assert "This is a note." in joined_result
+
+
+def test_remove_whitespaces_excess_keeps_breaks_and_indent():
+    """Newlines and leading indentation are not extra spaces."""
+    parser = RstParser()
+    body = "The budget is 100000.\n\n    def add(a, b):\n        return a + b\n\nParagraph two.\n"
+    result = parser.remove_whitespaces_excess([("Title", body)])
+    assert result == [("Title", body)]
+
+    indented_with_tabs = "\tdef add():\n\t\treturn 1\n"
+    tabbed = parser.remove_whitespaces_excess([("Title", indented_with_tabs)])
+    assert tabbed == [("Title", indented_with_tabs)]
+
+
+def test_remove_whitespaces_excess_collapses_inline_runs():
+    """Spaces that sit between words are still shortened."""
+    parser = RstParser()
+    result = parser.remove_whitespaces_excess([("Title", "hello     world\nnext")])
+    assert result == [("Title", "hello  world\nnext")]
+
+
+def test_remove_characters_excess_keeps_digits_and_letters():
+    """A repeated digit or letter is content, not decoration."""
+    parser = RstParser()
+    body = "100000 1111 hellooooo ____"
+    result = parser.remove_characters_excess([("Title", body)])
+    assert result == [("Title", body)]
+
+
+def test_remove_characters_excess_shortens_punctuation():
+    """A long run of the same punctuation mark is still shortened to three."""
+    parser = RstParser()
+    result = parser.remove_characters_excess([("Title", "see **** here and ---- there")])
+    assert result == [("Title", "see *** here and --- there")]
+
+
+def test_parse_file_keeps_numbers_blank_lines_and_code_indent():
+    """Default cleanup keeps an amount, a blank line, and indented code.
+
+    Regression for https://github.com/arc53/DocsGPT/issues/3089.
+    """
+    parser = RstParser()
+    content = """Title
+=====
+
+The budget is 100000.
+
+    def add(a, b):
+        return a + b
+
+Paragraph two.
+"""
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("budget.rst"))
+
+    joined = "\n".join(result)
+    assert "The budget is 100000." in joined
+    assert "The budget is 1000." not in joined
+    assert "The budget is 100000.\n\n    def add(a, b):\n        return a + b" in joined
+    assert "Paragraph two." in joined
