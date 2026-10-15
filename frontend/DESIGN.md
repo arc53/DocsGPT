@@ -157,13 +157,13 @@ Patterns:
   `has-[[data-state=checked]]:border-primary
   has-[[data-state=checked]]:bg-primary/5`; its wash beats the hover by
   design, so a chosen row never turns grey under the pointer.
-- A brand chip, a small action that opens something an answer produced (an
-  artifact chip under an answer, a citation pill in its text), is also
-  `variant="secondary" shape="pill"`: the default size with a lucide icon
-  first for artifacts, `size="xs"` for citations. It is the same tint as a
-  pressed toggle; the difference is that a chip never toggles and always
-  opens or scrolls to something. The citation pill keeps `h-5 min-w-5`
-  (20px) so it sits in a line of text.
+- A brand chip, a small action that opens something an answer produced (a
+  citation pill in its text), is also `variant="secondary" shape="pill"
+  size="xs"`. It is the same tint as a pressed toggle; the difference is that
+  a chip never toggles and always opens or scrolls to something. The citation
+  pill keeps `h-5 min-w-5` (20px) so it sits in a line of text. An artifact an
+  answer produced is a card, not a chip (`components/ArtifactCard`, see
+  PATTERNS.md › Chat answer column).
 - The user's question bubble is `bg-secondary text-foreground`: the brand
   tint as the fill, with body text in `foreground` (15.7:1 light, 12.4:1
   dark) rather than `secondary-foreground`, which is only 4.5:1 in light.
@@ -1457,9 +1457,12 @@ it?
   and account menu in the top-right corner (`ActionButtons`, `z-10` under the
   panel's `z-20`); they come back when it closes. One docked slot per page:
   opening another thing replaces what is there, never stacks.
-  The chat's slot (`conversation/chatCompanion`) holds an artifact or an
-  answer's sources; where there is no slot (a shared chat, an agent preview)
-  the sources open modal.
+  The chat's slot (`conversation/chatCompanion`) holds an artifact, an
+  answer's artifact list or its sources; where there is no slot (a shared
+  chat, an agent preview) the sources open modal. In the agent preview an
+  artifact (or an answer's list) takes the drawer over instead, with Back to
+  the run (`PreviewArtifactsContext` in `AgentPreviewSheet`): there is no room
+  for a docked panel beside it.
 
 Two widths, by `size`, never a `w-*` or `max-w-*` class (enforced):
 `default` 480px for every panel, and `wide` (600 / 700 / 800px) only for a
@@ -1497,8 +1500,9 @@ previewed in one shared panel, `agents/components/AgentPreviewSheet`, for
 workflow and classic agents alike: `size="wide"`, the agent's name as the
 one-line description, an `info` Running badge in `actions` while it answers,
 then the preview, which owns its scroller. The workflow preview's Execution
-details and Artifacts rows are the answer's step-row recipe (see PATTERNS.md › Chat answer column), each
-step a `subtle sm` panel with its output in a `filled sm` well. Never
+details row is the answer's step-row recipe (see PATTERNS.md › Chat answer column), each
+step a `subtle sm` panel with its output in a `filled sm` well; a run's
+artifacts are the answer's artifact cards, as in chat. Never
 hand-build a right panel (an `<aside border-l>` column or a `SheetContent
 side="right"`); compose SidePanel.
 
@@ -1532,10 +1536,11 @@ opaque: a strip behind the content, transparent or at `opacity-0` isn't
 sampled, so don't shrink or hide the strip (the measurements are in
 `ui/bar-tint-reset.ts`).
 
-Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`)
-and an answer's sources (`conversation/SourcesPanel`, with a cited source's
-`CitationReader` as its second level) share the chat's docked side panel (see
-Side panels). Don't add another pattern.
+Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`),
+an answer's artifact list (`conversation/ArtifactsPanel`, with an artifact as
+its second level) and an answer's sources (`conversation/SourcesPanel`, with a
+cited source's `CitationReader` as its second level) share the chat's docked
+side panel (see Side panels). Don't add another pattern.
 
 ### ActionMenu (`ui/dropdown-menu.tsx`)
 

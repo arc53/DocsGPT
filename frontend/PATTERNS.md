@@ -229,6 +229,39 @@ that order into blocks:
   stand-in (wiki `BookOpen`, Brave and DuckDuckGo `Search`, Telegram `Send`,
   ntfy `Bell`, Postgres `Database`). The Tools page keeps the brand marks.
 
+An answer's artifacts (files and notes its tool calls made, and its
+workflow run's files) are cards between the answer and its action row
+(`components/ArtifactCard`, built by `conversation/artifactCards`), never
+chips in the action row, which holds only the answer's own actions:
+
+- A card is the answer's surface (`bg-answer-surface`, `hover:bg-accent`,
+  `rounded-2xl p-3`): the kind's lucide icon on the brand soft fill
+  (`bg-secondary text-secondary-foreground`, a 40px `rounded-xl` square; the
+  grey icon tile would vanish, as `muted` is the answer surface in light),
+  the title (the artifact's title, else its filename) and a muted meta line,
+  the kind and the version its turn made ("PDF · v2"). The whole card opens
+  the artifact in the side panel on that version through a stretched button
+  named by the title; Download (`ghost-muted icon-sm pill`, `z-10`) saves
+  that version (DESIGN.md › A clickable card that holds a link). The card the
+  panel shows is `bg-secondary` (the open-row rule).
+- The list is a container query: two columns once the answer column fits two
+  (`@min-[33rem]`, at most `max-w-3xl`), one below that, so the builder
+  preview's narrow column stacks them on any screen. Its outer box is
+  `w-full min-w-0`: in the answer's wrapping flex column a container-query
+  box has no width of its own and lays its height out as if stacked.
+- Order: documents (HTML, PDF, slides, documents, spreadsheets, notes), then
+  images, then data and other files, each in the order produced; one card per
+  artifact.
+- Past four, the first three cards and a fourth, "N more files · Show all
+  M", with a chevron instead of Download, that opens the answer's list in the
+  side panel (`conversation/ArtifactsPanel`): `ListRows` grouped by kind
+  under `SectionHeader size="xs"` with counts, in a `subtle` Card, each row
+  opening that artifact as the panel's second level with Back to the list,
+  the Sources pattern. The fourth card is open while its list shows.
+- A workflow run's files are listed only where they can open (not in a
+  shared chat), quietly: no spinner, nothing for a run that made none, a
+  destructive `EmptyState` with Retry when the list fails.
+
 A cited source opens in that panel as its second level, `CitationReader`:
 a source card under the answer, a tile in the list and an inline `[n]` pill
 all open the source they name, with Back to the list. The reader fetches the
