@@ -56,6 +56,7 @@ export type TraceSpanKind =
   | 'embedding'
   | 'rerank'
   | 'guardrail'
+  | 'decision'
   | 'step';
 
 export type TraceSpan = {

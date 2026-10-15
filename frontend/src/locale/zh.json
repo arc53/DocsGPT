@@ -669,7 +669,8 @@
           "chunks_other": "{{count}} 个片段",
           "hits_one": "{{count}} 个命中",
           "hits_other": "{{count}} 个命中",
-          "cached": "缓存"
+          "cached": "缓存",
+          "answered": "已回答 {{answered}}/{{total}}"
         },
         "status": {
           "ok": "正常",

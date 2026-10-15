@@ -670,7 +670,8 @@
           "chunks_other": "{{count}} fragmentos",
           "hits_one": "{{count}} resultado",
           "hits_other": "{{count}} resultados",
-          "cached": "en caché"
+          "cached": "en caché",
+          "answered": "{{answered}}/{{total}} respondidas"
         },
         "status": {
           "ok": "OK",

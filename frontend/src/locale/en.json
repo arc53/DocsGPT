@@ -670,7 +670,8 @@
           "chunks_other": "{{count}} chunks",
           "hits_one": "{{count}} hit",
           "hits_other": "{{count}} hits",
-          "cached": "cached"
+          "cached": "cached",
+          "answered": "{{answered}}/{{total}} answered"
         },
         "status": {
           "ok": "OK",

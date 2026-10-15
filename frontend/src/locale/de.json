@@ -670,7 +670,8 @@
           "chunks_other": "{{count}} Abschnitte",
           "hits_one": "{{count}} Treffer",
           "hits_other": "{{count}} Treffer",
-          "cached": "aus Cache"
+          "cached": "aus Cache",
+          "answered": "{{answered}}/{{total}} beantwortet"
         },
         "status": {
           "ok": "OK",

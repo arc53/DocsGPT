@@ -669,7 +669,8 @@
           "chunks_other": "{{count}} チャンク",
           "hits_one": "{{count}} 件ヒット",
           "hits_other": "{{count}} 件ヒット",
-          "cached": "キャッシュ"
+          "cached": "キャッシュ",
+          "answered": "{{answered}}/{{total}} 件回答"
         },
         "status": {
           "ok": "OK",
