@@ -613,7 +613,11 @@ form column. Fields that take typing or sit beside one are 16px
 below `md` (iOS zooms on focus under 16px) and 14px from `md`: Input,
 Textarea, SelectTrigger `field`, Button `combobox` `default | field | lg` and
 CommandInput. The `sm` sizes stay 14px. A highlighted list row is
-`bg-accent` in Select, Command and DropdownMenu alike.
+`bg-accent` in Select, Command and DropdownMenu alike. A select list stops at
+the window edge and scrolls; one that can grow long (the landing page's model
+picker) passes `SelectContent capped`, which also stops it at CommandList's
+`max-h-75`. A `max-h-*` in `className` replaces the window limit rather than
+adding to it.
 
 ### Textarea (`ui/textarea.tsx`)
 

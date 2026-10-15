@@ -235,6 +235,15 @@ describe('Hero model picker', () => {
     expect(labels()).toEqual([]);
   });
 
+  it('caps the menu so a long model list scrolls', async () => {
+    await render([model('gpt-5.5')]);
+    await open();
+    const viewport = document.querySelector(
+      '[data-slot="select-content"] [data-radix-select-viewport]',
+    );
+    expect(viewport?.className.split(' ')).toContain('max-h-75');
+  });
+
   it('heads built-in and own models once the user has added one', async () => {
     await render([model('mine', 'user'), model('gpt-5.5')]);
     await open();

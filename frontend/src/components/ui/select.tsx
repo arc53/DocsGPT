@@ -93,8 +93,14 @@ function SelectContent({
   children,
   position = 'popper',
   align = 'center',
+  capped = false,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content> & {
+  /** Caps the list at CommandList's height (max-h-75) as well as the window,
+   *  for a list that can grow long. A max-h in className would replace the
+   *  window limit instead, so the cap sits on the viewport. */
+  capped?: boolean;
+}) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -115,6 +121,7 @@ function SelectContent({
             'p-1',
             position === 'popper' &&
               'h-(--radix-select-trigger-height) w-full min-w-(--radix-select-trigger-width) scroll-my-1',
+            capped && 'max-h-75',
           )}
         >
           {children}
