@@ -12,8 +12,9 @@ from sqlalchemy import Connection, Engine
 
 from docsgpt.api.user.idempotency import MAX_TASK_ATTEMPTS
 from docsgpt.core.settings import settings
-from docsgpt.notifications.notify import mark_failed_answer_unseen
+from docsgpt.notifications.notify import mark_unread_unless_watching
 from docsgpt.storage.db.engine import get_engine
+from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
 from docsgpt.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
 )
@@ -115,9 +116,14 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
     sweep raises. Each sweep stages into its own list via :func:`_sweep`; see
     the comment in :func:`run_reconciliation` for why staging matters.
     """
+    # Chats of the answers failed below, marked unread once the sweep has
+    # committed: whether their owner is watching is a Redis read, which must
+    # not hold the sweep's row locks.
+    failed_chats: list[tuple[str, str]] = []
     with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         pt_repo = PendingToolStateRepository(conn)
+        unread_repo = ConversationUnreadRepository(conn)
         for msg in repo.find_and_lock_stuck_messages():
             new_count = repo.increment_message_reconcile_attempts(msg["id"])
             if new_count >= MAX_MESSAGE_RECONCILE_ATTEMPTS:
@@ -129,7 +135,9 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     ),
                 )
                 summary["messages_failed"] += 1
-                mark_failed_answer_unseen(conn, str(msg["id"]))
+                failed_chat = unread_repo.listed_chat_of_message(str(msg["id"]))
+                if failed_chat is not None:
+                    failed_chats.append(failed_chat)
                 # Revoke any awaiting-approval prompt: the resumable state
                 # dies with the message, so the durable
                 # ``tool.approval.required`` envelope must be cleared or the
@@ -174,6 +182,9 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                         "attempts": new_count,
                     },
                 )
+
+    for conversation_id, user_id in failed_chats:
+        mark_unread_unless_watching(conversation_id, user_id, begin=engine.begin)
 
     with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)

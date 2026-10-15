@@ -21,7 +21,7 @@ down) the user counts as away: the notification still goes out.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Callable, ContextManager, Optional
 
 from sqlalchemy import Connection
 
@@ -99,18 +99,24 @@ def _notify(
     return STORED
 
 
-def mark_failed_answer_unseen(conn: Connection, message_id: str) -> bool:
-    """Mark the chat of an answer that just failed unread, unless its owner watched it fail.
+def mark_unread_unless_watching(
+    conversation_id: str,
+    user_id: str,
+    begin: Callable[[], ContextManager[Connection]],
+) -> bool:
+    """Mark a chat unread for its owner, unless they are watching it.
 
-    Activity counts a chat failed while it is unread and its last answer
-    failed; without the mark, an answer that fails after the user left the
-    chat shows no failure anywhere. Only sidebar (listed) chats. Runs in the
-    caller's transaction, under a savepoint so a failure here never undoes
-    the caller's writes; never raises.
+    For an answer that failed: Activity counts a chat failed while it is
+    unread and its last answer failed, and without the mark one that fails
+    after the user left shows no failure anywhere. Call it after the failure
+    is committed, outside any transaction: presence is a Redis read, which
+    must not hold row locks. Never raises.
 
     Args:
-        conn: The caller's open connection.
-        message_id: The answer that failed.
+        conversation_id: The chat (see ``listed_chat_of_message``).
+        user_id: Its owner.
+        begin: Opens the short transaction the write runs in
+            (``db_session``, or an engine's ``begin``).
 
     Returns:
         True when the chat was marked.
@@ -118,17 +124,12 @@ def mark_failed_answer_unseen(conn: Connection, message_id: str) -> bool:
     from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
 
     try:
-        with conn.begin_nested():
-            repo = ConversationUnreadRepository(conn)
-            chat = repo.listed_chat_of_message(message_id)
-            if chat is None:
-                return False
-            conversation_id, user_id = chat
-            if presence.is_watching(user_id, conversation_id):
-                return False
-            return repo.mark_unread(conversation_id, user_id)
+        if presence.is_watching(user_id, conversation_id):
+            return False
+        with begin() as conn:
+            return ConversationUnreadRepository(conn).mark_unread(conversation_id, user_id)
     except Exception:
-        logger.exception("marking the chat of failed answer %s unread failed", message_id)
+        logger.exception("marking conversation %s unread failed", conversation_id)
         return False
 
 

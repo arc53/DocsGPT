@@ -20,6 +20,7 @@ from docsgpt.api.answer.services.compression.types import (
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
     HeartbeatState,
@@ -479,10 +480,16 @@ class ConversationService:
             repo.confirm_executed_tool_calls(message_id)
             # Activity marks a chat failed while it is unread; a Stop or a
             # dropped connection (New Chat, a reload) is the user's own doing.
-            if status == "failed" and merged_metadata.get("error_code") not in _USER_ENDED_CODES:
-                from docsgpt.notifications.notify import mark_failed_answer_unseen
+            failed_chat = (
+                ConversationUnreadRepository(conn).listed_chat_of_message(message_id)
+                if status == "failed" and merged_metadata.get("error_code") not in _USER_ENDED_CODES
+                else None
+            )
+        # Outside the txn: whether the owner is watching is a Redis read.
+        if failed_chat is not None:
+            from docsgpt.notifications.notify import mark_unread_unless_watching
 
-                mark_failed_answer_unseen(conn, message_id)
+            mark_unread_unless_watching(*failed_chat, begin=db_session)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
         # ``failed`` counts too: the conversation is still listed, and
