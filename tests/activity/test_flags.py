@@ -2,19 +2,10 @@
 
 from __future__ import annotations
 
-import fakeredis
 import pytest
 import redis as redis_lib
 
 from docsgpt.activity import flags
-
-
-@pytest.fixture
-def redis(monkeypatch):
-    fake = fakeredis.FakeRedis()
-    monkeypatch.setattr(flags, "get_redis_instance", lambda: fake)
-    monkeypatch.setattr(flags, "_stop_redis", lambda: fake)
-    return fake
 
 
 class TestStopRequests:
