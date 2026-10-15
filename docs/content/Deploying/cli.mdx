@@ -1,7 +1,7 @@
 ---
 title: docsgpt CLI Reference
 description: Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -94,6 +94,7 @@ container from the stack directory, for example
 | `docsgpt connectors reencrypt` | Rewrite stored connections, tool secrets and custom-model keys with the current `ENCRYPTION_SECRET_KEY` after a key rotation. |
 | `docsgpt reembed [--dry-run] [--sources IDS] [--batch-size N]` | Re-embed every index after changing `EMBEDDINGS_NAME`. See [Upgrading](/upgrading). |
 | `docsgpt prefetch-models [MODEL ...]` | Download the embedding models and their tokenizers ahead of time. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
+| `docsgpt decisions prefetch` | Download the decision model's pinned files into `DECISION_CACHE_DIR` ahead of time. Every decision feature ships off, and nothing downloads until one is turned on. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
 | `docsgpt verify-offline [MODEL ...]` | Check that a prepared install serves its defaults with networking off. |
 | `docsgpt ocr-check [--engine tesseract\|deepseek] [--file PATH]` | Send one page to the configured OCR engine and report the endpoint, time, text and token usage. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |
 

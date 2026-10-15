@@ -329,6 +329,32 @@ def _connectors(args: argparse.Namespace) -> int:
     return 0
 
 
+def _decisions(args: argparse.Namespace) -> int:
+    """``docsgpt decisions prefetch``: download the decision model's pinned files into DECISION_CACHE_DIR.
+
+    For offline and air-gapped installs, and to avoid the download the first
+    decision feature turned on would otherwise start.
+    """
+    if getattr(args, "decisions_action", None) != "prefetch":
+        print("usage: docsgpt decisions prefetch", file=sys.stderr)
+        return 2
+    from docsgpt.decisions import files
+    from docsgpt.decisions.models import select
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    spec = select("onnx")
+    if spec is None:
+        print("docsgpt: DECISION_MODEL names a model this version does not know", file=sys.stderr)
+        return 2
+    try:
+        folder = files.ensure_onnx(spec)
+    except files.FilesUnavailable as exc:
+        print(f"docsgpt: {exc}", file=sys.stderr)
+        return 1
+    print(f"docsgpt: decision model {spec.id} at {files.revision(spec)} is in {folder}", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docsgpt", description="DocsGPT: private AI for agents, assistants and search.")
     parser.add_argument("--version", action="version", version=f"docsgpt {__version__}")
@@ -371,6 +397,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     connectors.set_defaults(func=_connectors)
+
+    decisions = commands.add_parser("decisions", help="manage the decision model's files")
+    decision_actions = decisions.add_subparsers(dest="decisions_action", metavar="<action>")
+    decision_actions.add_parser(
+        "prefetch", help="download the pinned decision model into DECISION_CACHE_DIR (for offline installs)"
+    )
+    decisions.set_defaults(func=_decisions)
 
     for name, (module, help_text) in SCRIPTS.items():
         commands.add_parser(name, help=f"{help_text} (docsgpt.scripts.{module})", add_help=False)

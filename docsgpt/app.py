@@ -240,6 +240,7 @@ def health():
 
 @app.route("/api/config")
 def get_config():
+    from docsgpt import decisions
     from docsgpt.graphrag import graphrag_available
     from docsgpt.stt.stt_creator import STTCreator
     from docsgpt.tts.tts_creator import TTSCreator
@@ -257,6 +258,9 @@ def get_config():
         # The composer offers Knowledge once its files pass this share of
         # the selected model's window.
         "attachment_budget_share": float(settings.ATTACHMENT_BUDGET_SHARE),
+        # The decision model's mode, load status, identity, measured speed and
+        # every feature's verdict; read from this process, never loading it.
+        **{f"decision_{key}": value for key, value in decisions.status().items()},
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

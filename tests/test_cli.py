@@ -260,6 +260,38 @@ class TestConnectorsReencrypt:
         assert "tool and custom-model secrets" in help_text
 
 
+class TestDecisions:
+    def test_prefetch_downloads_the_selected_model(self, monkeypatch, tmp_path, capsys):
+        from docsgpt.decisions import files
+
+        calls = []
+        monkeypatch.setattr(files, "ensure_onnx", lambda spec: calls.append(spec.id) or tmp_path / "onnx")
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        assert cli.main(["decisions", "prefetch"]) == 0
+        assert calls == ["arc53/arc-decide-0.4b-v0.2"]
+        assert str(tmp_path / "onnx") in capsys.readouterr().err
+
+    def test_prefetch_failure_is_an_error_not_a_traceback(self, monkeypatch, capsys):
+        from docsgpt.decisions import files
+
+        def offline(spec):
+            raise files.FilesUnavailable("offline", "HF_HUB_OFFLINE is set")
+
+        monkeypatch.setattr(files, "ensure_onnx", offline)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        assert cli.main(["decisions", "prefetch"]) == 1
+        assert "HF_HUB_OFFLINE is set" in capsys.readouterr().err
+
+    def test_an_unknown_model_is_refused(self, monkeypatch, capsys):
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", "someone/else")
+        assert cli.main(["decisions", "prefetch"]) == 2
+        assert "DECISION_MODEL" in capsys.readouterr().err
+
+    def test_without_an_action_prints_usage(self, capsys):
+        assert cli.main(["decisions"]) == 2
+        assert "docsgpt decisions prefetch" in capsys.readouterr().err
+
+
 class TestScripts:
     def test_arguments_pass_through_untouched(self, monkeypatch):
         main = MagicMock(return_value=0)
