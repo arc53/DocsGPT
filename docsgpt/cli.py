@@ -8,6 +8,7 @@ stays instant and does not touch the database.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -329,14 +330,40 @@ def _connectors(args: argparse.Namespace) -> int:
     return 0
 
 
+def _decisions_status() -> int:
+    """This machine's decision-model settings and files, without loading the model.
+
+    A running server's load state, speed and feature verdicts are in its
+    /api/admin/decisions; this command reports what that server would use.
+    """
+    from docsgpt import decisions
+    from docsgpt.decisions import files
+    from docsgpt.decisions.models import select
+
+    report = decisions.status()
+    for key in ("status", "reason", "speed"):  # this process never loads the model: they say nothing here
+        report.pop(key, None)
+    spec = select("onnx") if report["mode"] != "none" else None
+    if spec is not None:
+        folder = files.local_onnx_dir(spec)
+        report["revision"] = files.revision(spec)
+        report["files"] = str(folder) if folder else None
+    print(json.dumps(report, indent=2))
+    return 0
+
+
 def _decisions(args: argparse.Namespace) -> int:
     """``docsgpt decisions prefetch``: download the decision model's pinned files into DECISION_CACHE_DIR.
 
     For offline and air-gapped installs, and to avoid the download the first
-    decision feature turned on would otherwise start.
+    decision feature turned on would otherwise start. ``docsgpt decisions
+    status`` reports the settings and whether the files are here.
     """
-    if getattr(args, "decisions_action", None) != "prefetch":
-        print("usage: docsgpt decisions prefetch", file=sys.stderr)
+    action = getattr(args, "decisions_action", None)
+    if action == "status":
+        return _decisions_status()
+    if action != "prefetch":
+        print("usage: docsgpt decisions prefetch|status", file=sys.stderr)
         return 2
     from docsgpt.decisions import files
     from docsgpt.decisions.models import select
@@ -402,6 +429,9 @@ def build_parser() -> argparse.ArgumentParser:
     decision_actions = decisions.add_subparsers(dest="decisions_action", metavar="<action>")
     decision_actions.add_parser(
         "prefetch", help="download the pinned decision model into DECISION_CACHE_DIR (for offline installs)"
+    )
+    decision_actions.add_parser(
+        "status", help="show the decision model settings, feature modes and whether its files are downloaded"
     )
     decisions.set_defaults(func=_decisions)
 

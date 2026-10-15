@@ -289,7 +289,30 @@ class TestDecisions:
 
     def test_without_an_action_prints_usage(self, capsys):
         assert cli.main(["decisions"]) == 2
-        assert "docsgpt decisions prefetch" in capsys.readouterr().err
+        assert "docsgpt decisions prefetch|status" in capsys.readouterr().err
+
+    def test_status_reports_settings_and_files_without_loading(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from docsgpt import decisions
+        from docsgpt.decisions import files
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODE", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        monkeypatch.setattr(files, "local_onnx_dir", lambda spec: tmp_path)
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["mode"] == "local" and report["model"] == "arc53/arc-decide-0.4b-v0.2"
+        assert report["files"] == str(tmp_path) and report["revision"]
+        assert "speed" not in report and "status" not in report
+        assert decisions.get_decider()._backend is None
+
+    def test_status_when_off(self, capsys):
+        import json
+
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["mode"] == "none" and "files" not in report
 
 
 class TestScripts:

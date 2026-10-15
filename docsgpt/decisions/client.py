@@ -206,7 +206,10 @@ class DecisionClient:
         return backend.profile if backend and self.enabled else None
 
     def status(self) -> dict:
-        """The state ``/api/config`` reports. Reads only this process's own state: no load, no network."""
+        """The state ``/api/admin/decisions`` reports (``/api/config`` shows only ``available``).
+
+        Reads only this process's own state: no load, no network.
+        """
         info = self.model_info()
         backend = self._local(create=False)
         if not self.enabled:

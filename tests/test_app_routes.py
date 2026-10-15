@@ -163,33 +163,19 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_decision_model_is_reported_off(self, client):
-        response = client.get("/api/config")
-        data = json.loads(response.data)
-        assert data["decision_mode"] == "none"
-        assert data["decision_status"] == "off"
+        data = json.loads(client.get("/api/config").data)
         assert data["decision_available"] is False
-        assert data["decision_model"] is None and data["decision_speed"] is None
 
     @pytest.mark.unit
-    def test_decision_model_is_reported_without_loading_it(self, client, monkeypatch):
+    def test_only_availability_of_the_decision_model_is_public(self, client, monkeypatch):
         from docsgpt import decisions
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DECISION_MODE", None)
         monkeypatch.setattr(settings, "DECISION_MODEL", None)
-        response = client.get("/api/config")
-        data = json.loads(response.data)
-        assert {key: data[key] for key in data if key.startswith("decision_")} == {
-            "decision_available": True,
-            "decision_mode": "local",
-            "decision_status": "idle",
-            "decision_reason": None,
-            "decision_model": "arc53/arc-decide-0.4b-v0.2",
-            "decision_version": "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907",
-            "decision_runtime": "onnx-int8",
-            "decision_speed": None,
-            "decision_features": {},
-        }
+        data = json.loads(client.get("/api/config").data)
+        assert [key for key in data if key.startswith("decision_")] == ["decision_available"]
+        assert data["decision_available"] is True
         assert decisions.get_decider()._backend is None
 
     @pytest.mark.unit

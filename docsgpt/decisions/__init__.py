@@ -67,7 +67,7 @@ def available() -> bool:
 
 
 def status() -> dict:
-    """Mode, load status, model, speed and every feature's verdict, as ``/api/config`` reports them."""
+    """Mode, load status, model, speed and every feature's verdict, as ``/api/admin/decisions`` reports them."""
     return get_decider().status()
 
 

@@ -258,9 +258,10 @@ def get_config():
         # The composer offers Knowledge once its files pass this share of
         # the selected model's window.
         "attachment_budget_share": float(settings.ATTACHMENT_BUDGET_SHARE),
-        # The decision model's mode, load status, identity, measured speed and
-        # every feature's verdict; read from this process, never loading it.
-        **{f"decision_{key}": value for key, value in decisions.status().items()},
+        # Whether the decision model can answer here; never loads it. The
+        # details (status, speed, feature verdicts) are admin-only:
+        # /api/admin/decisions.
+        "decision_available": decisions.available(),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {
