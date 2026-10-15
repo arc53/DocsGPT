@@ -837,17 +837,23 @@ class BaseAnswerResource:
                     # call only sees it when the call returns.
                     if not stop_asked.is_set() and stop_requested(message_id):
                         stop_asked.set()
+                    if stop_asked.is_set() and next_beat == float("inf"):
+                        return
                     if time.monotonic() < next_beat:
                         continue
                     next_beat = time.monotonic() + STREAM_HEARTBEAT_INTERVAL
                     if time.monotonic() > deadline:
+                        # Past the ceiling the row is left to go stale, but
+                        # this thread is also what reads a Stop: keep polling
+                        # for one (a cheap Redis read) until the stream ends.
                         logger.warning(
                             "stream heartbeat ticker hit its %ss ceiling for "
-                            "message_id=%s; stopping",
+                            "message_id=%s; no more heartbeats",
                             STREAM_HEARTBEAT_MAX_SECONDS,
                             message_id,
                         )
-                        return
+                        next_beat = float("inf")
+                        continue
                     try:
                         state = service.heartbeat_message_state(message_id)
                     except Exception:

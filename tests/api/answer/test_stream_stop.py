@@ -131,6 +131,17 @@ class TestStopFromActivity:
         assert service.finalize_message.called
         cleared.assert_called_with(MESSAGE_ID)
 
+    def test_a_stop_still_lands_past_the_heartbeat_ceiling(self, mock_mongo_db, flask_app):
+        # The ticker stops stamping after STREAM_HEARTBEAT_MAX_SECONDS; it
+        # is also what reads the Stop, so it must keep reading it.
+        from docsgpt.api.answer.routes import base as base_mod
+
+        with patch.object(base_mod, "STREAM_HEARTBEAT_MAX_SECONDS", 0.1):
+            service, out, _, _ = _run(flask_app, _chatty(), stop_after=0.5)
+        answers = [line for line in out if '"type": "answer"' in line]
+        assert 0 < len(answers) < 200
+        assert service.finalize_message.called
+
     def test_the_open_tab_gets_the_end(self, mock_mongo_db, flask_app):
         # The chat tab is still listening: it must see the stream end, not
         # just a closed socket it has to reconnect after.
