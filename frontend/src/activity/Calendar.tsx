@@ -160,7 +160,8 @@ export default function Calendar() {
 
   // A slot whose run never shows up turns missed on the server's clock, and
   // no event or snapshot says so: reload when the first one is due. Capped,
-  // as a timer can't wait out a 62-day window.
+  // as a timer can't wait out a 62-day window. A failed reload keeps the
+  // last data on screen, so it sets the timer again too.
   useEffect(() => {
     if (!data) return;
     const due = nextRefreshAt(data.events, Date.now());
@@ -170,7 +171,7 @@ export default function Calendar() {
       Math.min(due - Date.now(), MAX_REFRESH_WAIT_MS),
     );
     return () => window.clearTimeout(timer);
-  }, [data]);
+  }, [data, failedKey]);
 
   // Agents that have a slot in the window, and the chosen one, for the filter.
   const agents = useMemo(

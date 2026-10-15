@@ -208,6 +208,26 @@ describe('Calendar page', () => {
     }
   });
 
+  it('keeps its reload timer after a reload fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const soon = new Date(Date.now() + 2 * 60_000).toISOString();
+      activity.planned.mockResolvedValue({
+        ...WINDOW,
+        events: [slot({ at: soon })],
+      });
+      await render();
+      activity.planned.mockRejectedValueOnce(new Error('blip'));
+      await act(async () => vi.advanceTimersByTime(12 * 60_000));
+      expect(activity.planned).toHaveBeenCalledTimes(2);
+      // The page still shows the last window; the timer must come back.
+      await act(async () => vi.advanceTimersByTime(2 * 60_000));
+      expect(activity.planned).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   const syncButton = () =>
     container.querySelector<HTMLButtonElement>('button[data-kind="sync"]');
 
