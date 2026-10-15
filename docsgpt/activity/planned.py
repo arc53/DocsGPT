@@ -13,7 +13,6 @@ window (future only; see ``activity.syncs``).
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -279,40 +278,52 @@ def _past_slots(
     return _planned_slots({**row, "trigger_type": "recurring"}, start, end, limit, expansions)
 
 
-def _sum_up_days(events: List[Dict[str, Any]], zone: Any) -> List[Dict[str, Any]]:
-    """Sum up each frequent schedule over the cap: one event per local day and state.
+def _sum_up_days(
+    runs: List[Dict[str, Any]],
+    slots: List[Tuple[datetime, str]],
+    base: Optional[Dict[str, Any]],
+    zone: Any,
+) -> List[Dict[str, Any]]:
+    """One schedule's events, summed up per local day and state when it is frequent and over the cap.
 
     Only the states in ``SUMMED_STATES`` are summed; each such event keeps
     the day's first ``at``, adds ``until`` (the last) and ``count``, and
     drops the fields only a single run has. A schedule under the cap keeps
-    an event per slot, so a week stays one event per run.
+    an event per slot, so a week stays one event per run. Slots come in as
+    pairs and become events only when shown on their own: a frequent
+    schedule has thousands in a month, and one schedule at a time is summed
+    so a request never holds them all.
 
     Args:
-        events: The window's schedule events.
+        runs: The schedule's runs, as events.
+        slots: Its slots no run filled, as ``(at, state)``; each is
+            planned, paused or missed, all summed states.
+        base: Its fields (see ``_base``); ``None`` when it has only runs.
         zone: The viewer's time zone, which days are split in.
 
     Returns:
-        The events, oldest first.
+        The schedule's events.
     """
-    per_schedule = Counter(e["schedule_id"] for e in events if e.get("frequent"))
-    over = {schedule_id for schedule_id, n in per_schedule.items() if n > MAX_SLOTS_PER_SCHEDULE}
-    if not over:
-        return events
-    out: List[Dict[str, Any]] = []
-    days: Dict[Tuple[str, Any, str], Dict[str, Any]] = {}
-    for event in sorted(events, key=lambda e: e["at"]):
-        if event["schedule_id"] not in over or event["state"] not in SUMMED_STATES:
-            out.append(event)
-            continue
-        key = (event["schedule_id"], parse_time(event["at"]).astimezone(zone).date(), event["state"])
+    frequent = (base or (runs[0] if runs else {})).get("frequent")
+    if not frequent or len(runs) + len(slots) <= MAX_SLOTS_PER_SCHEDULE:
+        return runs + [{**base, "at": _utc_iso(at), "state": state} for at, state in slots]
+    out = [e for e in runs if e["state"] not in SUMMED_STATES]
+    summed = [(parse_time(e["at"]), e["state"], e) for e in runs if e["state"] in SUMMED_STATES]
+    summed += [(at, state, base) for at, state in slots]
+    summed.sort(key=lambda entry: entry[0])
+    days: Dict[Tuple[Any, str], Dict[str, Any]] = {}
+    for at, state, fields in summed:
+        key = (at.astimezone(zone).date(), state)
         day = days.get(key)
         if day is None:
-            day = {k: v for k, v in event.items() if k not in _RUN_FIELDS}
-            day["count"] = 0
+            day = {k: v for k, v in fields.items() if k not in _RUN_FIELDS}
+            day.update(at=_utc_iso(at), state=state, count=0)
             days[key] = day
             out.append(day)
         day["count"] += 1
-        day["until"] = event["at"]
+        day["until"] = at
+    for day in days.values():
+        day["until"] = _utc_iso(day["until"])
     return out
 
 
@@ -388,6 +399,8 @@ def build_planned(
     frequent_cache: Dict[str, bool] = {}
     expansions: Dict[Tuple[Any, ...], List[datetime]] = {}
     events: List[Dict[str, Any]] = []
+    # Each schedule's runs, until its slots are known (see ``_sum_up_days``).
+    runs: Dict[str, List[Dict[str, Any]]] = {}
     taken: set = set()
     truncated: List[str] = []
     # Schedules whose runs were cut, to the last run kept: the slots after it
@@ -407,7 +420,7 @@ def build_planned(
             truncated.append(schedule_id)
             runs_cut_at[schedule_id] = max(at, runs_cut_at.get(schedule_id, at))
         taken.add((schedule_id, _minute(at)))
-        events.append(
+        runs.setdefault(schedule_id, []).append(
             {
                 **_base(run, frequent),
                 "at": _utc_iso(at),
@@ -426,40 +439,37 @@ def build_planned(
     for row in _schedules(conn, user_id, end):
         frequent = _is_frequent(row, frequent_cache)
         limit = MAX_FREQUENT_SLOTS if frequent else MAX_SLOTS_PER_SCHEDULE
-        slots, cut = _planned_slots(row, future_start, end, limit, expansions)
+        ahead, cut = _planned_slots(row, future_start, end, limit, expansions)
         if cut:
             truncated.append(str(row["id"]))
         state = "paused" if row.get("status") == "paused" else "planned"
-        base = _base(row, frequent)
         schedule_id = str(row["id"])
-        for at in slots:
-            if (schedule_id, _minute(at)) in taken:
-                continue
-            events.append({**base, "at": _utc_iso(at), "state": state})
+        slots = [(at, state) for at in ahead if (schedule_id, _minute(at)) not in taken]
         # Past slots that never got a run: the scheduler was down or behind.
         # Only for active schedules (pause history isn't kept, so a paused
         # one's quiet slots may be its pause), and only since its plan last
         # changed: an older timing fired at other times, and before a resume
         # it was paused. Not ``updated_at``: every dispatcher write moves it.
-        if row.get("status") != "active":
-            continue
         since = max(
             start,
             as_datetime(row.get("plan_changed_at")) or start,
             as_datetime(row.get("created_at")) or start,
         )
-        if since >= missed_until:
-            continue
-        past, cut = _past_slots(row, since, missed_until, limit, expansions)
-        if cut:
-            truncated.append(schedule_id)
-        cut_at = runs_cut_at.get(schedule_id)
-        for at in past:
-            if (schedule_id, _minute(at)) in taken or (cut_at is not None and at > cut_at):
-                continue
-            events.append({**base, "at": _utc_iso(at), "state": "missed"})
+        if row.get("status") == "active" and since < missed_until:
+            past, cut = _past_slots(row, since, missed_until, limit, expansions)
+            if cut:
+                truncated.append(schedule_id)
+            cut_at = runs_cut_at.get(schedule_id)
+            slots += [
+                (at, "missed")
+                for at in past
+                if (schedule_id, _minute(at)) not in taken and (cut_at is None or at <= cut_at)
+            ]
+        events += _sum_up_days(runs.pop(schedule_id, []), slots, _base(row, frequent), zone)
+    # Runs of schedules that have since ended (completed, cancelled).
+    for schedule_runs in runs.values():
+        events += _sum_up_days(schedule_runs, [], None, zone)
 
-    events = _sum_up_days(events, zone)
     events += calendar_slots(conn, user_id, start, end, sync_schedule(), now=current)
     events.sort(key=lambda event: event["at"])
     return {

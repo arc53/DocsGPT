@@ -324,3 +324,27 @@ class TestFrequentDays:
     def test_rejects_an_unknown_time_zone(self, pg_conn):
         with pytest.raises(planned.WindowError):
             planned.build_planned(pg_conn, "u1", MONDAY, MONDAY + timedelta(days=7), now=NOW, tz="Mars/Olympus")
+
+
+class TestManyFrequentSchedules:
+    def test_a_month_of_frequent_schedules_stays_small(self, pg_conn):
+        # 50 paused 15-minute schedules (the per-user cap, and paused costs
+        # nothing to run) over the widest window: about 300,000 slots. Each
+        # used to become an event dict before the days were summed up, a
+        # peak of some 165 MiB for one request; one schedule at a time, 8.
+        import tracemalloc
+
+        for i in range(50):
+            _schedule(pg_conn, cron=f"{i % 15}/15 * * * *", status="paused", name=f"Scan {i}")
+        start = MONDAY
+        tracemalloc.start()
+        try:
+            window = planned.build_planned(
+                pg_conn, "u1", start, start + planned.MAX_WINDOW, now=start - timedelta(days=1)
+            )
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert len(window["events"]) == 50 * 62
+        assert all(e["count"] == 96 for e in window["events"])
+        assert peak < 32 * 1024 * 1024
