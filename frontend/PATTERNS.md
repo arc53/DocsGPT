@@ -147,6 +147,12 @@ a chat".
   Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
   with no margin; the size's `gap-1.5` spaces them, and the label span keeps
   `text-xs sm:text-sm` so the row still fits on a phone.
+- Tools and Knowledge show what is on without opening the picker. Tools
+  adds a `Badge` with the count of tools on in this chat. Knowledge names
+  a single source; with several it keeps the "Knowledge" label, adds the
+  count `Badge` and lists the names in its `title`. The badge is
+  `tabular-nums` and `aria-hidden`; the trigger's `aria-label` says the
+  count instead. With nothing on (or one source), neither has a badge.
 - The attachment chips above the field (`message-input/AttachmentChipList`)
   sit in one `scrollbar-overlay` area capped at `max-h-32 sm:max-h-48` (about
   two and a half rows on a phone, three and a half wider, so the cut row
@@ -245,7 +251,7 @@ chips in the action row, which holds only the answer's own actions:
   that version (DESIGN.md › A clickable card that holds a link). The card the
   panel shows is `bg-secondary` (the open-row rule).
 - The list is a container query: two columns once the answer column fits two
-  (`@min-[33rem]`, at most `max-w-3xl`), one below that, so the builder
+  (`@min-[33rem]`, across the full answer column), one below that, so the builder
   preview's narrow column stacks them on any screen. Its outer box is
   `w-full min-w-0`: in the answer's wrapping flex column a container-query
   box has no width of its own and lays its height out as if stacked.
