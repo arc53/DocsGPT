@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -27,6 +27,7 @@ import activityService from '../api/services/activityService';
 import schedulesService from '../api/services/schedulesService';
 import { useMediaQuery } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { selectMonitorStatusKey } from '../monitors/monitorsSlice';
 import { showActionToast } from '../notifications/actionToastSlice';
 import type { AppDispatch } from '../store';
 import { intlLocale } from '../utils/dateTimeUtils';
@@ -73,6 +74,7 @@ export default function Calendar() {
   const token = useSelector(selectToken);
   // Refetch when activity may have changed: an event, or a poll with news.
   const revision = useSelector(selectActivityRevision);
+  const monitorKey = useSelector(selectMonitorStatusKey);
   const { isMobile } = useMediaQuery();
 
   const [view, setView] = useState<CalendarView>(isMobile ? 'agenda' : 'week');
@@ -112,6 +114,16 @@ export default function Calendar() {
     () => viewWindow(view, anchor),
     [view, anchor],
   );
+
+  // Watching comes with the window, and the Now snapshot has no monitors:
+  // reload when one is created, paused, resumed, cancelled or ends (the
+  // monitors store hears monitor.updated). The list's first load isn't news.
+  const seenMonitors = useRef(monitorKey);
+  useEffect(() => {
+    const previous = seenMonitors.current;
+    seenMonitors.current = monitorKey;
+    if (previous !== null && monitorKey !== previous) setReload((n) => n + 1);
+  }, [monitorKey]);
 
   const windowKey = `${start.toISOString()}|${end.toISOString()}`;
   const data = loaded?.key === windowKey ? loaded.data : null;

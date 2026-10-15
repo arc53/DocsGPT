@@ -134,12 +134,24 @@ describe('Calendar page', () => {
     container.remove();
   });
 
+  // A test replaces the monitors store with `{ type: 'test/monitors' }`.
+  const monitorsState = (status: string) => ({
+    byId: { m1: { monitor_id: 'm1', status } },
+    order: ['m1'],
+    loaded: true,
+    loading: false,
+    error: null,
+  });
   const render = async () => {
     const store = configureStore({
       reducer: {
         activity: activityReducer,
         preference: () => ({ token: 'tok' }),
         schedules: (s = {}) => s,
+        monitors: (
+          s = monitorsState('active'),
+          action: { type: string; payload?: unknown },
+        ) => (action.type === 'test/monitors' ? action.payload : s),
       },
     });
     await act(async () => {
@@ -219,6 +231,26 @@ describe('Calendar page', () => {
     ) as HTMLButtonElement;
     await act(async () => chip.click());
     expect(container.textContent).not.toContain('Rotterdam congestion');
+  });
+
+  it('asks again when a monitor is paused, cancelled or ends', async () => {
+    // Another tab cancelled it; the monitors store hears monitor.updated.
+    const store = await render();
+    const calls = activity.planned.mock.calls.length;
+    await act(async () => {
+      store.dispatch({
+        type: 'test/monitors',
+        payload: monitorsState('active'),
+      });
+    });
+    expect(activity.planned).toHaveBeenCalledTimes(calls);
+    await act(async () => {
+      store.dispatch({
+        type: 'test/monitors',
+        payload: monitorsState('cancelled'),
+      });
+    });
+    expect(activity.planned).toHaveBeenCalledTimes(calls + 1);
   });
 
   it('asks again only when activity may have changed', async () => {
