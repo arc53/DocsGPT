@@ -544,6 +544,56 @@ describe('Logs running rows', () => {
     expect(container.textContent).toContain('settings.logs.running');
   });
 
+  it('places a running webhook row by time across a refresh read in parts', async () => {
+    // Rows 0-149 newest first; row 145, on page 15, is a run that goes on,
+    // so the refresh reads two 100-row parts. The server adds a webhook run
+    // older than every loaded row to part 1 only, at its end: row 100, on
+    // page 11, which the merge doesn't re-sort.
+    const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
+    const rows = Array.from({ length: 150 }, (_, n) =>
+      n === 145
+        ? { ...answer, id: 'chat-run-145', timestamp: at(n) }
+        : { ...log, id: `chat-${n}`, question: `#${n}#`, timestamp: at(n) },
+    );
+    const webhook = {
+      ...answer,
+      id: 'webhook-run-w1',
+      action: 'webhook_run',
+      event_type: 'webhook',
+      question: 'Inbound hook',
+      timestamp: at(200),
+      started_at: at(200),
+    };
+    let withWebhook = false;
+    getLogs.mockImplementation(
+      async ({
+        page: number,
+        page_size: size,
+      }: {
+        page: number;
+        page_size: number;
+      }) => ({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            logs: [
+              ...rows.slice((number - 1) * size, number * size),
+              ...(withWebhook && number === 1 ? [webhook] : []),
+            ],
+            has_more: number * size < rows.length,
+          }),
+      }),
+    );
+    await act(async () => root.render(<Logs />));
+    for (let n = 2; n <= 15; n++) await act(async () => sentinel.reach());
+
+    withWebhook = true;
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Inbound hook')).toBeGreaterThan(text.indexOf('#149#'));
+  });
+
   it('keeps only the loaded rows when a refresh reads past them', async () => {
     // 300 rows newest first; row 105, on page 11, is a run that goes on.
     // Eleven pages need 110 rows, but the refresh reads two 100-row pages.

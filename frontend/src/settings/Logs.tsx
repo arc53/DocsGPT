@@ -35,7 +35,7 @@ import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
-import { mergeLoadedPages, uniqueLogs } from './logsPage';
+import { mergeLoadedPages, newestFirst, uniqueLogs } from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
 import { LogData, TraceRef } from './types';
 
@@ -204,19 +204,22 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       const parts = await Promise.all(
         responses.map((response) => response.json()),
       );
-      // The server adds running webhook rows to request 1 only. Past one
-      // request, the last reads beyond the loaded rows; what it has beyond
-      // them is more.
+      // The server adds running webhook rows to request 1 only, by time
+      // within it: one older than its rows sits at its end, ahead of the
+      // next request's, so the joined rows are put back in time order.
+      // Past one request, the last reads beyond the loaded rows; what it
+      // has beyond them is more.
       const last = parts[parts.length - 1];
       const keep =
         parts.length > 1
           ? rows - (parts.length - 1) * MAX_REQUEST_ROWS
           : last.logs.length;
+      const joined = [
+        ...parts.slice(0, -1).flatMap((part) => part.logs),
+        ...last.logs.slice(0, keep),
+      ];
       const data = {
-        logs: [
-          ...parts.slice(0, -1).flatMap((part) => part.logs),
-          ...last.logs.slice(0, keep),
-        ],
+        logs: parts.length > 1 ? newestFirst(joined) : joined,
         has_more: last.has_more || last.logs.length > keep,
       };
       if (issuedKey !== filterKeyRef.current) return;

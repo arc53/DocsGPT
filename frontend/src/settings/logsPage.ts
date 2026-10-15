@@ -2,6 +2,10 @@ import type { LogData } from './types';
 
 const at = (log: LogData) => Date.parse(log.timestamp) || 0;
 
+/** Rows newest first; rows at the same time keep their order. */
+export const newestFirst = (logs: LogData[]): LogData[] =>
+  [...logs].sort((a, b) => at(b) - at(a));
+
 /**
  * The loaded Logs pages after a live refresh read pages 1 to `pages` again.
  *
@@ -59,7 +63,7 @@ export function mergeLoadedPages(
     );
     next[n] = slice(n);
   }
-  next[pages] = [...next[pages], ...kept].sort((a, b) => at(b) - at(a));
+  next[pages] = newestFirst([...next[pages], ...kept]);
   return { pages: next, reset: false };
 }
 
