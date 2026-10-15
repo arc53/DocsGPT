@@ -75,6 +75,18 @@ def effective(spec: FeatureSpec, enabled: bool, profile: Optional[SpeedProfile])
     return (spec.auto_mode if on else "off"), predicted, reason
 
 
+def nothing_fits(profile: SpeedProfile) -> bool:
+    """Whether the model was loaded only to judge ``auto`` and no feature will call it.
+
+    True when some feature is set to ``auto``, every ``auto`` verdict on ``profile`` is off, and no feature is set
+    to ``on`` or ``monitor``.
+    """
+    registered = specs()
+    if not any(configured(spec) == "auto" for spec in registered):
+        return False
+    return all(effective(spec, True, profile)[0] == "off" for spec in registered)
+
+
 def specs() -> list[FeatureSpec]:
     """Every registered feature."""
     return list(_specs.values())

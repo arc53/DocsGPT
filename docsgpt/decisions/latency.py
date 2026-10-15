@@ -22,6 +22,9 @@ from docsgpt.decisions.vendor.arc_decide_onnx import CHUNK, steps
 #: Weight of each new pass in the drift average.
 DRIFT_ALPHA = 0.05
 
+#: Drift inside this band keeps the profile; outside it, the timing run is due again.
+DRIFT_BAND = (0.67, 1.5)
+
 #: Reference shapes reported in ``/api/admin/decisions``: an injection check on a short message, one relevance chunk of
 #: DocsGPT's default size, and an analytics turn (a full state and eight questions, in the background).
 GUARD = Shape(state_tokens=20, question_tokens=(100,))
@@ -142,6 +145,10 @@ class SpeedProfile:
         expected = self.pass_s(step.tokens, step.cached)
         if expected > 0:
             self.drift += DRIFT_ALPHA * (seconds / expected - self.drift)
+
+    def steady(self) -> bool:
+        """Whether ``drift`` is still inside ``DRIFT_BAND``."""
+        return DRIFT_BAND[0] <= self.drift <= DRIFT_BAND[1]
 
     def report(self) -> dict:
         """The profile as ``/api/admin/decisions`` shows it."""

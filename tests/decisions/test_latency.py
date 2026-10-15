@@ -74,6 +74,10 @@ class TestPredict:
         assert p.drift == pytest.approx(2.0, rel=1e-3)
         assert p.predict_s(Shape(100, (20,))) == pytest.approx(2 * before, rel=1e-3)
 
+    @pytest.mark.parametrize("drift, steady", [(1.0, True), (0.67, True), (1.5, True), (0.6, False), (1.6, False)])
+    def test_drift_band(self, drift, steady):
+        assert profile(drift=drift).steady() is steady
+
     def test_report(self):
         report = profile().report()
         assert set(report) == {"threads", "measured_at", "drift", "guard_s", "relevance_s", "analytics_s"}
@@ -126,6 +130,21 @@ class TestVerdict:
     def test_everything_is_off_when_decisions_are(self, feature):
         feature.settings.TEST_FEATURE_MODE = "on"
         assert features.effective(feature.spec, False, costing(0.1))[0] == "off"
+
+    def test_nothing_fits_when_every_auto_verdict_is_off(self, feature):
+        assert features.nothing_fits(costing(5.0))
+        assert not features.nothing_fits(costing(0.5))
+
+    @pytest.mark.parametrize("mode", ["on", "monitor"])
+    def test_an_explicit_feature_still_uses_the_model(self, feature, mode):
+        other = FeatureSpec("other", "OTHER_MODE", "TEST_FEATURE_BUDGET", Shape(0, (0,)))
+        feature.settings.OTHER_MODE = mode
+        features.register(other)
+        assert not features.nothing_fits(costing(5.0))
+
+    def test_without_an_auto_feature_nothing_is_judged(self, feature):
+        feature.settings.TEST_FEATURE_MODE = "off"
+        assert not features.nothing_fits(costing(5.0))
 
     def test_unset_mode_is_off(self, feature):
         feature.settings.TEST_FEATURE_MODE = None
