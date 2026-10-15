@@ -31,7 +31,8 @@ class TestPlan:
 class TestFit:
     def test_recovers_the_coefficients(self):
         c, a, b = 0.01, 0.0005, 2e-7
-        samples = [(n, k, c + n * (a + b * k)) for n, k in [(200, 0), (200, 0), (256, 0), (256, 256), (30, 512)]]
+        passes = [(200, 0), (256, 0), (256, 256), (256, 512), (30, 768), (30, 768)]
+        samples = [(n, k, c + n * (a + b * (k + n / 2))) for n, k in passes]
         assert fit(samples) == pytest.approx((c, a, b), rel=1e-6)
 
     def test_coefficients_are_never_negative(self):
@@ -56,6 +57,13 @@ class TestPredict:
         p = profile(c=1.0, a=0.0)
         assert p.predict_s(Shape(100, (20,))) == pytest.approx(1.0)  # one pass
         assert p.predict_s(Shape(100, (20,), lane="background")) == pytest.approx(2.0)  # prefill + suffix
+
+    def test_a_long_single_pass_pays_for_attention_within_it(self):
+        # each token attends to the rows before it in the same pass, so one long pass costs more than its tokens
+        p = profile(c=0.01, a=0.0008, b=6e-7, overhead=44)
+        n = 1259 + 44 + 30
+        assert p.predict_s(Shape(1259, (30,))) == pytest.approx(0.01 + n * (0.0008 + 6e-7 * n / 2))
+        assert p.predict_s(Shape(1259, (30,))) > 1.3 * (0.01 + n * 0.0008)
 
     def test_drift_scales_predictions(self):
         p = profile()

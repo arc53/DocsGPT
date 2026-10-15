@@ -53,8 +53,10 @@ TIMING_TEXT = (
     "with every passage of the selected sources and returns the closest ones, which the assistant reads before it "
     "answers. Passages keep their headings, so a result can be traced back to the section it came from. "
 )
-#: Tokens of the timing run's single-pass call and of its multi-pass state.
-TIMING_SINGLE, TIMING_STATE = 200, 512
+#: Tokens of the timing run's single-pass call and of its multi-pass state. The state's prefill passes run on 0,
+#: 256 and 512 cached rows and its questions on 768, so the per-row attention cost, which an analytics turn pays
+#: at 2,000 rows and a long single pass pays within itself, is measured over a range rather than at one point.
+TIMING_SINGLE, TIMING_STATE = 200, 768
 
 
 class LoadRefused(Exception):
@@ -258,7 +260,7 @@ class OnnxBackend:
         buf = engine.new_buffer()  # dropped afterwards: the timing state is longer than HOT_KEEP_TOKENS
         buf.reserve(TIMING_STATE + len(question))
         samples = []
-        for i, (prefix, suffixes) in enumerate([guard, guard, guard, state]):
+        for i, (prefix, suffixes) in enumerate([guard, guard, state]):
             for step in plan(len(prefix), [len(s) for s in suffixes], "hot"):
                 start = self._clock()
                 _run_pass(buf, prefix, suffixes, step)

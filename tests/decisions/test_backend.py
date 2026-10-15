@@ -124,7 +124,7 @@ class TestLifecycle:
         clock = FakeClock()
         c, a, b = 0.02, 0.0004, 3e-7
         engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"), clock=clock,
-                            cost=lambda n, k: c + n * (a + b * k))
+                            cost=lambda n, k: c + n * (a + b * (k + n / 2)))
         backend = loaded(engine, clock)
         profile = backend.profile
         assert (profile.c, profile.a, profile.b) == pytest.approx((c, a, b), rel=1e-6)

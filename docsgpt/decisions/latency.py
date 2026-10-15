@@ -2,9 +2,11 @@
 
 "Calibration" here means timing, unrelated to the model's probability calibration (``calibration_hash``). The ONNX
 backend runs a call as a fixed sequence of passes (``plan``), and one pass that appends ``n`` tokens after ``k``
-cached rows costs ``c + n * (a + b * k)``. A short timing run at load fits ``c``, ``a`` and ``b``, so the time of any
-call shape is predicted by summing its passes; real passes then keep a running ratio of measured to predicted time
-(``drift``) that scales every prediction.
+cached rows costs ``c + n * (a + b * (k + n / 2))``: a fixed cost per pass, the weights per token, and attention per
+token over the rows it reads, which are the cached ones plus, causally, on average half of the pass's own. Short
+passes barely show that last part; one long single pass (a whole relevance chunk) pays it in full. A short timing
+run at load fits ``c``, ``a`` and ``b``, so the time of any call shape is predicted by summing its passes; real
+passes then keep a running ratio of measured to predicted time (``drift``) that scales every prediction.
 """
 
 from __future__ import annotations
@@ -71,8 +73,13 @@ def plan(prefix: int, suffixes: Sequence[int], lane: Lane) -> list[Pass]:
     return passes
 
 
+def attended(tokens: int, cached: int) -> float:
+    """Rows the tokens of one pass attend to, summed: each reads the cached rows and the ones before it in the pass."""
+    return tokens * (cached + tokens / 2)
+
+
 def fit(samples: Sequence[tuple[int, int, float]]) -> tuple[float, float, float]:
-    """Least-squares ``c, a, b`` (all >= 0) of ``t = c + n * (a + b * k)`` over timed passes.
+    """Least-squares ``c, a, b`` (all >= 0) of ``t = c + n * a + b * attended(n, k)`` over timed passes.
 
     Exact non-negative least squares for three unknowns: solve on every subset of free coefficients (the rest
     fixed at 0) and keep the best fit that has no negative coefficient.
@@ -82,7 +89,7 @@ def fit(samples: Sequence[tuple[int, int, float]]) -> tuple[float, float, float]
     """
     import numpy as np
 
-    x = np.array([[1.0, n, n * k] for n, k, _ in samples])
+    x = np.array([[1.0, n, attended(n, k)] for n, k, _ in samples])
     y = np.array([t for _, _, t in samples])
     best, best_err = (0.0, 0.0, 0.0), float(np.sum(y**2))
     for size in (1, 2, 3):
@@ -106,7 +113,7 @@ class SpeedProfile:
     Attributes:
         c: Seconds per pass.
         a: Seconds per appended token.
-        b: Seconds per appended token per cached row.
+        b: Seconds per row an appended token attends to (``attended``).
         overhead: Tokens the prompt adds around a rendered state.
         threads: Threads the model ran with.
         measured_at: Unix time of the timing run.
@@ -123,7 +130,7 @@ class SpeedProfile:
 
     def pass_s(self, tokens: int, cached: int) -> float:
         """Unscaled seconds of one pass."""
-        return self.c + tokens * (self.a + self.b * cached)
+        return self.c + tokens * self.a + self.b * attended(tokens, cached)
 
     def predict_s(self, shape: Shape) -> float:
         """Seconds a call of this shape takes, drift included (queueing excluded)."""
