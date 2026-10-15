@@ -82,8 +82,13 @@ export default function EventPanel({
     selection.kind === 'block'
       ? selection.block.events[0]
       : (selection.event as ScheduleEvent);
+  // A day block is paused when its schedule is: its slots all say so.
   const state: EventState =
-    selection.kind === 'event' ? event.state : 'planned';
+    selection.kind === 'event'
+      ? event.state
+      : selection.block.events.some((slot) => slot.state === 'paused')
+        ? 'paused'
+        : 'planned';
   const schedulePath = event.agent_id
     ? agentSchedulesPath(event.agent_id)
     : ACTIVITY_SCHEDULES_PATH;

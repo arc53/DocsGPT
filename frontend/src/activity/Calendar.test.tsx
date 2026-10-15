@@ -326,6 +326,30 @@ describe('Calendar page', () => {
     expect(panel.textContent).toContain('–');
   });
 
+  it("treats a paused frequent schedule's day as paused, as its slots are", async () => {
+    // A single slot of a paused schedule hides Run now; its day block must too.
+    const frequent = {
+      schedule_id: 'f1',
+      name: 'Inbox triage',
+      frequent: true,
+    };
+    activity.planned.mockReset().mockResolvedValue({
+      ...WINDOW,
+      events: [
+        slot({ ...frequent, state: 'paused', at: at(0, 10) }),
+        slot({ ...frequent, state: 'paused', at: at(0, 11) }),
+      ],
+    });
+    await render();
+    const block = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="activity.calendar.block"]',
+    )!;
+    await act(async () => block.click());
+    const panel = document.querySelector('[data-slot="sheet-content"]')!;
+    expect(panel.textContent).toContain('activity.calendar.pausedNote');
+    expect(panel.textContent).not.toContain('agents.schedules.runNow');
+  });
+
   const next = () =>
     container.querySelector<HTMLButtonElement>(
       'button[aria-label="activity.calendar.next"]',
