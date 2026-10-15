@@ -188,7 +188,7 @@ export default function WeekGrid({
                 <div
                   key={hour}
                   aria-hidden
-                  className="border-border/60 absolute inset-x-0 top-(--top) border-t"
+                  className="border-border absolute inset-x-0 top-(--top) border-t"
                   style={{ '--top': `${(i + 1) * HOUR_PX}px` } as CSSProperties}
                 />
               ))}
