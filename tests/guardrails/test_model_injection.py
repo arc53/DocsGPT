@@ -5,8 +5,10 @@ The decision model is replaced by ``FakeDecider``: no model, no network.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -15,9 +17,12 @@ from docsgpt.core.settings import settings
 from docsgpt.core.settings.guardrails import GuardrailSettings
 from docsgpt.decisions import Q, features
 from docsgpt.decisions.features import INJECTION_INPUT
+from docsgpt.decisions.backends.onnx import OnnxBackend
 from docsgpt.decisions.latency import SpeedProfile
+from docsgpt.decisions.models import V02
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
+from docsgpt.decisions.vendor.arc_decide import Decider as Release
 from docsgpt.guardrails.base import ScanContext, stage_deadline
 from docsgpt.guardrails.checks import model_injection
 from docsgpt.guardrails.checks.model_injection import INSTANCE_DEFAULT, ModelInjectionCheck, windows
@@ -26,6 +31,9 @@ from docsgpt.guardrails.engine import GuardrailEngine
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
 from docsgpt.guardrails.runtime import resolve_config
 from docsgpt.guardrails.types import Action, Stage
+from tests.decisions.fakes import FakeClock, FakeEngine
+
+SERVING = Path(__file__).resolve().parent.parent / "fixtures" / "decisions" / "arcd_serving-0.4b-v0.2.json"
 
 DEFAULTS = {"threshold": 0.9, "flag_threshold": 0.5}
 
@@ -181,17 +189,17 @@ class TestWindows:
         with installed(FakeDecider(tokenizer=CharTokenizer())):
             assert windows("a" * 10) == (["a" * 10], 1)
             pieces, total = windows("".join(chr(65 + i) for i in range(18)))
-        assert total == 2 and pieces == ["ABCDEFGHIJ", "IJKLMNOPQR"]
+        assert total == 2 and pieces == ["IJKLMNOPQR", "ABCDEFGHIJ"]  # the last first
 
-    def test_past_the_cap_the_head_and_the_tail(self):
+    def test_the_last_then_the_first_then_backwards_up_to_the_cap(self):
         with installed(FakeDecider(tokenizer=CharTokenizer())):
             pieces, total = windows("".join(chr(65 + i) for i in range(42)))
-        assert total == 5 and len(pieces) == 3
-        assert pieces[0].startswith("A") and pieces[1].startswith("I") and pieces[-1].endswith(chr(65 + 41))
+        assert total == 5 and [p[0] for p in pieces] == [chr(65 + 32), "A", chr(65 + 24)]
+        assert pieces[0].endswith(chr(65 + 41))
 
     def test_characters_before_the_tokenizer_loads(self):
         pieces, total = windows("x" * 25)
-        assert total == 3 and [len(p) for p in pieces] == [10, 10, 9]
+        assert total == 3 and [len(p) for p in pieces] == [9, 10, 10]
 
     def test_the_highest_window_decides(self):
         text = "a" * 30 + "xxxxxx"  # five windows; the payload is in the last
@@ -212,7 +220,8 @@ class TestWindows:
         monkeypatch.setattr(fake, "decide_batch", first_only)
         assert scan(fake, "z" * 25).categories == ["PROMPT_INJECTION"]
         fake.answers["injection"] = 0.1
-        assert scan(fake, "z" * 25).error == "timeout"
+        outcome = scan(fake, "z" * 25)
+        assert outcome.error == "timeout" and outcome.detail == "timeout p=0.100 windows=1/3"
 
 
 @pytest.mark.unit
@@ -224,7 +233,7 @@ class TestEngine:
     def test_runs_under_the_stage_deadline_less_a_margin(self):
         fake = FakeDecider({"injection": 0.1})
         self.evaluate(engine_config(Action.FLAG), fake)
-        assert 1.5 < fake.calls[0].budget.seconds <= 1.9
+        assert 1.5 < fake.calls[0].budget.seconds <= 1.75
 
     def test_block_above_the_threshold(self):
         decision = self.evaluate(engine_config(Action.BLOCK), FakeDecider({"injection": 0.97}))
@@ -391,3 +400,55 @@ class TestFeature:
     def test_the_flag_threshold_may_not_exceed_the_threshold(self):
         with pytest.raises(ValueError, match="GUARDRAILS_INJECTION_FLAG_THRESHOLD"):
             GuardrailSettings(_env_file=None, GUARDRAILS_INJECTION_FLAG_THRESHOLD=0.95)
+
+
+class PayloadEngine(FakeEngine):
+    """The fake engine, answering P(injection) 0.99 for a window that holds ``PAYLOAD`` and 0.01 otherwise."""
+
+    def answer(self, logits, key, question):
+        p = 0.99 if "PAYLOAD" in "".join(map(chr, self.kv.rows)) else 0.01
+        return Release._answer(question, "noul", [p, 1 - p])
+
+
+@pytest.mark.unit
+class TestLongMessagesOnTheClock:
+    """The real client and backend, with every window costing 0.7 s on a fake clock (4 vCPU, measured)."""
+
+    TEXT = "lorem ipsum " * 250  # 3,000 characters: seven windows of 512 one-character tokens
+
+    @pytest.fixture
+    def model(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MODE", None)
+        monkeypatch.setattr(settings, "DECISION_MODEL", None)
+        monkeypatch.setattr("docsgpt.celery_init.in_worker", lambda: False)
+        monkeypatch.setattr(OnnxBackend, "_schedule_tick", lambda self: None)
+        clock = FakeClock()
+        engine = PayloadEngine(json.loads(SERVING.read_text()), clock=clock, cost=lambda n, k: 0.7)
+        client = decisions.get_decider()
+        client._backend = OnnxBackend(V02, open_engine=lambda backend: engine, clock=clock)
+        client._backend.warm()
+        end = time.monotonic() + 5
+        while client._backend.status == "loading" and time.monotonic() < end:
+            time.sleep(0.005)
+        # The client sets deadlines on the real monotonic clock; start the fake one from it.
+        clock.now = time.monotonic()
+        yield clock
+        decisions.tokens.reset()
+
+    def scan_with_two_seconds(self, text):
+        token = stage_deadline.set(time.monotonic() + 2.0)
+        try:
+            return ModelInjectionCheck(ModelInjectionCheck.validate_settings({})).scan(text, Stage.INPUT, ScanContext())
+        finally:
+            stage_deadline.reset(token)
+
+    def test_a_payload_at_the_end_is_flagged_inside_the_deadline(self, model):
+        started = model()
+        outcome = self.scan_with_two_seconds(self.TEXT + " PAYLOAD")
+        assert outcome.categories == ["PROMPT_INJECTION"] and outcome.detail == "p=0.990 windows=2/7"
+        assert model() - started == pytest.approx(1.4)
+
+    def test_a_long_benign_message_says_how_much_was_read(self, model):
+        outcome = self.scan_with_two_seconds(self.TEXT)
+        assert not outcome.evaluated and outcome.error == "timeout"
+        assert outcome.detail == "timeout p=0.010 windows=2/7"

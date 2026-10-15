@@ -8,6 +8,12 @@ A text the model could not score (it is off, still loading, or out of time) is n
 evaluated* and the agent's ``fail_open`` decides. The control the instance default adds
 (``GUARDRAILS_INJECTION_INPUT_MODE``) is the exception: it never stops a turn it could not score.
 
+A long text is split into short windows, scored in one call in the order most likely to matter: the last window
+(where an appended payload sits), the first, then the rest from the end backwards. The decision model answers a
+call's states in order and returns those it finished when the stage deadline cuts it short, so on a slow machine
+the windows that matter most are the ones read. One window over the flag threshold settles the verdict; otherwise
+every window must be scored, or the outcome is *not evaluated* and says how many were (``windows=2/13``).
+
 Only the ``input`` stage is offered for now. Retrieved documents and tool results are long, and on CPU they need
 scores computed before the turn rather than during it.
 """
@@ -23,24 +29,29 @@ from docsgpt.decisions.features import INJECTION_INPUT
 from docsgpt.guardrails.base import GuardrailCheck, ScanContext, stage_time_left
 from docsgpt.guardrails.types import Action, CheckOutcome, Stage
 
-#: Model tokens per window of a long text (a whole DocsGPT chunk fits one), and the overlap between windows, so a
-#: payload on a boundary is read whole in one of them.
-WINDOW_TOKENS = 1600
+#: Model tokens per window of a long text, and the overlap between windows, so a payload on a boundary is read whole
+#: in one of them. A short window is about 0.7 s on 4 vCPU, so two or three fit the default 2 s stage deadline
+#: (one 1,600-token window did not), it is close to the length of the texts the model was trained on, and a short
+#: payload is not diluted by a long benign window around it.
+WINDOW_TOKENS = 512
 WINDOW_OVERLAP = 50
-#: Windows scored per text. Past it, the first ``MAX_WINDOWS - 1`` and the last are scored, so the end of a long
-#: message is always read.
-MAX_WINDOWS = 8
-#: Seconds kept back from the stage deadline, so the answer reaches the engine before it gives up on the check.
-DEADLINE_MARGIN_S = 0.1
+#: Windows considered per text (about 11,000 tokens); past it the first and the last ``MAX_WINDOWS - 1`` are
+#: considered. On CPU the deadline stops far sooner.
+MAX_WINDOWS = 24
+#: Seconds kept back from the stage deadline. The model admits a window only if its predicted time fits, and a
+#: window that runs past its prediction must still finish before the engine gives up on the check, or every window
+#: already scored is lost with it.
+DEADLINE_MARGIN_S = 0.25
 #: Settings key marking the control ``GUARDRAILS_INJECTION_INPUT_MODE`` adds to an agent.
 INSTANCE_DEFAULT = "instance_default"
 
 
 def windows(text: str) -> tuple[list[str], int]:
-    """The windows of ``text`` to score, and how many it has in all.
+    """The windows of ``text`` to score, in the order to score them, and how many it has in all.
 
-    Windows are counted in model tokens. Before the tokenizer has loaded they are counted in characters, one per
-    token at worst, which gives more and shorter windows and still reads every part of the text.
+    The order is the last window, the first, then the rest from the end backwards. Windows are counted in model
+    tokens; before the tokenizer has loaded they are counted in characters, one per token at worst, which gives
+    more and shorter windows and still reads every part of the text.
 
     Args:
         text: The text to score.
@@ -54,9 +65,8 @@ def windows(text: str) -> tuple[list[str], int]:
     while starts[-1] + WINDOW_TOKENS < len(units):
         starts.append(starts[-1] + WINDOW_TOKENS - WINDOW_OVERLAP)
     total = len(starts)
-    if total > MAX_WINDOWS:
-        starts = starts[: MAX_WINDOWS - 1] + starts[-1:]
-    pieces = [units[start : start + WINDOW_TOKENS] for start in starts]
+    order = [starts[-1]] + starts[:1] + starts[-2:0:-1] if total > 1 else starts
+    pieces = [units[start : start + WINDOW_TOKENS] for start in order[:MAX_WINDOWS]]
     if ids is not None:
         pieces = [tokens.decode(piece) for piece in pieces]
     return pieces, total
@@ -141,12 +151,15 @@ class ModelInjectionCheck(GuardrailCheck):
         p = max((d.p("injection") for d in answered), default=None)
         flag_threshold = float(self.settings.get("flag_threshold", instance.GUARDRAILS_INJECTION_FLAG_THRESHOLD))
         threshold = float(self.settings.get("threshold", instance.GUARDRAILS_INJECTION_THRESHOLD))
+        scored = f"windows={len(answered)}/{total}"
         # A window over the flag threshold settles it even when others went
         # unscored; anything less needs every window.
         if p is None or (p < flag_threshold and len(answered) < len(pieces)):
             reason = next((r for r in batch.reasons if r), "unscored")
-            return CheckOutcome.not_evaluated("timeout" if reason == "timeout" else f"unscored: {reason}")
-        detail = f"p={p:.3f} windows={len(answered)}/{total}"
+            error = "timeout" if reason == "timeout" else f"unscored: {reason}"
+            seen = f" p={p:.3f}" if p is not None else ""
+            return CheckOutcome(evaluated=False, error=error, detail=f"{error}{seen} {scored}")
+        detail = f"p={p:.3f} {scored}"
         if any(d.truncated for d in answered):
             detail += " trunc"
         if all(d.cached for d in answered):
