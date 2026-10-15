@@ -141,4 +141,94 @@ describe('GoogleDrivePicker', () => {
     await act(async () => reconnect.click());
     expect(onReconnect).toHaveBeenCalled();
   });
+
+  it('lets folders and shared-drive items be picked', async () => {
+    drive.pickerToken.mockResolvedValue({ success: true, access_token: 'at' });
+    drive.openPicker.mockImplementation(({ callbackFunction }) =>
+      callbackFunction({
+        action: 'picked',
+        docs: [
+          {
+            id: 'folder-1',
+            name: 'Policies',
+            mimeType: 'application/vnd.google-apps.folder',
+          },
+          { id: 'f1', name: 'a.pdf', mimeType: 'application/pdf' },
+        ],
+      }),
+    );
+    const onSelectionChange = vi.fn();
+    await render({ onSelectionChange });
+    await act(async () =>
+      button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+    );
+    expect(drive.openPicker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setIncludeFolders: true,
+        setSelectFolderEnabled: true,
+        supportDrives: true,
+      }),
+    );
+    expect(onSelectionChange).toHaveBeenLastCalledWith(['f1'], ['folder-1']);
+    expect(container.textContent).toContain('filePicker.folder');
+  });
+
+  it('adds a shared drives tab once the Picker API is loaded', async () => {
+    const calls: Array<[string, unknown]> = [];
+    class DocsView {
+      constructor(viewId: unknown) {
+        calls.push(['viewId', viewId]);
+      }
+      setEnableDrives(on: boolean) {
+        calls.push(['setEnableDrives', on]);
+        return this;
+      }
+      setIncludeFolders(on: boolean) {
+        calls.push(['setIncludeFolders', on]);
+        return this;
+      }
+      setSelectFolderEnabled(on: boolean) {
+        calls.push(['setSelectFolderEnabled', on]);
+        return this;
+      }
+      setMimeTypes(types: string) {
+        calls.push(['setMimeTypes', types.includes('application/pdf')]);
+        return this;
+      }
+    }
+    Object.assign(window, {
+      google: { picker: { DocsView, ViewId: { DOCS: 'docs' } } },
+    });
+    try {
+      drive.pickerToken.mockResolvedValue({
+        success: true,
+        access_token: 'at',
+      });
+      await render();
+      await act(async () =>
+        button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+      );
+      const { customViews } = drive.openPicker.mock.calls[0][0];
+      expect(customViews).toHaveLength(1);
+      expect(customViews[0]).toBeInstanceOf(DocsView);
+      expect(calls).toEqual([
+        ['viewId', 'docs'],
+        ['setEnableDrives', true],
+        ['setIncludeFolders', true],
+        ['setSelectFolderEnabled', true],
+        ['setMimeTypes', true],
+      ]);
+    } finally {
+      delete (window as { google?: unknown }).google;
+    }
+  });
+
+  it('opens without a shared drives tab before the Picker API loads', async () => {
+    drive.pickerToken.mockResolvedValue({ success: true, access_token: 'at' });
+    await render();
+    await act(async () =>
+      button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+    );
+    expect(drive.openPicker.mock.calls[0][0].customViews).toBeUndefined();
+  });
 });

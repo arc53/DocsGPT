@@ -3690,6 +3690,74 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
         logging.warning("Could not link source %s to connection %s", source_id, connection_id, exc_info=True)
 
 
+def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
+    """Combine a connector's selection fingerprint with the source's processing settings.
+
+    Changing the chunking or retrieval settings changes the result, so the
+    next sync re-ingests even when no file changed.
+
+    Args:
+        selection_fingerprint: The loader's fingerprint of the selected files, or ``None``.
+        config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+
+    Returns:
+        A hex digest, or ``None`` when the loader gave no fingerprint.
+    """
+    if not selection_fingerprint:
+        return None
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError:
+            # Not JSON: hash the raw string, which still changes when the settings do.
+            pass
+    payload = json.dumps({"selection": selection_fingerprint, "config": config or {}}, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _connector_selection_unchanged(
+    loader: Any, source_config: Dict[str, Any], config: Any, source_id: str, user: str
+) -> bool:
+    """Whether a connector source's selection matches the fingerprint stored at its last ingest.
+
+    Any doubt (no stored fingerprint, a loader without one, an error reading
+    either) answers ``False``, so the sync re-ingests as before.
+
+    Args:
+        loader: The connector loader the sync would download with.
+        source_config: The stored selection (``file_ids``, ``folder_ids``, ``recursive``).
+        config: The source's ``SourceConfig`` dict, or ``None``.
+        source_id: The source being synced.
+        user: The source's owner.
+    """
+    try:
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        remote_data = (source or {}).get("remote_data")
+        if isinstance(remote_data, str):
+            remote_data = json.loads(remote_data)
+        previous = remote_data.get("sync_fingerprint") if isinstance(remote_data, dict) else None
+        if not previous:
+            return False
+        current = _connector_sync_fingerprint(loader.sync_fingerprint(source_config), config)
+    except Exception:
+        logging.warning("Could not check source %s for changes; syncing it in full", source_id, exc_info=True)
+        return False
+    return current == previous
+
+
+def _mark_source_synced(source_id: str, user: str) -> None:
+    """Record that a source was synced just now, without changing its index."""
+    try:
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            source = repo.get_any(source_id, user)
+            if source is not None:
+                repo.update(str(source["id"]), user, {"date": datetime.datetime.now(datetime.timezone.utc)})
+    except Exception:
+        logging.warning("Failed to update last_sync for source %s", source_id, exc_info=True)
+
+
 def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
     """Re-download and re-index a connector source from its connection.
 
@@ -3872,6 +3940,35 @@ def ingest_connector(
                 "recursive": recursive,
             }
 
+            # A sync whose selection has not changed since the last ingest
+            # (same files, same modified times, same settings) keeps the
+            # index it has instead of downloading and embedding it again.
+            if operation_mode == "sync" and doc_id and _connector_selection_unchanged(
+                remote_loader, api_source_config, config, source_id_for_events, user
+            ):
+                logging.info(f"No changes in {source_type} source {source_id_for_events}; sync skipped")
+                _mark_source_synced(source_id_for_events, user)
+                publish_user_event(
+                    user,
+                    "source.ingest.completed",
+                    {
+                        "source_id": source_id_for_events,
+                        "job_name": job_name,
+                        "loader": source_type,
+                        "operation": operation_mode,
+                        "tokens": 0,
+                        "no_changes": True,
+                    },
+                    scope={"kind": "source", "id": source_id_for_events},
+                )
+                return {
+                    "user": user,
+                    "name": job_name,
+                    "type": source_type,
+                    "id": source_id_for_events,
+                    "status": "unchanged",
+                }
+
             # Step 2: Download files to temp directory
             self.update_state(
                 state="PROGRESS", meta={"current": 20, "status": "Downloading files"}
@@ -3980,6 +4077,15 @@ def ingest_connector(
 
             tokens = count_tokens_docs(docs)
 
+            # The fingerprint lets the next sync skip an unchanged selection.
+            # It is left out when a file failed, so that sync tries again.
+            remote_data = {"provider": source_type, **api_source_config}
+            sync_fingerprint = _connector_sync_fingerprint(
+                download_info.get("sync_fingerprint"), config
+            )
+            if sync_fingerprint:
+                remote_data["sync_fingerprint"] = sync_fingerprint
+
             # Step 6: Upload index files
             file_data = {
                 "user": user,
@@ -3988,9 +4094,7 @@ def ingest_connector(
                 "retriever": retriever,
                 "id": source_id_for_events,
                 "type": "connector:file",
-                "remote_data": json.dumps(
-                    {"provider": source_type, **api_source_config}
-                ),
+                "remote_data": json.dumps(remote_data),
                 "directory_structure": json.dumps(directory_structure),
                 "sync_frequency": sync_frequency,
             }

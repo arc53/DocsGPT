@@ -1511,12 +1511,14 @@
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
         "mcp_drawio": "Create editable flowcharts and other diagrams with draw.io.",
+        "mcp_coingecko": "Look up live crypto prices, market caps, volumes, trending coins and price history.",
         "mcp_clickup": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
         "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
         "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
+        "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -1849,8 +1851,8 @@
           "connect": "Connect to Google Drive",
           "validateFailed": "Could not check the sign-in. Try again.",
           "pickerFailed": "Could not open the file picker. Try again.",
-          "selectedFiles": "Selected files",
-          "selectFiles": "Select files",
+          "selectedFiles": "Selected items",
+          "selectFiles": "Select files or folders",
           "noFilesSelected": "No files or folders selected yet.",
           "removeItem": "Remove {{name}}"
         }

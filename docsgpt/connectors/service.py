@@ -1255,7 +1255,9 @@ def create_tool_for_connection(
     doc = (tool.__doc__ or template).strip().split("\n", 1)
     if actions is None:
         actions = tool.get_actions_metadata()
-    actions = apply_default_permissions(template, _transform_actions(actions))
+    actions = apply_default_permissions(
+        template, _transform_actions(actions), definition.default_actions if definition else (),
+    )
     for index, action in enumerate(actions):
         permission = (permissions or {}).get(action.get("name"))
         if permission:
@@ -1313,6 +1315,7 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
 
     The OAuth tokens are not part of it: they stay on the connection, which
     the tool is linked to, and the executor signs in with them at run time.
+    A keyless preset (``auth_kind: mcp``, such as draw.io) uses no auth.
 
     Args:
         definition: The connector.
@@ -1329,7 +1332,7 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         return None
     return {
         "server_url": definition.mcp_url,
-        "auth_type": "oauth",
+        "auth_type": "oauth" if definition.auth_kind == "mcp_oauth" else "none",
         "oauth_scopes": list(definition.oauth_scopes),
         "timeout": 30,
         "transport_type": "auto",
