@@ -3479,9 +3479,11 @@ def agent_webhook_worker(self, agent_id, payload):
     # A webhook run has no row until it ends: mark it for Activity › Now.
     owner_id = agent_config.get("user_id")
     run_id = getattr(getattr(self, "request", None), "id", None)
+    # Walks the whole payload, which can be tens of thousands of characters.
+    retrieval_query = _webhook_retrieval_query(payload)
     _mark_webhook_run(
         owner_id, run_id, agent_config, started=True,
-        summary=_webhook_retrieval_query(payload)[:_WEBHOOK_SUMMARY_MAX_CHARS],
+        summary=retrieval_query[:_WEBHOOK_SUMMARY_MAX_CHARS],
     )
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
@@ -3491,10 +3493,10 @@ def agent_webhook_worker(self, agent_id, payload):
         outcome = run_agent_headless(
             agent_config,
             input_data,
-            retrieval_query=_webhook_retrieval_query(payload),
+            retrieval_query=retrieval_query,
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
-            request_id=getattr(getattr(self, "request", None), "id", None),
+            request_id=run_id,
         )
         result = {
             "answer": outcome.get("answer", ""),
