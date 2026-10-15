@@ -338,6 +338,35 @@ class TestListForUserTeamAgents:
         assert row["team"] is True
         assert row["origin_conversation_name"] is None
 
+    def test_a_team_runs_chat_is_not_linked_for_a_teammate(self, app, pg_conn):
+        # The run's chat is the agent owner's: the teammate can't open it.
+        from docsgpt.api.user.schedules.routes import ScheduleRunDetail, ScheduleRunList
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+        from docsgpt.storage.db.repositories.schedule_runs import ScheduleRunsRepository
+
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "editor")
+        schedule = SchedulesRepository(pg_conn).create(
+            user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+            instruction="team digest", cron="0 9 * * 1",
+        )
+        sid = str(schedule["id"])
+        conv = str(ConversationsRepository(pg_conn).create("owner1", "Digest")["id"])
+        runs = ScheduleRunsRepository(pg_conn)
+        run = runs.record_pending(sid, "owner1", agent_id, _now())
+        runs.update(str(run["id"]), {"status": "success", "conversation_id": conv})
+
+        def _as(user):
+            with _patch_db(pg_conn), app.test_request_context("/", method="GET"):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                detail = ScheduleRunDetail().get(sid, str(run["id"])).get_json()["run"]
+                listed = ScheduleRunList().get(sid).get_json()["runs"][0]
+            return detail["conversation_id"], listed["conversation_id"]
+
+        assert _as("u1") == (None, None)
+        assert _as("owner1") == (conv, conv)
+
     def test_a_viewer_does_not_see_them(self, app, pg_conn):
         agent_id = _make_agent(pg_conn, "owner1")
         self._share(pg_conn, agent_id, "viewer")

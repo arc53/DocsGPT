@@ -104,8 +104,18 @@ def _format_schedule(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _format_run(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Render a schedule_run row for the API."""
+def _format_run(row: Dict[str, Any], caller: Optional[str] = None) -> Dict[str, Any]:
+    """Render a schedule_run row for the API.
+
+    Args:
+        row: The run.
+        caller: Who asked. A teammate managing the owner's schedule gets no
+            ``conversation_id``/``message_id``: the run's chat is the
+            owner's, and the link would open nothing.
+
+    Returns:
+        The run as JSON-ready fields.
+    """
     if not row:
         return {}
     out = dict(row)
@@ -114,6 +124,10 @@ def _format_run(row: Dict[str, Any]) -> Dict[str, Any]:
     ):
         if out.get(key) is not None:
             out[key] = str(out[key])
+    if caller is not None and "user_id" in out and out["user_id"] != caller:
+        for key in ("conversation_id", "message_id"):
+            if key in out:
+                out[key] = None
     out.pop("_id", None)
     return out
 
@@ -547,7 +561,7 @@ class AgentScheduleStats(Resource):
                 "runs": stats["runs"],
                 "failed": stats["failed"],
                 "tokens": stats["tokens"],
-                "latest_failure": _format_run(latest) if latest else None,
+                "latest_failure": _format_run(latest, user_id) if latest else None,
             }
         )
 
@@ -824,7 +838,7 @@ class ScheduleRunNow(Resource):
                 "run-now enqueue failed: %s", exc, exc_info=True,
             )
             return _err("enqueue failed", 500)
-        return _ok({"run": _format_run(run)}, status=202)
+        return _ok({"run": _format_run(run, user_id)}, status=202)
 
 
 @schedules_ns.route("/schedules/<string:schedule_id>/runs")
@@ -858,7 +872,7 @@ class ScheduleRunList(Resource):
             )
         return _ok(
             {
-                "runs": [_format_run(r) for r in rows],
+                "runs": [_format_run(r, user_id) for r in rows],
                 "limit": limit,
                 "offset": offset,
             }
@@ -885,4 +899,4 @@ class ScheduleRunDetail(Resource):
                 schedule["id"]
             ):
                 return _err("run not found", 404)
-        return _ok({"run": _format_run(run)})
+        return _ok({"run": _format_run(run, user_id)})
