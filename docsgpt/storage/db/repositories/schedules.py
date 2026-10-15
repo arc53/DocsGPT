@@ -20,8 +20,8 @@ _ALLOWED_UPDATES = frozenset(
     }
 )
 
-#: The columns that decide when a schedule fires.
-_PLAN_FIELDS = frozenset({"cron", "timezone", "run_at"})
+#: The columns that decide when a schedule fires, with their SQL types.
+_PLAN_FIELDS = {"cron": "text", "timezone": "text", "run_at": "timestamptz"}
 
 
 class SchedulesRepository:
@@ -365,9 +365,20 @@ class SchedulesRepository:
                 params[key] = val
         # A new timing, or a resume, starts a new plan: the calendar's
         # missed slots count from here (the dispatcher writes through
-        # ``update_internal`` and never moves it).
-        if _PLAN_FIELDS & filtered.keys() or filtered.get("status") == "active":
-            set_parts.append("plan_changed_at = now()")
+        # ``update_internal`` and never moves it). Compared with the stored
+        # row (``SET`` reads the old values): the edit form resends the
+        # timezone and cron it loaded, and a rename is no new plan.
+        changes = [
+            f"{key} IS DISTINCT FROM CAST(:{key} AS {_PLAN_FIELDS[key]})"
+            for key in _PLAN_FIELDS.keys() & filtered.keys()
+        ]
+        if filtered.get("status") == "active":
+            changes.append("status <> 'active'")
+        if changes:
+            set_parts.append(
+                "plan_changed_at = CASE WHEN " + " OR ".join(changes) +
+                " THEN now() ELSE plan_changed_at END"
+            )
         guard = ""
         if pending_once_status is not None:
             guard = " AND trigger_type = 'once' AND status = :pending_status"

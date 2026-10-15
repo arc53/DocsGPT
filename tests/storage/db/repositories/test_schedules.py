@@ -268,6 +268,23 @@ class TestUpdateCancelFailureCounters:
         updated = repo.update(schedule_id, "u1", {"status": "active"})
         assert datetime.fromisoformat(str(updated["plan_changed_at"])) > old
 
+    def test_resending_the_same_timing_keeps_plan_changed_at(self, pg_conn):
+        # The edit form always sends the timezone, and may send the cron
+        # it loaded; a rename must not wipe the calendar's missed slots.
+        repo, schedule_id, old = self._stamped(pg_conn, timezone="Europe/Berlin")
+        repo.update(
+            schedule_id, "u1",
+            {"name": "renamed", "cron": "0 9 * * *", "timezone": "Europe/Berlin", "run_at": None},
+        )
+        row = repo.get(schedule_id, "u1")
+        assert datetime.fromisoformat(str(row["plan_changed_at"])) == old
+
+    def test_setting_an_active_schedule_active_keeps_plan_changed_at(self, pg_conn):
+        repo, schedule_id, old = self._stamped(pg_conn)
+        repo.update(schedule_id, "u1", {"status": "active"})
+        row = repo.get(schedule_id, "u1")
+        assert datetime.fromisoformat(str(row["plan_changed_at"])) == old
+
     def test_other_writes_keep_plan_changed_at(self, pg_conn):
         repo, schedule_id, old = self._stamped(pg_conn)
         repo.update(schedule_id, "u1", {"name": "renamed", "status": "paused"})
