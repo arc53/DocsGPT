@@ -38,6 +38,7 @@ import EventPanel from './calendar/EventPanel';
 import type { FrequentBlock } from './calendar/layout';
 import { STATE_CLASS, SYNC_CLASS } from './calendar/layout';
 import MonthGrid from './calendar/MonthGrid';
+import { nextRefreshAt } from './calendar/refresh';
 import type {
   CalendarEvent,
   CalendarView,
@@ -51,6 +52,8 @@ import { ACTIVITY_MONITORS_PATH } from './paths';
 /** The agent filter's values besides an agent id. */
 const ALL = 'all';
 const CHAT = 'chat';
+/** The longest timer the calendar sets before checking again. */
+const MAX_REFRESH_WAIT_MS = 60 * 60_000;
 
 const LEGEND = [
   ['planned', 'planned'],
@@ -144,6 +147,20 @@ export default function Calendar() {
       cancelled = true;
     };
   }, [start, end, token, revision, reload]);
+
+  // A slot whose run never shows up turns missed on the server's clock, and
+  // no event or snapshot says so: reload when the first one is due. Capped,
+  // as a timer can't wait out a 62-day window.
+  useEffect(() => {
+    if (!data) return;
+    const due = nextRefreshAt(data.events, Date.now());
+    if (due === null) return;
+    const timer = window.setTimeout(
+      () => setReload((n) => n + 1),
+      Math.min(due - Date.now(), MAX_REFRESH_WAIT_MS),
+    );
+    return () => window.clearTimeout(timer);
+  }, [data]);
 
   // Agents that have a slot in the window, for the filter.
   const agents = useMemo(() => {

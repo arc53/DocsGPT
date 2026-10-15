@@ -185,6 +185,26 @@ describe('Calendar page', () => {
     expect(container.textContent).toContain('Rotterdam congestion');
   });
 
+  it('reloads when a planned slot is due to turn missed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const soon = new Date(Date.now() + 2 * 60_000).toISOString();
+      activity.planned.mockResolvedValue({
+        ...WINDOW,
+        events: [slot({ at: soon })],
+      });
+      await render();
+      expect(activity.planned).toHaveBeenCalledTimes(1);
+      // The slot's time plus the 10-minute grace, and nothing loads before.
+      await act(async () => vi.advanceTimersByTime(11 * 60_000));
+      expect(activity.planned).toHaveBeenCalledTimes(1);
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(activity.planned).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   const syncButton = () =>
     container.querySelector<HTMLButtonElement>('button[data-kind="sync"]');
 

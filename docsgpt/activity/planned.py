@@ -373,8 +373,9 @@ def build_planned(
     Returns:
         ``{from, to, events, monitors, truncated}``. Each event has a
         ``kind`` (``schedule`` or ``sync``, see ``calendar_slots``) and a
-        ``state``: ``planned`` or ``paused`` for a future slot, ``missed`` for
-        a past slot of an active schedule that has no run, else the run's
+        ``state``: ``planned`` or ``paused`` for a future slot (or one less
+        than ``MISSED_GRACE`` late), ``missed`` for an older slot of an
+        active schedule that has no run, else the run's
         status (``pending``, ``running``, ``success``, ``failed``,
         ``skipped``, ``timeout``), plus ``run_id`` for a run. A summed-up
         event (see ``_sum_up_days``) has ``count`` and ``until`` instead.
@@ -418,8 +419,10 @@ def build_planned(
             }
         )
 
-    future_start = max(start, current)
+    # A slot inside the grace period is still planned, so the calendar
+    # keeps it until its run appears or it turns missed.
     missed_until = min(end, current - MISSED_GRACE)
+    future_start = max(start, current - MISSED_GRACE)
     for row in _schedules(conn, user_id, end):
         frequent = _is_frequent(row, frequent_cache)
         limit = MAX_FREQUENT_SLOTS if frequent else MAX_SLOTS_PER_SCHEDULE

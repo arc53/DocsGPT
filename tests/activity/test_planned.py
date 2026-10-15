@@ -174,7 +174,11 @@ class TestMissedRuns:
 
     def test_a_slot_inside_the_grace_period_is_not_missed_yet(self, pg_conn):
         _schedule(pg_conn, cron="55 13 * * 2")  # Tue 13:55, five minutes before NOW
-        assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
+        # Still planned, not dropped: the calendar keeps the slot until it
+        # turns missed (or its run appears).
+        assert [(e["at"], e["state"]) for e in _week(pg_conn)["events"] if e["kind"] == "schedule"] == [
+            ("2030-03-05T13:55:00+00:00", "planned")
+        ]
 
 
 class TestMonitorsAndSyncs:
