@@ -70,6 +70,26 @@ ROUND_TRIPS = 5
 ITEM_REASONS = BACKEND_REASONS | {"timeout", "bad_item"}
 
 
+
+def cleartext_public(url: str) -> bool:
+    """Whether ``url`` is plain HTTP to a host that looks reachable beyond this machine and its private network.
+
+    Loopback, private and link-local addresses, and single-label names (a compose or k8s service such as
+    ``decider``) are taken as local; a dotted name or a public address is not.
+    """
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme != "http" or not host or host == "localhost":
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return "." in host
+    return not (address.is_loopback or address.is_private or address.is_link_local)
+
 @dataclass
 class Reply:
     """What one HTTP request came to.
@@ -409,7 +429,13 @@ class RemoteBackend:
     def _headers(self, lane: Optional[Lane], deadline: float) -> dict:
         from docsgpt.core.settings import settings
 
-        return {"Authorization": f"Bearer {settings.DECISION_KEY}"} if settings.DECISION_KEY else {}
+        if not settings.DECISION_KEY:
+            return {}
+        if cleartext_public(self.base_url):
+            self._log_once("cleartext", logging.WARNING,
+                           "DECISION_KEY and the decided text go to %s over plain HTTP; use https for a decision "
+                           "server outside this machine or its private network", self.base_url)
+        return {"Authorization": f"Bearer {settings.DECISION_KEY}"}
 
     def _send(self, method: str, path: str, body: Any, *, lane: Optional[Lane], deadline: float, budget: float,
               check: Optional[Callable[[Any], bool]], optional: bool = False) -> Reply:

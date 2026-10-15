@@ -291,6 +291,25 @@ class TestHeaders:
         assert not any("authorization" in e["headers"] for e in server.log)
         assert not any("internal-key" in str(dict(e["headers"])) for e in server.log)
 
+    @pytest.mark.parametrize("url, warned", [
+        ("http://decider:7095", False), ("http://localhost:7095", False), ("http://127.0.0.1:7095", False),
+        ("http://[::1]:7095", False), ("http://10.0.3.7:7095", False), ("http://192.168.1.20", False),
+        ("https://decide.example.com", False), ("http://decide.example.com", True), ("http://8.8.8.8", True),
+    ])
+    def test_cleartext_to_a_public_host_is_flagged(self, url, warned):
+        from docsgpt.decisions.backends.http import cleartext_public
+
+        assert cleartext_public(url) is warned
+
+    def test_a_key_over_plain_http_to_a_public_host_warns_once(self, remote, api, caplog):
+        api(DECISION_KEY="decider-key", DECISION_BASE_URL="http://decide.example.com")
+        server = FakeDecideServer(DOCSGPT_ENTRY)
+        backend = remote(DecideBackend, server)
+        with caplog.at_level(logging.WARNING, logger="docsgpt.decisions.backends.http"):
+            backend._probe()
+            run(backend, [Request("s", {"q": NOUL})])
+        assert len([r for r in caplog.records if "plain HTTP" in r.message]) == 1
+
     def test_deadline_and_priority(self, remote):
         server = FakeDecideServer()
         run(remote(DecideBackend, server), [Request("s", {"q": NOUL})], lane="background", seconds=2.0)
