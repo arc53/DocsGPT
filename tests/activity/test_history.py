@@ -197,6 +197,12 @@ class TestFilters:
         assert first["has_more"] is True
         assert [r["title"] for r in second["runs"]] == ["run 2", "run 3"]
 
+    def test_an_offset_past_bigint_is_an_empty_page(self, pg_conn):
+        # Postgres rejects an OFFSET past int8, which answered 500.
+        _schedule_run(pg_conn, minutes_ago=1)
+        page = history.list_history(pg_conn, "u1", offset=10**20)
+        assert page == {"runs": [], "has_more": False}
+
     def test_old_runs_are_outside_the_window(self, pg_conn):
         _schedule_run(pg_conn, minutes_ago=60 * 24 * 40)
         assert history.list_history(pg_conn, "u1")["runs"] == []

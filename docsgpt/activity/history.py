@@ -38,6 +38,10 @@ MAX_DAYS = 90
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 
+#: The furthest a page may start; any page past the runs is empty anyway,
+#: and Postgres rejects an OFFSET past int8.
+MAX_OFFSET = 1_000_000
+
 _SCHEDULE = """
     SELECT 'schedule' AS kind, sr.id::text AS id,
            COALESCE(s.name, LEFT(s.instruction, 80)) AS title,
@@ -204,7 +208,7 @@ def list_history(
             job's as shown), agent and conversation names.
         days: How far back to look (clamped to ``1..MAX_DAYS``).
         limit: Rows per page (clamped to ``1..MAX_LIMIT``).
-        offset: Rows to skip.
+        offset: Rows to skip (clamped to ``0..MAX_OFFSET``).
 
     Returns:
         ``{runs, has_more}``. ``duration_ms`` and ``tokens`` are None when the
@@ -220,7 +224,7 @@ def list_history(
     parts = [_PARTS[kind]] if kind else list(_PARTS.values())
     days = max(1, min(int(days), MAX_DAYS))
     limit = max(1, min(int(limit), MAX_LIMIT))
-    offset = max(0, int(offset))
+    offset = max(0, min(int(offset), MAX_OFFSET))
 
     where: List[str] = []
     params: Dict[str, Any] = {"user_id": user_id, "days": days, "limit": limit + 1, "offset": offset}
