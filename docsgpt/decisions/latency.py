@@ -25,6 +25,17 @@ DRIFT_ALPHA = 0.05
 #: Drift inside this band keeps the profile; outside it, the timing run is due again.
 DRIFT_BAND = (0.67, 1.5)
 
+#: The timing run's state: constant text, never user data.
+TIMING_TEXT = (
+    "The service stores each document as a sequence of short passages. A search embeds the question, compares it "
+    "with every passage of the selected sources and returns the closest ones, which the assistant reads before it "
+    "answers. Passages keep their headings, so a result can be traced back to the section it came from. "
+)
+#: Tokens of the timing run's single-pass call and of its multi-pass state. The state's prefill passes run on 0,
+#: 256 and 512 cached rows and its questions on 768, so the per-row attention cost, which an analytics turn pays
+#: at 2,000 rows and a long single pass pays within itself, is measured over a range rather than at one point.
+TIMING_SINGLE, TIMING_STATE = 200, 768
+
 #: Reference shapes reported in ``/api/admin/decisions``: an injection check on a short message, one relevance chunk of
 #: DocsGPT's default size, and an analytics turn (a full state and eight questions, in the background).
 GUARD = Shape(state_tokens=20, question_tokens=(100,))
@@ -149,6 +160,24 @@ class SpeedProfile:
     def steady(self) -> bool:
         """Whether ``drift`` is still inside ``DRIFT_BAND``."""
         return DRIFT_BAND[0] <= self.drift <= DRIFT_BAND[1]
+
+    def wire(self) -> dict:
+        """The fitted numbers, as a decision server reports them on ``GET /v1/models`` (``speed``)."""
+        return {"c": self.c, "a": self.a, "b": self.b, "overhead": self.overhead, "threads": self.threads,
+                "measured_at": self.measured_at, "drift": self.drift}
+
+    @classmethod
+    def from_wire(cls, data: dict) -> "SpeedProfile":
+        """A profile a decision server reported.
+
+        Raises:
+            KeyError, TypeError, ValueError: When ``data`` lacks a coefficient or holds a non-number.
+        """
+        measured_at = data.get("measured_at")
+        return cls(float(data["c"]), float(data["a"]), float(data["b"]), overhead=int(data["overhead"]),
+                   threads=int(data.get("threads") or 0),
+                   measured_at=time.time() if measured_at is None else float(measured_at),
+                   drift=float(data.get("drift") or 1.0))
 
     def report(self) -> dict:
         """The profile as ``/api/admin/decisions`` shows it."""

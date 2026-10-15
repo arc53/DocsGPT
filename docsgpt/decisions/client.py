@@ -1,5 +1,8 @@
 """The process-wide decision client: validation, the answer cache, and the mode that picks a backend.
 
+``local`` runs the model in this process (``backends.onnx``); ``api`` calls the server at ``DECISION_BASE_URL``
+with the ``decide`` protocol (``backends.http``) or as stock vLLM (``backends.vllm``).
+
 Callers get answers or ``None``, never an exception at run time: a model that is off, loading, refused or busy
 answers ``None`` with a reason, and the feature falls back to what it does without the model. Caller bugs (a
 malformed question, too many states) are the exception, raised synchronously as ``ValueError``.
@@ -21,6 +24,22 @@ from docsgpt.decisions.types import BatchResult, Budget, Decision, ModelInfo, Re
 from docsgpt.decisions.vendor.arc_decide import to_text
 
 logger = logging.getLogger(__name__)
+
+
+def runtime() -> str:
+    """What the selected model runs on, for ``models.select``: ``onnx`` here, ``vllm``, or ``remote`` for a
+    ``decide`` server."""
+    from docsgpt.core.settings import settings
+
+    if _mode() != "api":
+        return "onnx"
+    return "vllm" if settings.DECISION_PROTOCOL == "vllm" else "remote"
+
+
+def _mode() -> str:
+    from docsgpt.core.settings import settings
+
+    return settings.DECISION_MODE or ("api" if settings.DECISION_BASE_URL else "local")
 
 
 def validate(requests: list[Request]) -> None:
@@ -79,10 +98,8 @@ class DecisionClient:
 
     @property
     def mode(self) -> str:
-        """``none`` or ``local``."""
-        from docsgpt.core.settings import settings
-
-        return settings.DECISION_MODE or "local"
+        """``none``, ``local`` or ``api``; unset is ``api`` when ``DECISION_BASE_URL`` is set, else ``local``."""
+        return _mode()
 
     @property
     def enabled(self) -> bool:
@@ -90,17 +107,30 @@ class DecisionClient:
         return self.mode != "none"
 
     def _spec(self) -> Optional[ModelSpec]:
-        return select("onnx")
+        return select(runtime())
 
-    def _local(self, create: bool):
-        """The in-process backend; created (not loaded) on first use, never in a Celery worker."""
+    def _get(self, create: bool):
+        """The backend: created (nothing loaded or sent) on first use; in local mode never in a Celery worker."""
         if self._backend is None and create:
-            from docsgpt.decisions.backends.onnx import OnnxBackend
-
             with self._lock:
                 if self._backend is None:
-                    self._backend = OnnxBackend(self._spec())
+                    self._backend = self._new_backend()
         return self._backend
+
+    def _new_backend(self):
+        if self.mode == "api":
+            from docsgpt.core.settings import settings
+
+            if settings.DECISION_PROTOCOL == "vllm":
+                from docsgpt.decisions.backends.vllm import VllmBackend
+
+                return VllmBackend()
+            from docsgpt.decisions.backends.http import DecideBackend
+
+            return DecideBackend()
+        from docsgpt.decisions.backends.onnx import OnnxBackend
+
+        return OnnxBackend(self._spec())
 
     def _unusable(self) -> Optional[str]:
         """Why no call can be answered here, or ``None``."""
@@ -108,6 +138,10 @@ class DecisionClient:
             return "off"
         if self._spec() is None:
             return "wrong_model"
+        if self.mode == "api":
+            from docsgpt.core.settings import settings
+
+            return None if settings.DECISION_BASE_URL else "no_decider"
         from docsgpt.celery_init import in_worker
 
         if in_worker():  # task processes never load the model; they will call the API's (later work)
@@ -141,7 +175,7 @@ class DecisionClient:
         reason = self._unusable()
         if reason:
             return self._result(feature, [None] * len(requests), [reason] * len(requests))
-        backend = self._local(create=True)
+        backend = self._get(create=True)
         info = self.model_info()
         decisions: list[Optional[Decision]] = [None] * len(requests)
         reasons: list[Optional[str]] = [None] * len(requests)
@@ -182,14 +216,19 @@ class DecisionClient:
     def warm(self) -> None:
         """Start loading the model in the background; never blocks, and does nothing where calls cannot run."""
         if self._unusable() is None:
-            self._local(create=True).warm()
+            self._get(create=True).warm()
 
     def model_info(self) -> Optional[ModelInfo]:
         """The model calls go to, without loading it; ``None`` when off or misconfigured."""
         spec = self._spec()
         if not self.enabled or spec is None:
             return None
-        backend = self._local(create=False)
+        backend = self._get(create=False)
+        if self.mode == "api":
+            if backend is not None:  # what the server reported at its last probe
+                return backend.model_info(self.mode)
+            return ModelInfo(id=spec.id, revision=files.revision(spec), runtime=runtime(), mode=self.mode,
+                             prompt_hash=spec.prompt_hash, calibration=spec.calibration, version=version(spec))
         calibration = backend.calibration if backend else spec.calibration
         return ModelInfo(id=spec.id, revision=files.revision(spec), runtime=f"onnx-{spec.onnx_dtype}",
                          mode=self.mode, prompt_hash=spec.prompt_hash, calibration=calibration,
@@ -201,8 +240,9 @@ class DecisionClient:
         return info.version if info else None
 
     def speed(self):
-        """This machine's ``SpeedProfile``, or ``None`` before the model has loaded and been timed."""
-        backend = self._local(create=False)
+        """This machine's ``SpeedProfile`` (in API mode the server's ``RemoteProfile``), or ``None`` before the
+        model has been timed."""
+        backend = self._get(create=False)
         return backend.profile if backend and self.enabled else None
 
     def status(self) -> dict:
@@ -211,11 +251,14 @@ class DecisionClient:
         Reads only this process's own state: no load, no network.
         """
         info = self.model_info()
-        backend = self._local(create=False)
+        backend = self._get(create=False)
+        unusable = self._unusable() if self.mode == "api" else None
         if not self.enabled:
             state, reason = "off", None
         elif info is None:
             state, reason = "unavailable", "wrong_model"
+        elif unusable:
+            state, reason = "unavailable", unusable
         elif backend is None:
             state, reason = "idle", None
         else:

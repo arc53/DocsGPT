@@ -28,15 +28,15 @@ import logging
 import os
 import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from docsgpt.decisions import features, files, memory, tokens
+from docsgpt.decisions.backends import Outcome
 from docsgpt.decisions.gate import Gate, GateTimeout
 from docsgpt.decisions.models import ModelSpec, calibration_hash
 from docsgpt.decisions.questions import FIXED, Q, family
-from docsgpt.decisions.latency import Pass, SpeedProfile, fit, plan
+from docsgpt.decisions.latency import TIMING_SINGLE, TIMING_STATE, TIMING_TEXT, Pass, SpeedProfile, fit, plan
 from docsgpt.decisions.types import Lane, Request
 from docsgpt.decisions.vendor.arc_decide import PROMPT_HASH, prefix_text, suffix_text, to_text
 from docsgpt.decisions.vendor.arc_decide_onnx import Decider as ReleaseDecider
@@ -59,17 +59,6 @@ CPU_CHECK_S = 60.0
 
 #: Longest wait for the gate before each pass of a repeated timing run; past it the run is dropped.
 RETIME_WAIT_S = 30.0
-
-#: The timing run's state: constant text, never user data.
-TIMING_TEXT = (
-    "The service stores each document as a sequence of short passages. A search embeds the question, compares it "
-    "with every passage of the selected sources and returns the closest ones, which the assistant reads before it "
-    "answers. Passages keep their headings, so a result can be traced back to the section it came from. "
-)
-#: Tokens of the timing run's single-pass call and of its multi-pass state. The state's prefill passes run on 0,
-#: 256 and 512 cached rows and its questions on 768, so the per-row attention cost, which an analytics turn pays
-#: at 2,000 rows and a long single pass pays within itself, is measured over a range rather than at one point.
-TIMING_SINGLE, TIMING_STATE = 200, 768
 
 
 class LoadRefused(Exception):
@@ -101,17 +90,6 @@ class Engine(ReleaseDecider):
         """The wire-shaped answer to one question from its label logits."""
         kind, p = self._probs(logits, key, question)
         return self._answer(question, kind, p)
-
-
-@dataclass
-class Outcome:
-    """One answered request, before it becomes a ``Decision``."""
-
-    answers: dict[str, dict]
-    ms: float
-    queue_ms: float
-    truncated: bool
-    input_tokens: int
 
 
 def _read(path: Path) -> Optional[str]:

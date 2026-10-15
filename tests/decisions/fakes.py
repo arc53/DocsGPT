@@ -1,6 +1,13 @@
-"""A fake engine for the ONNX backend: a KV buffer that checks every pass reads rows it holds, and a fake clock."""
+"""Fakes for the decision backends: an ONNX engine whose KV buffer checks every pass reads rows it holds, a fake
+clock, and decision servers (the ``decide`` protocol and stock vLLM) behind an ``httpx2.MockTransport``."""
 
+import json
+import math
+import threading
 import time
+from collections import deque
+
+import httpx2
 
 from docsgpt.decisions.vendor.arc_decide import Decider as Release
 from docsgpt.decisions.vendor.arc_decide import prefix_text, suffix_text
@@ -20,7 +27,7 @@ class FakeClock:
 class CharTokenizer:
     """One token per character."""
 
-    def encode(self, text):
+    def encode(self, text, add_special_tokens=False):
         return [ord(c) for c in text]
 
     def decode(self, ids):
@@ -86,3 +93,109 @@ def expected_p(state_text: str, question: dict) -> float:
     """The P(yes) a fresh, uninterrupted run over the prompt and the question would give."""
     tok = CharTokenizer()
     return digest(tok.encode(prefix_text(state_text)) + tok.encode(suffix_text(question)))
+
+
+def logit(ids, token) -> float:
+    """A stand-in label logit at the last position of ``ids``: deterministic, and sensitive to every id."""
+    return 4.0 * math.sin(sum((i + 1) * v for i, v in enumerate(ids)) * 1e-3 + token * 0.37)
+
+
+def server_answer(question: dict, p: float) -> dict:
+    """An answer as ``arcd serve`` shapes it: ``p`` on the first option (or yes), the rest spread evenly."""
+    kind = question.get("type", "noul")
+    if kind == "noul":
+        return {"type": "noul", "noul": p}
+    names = list(question["criteria"]) if kind == "choice" else [str(i) for i in range(len(question["criteria"]))]
+    probs = {name: (p if i == 0 else (1 - p) / (len(names) - 1)) for i, name in enumerate(names)}
+    if kind == "choice":
+        return {"type": "choice", "choice": names[0], "confidence": p, "probabilities": probs}
+    return {"type": "score", "score": 1.0, "confidence": p, "legend": {}, "probabilities": probs}
+
+
+class FakeServer:
+    """A decision server behind ``httpx2.MockTransport``, recording every request.
+
+    ``script`` holds responses (or exceptions) for the next requests to the decision routes, before the normal
+    behaviour resumes; ``gate`` blocks requests of one lane until it is set.
+    """
+
+    def __init__(self):
+        self.log: list[dict] = []
+        self.script: deque = deque()
+        self.lock = threading.Lock()
+        self.gate: dict[str, threading.Event] = {}
+
+    def transport(self) -> httpx2.MockTransport:
+        return httpx2.MockTransport(self.handle)
+
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content) if request.content else None
+        entry = {"method": request.method, "path": request.url.path, "body": body, "headers": request.headers}
+        with self.lock:
+            self.log.append(entry)
+            scripted = self.script.popleft() if self.script and request.url.path != "/v1/models" else None
+        event = self.gate.get(request.headers.get("x-decision-priority", ""))
+        if event is not None:
+            event.wait(5)
+        if isinstance(scripted, Exception):
+            raise scripted
+        if scripted is not None:
+            return scripted(body) if callable(scripted) else scripted
+        return self.route(request.url.path, body)
+
+    def paths(self, *, models: bool = False) -> list[str]:
+        return [e["path"] for e in self.log if models or e["path"] != "/v1/models"]
+
+    def route(self, path, body):
+        raise NotImplementedError
+
+
+class FakeDecideServer(FakeServer):
+    """``arcd serve`` (no identity on ``/v1/models``) or, with ``entry``, DocsGPT's decide-server.
+
+    ``score(state, key)`` gives each answer's p.
+    """
+
+    def __init__(self, entry=None, score=lambda state, key: 0.7, load_route=True):
+        super().__init__()
+        self.entry = entry or {"name": "head:checkpoints/p5-v01", "description": "", "release_date": ""}
+        self.score = score
+        self.load_route = load_route
+
+    def decide(self, body):
+        answers = {key: server_answer(q, self.score(body["state"], key)) for key, q in body["questions"].items()}
+        return {"model": self.entry["name"], "answers": answers, "usage": {"input_tokens": 7, "output_tokens": 0}}
+
+    def route(self, path, body):
+        if path == "/v1/models":
+            return httpx2.Response(200, json={"models": [self.entry]})
+        if path == "/v1/load":
+            return httpx2.Response(202) if self.load_route else httpx2.Response(404)
+        if path == "/v1/decide":
+            return httpx2.Response(200, json=self.decide(body))
+        if path == "/v1/decide/batch":
+            return httpx2.Response(200, json={"responses": [self.decide(r) for r in body["requests"]]})
+        return httpx2.Response(404)
+
+
+class FakeVllmServer(FakeServer):
+    """Stock vLLM with ``--logprobs-mode processed_logprobs``: log-probabilities over the allowed tokens only,
+    from ``logit`` over the prompt ids, keyed ``token_id:<id>`` and in no particular order."""
+
+    def __init__(self, served=("arc53/arc-decide-0.6b-v0.1",), drop=()):
+        super().__init__()
+        self.served = served
+        self.drop = set(drop)
+
+    def route(self, path, body):
+        if path == "/v1/models":
+            return httpx2.Response(200, json={"object": "list", "data": [
+                {"id": name, "object": "model", "root": name, "max_model_len": 4096} for name in self.served]})
+        if path == "/v1/completions":
+            allowed = body["allowed_token_ids"]
+            z = [logit(body["prompt"], t) for t in allowed]
+            norm = max(z) + math.log(sum(math.exp(x - max(z)) for x in z))
+            top = {f"token_id:{t}": x - norm for t, x in reversed(list(zip(allowed, z))) if t not in self.drop}
+            return httpx2.Response(200, json={"choices": [{"index": 0, "text": "", "logprobs": {
+                "tokens": [f"token_id:{allowed[0]}"], "token_logprobs": [0.0], "top_logprobs": [top]}}]})
+        return httpx2.Response(404)

@@ -1,10 +1,13 @@
-"""Shared fixtures for the decision-model tests: the release files recorded from the Hub at the pinned revisions."""
+"""Shared fixtures for the decision-model tests: the release files recorded from the Hub at the pinned revisions,
+and API mode against a fake server."""
 
 import json
 from pathlib import Path
 
 import pytest
 
+from docsgpt.core.settings import settings
+from docsgpt.decisions.backends.http import RemoteBackend
 from docsgpt.decisions.backends.onnx import OnnxBackend
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "decisions"
@@ -45,3 +48,49 @@ def _no_cpu_timer(monkeypatch):
     Tests drive ``OnnxBackend._tick`` themselves.
     """
     monkeypatch.setattr(OnnxBackend, "_schedule_tick", lambda self: None)
+
+
+#: API-mode settings at their defaults, pointed at a fake server; the answer cache is off so every call is sent.
+API_SETTINGS = {
+    "DECISION_MODE": None, "DECISION_BASE_URL": "http://decider:7095", "DECISION_PROTOCOL": "decide",
+    "DECISION_MODEL": None, "DECISION_MODEL_PATH": None, "DECISION_KEY": None, "INTERNAL_KEY": "internal-key",
+    "DECISION_BATCH_SIZE": 32, "DECISION_API_RETRIES": 1, "DECISION_BREAKER_FAILURES": 3,
+    "DECISION_BREAKER_COOLDOWN": 30.0, "DECISION_PROBE_SECONDS": 30, "DECISION_API_CONCURRENCY": 4,
+    "DECISION_BACKGROUND_CONCURRENCY": 1, "DECISION_VLLM_PRIORITY": False, "DECISION_CACHE_SIZE": 0,
+    "DECISION_LOAD_RETRY_SECONDS": 300,
+}
+
+
+@pytest.fixture
+def api(monkeypatch):
+    """Switch to API mode; call the fixture with overrides (``api(DECISION_PROTOCOL="vllm")``)."""
+
+    def configure(**values):
+        for name, value in {**API_SETTINGS, **values}.items():
+            monkeypatch.setattr(settings, name, value)
+
+    configure()
+    return configure
+
+
+@pytest.fixture
+def spawned(monkeypatch):
+    """Background jobs of the API backends, recorded instead of run, so each test drives them itself."""
+    jobs = []
+    monkeypatch.setattr(RemoteBackend, "_spawn", lambda self, job, name: jobs.append((name, job)))
+    return jobs
+
+
+@pytest.fixture
+def remote(api, spawned):
+    """Build API backends on a fake server's transport; every one is closed after the test."""
+    built = []
+
+    def make(cls, server, **kwargs):
+        backend = cls(transport=server.transport(), **kwargs)
+        built.append(backend)
+        return backend
+
+    yield make
+    for backend in built:
+        backend.close()

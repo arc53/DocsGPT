@@ -10,7 +10,10 @@ Lane = Literal["hot", "background"]
 #: Per-item reasons that come from the backend rather than from the item; a batch whose items all failed for
 #: one of these is ``unavailable``.
 BACKEND_REASONS = frozenset(
-    {"off", "loading", "queue_full", "no_decider", "memory", "download", "offline", "wrong_model", "load_failed"}
+    {
+        "off", "loading", "queue_full", "no_decider", "memory", "download", "offline", "wrong_model", "load_failed",
+        "circuit_open", "transport", "auth",
+    }
 )
 
 
@@ -69,8 +72,9 @@ class ModelInfo:
     Attributes:
         id: The model repository, e.g. ``arc53/arc-decide-0.4b-v0.2``.
         revision: The Hub commit the files came from (informational).
-        runtime: ``onnx-int8`` or ``onnx-fp32``.
-        mode: The harness mode, ``local``.
+        runtime: ``onnx-int8`` or ``onnx-fp32`` here; in API mode ``vllm``, the runtime a ``decide`` server
+            reports, or ``remote`` when it reports none.
+        mode: The harness mode, ``local`` or ``api``.
         prompt_hash: Identifies the prompt wording.
         calibration: Identifies the heads and fitted temperatures.
         version: ``<id>/p<prompt_hash>/c<calibration>``, the key for anything stored from an answer.
@@ -137,7 +141,7 @@ class BatchResult(list):
     Attributes:
         reasons: ``None`` for an answered item, else ``bad_item``, ``timeout`` or a backend reason (``off``,
             ``loading``, ``queue_full``, ``no_decider``, ``memory``, ``download``, ``offline``, ``wrong_model``,
-            ``load_failed``).
+            ``load_failed``, and in API mode ``circuit_open``, ``transport`` and ``auth``).
         status: ``ok`` (all answered), ``partial``, ``timeout`` (nothing answered in time) or ``unavailable``
             (nothing answered, for a backend reason: stop, do not retry item by item).
     """

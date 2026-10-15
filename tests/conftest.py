@@ -192,12 +192,14 @@ def _decisions_off(monkeypatch):
     """Run with the decision model off (``DECISION_MODE=none``) and a fresh client.
 
     Unset, the mode is ``local``, where the first call downloads and loads the
-    model. No test may do either: the decision tests switch the mode back on
-    themselves, with fake engines, or install ``FakeDecider``.
+    model, or ``api`` when a developer's ``.env`` sets ``DECISION_BASE_URL``. No
+    test may do either: the decision tests switch the mode back on themselves,
+    with fake engines or a mock transport, or install ``FakeDecider``.
     """
     from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "DECISION_MODE", "none", raising=False)
+    monkeypatch.setattr(settings, "DECISION_BASE_URL", None, raising=False)
     monkeypatch.setattr("docsgpt.decisions._client", None)
 
 

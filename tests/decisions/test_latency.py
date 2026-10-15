@@ -83,6 +83,16 @@ class TestPredict:
         assert set(report) == {"threads", "measured_at", "drift", "guard_s", "relevance_s", "analytics_s"}
         assert report["measured_at"] == "1970-01-01T00:00:00+00:00"
 
+    def test_wire_round_trip(self):
+        sent = profile(c=0.02, b=1e-7, drift=1.1)
+        got = SpeedProfile.from_wire(sent.wire())
+        assert got == sent and got.predict_s(Shape(300, (30, 30))) == sent.predict_s(Shape(300, (30, 30)))
+
+    @pytest.mark.parametrize("wire", [{}, {"c": 0.1, "a": 0.1, "b": "x", "overhead": 1}])
+    def test_wire_rejects_a_partial_profile(self, wire):
+        with pytest.raises((KeyError, ValueError)):
+            SpeedProfile.from_wire(wire)
+
 
 @pytest.fixture
 def feature(monkeypatch):

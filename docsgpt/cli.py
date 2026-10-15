@@ -338,14 +338,16 @@ def _decisions_status() -> int:
     """
     from docsgpt import decisions
     from docsgpt.decisions import files
+    from docsgpt.decisions.client import runtime
     from docsgpt.decisions.models import select
 
     report = decisions.status()
     for key in ("status", "reason", "speed"):  # this process never loads the model: they say nothing here
         report.pop(key, None)
-    spec = select("onnx") if report["mode"] != "none" else None
+    spec = select(runtime()) if report["mode"] != "none" else None
     if spec is not None:
-        folder = files.local_onnx_dir(spec)
+        # in API mode this process only needs the tokenizer; the server holds the model
+        folder = files.local_onnx_dir(spec) if report["mode"] == "local" else files.local_tokenizer(spec)
         report["revision"] = files.revision(spec)
         report["files"] = str(folder) if folder else None
     print(json.dumps(report, indent=2))

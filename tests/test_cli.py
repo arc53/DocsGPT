@@ -307,6 +307,21 @@ class TestDecisions:
         assert "speed" not in report and "status" not in report
         assert decisions.get_decider()._backend is None
 
+    def test_status_in_api_mode_reports_the_tokenizer(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from docsgpt.decisions import files
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODE", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_BASE_URL", "http://decider:7095")
+        monkeypatch.setattr(files, "local_tokenizer", lambda spec: tmp_path / "tokenizer.json")
+        monkeypatch.setattr(files, "local_onnx_dir", lambda spec: pytest.fail("API mode needs no model files"))
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["mode"] == "api" and report["model"] == "arc53/arc-decide-0.6b-v0.1"
+        assert report["files"] == str(tmp_path / "tokenizer.json")
+
     def test_status_when_off(self, capsys):
         import json
 

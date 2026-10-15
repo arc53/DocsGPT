@@ -34,6 +34,12 @@ class TestModelConstants:
         for name in ("questions.json", "onnx/tokenizer.json"):
             assert release[V02_ID]["sha256"][name] == release[V01_ID]["sha256"][name]
 
+    def test_heads_and_temperatures_match_the_serving_files(self, serving_v02, serving_v01):
+        for spec, serving in ((V02, serving_v02), (V01, serving_v01)):
+            fitted = {k: v for k, v in serving["temperature"].items() if k != "fit_sets"}
+            assert spec.serving == {"heads": serving["heads"], "temperature": fitted}
+            assert calibration_hash({**spec.serving, "temperature": serving["temperature"]}) == spec.calibration
+
     def test_memory_defaults_per_model(self):
         assert (V02.min_free_mb, V01.min_free_mb) == (1200, 3200)
 
@@ -51,6 +57,12 @@ class TestSelection:
     def test_decision_model_overrides_the_runtime_default(self, monkeypatch):
         monkeypatch.setattr(settings, "DECISION_MODEL", "Arc53/Arc-Decide-0.6b-v0.1")
         assert select("onnx") is V01
+
+    def test_vllm_and_a_silent_decide_server_use_v01(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MODEL", None)
+        assert select("vllm") is V01 and select("remote") is V01
+        monkeypatch.setattr(settings, "DECISION_MODEL", V02.id)
+        assert select("vllm") is V02
 
     def test_unregistered_model_selects_nothing(self, monkeypatch):
         monkeypatch.setattr(settings, "DECISION_MODEL", "someone/else")

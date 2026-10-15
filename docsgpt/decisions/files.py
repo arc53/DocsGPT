@@ -6,6 +6,9 @@ prefetch``), never while every decision feature is off. They are real files, not
 onnxruntime refuses external weights reached through a symlink that leaves the model's folder. A download goes
 into ``<revision>.partial`` and is renamed when complete, under a lock file, so an interrupted or concurrent
 download never looks finished.
+
+A process that only calls a decision server (API mode) needs the tokenizer alone, 11 MB, to count tokens and, for
+vLLM, to build the prompt; ``ensure_tokenizer`` fetches just that file at the same pinned commit.
 """
 
 from __future__ import annotations
@@ -142,3 +145,71 @@ def _download(spec: ModelSpec, rev: str) -> Path:
         os.replace(partial, target)
     return _onnx_in(target)
 
+
+#: The tokenizer inside a model repository; the same file in both published models.
+TOKENIZER = "onnx/tokenizer.json"
+
+
+def _tokenizer_dir(spec: ModelSpec) -> Path:
+    """Where a tokenizer fetched alone lives, beside (never inside) the model's own folder."""
+    folder = snapshot_dir(spec)
+    return folder.with_name(folder.name + ".tokenizer")
+
+
+def local_tokenizer(spec: ModelSpec) -> Optional[Path]:
+    """The tokenizer already on disk, or ``None``.
+
+    Any registered model's copy will do, at its configured revision: both models ship the same file, so an API
+    process sharing the decider's model cache reads the decider's download instead of fetching its own.
+    """
+    from docsgpt.core.settings import settings
+    from docsgpt.decisions.models import REGISTRY
+
+    if settings.DECISION_MODEL_PATH:
+        folder = Path(settings.DECISION_MODEL_PATH).expanduser()
+        candidates = [folder / TOKENIZER, folder / "tokenizer.json"]
+    else:
+        candidates = []
+        for each in [spec, *(s for s in REGISTRY.values() if s is not spec)]:
+            candidates += [snapshot_dir(each) / TOKENIZER, _tokenizer_dir(each) / TOKENIZER]
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def ensure_tokenizer(spec: ModelSpec) -> Path:
+    """The model's ``tokenizer.json``, downloading that file alone at the pinned commit if it is not on disk.
+
+    Raises:
+        FilesUnavailable: When the file is missing and cannot be fetched.
+    """
+    from docsgpt.core.settings import settings
+
+    found = local_tokenizer(spec)
+    if found:
+        return found
+    if settings.DECISION_MODEL_PATH:
+        raise FilesUnavailable("offline", f"DECISION_MODEL_PATH ({settings.DECISION_MODEL_PATH}) has no tokenizer.json")
+    if offline():
+        raise FilesUnavailable(
+            "offline",
+            f"the decision model's tokenizer is not in {snapshot_dir(spec).parent} and HF_HUB_OFFLINE is set: run "
+            "`docsgpt decisions prefetch` on a connected machine and copy DECISION_CACHE_DIR",
+        )
+    from huggingface_hub import snapshot_download
+
+    rev = revision(spec)
+    target = _tokenizer_dir(spec)
+    partial = target.with_name(target.name + ".partial")
+    with _locked(target.parent / ".tokenizer.lock"):
+        if (target / TOKENIZER).is_file():
+            return target / TOKENIZER
+        logger.info("Downloading the decision model's tokenizer from %s at %s into %s", spec.id, rev, target)
+        try:
+            snapshot_download(repo_id=spec.id, revision=rev, allow_patterns=[TOKENIZER], local_dir=partial)
+        except Exception as exc:  # noqa: BLE001 -- the caller retries after DECISION_LOAD_RETRY_SECONDS
+            raise FilesUnavailable("download", f"could not download {spec.id}'s tokenizer at {rev}: {exc}") from exc
+        if not (partial / TOKENIZER).is_file():
+            raise FilesUnavailable("download", f"{spec.id} at {rev} has no {TOKENIZER}")
+        if target.exists():
+            shutil.rmtree(target)
+        os.replace(partial, target)
+    return target / TOKENIZER
