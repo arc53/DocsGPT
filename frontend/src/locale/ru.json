@@ -1996,8 +1996,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Поиск разговоров",
-      "noResults": "Результаты не найдены",
-      "loading": "Загрузка..."
+      "noResults": "Результаты не найдены"
     },
     "configTool": {
       "title": "Настройка инструмента",

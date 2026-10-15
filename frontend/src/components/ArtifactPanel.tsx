@@ -99,9 +99,12 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
       </div>
       <div className="flex-1 overflow-y-auto">
         {data.items.length === 0 ? (
-          <p className="text-muted-foreground text-center text-sm">
-            {t('components.artifact.todo.empty')}
-          </p>
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title={t('components.artifact.todo.empty')}
+            className="h-full"
+          />
         ) : (
           <ul className="space-y-2">
             {data.items.map((item, index) => (
@@ -224,9 +227,12 @@ function NoteView({ data }: { data: NoteArtifactData }) {
             </ReactMarkdown>
           </div>
         ) : (
-          <p className="text-muted-foreground text-sm">
-            {t('components.artifact.note.empty')}
-          </p>
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title={t('components.artifact.note.empty')}
+            className="h-full"
+          />
         )}
       </div>
     </div>

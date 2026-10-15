@@ -161,11 +161,15 @@ export default function WorkflowRunArtifacts({
 
   if (!artifacts || artifacts.length === 0) {
     return (
-      <div className="text-muted-foreground px-3 py-3 text-sm">
-        {inProgress
-          ? t('agents.workflow.artifacts.inProgress')
-          : t('agents.workflow.artifacts.empty')}
-      </div>
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={
+          inProgress
+            ? t('agents.workflow.artifacts.inProgress')
+            : t('agents.workflow.artifacts.empty')
+        }
+      />
     );
   }
 

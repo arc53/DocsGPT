@@ -1896,8 +1896,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Search conversations",
-      "noResults": "No results found",
-      "loading": "Loading..."
+      "noResults": "No results found"
     },
     "configTool": {
       "title": "Tool Config",

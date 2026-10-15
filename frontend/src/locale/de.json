@@ -1896,8 +1896,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Konversationen durchsuchen",
-      "noResults": "Keine Ergebnisse gefunden",
-      "loading": "Laden..."
+      "noResults": "Keine Ergebnisse gefunden"
     },
     "configTool": {
       "title": "Werkzeug-Konfiguration",

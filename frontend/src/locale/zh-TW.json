@@ -1890,8 +1890,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "搜尋對話",
-      "noResults": "未找到結果",
-      "loading": "載入中..."
+      "noResults": "未找到結果"
     },
     "configTool": {
       "title": "工具設定",
