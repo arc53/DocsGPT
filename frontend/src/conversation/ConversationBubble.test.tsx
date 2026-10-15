@@ -24,6 +24,20 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const runArtifactsMock = vi.fn(
+  (): {
+    items: unknown[];
+    failed: boolean;
+    retry: () => void;
+  } => ({ items: [], failed: false, retry: () => {} }),
+);
+vi.mock('./useRunArtifacts', () => ({
+  useRunArtifacts: () => runArtifactsMock(),
+}));
+
+import { useState } from 'react';
+
+import type { ArtifactCardItem } from './artifactCards';
 import { ChatCompanionContext } from './chatCompanion';
 import ConversationBubble from './ConversationBubble';
 import { ToolCallsType } from './types';
@@ -230,6 +244,135 @@ describe('ConversationBubble', () => {
     );
     expect(openArtifactList).toHaveBeenCalledOnce();
     expect(openArtifactList.mock.calls[0][0]).toHaveLength(5);
+  });
+
+  const fileCall = (files: string[]): ToolCallsType =>
+    ({
+      tool_name: 'code_executor',
+      action_name: 'run_code',
+      call_id: 'c1',
+      arguments: {},
+      status: 'completed',
+      artifacts: files.map((f, i) => ({ id: `id-${i}`, filename: f })),
+    }) as ToolCallsType;
+
+  // Two answers can lead with the same artifact (an edit keeps its id); only
+  // the one whose list is open is marked, and its list follows its files.
+  it('marks and updates only the answer whose list is open', async () => {
+    const syncArtifactList = vi.fn();
+    const five = ['a.pdf', 'b.xlsx', 'c.docx', 'd.png', 'e.csv'];
+    let addFile: () => void = () => {};
+    let openKey: string | null = null;
+    function Harness() {
+      const [owner, setOwner] = useState<string | null>(null);
+      const [files, setFiles] = useState(five);
+      addFile = () => setFiles([...five, 'f.json']);
+      openKey = owner;
+      return (
+        <ChatCompanionContext.Provider
+          value={{
+            openArtifactList: (_items: ArtifactCardItem[], key: string) =>
+              setOwner(key),
+            openArtifactListKey: owner,
+            syncArtifactList,
+          }}
+        >
+          <ConversationBubble
+            type="ANSWER"
+            message="First"
+            onOpenArtifact={() => {}}
+            toolCalls={[fileCall(files)]}
+          />
+          <ConversationBubble
+            type="ANSWER"
+            message="Second"
+            onOpenArtifact={() => {}}
+            toolCalls={[fileCall(five)]}
+          />
+        </ChatCompanionContext.Provider>
+      );
+    }
+    await render(<Harness />);
+    // Each answer's fourth card is its “N more files”.
+    const moreButtons = () =>
+      Array.from(container.querySelectorAll('ul')).map(
+        (list) =>
+          list.querySelectorAll<HTMLButtonElement>('[data-artifact-open]')[3],
+      );
+    expect(moreButtons()).toHaveLength(2);
+    await act(async () => moreButtons()[0].click());
+    expect(
+      moreButtons().map((b) => b.getAttribute('aria-current') === 'true'),
+    ).toEqual([true, false]);
+
+    syncArtifactList.mockClear();
+    await act(async () => addFile());
+    const synced = syncArtifactList.mock.calls.filter(
+      ([key]) => key === openKey,
+    );
+    expect(synced.at(-1)![1]).toHaveLength(6);
+  });
+
+  // The builder preview's companion opens artifacts only.
+  it('keeps sources in their own panel when the companion has no sources slot', async () => {
+    const sources = [1, 2].map((n) => ({
+      title: `Doc ${n}`,
+      text: `Excerpt ${n}`,
+      source: `doc-${n}.pdf`,
+    }));
+    await render(
+      <ChatCompanionContext.Provider value={{ openArtifactList: () => {} }}>
+        <ConversationBubble type="ANSWER" message="Answer" sources={sources} />
+      </ChatCompanionContext.Provider>,
+    );
+    const header = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[data-variant="ghost"]',
+      ),
+    ).find((b) => b.textContent?.includes(tr('conversation.sources.title')))!;
+    expect(header.getAttribute('aria-haspopup')).toBe('dialog');
+    await act(async () => header.click());
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  // An artifact-only run: nothing to show until it has a file.
+  it('renders nothing for a finished run with no answer and no files', async () => {
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        workflowRunId="run-1"
+        onOpenArtifact={() => {}}
+      />,
+    );
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('shows a run with no answer once it has files', async () => {
+    runArtifactsMock.mockReturnValueOnce({
+      items: [
+        {
+          id: 'r1',
+          title: 'QBR',
+          kind: 'pdf',
+          version: 1,
+          filename: 'qbr.pdf',
+          toolName: '',
+          downloadable: true,
+        },
+      ],
+      failed: false,
+      retry: () => {},
+    });
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        workflowRunId="run-1"
+        onOpenArtifact={() => {}}
+      />,
+    );
+    expect(
+      container.querySelectorAll('[data-slot="artifact-card"]'),
+    ).toHaveLength(1);
   });
 
   it('renders artifacts as cards under the answer and feedback as muted icon buttons', async () => {

@@ -121,7 +121,12 @@ export function artifactKind({
   const extension = filename?.includes('.')
     ? filename.split('.').pop()?.toLowerCase()
     : undefined;
-  if (extension && KIND_BY_EXTENSION[extension])
+  // Own keys only: a generated file named `x.constructor` must not read
+  // Object.prototype.
+  if (
+    extension &&
+    Object.prototype.hasOwnProperty.call(KIND_BY_EXTENSION, extension)
+  )
     return KIND_BY_EXTENSION[extension];
   const mime = (mimeType ?? '').toLowerCase();
   for (const [fragment, kind] of KIND_BY_MIME) {
@@ -152,13 +157,22 @@ export function cardsFromToolCalls(
   }));
 }
 
-/** One card per artifact a workflow run produced. */
+/**
+ * One card per artifact a workflow run produced.
+ *
+ * Args:
+ *   artifacts: The run's list entries.
+ *   untitled: Names an artifact with neither a title nor a file, from its
+ *     short id.
+ */
 export function cardsFromRunArtifacts(
   artifacts: RunArtifactSummary[],
+  untitled: (shortId: string) => string = (shortId) => shortId,
 ): ArtifactCardItem[] {
   return artifacts.map((artifact) => ({
     id: artifact.id,
-    title: artifact.title || artifact.filename || artifact.id.slice(0, 8),
+    title:
+      artifact.title || artifact.filename || untitled(artifact.id.slice(0, 8)),
     kind: artifactKind({
       filename: artifact.filename,
       mimeType: artifact.mime_type,
@@ -166,7 +180,8 @@ export function cardsFromRunArtifacts(
     version: artifact.current_version ?? undefined,
     filename: artifact.filename ?? undefined,
     toolName: '',
-    downloadable: true,
+    // No filename means the current version's row is missing: nothing to save.
+    downloadable: Boolean(artifact.filename),
   }));
 }
 

@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
@@ -19,16 +18,8 @@ import type {
   OpenArtifactRequest,
 } from '../../conversation/artifactCards';
 import ArtifactsPanel from '../../conversation/ArtifactsPanel';
+import { useArtifactDetail } from '../../conversation/useArtifactDetail';
 import { setPreviewOpen } from '../workflow/workflowPreviewSlice';
-
-/** What the preview drawer shows in place of the preview: one artifact, or an answer's list. */
-type PreviewArtifactDetail =
-  | { kind: 'artifact'; open: OpenArtifactRequest }
-  | {
-      kind: 'artifacts';
-      items: ArtifactCardItem[];
-      open: OpenArtifactRequest | null;
-    };
 
 /**
  * Opens a preview answer's artifacts inside the drawer: there is no room
@@ -37,10 +28,12 @@ type PreviewArtifactDetail =
  */
 export const PreviewArtifactsContext = createContext<{
   openArtifact: (request: OpenArtifactRequest) => void;
-  openArtifactList: (items: ArtifactCardItem[]) => void;
+  openArtifactList: (items: ArtifactCardItem[], key: string) => void;
+  /** Keeps the list showing current with its answer's files. */
+  syncArtifactList: (key: string, items: ArtifactCardItem[]) => void;
   /** The artifact showing, so its card is marked open. */
   shown: { id: string; version?: number } | null;
-  /** The first artifact of the list showing. */
+  /** The key of the answer whose list is showing. */
   listKey: string | null;
 } | null>(null);
 
@@ -85,28 +78,32 @@ export default function AgentPreviewSheet({
 }: AgentPreviewSheetProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  const [detail, setDetail] = useState<PreviewArtifactDetail | null>(null);
+  const {
+    detail,
+    setDetail,
+    back,
+    reset,
+    openArtifact,
+    openArtifactList,
+    syncArtifactList,
+    shown,
+    listKey,
+  } = useArtifactDetail();
 
   // A closed drawer opens on the preview again.
   useEffect(() => {
-    if (!open) setDetail(null);
-  }, [open]);
+    if (!open) reset();
+  }, [open, reset]);
 
-  const shownRequest = detail?.open ?? null;
-  const listKey =
-    detail?.kind === 'artifacts' ? (detail.items[0]?.id ?? null) : null;
   const artifacts = useMemo(
     () => ({
-      openArtifact: (request: OpenArtifactRequest) =>
-        setDetail({ kind: 'artifact', open: request }),
-      openArtifactList: (items: ArtifactCardItem[]) =>
-        setDetail({ kind: 'artifacts', items, open: null }),
-      shown: shownRequest
-        ? { id: shownRequest.id, version: shownRequest.version }
-        : null,
+      openArtifact,
+      openArtifactList,
+      syncArtifactList,
+      shown,
       listKey,
     }),
-    [shownRequest, listKey],
+    [openArtifact, openArtifactList, syncArtifactList, shown, listKey],
   );
 
   // App moves the toast stack bottom-left while a preview drawer is open, so
@@ -135,7 +132,7 @@ export default function AgentPreviewSheet({
           toolName={detail.open.toolName}
           version={detail.open.version}
           conversationId={null}
-          onBack={() => setDetail(null)}
+          onBack={back}
           backLabel={t('agents.workflow.preview.backToRun')}
         />
       ) : detail?.kind === 'artifacts' ? (
@@ -149,7 +146,7 @@ export default function AgentPreviewSheet({
                 : current,
             )
           }
-          onBack={() => setDetail(null)}
+          onBack={back}
           conversationId={null}
         />
       ) : (

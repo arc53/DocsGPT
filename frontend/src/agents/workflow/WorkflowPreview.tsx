@@ -466,6 +466,7 @@ export default function WorkflowPreview({
             openArtifact: previewArtifacts.shown,
             openArtifactList: previewArtifacts.openArtifactList,
             openArtifactListKey: previewArtifacts.listKey,
+            syncArtifactList: previewArtifacts.syncArtifactList,
           }
         : null,
     [previewArtifacts],
@@ -703,7 +704,12 @@ export default function WorkflowPreview({
                                     />
                                   )}
                                   {/* Response bubble */}
-                                  {(hasAnswerBubble || query.workflowRunId) && (
+                                  {/* A run with no answer yet shows its
+                                    files once it ends; while it streams the
+                                    execution details are its live status. */}
+                                  {(hasAnswerBubble ||
+                                    (query.workflowRunId &&
+                                      !isStreamingLastQuery)) && (
                                     <ConversationBubble
                                       className="mb-7"
                                       message={query.response}

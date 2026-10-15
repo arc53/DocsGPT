@@ -270,6 +270,9 @@ export default function ArtifactPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // After a restore the view remounts on the new current version, not on
+  // the version the card named.
+  const [followCurrent, setFollowCurrent] = useState(false);
   const [effectiveArtifactId, setEffectiveArtifactId] = useState<string | null>(
     artifactId,
   );
@@ -436,8 +439,11 @@ export default function ArtifactPanel({
       return (
         <DocumentArtifactView
           artifact={documentArtifact}
-          initialVersion={version}
-          onRefresh={() => setRefreshNonce((n) => n + 1)}
+          initialVersion={followCurrent ? undefined : version}
+          onRefresh={() => {
+            setFollowCurrent(true);
+            setRefreshNonce((n) => n + 1);
+          }}
         />
       );
     }

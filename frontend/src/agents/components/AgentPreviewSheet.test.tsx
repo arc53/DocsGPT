@@ -107,6 +107,31 @@ describe('AgentPreviewSheet', () => {
     expect(body().parentElement?.className).not.toContain('hidden');
   });
 
+  // The card that opened it is hidden under the artifact; Back puts the
+  // keyboard back on it.
+  it('returns focus to the card that opened the artifact on Back', async () => {
+    await act(async () => {
+      root.render(
+        <AgentPreviewSheet open onOpenChange={() => undefined} title="Preview">
+          <div data-testid="body">
+            <OpensAnArtifact />
+          </div>
+        </AgentPreviewSheet>,
+      );
+    });
+    const opener = document.querySelector(
+      '[data-testid="open"]',
+    ) as HTMLButtonElement;
+    opener.focus();
+    await act(async () => opener.click());
+    const artifact = document.querySelector(
+      '[data-testid="artifact"]',
+    ) as HTMLButtonElement;
+    artifact.focus();
+    await act(async () => artifact.click());
+    expect(document.activeElement).toBe(opener);
+  });
+
   it('is a right Sheet at the workflow preview widths', async () => {
     await render();
     const content = document.querySelector<HTMLElement>(

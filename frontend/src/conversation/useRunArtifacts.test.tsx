@@ -2,6 +2,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-redux', () => ({ useSelector: () => 'tok' }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      key === 'agents.workflow.artifacts.untitled'
+        ? `Artifact ${opts?.id}`
+        : key,
+  }),
+}));
 const listMock = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
@@ -80,5 +88,56 @@ describe('useRunArtifacts', () => {
     await act(async () => latest.retry());
     expect(latest.failed).toBe(false);
     expect(listMock).toHaveBeenCalledTimes(2);
+  });
+
+  // An unsaved draft's preview has a run id but no saved run: no files.
+  it('reads a 403 as no files, not a failure', async () => {
+    listMock.mockResolvedValue({ ok: false, status: 403 });
+    await act(async () => root.render(<Probe id="run-1" />));
+    expect(latest.failed).toBe(false);
+    expect(latest.items).toEqual([]);
+  });
+
+  // A re-asked answer gets a new run; the old run's files are not its own.
+  it('drops the previous run’s files as soon as the run changes', async () => {
+    listMock.mockResolvedValueOnce(
+      ok([{ id: 'old', title: 'Old', current_version: 1, filename: 'a.pdf' }]),
+    );
+    await act(async () => root.render(<Probe id="run-1" />));
+    expect(latest.items.map((i) => i.id)).toEqual(['old']);
+
+    let resolve: (value: unknown) => void = () => {};
+    listMock.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    await act(async () => root.render(<Probe id="run-2" />));
+    expect(latest.items).toEqual([]);
+
+    await act(async () => resolve({ ok: false, status: 500 }));
+    expect(latest.failed).toBe(true);
+    expect(latest.items).toEqual([]);
+  });
+
+  it('keeps the run’s files while it refetches the same run', async () => {
+    listMock.mockResolvedValueOnce(
+      ok([{ id: 'a', title: 'A', current_version: 1, filename: 'a.pdf' }]),
+    );
+    await act(async () => root.render(<Probe id="run-1" live />));
+    listMock.mockReturnValueOnce(new Promise(() => {}));
+    await act(async () => root.render(<Probe id="run-1" live={false} />));
+    expect(latest.items.map((i) => i.id)).toEqual(['a']);
+  });
+
+  it('names a file with no title or filename by its translated fallback', async () => {
+    listMock.mockResolvedValue(
+      ok([
+        {
+          id: 'abcdef123456',
+          title: null,
+          current_version: null,
+          filename: null,
+        },
+      ]),
+    );
+    await act(async () => root.render(<Probe id="run-1" />));
+    expect(latest.items[0].title).toBe('Artifact abcdef12');
   });
 });

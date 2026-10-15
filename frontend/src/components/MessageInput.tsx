@@ -1325,19 +1325,27 @@ export default function MessageInput({
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
 
+  // The list loads on mount and on each open; only the latest request's
+  // answer applies, so a slow older one can't undo a toggle.
+  const toolsRequestRef = useRef(0);
   const fetchUserTools = useCallback(() => {
+    const request = ++toolsRequestRef.current;
+    const isLatest = () => request === toolsRequestRef.current;
     setToolsLoading(true);
     userService
       .getUserTools(token)
       .then((res) => res.json())
       .then((data) => {
+        if (!isLatest()) return;
         const filtered = (data.tools || []).filter(isChatPickerToolVisible);
         setUserTools(filtered);
       })
       .catch((error) => {
         console.error('Error fetching tools:', error);
       })
-      .finally(() => setToolsLoading(false));
+      .finally(() => {
+        if (isLatest()) setToolsLoading(false);
+      });
   }, [token]);
 
   // Launched from the Tools picker; the modals live here because the picker

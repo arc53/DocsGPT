@@ -80,4 +80,17 @@ describe('MobileBlocker', () => {
     expect(html).toContain(`href="${agentLogsPath('wf1')}"`);
     expect(html).not.toContain(`href="${agentSchedulesPath('wf1')}"`);
   });
+
+  // A saved workflow's page is loading: neither layout yet, so a phone
+  // doesn't flash the new-workflow screen first.
+  it('shows a spinner while the saved workflow loads', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={[agentEditPath('wf1', true)]}>
+        <MobileBlocker agent={null} loading />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('data-slot="loading-state"');
+    expect(html).not.toContain('agents.workflow.mobileBlocker.title');
+    expect(html).not.toContain(`href="${AGENTS_MANAGE_ROOT}"`);
+  });
 });

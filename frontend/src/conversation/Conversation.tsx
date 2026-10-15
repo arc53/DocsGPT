@@ -52,9 +52,11 @@ import { cn } from '@/lib/utils';
 /** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
 type ChatCompanion =
   | { kind: 'artifact'; id: string; toolName: string; version?: number }
-  // An answer's artifacts; `open` is the one showing, null shows the list.
+  // An answer's artifacts; `key` names the answer, `open` is the one
+  // showing, null shows the list.
   | {
       kind: 'artifacts';
+      key: string;
       items: ArtifactCardItem[];
       open: OpenArtifactRequest | null;
     }
@@ -434,7 +436,7 @@ export default function Conversation() {
   const openArtifactId = shownArtifact?.id ?? null;
   const openArtifactVersion = shownArtifact?.version;
   const openArtifactListKey =
-    companion?.kind === 'artifacts' ? (companion.items[0]?.id ?? null) : null;
+    companion?.kind === 'artifacts' ? companion.key : null;
   const companionContext = useMemo(
     () => ({
       openSources: (sources: AnswerSource[], index?: number) =>
@@ -442,9 +444,18 @@ export default function Conversation() {
       openArtifact: openArtifactId
         ? { id: openArtifactId, version: openArtifactVersion }
         : null,
-      openArtifactList: (items: ArtifactCardItem[]) =>
-        setCompanion({ kind: 'artifacts', items, open: null }),
+      openArtifactList: (items: ArtifactCardItem[], key: string) =>
+        setCompanion({ kind: 'artifacts', key, items, open: null }),
       openArtifactListKey,
+      // The open list follows its answer as the answer's files arrive.
+      syncArtifactList: (key: string, items: ArtifactCardItem[]) =>
+        setCompanion((current) =>
+          current?.kind === 'artifacts' &&
+          current.key === key &&
+          current.items !== items
+            ? { ...current, items }
+            : current,
+        ),
     }),
     [openArtifactId, openArtifactVersion, openArtifactListKey],
   );
@@ -454,6 +465,9 @@ export default function Conversation() {
   const companionPanel =
     shownCompanion?.kind === 'artifact' ? (
       <ArtifactPanel
+        // Another artifact or version is a fresh panel: its fetch and the
+        // version it opens on are per artifact.
+        key={`${shownCompanion.id}:${shownCompanion.version ?? ''}`}
         artifactId={shownCompanion.id}
         toolName={shownCompanion.toolName}
         version={shownCompanion.version}

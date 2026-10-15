@@ -1019,6 +1019,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
       delete state.queries[index].research;
+      // A new run answers it; the old run's files are not this answer's.
+      delete state.queries[index].workflow_run_id;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;

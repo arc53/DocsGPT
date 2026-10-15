@@ -2960,7 +2960,8 @@
       "redo": "Rehacer",
       "redoHint": "Rehacer (Ctrl+Mayús+Z)",
       "artifacts": {
-        "loadListFailed": "No se pudieron cargar los artefactos"
+        "loadListFailed": "No se pudieron cargar los artefactos",
+        "untitled": "Artefacto {{id}}"
       },
       "builder": {
         "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",

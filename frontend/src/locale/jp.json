@@ -2946,7 +2946,8 @@
       "redo": "やり直す",
       "redoHint": "やり直す (Ctrl+Shift+Z)",
       "artifacts": {
-        "loadListFailed": "アーティファクトを読み込めませんでした"
+        "loadListFailed": "アーティファクトを読み込めませんでした",
+        "untitled": "アーティファクト {{id}}"
       },
       "builder": {
         "deleteFailed": "ワークフローエージェントを削除できませんでした",

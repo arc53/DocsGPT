@@ -2945,7 +2945,8 @@
       "redo": "重做",
       "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
-        "loadListFailed": "无法加载产物"
+        "loadListFailed": "无法加载产物",
+        "untitled": "产物 {{id}}"
       },
       "builder": {
         "deleteFailed": "无法删除工作流智能体",

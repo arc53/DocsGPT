@@ -16,11 +16,13 @@ vi.mock('../hooks', () => ({
 
 const documentMock = vi.fn();
 const legacyMock = vi.fn();
+const restoreMock = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     getDocumentArtifact: (...args: unknown[]) => documentMock(...args),
     getArtifact: (...args: unknown[]) => legacyMock(...args),
     downloadArtifact: () => new Promise(() => undefined),
+    restoreArtifactVersion: (...args: unknown[]) => restoreMock(...args),
   },
 }));
 
@@ -115,6 +117,48 @@ describe('ArtifactPanel', () => {
         </SidePanel>,
       );
     });
+    expect(restore()).toBeUndefined();
+  });
+
+  // Restoring makes a new current version; the panel shows it, not the
+  // version the card named.
+  it('shows the restored version after a restore from a card', async () => {
+    const versions = [1, 2, 3].map((version) => ({
+      version,
+      filename: 'qbr.pdf',
+      mime_type: 'application/pdf',
+    }));
+    const doc = (current: number) => ({
+      ok: true,
+      json: async () => ({
+        success: true,
+        artifact: {
+          id: 'a1',
+          kind: 'document',
+          title: 'QBR',
+          current_version: current,
+          versions: versions.slice(0, current),
+        },
+      }),
+    });
+    documentMock.mockResolvedValueOnce(doc(2)).mockResolvedValueOnce(doc(3));
+    restoreMock.mockResolvedValue({ ok: true });
+    const restore = () =>
+      Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent === 'components.artifact.restore',
+      );
+
+    await act(async () => {
+      root.render(
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <ArtifactPanel artifactId="a1" version={1} conversationId="c1" />
+        </SidePanel>,
+      );
+    });
+    await act(async () => restore()!.click());
+    expect(restoreMock).toHaveBeenCalledWith('a1', 1, null);
+    expect(documentMock).toHaveBeenCalledTimes(2);
+    // v3 (the restored copy) is current and showing, so there is no Restore.
     expect(restore()).toBeUndefined();
   });
 

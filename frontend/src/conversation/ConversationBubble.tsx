@@ -18,6 +18,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -197,6 +198,12 @@ const ConversationBubble = forwardRef<
       ]),
     [toolCalls, runArtifacts.items],
   );
+  // Names this answer's artifact list in the side panel.
+  const artifactListKey = useId();
+  const syncArtifactList = companion?.syncArtifactList;
+  useEffect(() => {
+    syncArtifactList?.(artifactListKey, artifactCards);
+  }, [syncArtifactList, artifactListKey, artifactCards]);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -213,6 +220,22 @@ const ConversationBubble = forwardRef<
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
+  // A workflow run that answered only with files: nothing to show until it
+  // has one (or its list failed), once it has finished.
+  if (
+    type === 'ANSWER' &&
+    workflowRunId &&
+    !isStreaming &&
+    !message &&
+    !thought &&
+    !research &&
+    !toolCalls?.length &&
+    !segments?.length &&
+    !sources?.length &&
+    artifactCards.length === 0 &&
+    !runArtifacts.failed
+  )
+    return null;
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
@@ -371,7 +394,7 @@ const ConversationBubble = forwardRef<
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-haspopup={companion ? undefined : 'dialog'}
+                  aria-haspopup={companion?.openSources ? undefined : 'dialog'}
                   onClick={() => openSources()}
                   className="my-2 ml-3.5 w-fit"
                 >
@@ -579,13 +602,11 @@ const ConversationBubble = forwardRef<
             open={companion?.openArtifact}
             onShowAll={
               companion?.openArtifactList
-                ? () => companion.openArtifactList?.(artifactCards)
+                ? () =>
+                    companion.openArtifactList?.(artifactCards, artifactListKey)
                 : undefined
             }
-            showAllOpen={
-              !!companion?.openArtifactListKey &&
-              companion.openArtifactListKey === artifactCards[0]?.id
-            }
+            showAllOpen={companion?.openArtifactListKey === artifactListKey}
             onOpen={(item) =>
               onOpenArtifact({
                 id: item.id,
@@ -719,7 +740,7 @@ const ConversationBubble = forwardRef<
             )}
           </div>
         )}
-        {sources && !companion && (
+        {sources && !companion?.openSources && (
           <SidePanel open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SourcesPanel
               sources={sources}

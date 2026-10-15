@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 
 import { BackLink } from '../../../navigation/SectionPageHeader';
 import SectionShell from '../../../navigation/SectionShell';
@@ -29,9 +30,24 @@ import type { Agent } from '../../types';
  *
  * Args:
  *   agent: The saved workflow, or null for a new one.
+ *   loading: The saved workflow is still loading; a spinner, so a phone
+ *     doesn't show the new-workflow screen first.
  */
-export default function MobileBlocker({ agent }: { agent: Agent | null }) {
+export default function MobileBlocker({
+  agent,
+  loading = false,
+}: {
+  agent: Agent | null;
+  loading?: boolean;
+}) {
   const { t } = useTranslation();
+  if (loading) {
+    return (
+      <div className="h-full lg:hidden">
+        <LoadingState fill="parent" />
+      </div>
+    );
+  }
   const blocker = (titleAs: 'p' | 'h1') => (
     <EmptyState
       icon={Monitor}

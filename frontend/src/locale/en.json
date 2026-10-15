@@ -2965,7 +2965,8 @@
       "removeAssignment": "Remove assignment {{index}}",
       "removeCondition": "Remove condition {{index}}",
       "artifacts": {
-        "loadListFailed": "Failed to load artifacts"
+        "loadListFailed": "Failed to load artifacts",
+        "untitled": "Artifact {{id}}"
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",

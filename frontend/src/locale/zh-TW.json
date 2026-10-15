@@ -2946,7 +2946,8 @@
       "redo": "重做",
       "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
-        "loadListFailed": "無法載入產出物"
+        "loadListFailed": "無法載入產出物",
+        "untitled": "產出物 {{id}}"
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",

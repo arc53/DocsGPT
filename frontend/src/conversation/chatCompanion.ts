@@ -37,10 +37,15 @@ export const ChatCompanionContext = createContext<{
   openSources?: (sources: AnswerSource[], index?: number) => void;
   /** The artifact (and version) the docked panel shows, so its card is marked open. */
   openArtifact?: { id: string; version?: number } | null;
-  /** Shows an answer's full artifact list (its “N more files” card). */
-  openArtifactList?: (items: ArtifactCardItem[]) => void;
-  /** The first artifact of the list the panel shows, so that answer's card is marked open. */
+  /**
+   * Shows an answer's full artifact list (its “N more files” card). `key`
+   * names the answer, so its card is marked open and its list kept current.
+   */
+  openArtifactList?: (items: ArtifactCardItem[], key: string) => void;
+  /** The key of the answer whose list the panel shows. */
   openArtifactListKey?: string | null;
+  /** An answer's current files; updates the panel's list when it is that answer's. */
+  syncArtifactList?: (key: string, items: ArtifactCardItem[]) => void;
 } | null>(null);
 
 export const useChatCompanion = () => useContext(ChatCompanionContext);

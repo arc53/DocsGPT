@@ -28,6 +28,15 @@ describe('artifactKind', () => {
     expect(artifactKind({ filename: 'archive.zip' })).toBe('file');
   });
 
+  // A generated file's name is the model's to pick; an inherited property is
+  // no kind (the card would have no icon to render).
+  it('ignores an extension that names an object property', () => {
+    expect(artifactKind({ filename: 'output.constructor' })).toBe('file');
+    expect(artifactKind({ filename: 'x.__proto__' })).toBe('file');
+    expect(artifactKind({ filename: 'x.toString' })).toBe('file');
+    expect(artifactKind({ filename: 'x.hasOwnProperty' })).toBe('file');
+  });
+
   it('falls back to the mime type when the name has no known extension', () => {
     expect(artifactKind({ filename: 'out', mimeType: 'application/pdf' })).toBe(
       'pdf',
@@ -133,6 +142,25 @@ describe('cardsFromRunArtifacts', () => {
         downloadable: true,
       },
     ]);
+  });
+
+  // The version row is missing: there is no file to name or save.
+  it('names a file-less artifact by the given fallback and offers no download', () => {
+    const [card] = cardsFromRunArtifacts(
+      [
+        {
+          id: 'abcdef123456',
+          kind: 'document',
+          title: null,
+          current_version: null,
+          filename: null,
+          mime_type: null,
+        },
+      ],
+      (id) => `Artifact ${id}`,
+    );
+    expect(card.title).toBe('Artifact abcdef12');
+    expect(card.downloadable).toBe(false);
   });
 });
 

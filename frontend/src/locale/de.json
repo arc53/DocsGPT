@@ -2960,7 +2960,8 @@
       "redo": "Wiederholen",
       "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
-        "loadListFailed": "Artefakte konnten nicht geladen werden"
+        "loadListFailed": "Artefakte konnten nicht geladen werden",
+        "untitled": "Artefakt {{id}}"
       },
       "builder": {
         "deleteFailed": "Workflow-Agent konnte nicht gelöscht werden",

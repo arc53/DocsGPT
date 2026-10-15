@@ -3102,7 +3102,8 @@
       "redo": "Повторить",
       "redoHint": "Повторить (Ctrl+Shift+Z)",
       "artifacts": {
-        "loadListFailed": "Не удалось загрузить артефакты"
+        "loadListFailed": "Не удалось загрузить артефакты",
+        "untitled": "Артефакт {{id}}"
       },
       "builder": {
         "deleteFailed": "Не удалось удалить агента рабочего процесса",
