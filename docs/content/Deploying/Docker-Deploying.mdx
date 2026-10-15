@@ -1,7 +1,7 @@
 ---
 title: Docker Deployment of DocsGPT
 description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -462,6 +462,21 @@ There are two Ollama optional files:
 
 *   **NVIDIA Container Toolkit (for NVIDIA GPUs):** If you are using NVIDIA GPUs, you need to have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed and configured on your system for Docker to access your GPU.
 *   **Docker GPU Configuration:** Ensure Docker is configured to utilize your GPU. Refer to the [Ollama Docker Hub page](https://hub.docker.com/r/ollama/ollama) and Docker documentation for GPU setup instructions specific to your GPU type (NVIDIA, AMD, Intel).
+
+## The Decision Model Container
+
+Every Compose file (and the stack `docsgpt up` runs) has a `decider` service: the same `arc53/docsgpt` image
+running `docsgpt decide-server`, which serves the [decision model](/Models/decision-model) to the backend and the
+worker. It idles at about 100 MB and downloads and loads nothing until you turn a decision feature on in `.env`; the
+first one downloads the model (about 0.5 GB) into the `decision_models` volume. It is limited to 2 GB of memory
+(`DECISION_MEMORY` in `.env`), the backend never waits for it, and it is keyed with `INTERNAL_KEY` unless `.env`
+sets `DECISION_KEY`. Upgrading with `docsgpt up` adds it to an existing stack.
+
+- On a Mac, Docker cannot use the GPU: run the model natively on it instead, as in
+  [On a Mac's GPU](/Models/decision-model#on-a-macs-gpu).
+- On an NVIDIA GPU, layer `deployment/optional/docker-compose.optional.decide-vllm.yaml` on a checkout's Compose
+  file to serve the model with vLLM: see [On an NVIDIA GPU](/Models/decision-model#on-an-nvidia-gpu).
+- `deployment/docker-compose-dev.yaml` builds a decider from the checkout only with `--profile decider`.
 
 ## Optional Code Execution Sandbox
 

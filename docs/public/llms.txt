@@ -66,7 +66,7 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 - [Cloud Providers](https://docs.docsgpt.cloud/Models/cloud-providers): Connect DocsGPT to various Cloud Large Language Model (LLM) providers to power your document Q&A.
 - [Local Inference](https://docs.docsgpt.cloud/Models/local-inference): Connect DocsGPT to local inference engines for running LLMs directly on your hardware.
 - [Embeddings](https://docs.docsgpt.cloud/Models/embeddings): Learn about embedding models, their importance in DocsGPT, and how to configure them for optimal performance.
-- [Decision Model](https://docs.docsgpt.cloud/Models/decision-model): The small CPU model some DocsGPT features ask typed questions about a message or a chunk; it ships off and downloads nothing until a feature is turned on.
+- [Decision Model](https://docs.docsgpt.cloud/Models/decision-model): The small model some DocsGPT features ask typed questions about a message or a chunk, where it runs (the decider, a Mac's GPU, vLLM), and why it downloads nothing until a feature is turned on.
 - [Custom Models](https://docs.docsgpt.cloud/Models/custom-models): Add your own OpenAI-compatible model in Settings → Custom Models - the fields, Test connection, where the model appears, how its API key is stored, why only public endpoints are allowed, and the /api/user/models endpoints.
 - [Fallback Models](https://docs.docsgpt.cloud/Models/fallback): Switch to another model automatically when the primary model fails, and keep each provider's API key with that provider.
 

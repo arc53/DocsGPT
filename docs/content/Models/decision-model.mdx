@@ -1,6 +1,6 @@
 ---
 title: The Decision Model
-description: The small CPU model some DocsGPT features ask typed questions about a message or a chunk; it ships off and downloads nothing until a feature is turned on.
+description: The small model some DocsGPT features ask typed questions about a message or a chunk, where it runs (the decider, a Mac's GPU, vLLM), and why it downloads nothing until a feature is turned on.
 lastUpdated: 2026-10-15
 ---
 
@@ -8,7 +8,7 @@ lastUpdated: 2026-10-15
 
 Some DocsGPT features need a quick, bounded judgement rather than generated text: is this message a prompt injection, does this chunk answer the question, did this conversation end with the user's goal met. They ask the decision model, [`arc53/arc-decide-0.4b-v0.2`](https://huggingface.co/arc53/arc-decide-0.4b-v0.2), a small classifier that reads a state (a message, a chunk, a conversation) and answers typed questions with calibrated probabilities. It is not a chat model and never writes text, and it is unrelated to the decision journal of [guardrails](/Agents/guardrails).
 
-It runs on CPU with ONNX Runtime, which DocsGPT already ships for embeddings, so it adds no dependency. It is MIT-licensed, built on Qwen3 (Apache-2.0).
+It runs on CPU with ONNX Runtime, which DocsGPT already ships for embeddings, so it adds no dependency; it can also run on a Mac's GPU or, as [`arc53/arc-decide-0.6b-v0.1`](https://huggingface.co/arc53/arc-decide-0.6b-v0.1), on an NVIDIA GPU with vLLM. It is MIT-licensed, built on Qwen3 (Apache-2.0).
 
 ## Everything ships off
 
@@ -30,7 +30,16 @@ DECISION_MODE=none      # turn it off everywhere, whatever the feature settings 
 DECISION_PRELOAD=true   # download, load and time it when the API starts, even with every feature off
 ```
 
-By default the model runs inside the API process, and Celery workers never load it. It can also run on a server of its own, such as vLLM on a GPU: see [API mode](#api-mode). If a call cannot be answered (the model is off, loading, busy or unreachable), the feature falls back to what it does without it, so a missing model never fails a request.
+Where it runs depends on the install:
+
+| Install | Where the model runs |
+| --- | --- |
+| Docker (`docsgpt up`, every Compose file) and Kubernetes | The [`decider`](#the-decider), a container of its own that the API and the worker call. |
+| Without Docker (`docsgpt up --native`, pip, a checkout) | Inside the API process; Celery workers never load it. |
+| A Mac, fast | A native `decide-server` on the Mac's GPU: see [On a Mac's GPU](#on-a-macs-gpu). |
+| An NVIDIA GPU | vLLM: see [On an NVIDIA GPU](#on-an-nvidia-gpu). |
+
+If a call cannot be answered (the model is off, loading, busy or unreachable), the feature falls back to what it does without it, so a missing model never fails a request.
 
 ## Turning features on
 
@@ -51,9 +60,53 @@ The files are fetched from Hugging Face at a pinned revision, as real files unde
 docsgpt decisions prefetch
 ```
 
-For a machine with no internet access, run that on a connected machine and copy the directory, or point `DECISION_MODEL_PATH` at a copy of the model: nothing is downloaded then. `HF_HUB_OFFLINE=1` is honoured. A missing file or a failed download leaves the model unavailable, logs the fix, and is retried after `DECISION_LOAD_RETRY_SECONDS`. See [Air-Gapped Deployment](/Deploying/Air-Gapped).
+In a Docker stack, run it in the decider, which keeps the files in its volume: `docker compose run --rm decider python -m docsgpt decisions prefetch` from the stack's folder. For a machine with no internet access, run it on a connected machine and copy the directory, or point `DECISION_MODEL_PATH` at a copy of the model: nothing is downloaded then. `--runtime torch` fetches the weights a [Mac's GPU](#on-a-macs-gpu) runs instead. `HF_HUB_OFFLINE=1` is honoured. A missing file or a failed download leaves the model unavailable, logs the fix, and is retried after `DECISION_LOAD_RETRY_SECONDS`. See [Air-Gapped Deployment](/Deploying/Air-Gapped).
 
-Running in the API process, the model sends no text anywhere: its only outbound call is that one-time download. [API mode](#api-mode) sends text to the server you point it at.
+Running in the API process or the stack's decider, the model sends no text anywhere: the text goes no further than the stack's own network, and the only outbound call is that one-time download. [API mode](#api-mode) sends text to the server you point it at.
+
+## The decider
+
+Every Docker Compose file and the Kubernetes manifests run a `decider` next to the API and the worker: the same `arc53/docsgpt` image running `docsgpt decide-server`. It idles at about 100 MB and loads nothing until a feature calls, so turning a feature on is one setting in `.env`. The API and the worker call it at `DECISION_BASE_URL` (`http://decider:7095` in Compose, `http://docsgpt-decider-service:7095` in Kubernetes) with `DECISION_KEY`, which the stacks set from `INTERNAL_KEY` unless `.env` sets its own. The first feature turned on downloads the model into the decider's volume (`decision_models` in Compose, the `docsgpt-decision-models` claim in Kubernetes), where it survives upgrades; the API and the worker keep only the 11 MB tokenizer.
+
+- **Memory.** Compose limits it to 2 GB (`DECISION_MEMORY` in `.env`), Kubernetes to 2Gi; the model peaks under 1 GB. It has no CPU limit: interactive calls are short, and background work takes at most `DECISION_BACKGROUND_SHARE` of the cores.
+- **Health.** The API never waits for it. A decider that is down, restarting or unreachable makes features carry on without the model (see the failure handling under [API mode](#api-mode)); Compose restarts it. Its own `GET /health` answers while the process runs, loaded or not.
+- **Routes.** `POST /v1/decide`, `POST /v1/decide/batch`, `GET /v1/models` (the model, its revision and calibration, its runtime, whether it is loaded and how fast it measured), `POST /v1/load` and `GET /health`. A request's `X-Decision-Priority` (`hot` or `background`) picks its lane, and states not started within `X-Decision-Deadline-Ms` come back as `{"error": "timeout"}`. Its logs hold counts and timings, never text.
+
+`docsgpt decide-server` runs the same server anywhere:
+
+```bash
+docsgpt decide-server                   # 127.0.0.1:7095, ONNX on the CPU
+docsgpt decide-server --host 0.0.0.0    # every interface: refuses to start without DECISION_KEY
+```
+
+A backend run on the host against `deployment/docker-compose-dev.yaml` can use one too: start it with `--profile decider`, and set `DECISION_KEY` and `DECISION_BASE_URL=http://127.0.0.1:7095` in `.env`.
+
+## On a Mac's GPU
+
+Docker on a Mac runs Linux with no access to the GPU, so the decider there runs on the CPU, where an injection check takes about 2.2 s on an M1, too slow for most features. Natively, PyTorch on the Mac's GPU takes about 0.14 s, with about 1.2 GB of GPU memory. Run the server on the Mac itself:
+
+```bash
+uv tool install "docsgpt[decisions-torch]"        # adds PyTorch and transformers; no image ever has them
+docsgpt decisions prefetch --runtime torch         # the weights, 1.07 GiB
+docsgpt env set DECISION_BASE_URL=http://host.docker.internal:7095 DECISION_KEY=$(openssl rand -hex 32)
+docsgpt up                                         # recreate the containers with the new address and key
+docsgpt decide-server --device mps                 # 127.0.0.1:7095, in the foreground
+```
+
+The containers reach the server through `host.docker.internal`. Installed this way, `docsgpt` uses the same data home as `docsgpt up` (`~/.docsgpt/server`), so the server reads the stack's `.env`: its feature settings and the `DECISION_KEY` the containers send. For a stack in another folder, set `DOCSGPT_HOME` to it for these commands. For a native install (`docsgpt up --native`), set `DECISION_BASE_URL=http://127.0.0.1:7095` instead. The stack's own decider stays idle. Starting the server with the Mac (a launchd unit) is not set up for you yet: keep it running in a terminal, or start it again after a restart.
+
+PyTorch never loads in the API or the worker: it and faiss, the default vector store, each bring an OpenMP runtime, and macOS aborts a process that loads both. `DECISION_DEVICE=mps` is read by `decide-server` only. `docsgpt doctor` says where the decision model runs and, on a Mac with a feature on and the model in Docker, suggests this setup.
+
+## On an NVIDIA GPU
+
+`deployment/optional/docker-compose.optional.decide-vllm.yaml` adds stock vLLM (`vllm/vllm-openai`, pinned) serving `arc53/arc-decide-0.6b-v0.1` at its pinned revision, and points the backend and the worker at it (`DECISION_PROTOCOL=vllm`):
+
+```bash
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml \
+  -f deployment/optional/docker-compose.optional.decide-vllm.yaml up -d
+```
+
+It needs an amd64 host with the NVIDIA Container Toolkit. vLLM takes `DECISION_VLLM_GPU_SHARE` of the card's memory (0.2 by default, about 4.8 GB of 24 GB), which leaves room for an LLM such as [Ollama](/Deploying/Docker-Deploying#optional-ollama-setup-local-models) on the same card; if vLLM fails to start on a smaller card, raise it. Until vLLM answers, features carry on without the model. vLLM checks the same `DECISION_KEY` and logs no prompts. With `docsgpt up`, which runs its own Compose file only, run vLLM beside the stack as in [API mode](#api-mode) and set `DECISION_BASE_URL` and `DECISION_PROTOCOL=vllm` in its `.env`.
 
 ## API mode
 
@@ -86,7 +139,7 @@ In API mode DocsGPT downloads only the model's tokenizer (11 MB, at the same pin
 
 **The server receives the text** of every message, chunk or conversation a feature asks about. Point `DECISION_BASE_URL` only at a server you trust with that data, as you would an LLM provider: it acts as a data processor for your users' content. DocsGPT sends `DECISION_KEY` as a bearer key when it is set, and no key otherwise; it never sends `INTERNAL_KEY`, which guards its own internal API, to the decision server.
 
-{/* The shipped compose and k8s stacks, once they run the decider sidecar, set DECISION_KEY explicitly on the backend, the worker and the decider from one stack secret (for example `DECISION_KEY: ${DECISION_KEY:-${INTERNAL_KEY}}` in compose, evaluated by the operator's own stack). The client itself never falls back to INTERNAL_KEY. */}
+The Docker and Kubernetes stacks set `DECISION_KEY` on the API, the worker and the decider from their `INTERNAL_KEY`, explicitly, in their own files; DocsGPT itself never falls back to it.
 
 When the server fails, features carry on without it:
 
@@ -139,7 +192,7 @@ Decision calls never count toward users' token limits: the model runs on your ha
 
 ## Checking it
 
-`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything.
+`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing.
 
 A running server reports what its API process sees at `GET /api/admin/decisions` (admins only):
 
@@ -163,7 +216,7 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
 
 - `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`, and in API mode `degraded` while calls to a failing server are skipped. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits; in API mode also `circuit_open`, `auth` (the server refused the key) and `no_decider` (`DECISION_MODE=api` without `DECISION_BASE_URL`).
 - `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn. In API mode they include the transport, and `speed` adds `round_trip_ms` and `measured_by` (`server` when the server reported its own timing, `client` when DocsGPT timed it).
-- `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports, or `remote`.
+- `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports (`onnx-int8` for the decider, `torch-mps-fp16` on a Mac's GPU, `torch-cuda-bf16` on an NVIDIA one), or `remote`.
 - `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`.
 
 The public `/api/config` carries only `decision_available`.

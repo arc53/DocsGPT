@@ -1,7 +1,7 @@
 ---
 title: Deploying DocsGPT on Kubernetes
 description: Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -35,7 +35,7 @@ Uploaded files go to an S3-compatible bucket that you provide.
 | --- | --- | --- |
 | `kustomization.yaml` | Yes | The list of resources `kubectl apply -k` creates. |
 | `docsgpt-secrets.yaml` | Yes | Settings and keys. You fill it in before applying. |
-| `deployments/`, `services/` | Yes, except Qdrant and the sandbox | The API, worker, Postgres and Redis. |
+| `deployments/`, `services/` | Yes, except Qdrant and the sandbox | The API, worker, [decider](#the-decision-model), Postgres and Redis. |
 | `jobs/postgres-init-job.yaml` | Yes | The migration Job. |
 | `ingress-example.yaml` | No | An Ingress with TLS for publishing DocsGPT. |
 | `deployments/qdrant-deploy.yaml`, `services/qdrant-service.yaml` | No | An in-cluster Qdrant, if you prefer it to pgvector. |
@@ -194,6 +194,20 @@ You can raise `replicas` on `docsgpt-api` and `docsgpt-worker`. At least one wor
 
 For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the resources it needs.
 
+## The decision model
+
+`deployments/decider-deploy.yaml` runs `docsgpt-decider`, which serves the [decision model](/Models/decision-model)
+to the API and the worker at `docsgpt-decider-service:7095`. It idles and downloads nothing until a decision feature
+is turned on in `docsgpt-secrets.yaml`; the first one downloads the model (about 0.5 GB) into the
+`docsgpt-decision-models` PersistentVolumeClaim (2Gi, `ReadWriteOnce`, written as the image's user through
+`fsGroup: 999`). It requests 1Gi and 500m and is limited to 2Gi and 4 CPUs. Its key, `DECISION_KEY`, comes from
+`INTERNAL_KEY` in the secret, as on the API and the worker. The API's readiness never depends on it: decisions fail
+open. The API and the worker keep only the model's tokenizer, in an `emptyDir`.
+
+To serve the model from vLLM on a GPU node instead, change `DECISION_BASE_URL` in `deployments/docsgpt-deploy.yaml`
+to the vLLM Service and add `DECISION_PROTOCOL: vllm` to the secret; the vLLM flags it needs are in
+[API mode](/Models/decision-model#api-mode).
+
 ## Upgrading
 
 1. Back up the database. Migrations can't be undone without a backup:
@@ -202,7 +216,7 @@ For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the r
    kubectl exec deploy/postgres -- pg_dump -U docsgpt docsgpt > docsgpt-backup.sql
    ```
 
-2. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml` and `jobs/postgres-init-job.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
+2. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml`, `deployments/decider-deploy.yaml` and `jobs/postgres-init-job.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
 3. Run the migration and roll the pods:
 
    ```sh
