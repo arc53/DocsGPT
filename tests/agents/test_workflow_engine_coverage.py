@@ -833,20 +833,83 @@ class TestWorkflowNodeExecutionException:
 
 @pytest.mark.unit
 class TestWorkflowMaxStepsReached:
-    """Cover lines 127-130: max steps limit warning."""
+    """A run cut off by the step cap fails visibly instead of looking finished."""
 
-    def test_max_steps_exactly_reached(self):
+    @staticmethod
+    def _looping_engine(max_steps):
         nodes = [
             _make_node("n1", NodeType.START),
             _make_node("n2", NodeType.NOTE, "Note"),
         ]
         edges = [_make_edge("e1", "n1", "n2"), _make_edge("e2", "n2", "n2")]
-        graph = _make_graph(nodes, edges)
-        engine = WorkflowEngine(graph, _make_agent())
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
+        engine.MAX_EXECUTION_STEPS = max_steps
+        return engine
+
+    def test_max_steps_exactly_reached(self):
+        engine = self._looping_engine(3)
+        events = list(engine.execute({}, "q"))
+        completed = [e for e in events if e.get("status") == "completed"]
+        assert len(completed) == 3
+
+    def test_cap_hit_with_work_pending_emits_user_facing_error(self):
+        engine = self._looping_engine(4)
+        events = list(engine.execute({}, "q"))
+        errors = [e for e in events if e.get("type") == "error"]
+        assert len(errors) == 1
+        assert errors[0]["user_facing"] is True
+        assert "4 steps" in errors[0]["error"]
+        assert events[-1] is errors[0]
+
+    def test_cap_hit_with_work_pending_flags_the_engine(self):
+        engine = self._looping_engine(4)
+        list(engine.execute({}, "q"))
+        assert engine.step_limit_reached is True
+
+    def test_path_ending_on_the_last_allowed_step_is_not_a_cap_hit(self):
+        """Every node ran and the branch simply ended; nothing was cut off."""
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node("n2", NodeType.NOTE, "Note"),
+        ]
+        engine = WorkflowEngine(
+            _make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent()
+        )
+        engine.MAX_EXECUTION_STEPS = 2
+        events = list(engine.execute({}, "q"))
+        assert not [e for e in events if e.get("type") == "error"]
+        assert engine.step_limit_reached is False
+
+    def test_end_node_on_the_last_allowed_step_is_not_a_cap_hit(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node("n2", NodeType.NOTE, "Note"),
+            _make_node("n3", NodeType.END, "End", config={"config": {}}),
+        ]
+        edges = [_make_edge("e1", "n1", "n2"), _make_edge("e2", "n2", "n3")]
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
         engine.MAX_EXECUTION_STEPS = 3
         events = list(engine.execute({}, "q"))
-        # The while loop runs 3 times then exits, steps >= MAX
-        assert len(events) >= 3
+        assert not [e for e in events if e.get("type") == "error"]
+        assert engine.step_limit_reached is False
+
+    def test_failing_node_is_reported_once_and_is_not_a_cap_hit(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node(
+                "n2",
+                NodeType.STATE,
+                "State",
+                config={"config": {"operations": [{"expression": "bad!!!", "target_variable": "x"}]}},
+            ),
+        ]
+        engine = WorkflowEngine(
+            _make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent()
+        )
+        engine.MAX_EXECUTION_STEPS = 2
+        events = list(engine.execute({}, "q"))
+        assert len([e for e in events if e.get("type") == "error"]) == 1
+        assert engine.step_limit_reached is False
 
 
 @pytest.mark.unit

@@ -75,6 +75,9 @@ class WorkflowEngine:
         # Per-node tool-call summary collected by the node executors and folded
         # into the step log; reset before each node runs.
         self._last_node_tool_calls: List[Dict[str, Any]] = []
+        # Set when the run was stopped by ``MAX_EXECUTION_STEPS`` with a node
+        # still queued; WorkflowAgent finalizes such a run as failed.
+        self.step_limit_reached: bool = False
         # False when no ``workflow_runs`` row backs ``workflow_run_id`` (unsaved /
         # embedded draft), so run-scoped artifacts must NOT be persisted as orphans.
         # Defaults True; WorkflowAgent flips it off on the draft path.
@@ -238,10 +241,25 @@ class WorkflowEngine:
                     f"Branch ended at node '{node.title}' ({node.id}) without reaching an end node"
                 )
             steps += 1
-        if steps >= self.MAX_EXECUTION_STEPS:
+        # Only a run that still has a node queued was cut off: a branch that
+        # ends on the last allowed step leaves ``current_node_id`` empty, and
+        # an error or end node breaks out before ``steps`` reaches the cap.
+        if current_node_id is not None and steps >= self.MAX_EXECUTION_STEPS:
             logger.warning(
                 f"Workflow reached max steps limit ({self.MAX_EXECUTION_STEPS})"
             )
+            # A loop that never converges would otherwise be finalized as a
+            # completed run with a truncated (often empty) answer.
+            self.step_limit_reached = True
+            yield {
+                "type": "error",
+                "error": (
+                    f"The workflow stopped after {self.MAX_EXECUTION_STEPS} steps without "
+                    "reaching an end node. A loop in the graph, such as a condition that "
+                    "keeps routing back, is the usual cause."
+                ),
+                "user_facing": True,
+            }
 
     def _initialize_state(self, initial_inputs: WorkflowState, query: str) -> None:
         self.state.update(initial_inputs)

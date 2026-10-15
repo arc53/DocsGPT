@@ -524,6 +524,9 @@ class WorkflowAgent(BaseAgent):
             return ExecutionStatus.FAILED
         if not self._engine or not self._engine.execution_log:
             return ExecutionStatus.COMPLETED
+        # A run cut off by the step cap has no failed node log, only this flag.
+        if self._engine.step_limit_reached:
+            return ExecutionStatus.FAILED
         for log in self._engine.execution_log:
             if log.get("status") == ExecutionStatus.FAILED.value:
                 return ExecutionStatus.FAILED
