@@ -88,6 +88,11 @@ _EXPIRED = 1.0
 
 _ANNOTATION_HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
 
+# How long a sign-in's owner and cancel marks are kept: past the worker's
+# 5-minute wait for the callback, plus time spent queued.
+OAUTH_TASK_KEY_TTL = 900
+OAUTH_CANCELLED = "1"
+
 
 def _secret_fingerprint(secret: str) -> str:
     """A short digest of a whole secret, for telling cached clients apart.
@@ -318,7 +323,12 @@ class MCPTool(Tool):
         global _mcp_clients_cache
         if not hasattr(self, "_param_headers"):
             self._param_headers = {}
-        if self._cache_key in _mcp_clients_cache:
+        # A sign-in's client belongs to its task: its OAuth handler carries the
+        # task's id and event publisher. Shared, the next sign-in would run as
+        # the previous one (publishing its redirect to the old task, or
+        # stopping on that task's cancel), so it is never cached.
+        shareable = not (self.auth_type == "oauth" and self.oauth_task_id and not self.query_mode)
+        if shareable and self._cache_key in _mcp_clients_cache:
             cached_data = _mcp_clients_cache[self._cache_key]
             if time.time() - cached_data["created_at"] < 300:
                 self._client = cached_data["client"]
@@ -361,6 +371,8 @@ class MCPTool(Tool):
             if token:
                 auth = BearerAuth(token)
         self._client = Client(transport, auth=auth)
+        if not shareable:
+            return
         _mcp_clients_cache[self._cache_key] = {
             "client": self._client,
             "created_at": time.time(),
@@ -1153,8 +1165,21 @@ class DocsGPTOAuth(OAuthClientProvider):
         except Exception as e:
             raise Exception(f"Failed to process auth URL: {e}")
 
+    def _cancelled(self) -> bool:
+        """Whether the user cancelled this sign-in (``MCPOAuthManager.cancel``)."""
+        if not self.redis_client or not self.task_id:
+            return False
+        try:
+            mark = self.redis_client.get(f"{self.redis_prefix}cancel:{self.task_id}")
+        except Exception:
+            return False
+        return mark in (OAUTH_CANCELLED, OAUTH_CANCELLED.encode())
+
     async def redirect_handler(self, authorization_url: str) -> None:
         """Store auth URL and state in Redis for frontend to use."""
+        # A sign-in cancelled while queued never sends the user to the provider.
+        if self._cancelled():
+            raise Exception("OAuth cancelled")
         auth_url, state = self._process_auth_url(authorization_url)
         logger.info("Processed auth_url: %s, state: %s", auth_url, state)
         self.auth_url = auth_url
@@ -1226,6 +1251,15 @@ class DocsGPTOAuth(OAuthClientProvider):
                     f"{self.redis_prefix}state:{self.extracted_state}"
                 )
                 raise Exception(f"OAuth error: {error_msg}")
+            if self._cancelled():
+                # The user cancelled: free the worker instead of waiting out the timeout.
+                self.redis_client.delete(
+                    f"{self.redis_prefix}auth_url:{self.extracted_state}"
+                )
+                self.redis_client.delete(
+                    f"{self.redis_prefix}state:{self.extracted_state}"
+                )
+                raise Exception("OAuth cancelled")
             await asyncio.sleep(poll_interval)
         self.redis_client.delete(f"{self.redis_prefix}auth_url:{self.extracted_state}")
         self.redis_client.delete(f"{self.redis_prefix}state:{self.extracted_state}")
@@ -1421,6 +1455,44 @@ class MCPOAuthManager:
     def __init__(self, redis_client: Redis | None, redis_prefix: str = "mcp_oauth:"):
         self.redis_client = redis_client
         self.redis_prefix = redis_prefix
+
+    def register_task(self, task_id: str, user_id: str) -> None:
+        """Remember who started sign-in ``task_id``, so only they can cancel it.
+
+        Args:
+            task_id: The ``mcp_oauth_task`` id handed to the browser.
+            user_id: The user who started the sign-in.
+        """
+        if not self.redis_client or not task_id or not user_id:
+            return
+        try:
+            self.redis_client.setex(f"{self.redis_prefix}owner:{task_id}", OAUTH_TASK_KEY_TTL, user_id)
+        except Exception as e:
+            logger.warning("Could not record the owner of OAuth task %s: %s", task_id, e)
+
+    def cancel(self, task_id: str, user_id: str) -> bool:
+        """Mark ``user_id``'s sign-in ``task_id`` cancelled.
+
+        The worker stops waiting for the callback within a second, and a
+        sign-in still queued stops before it sends the user anywhere, so the
+        worker is free for the next attempt.
+
+        Args:
+            task_id: The ``mcp_oauth_task`` id.
+            user_id: The user cancelling it.
+
+        Returns:
+            True when the sign-in was the user's and is now marked cancelled.
+        """
+        if not self.redis_client or not task_id or not user_id:
+            return False
+        owner = self.redis_client.get(f"{self.redis_prefix}owner:{task_id}")
+        if isinstance(owner, bytes):
+            owner = owner.decode()
+        if owner != user_id:
+            return False
+        self.redis_client.setex(f"{self.redis_prefix}cancel:{task_id}", OAUTH_TASK_KEY_TTL, OAUTH_CANCELLED)
+        return True
 
     def handle_oauth_callback(
         self, state: str, code: str, error: Optional[str] = None, iss: Optional[str] = None
