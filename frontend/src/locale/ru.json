@@ -2485,7 +2485,24 @@
         "file": "Файл"
       },
       "version": "v{{version}}",
-      "download": "Скачать {{title}}"
+      "download": "Скачать {{title}}",
+      "more_one": "ещё {{count}} файл",
+      "more_few": "ещё {{count}} файла",
+      "more_many": "ещё {{count}} файлов",
+      "more_other": "ещё {{count}} файлов",
+      "fileCount_one": "{{count}} файл",
+      "fileCount_few": "{{count}} файла",
+      "fileCount_many": "{{count}} файлов",
+      "fileCount_other": "{{count}} файлов",
+      "showAll": "Показать все ({{count}})",
+      "listTitle": "Файлы из этого ответа",
+      "backToList": "Назад к файлам",
+      "group": {
+        "documents": "Документы",
+        "images": "Изображения",
+        "data": "Данные",
+        "other": "Другие файлы"
+      }
     }
   },
   "agents": {

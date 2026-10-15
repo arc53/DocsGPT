@@ -2360,7 +2360,18 @@
         "file": "檔案"
       },
       "version": "v{{version}}",
-      "download": "下載 {{title}}"
+      "download": "下載 {{title}}",
+      "more": "還有{{count}}個檔案",
+      "fileCount": "{{count}} 個檔案",
+      "showAll": "顯示全部 {{count}} 個",
+      "listTitle": "此回答的檔案",
+      "backToList": "返回檔案列表",
+      "group": {
+        "documents": "文件",
+        "images": "圖片",
+        "data": "資料",
+        "other": "其他檔案"
+      }
     }
   },
   "agents": {

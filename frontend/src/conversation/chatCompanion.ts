@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
 
+import type { ArtifactCardItem } from './artifactCards';
+
 /**
  * One retrieved source of an answer, as the backend labels a chunk.
  *
@@ -34,6 +36,10 @@ export const ChatCompanionContext = createContext<{
   openSources: (sources: AnswerSource[], index?: number) => void;
   /** The artifact (and version) the docked panel shows, so its card is marked open. */
   openArtifact?: { id: string; version?: number } | null;
+  /** Shows an answer's full artifact list (its “N more files” card). */
+  openArtifactList?: (items: ArtifactCardItem[]) => void;
+  /** The first artifact of the list the panel shows, so that answer's card is marked open. */
+  openArtifactListKey?: string | null;
 } | null>(null);
 
 export const useChatCompanion = () => useContext(ChatCompanionContext);

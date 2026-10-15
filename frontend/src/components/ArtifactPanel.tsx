@@ -53,6 +53,8 @@ type ArtifactPanelProps = {
   /** The version to show first (the one its card names); else the current one. */
   version?: number;
   conversationId: string | null;
+  /** Back to the list it was opened from (an answer's files). */
+  onBack?: () => void;
 };
 
 const ARTIFACT_TITLE_KEY_BY_TYPE: Record<
@@ -251,6 +253,7 @@ export default function ArtifactPanel({
   toolName,
   version,
   conversationId,
+  onBack,
 }: ArtifactPanelProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
@@ -448,7 +451,11 @@ export default function ArtifactPanel({
 
   return (
     <>
-      <PanelHeader title={title || t('components.artifact.preview')} />
+      <PanelHeader
+        title={title || t('components.artifact.preview')}
+        onBack={onBack}
+        backLabel={onBack ? t('conversation.artifacts.backToList') : undefined}
+      />
       <PanelBody scroll={false}>{renderContent()}</PanelBody>
     </>
   );

@@ -45,12 +45,19 @@ import {
   selectAttachments,
   selectSendableAttachments,
 } from '../upload/uploadSlice';
-import type { OpenArtifactRequest } from './artifactCards';
+import type { ArtifactCardItem, OpenArtifactRequest } from './artifactCards';
+import ArtifactsPanel from './ArtifactsPanel';
 import { cn } from '@/lib/utils';
 
 /** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
 type ChatCompanion =
   | { kind: 'artifact'; id: string; toolName: string; version?: number }
+  // An answer's artifacts; `open` is the one showing, null shows the list.
+  | {
+      kind: 'artifacts';
+      items: ArtifactCardItem[];
+      open: OpenArtifactRequest | null;
+    }
   // `index` is the source whose reader shows; null shows the list.
   | { kind: 'sources'; sources: AnswerSource[]; index: number | null };
 
@@ -417,9 +424,17 @@ export default function Conversation() {
     setCompanion({ kind: 'artifact', ...artifact });
   }, []);
 
-  const openArtifactId = companion?.kind === 'artifact' ? companion.id : null;
-  const openArtifactVersion =
-    companion?.kind === 'artifact' ? companion.version : undefined;
+  // The artifact showing, whether opened from its card or from a list.
+  const shownArtifact =
+    companion?.kind === 'artifact'
+      ? companion
+      : companion?.kind === 'artifacts'
+        ? companion.open
+        : null;
+  const openArtifactId = shownArtifact?.id ?? null;
+  const openArtifactVersion = shownArtifact?.version;
+  const openArtifactListKey =
+    companion?.kind === 'artifacts' ? (companion.items[0]?.id ?? null) : null;
   const companionContext = useMemo(
     () => ({
       openSources: (sources: AnswerSource[], index?: number) =>
@@ -427,8 +442,11 @@ export default function Conversation() {
       openArtifact: openArtifactId
         ? { id: openArtifactId, version: openArtifactVersion }
         : null,
+      openArtifactList: (items: ArtifactCardItem[]) =>
+        setCompanion({ kind: 'artifacts', items, open: null }),
+      openArtifactListKey,
     }),
-    [openArtifactId, openArtifactVersion],
+    [openArtifactId, openArtifactVersion, openArtifactListKey],
   );
 
   const isCompanionDocked = !isMobile && companion !== null;
@@ -439,6 +457,17 @@ export default function Conversation() {
         artifactId={shownCompanion.id}
         toolName={shownCompanion.toolName}
         version={shownCompanion.version}
+        conversationId={conversationId}
+      />
+    ) : shownCompanion?.kind === 'artifacts' ? (
+      <ArtifactsPanel
+        items={shownCompanion.items}
+        open={shownCompanion.open}
+        onOpenChange={(open) =>
+          setCompanion((current) =>
+            current?.kind === 'artifacts' ? { ...current, open } : current,
+          )
+        }
         conversationId={conversationId}
       />
     ) : shownCompanion?.kind === 'sources' ? (
@@ -546,7 +575,10 @@ export default function Conversation() {
             if (!open) setCompanion(null);
           }}
           expandable={
-            shownCompanion?.kind === 'artifact' ? 'artifact' : undefined
+            shownCompanion?.kind === 'artifact' ||
+            shownCompanion?.kind === 'artifacts'
+              ? 'artifact'
+              : undefined
           }
         >
           {companionPanel}

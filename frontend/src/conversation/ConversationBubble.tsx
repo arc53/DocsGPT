@@ -576,6 +576,15 @@ const ConversationBubble = forwardRef<
           <ArtifactCardList
             items={artifactCards}
             open={companion?.openArtifact}
+            onShowAll={
+              companion?.openArtifactList
+                ? () => companion.openArtifactList?.(artifactCards)
+                : undefined
+            }
+            showAllOpen={
+              !!companion?.openArtifactListKey &&
+              companion.openArtifactListKey === artifactCards[0]?.id
+            }
             onOpen={(item) =>
               onOpenArtifact({
                 id: item.id,

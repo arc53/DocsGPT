@@ -197,6 +197,41 @@ describe('ConversationBubble', () => {
     expect(card.getAttribute('data-padding')).toBe('sm');
   });
 
+  it('folds an answer past four artifacts into one that opens its list', async () => {
+    const openArtifactList = vi.fn();
+    const files = ['a.pdf', 'b.xlsx', 'c.docx', 'd.png', 'e.csv'];
+    await render(
+      <ChatCompanionContext.Provider
+        value={{ openSources: () => {}, openArtifactList }}
+      >
+        <ConversationBubble
+          type="ANSWER"
+          message="Done."
+          onOpenArtifact={() => {}}
+          toolCalls={[
+            {
+              tool_name: 'code_executor',
+              action_name: 'run_code',
+              call_id: 'c1',
+              arguments: {},
+              status: 'completed',
+              artifacts: files.map((f, i) => ({ id: `id-${i}`, filename: f })),
+            } as ToolCallsType,
+          ]}
+        />
+      </ChatCompanionContext.Provider>,
+    );
+    const cards = container.querySelectorAll('[data-slot="artifact-card"]');
+    expect(cards).toHaveLength(4);
+    await act(async () =>
+      (
+        cards[3].querySelector('[data-artifact-open]') as HTMLButtonElement
+      ).click(),
+    );
+    expect(openArtifactList).toHaveBeenCalledOnce();
+    expect(openArtifactList.mock.calls[0][0]).toHaveLength(5);
+  });
+
   it('renders artifacts as cards under the answer and feedback as muted icon buttons', async () => {
     const onOpenArtifact = vi.fn();
     await render(

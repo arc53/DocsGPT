@@ -2360,7 +2360,18 @@
         "file": "ファイル"
       },
       "version": "v{{version}}",
-      "download": "{{title}} をダウンロード"
+      "download": "{{title}} をダウンロード",
+      "more": "さらに{{count}}個のファイル",
+      "fileCount": "{{count}}個のファイル",
+      "showAll": "{{count}}件すべて表示",
+      "listTitle": "この回答のファイル",
+      "backToList": "ファイル一覧に戻る",
+      "group": {
+        "documents": "ドキュメント",
+        "images": "画像",
+        "data": "データ",
+        "other": "その他のファイル"
+      }
     }
   },
   "agents": {

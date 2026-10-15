@@ -2359,7 +2359,18 @@
         "file": "文件"
       },
       "version": "v{{version}}",
-      "download": "下载 {{title}}"
+      "download": "下载 {{title}}",
+      "more": "还有{{count}}个文件",
+      "fileCount": "{{count}} 个文件",
+      "showAll": "显示全部 {{count}} 个",
+      "listTitle": "此回答的文件",
+      "backToList": "返回文件列表",
+      "group": {
+        "documents": "文档",
+        "images": "图片",
+        "data": "数据",
+        "other": "其他文件"
+      }
     }
   },
   "agents": {

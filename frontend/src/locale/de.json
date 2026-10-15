@@ -2371,7 +2371,20 @@
         "file": "Datei"
       },
       "version": "v{{version}}",
-      "download": "{{title}} herunterladen"
+      "download": "{{title}} herunterladen",
+      "more_one": "{{count}} weitere Datei",
+      "more_other": "{{count}} weitere Dateien",
+      "fileCount_one": "{{count}} Datei",
+      "fileCount_other": "{{count}} Dateien",
+      "showAll": "Alle {{count}} anzeigen",
+      "listTitle": "Dateien aus dieser Antwort",
+      "backToList": "Zurück zu den Dateien",
+      "group": {
+        "documents": "Dokumente",
+        "images": "Bilder",
+        "data": "Daten",
+        "other": "Weitere Dateien"
+      }
     }
   },
   "agents": {

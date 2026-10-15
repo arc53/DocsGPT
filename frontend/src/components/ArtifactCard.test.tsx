@@ -171,6 +171,66 @@ describe('ArtifactCardList', () => {
     expect(cards[1].className).not.toContain('bg-secondary');
   });
 
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      item({ id: `a${i}`, title: `File ${i}` }),
+    );
+  const renderList = async (
+    props: Partial<Parameters<typeof ArtifactCardList>[0]>,
+  ) => {
+    await act(async () => {
+      root.render(
+        <Provider store={makeStore()}>
+          <ArtifactCardList
+            items={many(4)}
+            onOpen={() => undefined}
+            {...props}
+          />
+        </Provider>,
+      );
+    });
+  };
+  const cards = () =>
+    Array.from(container.querySelectorAll('[data-slot="artifact-card"]'));
+
+  it('shows up to four artifacts as cards', async () => {
+    await renderList({ items: many(4), onShowAll: () => undefined });
+    expect(cards().map((c) => c.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('File 3')]),
+    );
+    expect(cards()).toHaveLength(4);
+    expect(container.textContent).not.toContain('conversation.artifacts.more');
+  });
+
+  // The Sources pattern: past four, three cards and one that opens the list.
+  it('folds the rest into a fourth card that opens the full list', async () => {
+    const onShowAll = vi.fn();
+    await renderList({ items: many(9), onShowAll });
+    expect(cards()).toHaveLength(4);
+    const more = cards()[3];
+    expect(more.textContent).toContain('conversation.artifacts.more');
+    expect(container.textContent).not.toContain('File 3');
+    await act(async () =>
+      (more.querySelector('[data-artifact-open]') as HTMLButtonElement).click(),
+    );
+    expect(onShowAll).toHaveBeenCalledOnce();
+  });
+
+  it('marks the fourth card open while its list shows', async () => {
+    await renderList({
+      items: many(9),
+      onShowAll: () => undefined,
+      showAllOpen: true,
+    });
+    expect(cards()[3].className).toContain('bg-secondary');
+  });
+
+  // With nowhere to show a list, nothing is hidden.
+  it('shows every card without a list to open', async () => {
+    await renderList({ items: many(9) });
+    expect(cards()).toHaveLength(9);
+  });
+
   it('renders nothing without items', async () => {
     await act(async () => {
       root.render(
