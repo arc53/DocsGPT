@@ -1,7 +1,7 @@
 ---
 title: Agent Schedules
 description: Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
-lastUpdated: 2026-10-14
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components';
@@ -75,7 +75,7 @@ A run ends in one of these statuses:
 | **Timeout** | The run went past `SCHEDULE_RUN_TIMEOUT`. |
 | **Skipped** | The run didn't start: the previous run was still in progress (`overlap`), or the scheduler was down past the due time plus `SCHEDULE_MISFIRE_GRACE` (`missed`). |
 
-One-time tasks have a run log too, so a finished task shows its result. Every scheduled run also appears in **Settings → Logs** with the type **Scheduled**, with its execution trace, and in the agent's Logs tab; over the API, use `GET /api/schedules/<id>/runs`. A run's details link to its conversation with **Open conversation**.
+One-time tasks have a run log too, so a finished task shows its result. Every scheduled run also appears in **Settings → Logs** with the type **Scheduled**, with its execution trace, and, for a schedule with an agent, in the agent's Logs tab; over the API, use `GET /api/schedules/<id>/runs`. A run's details link to its conversation with **Open conversation**.
 
 ### Where the output goes
 
