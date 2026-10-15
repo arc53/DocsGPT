@@ -3195,9 +3195,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Page not found",
+    "message": "The page you're looking for doesn't exist.",
+    "goHome": "Go home"
   },
   "filePicker": {
     "searchPlaceholder": "Search files and folders",

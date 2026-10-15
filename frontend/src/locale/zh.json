@@ -3182,9 +3182,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "页面未找到",
+    "message": "你要查找的页面不存在。",
+    "goHome": "返回首页"
   },
   "filePicker": {
     "searchPlaceholder": "搜索文件和文件夹",

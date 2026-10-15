@@ -48,6 +48,16 @@ describe('EmptyState', () => {
     expect(html).not.toContain('size-32');
   });
 
+  // A page whose only content is the empty state needs it as its heading.
+  it('draws the title as a heading with titleAs, keeping its look', () => {
+    const html = renderToStaticMarkup(
+      <EmptyState titleAs="h1" illustration="none" title="Page not found" />,
+    );
+    expect(html).toContain(
+      '<h1 class="text-muted-foreground text-lg">Page not found</h1>',
+    );
+  });
+
   it('keeps the red alert icon over a passed icon', () => {
     const html = renderToStaticMarkup(
       <EmptyState tone="destructive" icon={Monitor} title="Failed" />,

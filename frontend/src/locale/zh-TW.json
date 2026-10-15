@@ -3183,9 +3183,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "找不到頁面",
+    "message": "你要找的頁面不存在。",
+    "goHome": "返回首頁"
   },
   "filePicker": {
     "searchPlaceholder": "搜尋檔案和資料夾",

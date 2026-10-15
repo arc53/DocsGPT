@@ -897,7 +897,9 @@ Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
 art, page / panel / popover), `illustration` `no-files | none`, `title`,
 `description` (plain `muted-foreground`), `action`. `icon` takes a lucide icon
 and draws it muted at 32px in place of the art, for a page the drawing doesn't
-fit: the workflow builder's MobileBlocker (`Monitor`) and the 404. An empty inline or inside
+fit: the workflow builder's MobileBlocker (`Monitor`) and the 404
+(`MapPinOff`). `titleAs` (`p` by default, `h1`, `h2`) changes only the title's
+element: a page whose only content is the empty state titles it with `h1`. An empty inline or inside
 a card or panel (no runs yet, no members) is `size="sm" illustration="none"`,
 and a "no results" line in a picker, popover or dense list `size="xs"
 illustration="none"`; never a hand-built muted `<p>`. A page or panel whose fetch failed (see

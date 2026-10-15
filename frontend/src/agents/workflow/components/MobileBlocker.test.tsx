@@ -45,6 +45,10 @@ describe('MobileBlocker', () => {
     // The shared empty state with the monitor icon, not a one-off tile.
     expect(html).toContain('data-slot="empty-state"');
     expect(html).toContain('lucide-monitor');
+    // Nothing else titles a new workflow's page.
+    expect(html).toMatch(
+      /<h1[^>]*>agents\.workflow\.mobileBlocker\.title<\/h1>/,
+    );
   });
 
   it("gives a saved workflow its agent page's header and tabs", () => {

@@ -32,9 +32,10 @@ import type { Agent } from '../../types';
  */
 export default function MobileBlocker({ agent }: { agent: Agent | null }) {
   const { t } = useTranslation();
-  const blocker = (
+  const blocker = (titleAs: 'p' | 'h1') => (
     <EmptyState
       icon={Monitor}
+      titleAs={titleAs}
       title={t('agents.workflow.mobileBlocker.title')}
       description={t('agents.workflow.mobileBlocker.body')}
     />
@@ -47,7 +48,9 @@ export default function MobileBlocker({ agent }: { agent: Agent | null }) {
         <BackLink to={AGENTS_MANAGE_ROOT} className="self-start">
           {t('agents.title')}
         </BackLink>
-        <div className="flex flex-1 flex-col justify-center">{blocker}</div>
+        <div className="flex flex-1 flex-col justify-center">
+          {blocker('h1')}
+        </div>
       </div>
     );
   }
@@ -105,7 +108,7 @@ export default function MobileBlocker({ agent }: { agent: Agent | null }) {
             ) : undefined
           }
         />
-        {blocker}
+        {blocker('p')}
       </SectionShell>
     </div>
   );

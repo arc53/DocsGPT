@@ -39,6 +39,11 @@ type EmptyStateProps = Omit<React.ComponentProps<'div'>, 'title'> & {
    */
   icon?: LucideIcon;
   /**
+   * The title's element. A page whose only content is the empty state (the
+   * 404, a new workflow's MobileBlocker) titles it with `h1`; the look stays.
+   */
+  titleAs?: 'p' | 'h1' | 'h2';
+  /**
    * `neutral` for "nothing here yet"; `destructive` for a failed page or
    * panel load: a red icon replaces the art, the title turns red and the
    * block is announced as an alert.
@@ -55,6 +60,7 @@ function EmptyState({
   size = 'default',
   illustration = 'no-files',
   icon: Icon,
+  titleAs: Title = 'p',
   tone = 'neutral',
   className,
   ...props
@@ -103,14 +109,14 @@ function EmptyState({
           />
         </>
       ) : null}
-      <p
+      <Title
         className={cn(
           destructive ? 'text-destructive' : 'text-muted-foreground',
           sizes.title,
         )}
       >
         {title}
-      </p>
+      </Title>
       {description ? (
         <p className="text-muted-foreground mt-1 max-w-sm text-sm">
           {description}

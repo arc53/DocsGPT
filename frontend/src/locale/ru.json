@@ -3343,9 +3343,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Страница не найдена",
+    "message": "Страница, которую вы ищете, не существует.",
+    "goHome": "На главную"
   },
   "filePicker": {
     "searchPlaceholder": "Поиск файлов и папок",
