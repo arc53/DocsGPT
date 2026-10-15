@@ -187,6 +187,21 @@ describe('parseCron', () => {
     });
   });
 
+  it('reads Sunday written as 7 as day 0', () => {
+    // Cron allows both; the form's days run 0-6, and buildCron clamped 7
+    // to 6, so an edit saved a Sunday schedule as Saturday.
+    const parsed = parseCron('0 9 * * 7');
+    expect(parsed).toMatchObject({ frequency: 'weekly', dow: 0 });
+    expect(
+      buildCron('weekly', {
+        time: '09:00',
+        dayOfWeek: parsed!.dow!,
+        dayOfMonth: 1,
+        month: 1,
+      }),
+    ).toBe('0 9 * * 0');
+  });
+
   it('returns null for unsupported shapes (weekday range)', () => {
     expect(parseCron('0 9 * * 1-5')).toBeNull();
   });

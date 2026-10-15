@@ -249,14 +249,15 @@ export function parseCron(expression: string): ParsedCron | null {
   // weekly: * dom, * mon, explicit dow (single value)
   if (dom === '*' && mon === '*' && dow !== '*' && !dow.includes(',')) {
     const d = Number(dow);
-    if (!Number.isFinite(d)) return null;
+    if (!Number.isInteger(d) || d < 0 || d > 7) return null;
     return {
       frequency: 'weekly',
       minute: m,
       hour: h,
       dom: null,
       mon: null,
-      dow: d,
+      // Cron writes Sunday as 0 or 7; the form's days run 0-6.
+      dow: d % 7,
     };
   }
   // daily: * dom, * mon, * dow
