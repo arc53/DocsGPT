@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 import pytest
 import yaml
 
@@ -358,3 +360,32 @@ def test_keyless_preset_for_endpoint_matches_only_its_own_endpoint(url, expected
     """A keyless preset's Connect saves its own endpoint; any other URL at its host is a custom server."""
     preset = catalog.keyless_preset_for_endpoint(url)
     assert (preset.key if preset else None) == expected
+
+
+@pytest.mark.parametrize("key, label", [
+    pytest.param("mcp:coingecko", "mcp.api.coingecko.com/mcp", id="coingecko"),
+    pytest.param("mcp:drawio", "mcp.draw.io/mcp", id="drawio"),
+])
+def test_a_keyless_preset_connection_is_labelled_with_its_endpoint(key, label):
+    """Not the bare host a no-auth custom server there is labelled with, so the two never share a row."""
+    definition = catalog.get_definition(key)
+    assert definition is not None
+    assert catalog.preset_account_label(definition) == label
+
+
+def test_every_spelling_of_a_keyless_preset_endpoint_gets_its_label():
+    """A trailing slash or an upper-case host is the same endpoint, so Connect finds the same row."""
+    keyless = [d for d in catalog.all_definitions() if d.publisher == "preset" and d.auth_kind == "mcp"]
+    assert keyless
+    for definition in keyless:
+        assert definition.mcp_url
+        parts = urlsplit(definition.mcp_url)
+        spellings = (
+            definition.mcp_url,
+            definition.mcp_url.rstrip("/") + "/",
+            urlunsplit(parts._replace(netloc=parts.netloc.upper())),
+        )
+        for url in spellings:
+            found = catalog.keyless_preset_for_endpoint(url)
+            assert found is not None and found.key == definition.key, url
+            assert catalog.preset_account_label(found) == catalog.preset_account_label(definition)
