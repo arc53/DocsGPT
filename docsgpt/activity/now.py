@@ -16,13 +16,14 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from docsgpt.activity.common import as_datetime, query_rows
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.labels import tool_labels
 from docsgpt.activity.syncs import LATE_GRACE, due_batches, next_sync_times
 from docsgpt.agents.scheduler_utils import ScheduleValidationError, cron_runs
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import looks_like_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +53,6 @@ def _str(value: Any) -> Optional[str]:
     return str(value) if value is not None else None
 
 
-def _rows(conn: Connection, sql: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Run ``sql`` and return its rows as dicts."""
-    return [row_to_dict(r) for r in conn.execute(text(sql), params).fetchall()]
-
-
 def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Answers being written in the user's listed chats.
 
@@ -64,7 +60,7 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     fresh, so an answer whose stream died without ending drops off. An answer
     paused for a tool approval is left out: it waits under ``needs_you``.
     """
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT m.id AS message_id, m.conversation_id, m.status, m.timestamp,
@@ -115,7 +111,7 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     each agent is one row whose ``count`` is its requests. The agent's Logs
     list them one by one.
     """
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT c.agent_id, a.name AS agent_name, COUNT(*) AS count,
@@ -155,7 +151,7 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Background jobs still working, with their tool's label and the job's progress."""
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT j.*, c.name AS conversation_name, a.name AS agent_name
@@ -198,7 +194,7 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Scheduled runs pending or running, oldest slot first."""
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT sr.id, sr.schedule_id, sr.status, sr.started_at, sr.scheduled_for,
@@ -238,7 +234,7 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     Most are folded into the chat, scheduled run or webhook that started them
     (``_fold_workflows``); the agent is the oldest one built on the workflow.
     """
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT r.id, r.started_at, r.workflow_id, r.progress, w.name AS workflow_name,
@@ -299,7 +295,7 @@ def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any
     # source's row: the marked sources by key, whatever their status (a
     # re-index of a stalled source needs its row), and the user's unfinished
     # ingests that are still active (stalled ones would fill the limit).
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT * FROM (
@@ -330,8 +326,8 @@ def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any
         marker = by_source.get(source_id) or {}
         row = progress.get(source_id)
         name = (row or {}).get("name")
-        started = _as_datetime(_marker_started(marker))
-        updated = _as_datetime((row or {}).get("last_updated"))
+        started = as_datetime(_marker_started(marker))
+        updated = as_datetime((row or {}).get("last_updated"))
         if row is not None and started is not None and updated is not None and updated < started:
             # A re-index or sync: the row is the last run's until this one
             # starts embedding.
@@ -419,7 +415,7 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
             standalone.append(flow)
     hosts: Dict[str, List[Dict[str, Any]]] = {}
     oldest = datetime.min.replace(tzinfo=timezone.utc)
-    for item in sorted(running, key=lambda entry: _as_datetime(entry.get("started_at")) or oldest):
+    for item in sorted(running, key=lambda entry: as_datetime(entry.get("started_at")) or oldest):
         if item["kind"] in ("chat", "schedule", "webhook") and item.get("agent_id") and id(item) not in claimed:
             hosts.setdefault(item["agent_id"], []).append(item)
     for flow in unnamed:
@@ -437,7 +433,7 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
 
 def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Paused turns waiting for the user to approve a tool call, soonest to expire first."""
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT p.conversation_id, p.created_at, p.expires_at, p.pending_tool_calls,
@@ -489,7 +485,7 @@ def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]
     consecutive failures counts, so a healthy one paused by hand stays out.
     """
     threshold = max(1, int(settings.SCHEDULE_AUTOPAUSE_FAILURES or 1))
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT s.id, s.name, s.instruction, s.agent_id, s.consecutive_failure_count,
@@ -529,33 +525,19 @@ def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]
     ]
 
 
-def _as_datetime(value: Any) -> Optional[datetime]:
-    """A timestamp from ``row_to_dict`` (an ISO string) as an aware datetime."""
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str) and value:
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-    else:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
 def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
     """How many times a schedule fires in ``[start, end)``.
 
     An overdue run (``next_run_at`` already past, the scheduler behind) is not
     counted: it is due now, not planned.
     """
-    first = _as_datetime(row.get("next_run_at"))
+    first = as_datetime(row.get("next_run_at"))
     if first is None or first >= end:
         return 0
     if row.get("trigger_type") != "recurring" or not row.get("cron"):
         return 1 if first >= start else 0
     stop = end
-    end_at = _as_datetime(row.get("end_at"))
+    end_at = as_datetime(row.get("end_at"))
     if end_at is not None:
         # The dispatcher still runs a slot at end_at itself; the window's
         # own end stays exclusive.
@@ -580,7 +562,7 @@ def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
 def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, Any]]:
     """Active schedules due in the next ``UP_NEXT_WINDOW``, with how often each fires in it."""
     end = now + UP_NEXT_WINDOW
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT s.id, s.name, s.instruction, s.agent_id, s.trigger_type, s.cron,
@@ -714,9 +696,9 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     for batch in syncs:
         # As on the calendar: a time more than LATE_GRACE late (beat behind or
         # stopped) plans nothing. It is still listed, as overdue.
-        at = _as_datetime(batch["next_run_at"])
+        at = as_datetime(batch["next_run_at"])
         batch["runs_in_window"] = 0 if at is not None and at < current - LATE_GRACE else 1
-    up_next = sorted(up_next + syncs, key=lambda item: _as_datetime(item["next_run_at"]) or current)
+    up_next = sorted(up_next + syncs, key=lambda item: as_datetime(item["next_run_at"]) or current)
     return {
         "running": running,
         "needs_you": needs_you,

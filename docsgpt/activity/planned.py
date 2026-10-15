@@ -17,9 +17,9 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from docsgpt.activity.common import as_datetime, parse_time, query_rows
 from docsgpt.activity.syncs import calendar_slots, sync_schedule
 from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
@@ -27,7 +27,6 @@ from docsgpt.agents.scheduler_utils import (
     cron_runs,
     resolve_timezone,
 )
-from docsgpt.storage.db.base_repository import row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +76,8 @@ def parse_window(raw_from: Optional[str], raw_to: Optional[str]) -> Tuple[dateti
             ``from``, or the window is wider than ``MAX_WINDOW``.
     """
     try:
-        start = _parse(raw_from)
-        end = _parse(raw_to)
+        start = parse_time(raw_from)
+        end = parse_time(raw_to)
     except (TypeError, ValueError) as exc:
         raise WindowError("from and to must be ISO 8601 times") from exc
     if end <= start:
@@ -108,26 +107,7 @@ def parse_zone(raw: Optional[str]) -> str:
     return name
 
 
-def _parse(value: Any) -> datetime:
-    """``value`` (a datetime or ISO text) as an aware datetime; naive means UTC. Raises on bad text."""
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _as_datetime(value: Any) -> Optional[datetime]:
-    """Like ``_parse``, but ``None`` for an empty or unreadable value."""
-    if value in (None, ""):
-        return None
-    try:
-        return _parse(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _iso(value: datetime) -> str:
+def _utc_iso(value: datetime) -> str:
     """``value`` as ISO text in UTC."""
     return value.astimezone(timezone.utc).isoformat()
 
@@ -137,14 +117,9 @@ def _minute(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(second=0, microsecond=0)
 
 
-def _rows(conn: Connection, sql: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Run ``sql`` and return its rows as dicts."""
-    return [row_to_dict(r) for r in conn.execute(text(sql), params).fetchall()]
-
-
 def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, Any]]:
     """The user's active and paused schedules, monitors left out, created before the window ends."""
-    return _rows(
+    return query_rows(
         conn,
         """
         SELECT s.id, s.name, s.instruction, s.agent_id, s.trigger_type, s.status,
@@ -171,7 +146,7 @@ def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> Lis
     schedule's runs and ``in_window`` says how many it had in all, so the
     caller cuts a schedule that is not frequent sooner.
     """
-    return _rows(
+    return query_rows(
         conn,
         """
         SELECT * FROM (
@@ -256,15 +231,15 @@ def _planned_slots(
     """
     limit = MAX_SLOTS_PER_SCHEDULE if limit is None else limit
     stop = end
-    end_at = _as_datetime(row.get("end_at"))
+    end_at = as_datetime(row.get("end_at"))
     if end_at is not None:
         # The dispatcher still runs a slot at end_at itself; the window's
         # own end stays exclusive.
         stop = min(stop, end_at + timedelta(microseconds=1))
     if row.get("trigger_type") == "once":
-        fire = _as_datetime(row.get("next_run_at") or row.get("run_at"))
+        fire = as_datetime(row.get("next_run_at") or row.get("run_at"))
         if row.get("status") == "paused":
-            fire = _as_datetime(row.get("run_at"))
+            fire = as_datetime(row.get("run_at"))
         return ([fire] if fire is not None and start <= fire < stop else []), False
     if not row.get("cron"):
         return [], False
@@ -299,7 +274,7 @@ def _past_slots(
     ``expansions`` are as for ``_planned_slots``.
     """
     if row.get("trigger_type") == "once":
-        fire = _as_datetime(row.get("next_run_at"))
+        fire = as_datetime(row.get("next_run_at"))
         return ([fire] if fire is not None and start <= fire < end else []), False
     return _planned_slots({**row, "trigger_type": "recurring"}, start, end, limit, expansions)
 
@@ -329,7 +304,7 @@ def _sum_up_days(events: List[Dict[str, Any]], zone: Any) -> List[Dict[str, Any]
         if event["schedule_id"] not in over or event["state"] not in SUMMED_STATES:
             out.append(event)
             continue
-        key = (event["schedule_id"], _parse(event["at"]).astimezone(zone).date(), event["state"])
+        key = (event["schedule_id"], parse_time(event["at"]).astimezone(zone).date(), event["state"])
         day = days.get(key)
         if day is None:
             day = {k: v for k, v in event.items() if k not in _RUN_FIELDS}
@@ -343,7 +318,7 @@ def _sum_up_days(events: List[Dict[str, Any]], zone: Any) -> List[Dict[str, Any]
 
 def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
     """The user's monitors that overlap the window, drawn as ranges."""
-    rows = _rows(
+    rows = query_rows(
         conn,
         """
         SELECT s.id, s.status, s.end_at, s.created_at, m.description, m.source_type,
@@ -419,7 +394,7 @@ def build_planned(
     runs_cut_at: Dict[str, datetime] = {}
 
     for run in _runs(conn, user_id, start, end):
-        at = _as_datetime(run.get("scheduled_for"))
+        at = as_datetime(run.get("scheduled_for"))
         if at is None:
             continue
         schedule_id = str(run["schedule_id"])
@@ -434,7 +409,7 @@ def build_planned(
         events.append(
             {
                 **_base(run, frequent),
-                "at": _iso(at),
+                "at": _utc_iso(at),
                 "state": run.get("status"),
                 "run_id": str(run["id"]),
                 "trigger_source": run.get("trigger_source"),
@@ -457,7 +432,7 @@ def build_planned(
         for at in slots:
             if (schedule_id, _minute(at)) in taken:
                 continue
-            events.append({**base, "at": _iso(at), "state": state})
+            events.append({**base, "at": _utc_iso(at), "state": state})
         # Past slots that never got a run: the scheduler was down or behind.
         # Only for active schedules (pause history isn't kept, so a paused
         # one's quiet slots may be its pause), and only since its plan last
@@ -467,8 +442,8 @@ def build_planned(
             continue
         since = max(
             start,
-            _as_datetime(row.get("plan_changed_at")) or start,
-            _as_datetime(row.get("created_at")) or start,
+            as_datetime(row.get("plan_changed_at")) or start,
+            as_datetime(row.get("created_at")) or start,
         )
         if since >= missed_until:
             continue
@@ -479,14 +454,14 @@ def build_planned(
         for at in past:
             if (schedule_id, _minute(at)) in taken or (cut_at is not None and at > cut_at):
                 continue
-            events.append({**base, "at": _iso(at), "state": "missed"})
+            events.append({**base, "at": _utc_iso(at), "state": "missed"})
 
     events = _sum_up_days(events, zone)
     events += calendar_slots(conn, user_id, start, end, sync_schedule(), now=current)
     events.sort(key=lambda event: event["at"])
     return {
-        "from": _iso(start),
-        "to": _iso(end),
+        "from": _utc_iso(start),
+        "to": _utc_iso(end),
         "events": events,
         "monitors": _monitors(conn, user_id, start, end),
         "truncated": list(dict.fromkeys(truncated)),
