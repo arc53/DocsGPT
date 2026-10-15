@@ -7,7 +7,8 @@ Five sources are folded into one row shape with one status vocabulary
 - **webhook**: webhook runs, from their ``request_traces`` row (a webhook run
   has no table of its own).
 - **workflow**: ``workflow_runs`` that ended, except those a webhook or
-  scheduled run already lists (its trace names the workflow run).
+  scheduled run already lists (its trace names the workflow run, and a
+  scheduled one is also named by the run's ``started_by``).
 - **job**: ``background_jobs`` that ended.
 - **monitor**: ``conversation_wakes`` a monitor, trigger link or approval
   link delivered to its conversation.
@@ -114,6 +115,18 @@ _WORKFLOW = """
       AND NOT EXISTS (
           SELECT 1 FROM request_traces t
           WHERE t.workflow_run_id = r.id AND t.source IN ('webhook', 'schedule')
+      )
+      -- A scheduled run's workflow names it (started_by), which outlasts
+      -- its trace: traces are purged sooner, or not recorded at all. The
+      -- CASE keeps a starter that isn't a uuid from failing the cast.
+      AND NOT EXISTS (
+          SELECT 1 FROM schedule_runs sr
+          WHERE sr.user_id = r.user_id
+            AND sr.id = CASE
+                WHEN r.inputs ->> 'started_by'
+                     ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                THEN CAST(r.inputs ->> 'started_by' AS uuid)
+            END
       )
 """
 

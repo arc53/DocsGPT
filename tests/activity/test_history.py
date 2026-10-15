@@ -141,6 +141,18 @@ class TestKinds:
         kinds = [r["kind"] for r in history.list_history(pg_conn, "u1")["runs"]]
         assert kinds == ["webhook"]
 
+    def test_a_workflow_run_of_a_schedule_is_listed_once_without_its_trace(self, pg_conn):
+        # Traces are purged sooner than History reaches back, or not
+        # recorded at all; the run names the scheduled run that started it.
+        agent, run = _workflow_run(pg_conn)
+        scheduled = _schedule_run(pg_conn, agent=agent)
+        pg_conn.execute(
+            text("UPDATE workflow_runs SET inputs = jsonb_build_object('started_by', CAST(:s AS text)) WHERE id = CAST(:r AS uuid)"),
+            {"s": str(scheduled["id"]), "r": run},
+        )
+        kinds = [r["kind"] for r in history.list_history(pg_conn, "u1")["runs"]]
+        assert kinds == ["schedule"]
+
     def test_a_workflow_run_is_named_by_its_agent_and_never_another_users(self, pg_conn):
         # u2's workflow under a private agent and, newer, a shared one; u1 ran the shared one.
         workflow = str(
