@@ -78,12 +78,3 @@ export function dayKey(date: Date): string {
 export function hourOf(date: Date): number {
   return date.getHours() + date.getMinutes() / 60;
 }
-
-/** "15:00": en-GB 24-hour, as every time in the app. */
-export function formatClock(date: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
-}

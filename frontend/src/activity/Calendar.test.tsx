@@ -188,6 +188,29 @@ describe('Calendar page', () => {
     expect(container.textContent).toContain('Rotterdam congestion');
   });
 
+  it('titles the week day-first in English', async () => {
+    await render();
+    const monday = new Date();
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    expect(container.textContent).toContain(
+      new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).formatRange(monday, sunday),
+    );
+  });
+
+  it("carries a cut-off monitor's description in full", async () => {
+    await render();
+    expect(
+      container.querySelector('button [title="Rotterdam congestion"]'),
+    ).not.toBeNull();
+  });
+
   it('reloads when a planned slot is due to turn missed', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     try {

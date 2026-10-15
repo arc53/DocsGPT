@@ -2827,10 +2827,10 @@
         "hourlyAt": "Jede Stunde um :{{minute}}",
         "hourlyRange": "Jede Stunde von {{from}} bis {{to}}",
         "hourlyRangeWeekdays": "Werktags jede Stunde von {{from}} bis {{to}}",
-        "everyMinutes_one": "Jede {{count}} Minute",
-        "everyMinutes_other": "Alle {{count}} Minuten",
-        "everyHours_one": "Jede {{count}} Stunde",
-        "everyHours_other": "Alle {{count}} Stunden"
+        "everyMinutes_one": "Jede {{formatted}} Minute",
+        "everyMinutes_other": "Alle {{formatted}} Minuten",
+        "everyHours_one": "Jede {{formatted}} Stunde",
+        "everyHours_other": "Alle {{formatted}} Stunden"
       },
       "runLog": {
         "when": "Wann",
@@ -3440,10 +3440,10 @@
       "api": "API"
     },
     "nav": {
-      "running_one": "{{count}} läuft",
-      "running_other": "{{count}} laufen",
-      "needsYou_one": "{{count}} braucht dich",
-      "needsYou_other": "{{count}} brauchen dich"
+      "running_one": "{{formatted}} läuft",
+      "running_other": "{{formatted}} laufen",
+      "needsYou_one": "{{formatted}} braucht dich",
+      "needsYou_other": "{{formatted}} brauchen dich"
     },
     "now": {
       "label": "Jetzt",
@@ -3465,8 +3465,8 @@
       "expires": "läuft ab {{time}}",
       "approval": "Freigabe",
       "review": "Prüfen",
-      "pausedAfter_one": "{{name}} nach {{count}} Fehler pausiert",
-      "pausedAfter_other": "{{name}} nach {{count}} Fehlern pausiert",
+      "pausedAfter_one": "{{name}} nach {{formatted}} Fehler pausiert",
+      "pausedAfter_other": "{{name}} nach {{formatted}} Fehlern pausiert",
       "errorType": {
         "auth_expired": "eine Anmeldung ist abgelaufen",
         "tool_not_allowed": "ein Werkzeug war nicht erlaubt",
@@ -3481,13 +3481,13 @@
       },
       "viewRuns": "Ausführungen ansehen",
       "fromChat": "Aus {{name}}",
-      "timesToday_one": "{{count}} Ausführung in den nächsten 24 Stunden",
-      "timesToday_other": "{{count}} Ausführungen in den nächsten 24 Stunden",
+      "timesToday_one": "{{formatted}} Ausführung in den nächsten 24 Stunden",
+      "timesToday_other": "{{formatted}} Ausführungen in den nächsten 24 Stunden",
       "oneTime": "einmalig",
       "stats": {
         "running": "Läuft",
-        "background_one": "{{count}} im Hintergrund",
-        "background_other": "{{count}} im Hintergrund",
+        "background_one": "{{formatted}} im Hintergrund",
+        "background_other": "{{formatted}} im Hintergrund",
         "needsYou": "Braucht dich",
         "approvalExpires": "Eine Freigabe läuft {{time}} ab",
         "next24h": "Nächste 24 Stunden",
@@ -3515,8 +3515,8 @@
       "openCalendar": "Kalender öffnen",
       "step": "Schritt {{step}}",
       "stepOf": "Schritt {{step}} von {{total}}",
-      "apiRequests_one": "{{count}} Anfrage",
-      "apiRequests_other": "{{count}} Anfragen",
+      "apiRequests_one": "{{formatted}} Anfrage",
+      "apiRequests_other": "{{formatted}} Anfragen",
       "reading": "liest den Inhalt",
       "operation": {
         "upload": "Upload",
@@ -3528,10 +3528,10 @@
         "weekly": "Wöchentliche Synchronisierung",
         "monthly": "Monatliche Synchronisierung"
       },
-      "syncSources_one": "{{count}} Quelle",
-      "syncSources_other": "{{count}} Quellen",
-      "syncBlocked_one": "{{count}} muss neu verbunden werden",
-      "syncBlocked_other": "{{count}} müssen neu verbunden werden"
+      "syncSources_one": "{{formatted}} Quelle",
+      "syncSources_other": "{{formatted}} Quellen",
+      "syncBlocked_one": "{{formatted}} muss neu verbunden werden",
+      "syncBlocked_other": "{{formatted}} müssen neu verbunden werden"
     },
     "calendar": {
       "label": "Kalender",
@@ -3576,17 +3576,17 @@
         "timeout": "Zeitüberschreitung",
         "missed": "Verpasst"
       },
-      "block_one": "{{name}} ×{{count}}",
-      "block_other": "{{name}} ×{{count}}",
-      "more_one": "+{{count}} weitere",
-      "more_other": "+{{count}} weitere",
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} weitere",
+      "more_other": "+{{formatted}} weitere",
       "today": "Heute",
       "tomorrow": "Morgen",
       "empty": "In diesen Tagen ist nichts geplant",
-      "blockDone_one": "{{done}} von {{count}} Ausführung erledigt",
-      "blockDone_other": "{{done}} von {{count}} Ausführungen erledigt",
-      "slotCount_one": "{{count}} Lauf",
-      "slotCount_other": "{{count}} Läufe",
+      "blockDone_one": "{{done}} von {{formatted}} Ausführung erledigt",
+      "blockDone_other": "{{done}} von {{formatted}} Ausführungen erledigt",
+      "slotCount_one": "{{formatted}} Lauf",
+      "slotCount_other": "{{formatted}} Läufe",
       "oneTime": "Einmalig",
       "recurring": "Wiederkehrend",
       "when": "Wann",
@@ -3672,9 +3672,9 @@
       "empty": "Noch keine abgeschlossenen Ausführungen",
       "emptyHint": "Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore erscheinen hier, sobald sie fertig sind.",
       "loadMore": "Mehr laden",
-      "retention": "Standardmäßig werden geplante Ausführungen 90 Tage aufbewahrt, Webhook- und Workflow-Ausführungen 30 und Hintergrundaufträge 7.",
-      "period_one": "Letzter {{count}} Tag",
-      "period_other": "Letzte {{count}} Tage",
+      "retention": "Standardmäßig werden geplante Ausführungen 90 Tage aufbewahrt, Webhook-Ausführungen 30 und Hintergrundaufträge und Monitor-Weckrufe 7. Workflow-Ausführungen bleiben in der Liste, ihr Trace wird 30 Tage aufbewahrt.",
+      "period_one": "Letzter {{formatted}} Tag",
+      "period_other": "Letzte {{formatted}} Tage",
       "periodFilter": "Zeitraum"
     }
   }

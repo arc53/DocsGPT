@@ -8,11 +8,11 @@ import {
   selectRunningKey,
 } from '../activity/activitySlice';
 import { formatElapsed, workflowStep } from '../activity/format';
-import { useClock } from '../activity/useClock';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { useClock } from '../hooks/useClock';
 import { useScrollSentinel } from '../hooks/useLoadMore';
 import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';

@@ -9,7 +9,12 @@ vi.mock('../api/services/activityService', () => ({ default: activity }));
 const schedules = vi.hoisted(() => ({ setPaused: vi.fn() }));
 vi.mock('../api/services/schedulesService', () => ({ default: schedules }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    // Counts and name lists show as the text the key interpolates.
+    t: (key: string, opts?: { formatted?: string; tools?: string }) =>
+      [key, opts?.formatted, opts?.tools].filter(Boolean).join(':'),
+    i18n: { language: 'en' },
+  }),
 }));
 
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -99,7 +104,7 @@ const SNAPSHOT: NowSnapshot = {
       id: 'approval:c2',
       conversation_id: 'c2',
       title: 'Vendor Renewal Decision',
-      tools: ['send_email'],
+      tools: ['send_email', 'http_request'],
       expires_at: new Date(Date.now() + 20 * 60_000).toISOString(),
     },
     {
@@ -202,7 +207,10 @@ describe('Now page', () => {
     await render();
     expect(container.textContent).toContain('activity.now.needsYou');
     expect(container.textContent).toContain('activity.now.approve');
-    expect(container.textContent).toContain('activity.now.pausedAfter');
+    expect(container.textContent).toContain('activity.now.pausedAfter:3');
+    expect(container.textContent).toContain(
+      'activity.now.approve:send_email and http_request',
+    );
     expect(container.textContent).toContain('activity.now.reconnect');
   });
 
@@ -267,7 +275,7 @@ describe('Now page', () => {
     await render();
     const row = container.querySelector('li[data-kind="api"]') as HTMLElement;
     expect(row.textContent).toContain('Support bot');
-    expect(row.textContent).toContain('activity.now.apiRequests');
+    expect(row.textContent).toContain('activity.now.apiRequests:3');
     expect(
       Array.from(row.querySelectorAll('button')).some(
         (b) => b.textContent === 'activity.now.open',
@@ -296,9 +304,9 @@ describe('Now page', () => {
       li.textContent?.includes('activity.now.syncBatch.daily'),
     ) as HTMLElement;
     expect(row).toBeDefined();
-    expect(row.textContent).toContain('activity.now.syncSources');
-    expect(row.textContent).toContain('Carrier portal, Rate cards');
-    expect(row.textContent).toContain('activity.now.syncBlocked');
+    expect(row.textContent).toContain('activity.now.syncSources:2');
+    expect(row.textContent).toContain('Carrier portal and Rate cards');
+    expect(row.textContent).toContain('activity.now.syncBlocked:1');
     expect(row.querySelector('a')?.getAttribute('href')).toBe(
       '/settings/knowledge',
     );

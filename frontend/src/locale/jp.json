@@ -2815,10 +2815,10 @@
         "hourlyAt": "毎時 {{minute}} 分",
         "hourlyRange": "{{from}}から{{to}}まで1時間ごと",
         "hourlyRangeWeekdays": "平日の{{from}}から{{to}}まで1時間ごと",
-        "everyMinutes_one": "{{count}} 分ごと",
-        "everyMinutes_other": "{{count}} 分ごと",
-        "everyHours_one": "{{count}} 時間ごと",
-        "everyHours_other": "{{count}} 時間ごと"
+        "everyMinutes_one": "{{formatted}} 分ごと",
+        "everyMinutes_other": "{{formatted}} 分ごと",
+        "everyHours_one": "{{formatted}} 時間ごと",
+        "everyHours_other": "{{formatted}} 時間ごと"
       },
       "runLog": {
         "when": "日時",
@@ -3428,10 +3428,10 @@
       "api": "API"
     },
     "nav": {
-      "running_one": "{{count}} 件実行中",
-      "running_other": "{{count}} 件実行中",
-      "needsYou_one": "{{count}} 件の対応待ち",
-      "needsYou_other": "{{count}} 件の対応待ち"
+      "running_one": "{{formatted}} 件実行中",
+      "running_other": "{{formatted}} 件実行中",
+      "needsYou_one": "{{formatted}} 件の対応待ち",
+      "needsYou_other": "{{formatted}} 件の対応待ち"
     },
     "now": {
       "label": "現在",
@@ -3453,8 +3453,8 @@
       "expires": "{{time}}に期限切れ",
       "approval": "承認",
       "review": "確認",
-      "pausedAfter_one": "{{name}} は {{count}} 回失敗したため一時停止中",
-      "pausedAfter_other": "{{name}} は {{count}} 回失敗したため一時停止中",
+      "pausedAfter_one": "{{name}} は {{formatted}} 回失敗したため一時停止中",
+      "pausedAfter_other": "{{name}} は {{formatted}} 回失敗したため一時停止中",
       "errorType": {
         "auth_expired": "サインインの期限切れ",
         "tool_not_allowed": "許可されていないツール",
@@ -3469,13 +3469,13 @@
       },
       "viewRuns": "実行を表示",
       "fromChat": "{{name}} から",
-      "timesToday_one": "今後24時間で {{count}} 回",
-      "timesToday_other": "今後24時間で {{count}} 回",
+      "timesToday_one": "今後24時間で {{formatted}} 回",
+      "timesToday_other": "今後24時間で {{formatted}} 回",
       "oneTime": "1回限り",
       "stats": {
         "running": "実行中",
-        "background_one": "バックグラウンドで {{count}} 件",
-        "background_other": "バックグラウンドで {{count}} 件",
+        "background_one": "バックグラウンドで {{formatted}} 件",
+        "background_other": "バックグラウンドで {{formatted}} 件",
         "needsYou": "対応待ち",
         "approvalExpires": "承認の期限: {{time}}",
         "next24h": "今後24時間",
@@ -3503,8 +3503,8 @@
       "openCalendar": "カレンダーを開く",
       "step": "ステップ {{step}}",
       "stepOf": "ステップ {{step}}/{{total}}",
-      "apiRequests_one": "{{count}} 件のリクエスト",
-      "apiRequests_other": "{{count}} 件のリクエスト",
+      "apiRequests_one": "{{formatted}} 件のリクエスト",
+      "apiRequests_other": "{{formatted}} 件のリクエスト",
       "reading": "コンテンツを読み込み中",
       "operation": {
         "upload": "アップロード",
@@ -3516,10 +3516,10 @@
         "weekly": "毎週の同期",
         "monthly": "毎月の同期"
       },
-      "syncSources_one": "{{count}} 件のソース",
-      "syncSources_other": "{{count}} 件のソース",
-      "syncBlocked_one": "{{count}} 件は再接続が必要",
-      "syncBlocked_other": "{{count}} 件は再接続が必要"
+      "syncSources_one": "{{formatted}} 件のソース",
+      "syncSources_other": "{{formatted}} 件のソース",
+      "syncBlocked_one": "{{formatted}} 件は再接続が必要",
+      "syncBlocked_other": "{{formatted}} 件は再接続が必要"
     },
     "calendar": {
       "label": "カレンダー",
@@ -3564,17 +3564,17 @@
         "timeout": "タイムアウト",
         "missed": "未実行"
       },
-      "block_one": "{{name}} ×{{count}}",
-      "block_other": "{{name}} ×{{count}}",
-      "more_one": "他 {{count}} 件",
-      "more_other": "他 {{count}} 件",
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "他 {{formatted}} 件",
+      "more_other": "他 {{formatted}} 件",
       "today": "今日",
       "tomorrow": "明日",
       "empty": "この期間に予定はありません",
-      "blockDone_one": "{{count}} 回中 {{done}} 回完了",
-      "blockDone_other": "{{count}} 回中 {{done}} 回完了",
-      "slotCount_one": "{{count}} 回",
-      "slotCount_other": "{{count}} 回",
+      "blockDone_one": "{{formatted}} 回中 {{done}} 回完了",
+      "blockDone_other": "{{formatted}} 回中 {{done}} 回完了",
+      "slotCount_one": "{{formatted}} 回",
+      "slotCount_other": "{{formatted}} 回",
       "oneTime": "1回限り",
       "recurring": "定期",
       "when": "日時",
@@ -3660,9 +3660,9 @@
       "empty": "完了した実行はまだありません",
       "emptyHint": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの実行は、完了するとここに表示されます。",
       "loadMore": "さらに読み込む",
-      "retention": "既定では、スケジュール実行は90日、Webhook とワークフローの実行は30日、バックグラウンドジョブは7日間保存されます。",
-      "period_one": "過去 {{count}} 日",
-      "period_other": "過去 {{count}} 日",
+      "retention": "既定では、スケジュール実行は90日、Webhook 実行は30日、バックグラウンドジョブとモニター通知は7日間保存されます。ワークフローの実行は一覧に残り、トレースは30日間保存されます。",
+      "period_one": "過去 {{formatted}} 日",
+      "period_other": "過去 {{formatted}} 日",
       "periodFilter": "期間"
     }
   }

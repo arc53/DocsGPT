@@ -38,7 +38,9 @@ The tab lists **Recurring** schedules and **One-time tasks** separately, with ea
 
 Deleting a schedule also deletes its run history, and deleting the agent deletes all its schedules.
 
-The builder covers daily, weekly, monthly and yearly times. For another cadence, such as every hour, set a custom cron expression through the [API](#rest-api). The tab shows it as `Custom: <expression>`.
+The builder covers daily, weekly, monthly and yearly times. For another cadence, such as every hour or every weekday, set a cron expression through the [API](#rest-api). The tab describes common cadences in words, such as "Every hour", "Every 15 minutes", "Every weekday at 9:00 AM", "Every Monday, Wednesday and Friday at 8:00 AM" or "Every hour from 9:00 AM to 5:00 PM on weekdays". Any other expression shows as `Custom: <expression>`.
+
+When you edit a schedule with such a cadence, the dialog shows a note with its current timing. The schedule keeps that timing when you change only its name, instructions, timezone or tool approvals. Changing **Frequency**, the day or the time replaces it with the timing you pick.
 
 ### Tools in a scheduled run
 
@@ -56,7 +58,7 @@ If you later mark one of a tool's actions as needing approval, schedules that do
 
 ## All your schedules in Activity
 
-**Activity → Schedules** in the sidebar lists every schedule you own, across all your agents, grouped by agent. Tasks the assistant set up in a chat without an agent are grouped last under **Created in chat**, each with a link to its chat. The page has the same **Recurring** and **One-time** tabs, row actions and run log as an agent's Schedules tab. **New schedule** there asks you to choose the agent first.
+**Activity → Schedules** in the sidebar lists every schedule you own, across all your agents, grouped by agent. Tasks the assistant set up in a chat without an agent are grouped last under **Created in chat**, each with a link to its chat. The page has the same **Recurring** and **One-time tasks** tabs, row actions and run log as an agent's Schedules tab. **New schedule** there asks you to choose the agent first. To get there from an agent, select **All schedules** on its Schedules tab.
 
 It also lists the schedules of teammates' agents you manage through a team (an **Editor** badge marks those groups). Those schedules belong to the agent's owner (see [Who owns a schedule](#who-owns-a-schedule-and-whose-quota-it-uses)); a teammate's own one-time task set from a chat stays private to them.
 

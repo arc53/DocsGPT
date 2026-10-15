@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import {
   DescriptionItem,
   DescriptionList,
@@ -23,9 +24,12 @@ import { agentSchedulesPath } from '../../agents/paths';
 import { formatCron } from '../../agents/schedules/cronBuilder';
 import { showActionToast } from '../../notifications/actionToastSlice';
 import type { AppDispatch } from '../../store';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import {
+  formatClock,
+  formatCount,
+  formatDateTime,
+} from '../../utils/dateTimeUtils';
 import { ACTIVITY_SCHEDULES_PATH } from '../paths';
-import { formatClock } from './dates';
 import { blockCount, type FrequentBlock } from './layout';
 import SyncPanel from './SyncPanel';
 import type { CalendarEvent, EventState, ScheduleEvent } from './types';
@@ -181,7 +185,7 @@ export default function EventPanel({
               title={t('activity.calendar.dayRuns')}
               count={blockCount(selection.block)}
             />
-            <div className="overflow-hidden rounded-2xl border">
+            <Card variant="subtle" padding="none" className="overflow-hidden">
               <ListRows>
                 {selection.block.events.map((slot) => {
                   const past = Boolean(slot.run_id);
@@ -200,6 +204,7 @@ export default function EventPanel({
                         slot.count
                           ? t('activity.calendar.slotCount', {
                               count: slot.count,
+                              formatted: formatCount(slot.count),
                             })
                           : undefined
                       }
@@ -216,7 +221,7 @@ export default function EventPanel({
                   );
                 })}
               </ListRows>
-            </div>
+            </Card>
           </section>
         )}
         {queued && (

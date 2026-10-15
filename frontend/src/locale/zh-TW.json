@@ -2815,10 +2815,10 @@
         "hourlyAt": "每小時第 {{minute}} 分",
         "hourlyRange": "{{from}} 至 {{to}} 每小時",
         "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小時",
-        "everyMinutes_one": "每 {{count}} 分鐘",
-        "everyMinutes_other": "每 {{count}} 分鐘",
-        "everyHours_one": "每 {{count}} 小時",
-        "everyHours_other": "每 {{count}} 小時"
+        "everyMinutes_one": "每 {{formatted}} 分鐘",
+        "everyMinutes_other": "每 {{formatted}} 分鐘",
+        "everyHours_one": "每 {{formatted}} 小時",
+        "everyHours_other": "每 {{formatted}} 小時"
       },
       "runLog": {
         "when": "時間",
@@ -3428,10 +3428,10 @@
       "api": "API"
     },
     "nav": {
-      "running_one": "{{count}} 個執行中",
-      "running_other": "{{count}} 個執行中",
-      "needsYou_one": "{{count}} 項需要你處理",
-      "needsYou_other": "{{count}} 項需要你處理"
+      "running_one": "{{formatted}} 個執行中",
+      "running_other": "{{formatted}} 個執行中",
+      "needsYou_one": "{{formatted}} 項需要你處理",
+      "needsYou_other": "{{formatted}} 項需要你處理"
     },
     "now": {
       "label": "目前",
@@ -3453,8 +3453,8 @@
       "expires": "{{time}}過期",
       "approval": "核准",
       "review": "查看",
-      "pausedAfter_one": "{{name}} 失敗 {{count}} 次後已暫停",
-      "pausedAfter_other": "{{name}} 失敗 {{count}} 次後已暫停",
+      "pausedAfter_one": "{{name}} 失敗 {{formatted}} 次後已暫停",
+      "pausedAfter_other": "{{name}} 失敗 {{formatted}} 次後已暫停",
       "errorType": {
         "auth_expired": "登入已過期",
         "tool_not_allowed": "工具未被允許",
@@ -3469,13 +3469,13 @@
       },
       "viewRuns": "查看執行",
       "fromChat": "來自 {{name}}",
-      "timesToday_one": "未來 24 小時執行 {{count}} 次",
-      "timesToday_other": "未來 24 小時執行 {{count}} 次",
+      "timesToday_one": "未來 24 小時執行 {{formatted}} 次",
+      "timesToday_other": "未來 24 小時執行 {{formatted}} 次",
       "oneTime": "一次性",
       "stats": {
         "running": "執行中",
-        "background_one": "背景 {{count}} 個",
-        "background_other": "背景 {{count}} 個",
+        "background_one": "背景 {{formatted}} 個",
+        "background_other": "背景 {{formatted}} 個",
         "needsYou": "需要你處理",
         "approvalExpires": "有一個核准將於{{time}}過期",
         "next24h": "未來 24 小時",
@@ -3503,8 +3503,8 @@
       "openCalendar": "開啟行事曆",
       "step": "第 {{step}} 步",
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
-      "apiRequests_one": "{{count}} 個請求",
-      "apiRequests_other": "{{count}} 個請求",
+      "apiRequests_one": "{{formatted}} 個請求",
+      "apiRequests_other": "{{formatted}} 個請求",
       "reading": "正在讀取內容",
       "operation": {
         "upload": "上傳",
@@ -3516,10 +3516,10 @@
         "weekly": "每週同步",
         "monthly": "每月同步"
       },
-      "syncSources_one": "{{count}} 個來源",
-      "syncSources_other": "{{count}} 個來源",
-      "syncBlocked_one": "{{count}} 個需要重新連線",
-      "syncBlocked_other": "{{count}} 個需要重新連線"
+      "syncSources_one": "{{formatted}} 個來源",
+      "syncSources_other": "{{formatted}} 個來源",
+      "syncBlocked_one": "{{formatted}} 個需要重新連線",
+      "syncBlocked_other": "{{formatted}} 個需要重新連線"
     },
     "calendar": {
       "label": "行事曆",
@@ -3564,17 +3564,17 @@
         "timeout": "逾時",
         "missed": "已錯過"
       },
-      "block_one": "{{name}} ×{{count}}",
-      "block_other": "{{name}} ×{{count}}",
-      "more_one": "另有 {{count}} 項",
-      "more_other": "另有 {{count}} 項",
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "另有 {{formatted}} 項",
+      "more_other": "另有 {{formatted}} 項",
       "today": "今天",
       "tomorrow": "明天",
       "empty": "這些天沒有排定項目",
-      "blockDone_one": "已完成 {{done}}/{{count}} 次",
-      "blockDone_other": "已完成 {{done}}/{{count}} 次",
-      "slotCount_one": "{{count}} 次",
-      "slotCount_other": "{{count}} 次",
+      "blockDone_one": "已完成 {{done}}/{{formatted}} 次",
+      "blockDone_other": "已完成 {{done}}/{{formatted}} 次",
+      "slotCount_one": "{{formatted}} 次",
+      "slotCount_other": "{{formatted}} 次",
       "oneTime": "一次性",
       "recurring": "週期性",
       "when": "時間",
@@ -3660,9 +3660,9 @@
       "empty": "還沒有已完成的執行",
       "emptyHint": "你的排程、Webhook、工作流程、背景工作和監控的執行完成後會顯示在這裡。",
       "loadMore": "載入更多",
-      "retention": "預設情況下，排程執行保留 90 天，Webhook 和工作流程執行保留 30 天，背景工作保留 7 天。",
-      "period_one": "最近 {{count}} 天",
-      "period_other": "最近 {{count}} 天",
+      "retention": "預設情況下，排程執行保留 90 天，Webhook 執行保留 30 天，背景工作和監控喚醒保留 7 天。工作流程執行會持續列出，其追蹤保留 30 天。",
+      "period_one": "最近 {{formatted}} 天",
+      "period_other": "最近 {{formatted}} 天",
       "periodFilter": "時間範圍"
     }
   }

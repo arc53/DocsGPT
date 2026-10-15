@@ -45,10 +45,15 @@ import {
   connectionNeedsSignIn,
   selectConnections,
 } from '../connectors/connectorsSlice';
+import { useClock } from '../hooks/useClock';
 import { selectMonitors } from '../monitors/monitorsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import { formatRelative } from '../utils/dateTimeUtils';
+import {
+  formatCount,
+  formatRelative,
+  intlLocale,
+} from '../utils/dateTimeUtils';
 import {
   loadActivityNow,
   selectActivityError,
@@ -56,7 +61,6 @@ import {
 } from './activitySlice';
 import { useActivitySummary } from './ActivityNavBadge';
 import { formatElapsed, formatRunTime, workflowStep } from './format';
-import { useClock } from './useClock';
 import {
   ACTIVITY_CALENDAR_PATH,
   ACTIVITY_MONITORS_PATH,
@@ -148,7 +152,7 @@ const meta = (...parts: (string | null | undefined | false)[]) =>
  * change it.
  */
 export default function Now() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
@@ -160,6 +164,10 @@ export default function Now() {
   // Stopwatches need every second; with nothing running, the overdue marks
   // and "in 5 min" only need the minute.
   const clock = useClock(true, snapshot?.running.length ? 1000 : 30_000);
+  const listNames = (names: string[]) =>
+    new Intl.ListFormat(intlLocale(i18n.language), {
+      type: 'conjunction',
+    }).format(names);
   const [filter, setFilter] = useState<Filter>('all');
   // Rows whose Stop / Cancel / Resume is on its way.
   const [pending, setPending] = useState<Record<string, true>>({});
@@ -255,7 +263,10 @@ export default function Now() {
         return meta(
           kind,
           item.workflow ? t('activity.kind.workflow') : null,
-          t('activity.now.apiRequests', { count: item.count ?? 1 }),
+          t('activity.now.apiRequests', {
+            count: item.count ?? 1,
+            formatted: formatCount(item.count ?? 1),
+          }),
         );
       case 'job':
         return meta(
@@ -461,7 +472,7 @@ export default function Now() {
         item.tools.length
           ? t('activity.now.approve', {
               ...NO_ESCAPE,
-              tools: item.tools.join(', '),
+              tools: listNames(item.tools),
             })
           : t('activity.now.approveAction')
       }
@@ -495,6 +506,7 @@ export default function Now() {
         ...NO_ESCAPE,
         name: item.title ?? '',
         count: item.failures,
+        formatted: formatCount(item.failures),
       })}
       description={meta(
         item.agent_name,
@@ -569,7 +581,10 @@ export default function Now() {
               })
             : t('activity.schedules.createdInChat')),
         item.runs_in_window > 1
-          ? t('activity.now.timesToday', { count: item.runs_in_window })
+          ? t('activity.now.timesToday', {
+              count: item.runs_in_window,
+              formatted: formatCount(item.runs_in_window),
+            })
           : item.trigger_type === 'once'
             ? t('activity.now.oneTime')
             : null,
@@ -601,12 +616,18 @@ export default function Now() {
       leading={upNextLeading(item)}
       title={meta(
         upNextName(item),
-        t('activity.now.syncSources', { count: item.sources.length }),
+        t('activity.now.syncSources', {
+          count: item.sources.length,
+          formatted: formatCount(item.sources.length),
+        }),
       )}
       description={meta(
-        item.sources.join(', '),
+        listNames(item.sources),
         item.blocked.length > 0 &&
-          t('activity.now.syncBlocked', { count: item.blocked.length }),
+          t('activity.now.syncBlocked', {
+            count: item.blocked.length,
+            formatted: formatCount(item.blocked.length),
+          }),
       )}
       trailing={
         <RefreshCw aria-hidden className="text-muted-foreground size-3.5" />
@@ -644,7 +665,10 @@ export default function Now() {
             value={summary.running}
             sub={
               background > 0
-                ? t('activity.now.stats.background', { count: background })
+                ? t('activity.now.stats.background', {
+                    count: background,
+                    formatted: formatCount(background),
+                  })
                 : undefined
             }
           />

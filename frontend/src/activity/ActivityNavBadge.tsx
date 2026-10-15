@@ -1,9 +1,15 @@
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import { selectSignInNeededCount } from '../connectors/connectorsSlice';
+import { formatCount } from '../utils/dateTimeUtils';
 import { selectActivityNow, selectLiveConversations } from './activitySlice';
 
 export type ActivitySummary = {
@@ -60,8 +66,18 @@ export default function ActivityNavBadge({
   const { t } = useTranslation();
   const { running, needsYou, failed } = useActivitySummary();
   const label = [
-    running > 0 ? t('activity.nav.running', { count: running }) : null,
-    needsYou > 0 ? t('activity.nav.needsYou', { count: needsYou }) : null,
+    running > 0
+      ? t('activity.nav.running', {
+          count: running,
+          formatted: formatCount(running),
+        })
+      : null,
+    needsYou > 0
+      ? t('activity.nav.needsYou', {
+          count: needsYou,
+          formatted: formatCount(needsYou),
+        })
+      : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -86,18 +102,22 @@ export default function ActivityNavBadge({
       </>
     );
   }
+  // The dot and the bare number say what they count in a tooltip; a screen
+  // reader reads the same words from the hidden label, part of the row's name.
   return (
-    <span
-      className="ms-auto flex shrink-0 items-center gap-2 pe-3"
-      title={label}
-    >
-      {dot}
-      {running > 0 && (
-        <span className="text-muted-foreground text-xs tabular-nums">
-          {running}
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="ms-auto flex shrink-0 items-center gap-2 pe-3">
+          {dot}
+          {running > 0 && (
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {formatCount(running)}
+            </span>
+          )}
+          <span className="sr-only">{label}</span>
         </span>
-      )}
-      <span className="sr-only">{label}</span>
-    </span>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }

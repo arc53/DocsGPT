@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import {
   DescriptionItem,
   DescriptionList,
@@ -69,7 +70,7 @@ export default function SyncPanel({ event, onClose }: SyncPanelProps) {
             title={t('activity.calendar.sources')}
             count={event.sources.length}
           />
-          <div className="overflow-hidden rounded-2xl border">
+          <Card variant="subtle" padding="none" className="overflow-hidden">
             <ListRows>
               {event.sources.map((source) => (
                 <ListRow
@@ -106,7 +107,7 @@ export default function SyncPanel({ event, onClose }: SyncPanelProps) {
                 />
               ))}
             </ListRows>
-          </div>
+          </Card>
         </section>
       </PanelBody>
       <PanelFooter>

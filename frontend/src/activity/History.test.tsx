@@ -171,6 +171,39 @@ describe('History page', () => {
     );
   });
 
+  it('heads an older day day-first in English', async () => {
+    const older = new Date();
+    older.setDate(older.getDate() - 4);
+    older.setHours(12, 0, 0, 0);
+    activity.history.mockResolvedValue({
+      runs: [run({ at: older.toISOString() })],
+      has_more: false,
+    });
+    await render();
+    expect(container.textContent).toContain(
+      new Intl.DateTimeFormat('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      }).format(older),
+    );
+  });
+
+  it('carries a cut-off title and names in full', async () => {
+    activity.history.mockResolvedValue({
+      runs: [run({ conversation_name: 'Rotterdam port' })],
+      has_more: false,
+    });
+    await render();
+    const cells = row('schedule').querySelectorAll('td');
+    expect(cells[1].querySelector('[title]')?.getAttribute('title')).toBe(
+      'Daily support digest',
+    );
+    expect(cells[2].querySelector('[title]')?.getAttribute('title')).toBe(
+      'Support Assistant · Rotterdam port',
+    );
+  });
+
   it('opens a scheduled run in its details', async () => {
     await render();
     await act(async () => row('schedule').click());

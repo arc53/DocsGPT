@@ -3,17 +3,14 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
-import { intlLocale } from '../../utils/dateTimeUtils';
 import {
-  addDays,
-  dayKey,
   formatClock,
-  hourOf,
-  sameDay,
-  startOfDay,
-} from './dates';
+  formatCount,
+  intlLocale,
+} from '../../utils/dateTimeUtils';
+import { addDays, dayKey, hourOf, sameDay, startOfDay } from './dates';
 import {
   blockState,
   byDay,
@@ -118,14 +115,15 @@ export default function WeekGrid({
         style={{ '--col': col } as CSSProperties}
         onClick={() => onSelectMonitor(monitor)}
         className={cn(
-          'hover:bg-accent col-(--col) flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs font-medium',
+          focusRing,
+          'hover:bg-accent col-(--col) flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs font-medium outline-none',
           monitor.status === 'paused'
             ? 'text-muted-foreground border-muted-foreground border border-dashed'
             : 'bg-muted text-foreground',
         )}
       >
         <Radar aria-hidden className="size-3 shrink-0" />
-        <span className="truncate">
+        <span className="truncate" title={monitor.description || undefined}>
           {monitor.description || t('monitors.untitled')}
         </span>
       </button>,
@@ -210,8 +208,9 @@ export default function WeekGrid({
                     aria-label={`${label}, ${detail}`}
                     onClick={() => onSelectEvent(event)}
                     className={cn(
+                      focusRing,
                       eventClass(event),
-                      'absolute top-(--top) left-(--left) h-(--h) w-(--w) truncate rounded-md px-1.5 py-1 text-left text-xs leading-4 font-medium hover:brightness-95',
+                      'absolute top-(--top) left-(--left) h-(--h) w-(--w) truncate rounded-md px-1.5 py-1 text-left text-xs leading-4 font-medium outline-none hover:brightness-95',
                     )}
                     style={
                       {
@@ -249,6 +248,7 @@ export default function WeekGrid({
                 const label = t('activity.calendar.block', {
                   name: block.name ?? '',
                   count: blockCount(block),
+                  formatted: formatCount(blockCount(block)),
                   interpolation: { escapeValue: false },
                 });
                 return (
@@ -259,8 +259,9 @@ export default function WeekGrid({
                     aria-label={label}
                     onClick={() => onSelectBlock(block)}
                     className={cn(
+                      focusRing,
                       STATE_CLASS[blockState(block.events)],
-                      'absolute top-(--top) right-(--right) flex h-(--h) w-(--w) items-center justify-center overflow-hidden rounded-md text-xs font-medium hover:brightness-95',
+                      'absolute top-(--top) right-(--right) flex h-(--h) w-(--w) items-center justify-center overflow-hidden rounded-md text-xs font-medium outline-none hover:brightness-95',
                     )}
                     style={
                       {

@@ -7,8 +7,12 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 import { SectionHeader } from '@/components/ui/section-header';
 
-import { intlLocale } from '../../utils/dateTimeUtils';
-import { dayKey, formatClock, sameDay, addDays } from './dates';
+import {
+  formatClock,
+  formatCount,
+  headingLocale,
+} from '../../utils/dateTimeUtils';
+import { dayKey, sameDay, addDays } from './dates';
 import {
   blockCount,
   blockState,
@@ -60,15 +64,13 @@ export default function AgendaList({
   const { t, i18n } = useTranslation();
   const grouped = byDay(events);
   const today = new Date(now);
-  const dayName = new Intl.DateTimeFormat(intlLocale(i18n.language), {
-    weekday: 'short',
+  // "Mon 12 Oct": English day-first, every other language in its own words.
+  const locale = headingLocale(i18n.language);
+  const dayName = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+  const date = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
   });
-  // English as en-GB (12 Oct), like the Monday-first weeks; every other
-  // language in its own words, as the weekday is.
-  const date = new Intl.DateTimeFormat(
-    i18n.language === 'en' ? 'en-GB' : intlLocale(i18n.language),
-    { day: 'numeric', month: 'short' },
-  );
   const filled = days.filter((day) => grouped.has(dayKey(day)));
 
   const heading = (day: Date) => {
@@ -78,6 +80,19 @@ export default function AgendaList({
     if (sameDay(day, addDays(today, 1)))
       return `${t('activity.calendar.tomorrow')} · ${label}`;
     return label;
+  };
+
+  /** "3 of 12 runs done": how far a frequent schedule's day has got. */
+  const doneLabel = (block: FrequentBlock) => {
+    const done = block.events
+      .filter((e) => e.state !== 'planned' && e.state !== 'paused')
+      .reduce((sum, e) => sum + eventCount(e), 0);
+    const count = blockCount(block);
+    return t('activity.calendar.blockDone', {
+      done: formatCount(done),
+      count,
+      formatted: formatCount(count),
+    });
   };
 
   const stateBadge = (state: EventState) =>
@@ -170,15 +185,7 @@ export default function AgendaList({
                           </span>
                         }
                         title={row.block.name ?? ''}
-                        description={t('activity.calendar.blockDone', {
-                          done: row.block.events
-                            .filter(
-                              (e) =>
-                                e.state !== 'planned' && e.state !== 'paused',
-                            )
-                            .reduce((sum, e) => sum + eventCount(e), 0),
-                          count: blockCount(row.block),
-                        })}
+                        description={doneLabel(row.block)}
                         trailing={stateBadge(blockState(row.block.events))}
                       >
                         <button

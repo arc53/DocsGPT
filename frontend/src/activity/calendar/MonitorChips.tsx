@@ -1,6 +1,8 @@
 import { Radar } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { cn, focusRing } from '@/lib/utils';
+
 import type { MonitorRange } from './types';
 
 export type MonitorChipsProps = {
@@ -25,10 +27,13 @@ export default function MonitorChips({
           key={monitor.monitor_id}
           type="button"
           onClick={() => onSelectMonitor(monitor)}
-          className="bg-muted hover:bg-accent inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
+          className={cn(
+            focusRing,
+            'bg-muted hover:bg-accent inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium outline-none',
+          )}
         >
           <Radar aria-hidden className="size-3 shrink-0" />
-          <span className="truncate">
+          <span className="truncate" title={monitor.description || undefined}>
             {monitor.description || t('monitors.untitled')}
           </span>
         </button>

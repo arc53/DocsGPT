@@ -1,4 +1,4 @@
-import { intlLocale } from '../utils/dateTimeUtils';
+import { formatClock, intlLocale } from '../utils/dateTimeUtils';
 import type { WorkflowProgress } from './types';
 
 const DAY_MS = 86_400_000;
@@ -22,11 +22,7 @@ export function formatRunTime(
   if (!iso) return '';
   const when = new Date(iso);
   if (Number.isNaN(when.getTime())) return '';
-  const clock = new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(when);
+  const clock = formatClock(when);
   const today = new Date(now);
   if (when.toDateString() === today.toDateString()) return clock;
   if (Math.abs(when.getTime() - now) < 6 * DAY_MS) {

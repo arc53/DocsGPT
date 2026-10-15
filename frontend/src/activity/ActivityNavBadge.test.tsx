@@ -5,8 +5,9 @@ import { Provider } from 'react-redux';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { count?: number }) =>
-      opts?.count !== undefined ? `${key}:${opts.count}` : key,
+    // The count shows as the formatted text the key interpolates.
+    t: (key: string, opts?: { count?: number; formatted?: string }) =>
+      opts?.count !== undefined ? `${key}:${opts.formatted}` : key,
   }),
 }));
 
@@ -165,6 +166,19 @@ describe('ActivityNavBadge', () => {
     expect(status?.textContent).toBe(
       'activity.nav.running:2 · activity.nav.needsYou:1',
     );
+  });
+
+  it('formats the running count in the app language', () => {
+    render(store([], 1234));
+    expect(container.textContent).toContain('1,234');
+    expect(container.textContent).toContain('activity.nav.running:1,234');
+  });
+
+  it('names its counts in a tooltip, not a title', () => {
+    render(store([approval]));
+    const badge = container.querySelector('[data-slot="tooltip-trigger"]');
+    expect(badge).not.toBeNull();
+    expect(container.querySelector('[title]')).toBeNull();
   });
 
   it('renders nothing when there is nothing to say', () => {

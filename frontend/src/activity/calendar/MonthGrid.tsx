@@ -2,10 +2,14 @@ import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Card } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
-import { intlLocale } from '../../utils/dateTimeUtils';
-import { dayKey, formatClock, sameDay } from './dates';
+import {
+  formatClock,
+  formatCount,
+  intlLocale,
+} from '../../utils/dateTimeUtils';
+import { dayKey, sameDay } from './dates';
 import {
   blockState,
   byDay,
@@ -59,6 +63,13 @@ export default function MonthGrid({
     weekday: 'short',
   });
   const today = new Date(now);
+  const blockLabel = (block: FrequentBlock) =>
+    t('activity.calendar.block', {
+      name: block.name ?? '',
+      count: blockCount(block),
+      formatted: formatCount(blockCount(block)),
+      interpolation: { escapeValue: false },
+    });
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,14 +112,15 @@ export default function MonthGrid({
                 data-day={dayKey(day)}
                 className={cn(
                   'border-border flex min-h-28 min-w-0 flex-col gap-1 border-t border-l p-1.5 [&:nth-child(-n+7)]:border-t-0 [&:nth-child(7n+1)]:border-l-0',
-                  day.getMonth() !== month && 'bg-muted/40',
+                  day.getMonth() !== month && 'bg-muted',
                 )}
               >
                 <button
                   type="button"
                   onClick={() => onOpenDay(day)}
                   className={cn(
-                    'hover:bg-accent grid size-6 place-items-center self-start rounded-full text-xs font-semibold',
+                    focusRing,
+                    'hover:bg-accent grid size-6 place-items-center self-start rounded-full text-xs font-semibold outline-none',
                     sameDay(day, today) &&
                       'bg-primary text-primary-foreground hover:bg-primary',
                     day.getMonth() !== month &&
@@ -126,9 +138,11 @@ export default function MonthGrid({
                       data-kind={item.event.kind}
                       data-state={item.event.state}
                       onClick={() => onSelectEvent(item.event)}
+                      title={`${formatClock(new Date(item.event.at))} ${eventTitle(item.event, t)}`}
                       className={cn(
+                        focusRing,
                         eventClass(item.event),
-                        'truncate rounded-sm px-1.5 py-0.5 text-left text-xs hover:brightness-95',
+                        'truncate rounded-sm px-1.5 py-0.5 text-left text-xs outline-none hover:brightness-95',
                       )}
                     >
                       {item.event.kind === 'sync' && (
@@ -147,16 +161,14 @@ export default function MonthGrid({
                       key={item.block.schedule_id}
                       type="button"
                       onClick={() => onSelectBlock(item.block)}
+                      title={blockLabel(item.block)}
                       className={cn(
+                        focusRing,
                         STATE_CLASS[blockState(item.block.events)],
-                        'truncate rounded-sm px-1.5 py-0.5 text-left text-xs hover:brightness-95',
+                        'truncate rounded-sm px-1.5 py-0.5 text-left text-xs outline-none hover:brightness-95',
                       )}
                     >
-                      {t('activity.calendar.block', {
-                        name: item.block.name ?? '',
-                        count: blockCount(item.block),
-                        interpolation: { escapeValue: false },
-                      })}
+                      {blockLabel(item.block)}
                     </button>
                   ),
                 )}
@@ -164,9 +176,15 @@ export default function MonthGrid({
                   <button
                     type="button"
                     onClick={() => onOpenDay(day)}
-                    className="text-muted-foreground hover:text-foreground self-start px-1.5 text-xs"
+                    className={cn(
+                      focusRing,
+                      'text-muted-foreground hover:text-foreground self-start rounded-sm px-1.5 text-xs outline-none',
+                    )}
                   >
-                    {t('activity.calendar.more', { count: hidden })}
+                    {t('activity.calendar.more', {
+                      count: hidden,
+                      formatted: formatCount(hidden),
+                    })}
                   </button>
                 )}
               </div>

@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { intlLocale } from '../../utils/dateTimeUtils';
+import { formatCount, intlLocale } from '../../utils/dateTimeUtils';
 import type { Schedule } from '../types/schedule';
 
 export type ScheduleFrequency =
@@ -406,7 +406,10 @@ function describePattern(expression: string, t?: TFunction): string | null {
   // fires at :56 and then :00, four minutes later.
   if (minutes && hr === '*' && allDays && 60 % Number(minutes[1]) === 0) {
     const count = Number(minutes[1]);
-    return say('everyMinutes', `Every ${count} minutes`, { count });
+    return say('everyMinutes', `Every ${count} minutes`, {
+      count,
+      formatted: formatCount(count),
+    });
   }
   const minute = plainNumber(mn);
   if (minute === null) return null;
@@ -414,7 +417,10 @@ function describePattern(expression: string, t?: TFunction): string | null {
   const hours = everyN.exec(hr);
   if (hours && allDays && minute === 0 && 24 % Number(hours[1]) === 0) {
     const count = Number(hours[1]);
-    return say('everyHours', `Every ${count} hours`, { count });
+    return say('everyHours', `Every ${count} hours`, {
+      count,
+      formatted: formatCount(count),
+    });
   }
   // Hourly, all day or in a range, every day or on weekdays.
   if (hr === '*' && allDays) {

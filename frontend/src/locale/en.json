@@ -2827,10 +2827,10 @@
         "hourlyAt": "Every hour at :{{minute}}",
         "hourlyRange": "Every hour from {{from}} to {{to}}",
         "hourlyRangeWeekdays": "Every hour from {{from}} to {{to}} on weekdays",
-        "everyMinutes_one": "Every {{count}} minute",
-        "everyMinutes_other": "Every {{count}} minutes",
-        "everyHours_one": "Every {{count}} hour",
-        "everyHours_other": "Every {{count}} hours"
+        "everyMinutes_one": "Every {{formatted}} minute",
+        "everyMinutes_other": "Every {{formatted}} minutes",
+        "everyHours_one": "Every {{formatted}} hour",
+        "everyHours_other": "Every {{formatted}} hours"
       },
       "runLog": {
         "when": "When",
@@ -3459,10 +3459,10 @@
       "api": "API"
     },
     "nav": {
-      "running_one": "{{count}} running",
-      "running_other": "{{count}} running",
-      "needsYou_one": "{{count}} needs you",
-      "needsYou_other": "{{count}} need you"
+      "running_one": "{{formatted}} running",
+      "running_other": "{{formatted}} running",
+      "needsYou_one": "{{formatted}} needs you",
+      "needsYou_other": "{{formatted}} need you"
     },
     "now": {
       "label": "Now",
@@ -3484,8 +3484,8 @@
       "expires": "expires {{time}}",
       "approval": "Approval",
       "review": "Review",
-      "pausedAfter_one": "{{name}} paused after {{count}} failure",
-      "pausedAfter_other": "{{name}} paused after {{count}} failures",
+      "pausedAfter_one": "{{name}} paused after {{formatted}} failure",
+      "pausedAfter_other": "{{name}} paused after {{formatted}} failures",
       "errorType": {
         "auth_expired": "a sign-in expired",
         "tool_not_allowed": "a tool was not allowed",
@@ -3500,13 +3500,13 @@
       },
       "viewRuns": "View runs",
       "fromChat": "From {{name}}",
-      "timesToday_one": "{{count}} run in the next 24 hours",
-      "timesToday_other": "{{count}} runs in the next 24 hours",
+      "timesToday_one": "{{formatted}} run in the next 24 hours",
+      "timesToday_other": "{{formatted}} runs in the next 24 hours",
       "oneTime": "one-time",
       "stats": {
         "running": "Running",
-        "background_one": "{{count}} in the background",
-        "background_other": "{{count}} in the background",
+        "background_one": "{{formatted}} in the background",
+        "background_other": "{{formatted}} in the background",
         "needsYou": "Needs you",
         "approvalExpires": "An approval expires {{time}}",
         "next24h": "Next 24 hours",
@@ -3534,8 +3534,8 @@
       "openCalendar": "Open calendar",
       "step": "step {{step}}",
       "stepOf": "step {{step}} of {{total}}",
-      "apiRequests_one": "{{count}} request",
-      "apiRequests_other": "{{count}} requests",
+      "apiRequests_one": "{{formatted}} request",
+      "apiRequests_other": "{{formatted}} requests",
       "reading": "reading the content",
       "operation": {
         "upload": "Upload",
@@ -3547,10 +3547,10 @@
         "weekly": "Weekly sync",
         "monthly": "Monthly sync"
       },
-      "syncSources_one": "{{count}} source",
-      "syncSources_other": "{{count}} sources",
-      "syncBlocked_one": "{{count}} needs reconnecting",
-      "syncBlocked_other": "{{count}} need reconnecting"
+      "syncSources_one": "{{formatted}} source",
+      "syncSources_other": "{{formatted}} sources",
+      "syncBlocked_one": "{{formatted}} needs reconnecting",
+      "syncBlocked_other": "{{formatted}} need reconnecting"
     },
     "calendar": {
       "label": "Calendar",
@@ -3595,17 +3595,17 @@
         "timeout": "Timed out",
         "missed": "Missed"
       },
-      "block_one": "{{name}} ×{{count}}",
-      "block_other": "{{name}} ×{{count}}",
-      "more_one": "+{{count}} more",
-      "more_other": "+{{count}} more",
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} more",
+      "more_other": "+{{formatted}} more",
       "today": "Today",
       "tomorrow": "Tomorrow",
       "empty": "Nothing is planned in these days",
-      "blockDone_one": "{{done}} of {{count}} run done",
-      "blockDone_other": "{{done}} of {{count}} runs done",
-      "slotCount_one": "{{count}} run",
-      "slotCount_other": "{{count}} runs",
+      "blockDone_one": "{{done}} of {{formatted}} run done",
+      "blockDone_other": "{{done}} of {{formatted}} runs done",
+      "slotCount_one": "{{formatted}} run",
+      "slotCount_other": "{{formatted}} runs",
       "oneTime": "One-time",
       "recurring": "Recurring",
       "when": "When",
@@ -3691,9 +3691,9 @@
       "empty": "No finished runs yet",
       "emptyHint": "Runs of your schedules, webhooks, workflows, background jobs and monitors show up here when they finish.",
       "loadMore": "Load more",
-      "retention": "By default, scheduled runs are kept for 90 days, webhook and workflow runs for 30, and background jobs for 7.",
-      "period_one": "Last {{count}} day",
-      "period_other": "Last {{count}} days",
+      "retention": "By default, scheduled runs are kept for 90 days, webhook runs for 30, and background jobs and monitor wakes for 7. Workflow runs stay listed, and their trace is kept for 30 days.",
+      "period_one": "Last {{formatted}} day",
+      "period_other": "Last {{formatted}} days",
       "periodFilter": "Period"
     }
   }

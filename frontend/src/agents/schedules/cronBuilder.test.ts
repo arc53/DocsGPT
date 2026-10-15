@@ -430,5 +430,7 @@ describe('formatCron common patterns', () => {
     expect(formatCron('*/15 * * * *', t)).toContain(
       'agents.schedules.cron.everyMinutes',
     );
+    expect(formatCron('*/15 * * * *', t)).toContain('"formatted":"15"');
+    expect(formatCron('0 */6 * * *', t)).toContain('"formatted":"6"');
   });
 });

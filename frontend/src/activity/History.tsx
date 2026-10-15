@@ -45,9 +45,15 @@ import { selectToken } from '../preferences/preferenceSlice';
 import TraceSheet from '../settings/traces/TraceSheet';
 import type { TraceRef } from '../settings/types';
 import type { AppDispatch } from '../store';
-import { formatCount, intlLocale } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatClock,
+  formatCount,
+  headingLocale,
+  intlLocale,
+} from '../utils/dateTimeUtils';
 import { selectActivityRevision } from './activitySlice';
-import { addDays, dayKey, formatClock, startOfDay } from './calendar/dates';
+import { addDays, dayKey, startOfDay } from './calendar/dates';
 import type { HistoryKind, HistoryRun, HistoryStatus } from './historyTypes';
 
 const PAGE_SIZE = 50;
@@ -317,7 +323,7 @@ export default function History() {
     if (dayKey(day) === dayKey(today)) return t('activity.calendar.today');
     if (dayKey(day) === dayKey(addDays(today, -1)))
       return t('activity.history.yesterday');
-    return new Intl.DateTimeFormat(intlLocale(i18n.language), {
+    return new Intl.DateTimeFormat(headingLocale(i18n.language), {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -329,7 +335,7 @@ export default function History() {
       ? t(`activity.history.trigger.${run.trigger}`, {
           defaultValue: run.trigger,
         })
-      : '—';
+      : EMPTY_VALUE;
 
   const rows: React.ReactNode[] = [];
   let lastDay = '';
@@ -351,6 +357,9 @@ export default function History() {
     }
     const Icon = KIND_ICON[run.kind];
     const clickable = canOpen(run);
+    const names = [run.agent_name, run.conversation_name]
+      .filter(Boolean)
+      .join(' · ');
     rows.push(
       <TableRow
         key={`${run.kind}:${run.id}`}
@@ -361,7 +370,7 @@ export default function History() {
           {formatClock(at)}
         </TableCell>
         <TableCell className="font-medium">
-          <span className="line-clamp-1">
+          <span className="line-clamp-1" title={run.title || undefined}>
             {run.title ||
               (run.kind === 'job'
                 ? t('activity.kind.job')
@@ -369,10 +378,8 @@ export default function History() {
           </span>
         </TableCell>
         <TableCell className="text-muted-foreground">
-          <span className="line-clamp-1">
-            {[run.agent_name, run.conversation_name]
-              .filter(Boolean)
-              .join(' · ') || '—'}
+          <span className="line-clamp-1" title={names || undefined}>
+            {names || EMPTY_VALUE}
           </span>
         </TableCell>
         <TableCell>
@@ -390,13 +397,14 @@ export default function History() {
           </Badge>
         </TableCell>
         <TableCell align="right" className="whitespace-nowrap tabular-nums">
-          {formatDuration(run.duration_ms, intlLocale(i18n.language)) || '—'}
+          {formatDuration(run.duration_ms, intlLocale(i18n.language)) ||
+            EMPTY_VALUE}
         </TableCell>
         <TableCell
           align="right"
           className="text-muted-foreground whitespace-nowrap tabular-nums"
         >
-          {run.tokens ? formatCount(run.tokens) : '—'}
+          {run.tokens ? formatCount(run.tokens) : EMPTY_VALUE}
         </TableCell>
       </TableRow>,
     );
@@ -432,7 +440,10 @@ export default function History() {
               <SelectContent>
                 {PERIODS.map((value) => (
                   <SelectItem key={value} value={value}>
-                    {t('activity.history.period', { count: Number(value) })}
+                    {t('activity.history.period', {
+                      count: Number(value),
+                      formatted: formatCount(Number(value)),
+                    })}
                   </SelectItem>
                 ))}
               </SelectContent>

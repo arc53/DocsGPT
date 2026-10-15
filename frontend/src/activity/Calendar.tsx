@@ -30,7 +30,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { selectMonitorStatusKey } from '../monitors/monitorsSlice';
 import { showActionToast } from '../notifications/actionToastSlice';
 import type { AppDispatch } from '../store';
-import { intlLocale } from '../utils/dateTimeUtils';
+import { headingLocale } from '../utils/dateTimeUtils';
 import { selectActivityRevision } from './activitySlice';
 import { agentOptions } from './calendar/agentFilter';
 import AgendaList from './calendar/AgendaList';
@@ -204,7 +204,7 @@ export default function Calendar() {
   );
   const monitors = showMonitors ? (data?.monitors ?? []) : [];
 
-  const locale = intlLocale(i18n.language);
+  const locale = headingLocale(i18n.language);
   const rangeLabel = (() => {
     if (view === 'day') {
       return new Intl.DateTimeFormat(locale, {

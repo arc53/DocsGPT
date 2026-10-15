@@ -2814,10 +2814,10 @@
         "hourlyAt": "每小时第 {{minute}} 分",
         "hourlyRange": "{{from}} 至 {{to}} 每小时",
         "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小时",
-        "everyMinutes_one": "每 {{count}} 分钟",
-        "everyMinutes_other": "每 {{count}} 分钟",
-        "everyHours_one": "每 {{count}} 小时",
-        "everyHours_other": "每 {{count}} 小时"
+        "everyMinutes_one": "每 {{formatted}} 分钟",
+        "everyMinutes_other": "每 {{formatted}} 分钟",
+        "everyHours_one": "每 {{formatted}} 小时",
+        "everyHours_other": "每 {{formatted}} 小时"
       },
       "runLog": {
         "when": "时间",
@@ -3427,10 +3427,10 @@
       "api": "API"
     },
     "nav": {
-      "running_one": "{{count}} 个运行中",
-      "running_other": "{{count}} 个运行中",
-      "needsYou_one": "{{count}} 项需要你处理",
-      "needsYou_other": "{{count}} 项需要你处理"
+      "running_one": "{{formatted}} 个运行中",
+      "running_other": "{{formatted}} 个运行中",
+      "needsYou_one": "{{formatted}} 项需要你处理",
+      "needsYou_other": "{{formatted}} 项需要你处理"
     },
     "now": {
       "label": "当前",
@@ -3452,8 +3452,8 @@
       "expires": "{{time}}过期",
       "approval": "批准",
       "review": "查看",
-      "pausedAfter_one": "{{name}} 失败 {{count}} 次后已暂停",
-      "pausedAfter_other": "{{name}} 失败 {{count}} 次后已暂停",
+      "pausedAfter_one": "{{name}} 失败 {{formatted}} 次后已暂停",
+      "pausedAfter_other": "{{name}} 失败 {{formatted}} 次后已暂停",
       "errorType": {
         "auth_expired": "登录已过期",
         "tool_not_allowed": "工具未被允许",
@@ -3468,13 +3468,13 @@
       },
       "viewRuns": "查看运行",
       "fromChat": "来自 {{name}}",
-      "timesToday_one": "未来 24 小时运行 {{count}} 次",
-      "timesToday_other": "未来 24 小时运行 {{count}} 次",
+      "timesToday_one": "未来 24 小时运行 {{formatted}} 次",
+      "timesToday_other": "未来 24 小时运行 {{formatted}} 次",
       "oneTime": "一次性",
       "stats": {
         "running": "运行中",
-        "background_one": "后台 {{count}} 个",
-        "background_other": "后台 {{count}} 个",
+        "background_one": "后台 {{formatted}} 个",
+        "background_other": "后台 {{formatted}} 个",
         "needsYou": "需要你处理",
         "approvalExpires": "有一个批准将于{{time}}过期",
         "next24h": "未来 24 小时",
@@ -3502,8 +3502,8 @@
       "openCalendar": "打开日历",
       "step": "第 {{step}} 步",
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
-      "apiRequests_one": "{{count}} 个请求",
-      "apiRequests_other": "{{count}} 个请求",
+      "apiRequests_one": "{{formatted}} 个请求",
+      "apiRequests_other": "{{formatted}} 个请求",
       "reading": "正在读取内容",
       "operation": {
         "upload": "上传",
@@ -3515,10 +3515,10 @@
         "weekly": "每周同步",
         "monthly": "每月同步"
       },
-      "syncSources_one": "{{count}} 个来源",
-      "syncSources_other": "{{count}} 个来源",
-      "syncBlocked_one": "{{count}} 个需要重新连接",
-      "syncBlocked_other": "{{count}} 个需要重新连接"
+      "syncSources_one": "{{formatted}} 个来源",
+      "syncSources_other": "{{formatted}} 个来源",
+      "syncBlocked_one": "{{formatted}} 个需要重新连接",
+      "syncBlocked_other": "{{formatted}} 个需要重新连接"
     },
     "calendar": {
       "label": "日历",
@@ -3563,17 +3563,17 @@
         "timeout": "超时",
         "missed": "已错过"
       },
-      "block_one": "{{name}} ×{{count}}",
-      "block_other": "{{name}} ×{{count}}",
-      "more_one": "另有 {{count}} 项",
-      "more_other": "另有 {{count}} 项",
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "另有 {{formatted}} 项",
+      "more_other": "另有 {{formatted}} 项",
       "today": "今天",
       "tomorrow": "明天",
       "empty": "这些天没有计划",
-      "blockDone_one": "已完成 {{done}}/{{count}} 次",
-      "blockDone_other": "已完成 {{done}}/{{count}} 次",
-      "slotCount_one": "{{count}} 次",
-      "slotCount_other": "{{count}} 次",
+      "blockDone_one": "已完成 {{done}}/{{formatted}} 次",
+      "blockDone_other": "已完成 {{done}}/{{formatted}} 次",
+      "slotCount_one": "{{formatted}} 次",
+      "slotCount_other": "{{formatted}} 次",
       "oneTime": "一次性",
       "recurring": "定期",
       "when": "时间",
@@ -3659,9 +3659,9 @@
       "empty": "还没有已完成的运行",
       "emptyHint": "你的计划、Webhook、工作流、后台任务和监控的运行完成后会显示在这里。",
       "loadMore": "加载更多",
-      "retention": "默认情况下，计划运行保留 90 天，Webhook 和工作流运行保留 30 天，后台任务保留 7 天。",
-      "period_one": "最近 {{count}} 天",
-      "period_other": "最近 {{count}} 天",
+      "retention": "默认情况下，计划运行保留 90 天，Webhook 运行保留 30 天，后台任务和监控唤醒保留 7 天。工作流运行会一直列出，其追踪保留 30 天。",
+      "period_one": "最近 {{formatted}} 天",
+      "period_other": "最近 {{formatted}} 天",
       "periodFilter": "时间段"
     }
   }

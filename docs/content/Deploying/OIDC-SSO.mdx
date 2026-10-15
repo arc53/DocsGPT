@@ -307,7 +307,7 @@ The events this page covers are `oidc_login`, `oidc_login_denied` (`metadata.rea
 change. The same table also records admin, team, quota, token and data-plane events; the full list is the
 [audit event table](/Deploying/Access-Control#audit-log).
 
-See [Access Control, Roles & Teams](/Deploying/Access-Control#activity-feed) for the admin Audit log view that reads these events, and for the two other journals it merges them with. To query the table directly:
+See [Access Control, Roles & Teams](/Deploying/Access-Control#audit-log-feed) for the admin Audit log view that reads these events, and for the two other journals it merges them with. To query the table directly:
 
 ```sql
 SELECT created_at, event, actor_id, target_id, ip, metadata
