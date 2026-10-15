@@ -706,6 +706,12 @@ class BaseAnswerResource:
             # still stored; the resume is the user carrying on, not stopping.
             clear_stop(reserved_message_id)
 
+        if reserved_message_id:
+            try:
+                agent.started_by = reserved_message_id
+            except Exception:
+                logger.debug("Could not stamp started_by on the agent")
+
         # Bind the row now so an audit flush that happens before the ``finally``
         # below — an input block returns from ``gen`` immediately and flushes
         # there — still writes rows linked to their message instead of orphans.

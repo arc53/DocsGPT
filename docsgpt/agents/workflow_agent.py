@@ -375,13 +375,28 @@ class WorkflowAgent(BaseAgent):
                     run_user_id,
                     ExecutionStatus.RUNNING.value,
                     run_id=self._engine.workflow_run_id,
-                    inputs={"query": query},
+                    inputs=self._run_inputs(query),
                     started_at=datetime.now(timezone.utc),
                 )
             return pg_workflow_id
         except Exception as e:
             logger.error(f"Failed to pre-create workflow run: {e}")
             return None
+
+    def _run_inputs(self, query: str) -> Dict[str, Any]:
+        """The run row's ``inputs``: the query and, when known, what started the run.
+
+        Args:
+            query: The run's input.
+
+        Returns:
+            ``{"query": ...}``, plus ``started_by`` (see ``BaseAgent``) when set.
+        """
+        inputs: Dict[str, Any] = {"query": query}
+        started_by = getattr(self, "started_by", None)
+        if started_by:
+            inputs["started_by"] = str(started_by)
+        return inputs
 
     def _bridge_attachments(
         self, run_user_id: Optional[str], *, persisted: bool

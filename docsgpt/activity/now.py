@@ -119,7 +119,7 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         conn,
         """
         SELECT c.agent_id, a.name AS agent_name, COUNT(*) AS count,
-               MIN(m.timestamp) AS started_at
+               MIN(m.timestamp) AS started_at, array_agg(m.id::text) AS message_ids
         FROM conversation_messages m
         JOIN conversations c ON c.id = m.conversation_id
         JOIN agents a ON a.id = c.agent_id
@@ -146,6 +146,8 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
             "count": int(r.get("count") or 0),
             "started_at": _iso(r.get("started_at")),
             "workflow": False,
+            # For ``_fold_workflows`` only; it drops them.
+            "message_ids": list(r.get("message_ids") or []),
         }
         for r in rows
     ]
@@ -240,7 +242,7 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         conn,
         """
         SELECT r.id, r.started_at, r.workflow_id, r.progress, w.name AS workflow_name,
-               a.id AS agent_id, a.name AS agent_name
+               r.inputs ->> 'started_by' AS started_by, a.id AS agent_id, a.name AS agent_name
         FROM workflow_runs r
         JOIN workflows w ON w.id = r.workflow_id
         LEFT JOIN LATERAL (
@@ -264,6 +266,8 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
             "agent_name": r.get("agent_name"),
             "started_at": _iso(r.get("started_at")),
             "workflow_progress": r.get("progress"),
+            # For ``_fold_workflows`` only; it drops it.
+            "started_by": r.get("started_by"),
         }
         for r in rows
     ]
@@ -377,19 +381,48 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
 
     A workflow agent's chat, scheduled run or webhook run also writes a
     ``workflow_runs`` row; listing both would show one piece of work twice.
-    Runs are matched by agent, oldest run to oldest host, one run per host;
-    the host takes the run's step (``workflow_progress``). Runs left over go
-    into the agent's API row, which stands for many requests; a run with
-    nothing to fold into (a builder preview) is listed on its own.
+    A run names what started it (``started_by``: the chat or API answer's
+    message id, the scheduled run's id or the webhook's task id), and goes
+    there; the host takes the run's step (``workflow_progress``). A run that
+    names nothing (one from before ``started_by``) is matched by agent,
+    oldest run to oldest host left, one run per host. Runs of API answers go
+    into the agent's API row, which stands for many requests, as do unnamed
+    runs left over; a run with nothing to fold into (a builder preview) is
+    listed on its own.
     """
+    by_id: Dict[str, Dict[str, Any]] = {}
+    api_by_message: Dict[str, Dict[str, Any]] = {}
+    for item in running:
+        if item["kind"] == "chat" and item.get("message_id"):
+            by_id[item["message_id"]] = item
+        elif item["kind"] in ("schedule", "webhook") and item.get("id"):
+            by_id[item["id"]] = item
+        elif item["kind"] == "api":
+            for message_id in item.pop("message_ids", None) or []:
+                api_by_message[message_id] = item
+    api_rows = {item["agent_id"]: item for item in running if item["kind"] == "api"}
+    claimed = set()
+    unnamed = []
+    standalone = []
+    for flow in workflows:
+        started_by = flow.pop("started_by", None)
+        if not started_by:
+            unnamed.append(flow)
+        elif started_by in by_id and id(by_id[started_by]) not in claimed:
+            host = by_id[started_by]
+            claimed.add(id(host))
+            host["workflow"] = True
+            host["workflow_progress"] = flow.get("workflow_progress")
+        elif started_by in api_by_message:
+            api_by_message[started_by]["workflow"] = True
+        else:
+            standalone.append(flow)
     hosts: Dict[str, List[Dict[str, Any]]] = {}
     oldest = datetime.min.replace(tzinfo=timezone.utc)
     for item in sorted(running, key=lambda entry: _as_datetime(entry.get("started_at")) or oldest):
-        if item["kind"] in ("chat", "schedule", "webhook") and item.get("agent_id"):
+        if item["kind"] in ("chat", "schedule", "webhook") and item.get("agent_id") and id(item) not in claimed:
             hosts.setdefault(item["agent_id"], []).append(item)
-    api_rows = {item["agent_id"]: item for item in running if item["kind"] == "api"}
-    standalone = []
-    for flow in workflows:
+    for flow in unnamed:
         waiting = hosts.get(flow.get("agent_id")) if flow.get("agent_id") else None
         if waiting:
             host = waiting.pop(0)

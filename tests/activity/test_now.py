@@ -188,14 +188,22 @@ class TestWorkflowRuns:
             ).scalar()
         )
 
-    def _run(self, conn, workflow_id: str, progress: dict | None = None, age: int = 0) -> None:
+    def _run(
+        self, conn, workflow_id: str, progress: dict | None = None, age: int = 0, started_by: str | None = None,
+    ) -> None:
+        inputs = {"query": "q", "started_by": started_by} if started_by else None
         conn.execute(
             text(
-                "INSERT INTO workflow_runs (workflow_id, user_id, status, started_at, progress) "
+                "INSERT INTO workflow_runs (workflow_id, user_id, status, started_at, progress, inputs) "
                 "VALUES (CAST(:w AS uuid), 'u1', 'running', now() - make_interval(secs => :age), "
-                "CAST(:p AS jsonb))"
+                "CAST(:p AS jsonb), CAST(:i AS jsonb))"
             ),
-            {"w": workflow_id, "p": json.dumps(progress) if progress else None, "age": age},
+            {
+                "w": workflow_id,
+                "p": json.dumps(progress) if progress else None,
+                "age": age,
+                "i": json.dumps(inputs) if inputs else None,
+            },
         )
 
     def test_a_run_on_its_own_is_listed(self, pg_conn):
@@ -244,6 +252,52 @@ class TestWorkflowRuns:
         assert _kinds(snap) == ["chat", "workflow"]
         assert snap["running"][0]["workflow_progress"] == older
         assert snap["running"][1]["workflow_progress"] == _PROGRESS
+
+    def test_a_run_goes_to_the_request_that_started_it(self, pg_conn):
+        # An API request starts first, then a chat on the same agent: by age
+        # alone, the chat would show the API run's step.
+        workflow = self._workflow(pg_conn)
+        agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        api_message = _message(pg_conn, _chat(pg_conn, agent_id=agent, visibility="hidden"), "streaming")
+        chat_message = _message(pg_conn, _chat(pg_conn, agent_id=agent), "streaming")
+        api_step = {**_PROGRESS, "done": 2}
+        self._run(pg_conn, workflow, api_step, age=60, started_by=api_message)
+        self._run(pg_conn, workflow, _PROGRESS, started_by=chat_message)
+        snap = activity_now.build_now(pg_conn, "u1")
+        by_kind = {item["kind"]: item for item in snap["running"]}
+        assert sorted(by_kind) == ["api", "chat"]
+        assert by_kind["chat"]["workflow_progress"] == _PROGRESS
+        assert by_kind["api"]["workflow"] is True
+        assert "message_ids" not in by_kind["api"]
+
+    def test_a_scheduled_run_takes_its_own_workflow_run(self, pg_conn):
+        workflow = self._workflow(pg_conn)
+        agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        schedule = SchedulesRepository(pg_conn).create("u1", agent, "recurring", "renew", cron="0 9 * * *")
+        run = ScheduleRunsRepository(pg_conn).record_pending(str(schedule["id"]), "u1", agent, scheduled_for=_now())
+        ScheduleRunsRepository(pg_conn).mark_running(str(run["id"]), None)
+        _message(pg_conn, _chat(pg_conn, agent_id=agent), "streaming")
+        # The chat's run is older, but this one names the scheduled run.
+        self._run(pg_conn, workflow, _PROGRESS, started_by=str(run["id"]))
+        snap = activity_now.build_now(pg_conn, "u1")
+        by_kind = {item["kind"]: item for item in snap["running"]}
+        assert by_kind["schedule"]["workflow_progress"] == _PROGRESS
+        assert by_kind["chat"]["workflow"] is False
+
+    def test_a_webhook_run_takes_its_own_workflow_run(self, pg_conn, monkeypatch):
+        workflow = self._workflow(pg_conn)
+        agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        monkeypatch.setattr(
+            activity_now,
+            "list_runs",
+            # Started after the chat, so by age the chat would take the run.
+            lambda user_id: [{"id": "task-1", "kind": "webhook", "agent_id": agent, "started_at": _now().timestamp()}],
+        )
+        _message(pg_conn, _chat(pg_conn, agent_id=agent), "streaming", heartbeat_age=30)
+        self._run(pg_conn, workflow, _PROGRESS, started_by="task-1")
+        by_kind = {item["kind"]: item for item in activity_now.build_now(pg_conn, "u1")["running"]}
+        assert by_kind["webhook"]["workflow_progress"] == _PROGRESS
+        assert by_kind["chat"]["workflow"] is False
 
 
 class TestIngest:
