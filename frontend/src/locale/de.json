@@ -3666,6 +3666,7 @@
       },
       "yesterday": "Gestern",
       "loadError": "Der Verlauf konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
       "noMatches": "Keine Ausführungen passen zu diesen Filtern",
       "empty": "Noch keine abgeschlossenen Ausführungen",
       "emptyHint": "Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore erscheinen hier, sobald sie fertig sind.",

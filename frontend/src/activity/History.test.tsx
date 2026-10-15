@@ -21,6 +21,7 @@ vi.mock('react-i18next', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+import actionToastReducer from '../notifications/actionToastSlice';
 import activityReducer, { loadActivityNow } from './activitySlice';
 import History, { formatDuration } from './History';
 import type { HistoryRun } from './historyTypes';
@@ -96,6 +97,7 @@ describe('History page', () => {
     const store = configureStore({
       reducer: {
         activity: activityReducer,
+        actionToast: actionToastReducer,
         preference: () => ({ token: 'tok' }),
       },
     });
@@ -173,6 +175,23 @@ describe('History page', () => {
     await render();
     await act(async () => row('schedule').click());
     expect(schedules.getRun).toHaveBeenCalledWith('s1', 'r1', 'tok');
+  });
+
+  it('says a run that fails to open in a toast, leaving the list alone', async () => {
+    activity.history.mockResolvedValue({ ...PAGE, has_more: true });
+    const store = await render();
+    schedules.getRun.mockRejectedValueOnce(new Error('gone'));
+    await act(async () => row('schedule').click());
+    expect(store.getState().actionToast.current).toMatchObject({
+      variant: 'destructive',
+      message: 'activity.history.runLoadError',
+    });
+    expect(container.textContent).not.toContain('pagination.olderFailed');
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent === 'activity.history.loadMore',
+      ),
+    ).toBe(true);
   });
 
   it('opens a webhook run as its trace', async () => {

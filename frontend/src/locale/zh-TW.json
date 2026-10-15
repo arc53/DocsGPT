@@ -3654,6 +3654,7 @@
       },
       "yesterday": "昨天",
       "loadError": "無法載入歷史",
+      "runLoadError": "無法開啟此次執行。請重試。",
       "noMatches": "沒有符合這些篩選條件的執行",
       "empty": "還沒有已完成的執行",
       "emptyHint": "你的排程、Webhook、工作流程、背景工作和監控的執行完成後會顯示在這裡。",

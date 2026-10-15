@@ -3685,6 +3685,7 @@
       },
       "yesterday": "Yesterday",
       "loadError": "Couldn't load the history",
+      "runLoadError": "Couldn't open the run. Try again.",
       "noMatches": "No runs match these filters",
       "empty": "No finished runs yet",
       "emptyHint": "Runs of your schedules, webhooks, workflows, background jobs and monitors show up here when they finish.",

@@ -3666,6 +3666,7 @@
       },
       "yesterday": "Ayer",
       "loadError": "No se pudo cargar el historial",
+      "runLoadError": "No se pudo abrir la ejecución. Inténtalo de nuevo.",
       "noMatches": "Ninguna ejecución coincide con estos filtros",
       "empty": "Aún no hay ejecuciones terminadas",
       "emptyHint": "Las ejecuciones de tus programaciones, webhooks, flujos, tareas en segundo plano y monitores aparecen aquí al terminar.",

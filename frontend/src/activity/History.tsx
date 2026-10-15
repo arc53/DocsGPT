@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import PageToolbar from '@/components/PageToolbar';
@@ -40,9 +40,11 @@ import RunDetailDrawer from '../agents/schedules/RunDetailDrawer';
 import type { ScheduleRun } from '../agents/types/schedule';
 import activityService from '../api/services/activityService';
 import schedulesService from '../api/services/schedulesService';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import TraceSheet from '../settings/traces/TraceSheet';
 import type { TraceRef } from '../settings/types';
+import type { AppDispatch } from '../store';
 import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 import { selectActivityRevision } from './activitySlice';
 import { addDays, dayKey, formatClock, startOfDay } from './calendar/dates';
@@ -117,6 +119,7 @@ function unseen(listed: HistoryRun[], page: HistoryRun[]): HistoryRun[] {
 export default function History() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const revision = useSelector(selectActivityRevision);
 
@@ -263,7 +266,12 @@ export default function History() {
         );
         setActiveRun(detail);
       } catch {
-        setFailed(true);
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('activity.history.runLoadError'),
+          }),
+        );
       }
     } else if (run.kind === 'webhook' && run.trace_id) {
       setTrace({

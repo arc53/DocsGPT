@@ -3653,6 +3653,7 @@
       },
       "yesterday": "昨天",
       "loadError": "无法加载历史",
+      "runLoadError": "无法打开此次运行。请重试。",
       "noMatches": "没有符合这些筛选条件的运行",
       "empty": "还没有已完成的运行",
       "emptyHint": "你的计划、Webhook、工作流、后台任务和监控的运行完成后会显示在这里。",
