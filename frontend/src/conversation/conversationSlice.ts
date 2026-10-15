@@ -169,6 +169,9 @@ export function handleAbort() {
 /** How long the chat's Stop waits for the server to take it before closing. */
 export const STOP_REQUEST_TIMEOUT_MS = 1000;
 
+/** Whether a Stop is out: another press while it is would send it again. */
+let stopping = false;
+
 /**
  * The chat's Stop. Tells the server first, so the answer is saved as stopped
  * rather than as a dropped connection, then closes the stream. An answer
@@ -178,46 +181,57 @@ export const STOP_REQUEST_TIMEOUT_MS = 1000;
 export const stopAnswer = createAsyncThunk<void, void>(
   'conversation/stopAnswer',
   async (_arg, { dispatch, getState }) => {
-    const controller = abortController;
-    const { conversation, preference } = getState() as RootState;
-    const conversationId = conversation.conversationId;
-    const index = conversation.queries.length - 1;
-    const messageId = conversation.queries[index]?.messageId;
-    let taken = false;
-    // Not only a stream of this tab's: an answer picked back up after a
-    // reload is followed by polling, and only the server can stop it.
-    if (messageId && conversation.status === 'loading') {
-      taken = await Promise.race([
-        activityService.stopMessage(messageId, preference.token).then(
-          () => true,
-          () => false,
-        ),
-        new Promise<boolean>((resolve) =>
-          setTimeout(() => resolve(false), STOP_REQUEST_TIMEOUT_MS),
-        ),
-      ]);
-    }
-    if (abortController === controller) handleAbort();
-    // The user may have opened another chat while the request was out: mark
-    // only the answer that was stopped, in the chat it belongs to.
-    const after = (getState() as RootState).conversation;
-    if (!taken || after.conversationId !== conversationId) return;
-    const at = after.queries.findIndex(
-      (query) => query.messageId === messageId,
-    );
-    const query = after.queries[at];
-    if (query && !query.response && !query.error) {
-      dispatch(
-        conversationSlice.actions.raiseError({
-          conversationId,
-          index: at,
-          message: 'Stopped before any response was produced.',
-          code: 'stopped',
-        }),
-      );
+    stopping = true;
+    try {
+      await stop(dispatch, getState);
+    } finally {
+      stopping = false;
     }
   },
+  { condition: () => !stopping },
 );
+
+async function stop(
+  dispatch: (action: unknown) => unknown,
+  getState: () => unknown,
+): Promise<void> {
+  const controller = abortController;
+  const { conversation, preference } = getState() as RootState;
+  const conversationId = conversation.conversationId;
+  const index = conversation.queries.length - 1;
+  const messageId = conversation.queries[index]?.messageId;
+  let taken = false;
+  // Not only a stream of this tab's: an answer picked back up after a
+  // reload is followed by polling, and only the server can stop it.
+  if (messageId && conversation.status === 'loading') {
+    taken = await Promise.race([
+      activityService.stopMessage(messageId, preference.token).then(
+        () => true,
+        () => false,
+      ),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), STOP_REQUEST_TIMEOUT_MS),
+      ),
+    ]);
+  }
+  if (abortController === controller) handleAbort();
+  // The user may have opened another chat while the request was out: mark
+  // only the answer that was stopped, in the chat it belongs to.
+  const after = (getState() as RootState).conversation;
+  if (!taken || after.conversationId !== conversationId) return;
+  const at = after.queries.findIndex((query) => query.messageId === messageId);
+  const query = after.queries[at];
+  if (query && !query.response && !query.error) {
+    dispatch(
+      conversationSlice.actions.raiseError({
+        conversationId,
+        index: at,
+        message: 'Stopped before any response was produced.',
+        code: 'stopped',
+      }),
+    );
+  }
+}
 
 // Loads a conversation and applies it to the slice. Returns
 // ``{data, stale}``: ``stale`` true means a newer load has superseded

@@ -981,6 +981,22 @@ describe('stopAnswer', () => {
     expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
   });
 
+  it('sends one stop however often Stop is pressed while it is out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const first = store.dispatch(stopAnswer());
+    const second = store.dispatch(stopAnswer());
+    answer();
+    await Promise.all([first, second]);
+    expect(activityService.stopMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('still closes the stream when the server could not take the stop', async () => {
     const events: string[] = [];
     streamUntilClosed(events);
