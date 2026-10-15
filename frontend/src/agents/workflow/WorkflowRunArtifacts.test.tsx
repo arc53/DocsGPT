@@ -56,6 +56,58 @@ describe('WorkflowRunArtifacts', () => {
       b.textContent?.includes(text),
     );
 
+  // In chat every workflow answer carries a run id, but few runs make
+  // artifacts: the block stays out of the way until there is one to show.
+  describe('hideWhenEmpty', () => {
+    const renderQuiet = async (inProgress = false) => {
+      await act(async () => {
+        root.render(
+          <WorkflowRunArtifacts
+            workflowRunId="run-1"
+            inProgress={inProgress}
+            hideWhenEmpty
+          />,
+        );
+      });
+    };
+    const ok = (artifacts: unknown[]) => ({
+      ok: true,
+      json: async () => ({ success: true, artifacts }),
+    });
+
+    it('draws nothing while the list loads', async () => {
+      listMock.mockReturnValue(new Promise(() => undefined));
+      await renderQuiet();
+      expect(container.innerHTML).toBe('');
+    });
+
+    it('draws nothing for a finished run with no artifacts', async () => {
+      listMock.mockResolvedValue(ok([]));
+      await renderQuiet();
+      expect(container.innerHTML).toBe('');
+    });
+
+    it('draws nothing while a run with none yet is streaming', async () => {
+      listMock.mockResolvedValue(ok([]));
+      await renderQuiet(true);
+      expect(container.innerHTML).toBe('');
+    });
+
+    it('still lists the artifacts a run made', async () => {
+      listMock.mockResolvedValue(
+        ok([{ id: 'a1', title: 'QBR report', kind: 'document' }]),
+      );
+      await renderQuiet();
+      expect(buttonByText('QBR report')).toBeDefined();
+    });
+
+    it('still shows a failed load with Retry', async () => {
+      listMock.mockResolvedValue(failed);
+      await renderQuiet();
+      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    });
+  });
+
   it('shows a failed list load as an alert with Retry that refetches', async () => {
     listMock.mockResolvedValue(failed);
     await render();

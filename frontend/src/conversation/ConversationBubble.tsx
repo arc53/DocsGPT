@@ -497,10 +497,12 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {workflowRunId && (
-          <div className="my-2 mr-5 ml-6">
+          // empty:hidden drops the margin while the run has no artifacts.
+          <div className="my-2 mr-5 ml-6 empty:hidden">
             <WorkflowRunArtifacts
               workflowRunId={workflowRunId}
               inProgress={isStreaming}
+              hideWhenEmpty
             />
           </div>
         )}

@@ -31,12 +31,18 @@ interface WorkflowRunArtifactsProps {
   /** True while the run is still streaming; flipping to false refetches so
    * a panel opened mid-run picks up the final artifact list. */
   inProgress?: boolean;
+  /** Chat: every workflow answer carries a run id but few runs make
+   * artifacts, so draw nothing until there is one (a failed load still
+   * shows). The preview's Artifacts step, opened on purpose, keeps the
+   * empty state. */
+  hideWhenEmpty?: boolean;
 }
 
 /** List a workflow run's produced artifacts, with click-through preview + download. */
 export default function WorkflowRunArtifacts({
   workflowRunId,
   inProgress = false,
+  hideWhenEmpty = false,
 }: WorkflowRunArtifactsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -137,7 +143,12 @@ export default function WorkflowRunArtifacts({
     return cleanup;
   }, [selectedId, fetchDetail]);
 
-  if (loading) {
+  const hasArtifacts = !!artifacts && artifacts.length > 0;
+  if (hideWhenEmpty && !error && !hasArtifacts) return null;
+
+  // Quiet mode keeps a list already on screen through the end-of-run
+  // refetch rather than flashing a spinner.
+  if (loading && !(hideWhenEmpty && hasArtifacts)) {
     return (
       <LoadingState
         fill="block"
@@ -159,7 +170,7 @@ export default function WorkflowRunArtifacts({
     );
   }
 
-  if (!artifacts || artifacts.length === 0) {
+  if (!hasArtifacts) {
     return (
       <EmptyState
         size="sm"
