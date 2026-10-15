@@ -27,7 +27,8 @@ import StatCard from '@/components/StatCard';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
 import { EmptyState } from '../components/ui/empty-state';
-import { LoadError, fmtMs, fmtNumber, fmtUsd } from './AdminUI';
+import { LoadError, fmtMs, fmtNumber, fmtUsd, userName } from './AdminUI';
+import { cn } from '@/lib/utils';
 import { useChartPalette } from '../utils/chartUtils';
 import UsageChart from './UsageChart';
 import {
@@ -40,7 +41,12 @@ import {
 } from './usageChartData';
 import UserUsageModal from './UserUsageModal';
 
-type TopUser = { user_id: string; tokens: number; cost: number };
+type TopUser = {
+  user_id: string;
+  email?: string | null;
+  tokens: number;
+  cost: number;
+};
 type Latency = {
   samples: number;
   p50_ms: number | null;
@@ -60,7 +66,7 @@ export default function Usage() {
   const [metric, setMetric] = useState<Metric>('tokens');
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [drilldown, setDrilldown] = useState<string | null>(null);
+  const [drilldown, setDrilldown] = useState<TopUser | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -225,17 +231,28 @@ export default function Usage() {
               <TableBody>
                 {topUsers.map((user) => (
                   <TableRow key={user.user_id}>
-                    <TableCell className="font-mono text-xs wrap-anywhere">
+                    <TableCell className="wrap-anywhere">
                       <Button
                         type="button"
                         variant="link"
                         size="inline"
-                        // eslint-disable-next-line shadcn/no-restyle -- the id keeps the cell's 12px mono type and wraps
-                        className="text-left font-mono text-xs font-normal whitespace-normal"
-                        onClick={() => setDrilldown(user.user_id)}
+                        /* eslint-disable shadcn/no-restyle -- the name wraps
+                           like the cell's text; an id alone keeps the 12px
+                           mono type. */
+                        className={cn(
+                          'text-left font-normal whitespace-normal',
+                          !user.email?.trim() && 'font-mono text-xs',
+                        )}
+                        /* eslint-enable shadcn/no-restyle */
+                        onClick={() => setDrilldown(user)}
                       >
-                        {user.user_id}
+                        {userName(user.user_id, user.email)}
                       </Button>
+                      {user.email?.trim() ? (
+                        <span className="text-muted-foreground block font-mono text-xs">
+                          {user.user_id}
+                        </span>
+                      ) : null}
                     </TableCell>
                     <TableCell
                       align="right"
@@ -257,7 +274,11 @@ export default function Usage() {
         )}
       </Card>
 
-      <UserUsageModal userId={drilldown} onClose={() => setDrilldown(null)} />
+      <UserUsageModal
+        userId={drilldown?.user_id ?? null}
+        email={drilldown?.email}
+        onClose={() => setDrilldown(null)}
+      />
     </div>
   );
 }
