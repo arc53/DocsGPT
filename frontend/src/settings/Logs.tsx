@@ -182,10 +182,20 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       const parts = await Promise.all(
         responses.map((response) => response.json()),
       );
-      // The server adds running webhook rows to request 1 only.
+      // The server adds running webhook rows to request 1 only. Past one
+      // request, the last reads beyond the loaded rows; what it has beyond
+      // them is more.
+      const last = parts[parts.length - 1];
+      const keep =
+        parts.length > 1
+          ? rows - (parts.length - 1) * MAX_REQUEST_ROWS
+          : last.logs.length;
       const data = {
-        logs: parts.flatMap((part) => part.logs),
-        has_more: parts[parts.length - 1].has_more,
+        logs: [
+          ...parts.slice(0, -1).flatMap((part) => part.logs),
+          ...last.logs.slice(0, keep),
+        ],
+        has_more: last.has_more || last.logs.length > keep,
       };
       if (issuedKey !== filterKeyRef.current) return;
       const previous = logsByPageRef.current;

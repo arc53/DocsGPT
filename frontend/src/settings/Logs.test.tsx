@@ -444,6 +444,47 @@ describe('Logs running rows', () => {
     expect(container.textContent).not.toContain('settings.logs.running');
   });
 
+  it('keeps only the loaded rows when a refresh reads past them', async () => {
+    // 300 rows newest first; row 105, on page 11, is a run that goes on.
+    // Eleven pages need 110 rows, but the refresh reads two 100-row pages.
+    const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
+    const rows = Array.from({ length: 300 }, (_, n) =>
+      n === 105
+        ? { ...answer, id: 'chat-run-105', timestamp: at(n) }
+        : { ...log, id: `chat-${n}`, question: `#${n}#`, timestamp: at(n) },
+    );
+    getLogs.mockImplementation(
+      async ({
+        page: number,
+        page_size: size,
+      }: {
+        page: number;
+        page_size: number;
+      }) => ({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            logs: rows.slice((number - 1) * size, number * size),
+            has_more: number * size < rows.length,
+          }),
+      }),
+    );
+    await act(async () => root.render(<Logs />));
+    for (let n = 2; n <= 11; n++) await act(async () => sentinel.reach());
+    expect(container.textContent).toContain('#109#');
+    expect(container.textContent).not.toContain('#110#');
+
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    expect(container.textContent).toContain('#109#');
+    expect(container.textContent).not.toContain('#150#');
+
+    getLogs.mockClear();
+    await act(async () => sentinel.reach());
+    expect(getLogs.mock.calls[0][0]).toMatchObject({ page: 12, page_size: 10 });
+    expect(container.textContent).toContain('#119#');
+  });
+
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
     // Opening a chat patches the snapshot; the minute poll may replace it
     // with an equal one. Neither is news for the logs.
