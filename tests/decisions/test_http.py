@@ -301,14 +301,33 @@ class TestHeaders:
 
         assert cleartext_public(url) is warned
 
+    @pytest.mark.parametrize("url, bare, credentials", [
+        ("http://decider:7095", "http://decider:7095", None),
+        ("http://u:p%40ss@decide.example.com:8443/v1", "http://decide.example.com:8443/v1", ("u", "p@ss")),
+        ("https://u@[::1]:7095", "https://[::1]:7095", ("u", "")),
+    ])
+    def test_credentials_leave_the_url(self, url, bare, credentials):
+        from docsgpt.decisions.backends.http import without_userinfo
+
+        assert without_userinfo(url) == (bare, credentials)
+
+    def test_url_credentials_go_as_basic_auth_never_in_the_url(self, remote, api):
+        api(DECISION_BASE_URL="http://user:secret@decider:7095")
+        server = FakeDecideServer(DOCSGPT_ENTRY)
+        backend = remote(DecideBackend, server)
+        backend._probe()
+        assert backend.base_url == "http://decider:7095"
+        assert server.log[0]["headers"]["authorization"].startswith("Basic ")
+
     def test_a_key_over_plain_http_to_a_public_host_warns_once(self, remote, api, caplog):
-        api(DECISION_KEY="decider-key", DECISION_BASE_URL="http://decide.example.com")
+        api(DECISION_KEY="decider-key", DECISION_BASE_URL="http://user:secret@decide.example.com")
         server = FakeDecideServer(DOCSGPT_ENTRY)
         backend = remote(DecideBackend, server)
         with caplog.at_level(logging.WARNING, logger="docsgpt.decisions.backends.http"):
             backend._probe()
             run(backend, [Request("s", {"q": NOUL})])
-        assert len([r for r in caplog.records if "plain HTTP" in r.message]) == 1
+        (said,) = [r.message for r in caplog.records if "plain HTTP" in r.message]
+        assert "decide.example.com" in said and "secret" not in said
 
     def test_deadline_and_priority(self, remote):
         server = FakeDecideServer()

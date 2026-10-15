@@ -71,6 +71,25 @@ ITEM_REASONS = BACKEND_REASONS | {"timeout", "bad_item"}
 
 
 
+def without_userinfo(url: str) -> tuple[str, Optional[tuple[str, str]]]:
+    """``url`` without the ``user:password@`` part, and that part as basic-auth credentials (``None`` if absent).
+
+    The credentials then travel as an ``Authorization`` header only and never appear in a URL that logs, errors or
+    tracebacks may print.
+    """
+    from urllib.parse import unquote, urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    if parts.username is None and parts.password is None:
+        return url, None
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = f"{host}:{parts.port}" if parts.port else host
+    credentials = (unquote(parts.username or ""), unquote(parts.password or ""))
+    return urlunsplit(parts._replace(netloc=netloc)), credentials
+
+
 def cleartext_public(url: str) -> bool:
     """Whether ``url`` is plain HTTP to a host that looks reachable beyond this machine and its private network.
 
@@ -185,7 +204,7 @@ class RemoteBackend:
         """
         from docsgpt.core.settings import settings
 
-        url = (settings.DECISION_BASE_URL or "").rstrip("/")
+        url, self._userinfo = without_userinfo((settings.DECISION_BASE_URL or "").rstrip("/"))
         self.base_url = url[: -len("/v1")] if url.endswith("/v1") else url
         self.spec: ModelSpec = select(self.runtime_key)
         self.calibration = self.spec.calibration
@@ -432,9 +451,11 @@ class RemoteBackend:
         if not settings.DECISION_KEY:
             return {}
         if cleartext_public(self.base_url):
+            from urllib.parse import urlsplit
+
             self._log_once("cleartext", logging.WARNING,
                            "DECISION_KEY and the decided text go to %s over plain HTTP; use https for a decision "
-                           "server outside this machine or its private network", self.base_url)
+                           "server outside this machine or its private network", urlsplit(self.base_url).hostname)
         return {"Authorization": f"Bearer {settings.DECISION_KEY}"}
 
     def _send(self, method: str, path: str, body: Any, *, lane: Optional[Lane], deadline: float, budget: float,
@@ -466,7 +487,7 @@ class RemoteBackend:
                 return Reply(reason="timeout", ms=(self._clock() - started) * 1000)
             try:
                 response = self._client.request(method, self.base_url + path, json=body, timeout=left,
-                                                headers=self._headers(lane, deadline))
+                                                headers=self._headers(lane, deadline), auth=self._userinfo)
             except httpx2.TimeoutException:
                 return self._failed("timeout", started)
             except httpx2.HTTPError as exc:
