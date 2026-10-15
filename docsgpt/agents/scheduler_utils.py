@@ -23,8 +23,10 @@ def resolve_timezone(tz_name: Optional[str]) -> ZoneInfo:
     name = (tz_name or "UTC").strip() or "UTC"
     try:
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError as exc:
-        raise ScheduleValidationError(f"Unknown timezone: {name}") from exc
+    # A directory ("America"), a path or an over-long name raises OSError or
+    # ValueError rather than ZoneInfoNotFoundError.
+    except (ZoneInfoNotFoundError, OSError, ValueError) as exc:
+        raise ScheduleValidationError(f"Unknown timezone: {name[:64]}") from exc
 
 
 def parse_cron(expression: str) -> None:

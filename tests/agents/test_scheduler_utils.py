@@ -157,6 +157,13 @@ class TestResolveTimezone:
         with pytest.raises(ScheduleValidationError):
             resolve_timezone("Atlantis/Nowhere")
 
+    @pytest.mark.parametrize("name", ["America", "Etc", "../x", "/etc/localtime", "Europe/", "x" * 300, "UTC\x00"])
+    def test_a_name_zoneinfo_rejects_otherwise_is_unknown(self, name):
+        # A directory, a path or an over-long name raises OSError or
+        # ValueError, not ZoneInfoNotFoundError; a 400, never a 500.
+        with pytest.raises(ScheduleValidationError):
+            resolve_timezone(name)
+
     def test_blank_defaults_utc(self):
         assert resolve_timezone("").key == "UTC"
         assert resolve_timezone(None).key == "UTC"
