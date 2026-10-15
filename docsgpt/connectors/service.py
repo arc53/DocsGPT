@@ -1362,12 +1362,13 @@ def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: boo
 def rebuilds_from_preset(connection: dict, definition: Optional[ConnectorDefinition]) -> bool:
     """Whether setup may rebuild a connection's MCP tool from its preset.
 
-    Only for a connection made through the preset: its sign-in stores the
-    preset's key, and a keyless preset's Connect (CoinGecko, draw.io) stores a
-    ``custom_mcp`` row with no auth. Any other connection at a preset's address
-    is a custom server, named after the preset only for admin switches and
-    attribution; its tool comes from the MCP server form's save, which keeps
-    its own path and sign-in.
+    Only for a connection made through the preset, which stores the preset's
+    key: its sign-in does, and so does a keyless preset's Connect (CoinGecko,
+    draw.io) when it saves the preset's own endpoint (see
+    :func:`catalog.keyless_preset_for_endpoint`). Any other connection at a
+    preset's address is a custom server, named after the preset only for admin
+    switches and attribution; its tool comes from the MCP server form's save,
+    which keeps its own path and sign-in.
 
     Args:
         connection: The connection row.
@@ -1376,12 +1377,11 @@ def rebuilds_from_preset(connection: dict, definition: Optional[ConnectorDefinit
     Returns:
         True when the preset's URL and auth are the connection's own.
     """
-    if definition is None or definition.publisher != "preset":
-        return False
-    stored = connection.get("connector_key")
-    if stored == definition.key:
-        return True
-    return definition.auth_kind == "mcp" and stored == "custom_mcp" and connection.get("auth_kind") == "none"
+    return (
+        definition is not None
+        and definition.publisher == "preset"
+        and connection.get("connector_key") == definition.key
+    )
 
 
 def connection_rebuild_config(connection: dict, writes: bool = False) -> Optional[dict]:

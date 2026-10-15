@@ -337,3 +337,24 @@ def test_presets_have_unique_keys_and_servers():
 
     assert len(keys) == len(set(keys))
     assert len(hosts) == len(set(hosts))
+
+
+@pytest.mark.parametrize("url, expected", [
+    pytest.param("https://mcp.api.coingecko.com/mcp", "mcp:coingecko", id="coingecko"),
+    pytest.param("https://MCP.api.coingecko.com/mcp/", "mcp:coingecko", id="host-case-and-trailing-slash"),
+    pytest.param("https://mcp.draw.io/mcp", "mcp:drawio", id="drawio"),
+    pytest.param("https://mcp.api.coingecko.com/sse", None, id="other-path"),
+    pytest.param("https://mcp.api.coingecko.com/mcp?x=1", None, id="query"),
+    pytest.param("https://mcp.api.coingecko.com/mcp#a", None, id="fragment"),
+    pytest.param("http://mcp.api.coingecko.com/mcp", None, id="other-scheme"),
+    pytest.param("https://mcp.api.coingecko.com:8443/mcp", None, id="other-port"),
+    pytest.param("https://mcp.twelvedata.com/mcp", None, id="oauth-preset-is-not-keyless"),
+    pytest.param("https://mcp.example.com/mcp", None, id="not-a-preset"),
+    pytest.param("", None, id="empty"),
+    pytest.param(None, None, id="none"),
+    pytest.param("not a url", None, id="not-a-url"),
+])
+def test_keyless_preset_for_endpoint_matches_only_its_own_endpoint(url, expected):
+    """A keyless preset's Connect saves its own endpoint; any other URL at its host is a custom server."""
+    preset = catalog.keyless_preset_for_endpoint(url)
+    assert (preset.key if preset else None) == expected

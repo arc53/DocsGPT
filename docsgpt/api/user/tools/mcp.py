@@ -108,8 +108,12 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     OAuth servers already have one (the sign-in stored its tokens there).
     Key, bearer and basic auth store their secret on a connection; servers
     with no auth get a credential-less connection so they still appear on
-    the Connectors page. Returns None when a multi-user install runs on the
-    default encryption key, which keeps the legacy per-tool secret.
+    the Connectors page. A keyless preset's Connect (CoinGecko, draw.io) saves
+    its own endpoint here with no auth: that connection records the preset's
+    key, so setup can tell it from a no-auth custom server at the same address
+    (see :func:`docsgpt.connectors.catalog.keyless_preset_for_endpoint`).
+    Returns None when a multi-user install runs on the default encryption key,
+    which keeps the legacy per-tool secret.
     """
     from docsgpt.connectors import catalog, service
 
@@ -129,11 +133,20 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
                     conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
                 )
             else:
+                preset = catalog.keyless_preset_for_endpoint(config.get("server_url"))
                 repo = ConnectorSessionsRepository(conn)
-                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host) or repo.create(
-                    user, "custom_mcp", connector_key="custom_mcp", auth_kind="none",
-                    display_name=display_name, account_label=host, server_url=base,
-                )
+                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host)
+                if row is None:
+                    row = repo.create(
+                        user, "custom_mcp", connector_key=preset.key if preset else "custom_mcp", auth_kind="none",
+                        display_name=display_name, account_label=host, server_url=base,
+                    )
+                elif (
+                    preset is not None
+                    and row.get("auth_kind") == "none"
+                    and row.get("connector_key") != preset.key
+                ):
+                    repo.update(str(row["id"]), {"connector_key": preset.key})
     except service.EncryptionKeyNotConfigured:
         return None
     return str(row["id"]) if row else None

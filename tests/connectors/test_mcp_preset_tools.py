@@ -38,7 +38,8 @@ def _db(conn):
 
     with patch.multiple("docsgpt.api.connector.connections", db_session=_yield, db_readonly=_yield), \
             patch.multiple("docsgpt.connectors.service", db_session=_yield, db_readonly=_yield), \
-            patch.multiple("docsgpt.connectors.mcp", db_session=_yield, db_readonly=_yield):
+            patch.multiple("docsgpt.connectors.mcp", db_session=_yield, db_readonly=_yield), \
+            patch.multiple("docsgpt.api.user.tools.mcp", db_session=_yield, db_readonly=_yield):
         yield
 
 
@@ -62,14 +63,19 @@ def _connection(conn, status="connected") -> str:
     ).scalar())
 
 
-def _keyless_connection(conn) -> str:
-    """A CoinGecko connection, as the no-auth MCP server form stores it."""
+def _keyless_connection(conn, connector_key: str = "mcp:coingecko") -> str:
+    """A CoinGecko connection, as its Connect stores it through the no-auth MCP server form.
+
+    ``connector_key="custom_mcp"`` is a connection made before Connect
+    recorded the preset (or a no-auth custom server at CoinGecko's address).
+    """
     return str(conn.execute(
         text(
             "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, account_label, "
-            "server_url) VALUES ('alice', 'custom_mcp', 'custom_mcp', 'none', 'connected', "
+            "server_url) VALUES ('alice', 'custom_mcp', :k, 'none', 'connected', "
             "'mcp.api.coingecko.com', 'https://mcp.api.coingecko.com') RETURNING id"
         ),
+        {"k": connector_key},
     ).scalar())
 
 
@@ -346,8 +352,10 @@ class TestRebuildRule:
 
     @pytest.mark.parametrize("key, row, expected", [
         pytest.param("mcp:twelvedata", _row("mcp:twelvedata", "mcp_oauth"), True, id="preset-sign-in"),
-        pytest.param("mcp:coingecko", _row("custom_mcp", "none"), True, id="keyless-preset-connect"),
-        pytest.param("mcp:drawio", _row("custom_mcp", "none"), True, id="keyless-preset-connect-drawio"),
+        pytest.param("mcp:coingecko", _row("mcp:coingecko", "none"), True, id="keyless-preset-connect"),
+        pytest.param("mcp:drawio", _row("mcp:drawio", "none"), True, id="keyless-preset-connect-drawio"),
+        pytest.param("mcp:coingecko", _row("custom_mcp", "none"), False, id="custom-no-auth-at-keyless-preset"),
+        pytest.param("mcp:drawio", _row("custom_mcp", "none"), False, id="custom-no-auth-at-keyless-preset-drawio"),
         pytest.param("mcp:twelvedata", _row("custom_mcp", "mcp_oauth"), False, id="custom-oauth"),
         pytest.param("mcp:twelvedata", _row("custom_mcp", "api_key"), False, id="custom-api-key"),
         pytest.param("mcp:alphavantage", _row("custom_mcp", "none"), False, id="custom-no-auth-at-oauth-preset"),
@@ -398,7 +406,124 @@ class TestCustomServerFlag:
     def test_a_keyless_preset_connect_is_not_flagged(self, pg_conn):
         assert self._detail(pg_conn, _keyless_connection(pg_conn))["custom_server"] is False
 
+    def test_a_no_auth_custom_server_at_a_keyless_preset_address_is_flagged(self, pg_conn):
+        detail = self._detail(pg_conn, _keyless_connection(pg_conn, connector_key="custom_mcp"))
+        assert detail["connector_key"] == "mcp:coingecko"
+        assert detail["custom_server"] is True
+
     def test_a_custom_server_elsewhere_is_not_flagged(self, pg_conn):
         detail = self._detail(pg_conn, _custom_connection(pg_conn, "https://mcp.example.com", "none"))
         assert detail["connector_key"] == "custom_mcp"
         assert detail["custom_server"] is False
+
+
+DRAWIO_MCP = "https://mcp.draw.io/mcp"
+
+
+def _save_no_auth(pg_conn, server_url: str, name: str = "My server") -> str:
+    """The connection the MCP server form's save gives a no-auth server (what a keyless preset's Connect uses)."""
+    from docsgpt.api.user.tools.mcp import _mcp_connection
+
+    with _db(pg_conn):
+        cid = _mcp_connection("alice", {"server_url": server_url}, "none", {}, name)
+    assert cid is not None
+    return cid
+
+
+def _stored(pg_conn, cid) -> tuple:
+    return tuple(pg_conn.execute(
+        text("SELECT provider, connector_key, auth_kind FROM connector_sessions WHERE id = CAST(:c AS uuid)"),
+        {"c": cid},
+    ).one())
+
+
+def _rows_at(pg_conn, base_url: str) -> int:
+    return pg_conn.execute(
+        text("SELECT count(*) FROM connector_sessions WHERE user_id = 'alice' AND server_url = :u"), {"u": base_url},
+    ).scalar()
+
+
+class TestKeylessPresetOrigin:
+    """A no-auth save records a keyless preset only when its URL is the preset's own endpoint.
+
+    CoinGecko's and draw.io's Connect save their ``mcp_url`` with no auth, the
+    same form a no-auth custom server uses, and the connection keeps only the
+    host. Recording the preset's key at save time is what lets setup tell the
+    preset (rebuilt from its URL) from a custom path at its address (kept).
+    """
+
+    def test_connect_records_the_preset(self, pg_conn):
+        cid = _save_no_auth(pg_conn, COINGECKO_MCP, "CoinGecko")
+        assert _stored(pg_conn, cid) == ("custom_mcp", "mcp:coingecko", "none")
+
+    @pytest.mark.parametrize("url", [
+        pytest.param("https://mcp.api.coingecko.com/sse", id="other-path"),
+        pytest.param(f"{COINGECKO_MCP}?apikey=x", id="query"),
+        pytest.param(TWELVEDATA_MCP, id="oauth-preset-saved-without-auth"),
+    ])
+    def test_any_other_endpoint_stays_custom(self, pg_conn, url):
+        cid = _save_no_auth(pg_conn, url)
+        assert _stored(pg_conn, cid) == ("custom_mcp", "custom_mcp", "none")
+
+    def test_connect_upgrades_a_connection_made_before_it_recorded_the_preset(self, pg_conn):
+        legacy = _keyless_connection(pg_conn, connector_key="custom_mcp")
+        cid = _save_no_auth(pg_conn, COINGECKO_MCP, "CoinGecko")
+        assert cid == legacy
+        assert _stored(pg_conn, cid) == ("custom_mcp", "mcp:coingecko", "none")
+        assert _rows_at(pg_conn, "https://mcp.api.coingecko.com") == 1
+
+    def test_a_custom_path_never_downgrades_the_preset_connection(self, pg_conn):
+        """The account index gives one row per host: the preset's tool lives on it too."""
+        preset = _keyless_connection(pg_conn)
+        cid = _save_no_auth(pg_conn, "https://mcp.api.coingecko.com/sse")
+        assert cid == preset
+        assert _stored(pg_conn, cid) == ("custom_mcp", "mcp:coingecko", "none")
+
+    @pytest.mark.parametrize("url", [
+        pytest.param("https://mcp.api.coingecko.com/sse", id="coingecko"),
+        pytest.param(DRAWIO_MCP.rstrip("/") + "/sse", id="drawio"),
+    ])
+    def test_a_no_auth_custom_server_at_a_keyless_preset_address_is_not_rebuilt(self, app, pg_conn, url):
+        cid = _save_no_auth(pg_conn, url)
+        with _db(pg_conn), patch("docsgpt.connectors.mcp._discover",
+                                 return_value=[dict(a) for a in ACTIONS]) as discover:
+            resp = _setup(app, cid)
+        assert resp.status_code == 200, resp.get_json()
+        discover.assert_not_called()
+        assert resp.get_json()["tools"] == []
+        assert _tools(pg_conn, cid) == []
+        row = service.ConnectorSessionsRepository(pg_conn).get(cid)
+        assert row is not None
+        assert service.connection_detail(pg_conn, row)["custom_server"] is True
+
+    def test_the_preset_connect_is_rebuilt_from_its_own_endpoint(self, app, pg_conn):
+        cid = _save_no_auth(pg_conn, COINGECKO_MCP, "CoinGecko")
+        with _db(pg_conn), patch("docsgpt.connectors.mcp._discover",
+                                 return_value=[dict(a) for a in ACTIONS]) as discover:
+            resp = _setup(app, cid)
+        assert resp.status_code == 200, resp.get_json()
+        discover.assert_called_once()
+        assert discover.call_args.args[2]["config"]["server_url"] == COINGECKO_MCP
+        assert discover.call_args.args[2]["config"]["auth_type"] == "none"
+        [(name, config, *_)] = _tools(pg_conn, cid)
+        assert name == "mcp_tool"
+        assert config["server_url"] == COINGECKO_MCP
+        assert config["auth_type"] == "none"
+        row = service.ConnectorSessionsRepository(pg_conn).get(cid)
+        assert row is not None
+        assert service.connection_detail(pg_conn, row)["custom_server"] is False
+
+    def test_a_connection_made_before_is_rebuilt_once_connect_records_the_preset(self, app, pg_conn):
+        cid = _keyless_connection(pg_conn, connector_key="custom_mcp")
+        with _db(pg_conn), patch("docsgpt.connectors.mcp._discover",
+                                 return_value=[dict(a) for a in ACTIONS]) as discover:
+            before = _setup(app, cid)
+            assert before.get_json()["tools"] == []
+            discover.assert_not_called()
+
+        assert _save_no_auth(pg_conn, COINGECKO_MCP, "CoinGecko") == cid
+        with _db(pg_conn), patch("docsgpt.connectors.mcp._discover",
+                                 return_value=[dict(a) for a in ACTIONS]) as discover:
+            after = _setup(app, cid)
+        discover.assert_called_once()
+        assert [t["name"] for t in after.get_json()["tools"]] == ["mcp_tool"]
