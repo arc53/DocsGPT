@@ -1,13 +1,15 @@
 """The unread mark on a conversation (``conversations.unread_at``).
 
-Set when a message lands that the owner has not seen (a continuation turn
-while they were elsewhere), cleared when they open the conversation. Reading
+Set when a message lands that the owner has not seen (a continuation turn,
+or an answer that failed, while they were elsewhere), cleared when they open the conversation. Reading
 also stamps ``read_at``, which Activity compares a failed job against: one
 that ended before it was seen. Neither write touches ``date`` or
 ``updated_at``, so marking never reorders the sidebar.
 """
 
 from __future__ import annotations
+
+from typing import Optional
 
 from sqlalchemy import Connection, text
 
@@ -40,6 +42,29 @@ class ConversationUnreadRepository:
             {"id": conversation_id, "user_id": user_id},
         )
         return bool(result.rowcount)
+
+    def listed_chat_of_message(self, message_id: str) -> Optional[tuple[str, str]]:
+        """The sidebar conversation a message belongs to, and its owner.
+
+        Args:
+            message_id: The message.
+
+        Returns:
+            ``(conversation_id, user_id)``, or ``None`` when the message is
+            unknown or its conversation isn't listed (API, ``/v1`` and agent
+            chats have no sidebar row to mark).
+        """
+        if not looks_like_uuid(message_id):
+            return None
+        row = self._conn.execute(
+            text(
+                "SELECT c.id, c.user_id FROM conversation_messages m "
+                "JOIN conversations c ON c.id = m.conversation_id "
+                "WHERE m.id = CAST(:id AS uuid) AND c.visibility = 'listed'"
+            ),
+            {"id": message_id},
+        ).fetchone()
+        return (str(row[0]), str(row[1])) if row is not None else None
 
     def mark_read(self, conversation_id: str, user_id: str) -> bool:
         """Clear the unread mark and stamp ``read_at``, unread or not.

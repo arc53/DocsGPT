@@ -547,6 +547,48 @@ class TestFinalizeMessage:
         assert msgs[0]["status"] == "failed"
         assert msgs[0]["metadata"]["error"] == "RuntimeError: provider down"
 
+    def _finalized_unread_at(self, pg_conn, *, status, visibility="listed", watching=False, metadata=None):
+        """Finalize a fresh answer and return its conversation's ``unread_at``."""
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.notifications.presence.is_watching", return_value=watching,
+        ):
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question="q",
+                decoded_token={"sub": "u-fin-unread"},
+                visibility=visibility,
+            )
+            svc.finalize_message(res["message_id"], "", status=status, metadata=metadata)
+        return pg_conn.execute(
+            sql_text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": res["conversation_id"]},
+        ).scalar()
+
+    def test_a_failure_nobody_watched_marks_the_chat_unread(self, pg_conn):
+        # Activity's failed mark is an unread chat whose last answer failed.
+        assert self._finalized_unread_at(pg_conn, status="failed") is not None
+
+    def test_a_failure_its_owner_watched_leaves_no_mark(self, pg_conn):
+        assert self._finalized_unread_at(pg_conn, status="failed", watching=True) is None
+
+    def test_a_completed_answer_leaves_no_mark(self, pg_conn):
+        assert self._finalized_unread_at(pg_conn, status="complete") is None
+
+    def test_a_stop_leaves_no_mark(self, pg_conn):
+        # The user ended it on purpose; Activity doesn't count it failed.
+        stopped = {"error_code": "stopped"}
+        assert self._finalized_unread_at(pg_conn, status="failed", metadata=stopped) is None
+
+    def test_a_failure_in_an_unlisted_chat_leaves_no_mark(self, pg_conn):
+        assert self._finalized_unread_at(pg_conn, status="failed", visibility="hidden") is None
+
     def test_finalize_flips_executed_tool_calls(self, pg_conn):
         """finalize_message must mark tool_call_attempts.status='executed'
         rows as 'confirmed' for the same message_id."""

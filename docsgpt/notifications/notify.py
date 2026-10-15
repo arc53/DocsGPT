@@ -23,6 +23,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from sqlalchemy import Connection
+
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.notifications import presence
@@ -95,6 +97,39 @@ def _notify(
     if _queue_push(user_id, kind=kind, title=title, body=body, url=url, conversation_id=conversation_id):
         return PUSH
     return STORED
+
+
+def mark_failed_answer_unseen(conn: Connection, message_id: str) -> bool:
+    """Mark the chat of an answer that just failed unread, unless its owner watched it fail.
+
+    Activity counts a chat failed while it is unread and its last answer
+    failed; without the mark, an answer that fails after the user left the
+    chat shows no failure anywhere. Only sidebar (listed) chats. Runs in the
+    caller's transaction, under a savepoint so a failure here never undoes
+    the caller's writes; never raises.
+
+    Args:
+        conn: The caller's open connection.
+        message_id: The answer that failed.
+
+    Returns:
+        True when the chat was marked.
+    """
+    from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
+
+    try:
+        with conn.begin_nested():
+            repo = ConversationUnreadRepository(conn)
+            chat = repo.listed_chat_of_message(message_id)
+            if chat is None:
+                return False
+            conversation_id, user_id = chat
+            if presence.is_watching(user_id, conversation_id):
+                return False
+            return repo.mark_unread(conversation_id, user_id)
+    except Exception:
+        logger.exception("marking the chat of failed answer %s unread failed", message_id)
+        return False
 
 
 def _mark_read(conversation_id: str, user_id: str) -> None:

@@ -12,6 +12,7 @@ from sqlalchemy import Connection, Engine
 
 from docsgpt.api.user.idempotency import MAX_TASK_ATTEMPTS
 from docsgpt.core.settings import settings
+from docsgpt.notifications.notify import mark_failed_answer_unseen
 from docsgpt.storage.db.engine import get_engine
 from docsgpt.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
@@ -128,6 +129,7 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     ),
                 )
                 summary["messages_failed"] += 1
+                mark_failed_answer_unseen(conn, str(msg["id"]))
                 # Revoke any awaiting-approval prompt: the resumable state
                 # dies with the message, so the durable
                 # ``tool.approval.required`` envelope must be cleared or the

@@ -473,6 +473,12 @@ class ConversationService:
                 )
                 return outcome
             repo.confirm_executed_tool_calls(message_id)
+            # Activity marks a chat failed while it is unread; a Stop is the
+            # user's own doing and isn't counted.
+            if status == "failed" and merged_metadata.get("error_code") != "stopped":
+                from docsgpt.notifications.notify import mark_failed_answer_unseen
+
+                mark_failed_answer_unseen(conn, message_id)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
         # ``failed`` counts too: the conversation is still listed, and
