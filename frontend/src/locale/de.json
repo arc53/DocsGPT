@@ -3073,8 +3073,8 @@
         "extract": "Extrahieren"
       },
       "mobileBlocker": {
-        "title": "Desktop erforderlich",
-        "body": "Der Workflow-Builder braucht für eine gute Bedienung einen größeren Bildschirm. Bitte öffne diese Seite auf einem Desktop- oder Laptop-Computer."
+        "title": "Auf einem größeren Bildschirm öffnen",
+        "body": "Der Workflow-Builder braucht einen breiteren Bildschirm. Nutze einen Computer oder dreh dein Tablet ins Querformat."
       },
       "nodes": {
         "start": "Start",

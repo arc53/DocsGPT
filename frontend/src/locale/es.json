@@ -3073,8 +3073,8 @@
         "extract": "Extraer"
       },
       "mobileBlocker": {
-        "title": "Se requiere un ordenador",
-        "body": "El creador de flujos de trabajo necesita una pantalla más grande para ofrecer la mejor experiencia. Abre esta página en un ordenador de sobremesa o portátil."
+        "title": "Ábrelo en una pantalla más grande",
+        "body": "El creador de flujos de trabajo necesita una pantalla más ancha. Usa un ordenador o gira la tableta en horizontal."
       },
       "nodes": {
         "start": "Inicio",

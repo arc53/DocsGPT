@@ -895,7 +895,9 @@ inside a control (a busy Button, a picker's `sm` ring) stay `Spinner`.
 
 Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
 art, page / panel / popover), `illustration` `no-files | none`, `title`,
-`description` (plain `muted-foreground`), `action`. An empty inline or inside
+`description` (plain `muted-foreground`), `action`. `icon` takes a lucide icon
+and draws it muted at 32px in place of the art, for a page the drawing doesn't
+fit: the workflow builder's MobileBlocker (`Monitor`) and the 404. An empty inline or inside
 a card or panel (no runs yet, no members) is `size="sm" illustration="none"`,
 and a "no results" line in a picker, popover or dense list `size="xs"
 illustration="none"`; never a hand-built muted `<p>`. A page or panel whose fetch failed (see
@@ -1614,9 +1616,13 @@ runs under the tab bar, and the app shell can be dragged and bounce. ESLint
 (`no-restricted-syntax`) rejects both. Pick by what the height does:
 
 - **`dvh`** (the visible viewport, follows the toolbars): the app shell
-  and the `screen` `LoadingState` (`h-dvh`), full-screen states (`min-h-dvh`:
-  404, MobileBlocker), and caps on things that pop up over the page (a search
-  dropdown's `max-h-[calc(100dvh-200px)]`, `Modal`'s `85dvh`).
+  and the `screen` `LoadingState` (`h-dvh`), full-screen states outside the
+  app shell (`min-h-dvh`: 404, the connector callback, the approval page), and
+  caps on things that pop up over the page (a search dropdown's
+  `max-h-[calc(100dvh-200px)]`, `Modal`'s `85dvh`). A state inside the shell
+  is `h-full`: below `lg` the shell's scroll column is 56px shorter than the
+  screen (the top bar), so a `dvh` height there always scrolls
+  (MobileBlocker).
 - **`svh`** (the smallest viewport, steady): a fixed-size panel inside a page
   that scrolls (the Logs panel's `h-[55svh]`, a list's `max-h-[45svh]`, the
   graph surface's `h-[70svh]`, the source edit drawer's `min-h`), so it doesn't resize while Safari's bars slide in

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { CircleAlert } from 'lucide-react';
+import { CircleAlert, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import NoFilesDark from '@/assets/no-files-dark.svg?react';
@@ -34,6 +34,11 @@ type EmptyStateProps = Omit<React.ComponentProps<'div'>, 'title'> & {
   /** The "no files" drawing, or text only. */
   illustration?: 'no-files' | 'none';
   /**
+   * A muted 32px icon in place of the art, for a state the drawing doesn't
+   * fit (the workflow builder's "larger screen", the 404).
+   */
+  icon?: LucideIcon;
+  /**
    * `neutral` for "nothing here yet"; `destructive` for a failed page or
    * panel load: a red icon replaces the art, the title turns red and the
    * block is announced as an alert.
@@ -49,6 +54,7 @@ function EmptyState({
   onRetry,
   size = 'default',
   illustration = 'no-files',
+  icon: Icon,
   tone = 'neutral',
   className,
   ...props
@@ -83,6 +89,8 @@ function EmptyState({
     >
       {destructive ? (
         <CircleAlert aria-hidden className="text-destructive mb-3 size-8" />
+      ) : Icon ? (
+        <Icon aria-hidden className="text-muted-foreground mb-3 size-8" />
       ) : illustration === 'no-files' ? (
         <>
           <NoFiles

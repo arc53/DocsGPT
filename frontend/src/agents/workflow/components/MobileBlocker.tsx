@@ -1,6 +1,8 @@
 import { Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { EmptyState } from '@/components/ui/empty-state';
+
 import { BackLink } from '../../../navigation/SectionPageHeader';
 import { AGENTS_MANAGE_ROOT } from '../../paths';
 
@@ -16,16 +18,12 @@ export default function MobileBlocker() {
       <BackLink to={AGENTS_MANAGE_ROOT} className="self-start">
         {t('agents.title')}
       </BackLink>
-      <div className="flex flex-1 flex-col items-center justify-center px-2 text-center">
-        <div className="bg-secondary mb-6 flex size-20 items-center justify-center rounded-2xl">
-          <Monitor className="text-primary size-10" />
-        </div>
-        <h2 className="text-foreground mb-2 text-xl leading-tight font-semibold">
-          {t('agents.workflow.mobileBlocker.title')}
-        </h2>
-        <p className="text-muted-foreground max-w-sm text-sm leading-relaxed">
-          {t('agents.workflow.mobileBlocker.body')}
-        </p>
+      <div className="flex flex-1 flex-col justify-center">
+        <EmptyState
+          icon={Monitor}
+          title={t('agents.workflow.mobileBlocker.title')}
+          description={t('agents.workflow.mobileBlocker.body')}
+        />
       </div>
     </div>
   );

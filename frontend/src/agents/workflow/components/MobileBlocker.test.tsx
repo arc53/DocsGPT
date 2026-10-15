@@ -23,5 +23,8 @@ describe('MobileBlocker', () => {
       ),
     );
     expect(html).toContain('agents.workflow.mobileBlocker.title');
+    // The shared empty state with the monitor icon, not a one-off tile.
+    expect(html).toContain('data-slot="empty-state"');
+    expect(html).toContain('lucide-monitor');
   });
 });
