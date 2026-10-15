@@ -28,6 +28,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.llm.handlers.base import (
     ToolCall,
     _bound_tool_response_for_llm,
@@ -1872,12 +1873,14 @@ class BaseAgent(ABC):
         The resume builds a new agent from the saved state alone; without
         these it would lose the turn's files (``run_code`` could not load an
         ``F`` ref, the response would list no refs), the compression point the
-        turn's metadata is stamped with, and the agent's backup models.
-        Files are saved by id: the resume reads them again as their owner.
+        turn's metadata is stamped with, the agent's backup models and the
+        decision model's entries so far. Files are saved by id: the resume
+        reads them again as their owner.
 
         Returns:
             ``attachments`` (None when the turn has no files),
-            ``last_compression_at`` and ``backup_models``; all JSON-safe.
+            ``last_compression_at``, ``backup_models`` and ``decisions`` (None
+            when nothing was recorded); all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -1906,6 +1909,7 @@ class BaseAgent(ABC):
             "backup_models": (
                 [m for m in backup_models if isinstance(m, str)] if isinstance(backup_models, list) else []
             ),
+            "decisions": decision_record.snapshot(),
         }
 
     def resume_paused_attachments(self, listing: Optional[List[Dict]]) -> None:

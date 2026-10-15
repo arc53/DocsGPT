@@ -128,11 +128,13 @@ def model_version() -> Optional[str]:
 
 
 def reset() -> None:
-    """Drop this process's client, tokenizer and verdicts; run in a forked child so nothing crosses the fork."""
+    """Drop this process's client, tokenizer, verdicts and unwritten usage counts; run in a forked child so nothing
+    crosses the fork."""
     global _client
-    from docsgpt.decisions import features, tokens
+    from docsgpt.decisions import features, tokens, usage
 
     with _client_lock:
         _client = None
     tokens.reset()
     features.reset()
+    usage.reset()

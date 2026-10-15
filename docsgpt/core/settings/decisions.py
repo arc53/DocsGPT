@@ -175,6 +175,14 @@ class DecisionSettings(SettingsGroup):
             "with `--scheduling-policy priority`."
         ),
     )
+    DECISION_USAGE_RETENTION_DAYS: int = Field(
+        default=90,
+        ge=1,
+        description=(
+            "Days the per-day counts of decision-model calls (`decision_usage`) are kept before the cleanup task "
+            "removes them."
+        ),
+    )
 
     @field_validator("DECISION_MODE", "DECISION_PROTOCOL", mode="before")
     @classmethod

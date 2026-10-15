@@ -440,6 +440,7 @@ class OnnxBackend:
         suffixes = [enc(suffix_text(q)) for q in request.questions.values()]
         passes = plan(len(prefix), [len(s) for s in suffixes], lane)
         needed = len(prefix) + max(map(len, suffixes))
+        predicted = sum(map(self._predict, passes)) * 1000 if self.profile else None
 
         start = self._clock()
         lock = self._buffer_locks[lane]
@@ -479,7 +480,7 @@ class OnnxBackend:
                 self._schedule_drop()
         total = self._clock() - start
         return Outcome(answers, compute * 1000, (total - compute) * 1000, truncated,
-                       len(prefix) + sum(map(len, suffixes)))
+                       len(prefix) + sum(map(len, suffixes)), predicted)
 
     # The background buffer
 

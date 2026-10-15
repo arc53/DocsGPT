@@ -125,7 +125,12 @@ class GuardrailEngine:
                 "Guardrail check %s raised at stage %s: %s", control.check, stage.value, exc
             )
             outcome = CheckOutcome.not_evaluated(f"error: {type(exc).__name__}")
-        return self._verdict(control, stage, outcome)
+        verdict = self._verdict(control, stage, outcome)
+        try:
+            check.settled(control.action, verdict)
+        except Exception:
+            logger.exception("Guardrail check %s failed after its verdict", control.check)
+        return verdict
 
     @staticmethod
     def _needs_deadline(control) -> bool:

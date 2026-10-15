@@ -634,6 +634,12 @@ Type `bool`, default `false`.
 
 vLLM protocol: send request priorities (interactive before background). Only valid when vLLM runs with `--scheduling-policy priority`.
 
+### `DECISION_USAGE_RETENTION_DAYS`
+
+Type `int`, default `90`, must be `>= 1`.
+
+Days the per-day counts of decision-model calls (`decision_usage`) are kept before the cleanup task removes them.
+
 
 ## Retrieval
 

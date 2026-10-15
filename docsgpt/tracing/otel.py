@@ -27,6 +27,7 @@ from typing import Any, Dict, Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.tracing.core import (
+    KIND_DECISION,
     KIND_EMBEDDING,
     KIND_LLM,
     KIND_TOOL,
@@ -135,6 +136,13 @@ def _root_attributes(trace: Trace) -> Dict[str, Any]:
     )
 
 
+def _is_client(span: Any) -> bool:
+    """Whether a span calls out of the process: an LLM or embedding call, or the decision model in API mode."""
+    if span.kind == KIND_DECISION:
+        return span.attributes.get("docsgpt.decision.mode") == "api"
+    return span.kind in (KIND_LLM, KIND_EMBEDDING)
+
+
 def export_trace(trace: Trace, tracer_provider: Any = None) -> Optional[str]:
     """Replay ``trace`` as OTel spans; returns the OTel trace id (hex) or ``None``.
 
@@ -180,7 +188,7 @@ def export_trace(trace: Trace, tracer_provider: Any = None) -> Optional[str]:
         otel_span = tracer.start_span(
             span.name,
             context=ot_trace.set_span_in_context(parent),
-            kind=SpanKind.CLIENT if span.kind in (KIND_LLM, KIND_EMBEDDING) else SpanKind.INTERNAL,
+            kind=SpanKind.CLIENT if _is_client(span) else SpanKind.INTERNAL,
             attributes=attributes,
             start_time=trace.span_start_ns(span),
         )
@@ -224,7 +232,10 @@ def _make_instruments(meter_provider: Any = None) -> tuple:
     tokens = _histogram(
         "gen_ai.client.token.usage", "{token}", "Number of input and output tokens used.", _TOKEN_BUCKETS
     )
-    return duration, tokens
+    decision_calls = meter.create_counter(
+        "docsgpt.decision.calls", unit="{call}", description="Calls to the decision model, by feature and status."
+    )
+    return duration, tokens, decision_calls
 
 
 def _instruments(meter_provider: Any = None) -> tuple:
@@ -257,7 +268,7 @@ def record_llm_metrics(
     if not settings.TRACES_OTEL_EXPORT:
         return
     try:
-        duration, tokens = _instruments(meter_provider)
+        duration, tokens, _ = _instruments(meter_provider)
         attributes = {
             "gen_ai.operation.name": operation,
             "gen_ai.provider.name": provider_name(provider),
@@ -272,3 +283,48 @@ def record_llm_metrics(
         tokens.record(int(output_tokens or 0), {**attributes, "gen_ai.token.type": "output"})
     except Exception:  # noqa: BLE001 - metrics must never break a call
         logger.debug("Failed to record GenAI metrics", exc_info=True)
+
+
+def record_decision_metrics(
+    *,
+    feature: str,
+    status: str,
+    model: Optional[str],
+    input_tokens: int,
+    duration_s: float,
+    error_type: Optional[str],
+    meter_provider: Any = None,
+) -> None:
+    """Record one call to the decision model.
+
+    It counts in the GenAI client metrics as operation ``decide`` from
+    provider ``arc-decide`` (input tokens only: the model writes none), and in
+    ``docsgpt.decision.calls`` by feature and status.
+
+    Args:
+        feature: The calling feature's label.
+        status: The call's status: ``ok``, ``partial``, ``timeout`` or ``unavailable``.
+        model: The decision model's id.
+        input_tokens: Tokens the model read; answers from the cache read none.
+        duration_s: Wall time of the call.
+        error_type: Why nothing was answered, or ``None`` when something was.
+        meter_provider: Override the global provider (tests).
+    """
+    if not settings.TRACES_OTEL_EXPORT:
+        return
+    record_llm_metrics(
+        provider="arc-decide",
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=0,
+        duration_s=duration_s,
+        error_type=error_type,
+        operation="decide",
+        meter_provider=meter_provider,
+    )
+    try:
+        _instruments(meter_provider)[2].add(
+            1, {"docsgpt.decision.feature": feature, "docsgpt.decision.status": status}
+        )
+    except Exception:  # noqa: BLE001 - metrics must never break a call
+        logger.debug("Failed to record decision metrics", exc_info=True)

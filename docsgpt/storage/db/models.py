@@ -22,6 +22,7 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -944,6 +945,26 @@ Index(
 )
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
+
+# Calls to the decision model per day, feature, mode, model version and status:
+# counters only, the denominators of the guardrail journal. Each process
+# upserts increments once a minute. Migration 0053.
+decision_usage_table = Table(
+    "decision_usage",
+    metadata,
+    Column("day", Date, nullable=False),
+    Column("feature", Text, nullable=False),
+    Column("mode", Text, nullable=False),
+    Column("model_version", Text, nullable=False, server_default=""),
+    Column("status", Text, nullable=False),
+    Column("calls", BigInteger, nullable=False, server_default="0"),
+    Column("states", BigInteger, nullable=False, server_default="0"),
+    Column("answered", BigInteger, nullable=False, server_default="0"),
+    Column("ms_total", Float, nullable=False, server_default="0"),
+    Column("queue_ms_total", Float, nullable=False, server_default="0"),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("day", "feature", "mode", "model_version", "status", name="decision_usage_pkey"),
+)
 
 # One execution trace per request (chat turn, continuation, scheduled or
 # webhook run, search, graph extraction): the span tree as a JSONB array,

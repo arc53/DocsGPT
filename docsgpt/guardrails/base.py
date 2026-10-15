@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from time import monotonic
 from typing import Any, ClassVar, Dict, Optional, Set
 
-from docsgpt.guardrails.types import Action, CheckOutcome, Stage
+from docsgpt.guardrails.types import Action, CheckOutcome, ControlVerdict, Stage
 
 # Monotonic deadline of the stage a remote check is running for, set by the
 # engine in the check's own thread.
@@ -128,6 +128,15 @@ class GuardrailCheck(ABC):
     @abstractmethod
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         """Inspect ``text`` and report an outcome. Must not raise."""
+
+    def settled(self, action: Action, verdict: ControlVerdict) -> None:
+        """Called after ``scan`` with the verdict the engine reached; a no-op unless a check needs it.
+
+        Args:
+            action: The control's action at this stage, after the agent's mode
+                (``monitor_only`` makes every action a flag).
+            verdict: The control's verdict, its action capped by the outcome.
+        """
 
     @classmethod
     def describe(cls) -> Dict[str, Any]:

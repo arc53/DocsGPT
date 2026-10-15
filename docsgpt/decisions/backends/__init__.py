@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -14,3 +15,5 @@ class Outcome:
     queue_ms: float
     truncated: bool
     input_tokens: int
+    #: The time the latency model predicted for it, where the backend runs the pass plan itself.
+    predicted_ms: Optional[float] = None

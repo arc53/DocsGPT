@@ -14,20 +14,26 @@ call's states in order and returns those it finished when the stage deadline cut
 the windows that matter most are the ones read. One window over the flag threshold settles the verdict; otherwise
 every window must be scored, or the outcome is *not evaluated* and says how many were (``windows=2/13``).
 
+Every scan that asks the model is also an entry in the request's decision record (``docsgpt.decisions.record``):
+the probability, the thresholds and how many windows were scored, never the text. ``applied`` is false when the
+control only flags (the instance default under ``monitor``, or an agent in ``monitor_only``).
+
 Only the ``input`` stage is offered for now. Retrieved documents and tool results are long, and on CPU they need
 scores computed before the turn rather than during it.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, Optional, Sequence
 
 from docsgpt import decisions
 from docsgpt.core.settings import settings as instance
-from docsgpt.decisions import Budget, Q, Request, states, tokens
+from docsgpt.decisions import Budget, Q, Request, record, states, tokens
 from docsgpt.decisions.features import INJECTION_INPUT
+from docsgpt.decisions.types import BACKEND_REASONS, Decision
 from docsgpt.guardrails.base import GuardrailCheck, ScanContext, stage_time_left
-from docsgpt.guardrails.types import Action, CheckOutcome, Stage
+from docsgpt.guardrails.types import Action, CheckOutcome, ControlVerdict, Stage
 
 #: Model tokens per window of a long text, and the overlap between windows, so a payload on a boundary is read whole
 #: in one of them. A short window is about 0.7 s on 4 vCPU, so two or three fit the default 2 s stage deadline
@@ -137,29 +143,35 @@ class ModelInjectionCheck(GuardrailCheck):
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         if not text.strip():
             return CheckOutcome.clean()
+        flag_threshold = float(self.settings.get("flag_threshold", instance.GUARDRAILS_INJECTION_FLAG_THRESHOLD))
+        threshold = float(self.settings.get("threshold", instance.GUARDRAILS_INJECTION_THRESHOLD))
         left = stage_time_left()
         if left is not None and left <= DEADLINE_MARGIN_S:
+            self._entry = _record_entry("timeout", None, flag_threshold, threshold)
             return CheckOutcome.not_evaluated("timeout")
         budget = Budget.HOT if left is None else Budget.hot(left - DEADLINE_MARGIN_S)
         pieces, total = windows(text)
+        started = time.monotonic()
         batch = decisions.decide_batch(
             [Request(states.text(piece), {"injection": Q.INJECTION}) for piece in pieces],
             feature=INJECTION_INPUT.name,
             budget=budget,
         )
+        ms = (time.monotonic() - started) * 1000
         answered = [d for d in batch if d is not None]
         p = max((d.p("injection") for d in answered), default=None)
-        flag_threshold = float(self.settings.get("flag_threshold", instance.GUARDRAILS_INJECTION_FLAG_THRESHOLD))
-        threshold = float(self.settings.get("threshold", instance.GUARDRAILS_INJECTION_THRESHOLD))
         scored = f"windows={len(answered)}/{total}"
         # A window over the flag threshold settles it even when others went
         # unscored; anything less needs every window of the text, including
         # those past MAX_WINDOWS that were never sent.
         if p is None or (p < flag_threshold and len(answered) < total):
             reason = next((r for r in batch.reasons if r), "too_long" if len(answered) == len(pieces) else "unscored")
+            self._entry = _record_entry(_status(reason), p, flag_threshold, threshold, [len(answered), total], ms,
+                                        answered)
             error = "timeout" if reason == "timeout" else f"unscored: {reason}"
             seen = f" p={p:.3f}" if p is not None else ""
             return CheckOutcome(evaluated=False, error=error, detail=f"{error}{seen} {scored}")
+        self._entry = _record_entry("ok", p, flag_threshold, threshold, [len(answered), total], ms, answered)
         detail = f"p={p:.3f} {scored}"
         if any(d.truncated for d in answered):
             detail += " trunc"
@@ -172,3 +184,44 @@ class ModelInjectionCheck(GuardrailCheck):
                 categories=["PROMPT_INJECTION_SUSPECTED"], score=p, detail=detail, at_most=Action.FLAG
             )
         return CheckOutcome(triggered=False, score=p, detail=detail)
+
+    def settled(self, action: Action, verdict: ControlVerdict) -> None:
+        entry = getattr(self, "_entry", None)
+        if entry is not None:
+            record.add(INJECTION_INPUT.name, applied=action is not Action.FLAG, **entry)
+
+
+def _status(reason: str) -> str:
+    """The decision-record status of a scan left unevaluated for ``reason``."""
+    if reason in BACKEND_REASONS:
+        return "unavailable"
+    if reason == "timeout":
+        return "timeout"
+    return "skipped" if reason == "too_long" else "error"
+
+
+def _record_entry(status: str, p: Optional[float], flag_threshold: float, threshold: float,
+                  scored: Optional[list] = None, ms: Optional[float] = None,
+                  answered: Sequence[Decision] = ()) -> Dict[str, Any]:
+    """The decision-record entry of one scan, without ``applied``, which the control's action decides.
+
+    Args:
+        status: ``ok``, or why the scan was not evaluated.
+        p: The highest probability among the scored windows.
+        flag_threshold: The control's flag threshold.
+        threshold: The control's threshold.
+        scored: ``[windows scored, windows in the text]``; ``None`` when the model was not asked.
+        ms: How long the scan waited for the model.
+        answered: The windows' answers, for the model that gave them.
+    """
+    return {
+        "outcome": {
+            "p": None if p is None else round(p, 4),
+            "flag_threshold": flag_threshold,
+            "threshold": threshold,
+            "windows": scored,
+        },
+        "status": status,
+        "ms": ms,
+        "model": answered[0].model if answered else None,
+    }

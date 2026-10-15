@@ -42,6 +42,23 @@ class ExplodingCheck(GuardrailCheck):
         raise RuntimeError("detector exploded")
 
 
+class SettlingCheck(GuardrailCheck):
+    """Hits, and keeps what the engine settled on; raises from ``settled`` when told to."""
+
+    name = "_test_settling"
+    label = "Settling"
+    supported_stages = {Stage.INPUT}
+    settled_with: list = []
+
+    def scan(self, text, stage, context):
+        return CheckOutcome.hit(categories=["TEST"], at_most=Action.FLAG)
+
+    def settled(self, action, verdict):
+        if self.settings.get("explode"):
+            raise RuntimeError("settled exploded")
+        SettlingCheck.settled_with.append((action, verdict.action))
+
+
 class SlowCheck(GuardrailCheck):
     name = "_test_slow"
     label = "Slow"
@@ -56,10 +73,10 @@ class SlowCheck(GuardrailCheck):
 @pytest.fixture(autouse=True)
 def _register_test_checks():
     GuardrailCreator._ensure_builtin()
-    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck):
+    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck):
         GuardrailCreator.register(cls.name, cls)
     yield
-    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck):
+    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck):
         GuardrailCreator.checks.pop(cls.name, None)
 
 
@@ -124,6 +141,29 @@ class TestReduction:
         decision = engine.evaluate("some text", Stage.OUTPUT)
         assert decision.verdicts == []
         assert decision.clean is True
+
+
+class TestSettled:
+    @pytest.fixture(autouse=True)
+    def _clear(self):
+        SettlingCheck.settled_with = []
+
+    def test_a_check_hears_the_control_action_and_its_capped_verdict(self):
+        engine = GuardrailEngine(_config(controls=[{"check": "_test_settling", "stage": "input", "action": "block"}]))
+        engine.evaluate("some text", Stage.INPUT)
+        assert SettlingCheck.settled_with == [(Action.BLOCK, Action.FLAG)]
+
+    def test_monitor_only_settles_on_a_flag(self):
+        engine = GuardrailEngine(_config(mode="monitor_only", controls=[
+            {"check": "_test_settling", "stage": "input", "action": "block"}]))
+        engine.evaluate("some text", Stage.INPUT)
+        assert SettlingCheck.settled_with == [(Action.FLAG, Action.FLAG)]
+
+    def test_a_failing_hook_keeps_the_verdict(self):
+        engine = GuardrailEngine(_config(controls=[
+            {"check": "_test_settling", "stage": "input", "action": "flag", "settings": {"explode": True}}]))
+        decision = engine.evaluate("some text", Stage.INPUT)
+        assert len(decision.triggered) == 1
 
 
 class TestFailureSemantics:

@@ -3,22 +3,19 @@
 import os
 import subprocess
 import sys
-import time
 
 import pytest
 
 import docsgpt.decisions as decisions
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Q, Request, features, states
-from docsgpt.decisions.backends.onnx import OnnxBackend
 from docsgpt.decisions.client import DecisionClient
 from docsgpt.decisions.models import V02
 from docsgpt.decisions.latency import SpeedProfile
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import Decision, FeatureSpec, Shape
 
-from .conftest import load_fixture
-from .fakes import FakeEngine, expected_p
+from .fakes import expected_p
 
 NOUL = {"type": "noul", "instructions": "Is it?"}
 CHOICE = {"type": "choice", "instructions": "Which?", "criteria": {"zeta": None, "alpha": None, "mid": None}}
@@ -33,23 +30,6 @@ BAD = [
     ({"q": {"type": "score", "criteria": ["a", "b"]}}, "3 or 4"),
     ({"q": {"type": "score", "criteria": ["a", "b", "c", "d", "e"]}}, "3 or 4"),
 ]
-
-
-@pytest.fixture
-def local(monkeypatch):
-    """Mode ``local`` (the shipped default) with a client whose backend runs a fake engine."""
-    monkeypatch.setattr(settings, "DECISION_MODE", None)
-    monkeypatch.setattr(settings, "DECISION_MODEL", None)
-    monkeypatch.setattr("docsgpt.celery_init.in_worker", lambda: False)
-    engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"))
-    client = decisions.get_decider()
-    client._backend = OnnxBackend(V02, open_engine=lambda backend: engine)
-    client._backend.warm()
-    end = time.monotonic() + 5
-    while client._backend.status == "loading" and time.monotonic() < end:
-        time.sleep(0.005)
-    yield client, engine
-    decisions.tokens.reset()
 
 
 @pytest.mark.unit

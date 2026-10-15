@@ -2,13 +2,18 @@
 and API mode against a fake server."""
 
 import json
+import time
 from pathlib import Path
 
 import pytest
 
+import docsgpt.decisions as decisions
 from docsgpt.core.settings import settings
 from docsgpt.decisions.backends.http import RemoteBackend
 from docsgpt.decisions.backends.onnx import OnnxBackend
+from docsgpt.decisions.models import V02
+
+from .fakes import FakeEngine
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "decisions"
 
@@ -105,3 +110,20 @@ def remote(api, spawned):
     yield make
     for backend in built:
         backend.close()
+
+
+@pytest.fixture
+def local(monkeypatch):
+    """Mode ``local`` (the shipped default) with a client whose backend runs a fake engine."""
+    monkeypatch.setattr(settings, "DECISION_MODE", None)
+    monkeypatch.setattr(settings, "DECISION_MODEL", None)
+    monkeypatch.setattr("docsgpt.celery_init.in_worker", lambda: False)
+    engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"))
+    client = decisions.get_decider()
+    client._backend = OnnxBackend(V02, open_engine=lambda backend: engine)
+    client._backend.warm()
+    end = time.monotonic() + 5
+    while client._backend.status == "loading" and time.monotonic() < end:
+        time.sleep(0.005)
+    yield client, engine
+    decisions.tokens.reset()

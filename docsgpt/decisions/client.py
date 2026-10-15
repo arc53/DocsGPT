@@ -6,6 +6,10 @@ with the ``decide`` protocol (``backends.http``) or as stock vLLM (``backends.vl
 Callers get answers or ``None``, never an exception at run time: a model that is off, loading, refused or busy
 answers ``None`` with a reason, and the feature falls back to what it does without the model. Caller bugs (a
 malformed question, too many states) are the exception, raised synchronously as ``ValueError``.
+
+Every call outside mode ``none`` is a ``decision`` span in the request's trace, a count in ``decision_usage``
+(``docsgpt.decisions.usage``) and an OTel metric; none of them holds text. Decision calls never write
+``token_usage`` rows: the model has no per-token price, and the rows would count against users' limits.
 """
 
 from __future__ import annotations
@@ -18,10 +22,12 @@ import time
 from collections import OrderedDict
 from typing import Any, Optional
 
-from docsgpt.decisions import features, files, questions
+from docsgpt import tracing
+from docsgpt.decisions import features, files, questions, usage
 from docsgpt.decisions.models import ModelSpec, select, version
-from docsgpt.decisions.types import BatchResult, Budget, Decision, ModelInfo, Request
+from docsgpt.decisions.types import BatchResult, Budget, Decision, Lane, ModelInfo, Request
 from docsgpt.decisions.vendor.arc_decide import to_text
+from docsgpt.tracing.otel import record_decision_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +178,18 @@ class DecisionClient:
         validate(requests)
         if not requests:
             return BatchResult([], [])
+        if not self.enabled:  # nothing is asked, so nothing is traced or counted
+            return self._logged(feature, BatchResult([None] * len(requests), ["off"] * len(requests)))
+        with tracing.span(tracing.KIND_DECISION, f"decision {feature}") as span:
+            result, predicted_ms = self._decide(requests, budget, started)
+            self._report(span, feature, budget.lane, requests, result, time.monotonic() - started, predicted_ms)
+        return self._logged(feature, result)
+
+    def _decide(self, requests: list[Request], budget: Budget, started: float) -> tuple[BatchResult, Optional[float]]:
+        """The answers, and the time the backend predicted for the states it ran (``None`` when it gave none)."""
         reason = self._unusable()
         if reason:
-            return self._result(feature, [None] * len(requests), [reason] * len(requests))
+            return BatchResult([None] * len(requests), [reason] * len(requests)), None
         backend = self._get(create=True)
         info = self.model_info()
         decisions: list[Optional[Decision]] = [None] * len(requests)
@@ -193,6 +208,7 @@ class DecisionClient:
             else:
                 answers, truncated, input_tokens = hit
                 decisions[i] = Decision(answers, info, cached=True, truncated=truncated, input_tokens=input_tokens)
+        predicted = []
         if todo:
             outcomes = backend.run([requests[i] for i in todo], budget.lane, started + budget.timeout())
             info = self.model_info()  # a load during the call may have changed the calibration
@@ -202,15 +218,53 @@ class DecisionClient:
                     continue
                 decisions[i] = Decision(outcome.answers, info, outcome.ms, outcome.queue_ms,
                                         truncated=outcome.truncated, input_tokens=outcome.input_tokens)
+                if outcome.predicted_ms is not None:
+                    predicted.append(outcome.predicted_ms)
                 self._cache.put(keys[i], (outcome.answers, outcome.truncated, outcome.input_tokens))
-        return self._result(feature, decisions, reasons)
+        return BatchResult(decisions, reasons), (sum(predicted) if predicted else None)
+
+    def _report(self, span: Any, feature: str, lane: Lane, requests: list[Request], result: BatchResult,
+                seconds: float, predicted_ms: Optional[float]) -> None:
+        """Describe a finished call on its span, in the usage counts and in the OTel metrics: numbers only."""
+        info = self.model_info()
+        answered = [d for d in result if d is not None]
+        computed = [d for d in answered if not d.cached]
+        reason = next((r for r in result.reasons if r), None)
+        input_tokens = sum(d.input_tokens for d in computed)
+        span.set(
+            **{
+                "gen_ai.operation.name": "decide",
+                "gen_ai.request.model": info.id if info else None,
+                "docsgpt.decision.feature": feature,
+                "docsgpt.decision.mode": self.mode,
+                "docsgpt.decision.runtime": info.runtime if info else None,
+                "docsgpt.decision.version": info.version if info else None,
+                "docsgpt.decision.lane": lane,
+                "docsgpt.decision.states": len(result),
+                "docsgpt.decision.questions": sum(len(r.questions) for r in requests),
+                "docsgpt.decision.answered": len(answered),
+                "docsgpt.decision.cached": len(answered) - len(computed),
+                "docsgpt.decision.truncated": sum(d.truncated for d in answered),
+                "docsgpt.decision.input_tokens": input_tokens,
+                "docsgpt.decision.queue_ms": round(max((d.queue_ms for d in computed), default=0.0), 1),
+                "docsgpt.decision.predicted_ms": None if predicted_ms is None else round(predicted_ms, 1),
+                "docsgpt.decision.status": result.status,
+                "docsgpt.decision.reason": reason,
+            }
+        )
+        if not answered:
+            span.end(tracing.STATUS_SKIPPED)
+        usage.count(feature, self.mode, info.version if info else None, result.status, states=len(result),
+                    answered=len(answered), ms=seconds * 1000, queue_ms=sum(d.queue_ms for d in computed))
+        record_decision_metrics(feature=feature, status=result.status, model=info.id if info else None,
+                                input_tokens=input_tokens, duration_s=seconds,
+                                error_type=None if answered else (reason or result.status))
 
     @staticmethod
-    def _result(feature: str, decisions: list[Optional[Decision]], reasons: list[Optional[str]]) -> BatchResult:
-        result = BatchResult(decisions, reasons)
+    def _logged(feature: str, result: BatchResult) -> BatchResult:
         if result.status != "ok":
             logger.debug("Decision call for %s: %s (%s)", feature, result.status,
-                         ", ".join(sorted({r for r in reasons if r})))
+                         ", ".join(sorted({r for r in result.reasons if r})))
         return result
 
     def warm(self) -> None:
