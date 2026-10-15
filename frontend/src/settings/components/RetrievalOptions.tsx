@@ -37,6 +37,12 @@ export const DEFAULT_PRESCREEN = {
   max_keep: 8,
 };
 
+export const MAX_CHUNK_TOKENS = 4096;
+
+function clampChunkTokens(value: number): number {
+  return Math.min(MAX_CHUNK_TOKENS, Math.max(1, value || 1));
+}
+
 // Fully-populated form shape so every control is controlled. Prescreen is
 // flattened into the form (with an `enabled` flag) and re-nested on serialize.
 // `kind` is carried so serialization preserves a source's behavior selector
@@ -189,7 +195,9 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
     kind: config?.kind ?? d.kind,
     chunking: {
       strategy: chunking.strategy ?? d.chunking.strategy,
-      max_tokens: chunking.max_tokens ?? d.chunking.max_tokens,
+      max_tokens: clampChunkTokens(
+        chunking.max_tokens ?? d.chunking.max_tokens,
+      ),
       min_tokens: chunking.min_tokens ?? d.chunking.min_tokens,
       duplicate_headers:
         chunking.duplicate_headers ?? d.chunking.duplicate_headers,
@@ -240,7 +248,7 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
     kind,
     chunking: {
       strategy: value.chunking.strategy,
-      max_tokens: value.chunking.max_tokens,
+      max_tokens: clampChunkTokens(value.chunking.max_tokens),
       min_tokens: value.chunking.min_tokens,
       duplicate_headers: value.chunking.duplicate_headers,
     },
@@ -801,18 +809,20 @@ export default function RetrievalOptions({
 
           <SettingRow
             label={tr('chunking.maxTokens')}
+            description={tr('chunking.maxTokensHint')}
             htmlFor="chunking-max-tokens"
           >
             <Input
               id="chunking-max-tokens"
               type="number"
               min={1}
+              max={MAX_CHUNK_TOKENS}
               className="w-24 text-right"
               value={String(value.chunking.max_tokens)}
               disabled={disabled}
               onChange={(e) =>
                 setChunking({
-                  max_tokens: Math.max(1, Number(e.target.value) || 1),
+                  max_tokens: clampChunkTokens(Number(e.target.value)),
                 })
               }
             />
