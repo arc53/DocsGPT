@@ -564,7 +564,7 @@ class WorkflowAgent(BaseAgent):
                 workflow_id=self.workflow_id or "unknown",
                 user=run_user_id,
                 status=status,
-                inputs={"query": query},
+                inputs=self._run_inputs(query),
                 outputs=self._serialize_state(self._engine.state),
                 steps=self._engine.get_execution_summary(),
                 created_at=datetime.now(timezone.utc),
