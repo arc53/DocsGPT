@@ -173,8 +173,9 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
 
   // Reloads the loaded pages in place: new rows come in on top and runs that
   // ended give way to their finished rows. Only page 1 while no loaded page
-  // shows a run; while one does, every loaded page (a run can sit on any of
-  // them): one request up to 100 rows, past that one per 100, side by side.
+  // shows a run; while one does, pages 1 to the deepest one showing a run
+  // (the pages past it only shift, as past page 1 when none runs): one
+  // request up to 100 rows, past that one per 100, side by side.
   const logsByPageRef = useRef(logsByPage);
   logsByPageRef.current = logsByPage;
   // The latest refresh. The poll and an activity change can each start one;
@@ -184,10 +185,12 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     const issuedKey = filterKey;
     const seq = ++refreshSeqRef.current;
     const loaded = logsByPageRef.current;
-    const running = Object.values(loaded).some((rows) =>
-      rows.some((log) => log.running),
+    const pages = Math.max(
+      1,
+      ...Object.entries(loaded)
+        .filter(([, rows]) => rows.some((log) => log.running))
+        .map(([n]) => Number(n)),
     );
-    const pages = running ? Math.max(1, ...Object.keys(loaded).map(Number)) : 1;
     const rows = pages * PAGE_SIZE;
     try {
       const responses = await Promise.all(

@@ -509,6 +509,41 @@ describe('Logs running rows', () => {
     expect(container.textContent).not.toContain('settings.logs.running');
   });
 
+  it('reads again only down to the deepest page with a run', async () => {
+    // Rows 0-29 newest first; row 2, on page 1, is a run that goes on.
+    const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
+    const rows = Array.from({ length: 30 }, (_, n) =>
+      n === 2
+        ? { ...answer, id: 'chat-run-2', timestamp: at(n) }
+        : { ...log, id: `chat-${n}`, timestamp: at(n) },
+    );
+    getLogs.mockImplementation(
+      async ({
+        page: number,
+        page_size: size,
+      }: {
+        page: number;
+        page_size: number;
+      }) => ({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            logs: rows.slice((number - 1) * size, number * size),
+            has_more: number * size < rows.length,
+          }),
+      }),
+    );
+    await act(async () => root.render(<Logs />));
+    for (let n = 2; n <= 3; n++) await act(async () => sentinel.reach());
+
+    getLogs.mockClear();
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    const asked = getLogs.mock.calls.map(([q]) => [q.page, q.page_size]);
+    expect(asked).toEqual([[1, 10]]);
+    expect(container.textContent).toContain('settings.logs.running');
+  });
+
   it('keeps only the loaded rows when a refresh reads past them', async () => {
     // 300 rows newest first; row 105, on page 11, is a run that goes on.
     // Eleven pages need 110 rows, but the refresh reads two 100-row pages.
