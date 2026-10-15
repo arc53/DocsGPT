@@ -23,6 +23,13 @@ export type SchedulesState = {
   all: UserSchedule[] | null;
   allLoading: boolean;
   allError: boolean;
+  /** The latest cross-agent load: only its answer is applied. */
+  allRequestId: string | null;
+  /**
+   * Schedules saved or deleted while that load was out. Its answer was read
+   * before them, so they are applied on top of it.
+   */
+  allChangedSinceRequest: { saved: Schedule[]; deleted: string[] };
   runsBySchedule: Record<string, ScheduleRun[]>;
   /** True once a schedule's oldest run is loaded. */
   runsEndBySchedule: Record<string, boolean>;
@@ -35,6 +42,8 @@ const initialState: SchedulesState = {
   all: null,
   allLoading: false,
   allError: false,
+  allRequestId: null,
+  allChangedSinceRequest: { saved: [], deleted: [] },
   runsBySchedule: {},
   runsEndBySchedule: {},
   loading: false,
@@ -194,11 +203,20 @@ const applyToLists = (state: SchedulesState, next: Schedule): void => {
       next,
     );
   }
-  if (state.all) {
-    const idx = state.all.findIndex((s) => s.id === next.id);
-    if (idx === -1) state.all = [next, ...state.all];
-    else state.all[idx] = { ...state.all[idx], ...next };
-  }
+  if (state.allLoading) state.allChangedSinceRequest.saved.push(next);
+  upsertInAll(state, next);
+};
+
+/** Whether a cross-agent load's answer is the latest one's (or none is tracked). */
+const isLatestAll = (state: SchedulesState, requestId: string): boolean =>
+  state.allRequestId === null || state.allRequestId === requestId;
+
+/** Puts a schedule in the cross-agent list, keeping a listed row's names. */
+const upsertInAll = (state: SchedulesState, next: Schedule): void => {
+  if (!state.all) return;
+  const idx = state.all.findIndex((s) => s.id === next.id);
+  if (idx === -1) state.all = [next, ...state.all];
+  else state.all[idx] = { ...state.all[idx], ...next };
 };
 
 /** Changes fields of a schedule wherever it is listed (an SSE update). */
@@ -269,15 +287,25 @@ const schedulesSlice = createSlice({
         state.loading = false;
         state.error = action.error.message ?? 'failed to load schedules';
       })
-      .addCase(loadAllSchedules.pending, (state) => {
+      .addCase(loadAllSchedules.pending, (state, action) => {
         state.allLoading = true;
         state.allError = false;
+        state.allRequestId = action.meta.requestId;
+        state.allChangedSinceRequest = { saved: [], deleted: [] };
       })
       .addCase(loadAllSchedules.fulfilled, (state, action) => {
-        state.all = action.payload;
+        if (!isLatestAll(state, action.meta.requestId)) return;
+        const { saved, deleted } = state.allChangedSinceRequest;
+        const gone = new Set(deleted);
+        state.all = action.payload.filter((s) => !gone.has(s.id));
+        saved
+          .filter((s) => !gone.has(s.id))
+          .forEach((s) => upsertInAll(state, s));
+        state.allChangedSinceRequest = { saved: [], deleted: [] };
         state.allLoading = false;
       })
-      .addCase(loadAllSchedules.rejected, (state) => {
+      .addCase(loadAllSchedules.rejected, (state, action) => {
+        if (!isLatestAll(state, action.meta.requestId)) return;
         state.allLoading = false;
         state.allError = true;
       })
@@ -297,6 +325,7 @@ const schedulesSlice = createSlice({
         Object.keys(state.byAgent).forEach((agentId) => {
           state.byAgent[agentId] = removeFrom(state.byAgent[agentId], id);
         });
+        if (state.allLoading) state.allChangedSinceRequest.deleted.push(id);
         if (state.all) state.all = state.all.filter((s) => s.id !== id);
         delete state.runsBySchedule[id];
         delete state.runsEndBySchedule[id];

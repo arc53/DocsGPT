@@ -9,6 +9,7 @@ import {
 } from '../../notifications/notificationsSlice';
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
+  createSchedule,
   applyEvent,
   deleteSchedule,
   loadAllSchedules,
@@ -411,6 +412,57 @@ describe('schedulesSlice cross-agent list', () => {
       } as SSEEvent),
     );
     expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  describe('while the list is loading', () => {
+    const loading = () =>
+      reducer(
+        seedWithSchedule(),
+        loadAllSchedules.pending('load', { token: null }),
+      );
+    const answer = (requestId = 'load') =>
+      loadAllSchedules.fulfilled(
+        [{ ...sampleSchedule(), agent_name: 'Deal Desk' }],
+        requestId,
+        { token: null },
+      );
+
+    it('keeps a schedule created meanwhile, which its answer predates', () => {
+      let state = reducer(
+        loading(),
+        createSchedule.fulfilled(sampleSchedule({ id: 'sched-new' }), 'c', {
+          agentId: 'agent-1',
+          token: null,
+        } as never),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
+    });
+
+    it('keeps a schedule deleted meanwhile deleted', () => {
+      let state = reducer(
+        loading(),
+        deleteSchedule.fulfilled('sched-1', 'd', {
+          id: 'sched-1',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all).toEqual([]);
+    });
+
+    it('applies only the latest load', () => {
+      let state = reducer(
+        loading(),
+        loadAllSchedules.pending('newer', { token: null }),
+      );
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled([], 'newer', { token: null }),
+      );
+      state = reducer(state, answer('load'));
+      expect(state.all).toEqual([]);
+    });
   });
 
   it('drops a deleted schedule from the cross-agent list', () => {
