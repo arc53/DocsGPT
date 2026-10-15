@@ -199,12 +199,18 @@ describe('admin Users actions', () => {
     expect(items).toContainEqual(['User ID', 'priya']);
   });
 
-  it('a confirm names the user by email', async () => {
+  it('a confirm names the user by email and id (emails are not unique)', async () => {
     await render({ email: 'priya@example.com' });
     await clickOption('Deactivate');
     expect(confirmProps.current?.message).toBe(
-      'Deactivate "priya@example.com"?',
+      'Deactivate "priya@example.com (priya)"?',
     );
+  });
+
+  it('a confirm names a user without an email by id alone', async () => {
+    await render({}, ['priya']);
+    await clickOption('Revoke admin');
+    expect(confirmProps.current?.message).toBe('Revoke admin from "priya"?');
   });
 
   it('Make admin shows no success toast and reloads the list', async () => {

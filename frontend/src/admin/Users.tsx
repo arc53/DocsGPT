@@ -207,6 +207,8 @@ export default function Users() {
   ): Action[] => {
     const userId = user.user_id;
     const name = userName(userId, user.email);
+    // Emails aren't unique, so a destructive confirm also names the id.
+    const confirmName = name === userId ? userId : `${name} (${userId})`;
     const acts: Action[] = [
       {
         key: 'quota',
@@ -223,7 +225,7 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Revoke admin from "${name}"?`,
+            `Revoke admin from "${confirmName}"?`,
             'They lose access to the admin console. You can make them an admin again at any time.',
             'Revoke',
             confirmed(() => adminService.revokeAdmin(userId, token), userId),
@@ -245,7 +247,7 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Deactivate "${name}"?`,
+            `Deactivate "${confirmName}"?`,
             'Their live sessions are revoked. You can activate them again at any time.',
             'Deactivate',
             confirmed(
