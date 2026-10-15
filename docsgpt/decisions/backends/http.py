@@ -17,7 +17,9 @@ other):
 - **The probe.** ``GET /v1/models`` before the first call and every ``DECISION_PROBE_SECONDS``: the server's model,
   status and, from ``docsgpt decide-server``, its timing profile, plus the round trip. A server that reports no
   profile (``arcd serve``, vLLM) is timed through the endpoint with the synthetic calls the local backend times, at
-  first use and whenever the breaker closes again.
+  first use and whenever the breaker closes again. After asking ``docsgpt decide-server`` to load, first use keeps
+  probing (backing off to every 5 s) until the server is ready or gives up, so a cold server's profile arrives
+  without waiting for a call.
 - **The tokenizer alone** (``files.ensure_tokenizer``, 11 MB) loads in the background, so token counts and
   truncation are computed here exactly as the server cuts the state.
 
@@ -26,6 +28,7 @@ Request bodies are never logged.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 import statistics
@@ -59,6 +62,12 @@ RETRY_MIN_SHARE = 0.3
 
 #: Timeout of a probe or a load request, which no call waits on longer than its own deadline.
 PROBE_TIMEOUT_S = 10.0
+
+#: Pauses between probes while the server loads its model after the load request (the last one repeats).
+LOAD_POLL_S = (0.5, 1.0, 2.0, 5.0)
+
+#: How long first use follows a loading server; past it the periodic probe and ``warm`` take over.
+LOAD_WAIT_S = 900.0
 
 #: Deadline of each synthetic call of the timing run.
 TIMING_TIMEOUT_S = 60.0
@@ -293,8 +302,12 @@ class RemoteBackend:
                          and now - self._tokenizer_failed[1] >= retry)
             retime = (self.profile is None and self._client_timed and self._probed_at is not None
                       and not self._timing and self._timed_at is not None and now - self._timed_at >= retry)
+            follow = (not first and self._server_loading() and not self._probing and self._last_probe is not None
+                      and now - self._last_probe >= retry)
         if first:
             self._spawn(self._first_use, "decision-api-start")
+        elif follow:
+            self._spawn(self._follow_load, "decision-api-load")
         elif tokenizer:
             self._spawn(self._load_tokenizer, "decision-tokenizer")
         elif retime:
@@ -307,6 +320,26 @@ class RemoteBackend:
         self._load_tokenizer()
         if self._client_timed and self._probed_at is not None:
             self._time()
+        self._follow_load()
+
+    def _server_loading(self) -> bool:
+        """Whether the server is still on its way to ready: loading, or idle without having given up."""
+        return self._server_status == "loading" or (self._server_status == "idle" and self._server_reason is None)
+
+    def _follow_load(self) -> None:
+        """Probe until a server that was asked to load reports where it got.
+
+        Without this the status stays at the first probe's ``idle`` until a call is let through, and features in
+        ``auto`` mode, which wait for the server's profile, never make one.
+        """
+        end = self._clock() + LOAD_WAIT_S
+        for i in itertools.count():
+            if not self._server_loading() or self._refused or self._clock() >= end:
+                return
+            with self._lock:
+                self._lock.wait(LOAD_POLL_S[min(i, len(LOAD_POLL_S) - 1)])
+            if not self._probe():  # no answer: the periodic probe picks it up from here
+                return
 
     def _load(self) -> None:
         """Ask the server to load its model now; only ``docsgpt decide-server`` has the route."""
@@ -563,24 +596,27 @@ class RemoteBackend:
 
     # Probe
 
-    def _probe(self, timeout: float = PROBE_TIMEOUT_S) -> None:
+    def _probe(self, timeout: float = PROBE_TIMEOUT_S) -> bool:
         """``GET /v1/models``: the server's identity, status and profile, and the round trip.
 
         If a probe is already running, wait for it (up to ``timeout``) instead of sending another.
+
+        Returns:
+            Whether the server answered (a probe this one waited on counts as answered).
         """
         with self._lock:
             if self._probing:
                 end = self._clock() + timeout
                 while self._probing and self._clock() < end:
                     self._lock.wait(max(0.0, end - self._clock()))
-                return
+                return True
             self._probing, self._last_probe = True, self._clock()
         try:
             started = self._clock()
             reply = self._send("GET", "/v1/models", None, lane=None, deadline=started + timeout, budget=timeout,
                                check=self._models_shape)
             if reply.data is None:
-                return
+                return False
             self._round_trips.append(reply.ms / 1000)
             refused = self._identify(reply.data)
             with self._lock:
@@ -589,6 +625,7 @@ class RemoteBackend:
                 self.profile = self._profile(server=self._server_speed)
             elif self.profile is not None:
                 self.profile.round_trip = statistics.median(self._round_trips)
+            return True
         finally:
             with self._lock:
                 self._probing = False

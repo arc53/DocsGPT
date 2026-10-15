@@ -10,7 +10,7 @@ import pytest
 import docsgpt.decisions as decisions
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Q, Request, files, tokens
-from docsgpt.decisions.backends import Outcome
+from docsgpt.decisions.backends import Outcome, http
 from docsgpt.decisions.backends.http import DecideBackend, RemoteProfile
 from docsgpt.decisions.breaker import Breaker
 from docsgpt.decisions.latency import GUARD, SpeedProfile
@@ -462,6 +462,49 @@ class TestFirstUse:
         assert server.paths(models=True) == ["/v1/models", "/v1/load"]  # timed by the server, not through it
         assert backend.profile.server is not None and backend.profile.report()["measured_by"] == "server"
         assert tokens.count_tokens("abc") == 3
+
+    def test_a_cold_server_is_followed_until_it_is_ready(self, remote, spawned, char_tokenizer, monkeypatch):
+        monkeypatch.setattr(http, "LOAD_POLL_S", (0.0,))
+        server = FakeDecideServer({**DOCSGPT_ENTRY, "status": "idle", "speed": None})
+        states = iter([("idle", None), ("loading", None), ("ready", DOCSGPT_ENTRY["speed"])])
+
+        def models(path, body, route=server.route):
+            if path == "/v1/models":
+                server.entry["status"], server.entry["speed"] = next(states, ("ready", DOCSGPT_ENTRY["speed"]))
+            return route(path, body)
+
+        server.route = models
+        backend = remote(DecideBackend, server)
+        backend.warm()
+        spawned[0][1]()
+        assert server.paths(models=True) == ["/v1/models", "/v1/load", "/v1/models", "/v1/models"]
+        assert backend.status == "ready" and backend.profile.report()["measured_by"] == "server"
+
+    def test_following_stops_when_the_server_gives_up_or_goes_away(self, remote, spawned, monkeypatch):
+        monkeypatch.setattr(http, "LOAD_POLL_S", (0.0,))
+        released = FakeDecideServer({**DOCSGPT_ENTRY, "status": "idle", "reason": "nothing_fits", "speed": None})
+        backend = remote(DecideBackend, released)
+        backend._probe()
+        backend._follow_load()
+        assert released.paths(models=True) == ["/v1/models"]
+        gone = FakeDecideServer({**DOCSGPT_ENTRY, "status": "loading", "speed": None})
+        backend = remote(DecideBackend, gone)
+        backend._probe()
+        gone.route = lambda path, body: httpx2.Response(500)
+        backend._follow_load()
+        assert gone.paths(models=True).count("/v1/models") == 2 and backend.status == "loading"
+
+    def test_warm_follows_a_server_still_loading_after_the_retry_window(self, remote, spawned, api):
+        api(DECISION_LOAD_RETRY_SECONDS=60)
+        clock = FakeClock()
+        backend = remote(DecideBackend, FakeDecideServer({**DOCSGPT_ENTRY, "status": "loading", "speed": None}),
+                         clock=clock)
+        backend.warm()
+        backend._probe()
+        backend.warm()
+        clock.advance(60)
+        backend.warm()
+        assert [name for name, _ in spawned] == ["decision-api-start", "decision-api-load"]
 
     def test_arcd_serve_is_timed_through_the_endpoint(self, remote, spawned, char_tokenizer):
         server = FakeDecideServer()
