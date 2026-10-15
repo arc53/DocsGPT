@@ -1363,7 +1363,7 @@
       "deleteWarning": "Удалить «{{modelName}}»?",
       "actionsMenuAria": "Действия для {{modelName}}",
       "modelsGroup": {
-        "builtin": "Модели DocsGPT",
+        "builtin": "Встроенные",
         "user": "Мои модели"
       },
       "actions": {

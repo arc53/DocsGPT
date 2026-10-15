@@ -1294,7 +1294,7 @@
       "deleteWarning": "「{{modelName}}」を削除しますか？",
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
-        "builtin": "DocsGPT モデル",
+        "builtin": "組み込み",
         "user": "マイモデル"
       },
       "actions": {

@@ -1295,7 +1295,7 @@
       "deleteWarning": "\"{{modelName}}\" löschen?",
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT-Modelle",
+        "builtin": "Integriert",
         "user": "Meine Modelle"
       },
       "actions": {

@@ -1294,7 +1294,7 @@
       "deleteWarning": "要刪除「{{modelName}}」嗎？",
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
-        "builtin": "DocsGPT 模型",
+        "builtin": "內建",
         "user": "我的模型"
       },
       "actions": {
