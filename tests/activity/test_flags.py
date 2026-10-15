@@ -52,6 +52,16 @@ class TestRunMarkers:
         later = flags.list_runs("u1")[0]["started_at"] + 61
         assert flags.list_runs("u1", now=later) == []
 
+    def test_listing_drops_dead_markers(self, redis):
+        # A worker killed mid-run never clears its marker, and newer runs keep
+        # the hash alive: the listing deletes what it skips.
+        flags.mark_run_started("u1", "dead", {"kind": "webhook"}, ttl_seconds=60)
+        later = flags.list_runs("u1")[0]["started_at"] + 61
+        flags.mark_run_started("u1", "live", {"kind": "webhook"}, ttl_seconds=3600)
+        redis.hset("activity:runs:u1", "garbled", "not json")
+        assert [r["id"] for r in flags.list_runs("u1", now=later)] == ["live"]
+        assert set(redis.hgetall("activity:runs:u1")) == {b"live"}
+
     def test_markers_are_per_user(self, redis):
         flags.mark_run_started("u1", "t1", {"kind": "webhook"}, ttl_seconds=60)
         assert flags.list_runs("u2") == []

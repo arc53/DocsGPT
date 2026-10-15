@@ -177,6 +177,10 @@ def mark_run_finished(user_id: str, run_id: str) -> None:
 def list_runs(user_id: str, *, now: Optional[float] = None) -> List[Dict[str, Any]]:
     """The user's in-flight runs that have not outlived their ceiling.
 
+    Markers past their ceiling, or unreadable, are deleted: a worker killed
+    mid-run never clears its own, and each new run lengthens the hash's life,
+    so they would otherwise pile up for good.
+
     Args:
         user_id: The owner.
         now: The current UNIX time (tests).
@@ -188,18 +192,31 @@ def list_runs(user_id: str, *, now: Optional[float] = None) -> List[Dict[str, An
     if redis is None or not user_id:
         return []
     current = time.time() if now is None else now
+    key = f"{_RUNS_PREFIX}{user_id}"
     try:
-        raw = redis.hgetall(f"{_RUNS_PREFIX}{user_id}") or {}
+        raw = redis.hgetall(key) or {}
     except Exception:
         return []
     out: List[Dict[str, Any]] = []
-    for value in raw.values():
+    dead: List[Any] = []
+    for field, value in raw.items():
         try:
             item = json.loads(value)
         except (TypeError, ValueError):
+            dead.append(field)
             continue
         if isinstance(item, dict) and float(item.get("expires_at") or 0) > current:
             out.append(item)
+        else:
+            dead.append(field)
+    if dead:
+        # Not atomic: a run that re-marks the same id (an ingest of the same
+        # source) between the read and here loses its marker until its next
+        # event. A dead marker of that id is hours old by then.
+        try:
+            redis.hdel(key, *dead)
+        except Exception:
+            logger.debug("activity: dropping dead run markers failed", exc_info=True)
     return sorted(out, key=lambda item: item.get("started_at") or 0)
 
 
