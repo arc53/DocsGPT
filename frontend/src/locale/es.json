@@ -1209,6 +1209,8 @@
       "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} herramienta",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} herramientas",
+      "triggerLabel_one": "Herramientas, {{formatted}} seleccionada",
+      "triggerLabel_other": "Herramientas, {{formatted}} seleccionadas",
       "manageInConnectors": "Gestionar en Conectores",
       "defaultBadge": "Predeterminada",
       "noToolsYet": "Aún no hay herramientas",

@@ -1208,6 +1208,8 @@
       "savedSecretPlaceholder": "已保存 · 输入新值以替换",
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个工具",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个工具",
+      "triggerLabel_one": "工具，已选 {{formatted}} 个",
+      "triggerLabel_other": "工具，已选 {{formatted}} 个",
       "manageInConnectors": "在连接器中管理",
       "defaultBadge": "默认",
       "noToolsYet": "还没有工具",

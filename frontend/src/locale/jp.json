@@ -1208,6 +1208,8 @@
       "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
       "pageRange_one": "ツール {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "ツール {{formatted}}件中 {{from}}–{{to}}件",
+      "triggerLabel_one": "ツール、{{formatted}} 件選択中",
+      "triggerLabel_other": "ツール、{{formatted}} 件選択中",
       "manageInConnectors": "コネクタで管理",
       "defaultBadge": "デフォルト",
       "noToolsYet": "ツールはまだありません",

@@ -1344,6 +1344,12 @@ export default function MessageInput({
   // closes when a sign-in opens.
   const signInAgain = useSignInAgain({ onConnected: fetchUserTools });
 
+  // Loaded up front so the Tools pill shows its count before the picker is
+  // opened; opening it refetches.
+  useEffect(() => {
+    if (showToolButton) fetchUserTools();
+  }, [showToolButton, fetchUserTools]);
+
   useEffect(() => {
     if (isToolsPopupOpen) {
       fetchUserTools();

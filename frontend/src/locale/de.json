@@ -1209,6 +1209,8 @@
       "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Werkzeug",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Werkzeugen",
+      "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Werkzeuge, {{formatted}} ausgewählt",
       "manageInConnectors": "In Konnektoren verwalten",
       "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",

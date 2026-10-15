@@ -53,4 +53,30 @@ describe('composer controls', () => {
       expect(classes, icon).toContain('sm:size-4');
     }
   });
+
+  it('shows how many tools are on beside the Tools label', () => {
+    const render = (selectedIds: string[]) =>
+      renderToStaticMarkup(
+        <ToolsTrigger
+          open={false}
+          onOpenChange={noop}
+          items={[]}
+          selectedIds={selectedIds}
+          onToggle={noop}
+          loading={false}
+          onAddTool={noop}
+        />,
+      );
+    const badge = (html: string) =>
+      html.match(/<span[^>]*data-slot="badge"[^>]*>([^<]*)<\/span>/);
+
+    const none = render([]);
+    expect(badge(none)).toBeNull();
+    expect(none).not.toContain('aria-label');
+
+    const three = render(['a', 'b', 'c']);
+    expect(badge(three)?.[1]).toBe('3');
+    expect(badge(three)?.[0]).toContain('aria-hidden="true"');
+    expect(three).toContain('aria-label="settings.tools.triggerLabel"');
+  });
 });
