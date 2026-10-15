@@ -1,7 +1,7 @@
 ---
 title: Agent Guardrails
-description: Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection, groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
-lastUpdated: 2026-10-06
+description: Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns or a local model), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
+lastUpdated: 2026-10-15
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -72,6 +72,7 @@ Monitor mode is the supported rollout path. Turn on the checks you want, run rea
 | `denylist` | Banned terms | input, retrieval, tool_result, output | Yes | No | ~1 ms |
 | `url` | Link policy | input, retrieval, tool_result, output | Yes | No | ~2 ms |
 | `injection` | Prompt injection (heuristic) | input, retrieval, tool_result | No | No | ~3 ms |
+| `injection_model` | Prompt injection (model) | input | No | Yes | ~0.2 s on CPU |
 | `groundedness` | Grounding in sources | output | No | No | ~5 ms |
 | `policy` | Custom policy (LLM judge) | input, retrieval, tool_result, output | No | Yes | ~1 s |
 
@@ -121,6 +122,26 @@ Matches the phrasings that appear in real indirect-injection payloads: instructi
 <Callout type="warning" emoji="⚠️">
 This check catches unobfuscated payloads only. A motivated attacker can evade it trivially. Pair it with the `policy` judge if you need semantic coverage.
 </Callout>
+
+### `injection_model` — Prompt injection (model)
+
+Scores the user's message with the [decision model](/Models/decision-model), a small classifier trained on direct and indirect prompt injections and jailbreaks, which answers with a probability. It runs on your own server, so no text is sent anywhere, and it reads meaning rather than phrasings, so it also catches payloads the `injection` patterns miss and other languages (English is strongest; Spanish, Chinese and Russian are decent).
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `threshold` | `0.9` | 0–1. From this probability the control's action applies, with category `PROMPT_INJECTION` |
+| `flag_threshold` | `0.5` | 0 up to `threshold`. From this probability up to `threshold` the message is flagged with category `PROMPT_INJECTION_SUSPECTED`, never redacted or blocked, whatever the control's action |
+
+The defaults come from `GUARDRAILS_INJECTION_THRESHOLD` and `GUARDRAILS_INJECTION_FLAG_THRESHOLD`. Set `flag_threshold` equal to `threshold` to drop the flag-only band.
+
+- **Input only for now.** Retrieved documents and tool results are too long to score during a turn on CPU.
+- **It adds time before the answer starts.** The check runs before the agent does: about 0.2 s for a short message on a 4 vCPU x86 server, less on a GPU. A long message is scored in windows of about 6,000 characters (1,600 model tokens), at most eight of them: the first seven and the last, so the end of a padded message is always read. It runs under the stage deadline (`timeout_ms`).
+- **The first use downloads the model** (about 0.5 GB), unless `docsgpt decisions prefetch` ran first. Until it has loaded, and whenever it cannot answer in time, the control reports *not evaluated* and the failure policy applies. Keep `fail_open` on with this check unless you can accept turns ending while the model loads.
+- **Keep `block` for public agents that need it.** Role-play and persona requests, and messages that discuss jailbreaks or prompt security, are where it is most often wrong, and many benign role-play prompts score above 0.9. `flag` records without changing the turn.
+- **The journal** records the probability as the row's score and a detail such as `p=0.973 windows=1/1`, never the message.
+- The `injection` check stays as it is, and the two can run side by side.
+
+It is available unless the decision model is off (`DECISION_MODE=none`), in which case the card shows *Not configured*.
 
 ### `groundedness` — Grounding in sources
 
@@ -248,7 +269,7 @@ Writes are validated **strictly**. The request is rejected with HTTP 400 and the
 
 - a `check` is unknown, or is not allowed by the instance's `GUARDRAILS_CHECKS_ENABLED`;
 - a check is attached to a stage it does not support (for example `groundedness` at `input`);
-- `redact` is requested on a check that reports no spans (`injection`, `groundedness`, `policy`);
+- `redact` is requested on a check that reports no spans (`injection`, `injection_model`, `groundedness`, `policy`);
 - a control's settings are out of range, or a required setting is missing;
 - the same `(check, stage)` pair appears twice, or there are more than 50 controls;
 - `mode`, `timeout_ms` or `block_message` is out of bounds.
@@ -306,6 +327,10 @@ Operators control guardrails deployment-wide with these settings:
 | `GUARDRAILS_JUDGE_MODEL` | unset | Model id for `policy` controls that do not set their own `model`. Unset reuses the agent's model. |
 | `GUARDRAILS_STORE_SCANNED_TEXT` | `false` | Persist a sample of matched text with each journal row. |
 | `GUARDRAILS_EVENTS_RETENTION_DAYS` | `30` | Journal retention. Minimum 1. |
+| `GUARDRAILS_INJECTION_INPUT_MODE` | `off` | Give every agent an `injection_model` control on user input. See [below](#injection-check-on-every-agent). |
+| `GUARDRAILS_INJECTION_INPUT_BUDGET` | `0.5` | Under `auto`, the longest predicted time in seconds the input check may add. |
+| `GUARDRAILS_INJECTION_THRESHOLD` | `0.9` | Default `threshold` of `injection_model` controls. |
+| `GUARDRAILS_INJECTION_FLAG_THRESHOLD` | `0.5` | Default `flag_threshold` of `injection_model` controls; at most `GUARDRAILS_INJECTION_THRESHOLD`. |
 
 `GUARDRAILS_CHECKS_ENABLED` takes a JSON list or comma-separated names, and an empty value (or `[]`) means every check. `none` is not special here: it is read as a check called `none`, which matches nothing, so every check is disallowed and controls that use one are dropped. DocsGPT logs a warning at startup naming entries that are not registered checks. To turn guardrails off, set `GUARDRAILS_ENABLED=false` instead. `GUARDRAILS_FLOOR` must be JSON. For example:
 
@@ -318,6 +343,26 @@ GUARDRAILS_CHECKS_ENABLED=pii,secrets,denylist,url,injection,groundedness
 <Callout type="info" emoji="ℹ️">
 Leaving `policy` out of `GUARDRAILS_CHECKS_ENABLED` is how an air-gapped or privacy-sensitive deployment guarantees that no user text is sent to a judge model, regardless of what agent owners configure.
 </Callout>
+
+### Injection check on every agent
+
+`GUARDRAILS_INJECTION_INPUT_MODE` gives every agent an `injection_model` control on user input, including agents whose owners never turned guardrails on. It is `off` by default, and while it is, nothing is downloaded or loaded.
+
+| Mode | What every agent gets |
+| --- | --- |
+| `off` (default) | Nothing. |
+| `monitor` | A control with the `flag` action: suspected injections are recorded in the journal, and turns are never changed. |
+| `on` | A control with the `block` action at `GUARDRAILS_INJECTION_THRESHOLD`. It blocks only on agents whose guardrails are on in `scan_all` mode; on every other agent it flags. |
+| `auto` | As `monitor`, while the check's predicted time on this machine fits `GUARDRAILS_INJECTION_INPUT_BUDGET` (0.5 s). The prediction comes from timing the model when it loads; see [Measured `auto`](/Models/decision-model#measured-auto). Until it has been measured, and on a machine too slow for the budget (Docker on a Mac), it adds nothing. |
+
+The setting never changes an agent's own configuration:
+
+- On an agent whose guardrails are off, the added control runs alone, in monitor mode and failing open; the agent's own stored controls stay off.
+- On an agent with guardrails on, the control is added next to the agent's controls, and the agent's mode, failure policy and timeout stay as they are.
+- An agent that has its own `injection_model` control at the `input` stage, enabled or not, keeps that control instead; so does an agent whose [instance floor](#the-instance-floor) has one.
+- The added control never stops a turn it could not score, even on an agent that fails closed: while the model is loading or late, the turn goes ahead and the journal records the control as *not evaluated*.
+
+Nothing is added when `GUARDRAILS_ENABLED` is `false`, when `GUARDRAILS_CHECKS_ENABLED` leaves `injection_model` out, or when the decision model is off (`DECISION_MODE=none`). Celery workers do not run the model yet, so on [webhook](/API/webhooks) and scheduled runs the control reports *not evaluated*.
 
 ### The instance floor
 
@@ -350,10 +395,10 @@ The floor also applies to the individual AI Agent nodes inside a workflow, which
 
 ## Scope and limitations
 
-- **Workflow agents** run the `input` stage with their own controls, but the AI Agent nodes inside the workflow run only the instance floor, not the parent agent's controls. Aggregate output guarding across a workflow is not yet wired.
+- **Workflow agents** run the `input` stage with their own controls, but the AI Agent nodes inside the workflow run only the instance floor (and the [injection check on every agent](#injection-check-on-every-agent), when it is on), not the parent agent's controls. Aggregate output guarding across a workflow is not yet wired.
 - **Pattern checks match formats, not meaning.** `pii` does not find names; `injection` misses obfuscated payloads; `groundedness` measures word overlap, not truth. Use `policy` where you need a semantic judgement, and keep an eye on the *Not evaluated* count when you do.
 - **Redaction is best-effort against structured identifiers.** A value that does not match a known format passes through. Treat `redact` as a safety net, not as a data-loss-prevention guarantee.
-- **Latency.** Local checks add low single-digit milliseconds. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
+- **Latency.** Local checks add low single-digit milliseconds. An `injection_model` control adds about 0.2 s on CPU before the answer starts. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
 
 ## Extending: writing your own check
 

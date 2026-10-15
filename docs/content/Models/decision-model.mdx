@@ -21,7 +21,7 @@ Every feature that uses the decision model is off by default, and nothing is dow
 | `on` | Asks the model and acts on the answer. |
 | `auto` | Runs only if its predicted time on this machine fits its budget; see [Measured `auto`](#measured-auto). |
 
-The first feature you set to anything but `off` downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, then loads it in the background. Until it is ready, features carry on without it. The features and their settings are listed on this page as they become available.
+The first feature you set to anything but `off` downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, then loads it in the background. Until it is ready, features carry on without it. The features and their settings are in [Turning features on](#turning-features-on).
 
 Two settings apply to the model as a whole:
 
@@ -31,6 +31,17 @@ DECISION_PRELOAD=true   # download, load and time it when the API starts, even w
 ```
 
 The model runs inside the API process, and Celery workers never load it. If a call cannot be answered (the model is off, loading or busy), the feature falls back to what it does without it, so a missing model never fails a request.
+
+## Turning features on
+
+Each feature has its own switch, so you can turn them on one at a time:
+
+| To turn on | How | Default |
+| --- | --- | --- |
+| The injection check on user input, for every agent (flags only) | `GUARDRAILS_INJECTION_INPUT_MODE=monitor` in `.env`; `on` also blocks on agents that enforce their guardrails, and `auto` flags only while the check fits its 0.5 s budget on this machine | `off` |
+| The injection check on one agent | an `injection_model` control at the agent's `input` stage | none |
+
+Both are described in [Agent Guardrails](/Agents/guardrails#injection-check-on-every-agent).
 
 ## Offline and air-gapped installs
 
@@ -81,7 +92,9 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
   "runtime": "onnx-int8",
   "speed": {"threads": 4, "measured_at": "2026-10-15T09:12:03+00:00", "drift": 1.02,
             "guard_s": 0.152, "relevance_s": 1.41, "analytics_s": 4.1},
-  "features": {}
+  "features": {
+    "injection_input": {"mode": "auto", "effective": "monitor", "predicted_s": 0.38, "budget_s": 0.5, "reason": "fits"}
+  }
 }
 ```
 
