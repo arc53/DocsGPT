@@ -163,7 +163,7 @@ const schedulesService = {
       endpoints.USER.SCHEDULE_RUN(id, runId),
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await savedOrThrow(r)) as ScheduleRunResponse;
   },
 };
 
