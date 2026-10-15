@@ -586,6 +586,11 @@ class TestFinalizeMessage:
         stopped = {"error_code": "stopped"}
         assert self._finalized_unread_at(pg_conn, status="failed", metadata=stopped) is None
 
+    def test_a_dropped_connection_leaves_no_mark(self, pg_conn):
+        # New Chat, a reload or a closed tab: the user left on purpose.
+        dropped = {"error_code": "client_disconnect"}
+        assert self._finalized_unread_at(pg_conn, status="failed", metadata=dropped) is None
+
     def test_a_failure_in_an_unlisted_chat_leaves_no_mark(self, pg_conn):
         assert self._finalized_unread_at(pg_conn, status="failed", visibility="hidden") is None
 

@@ -37,6 +37,10 @@ TERMINATED_RESPONSE_PLACEHOLDER = (
     "Response was terminated prior to completion, try regenerating."
 )
 
+# A failed answer's codes for an end its user chose: a Stop, or leaving the
+# stream (New Chat, a reload, a closed tab). Neither marks the chat failed.
+_USER_ENDED_CODES = frozenset({"stopped", "client_disconnect"})
+
 
 def _final_finish_reason(llm: Any) -> Optional[str]:
     """Best-effort finish_reason of the round that actually produced the answer.
@@ -473,9 +477,9 @@ class ConversationService:
                 )
                 return outcome
             repo.confirm_executed_tool_calls(message_id)
-            # Activity marks a chat failed while it is unread; a Stop is the
-            # user's own doing and isn't counted.
-            if status == "failed" and merged_metadata.get("error_code") != "stopped":
+            # Activity marks a chat failed while it is unread; a Stop or a
+            # dropped connection (New Chat, a reload) is the user's own doing.
+            if status == "failed" and merged_metadata.get("error_code") not in _USER_ENDED_CODES:
                 from docsgpt.notifications.notify import mark_failed_answer_unseen
 
                 mark_failed_answer_unseen(conn, message_id)

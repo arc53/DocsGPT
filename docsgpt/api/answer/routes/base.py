@@ -1835,6 +1835,10 @@ class BaseAnswerResource:
                         if stopped:
                             failure_metadata["error"] = "Stopped by its user before any response was produced."
                             failure_metadata["error_code"] = "stopped"
+                        else:
+                            # As the journaled event says, so a reload words
+                            # it the same and the chat isn't marked failed.
+                            failure_metadata["error_code"] = "client_disconnect"
                         try:
                             self.conversation_service.finalize_message(
                                 reserved_message_id,

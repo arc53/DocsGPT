@@ -205,7 +205,9 @@ class TestStopFromActivity:
             call for call in service.finalize_message.call_args_list if call.kwargs.get("status") == "failed"
         ]
         assert len(failed) == 1
-        assert (failed[0].kwargs.get("metadata") or {}).get("error_code") != "stopped"
+        # Saved with its code, so a reload words it as the live stream did
+        # and the chat isn't marked failed for it.
+        assert (failed[0].kwargs.get("metadata") or {}).get("error_code") == "client_disconnect"
 
     def test_a_stopped_turn_keeps_its_logs_entry(self, mock_mongo_db, flask_app):
         # Logs lists running chats; once stopped it must list the turn as
