@@ -7,7 +7,10 @@ around it:
   timing run) runs on its own thread; hot calls meanwhile return ``loading`` and background calls wait. A failed
   load is retried after ``DECISION_LOAD_RETRY_SECONDS``.
 - **Two buffers on one session.** A second release ``Decider`` would hold a second copy of the weights. The hot
-  buffer is the client's own; the background one is made on first use and dropped after a minute idle.
+  buffer is the client's own; the background one is made on first use and dropped after a minute idle. A buffer
+  keeps the rows of the longest state it has held, so a hot call longer than ``HOT_KEEP_TOKENS`` leaves a fresh
+  buffer behind: otherwise one long hot call plus a long background call hold two full-size buffers (~220 MB more
+  than one at 2,048 tokens) for the life of the process.
 - **Passes, not calls.** Each call runs the pass plan in ``speed.plan`` one pass at a time through the gate, so
   hot work waits at most one background pass, and every pass is timed into the latency model.
 - **Temperatures by family.** ``tag:billing`` is answered with ``tag``'s fitted temperature; the release client
@@ -39,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 #: Seconds without background work after which the background buffer is freed.
 BACKGROUND_IDLE_S = 60.0
+
+#: Tokens of KV the hot buffer may keep after a call; longer calls get a fresh buffer afterwards. Guard and gate
+#: calls fit, so they never reallocate; a long hot call pays a few milliseconds to map its rows again.
+HOT_KEEP_TOKENS = 512
 
 #: The timing run's state: constant text, never user data.
 TIMING_TEXT = (
@@ -248,7 +255,7 @@ class OnnxBackend:
         question = enc(suffix_text(Q.RELEVANT))
         guard = (filler[: TIMING_SINGLE - len(question)], [question])
         state = (filler, [question, question])
-        buf = engine.kv
+        buf = engine.new_buffer()  # dropped afterwards: the timing state is longer than HOT_KEEP_TOKENS
         buf.reserve(TIMING_STATE + len(question))
         samples = []
         for i, (prefix, suffixes) in enumerate([guard, guard, guard, state]):
@@ -317,6 +324,7 @@ class OnnxBackend:
         prefix = enc(prefix_text(text))
         suffixes = [enc(suffix_text(q)) for q in request.questions.values()]
         passes = plan(len(prefix), [len(s) for s in suffixes], lane)
+        needed = len(prefix) + max(map(len, suffixes))
 
         start = self._clock()
         lock = self._buffer_locks[lane]
@@ -325,7 +333,7 @@ class OnnxBackend:
         compute = 0.0
         try:
             buf = self._buffer(engine, lane)
-            buf.reserve(len(prefix) + max(map(len, suffixes)))
+            buf.reserve(needed)
             logits: dict[int, Any] = {}
             for step in passes:
                 try:
@@ -349,6 +357,8 @@ class OnnxBackend:
         finally:
             if lane == "background":
                 self._background_used = self._clock()
+            elif needed > HOT_KEEP_TOKENS:
+                engine.kv = engine.new_buffer()
             lock.release()
             if lane == "background":
                 self._schedule_drop()

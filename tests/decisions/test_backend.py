@@ -222,20 +222,20 @@ class TestPasses:
 
     def test_several_questions_share_one_prefill(self, engine):
         backend = loaded(engine)
-        engine.kv.passes.clear()
+        hot = engine.kv  # replaced after this call: the state is longer than HOT_KEEP_TOKENS
         state = {"text": "x" * 600}
         (outcome,) = backend.run([Request(state, {"a": NOUL, "b": OTHER})], "hot", far())
         prefix = len(prefix_text(to_text(state)))
-        assert [cached for _, cached, _ in engine.kv.passes] == [*range(0, prefix, 256), prefix, prefix]
+        assert [cached for _, cached, _ in hot.passes] == [*range(0, prefix, 256), prefix, prefix]
         assert outcome.answers["a"]["noul"] == pytest.approx(expected_p(to_text(state), NOUL))
         assert outcome.answers["b"]["noul"] == pytest.approx(expected_p(to_text(state), OTHER))
-        suffixes = sum(n for n, cached, _ in engine.kv.passes if cached == prefix)
+        suffixes = sum(n for n, cached, _ in hot.passes if cached == prefix)
         assert outcome.input_tokens == prefix + suffixes
 
     def test_background_prefills_in_chunks_even_for_one_question(self, engine):
         backend = loaded(engine)
         (outcome,) = backend.run([Request("y" * 300, {"q": NOUL})], "background", far())
-        background = engine.buffers[1]
+        background = backend._background
         assert [single for _, _, single in background.passes] == [False] * len(background.passes)
         assert max(n for n, _, _ in background.passes) <= 256
         assert outcome.answers["q"]["noul"] == pytest.approx(expected_p("y" * 300, NOUL))
@@ -307,7 +307,30 @@ class TestBuffers:
             assert background.answers[key]["noul"] == pytest.approx(expected_p(to_text(state), question))
         for i, outcome in enumerate(hot):
             assert outcome.answers["a"]["noul"] == pytest.approx(expected_p(f"hot {i} " * 40, NOUL))
-        assert len(engine.buffers) == 2 and engine.buffers[1].passes
+        assert backend._background is not None and backend._background.passes
+
+    def test_a_long_hot_call_leaves_a_fresh_hot_buffer(self, engine):
+        from docsgpt.decisions.backends.onnx import HOT_KEEP_TOKENS
+
+        backend = loaded(engine)
+        short = engine.kv
+        backend.run([Request("short", {"q": NOUL})], "hot", far())
+        assert engine.kv is short
+        backend.run([Request("x" * HOT_KEEP_TOKENS, {"q": NOUL})], "hot", far())
+        assert engine.kv is not short and engine.kv.reserved == 0
+        (again,) = backend.run([Request("x" * HOT_KEEP_TOKENS, {"q": NOUL})], "hot", far())
+        assert again.answers["q"]["noul"] == pytest.approx(expected_p(to_text("x" * HOT_KEEP_TOKENS), NOUL))
+
+    def test_a_long_background_call_keeps_its_buffer(self, engine):
+        from docsgpt.decisions.backends.onnx import HOT_KEEP_TOKENS
+
+        backend = loaded(engine)
+        backend.run([Request("x" * HOT_KEEP_TOKENS, {"q": NOUL})], "background", far())
+        assert backend._background.reserved > HOT_KEEP_TOKENS
+
+    def test_the_timing_run_leaves_the_hot_buffer_empty(self, engine):
+        loaded(engine)
+        assert engine.kv.reserved == 0 and engine.buffers[1].passes
 
     def test_the_background_buffer_is_dropped_after_a_minute_idle(self, engine):
         clock = FakeClock()
