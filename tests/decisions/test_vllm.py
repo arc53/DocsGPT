@@ -166,7 +166,7 @@ class TestRequests:
         assert noul["logprobs"] == 2 and choice["logprobs"] == 5 and noul["return_tokens_as_token_ids"] is True
         assert "priority" not in noul
         assert "x-decision-priority" not in server.log[-1]["headers"]
-        assert server.log[-1]["headers"]["authorization"] == "Bearer internal-key"
+        assert "authorization" not in server.log[-1]["headers"]  # INTERNAL_KEY is set but never sent
 
     @pytest.mark.parametrize("lane, priority", [("hot", 0), ("background", 10)])
     def test_priority_only_when_enabled(self, vllm, lane, priority):

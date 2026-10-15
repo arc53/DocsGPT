@@ -488,7 +488,7 @@ How `DECISION_BASE_URL` is called: `decide` for the `/v1/decide` contract, `vllm
 
 Type `str`, default unset.
 
-Bearer key sent to `DECISION_BASE_URL`. Unset sends `INTERNAL_KEY`, which every shipped stack shares; set it for a server outside your stack.
+Bearer key sent to `DECISION_BASE_URL`, and only there. Unset sends no key; `INTERNAL_KEY` is never sent to the decision server.
 
 ### `DECISION_MODEL`
 

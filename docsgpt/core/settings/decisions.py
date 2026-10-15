@@ -38,8 +38,8 @@ class DecisionSettings(SettingsGroup):
     DECISION_KEY: Optional[str] = Field(
         default=None,
         description=(
-            "Bearer key sent to `DECISION_BASE_URL`. Unset sends `INTERNAL_KEY`, which every shipped stack shares; "
-            "set it for a server outside your stack."
+            "Bearer key sent to `DECISION_BASE_URL`, and only there. Unset sends no key; `INTERNAL_KEY` is never "
+            "sent to the decision server."
         ),
     )
     DECISION_MODEL: Optional[str] = Field(

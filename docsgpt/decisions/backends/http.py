@@ -10,8 +10,10 @@ other):
 - **Deadlines.** A request's timeout is the time its call has left, and parts not done by the deadline come back
   ``timeout``. One retry, after a connection error or a 502/503/504, only while 30% of the call's budget remains.
 - **The breaker** (``decisions.breaker``) skips calls for a cooldown after consecutive transport failures.
-- **The key.** ``Authorization: Bearer`` ``DECISION_KEY``, else ``INTERNAL_KEY``. A 401 is logged once and makes the
-  backend ``unavailable`` (``auth``) until a later probe is let in.
+- **The key.** ``Authorization: Bearer`` ``DECISION_KEY`` when it is set, and no header otherwise. There is no
+  fallback to ``INTERNAL_KEY``: it guards DocsGPT's internal API and must never reach whatever server
+  ``DECISION_BASE_URL`` names. A 401 or 403 is logged once and makes the backend ``unavailable`` (``auth``) until a
+  later probe is let in.
 - **The probe.** ``GET /v1/models`` before the first call and every ``DECISION_PROBE_SECONDS``: the server's model,
   status and, from ``docsgpt decide-server``, its timing profile, plus the round trip. A server that reports no
   profile (``arcd serve``, vLLM) is timed through the endpoint with the synthetic calls the local backend times, at
@@ -407,8 +409,7 @@ class RemoteBackend:
     def _headers(self, lane: Optional[Lane], deadline: float) -> dict:
         from docsgpt.core.settings import settings
 
-        key = settings.DECISION_KEY or settings.INTERNAL_KEY
-        return {"Authorization": f"Bearer {key}"} if key else {}
+        return {"Authorization": f"Bearer {settings.DECISION_KEY}"} if settings.DECISION_KEY else {}
 
     def _send(self, method: str, path: str, body: Any, *, lane: Optional[Lane], deadline: float, budget: float,
               check: Optional[Callable[[Any], bool]], optional: bool = False) -> Reply:
@@ -464,8 +465,7 @@ class RemoteBackend:
             with self._lock:
                 self._refused = "auth"
             self._log_once("auth", logging.WARNING, "The decision server refused this process's key (HTTP %s): set "
-                           "the same DECISION_KEY, or INTERNAL_KEY, on both sides. Decisions fail open meanwhile.",
-                           status)
+                           "DECISION_KEY to the key the server expects. Decisions fail open meanwhile.", status)
             return Reply(reason="auth", ms=ms)
         if status in (404, 405) and optional:
             self._succeeded()

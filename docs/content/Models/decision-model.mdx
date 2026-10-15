@@ -61,7 +61,7 @@ Instead of loading the model in the API process, DocsGPT can call a decision ser
 
 ```env
 DECISION_BASE_URL=http://127.0.0.1:7095   # the server's root, without /v1
-DECISION_KEY=                             # bearer key; unset sends INTERNAL_KEY
+DECISION_KEY=                             # bearer key the server expects; unset sends none
 ```
 
 Two kinds of server work:
@@ -84,13 +84,15 @@ The two `logprobs` flags are required: without them the answers come back empty 
 
 In API mode DocsGPT downloads only the model's tokenizer (11 MB, at the same pinned revision) into `DECISION_CACHE_DIR`, so it counts tokens and reports truncation exactly as the server cuts a state. On an air-gapped host, `docsgpt decisions prefetch` fetches it with the rest of the model.
 
-**The server receives the text** of every message, chunk or conversation a feature asks about. Point `DECISION_BASE_URL` only at a server you trust with that data, as you would an LLM provider: it acts as a data processor for your users' content. `INTERNAL_KEY` is sent as the bearer key when `DECISION_KEY` is unset, so set `DECISION_KEY` for any server outside your own stack.
+**The server receives the text** of every message, chunk or conversation a feature asks about. Point `DECISION_BASE_URL` only at a server you trust with that data, as you would an LLM provider: it acts as a data processor for your users' content. DocsGPT sends `DECISION_KEY` as a bearer key when it is set, and no key otherwise; it never sends `INTERNAL_KEY`, which guards its own internal API, to the decision server.
+
+{/* The shipped compose and k8s stacks, once they run the decider sidecar, set DECISION_KEY explicitly on the backend, the worker and the decider from one stack secret (for example `DECISION_KEY: ${DECISION_KEY:-${INTERNAL_KEY}}` in compose, evaluated by the operator's own stack). The client itself never falls back to INTERNAL_KEY. */}
 
 When the server fails, features carry on without it:
 
 - Each request's timeout is the time left before the feature's deadline. A connection error or a 502, 503 or 504 is retried once (`DECISION_API_RETRIES`), and only while 30% of that time remains; timeouts and other errors are not retried.
 - After 3 consecutive failures (`DECISION_BREAKER_FAILURES`), calls are skipped for 30 seconds (`DECISION_BREAKER_COOLDOWN`); then one is let through, and its success resumes them.
-- A server that refuses the key (HTTP 401) is logged once, and calls stop until a later check of the server succeeds.
+- A server that refuses the key (HTTP 401 or 403) is logged once, and calls stop until a later check of the server succeeds. Set `DECISION_KEY` to the key the server expects.
 - A server that answers one bad item with an error for the whole batch, as `arcd serve` does, has that batch sent again one item at a time.
 
 States are sent in batches of `DECISION_BATCH_SIZE` (32). Up to `DECISION_API_CONCURRENCY` (4) requests are in flight for decisions someone waits on, and `DECISION_BACKGROUND_CONCURRENCY` (1) for background work, which never takes an interactive slot. DocsGPT reads the server's `GET /v1/models` before the first call and every `DECISION_PROBE_SECONDS` (30).

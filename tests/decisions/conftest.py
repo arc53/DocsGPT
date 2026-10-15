@@ -42,6 +42,16 @@ schedule_tick = OnnxBackend._schedule_tick
 
 
 @pytest.fixture(autouse=True)
+def _no_hub(monkeypatch):
+    """No decision test downloads anything; tests of the downloader patch ``snapshot_download`` themselves."""
+
+    def refuse(**kwargs):
+        raise AssertionError(f"a test tried to download {kwargs.get('repo_id')} from the Hub")
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _no_cpu_timer(monkeypatch):
     """No CPU-budget timer in unit tests: a minute later it would rebuild a stale backend in another test.
 
@@ -51,6 +61,7 @@ def _no_cpu_timer(monkeypatch):
 
 
 #: API-mode settings at their defaults, pointed at a fake server; the answer cache is off so every call is sent.
+#: ``INTERNAL_KEY`` is set so the tests can show it never leaves the process.
 API_SETTINGS = {
     "DECISION_MODE": None, "DECISION_BASE_URL": "http://decider:7095", "DECISION_PROTOCOL": "decide",
     "DECISION_MODEL": None, "DECISION_MODEL_PATH": None, "DECISION_KEY": None, "INTERNAL_KEY": "internal-key",

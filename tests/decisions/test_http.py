@@ -271,22 +271,25 @@ class TestBreaker:
 
 @pytest.mark.unit
 class TestHeaders:
-    def test_the_key_falls_back_to_internal_key(self, remote):
-        server = FakeDecideServer()
-        run(remote(DecideBackend, server), [Request("s", {"q": NOUL})])
-        assert {e["headers"]["authorization"] for e in server.log} == {"Bearer internal-key"}
-
-    def test_decision_key_wins(self, remote, api):
+    def test_decision_key_goes_on_every_request(self, remote, api):
         api(DECISION_KEY="decider-key")
-        server = FakeDecideServer()
-        run(remote(DecideBackend, server), [Request("s", {"q": NOUL})])
-        assert server.log[-1]["headers"]["authorization"] == "Bearer decider-key"
+        server = FakeDecideServer(DOCSGPT_ENTRY)
+        backend = remote(DecideBackend, server)
+        backend._probe()
+        backend._load()
+        run(backend, [Request("s", {"q": NOUL})])
+        assert server.paths(models=True) == ["/v1/models", "/v1/load", "/v1/decide"]
+        assert {e["headers"]["authorization"] for e in server.log} == {"Bearer decider-key"}
 
-    def test_no_key_no_header(self, remote, api):
-        api(INTERNAL_KEY=None)
-        server = FakeDecideServer()
-        run(remote(DecideBackend, server), [Request("s", {"q": NOUL})])
-        assert "authorization" not in server.log[-1]["headers"]
+    def test_internal_key_is_never_sent(self, remote):
+        server = FakeDecideServer(DOCSGPT_ENTRY)
+        backend = remote(DecideBackend, server)
+        backend._probe()
+        backend._load()
+        run(backend, [Request("s", {"q": NOUL})])
+        assert settings.INTERNAL_KEY == "internal-key" and len(server.log) == 3
+        assert not any("authorization" in e["headers"] for e in server.log)
+        assert not any("internal-key" in str(dict(e["headers"])) for e in server.log)
 
     def test_deadline_and_priority(self, remote):
         server = FakeDecideServer()
@@ -307,7 +310,8 @@ class TestHeaders:
             sent = len(server.log)
             assert run(backend, [Request("s", {"q": NOUL})]) == ["auth"]
         assert len(server.log) == sent  # refused without sending
-        assert sum("refused this process's key" in r.message for r in caplog.records) == 1
+        (said,) = [r.message for r in caplog.records if "refused this process's key" in r.message]
+        assert "DECISION_KEY" in said and "INTERNAL_KEY" not in said
         assert (backend.status, backend.reason) == ("unavailable", "auth")
         assert not backend._breaker.open
         clock.advance(30)
