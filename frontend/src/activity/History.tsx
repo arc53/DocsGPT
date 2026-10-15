@@ -91,13 +91,31 @@ const STATUS_FILTERS = [
 /** Look-back choices, in days (scheduled runs are kept 90 days by default). */
 const PERIODS = ['7', '30', '90'] as const;
 
-/** "8.2 s", "2 m 10 s", "1 h 4 m"; empty when unknown (a skipped run has none). */
-export function formatDuration(ms: number | null | undefined): string {
+/**
+ * "8.2s", "2m 10s", "1h 4m" in English, with the units in the reader's
+ * language; empty when unknown (a skipped run has none).
+ */
+export function formatDuration(
+  ms: number | null | undefined,
+  locale: string = intlLocale(),
+): string {
   if (ms === null || ms === undefined || ms <= 0) return '';
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${minutes} m ${Math.round((ms % 60_000) / 1000)} s`;
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} m`;
+  const unit = (value: number, name: string, digits = 0) =>
+    new Intl.NumberFormat(locale, {
+      style: 'unit',
+      unit: name,
+      unitDisplay: 'narrow',
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(value);
+  if (ms < 10_000) return unit(ms / 1000, 'second', 1);
+  // Whole seconds before splitting, so 119.6 s reads 2m 0s, not 1m 60s.
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return unit(seconds, 'second');
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return `${unit(minutes, 'minute')} ${unit(seconds % 60, 'second')}`;
+  return `${unit(Math.floor(minutes / 60), 'hour')} ${unit(minutes % 60, 'minute')}`;
 }
 
 /**
@@ -372,7 +390,7 @@ export default function History() {
           </Badge>
         </TableCell>
         <TableCell align="right" className="whitespace-nowrap tabular-nums">
-          {formatDuration(run.duration_ms) || '—'}
+          {formatDuration(run.duration_ms, intlLocale(i18n.language)) || '—'}
         </TableCell>
         <TableCell
           align="right"

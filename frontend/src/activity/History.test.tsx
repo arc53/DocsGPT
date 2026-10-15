@@ -165,7 +165,7 @@ describe('History page', () => {
     await render();
     expect(container.textContent).toContain('activity.calendar.today');
     expect(row('schedule').textContent).toContain('Daily support digest');
-    expect(row('schedule').textContent).toContain('11 s');
+    expect(row('schedule').textContent).toContain('11s');
     expect(row('webhook').textContent).toContain(
       'activity.history.status.failed',
     );
@@ -343,9 +343,20 @@ describe('History page', () => {
 
 describe('formatDuration', () => {
   it('reads in seconds, minutes and hours', () => {
-    expect(formatDuration(8_200)).toBe('8.2 s');
-    expect(formatDuration(130_000)).toBe('2 m 10 s');
-    expect(formatDuration(3_840_000)).toBe('1 h 4 m');
-    expect(formatDuration(null)).toBe('');
+    expect(formatDuration(8_200, 'en')).toBe('8.2s');
+    expect(formatDuration(130_000, 'en')).toBe('2m 10s');
+    expect(formatDuration(3_840_000, 'en')).toBe('1h 4m');
+    expect(formatDuration(null, 'en')).toBe('');
+  });
+
+  it('rounds to whole seconds before splitting minutes', () => {
+    // Rounding the remainder alone read 119.6 s as "1 m 60 s".
+    expect(formatDuration(119_600, 'en')).toBe('2m 0s');
+    expect(formatDuration(59_700, 'en')).toBe('1m 0s');
+  });
+
+  it("writes the units in the reader's language", () => {
+    expect(formatDuration(130_000, 'ru')).toBe('2 мин 10 с');
+    expect(formatDuration(130_000, 'de')).toBe('2 Min. 10 Sek.');
   });
 });
