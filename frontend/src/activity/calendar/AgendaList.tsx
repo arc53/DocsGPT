@@ -63,10 +63,12 @@ export default function AgendaList({
   const dayName = new Intl.DateTimeFormat(intlLocale(i18n.language), {
     weekday: 'short',
   });
-  const date = new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-  });
+  // English as en-GB (12 Oct), like the Monday-first weeks; every other
+  // language in its own words, as the weekday is.
+  const date = new Intl.DateTimeFormat(
+    i18n.language === 'en' ? 'en-GB' : intlLocale(i18n.language),
+    { day: 'numeric', month: 'short' },
+  );
   const filled = days.filter((day) => grouped.has(dayKey(day)));
 
   const heading = (day: Date) => {
