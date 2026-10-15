@@ -2277,7 +2277,6 @@
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
     },
     "send": "傳送",
-    "viewArtifact": "檢視 Artifact",
     "stopSpeaking": "停止朗讀",
     "loadingAudio": "正在載入音訊",
     "voice": {
@@ -2348,6 +2347,20 @@
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 個失敗"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML 頁面",
+        "pdf": "PDF",
+        "slides": "投影片",
+        "document": "文件",
+        "spreadsheet": "試算表",
+        "data": "資料檔案",
+        "image": "圖片",
+        "file": "檔案"
+      },
+      "version": "v{{version}}",
+      "download": "下載 {{title}}"
     }
   },
   "agents": {

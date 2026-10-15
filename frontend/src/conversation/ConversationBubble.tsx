@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Database,
   Download,
-  Eye,
   FileText,
   Paperclip,
   Pencil,
@@ -19,19 +18,21 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
+import { ArtifactCardList } from '../components/ArtifactCard';
 import CopyButton from '../components/CopyButton';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';
+import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { SidePanel } from '../components/ui/side-panel';
@@ -54,6 +55,11 @@ import ConnectToolCallBar from './ConnectToolCallBar';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
+import {
+  cardsFromToolCalls,
+  orderArtifactCards,
+  type OpenArtifactRequest,
+} from './artifactCards';
 import { deriveArtifactChips } from './artifactChips';
 import {
   type AnswerSource,
@@ -65,6 +71,7 @@ import ResearchProgress from './ResearchProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
 import { shownArguments, ToolCallsType } from './types';
+import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = envVar('VITE_DISABLE_SOURCE_FE') === 'true';
@@ -108,7 +115,7 @@ const ConversationBubble = forwardRef<
      * The chip RAIL still uses this turn's artifacts only.
      */
     conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
-    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+    onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
     onToolAction?: (
       callId: string,
       decision: 'approved' | 'denied',
@@ -174,6 +181,21 @@ const ConversationBubble = forwardRef<
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
   const completedArtifacts = deriveArtifactChips(toolCalls);
+  // Only a view that can open an artifact lists the run's (a shared chat
+  // can't, and its reader may not own the run).
+  const runArtifacts = useRunArtifacts(
+    onOpenArtifact ? workflowRunId : undefined,
+    isStreaming,
+  );
+  // This turn's artifacts, from its tool calls and its workflow run, as cards.
+  const artifactCards = useMemo(
+    () =>
+      orderArtifactCards([
+        ...cardsFromToolCalls(toolCalls),
+        ...runArtifacts.items,
+      ]),
+    [toolCalls, runArtifacts.items],
+  );
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -473,39 +495,6 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
-        {!message && onOpenArtifact && completedArtifacts.length > 0 && (
-          <div className="my-2 ml-6 flex flex-wrap justify-start gap-2">
-            {completedArtifacts.map((artifact, artifactIndex) => (
-              <Button
-                key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
-                type="button"
-                onClick={() =>
-                  onOpenArtifact({
-                    id: artifact.id,
-                    toolName: artifact.toolName,
-                  })
-                }
-                variant="secondary"
-                shape="pill"
-              >
-                <Eye />
-                <span className="max-w-50 truncate" title={artifact.label}>
-                  {artifact.label}
-                </span>
-              </Button>
-            ))}
-          </div>
-        )}
-        {workflowRunId && (
-          // empty:hidden drops the margin while the run has no artifacts.
-          <div className="my-2 mr-5 ml-6 empty:hidden">
-            <WorkflowRunArtifacts
-              workflowRunId={workflowRunId}
-              inProgress={isStreaming}
-              hideWhenEmpty
-            />
-          </div>
-        )}
         {type === 'ERROR' ? (
           message && (
             // On the answer's ml-6 text column. Without a code the backend's
@@ -583,6 +572,30 @@ const ConversationBubble = forwardRef<
             )}
           />
         )}
+        {onOpenArtifact && (
+          <ArtifactCardList
+            items={artifactCards}
+            open={companion?.openArtifact}
+            onOpen={(item) =>
+              onOpenArtifact({
+                id: item.id,
+                toolName: item.toolName,
+                version: item.version,
+              })
+            }
+            className="mt-3 mr-5 ml-6"
+          />
+        )}
+        {runArtifacts.failed && (
+          <EmptyState
+            tone="destructive"
+            size="sm"
+            illustration="none"
+            title={t('agents.workflow.artifacts.loadListFailed')}
+            onRetry={runArtifacts.retry}
+            className="mr-5 ml-6"
+          />
+        )}
         {message && (
           // ml-4 plus each button's own p-2 puts the first glyph on the answer's
           // ml-6 text column.
@@ -598,34 +611,6 @@ const ConversationBubble = forwardRef<
               </>
             ) : (
               <>
-                {onOpenArtifact &&
-                  completedArtifacts.map((artifact, artifactIndex) => (
-                    <div
-                      key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
-                      className="relative flex items-center justify-center"
-                    >
-                      <Button
-                        type="button"
-                        onClick={() =>
-                          onOpenArtifact({
-                            id: artifact.id,
-                            toolName: artifact.toolName,
-                          })
-                        }
-                        variant="secondary"
-                        shape="pill"
-                        aria-label={t('conversation.viewArtifact')}
-                      >
-                        <Eye />
-                        <span
-                          className="max-w-50 truncate"
-                          title={artifact.label}
-                        >
-                          {artifact.label}
-                        </span>
-                      </Button>
-                    </div>
-                  ))}
                 {!isStreaming && (
                   <>
                     <div className="relative block items-center justify-center">

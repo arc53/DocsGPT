@@ -2287,7 +2287,6 @@
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
     },
     "send": "Enviar",
-    "viewArtifact": "Ver artefacto",
     "stopSpeaking": "Dejar de hablar",
     "loadingAudio": "Cargando audio",
     "voice": {
@@ -2359,6 +2358,20 @@
     "stepGroup": {
       "title": "Herramientas",
       "failed": "{{count}} con error"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "Página HTML",
+        "pdf": "PDF",
+        "slides": "Diapositivas",
+        "document": "Documento",
+        "spreadsheet": "Hoja de cálculo",
+        "data": "Archivo de datos",
+        "image": "Imagen",
+        "file": "Archivo"
+      },
+      "version": "v{{version}}",
+      "download": "Descargar {{title}}"
     }
   },
   "agents": {

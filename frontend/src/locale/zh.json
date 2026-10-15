@@ -2276,7 +2276,6 @@
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
     },
     "send": "发送",
-    "viewArtifact": "查看工件",
     "stopSpeaking": "停止朗读",
     "loadingAudio": "正在加载音频",
     "voice": {
@@ -2347,6 +2346,20 @@
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 个失败"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML 页面",
+        "pdf": "PDF",
+        "slides": "幻灯片",
+        "document": "文档",
+        "spreadsheet": "电子表格",
+        "data": "数据文件",
+        "image": "图片",
+        "file": "文件"
+      },
+      "version": "v{{version}}",
+      "download": "下载 {{title}}"
     }
   },
   "agents": {

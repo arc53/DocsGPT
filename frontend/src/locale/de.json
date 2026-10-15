@@ -2287,7 +2287,6 @@
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
     "send": "Senden",
-    "viewArtifact": "Artefakt anzeigen",
     "stopSpeaking": "Vorlesen beenden",
     "loadingAudio": "Audio wird geladen",
     "voice": {
@@ -2359,6 +2358,20 @@
     "stepGroup": {
       "title": "Werkzeuge",
       "failed": "{{count}} fehlgeschlagen"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML-Seite",
+        "pdf": "PDF",
+        "slides": "Folien",
+        "document": "Dokument",
+        "spreadsheet": "Tabelle",
+        "data": "Datendatei",
+        "image": "Bild",
+        "file": "Datei"
+      },
+      "version": "v{{version}}",
+      "download": "{{title}} herunterladen"
     }
   },
   "agents": {

@@ -2287,7 +2287,6 @@
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
     },
     "send": "Send",
-    "viewArtifact": "View artifact",
     "stopSpeaking": "Stop speaking",
     "loadingAudio": "Loading audio",
     "voice": {
@@ -2359,6 +2358,20 @@
     "stepGroup": {
       "title": "Tools",
       "failed": "{{count}} failed"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML page",
+        "pdf": "PDF",
+        "slides": "Slides",
+        "document": "Document",
+        "spreadsheet": "Spreadsheet",
+        "data": "Data file",
+        "image": "Image",
+        "file": "File"
+      },
+      "version": "v{{version}}",
+      "download": "Download {{title}}"
     }
   },
   "agents": {

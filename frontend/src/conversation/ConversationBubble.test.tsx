@@ -197,38 +197,57 @@ describe('ConversationBubble', () => {
     expect(card.getAttribute('data-padding')).toBe('sm');
   });
 
-  it('renders artifact chips as secondary pills and feedback as muted icon buttons', async () => {
+  it('renders artifacts as cards under the answer and feedback as muted icon buttons', async () => {
+    const onOpenArtifact = vi.fn();
     await render(
-      <ConversationBubble
-        type="ANSWER"
-        message="Done."
-        feedback="LIKE"
-        handleFeedback={() => {}}
-        onOpenArtifact={() => {}}
-        toolCalls={[
-          {
-            tool_name: 'code_executor',
-            action_name: 'code_executor_run',
-            call_id: 'call-2',
-            arguments: {},
-            status: 'completed',
-            artifact_id: 'art-1',
-          } as ToolCallsType,
-        ]}
-      />,
+      <ChatCompanionContext.Provider
+        value={{
+          openSources: () => {},
+          openArtifact: { id: 'art-1', version: 2 },
+        }}
+      >
+        <ConversationBubble
+          type="ANSWER"
+          message="Done."
+          feedback="LIKE"
+          handleFeedback={() => {}}
+          onOpenArtifact={onOpenArtifact}
+          toolCalls={[
+            {
+              tool_name: 'code_executor',
+              action_name: 'code_executor_run',
+              call_id: 'call-2',
+              arguments: {},
+              status: 'completed',
+              artifact_id: 'art-1',
+              artifacts: [
+                { id: 'art-1', filename: 'claims.csv', ref: 'A1', version: 2 },
+              ],
+            } as ToolCallsType,
+          ]}
+        />
+      </ChatCompanionContext.Provider>,
     );
 
-    const viewArtifact =
-      (en.conversation as Record<string, unknown>).viewArtifact ??
-      'conversation.viewArtifact';
-    const chips = container.querySelectorAll(
-      `button[aria-label="${viewArtifact}"]`,
-    );
-    expect(chips.length).toBe(1);
-    chips.forEach((chip) => {
-      expect((chip as HTMLElement).dataset.variant).toBe('secondary');
-      expect((chip as HTMLElement).dataset.shape).toBe('pill');
+    const cards = container.querySelectorAll('[data-slot="artifact-card"]');
+    expect(cards.length).toBe(1);
+    expect(cards[0].textContent).toContain('claims.csv');
+    // The card the docked panel shows is marked open.
+    expect(cards[0].className).toContain('bg-secondary');
+    const open = cards[0].querySelector(
+      '[data-artifact-open]',
+    ) as HTMLButtonElement;
+    await act(async () => open.click());
+    // It opens the version the card names.
+    expect(onOpenArtifact).toHaveBeenCalledWith({
+      id: 'art-1',
+      toolName: 'code_executor',
+      version: 2,
     });
+    // The action row holds only the answer's own actions now.
+    expect(
+      container.querySelector('[data-variant="secondary"][data-shape="pill"]'),
+    ).toBeNull();
 
     const like = container.querySelector(
       `button[aria-label="${tr('conversation.feedback.removeLike')}"]`,

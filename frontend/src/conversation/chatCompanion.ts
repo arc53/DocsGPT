@@ -32,6 +32,8 @@ export type AnswerSource = {
  */
 export const ChatCompanionContext = createContext<{
   openSources: (sources: AnswerSource[], index?: number) => void;
+  /** The artifact (and version) the docked panel shows, so its card is marked open. */
+  openArtifact?: { id: string; version?: number } | null;
 } | null>(null);
 
 export const useChatCompanion = () => useContext(ChatCompanionContext);

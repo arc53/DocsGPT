@@ -50,6 +50,8 @@ type ArtifactData =
 type ArtifactPanelProps = {
   artifactId: string | null;
   toolName?: string;
+  /** The version to show first (the one its card names); else the current one. */
+  version?: number;
   conversationId: string | null;
 };
 
@@ -247,6 +249,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
 export default function ArtifactPanel({
   artifactId,
   toolName,
+  version,
   conversationId,
 }: ArtifactPanelProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
@@ -414,6 +417,7 @@ export default function ArtifactPanel({
       return (
         <DocumentArtifactView
           artifact={documentArtifact}
+          initialVersion={version}
           onRefresh={() => setRefreshNonce((n) => n + 1)}
         />
       );

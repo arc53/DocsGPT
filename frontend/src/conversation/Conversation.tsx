@@ -45,11 +45,12 @@ import {
   selectAttachments,
   selectSendableAttachments,
 } from '../upload/uploadSlice';
+import type { OpenArtifactRequest } from './artifactCards';
 import { cn } from '@/lib/utils';
 
 /** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
 type ChatCompanion =
-  | { kind: 'artifact'; id: string; toolName: string }
+  | { kind: 'artifact'; id: string; toolName: string; version?: number }
   // `index` is the source whose reader shows; null shows the list.
   | { kind: 'sources'; sources: AnswerSource[]; index: number | null };
 
@@ -411,20 +412,23 @@ export default function Conversation() {
     });
   }, [queries, conversationMountKey]);
 
-  const handleOpenArtifact = useCallback(
-    (artifact: { id: string; toolName: string }) => {
-      lastAutoOpenedArtifactId.current = artifact.id;
-      setCompanion({ kind: 'artifact', ...artifact });
-    },
-    [],
-  );
+  const handleOpenArtifact = useCallback((artifact: OpenArtifactRequest) => {
+    lastAutoOpenedArtifactId.current = artifact.id;
+    setCompanion({ kind: 'artifact', ...artifact });
+  }, []);
 
+  const openArtifactId = companion?.kind === 'artifact' ? companion.id : null;
+  const openArtifactVersion =
+    companion?.kind === 'artifact' ? companion.version : undefined;
   const companionContext = useMemo(
     () => ({
       openSources: (sources: AnswerSource[], index?: number) =>
         setCompanion({ kind: 'sources', sources, index: index ?? null }),
+      openArtifact: openArtifactId
+        ? { id: openArtifactId, version: openArtifactVersion }
+        : null,
     }),
-    [],
+    [openArtifactId, openArtifactVersion],
   );
 
   const isCompanionDocked = !isMobile && companion !== null;
@@ -434,6 +438,7 @@ export default function Conversation() {
       <ArtifactPanel
         artifactId={shownCompanion.id}
         toolName={shownCompanion.toolName}
+        version={shownCompanion.version}
         conversationId={conversationId}
       />
     ) : shownCompanion?.kind === 'sources' ? (

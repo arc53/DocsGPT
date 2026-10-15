@@ -2399,7 +2399,6 @@
       "cost": "Вы использовали {{used}} из бюджета в {{limit}}. Бюджет сбросится {{resetsAt}}."
     },
     "send": "Отправить",
-    "viewArtifact": "Открыть артефакт",
     "stopSpeaking": "Остановить озвучивание",
     "loadingAudio": "Загрузка аудио",
     "voice": {
@@ -2473,6 +2472,20 @@
     "stepGroup": {
       "title": "Инструменты",
       "failed": "Ошибок: {{count}}"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML-страница",
+        "pdf": "PDF",
+        "slides": "Слайды",
+        "document": "Документ",
+        "spreadsheet": "Таблица",
+        "data": "Файл данных",
+        "image": "Изображение",
+        "file": "Файл"
+      },
+      "version": "v{{version}}",
+      "download": "Скачать {{title}}"
     }
   },
   "agents": {
