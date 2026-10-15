@@ -172,6 +172,23 @@ class TestMissedRuns:
         _schedule(pg_conn, name="Scan", status="paused")
         assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
 
+    def test_slots_older_than_run_retention_are_not_missed(self, pg_conn):
+        # Runs are trimmed after SCHEDULE_RUN_OUTPUT_RETENTION_DAYS, so an
+        # older slot with no run may well have run.
+        from docsgpt.core.settings import settings
+
+        schedule = _schedule(pg_conn, cron="0 15 * * *")
+        pg_conn.execute(
+            text("UPDATE schedules SET created_at = :t, plan_changed_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": NOW - timedelta(days=400), "id": str(schedule["id"])},
+        )
+        horizon = NOW - timedelta(days=settings.SCHEDULE_RUN_OUTPUT_RETENTION_DAYS)
+        start = horizon - timedelta(days=20)
+        events = planned.build_planned(pg_conn, "u1", start, start + timedelta(days=40), now=NOW)["events"]
+        missed = [e["at"] for e in events if e["state"] == "missed"]
+        assert len(missed) == 20
+        assert min(missed) >= horizon.isoformat()
+
     def test_a_slot_inside_the_grace_period_is_not_missed_yet(self, pg_conn):
         _schedule(pg_conn, cron="55 13 * * 2")  # Tue 13:55, five minutes before NOW
         # Still planned, not dropped: the calendar keeps the slot until it

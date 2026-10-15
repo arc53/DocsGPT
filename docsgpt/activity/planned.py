@@ -26,6 +26,7 @@ from docsgpt.agents.scheduler_utils import (
     cron_runs,
     resolve_timezone,
 )
+from docsgpt.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -435,6 +436,9 @@ def build_planned(
     # A slot inside the grace period is still planned, so the calendar
     # keeps it until its run appears or it turns missed.
     missed_until = min(end, current - MISSED_GRACE)
+    # Older runs are trimmed (``cleanup_schedule_runs``), so an older slot
+    # with no run may have run: none of them counts as missed.
+    retained_since = current - timedelta(days=settings.SCHEDULE_RUN_OUTPUT_RETENTION_DAYS)
     future_start = max(start, current - MISSED_GRACE)
     for row in _schedules(conn, user_id, end):
         frequent = _is_frequent(row, frequent_cache)
@@ -446,7 +450,7 @@ def build_planned(
         schedule_id = str(row["id"])
         slots = [(at, state) for at in ahead if (schedule_id, _minute(at)) not in taken]
         # Past slots that never got a run: the scheduler was down or behind.
-        # Only for active schedules (pause history isn't kept, so a paused
+        # Only within run retention, only for active schedules (pause history isn't kept, so a paused
         # one's quiet slots may be its pause), and only since its plan last
         # changed: an older timing fired at other times, and before a resume
         # it was paused. Not ``updated_at``: every dispatcher write moves it.
@@ -454,6 +458,7 @@ def build_planned(
             start,
             as_datetime(row.get("plan_changed_at")) or start,
             as_datetime(row.get("created_at")) or start,
+            retained_since,
         )
         if row.get("status") == "active" and since < missed_until:
             past, cut = _past_slots(row, since, missed_until, limit, expansions)
