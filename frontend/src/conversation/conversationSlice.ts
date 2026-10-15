@@ -184,7 +184,9 @@ export const stopAnswer = createAsyncThunk<void, void>(
     const index = conversation.queries.length - 1;
     const messageId = conversation.queries[index]?.messageId;
     let taken = false;
-    if (controller && messageId && conversation.status === 'loading') {
+    // Not only a stream of this tab's: an answer picked back up after a
+    // reload is followed by polling, and only the server can stop it.
+    if (messageId && conversation.status === 'loading') {
       taken = await Promise.race([
         activityService.stopMessage(messageId, preference.token).then(
           () => true,

@@ -29,6 +29,7 @@ import reducer, {
   addQuery,
   applyMessageTail,
   fetchAnswer,
+  handleAbort,
   loadConversation,
   mapServerQueryToClient,
   raiseError,
@@ -991,5 +992,22 @@ describe('stopAnswer', () => {
     await answer;
     expect(events).toEqual(['closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+  });
+
+  it('stops an answer the chat picked back up, which has no stream of its own', async () => {
+    handleAbort();
+    vi.mocked(activityService.stopMessage).mockReset().mockResolvedValue();
+    const store = makeStore();
+    // After a reload the chat follows the answer by polling, not a stream.
+    store.dispatch(
+      setConversation([
+        { prompt: 'q', messageId: 'm1', messageStatus: 'streaming' },
+      ]),
+    );
+    store.dispatch(setConversationId('chat-a'));
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
+    expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
   });
 });
