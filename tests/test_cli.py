@@ -317,10 +317,35 @@ class TestDecisions:
         monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_BASE_URL", "http://decider:7095")
         monkeypatch.setattr(files, "local_tokenizer", lambda spec: tmp_path / "tokenizer.json")
         monkeypatch.setattr(files, "local_onnx_dir", lambda spec: pytest.fail("API mode needs no model files"))
+        monkeypatch.setattr("docsgpt.decisions.client.DecisionClient.probe", lambda self, timeout=5.0: False)
         assert cli.main(["decisions", "status"]) == 0
         report = json.loads(capsys.readouterr().out)
         assert report["mode"] == "api" and report["model"] == "arc53/arc-decide-0.6b-v0.1"
-        assert report["files"] == str(tmp_path / "tokenizer.json")
+        assert report["files"] == str(tmp_path / "tokenizer.json") and report["server"] == "no answer"
+
+    def test_status_in_api_mode_reports_the_servers_model(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from docsgpt import decisions
+        from docsgpt.decisions import files
+        from docsgpt.decisions.backends.http import DecideBackend
+        from docsgpt.decisions.models import V02
+        from tests.decisions.fakes import FakeDecideServer
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODE", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_BASE_URL", "http://decider:7095")
+        monkeypatch.setattr(files, "local_tokenizer", lambda spec: tmp_path / spec.id / "tokenizer.json")
+        server = FakeDecideServer({"name": V02.id, "revision": V02.revision, "prompt_hash": V02.prompt_hash,
+                                   "calibration": V02.calibration, "runtime": "onnx-int8", "status": "ready"})
+        decider = decisions.get_decider()
+        monkeypatch.setattr(decider, "_new_backend", lambda: DecideBackend(transport=server.transport()))
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert (report["model"], report["runtime"], report["status"]) == (V02.id, "onnx-int8", "ready")
+        assert report["server"] == "answered" and report["files"] == str(tmp_path / V02.id / "tokenizer.json")
+        assert server.paths(models=True) == ["/v1/models"]
+        decider._backend.close()
 
     def test_status_when_off(self, capsys):
         import json

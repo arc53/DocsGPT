@@ -196,7 +196,7 @@ Decision calls never count toward users' token limits: the model runs on your ha
 
 ## Checking it
 
-`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing.
+`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. In API mode it asks the decision server once, so the model, load status and speed it shows are the server's (`"server": "no answer"` when it cannot reach it). `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing.
 
 A running server reports what its API process sees at `GET /api/admin/decisions` (admins only):
 

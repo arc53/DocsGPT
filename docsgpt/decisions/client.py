@@ -291,6 +291,16 @@ class DecisionClient:
         if self._unusable() is None:
             self._get(create=True).warm()
 
+    def probe(self, timeout: float = 5.0) -> Optional[bool]:
+        """Ask the decision server once what it runs and how it is (``docsgpt decisions status``).
+
+        Returns:
+            Whether it answered; ``None`` where calls do not go to a server (local model, off, misconfigured).
+        """
+        if self.mode != "api" or self._unusable():
+            return None
+        return self._get(create=True)._probe(timeout)
+
     def model_info(self) -> Optional[ModelInfo]:
         """The model calls go to, without loading it; ``None`` when off or misconfigured."""
         spec = self._spec()

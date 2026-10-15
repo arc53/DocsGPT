@@ -335,16 +335,22 @@ def _decisions_status() -> int:
 
     A running server's load state, speed and feature verdicts are in its
     /api/admin/decisions; this command reports what that server would use.
+    In API mode it asks the decision server once, so the model, status and
+    speed are the server's.
     """
     from docsgpt import decisions
     from docsgpt.decisions import files
     from docsgpt.decisions.client import runtime
-    from docsgpt.decisions.models import select
+    from docsgpt.decisions.models import lookup, select
 
+    answered = decisions.get_decider().probe()
     report = decisions.status()
-    for key in ("status", "reason", "speed"):  # this process never loads the model: they say nothing here
-        report.pop(key, None)
-    spec = select(runtime()) if report["mode"] != "none" else None
+    if answered is None:
+        for key in ("status", "reason", "speed"):  # this process never loads the model: they say nothing here
+            report.pop(key, None)
+    else:
+        report["server"] = "answered" if answered else "no answer"
+    spec = ((report.get("model") and lookup(report["model"])) or select(runtime())) if report["mode"] != "none" else None
     if spec is not None:
         # in API mode this process only needs the tokenizer; the server holds the model
         folder = files.local_onnx_dir(spec) if report["mode"] == "local" else files.local_tokenizer(spec)
