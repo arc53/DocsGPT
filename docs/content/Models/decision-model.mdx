@@ -1,0 +1,92 @@
+---
+title: The Decision Model
+description: The small CPU model some DocsGPT features ask typed questions about a message or a chunk; it ships off and downloads nothing until a feature is turned on.
+lastUpdated: 2026-10-15
+---
+
+# The Decision Model
+
+Some DocsGPT features need a quick, bounded judgement rather than generated text: is this message a prompt injection, does this chunk answer the question, did this conversation end with the user's goal met. They ask the decision model, [`arc53/arc-decide-0.4b-v0.2`](https://huggingface.co/arc53/arc-decide-0.4b-v0.2), a small classifier that reads a state (a message, a chunk, a conversation) and answers typed questions with calibrated probabilities. It is not a chat model and never writes text, and it is unrelated to the decision journal of [guardrails](/Agents/guardrails).
+
+It runs on CPU with ONNX Runtime, which DocsGPT already ships for embeddings, so it adds no dependency. It is MIT-licensed, built on Qwen3 (Apache-2.0).
+
+## Everything ships off
+
+Every feature that uses the decision model is off by default, and nothing is downloaded or loaded while they all are. Each feature has a mode setting:
+
+| Mode | What the feature does |
+| --- | --- |
+| `off` (default) | Nothing; DocsGPT behaves as it does without the model. |
+| `monitor` | Asks the model and records the answer without acting on it. |
+| `on` | Asks the model and acts on the answer. |
+| `auto` | Runs only if its predicted time on this machine fits its budget; see [Measured `auto`](#measured-auto). |
+
+The first feature you set to anything but `off` downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, then loads it in the background. Until it is ready, features carry on without it. The features and their settings are listed on this page as they become available.
+
+Two settings apply to the model as a whole:
+
+```env
+DECISION_MODE=none      # turn it off everywhere, whatever the feature settings say
+DECISION_PRELOAD=true   # download, load and time it when the API starts, even with every feature off
+```
+
+The model runs inside the API process, and Celery workers never load it. If a call cannot be answered (the model is off, loading or busy), the feature falls back to what it does without it, so a missing model never fails a request.
+
+## Offline and air-gapped installs
+
+The files are fetched from Hugging Face at a pinned revision, as real files under `DECISION_CACHE_DIR` (`models/decision` in the data home). To fetch them ahead of time:
+
+```bash
+docsgpt decisions prefetch
+```
+
+For a machine with no internet access, run that on a connected machine and copy the directory, or point `DECISION_MODEL_PATH` at a copy of the model: nothing is downloaded then. `HF_HUB_OFFLINE=1` is honoured. A missing file or a failed download leaves the model unavailable, logs the fix, and is retried after `DECISION_LOAD_RETRY_SECONDS`. See [Air-Gapped Deployment](/Deploying/Air-Gapped).
+
+The model sends no text anywhere: running in the API process, its only outbound call is that one-time download.
+
+## Memory and speed on CPU
+
+Measured on a 4 vCPU x86 server:
+
+| | |
+| --- | --- |
+| Memory, loaded and idle | ~0.55 GB |
+| Memory, steady state | under 1 GB |
+| An injection check on a short message | ~0.15 s |
+| An analytics turn (a 2,048-token conversation, 8 questions) | ~4 s |
+
+Before it loads, DocsGPT checks that the process has room: below `DECISION_MIN_FREE_MB` (1,200 MB by default) the load is refused and features carry on without the model. The model uses the cores the process may use (its CPU affinity, container quota and physical cores); set `DECISION_THREADS` to fix the count. One pass runs at a time: work someone waits on goes first, and background work (analytics, scans) keeps the CPU busy for at most `DECISION_BACKGROUND_SHARE` (a quarter) of the time.
+
+## Measured `auto`
+
+When the model loads, DocsGPT times a few fixed passes on this machine (a second or two on 4 vCPU) and predicts from them how long each feature's calls take. A feature set to `auto` runs while its prediction fits its budget, and once on, turns off only above 1.25 times the budget, so it does not flap. Explicit `off`, `monitor` and `on` always win.
+
+The predictions stay current. Real calls are compared with them, and when they drift outside 0.67 to 1.5 times the prediction the timing runs again (at most every 10 minutes). The CPU budget is re-read every minute, and a change rebuilds the model with the new thread count. If the timing leaves every `auto` feature off and no feature is set to `on` or `monitor`, the model is unloaded again and only its measurements are kept, so a machine too slow for any feature does not hold the memory for nothing.
+
+## Checking it
+
+`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything.
+
+A running server reports what its API process sees at `GET /api/admin/decisions` (admins only):
+
+```json
+{
+  "success": true,
+  "available": true,
+  "mode": "local",
+  "status": "ready",
+  "reason": null,
+  "model": "arc53/arc-decide-0.4b-v0.2",
+  "version": "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907",
+  "runtime": "onnx-int8",
+  "speed": {"threads": 4, "measured_at": "2026-10-15T09:12:03+00:00", "drift": 1.02,
+            "guard_s": 0.152, "relevance_s": 1.41, "analytics_s": 4.1},
+  "features": {}
+}
+```
+
+- `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits.
+- `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn.
+- `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`.
+
+The public `/api/config` carries only `decision_available`.
