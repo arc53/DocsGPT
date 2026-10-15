@@ -41,6 +41,8 @@ export type ActivityState = {
   liveAtRequest: string[];
   /** Chats whose answer finished after the latest fetch went out. */
   finishedSinceRequest: string[];
+  /** Chats opened after the latest fetch went out; it may still call them failed. */
+  readSinceRequest: string[];
 };
 
 const initialState: ActivityState = {
@@ -53,6 +55,7 @@ const initialState: ActivityState = {
   requestId: null,
   liveAtRequest: [],
   finishedSinceRequest: [],
+  readSinceRequest: [],
 };
 
 /** Whether a fetch's answer is the latest one's (or none is being tracked). */
@@ -93,6 +96,7 @@ const activitySlice = createSlice({
         state.requestId = action.meta.requestId;
         state.liveAtRequest = Object.keys(state.live);
         state.finishedSinceRequest = [];
+        state.readSinceRequest = [];
       })
       .addCase(loadActivityNow.fulfilled, (state, action) => {
         if (!isLatest(state, action.meta.requestId)) return;
@@ -107,27 +111,33 @@ const activitySlice = createSlice({
           state.revision += 1;
         }
         state.settled = settled;
-        // The server may have read before an answer that finished since.
+        // The server may have read before an answer that finished since,
+        // or before a failed chat was opened.
         const finished = new Set(state.finishedSinceRequest);
-        state.now = finished.size
-          ? {
-              ...action.payload,
-              running: action.payload.running.filter(
+        const read = new Set(state.readSinceRequest);
+        state.now = {
+          ...action.payload,
+          running: finished.size
+            ? action.payload.running.filter(
                 (item) =>
                   !(
                     item.kind === 'chat' &&
                     item.conversation_id &&
                     finished.has(item.conversation_id)
                   ),
-              ),
-            }
-          : action.payload;
+              )
+            : action.payload.running,
+          failed_conversations: read.size
+            ? action.payload.failed_conversations.filter((id) => !read.has(id))
+            : action.payload.failed_conversations,
+        };
         state.loading = false;
         state.error = false;
         // Answers that started after the fetch went out stay live.
         for (const id of state.liveAtRequest) delete state.live[id];
         state.liveAtRequest = [];
         state.finishedSinceRequest = [];
+        state.readSinceRequest = [];
       })
       .addCase(loadActivityNow.rejected, (state, action) => {
         if (!isLatest(state, action.meta.requestId)) return;
@@ -136,6 +146,7 @@ const activitySlice = createSlice({
       })
       // Opening a chat clears its unread mark, and with it the failed mark.
       .addCase(markConversationRead.pending, (state, action) => {
+        if (state.loading) state.readSinceRequest.push(action.meta.arg);
         if (!state.now) return;
         state.now.failed_conversations = state.now.failed_conversations.filter(
           (id) => id !== action.meta.arg,

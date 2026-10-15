@@ -158,6 +158,24 @@ describe('activitySlice', () => {
       expect(working(state).has('c1')).toBe(false);
       expect(working(state).has('c2')).toBe(true);
     });
+
+    it('does not bring back the failed mark of a chat opened while the request was out', () => {
+      // The server read the chat unread before it was opened.
+      let state = reducer(loaded(), loadActivityNow.pending('a', 'event'));
+      state = reducer(state, markConversationRead.pending('read', 'c4'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'a', 'event'),
+      );
+      expect(selectFailedConversations(wrap(state)).has('c4')).toBe(false);
+      // The next fetch read it after: whatever it says stands.
+      state = reducer(state, loadActivityNow.pending('b', 'poll'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'b', 'poll'),
+      );
+      expect(selectFailedConversations(wrap(state)).has('c4')).toBe(true);
+    });
   });
 
   describe('revision', () => {
