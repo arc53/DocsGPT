@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import ActivityNavBadge from './ActivityNavBadge';
+import ActivityNavBadge, { RAIL_STATUS_ID } from './ActivityNavBadge';
 import type { NeedsYouItem } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -144,6 +144,27 @@ describe('ActivityNavBadge', () => {
     });
     render(withLive);
     expect(container.textContent).toContain('2');
+  });
+
+  it('gives the rail its counts as a description for the button it sits in', () => {
+    // The rail button's aria-label overrides text inside it, so the counts
+    // reach a screen reader through aria-describedby.
+    act(() =>
+      root.render(
+        <Provider store={store([approval])}>
+          <button aria-label="activity.label" aria-describedby={RAIL_STATUS_ID}>
+            <ActivityNavBadge variant="rail" />
+          </button>
+        </Provider>,
+      ),
+    );
+    const button = container.querySelector('button')!;
+    const status = document.getElementById(
+      button.getAttribute('aria-describedby')!,
+    );
+    expect(status?.textContent).toBe(
+      'activity.nav.running:2 · activity.nav.needsYou:1',
+    );
   });
 
   it('renders nothing when there is nothing to say', () => {

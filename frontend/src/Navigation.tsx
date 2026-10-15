@@ -14,7 +14,7 @@ import {
   SquarePen,
 } from 'lucide-react';
 
-import ActivityNavBadge from './activity/ActivityNavBadge';
+import ActivityNavBadge, { RAIL_STATUS_ID } from './activity/ActivityNavBadge';
 import { ACTIVITY_ROOT } from './activity/paths';
 import useActivityLoader from './activity/useActivityLoader';
 import {
@@ -505,6 +505,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               )}
               <IconButton
                 label={t('activity.label')}
+                aria-describedby={RAIL_STATUS_ID}
                 side="right"
                 variant="ghost-muted"
                 size="icon"

@@ -41,6 +41,13 @@ export function useActivitySummary(): ActivitySummary {
 }
 
 /**
+ * The id of the rail's counts. The rail's icon button is named by its
+ * `aria-label`, which hides any text inside it, so it points
+ * `aria-describedby` here.
+ */
+export const RAIL_STATUS_ID = 'activity-rail-status';
+
+/**
  * The trailing marks of the sidebar's Activity row: a red or amber dot while
  * something needs the user (red when it failed), and how many things run.
  * `rail` draws only the dot, on the collapsed sidebar's icon.
@@ -73,7 +80,9 @@ export default function ActivityNavBadge({
     return (
       <>
         {dot}
-        <span className="sr-only">{label}</span>
+        <span id={RAIL_STATUS_ID} className="sr-only">
+          {label}
+        </span>
       </>
     );
   }
