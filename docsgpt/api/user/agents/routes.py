@@ -1346,7 +1346,7 @@ class UpdateAgent(Resource):
                         if pg_workflow_id is not None and pg_workflow_id != (
                             str(current_workflow) if current_workflow else None
                         ):
-                            taken = _workflow_taken(conn, pg_workflow_id, agent_id)
+                            taken = _workflow_taken(conn, pg_workflow_id, pg_agent_id)
                             if taken is not None:
                                 return taken
                         update_fields["workflow_id"] = pg_workflow_id
