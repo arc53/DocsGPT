@@ -235,6 +235,47 @@ class TestUpdateCancelFailureCounters:
         assert updated["instruction"] == "new"
         assert updated["tool_allowlist"] == ["a", "b"]
 
+    def _stamped(self, pg_conn, **kw) -> tuple:
+        """A recurring schedule whose ``plan_changed_at`` is a day old."""
+        repo = SchedulesRepository(pg_conn)
+        created = repo.create(
+            user_id="u1", agent_id=_insert_agent(pg_conn), trigger_type="recurring",
+            instruction="i", cron="0 9 * * *", next_run_at=_now() + timedelta(hours=1), **kw,
+        )
+        old = _now() - timedelta(days=1)
+        pg_conn.execute(
+            text("UPDATE schedules SET plan_changed_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": old, "id": str(created["id"])},
+        )
+        return repo, str(created["id"]), old
+
+    def test_a_new_schedule_has_a_plan_change_time(self, pg_conn):
+        repo = SchedulesRepository(pg_conn)
+        created = repo.create(
+            user_id="u1", agent_id=_insert_agent(pg_conn), trigger_type="once",
+            instruction="i", run_at=_now() + timedelta(hours=1),
+        )
+        assert created["plan_changed_at"] is not None
+
+    def test_a_timing_edit_moves_plan_changed_at(self, pg_conn):
+        for field, value in (("cron", "0 10 * * *"), ("timezone", "Europe/Berlin"), ("run_at", _now())):
+            repo, schedule_id, old = self._stamped(pg_conn)
+            updated = repo.update(schedule_id, "u1", {field: value})
+            assert datetime.fromisoformat(str(updated["plan_changed_at"])) > old, field
+
+    def test_a_resume_moves_plan_changed_at(self, pg_conn):
+        repo, schedule_id, old = self._stamped(pg_conn, status="paused")
+        updated = repo.update(schedule_id, "u1", {"status": "active"})
+        assert datetime.fromisoformat(str(updated["plan_changed_at"])) > old
+
+    def test_other_writes_keep_plan_changed_at(self, pg_conn):
+        repo, schedule_id, old = self._stamped(pg_conn)
+        repo.update(schedule_id, "u1", {"name": "renamed", "status": "paused"})
+        repo.update_internal(schedule_id, {"next_run_at": _now() + timedelta(days=1), "last_run_at": _now()})
+        repo.bump_failure_count(schedule_id)
+        row = repo.get(schedule_id, "u1")
+        assert datetime.fromisoformat(str(row["plan_changed_at"])) == old
+
     def test_cancel_blocks_completed(self, pg_conn):
         repo = SchedulesRepository(pg_conn)
         agent_id = _insert_agent(pg_conn)

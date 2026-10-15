@@ -139,14 +139,34 @@ class TestMissedRuns:
 
     def test_slots_before_the_schedule_existed_are_not_missed(self, pg_conn):
         schedule = _schedule(pg_conn, name="Daily digest")
-        # ``updated_at`` follows every write (a trigger), so the dispatcher's
-        # own update after each run also bounds the window: slots older than
-        # the last run were handled then. Here the schedule is created Tuesday.
         pg_conn.execute(
             text("UPDATE schedules SET created_at = :t WHERE id = CAST(:id AS uuid)"),
             {"t": MONDAY + timedelta(days=1), "id": str(schedule["id"])},
         )
         assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
+
+    def test_slots_before_the_last_plan_change_are_not_missed(self, pg_conn):
+        schedule = _schedule(pg_conn, name="Daily digest")
+        # An edit of the timing (or a resume) on Tuesday: Monday's slot was
+        # planned under the old timing.
+        pg_conn.execute(
+            text("UPDATE schedules SET plan_changed_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": MONDAY + timedelta(days=1), "id": str(schedule["id"])},
+        )
+        assert not [e for e in _week(pg_conn)["events"] if e["state"] == "missed"]
+
+    def test_a_dispatcher_write_does_not_hide_missed_slots(self, pg_conn):
+        schedule = _schedule(pg_conn, name="Daily digest")
+        # The dispatcher recovers Tuesday 13:00 and moves next_run_at past the
+        # slots it skipped; the trigger stamps updated_at then. Pinned by hand
+        # here, as the test clock is in 2030.
+        pg_conn.execute(text("ALTER TABLE schedules DISABLE TRIGGER USER"))
+        pg_conn.execute(
+            text("UPDATE schedules SET updated_at = :t, last_run_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": MONDAY + timedelta(days=1, hours=13), "id": str(schedule["id"])},
+        )
+        monday = [e for e in _week(pg_conn)["events"] if e["at"].startswith("2030-03-04")]
+        assert [e["state"] for e in monday] == ["missed"]
 
     def test_a_paused_schedule_has_no_missed_slots(self, pg_conn):
         _schedule(pg_conn, name="Scan", status="paused")

@@ -149,7 +149,7 @@ def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, 
         """
         SELECT s.id, s.name, s.instruction, s.agent_id, s.trigger_type, s.status,
                s.cron, s.timezone, s.run_at, s.next_run_at, s.end_at,
-               s.created_at, s.updated_at,
+               s.created_at, s.plan_changed_at,
                s.origin_conversation_id, a.name AS agent_name,
                c.name AS origin_conversation_name
         FROM schedules s
@@ -442,13 +442,14 @@ def build_planned(
             events.append({**_base(row, frequent), "at": _iso(at), "state": state})
         # Past slots that never got a run: the scheduler was down or behind.
         # Only for active schedules (pause history isn't kept, so a paused
-        # one's quiet slots may be its pause), and only since its last edit
-        # (an older cron fired at other times).
+        # one's quiet slots may be its pause), and only since its plan last
+        # changed: an older timing fired at other times, and before a resume
+        # it was paused. Not ``updated_at``: every dispatcher write moves it.
         if row.get("status") != "active":
             continue
         since = max(
             start,
-            _as_datetime(row.get("updated_at")) or start,
+            _as_datetime(row.get("plan_changed_at")) or start,
             _as_datetime(row.get("created_at")) or start,
         )
         if since >= missed_until:
