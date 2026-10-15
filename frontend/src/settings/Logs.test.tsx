@@ -635,6 +635,24 @@ describe('Logs running rows', () => {
     expect(container.textContent).toContain('#119#');
   });
 
+  it('polls a run with the token in use now', async () => {
+    // A signed-in session's token is renewed while the page stays open.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+    store.state.preference.token = 'renewed';
+    try {
+      await act(async () => root.render(<Logs />));
+      getLogs.mockClear();
+      await act(async () => vi.advanceTimersByTime(30_000));
+      expect(getLogs).toHaveBeenCalledTimes(1);
+      expect(getLogs.mock.calls[0][1]).toBe('renewed');
+    } finally {
+      store.state.preference.token = 'token';
+    }
+  });
+
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
     // Opening a chat patches the snapshot; the minute poll may replace it
     // with an equal one. Neither is news for the logs.

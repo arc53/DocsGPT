@@ -263,11 +263,15 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     void refreshLoadedPages();
   }, [activityRevision, runningKey]);
 
+  // The poll calls this render's refresh, not the one it started with: that
+  // one's token may have been renewed since.
+  const refreshRef = useRef(refreshLoadedPages);
+  refreshRef.current = refreshLoadedPages;
   const showsRunning = logs.some((log) => log.running);
   useEffect(() => {
     if (!showsRunning) return;
     const timer = window.setInterval(
-      () => void refreshLoadedPages(),
+      () => void refreshRef.current(),
       RUNNING_POLL_MS,
     );
     return () => window.clearInterval(timer);
