@@ -460,6 +460,14 @@ function describePattern(expression: string, t?: TFunction): string | null {
 }
 
 /**
+ * A cron the form can't show, for a line that already calls it custom: the
+ * pattern's name when it has one (weekdays at 9), else the cron as written.
+ */
+export function describeCustomCron(expression: string, t?: TFunction): string {
+  return describePattern(expression, t) ?? expression;
+}
+
+/**
  * Human-readable label for a cron string the form emits; falls back for custom shapes.
  *
  * Args:
@@ -469,14 +477,6 @@ function describePattern(expression: string, t?: TFunction): string | null {
  * Returns:
  *   The label, or an empty string when there is no expression.
  */
-/**
- * A cron the form can't show, for a line that already calls it custom: the
- * pattern's name when it has one (weekdays at 9), else the cron as written.
- */
-export function describeCustomCron(expression: string, t?: TFunction): string {
-  return describePattern(expression, t) ?? expression;
-}
-
 export function formatCron(expression?: string | null, t?: TFunction): string {
   if (!expression) return '';
   const parsed = parseCron(expression);

@@ -35,13 +35,13 @@ export function useOutsideAlerter<T extends HTMLElement>(
   }, [ref, handler, handleEscapeKey, ...additionalDeps]);
 }
 
+/** The screens `useMediaQuery` calls mobile. */
+export const MOBILE_QUERY = '(max-width: 1023.98px)';
+
 /**
  * The app's one phone / desktop switch, matching Tailwind's ``lg`` (1024px):
  * below it the shell is the phone layout, so JS and classes always agree.
  */
-/** The screens `useMediaQuery` calls mobile. */
-export const MOBILE_QUERY = '(max-width: 1023.98px)';
-
 export function useMediaQuery() {
   const mobileQuery = MOBILE_QUERY;
   const desktopQuery = '(min-width: 1024px)';
