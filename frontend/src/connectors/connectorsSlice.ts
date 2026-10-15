@@ -114,6 +114,9 @@ export const connectionNeedsSignIn = (
 /** Any connection that needs signing in again (`connectionNeedsSignIn`). */
 export const selectConnectionsNeedAttention = (state: RootLike) =>
   (state.connectors?.connections ?? []).some(connectionNeedsSignIn);
+/** How many connections need signing in again (`connectionNeedsSignIn`). */
+export const selectSignInNeededCount = (state: RootLike) =>
+  (state.connectors?.connections ?? []).filter(connectionNeedsSignIn).length;
 export const selectConnectorsLoading = (state: RootLike) =>
   state.connectors.loading;
 export const selectConnectorsLoaded = (state: RootLike) =>

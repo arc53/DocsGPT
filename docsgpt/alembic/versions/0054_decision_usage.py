@@ -1,4 +1,4 @@
-"""0053 decision usage — how often each feature called the decision model, per day.
+"""0054 decision usage — how often each feature called the decision model, per day.
 
 * ``decision_usage``: one row per day, feature, mode (``local`` or ``api``),
   model version and call status, holding counters only: calls, states asked
@@ -13,8 +13,8 @@
 
 Idempotent both ways. Downgrade drops the counts.
 
-Revision ID: 0053_decision_usage
-Revises: 0052_connector_oauth_flows
+Revision ID: 0054_decision_usage
+Revises: 0053_workflow_run_progress
 """
 
 from typing import Sequence, Union
@@ -22,8 +22,8 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "0053_decision_usage"
-down_revision: Union[str, None] = "0052_connector_oauth_flows"
+revision: str = "0054_decision_usage"
+down_revision: Union[str, None] = "0053_workflow_run_progress"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -23,7 +23,12 @@ At least one beat scheduler must run. Beat uses RedBeat, which keeps its schedul
 | Development | `celery -A docsgpt.app.celery worker -l INFO -B`, or `docsgpt worker`. See [Development Environment](/Deploying/Development-Environment). |
 | Windows | The worker can't embed beat. Run `docsgpt beat` (or `celery -A docsgpt.app.celery beat -l INFO`) in a separate process. |
 
-If you write your own worker command, keep `-B` on it or run `celery -A docsgpt.app.celery beat -l INFO` next to it. Signs that beat isn't running: scheduled agent runs and source syncs never fire, and a request stuck after a crash is never marked failed.
+If you write your own worker command, keep `-B` on it or run `celery -A docsgpt.app.celery beat -l INFO` next to it. Signs that beat isn't running:
+
+- Scheduled agent runs and source syncs never fire.
+- A request stuck after a crash is never marked failed.
+- In [Activity](/Using/activity), **Now** shows items under **Up next** as **Overdue**, and the **Calendar** marks the times schedules should have run as **Missed**.
+- Coming knowledge syncs disappear from the **Calendar**: their next time is already in the past.
 
 ## Periodic tasks
 

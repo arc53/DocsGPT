@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "对话"
   },
   "backgroundJobs": {
-    "unread": "未读",
     "card": {
       "status": {
         "working": "后台运行中",
@@ -463,6 +462,7 @@
             "semantic": "语义"
           },
           "maxTokens": "每块最大令牌数",
+          "maxTokensHint": "最多 4,096 个令牌。",
           "minTokens": "每块最小令牌数",
           "duplicateHeaders": "跨块重复标题"
         }
@@ -745,7 +745,15 @@
           "allAttributes": "全部属性"
         }
       },
-      "loadError": "无法加载日志。"
+      "loadError": "无法加载日志。",
+      "running": "运行中",
+      "failedAtStep": "在第 {{step}} 步失败",
+      "failedAtStepOf": "在第 {{step}} 步失败（共 {{total}} 步）",
+      "origin": {
+        "api": "API",
+        "shared": "共享",
+        "chat": "聊天"
+      }
     },
     "teams": {
       "label": "团队",
@@ -2135,13 +2143,15 @@
     },
     "retry": "重试",
     "failedTitle": "无法生成回复",
+    "stoppedTitle": "已停止",
     "errors": {
       "contextLength": "此消息及其附件太大，超出了模型的上下文窗口。请发送更少或更小的文件。",
       "contextLengthKnowledge": "此消息及其附件太大，超出了模型的上下文窗口。请发送更少或更小的文件，或使用“添加到知识库”来检索它们，而不是整个发送。",
       "contextLengthSized": "此消息及其附件大约需要 {{needed, number}} 个 token，超出了模型可接受的上限（{{available, number}} 个 token）。请发送更少或更小的文件。",
       "contextLengthSizedKnowledge": "此消息及其附件大约需要 {{needed, number}} 个 token，超出了模型可接受的上限（{{available, number}} 个 token）。请发送更少或更小的文件，或使用“添加到知识库”来检索它们，而不是整个发送。",
       "serverError": "请稍后再试。给您带来不便，敬请谅解。",
-      "clientDisconnect": "回复在生成任何内容之前就中断了。请重试。"
+      "clientDisconnect": "回复在生成任何内容之前就中断了。请重试。",
+      "stopped": "你在回复写出任何内容之前停止了它。请重试以获取回复。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -2727,6 +2737,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "频率",
+        "customTiming": "此计划使用自定义时间：{{pattern}}。更改下方的时间即可替换它。",
         "dayOfWeek": "星期"
       },
       "status": {
@@ -2757,7 +2768,8 @@
         "error": "错误",
         "errorWithType": "错误（{{type}}）",
         "output": "输出",
-        "truncated": "（已截断）"
+        "truncated": "（已截断）",
+        "openConversation": "打开对话"
       },
       "toolCard": {
         "cancelFailed": "取消失败",
@@ -2796,7 +2808,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "每个工作日 {{time}}",
+        "weekends": "每个周末 {{time}}",
+        "days": "每{{days}} {{time}}",
+        "hourly": "每小时",
+        "hourlyAt": "每小时第 {{minute}} 分",
+        "hourlyRange": "{{from}} 至 {{to}} 每小时",
+        "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小时",
+        "everyMinutes_one": "每 {{formatted}} 分钟",
+        "everyMinutes_other": "每 {{formatted}} 分钟",
+        "everyHours_one": "每 {{formatted}} 小时",
+        "everyHours_other": "每 {{formatted}} 小时"
       },
       "runLog": {
         "when": "时间",
@@ -2826,7 +2849,8 @@
         "overdue": "已逾期"
       },
       "deleteFailed": "无法删除此计划。",
-      "deleteConsequence": "其运行历史也会一并删除。此操作无法撤销。"
+      "deleteConsequence": "其运行历史也会一并删除。此操作无法撤销。",
+      "allSchedules": "所有计划"
     },
     "shared": {
       "notFound": "未找到代理。请确保代理已共享。",
@@ -3209,7 +3233,8 @@
         "personal": "个人",
         "workspace": "工作区",
         "insights": "洞察",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "自动化"
       }
     },
     "openSidebar": "打开侧边栏",
@@ -3289,7 +3314,6 @@
     "loadError": "无法加载你的监控",
     "actionError": "操作失败，请重试。",
     "untitled": "监控",
-    "watching": "正在关注变化",
     "every": "每 {{interval}}",
     "onEvent": "发生时",
     "openConversation": "打开对话",
@@ -3366,5 +3390,282 @@
       "conversationGone": "已结束：其对话已无法继续"
     },
     "endedBecause": "已结束：{{reason}}"
+  },
+  "activity": {
+    "label": "活动",
+    "schedules": {
+      "label": "计划",
+      "subtitle": "你所有代理的定期运行和一次性任务，以及助手在聊天中创建的任务。",
+      "search": "搜索计划",
+      "createdInChat": "在聊天中创建",
+      "createdInChatHint": "没有代理。每个都属于创建它的聊天。",
+      "agentSchedules": "代理计划",
+      "openChat": "打开聊天",
+      "noMatches": "没有符合搜索的计划。",
+      "loadError": "无法加载你的计划",
+      "empty": "还没有计划",
+      "emptyHint": "在这里创建，或在聊天中让助手按计划做事。",
+      "agentLabel": "代理",
+      "agentPlaceholder": "选择代理",
+      "agentSearch": "搜索代理",
+      "agentEmpty": "没有可以安排计划的代理",
+      "teamAgent": "你通过团队管理的队友代理"
+    },
+    "marks": {
+      "failed": "有失败",
+      "needsYou": "等待你的批准",
+      "working": "运行中",
+      "unread": "未读",
+      "watching": "正在监控变化"
+    },
+    "kind": {
+      "chat": "聊天",
+      "job": "后台任务",
+      "code": "代码执行",
+      "schedule": "计划运行",
+      "workflow": "工作流",
+      "webhook": "Webhook 运行",
+      "ingest": "知识",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} 个运行中",
+      "running_other": "{{formatted}} 个运行中",
+      "needsYou_one": "{{formatted}} 项需要你处理",
+      "needsYou_other": "{{formatted}} 项需要你处理"
+    },
+    "now": {
+      "label": "当前",
+      "subtitle": "正在运行的、等待你处理的，以及接下来要运行的。实时更新。",
+      "loadError": "无法加载你的活动",
+      "stopFailed": "无法停止该回答。请重试，或打开聊天在那里停止。",
+      "thinking": "思考中",
+      "writing": "正在撰写回答",
+      "ranByHand": "手动运行",
+      "due": "计划于 {{time}}",
+      "chunks": "已嵌入 {{done}}/{{total}} 个分块",
+      "background": "后台",
+      "running": "运行中",
+      "stop": "停止",
+      "cancel": "取消",
+      "open": "打开",
+      "approve": "批准 {{tools}}",
+      "approveAction": "批准工具操作",
+      "expires": "{{time}}过期",
+      "approval": "批准",
+      "review": "查看",
+      "pausedAfter_one": "{{name}} 失败 {{formatted}} 次后已暂停",
+      "pausedAfter_other": "{{name}} 失败 {{formatted}} 次后已暂停",
+      "errorType": {
+        "auth_expired": "登录已过期",
+        "tool_not_allowed": "工具未被允许",
+        "budget_exceeded": "超出令牌预算",
+        "timeout": "超时",
+        "agent_error": "代理失败",
+        "internal": "内部错误",
+        "missed": "错过了运行时间",
+        "overlap": "上一次运行仍在进行",
+        "stream_error": "回答流中断",
+        "empty_output": "没有产生任何输出"
+      },
+      "viewRuns": "查看运行",
+      "fromChat": "来自 {{name}}",
+      "timesToday_one": "未来 24 小时运行 {{formatted}} 次",
+      "timesToday_other": "未来 24 小时运行 {{formatted}} 次",
+      "oneTime": "一次性",
+      "stats": {
+        "running": "运行中",
+        "background_one": "后台 {{formatted}} 个",
+        "background_other": "后台 {{formatted}} 个",
+        "needsYou": "需要你处理",
+        "approvalExpires": "有一个批准将于{{time}}过期",
+        "next24h": "未来 24 小时",
+        "nextAt": "下一个：{{time}}，{{name}}",
+        "failed": "失败（过去 24 小时）",
+        "viewInHistory": "在历史中查看"
+      },
+      "needsYou": "需要你处理",
+      "reconnect": "{{name}} 需要重新连接",
+      "reconnectAction": "重新连接",
+      "runningTitle": "运行中",
+      "filter": "显示",
+      "filters": {
+        "all": "全部",
+        "chats": "聊天",
+        "automations": "自动化",
+        "knowledge": "知识"
+      },
+      "nothingRunning": "没有正在运行的内容",
+      "upNext": "接下来",
+      "nothingPlanned": "未来 24 小时没有计划运行的内容",
+      "watching": "监控中",
+      "allMonitors": "所有监控",
+      "nothingWatched": "没有正在监控的内容",
+      "checked": "{{time}}检查过",
+      "openCalendar": "打开日历",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "apiRequests_one": "{{formatted}} 个请求",
+      "apiRequests_other": "{{formatted}} 个请求",
+      "reading": "正在读取内容",
+      "operation": {
+        "upload": "上传",
+        "sync": "同步",
+        "reingest": "重新索引"
+      },
+      "syncBatch": {
+        "daily": "每日同步",
+        "weekly": "每周同步",
+        "monthly": "每月同步"
+      },
+      "syncSources_one": "{{formatted}} 个来源",
+      "syncSources_other": "{{formatted}} 个来源",
+      "syncBlocked_one": "{{formatted}} 个需要重新连接",
+      "syncBlocked_other": "{{formatted}} 个需要重新连接"
+    },
+    "calendar": {
+      "label": "日历",
+      "subtitle": "计划中的运行、按结果显示的过往运行，以及正在监控的内容。",
+      "loadError": "无法加载日历",
+      "runLoadError": "无法打开此次运行。请重试。",
+      "runNowError": "无法启动运行。请重试。",
+      "todayButton": "今天",
+      "previous": "上一页",
+      "next": "下一页",
+      "agentFilter": "代理",
+      "allAgents": "所有代理",
+      "viewLabel": "视图",
+      "views": {
+        "day": "日",
+        "week": "周",
+        "month": "月",
+        "agenda": "日程"
+      },
+      "monitors": "监控",
+      "knowledgeSyncs": "知识同步",
+      "hidePast": "隐藏过往运行",
+      "legend": {
+        "planned": "计划中",
+        "running": "运行中",
+        "success": "成功",
+        "failed": "失败",
+        "paused": "已暂停或跳过",
+        "missed": "已错过",
+        "sync": "知识同步"
+      },
+      "truncated": "部分非常频繁的计划在此范围内只显示前几次运行。",
+      "watching": "监控中",
+      "state": {
+        "planned": "计划中",
+        "paused": "已暂停",
+        "pending": "启动中",
+        "running": "运行中",
+        "success": "成功",
+        "failed": "失败",
+        "skipped": "已跳过",
+        "timeout": "超时",
+        "missed": "已错过"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "另有 {{formatted}} 项",
+      "more_other": "另有 {{formatted}} 项",
+      "today": "今天",
+      "tomorrow": "明天",
+      "empty": "这些天没有计划",
+      "blockDone_one": "已完成 {{done}}/{{formatted}} 次",
+      "blockDone_other": "已完成 {{done}}/{{formatted}} 次",
+      "slotCount_one": "{{formatted}} 次",
+      "slotCount_other": "{{formatted}} 次",
+      "oneTime": "一次性",
+      "recurring": "定期",
+      "when": "时间",
+      "repeats": "重复",
+      "fromChat": "来自聊天",
+      "pausedNote": "此计划已暂停，因此这次运行不会发生。请在计划页面恢复它。",
+      "dayRuns": "当天的运行",
+      "queued": "已开始运行。它会显示在“当前”和运行日志中。",
+      "openSchedule": "打开计划",
+      "timezone": "计划时区",
+      "missedNote": "这次运行从未开始：当时调度器已停止或滞后。立即运行以补上，或检查 worker 是否带 beat 运行。",
+      "syncRepeats": {
+        "daily": "每天，从调度器启动时开始计算",
+        "weekly": "每周，从调度器启动时开始计算",
+        "monthly": "每 30 天，从调度器启动时开始计算"
+      },
+      "sources": "来源",
+      "needsReconnecting": "需要重新连接",
+      "lastSynced": "已于 {{time}} 同步",
+      "notSyncedYet": "尚未同步",
+      "openKnowledge": "打开知识库"
+    },
+    "history": {
+      "label": "历史",
+      "subtitle": "你的计划、Webhook、工作流、后台任务和监控已完成的运行。完整的技术日志在“设置 › 日志”中。",
+      "search": "搜索运行",
+      "statusFilter": "状态",
+      "kindFilter": "类型",
+      "statusFilters": {
+        "all": "所有状态",
+        "failed": "失败",
+        "success": "成功",
+        "skipped": "已跳过",
+        "cancelled": "已取消"
+      },
+      "kindFilters": {
+        "all": "全部",
+        "schedule": "计划",
+        "webhook": "Webhook",
+        "workflow": "工作流",
+        "job": "后台",
+        "monitor": "监控唤醒"
+      },
+      "kind": {
+        "schedule": "计划",
+        "webhook": "Webhook",
+        "workflow": "工作流",
+        "job": "后台",
+        "monitor": "监控"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "skipped": "已跳过",
+        "cancelled": "已取消"
+      },
+      "trigger": {
+        "cron": "计划",
+        "manual": "手动",
+        "webhook": "Webhook",
+        "chat": "聊天",
+        "monitor": "发现变化",
+        "trigger": "Webhook 链接",
+        "approval": "批准链接",
+        "monitor_paused": "监控已暂停",
+        "monitor_expired": "监控已过期"
+      },
+      "columns": {
+        "when": "时间",
+        "run": "运行",
+        "owner": "代理 / 聊天",
+        "kind": "类型",
+        "trigger": "触发",
+        "status": "状态",
+        "duration": "时长",
+        "tokens": "令牌"
+      },
+      "yesterday": "昨天",
+      "loadError": "无法加载历史",
+      "runLoadError": "无法打开此次运行。请重试。",
+      "noMatches": "没有符合这些筛选条件的运行",
+      "empty": "还没有已完成的运行",
+      "emptyHint": "你的计划、Webhook、工作流、后台任务和监控的运行完成后会显示在这里。",
+      "loadMore": "加载更多",
+      "retention": "默认情况下，计划运行保留 90 天，Webhook 运行保留 30 天，后台任务和监控唤醒保留 7 天。工作流运行会一直列出，其追踪保留 30 天。",
+      "period_one": "最近 {{formatted}} 天",
+      "period_other": "最近 {{formatted}} 天",
+      "periodFilter": "时间段"
+    }
   }
 }

@@ -5,6 +5,7 @@ Main user API routes - registers all namespace modules.
 from flask import Blueprint
 
 from docsgpt.api import api
+from .activity import activity_ns
 from .agents import (
     agents_folders_ns,
     agents_guardrails_ns,
@@ -37,6 +38,9 @@ from .workflows import workflows_ns
 
 
 user = Blueprint("user", __name__)
+
+# Activity (the Now page, stopping a running answer)
+api.add_namespace(activity_ns)
 
 # Analytics
 api.add_namespace(analytics_ns)

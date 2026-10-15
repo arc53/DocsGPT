@@ -727,6 +727,7 @@ conversations_table = Table(
     Column("legacy_mongo_id", Text),
     # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
     Column("unread_at", DateTime(timezone=True)),
+    Column("read_at", DateTime(timezone=True)),
 )
 
 conversation_messages_table = Table(
@@ -1137,6 +1138,8 @@ workflow_runs_table = Table(
     Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("ended_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    # The step a running run is on (0053); kept after the run ends.
+    Column("progress", JSONB),
 )
 
 
@@ -1176,6 +1179,8 @@ schedules_table = Table(
     Column("consecutive_failure_count", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Set on create, a timing edit and a resume; never by the dispatcher (0053).
+    Column("plan_changed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 schedule_runs_table = Table(

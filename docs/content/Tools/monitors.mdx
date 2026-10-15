@@ -1,7 +1,7 @@
 ---
 title: Monitors, Trigger Links and Approval Links
 description: How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, how link secrets reach a sender through secret references, and how its checks, limits and safety rules work.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components';
@@ -169,7 +169,7 @@ counted.
 
 **Secrets the sender creates.** Stripe and Slack generate their own signing secret, so a `stripe` or `slack`
 link starts without one and refuses every call (`401`) until the owner pastes it in with **Set signing secret**
-on the link card or on **Settings → Monitors** (`PUT /api/monitors/<id>/secret` with `{"secret": "…"}`). The
+on the link card or on **Activity → Monitors** (`PUT /api/monitors/<id>/secret` with `{"secret": "…"}`). The
 value is checked against the scheme (a Stripe endpoint secret starts with `whsec_`), stored encrypted, audited
 as `monitor.secret_set` without the value, and never shown to the model. The link still gets a `secret_ref`
 at creation; its reference works once the secret is set. Paste a Slack app's secret **before**
@@ -203,7 +203,7 @@ GitHub's own MCP server has no webhook tool, so through the stock GitHub connect
 `gh api` on a [paired device](/Tools/remote-device) or an [API tool](/Tools/api-tool) for GitHub's REST API
 (`POST /repos/{owner}/{repo}/hooks` with the reference as `config.secret`).
 
-Only the owner can show a secret to the assistant: **Show to assistant** on **Settings → Monitors**, after a
+Only the owner can show a secret to the assistant: **Show to assistant** on **Activity → Monitors**, after a
 warning (`PUT /api/monitors/<id>/secret/exposure` with `{"exposed": true}`; owner session only, audited as
 `monitor.secret_exposure`). The model can't: an `expose_secret` argument from it is ignored, with a note in the
 result. An exposed link's secret appears in `monitor_list` and so goes to the model provider. Even then:
@@ -215,7 +215,7 @@ result. An exposed link's secret appears in `monitor_list` and so goes to the mo
 
 **Hide from assistant** turns it off again.
 
-The owner can always see the secret: **Reveal secret** on the link card or on **Settings → Monitors** calls
+The owner can always see the secret: **Reveal secret** on the link card or on **Activity → Monitors** calls
 `GET /api/monitors/<id>/secret`, which only the owner's own session may use (never an access token). It is rate
 limited, audited as `monitor.secret_revealed` and never cached, and it answers `404` once the link has ended.
 The `example_curl` reads the secret from `$DOCSGPT_WEBHOOK_SECRET`.
@@ -268,10 +268,10 @@ why, so it doesn't promise to report back.
 
 ## Managing monitors
 
-**Settings → Monitors** lists the user's monitors: what each watches, how often, when it last checked, the wakes
+**Activity → Monitors** lists the user's monitors: what each watches, how often, when it last checked, the wakes
 left and the expiry, with pause, resume and cancel, and for a live signed webhook link **Reveal secret**, **Show to
 assistant** (and **Set signing secret** for Stripe and Slack). Cancelling stops the checks, revokes its links and withdraws
-the approval its source was given. A conversation with an active monitor shows a small watching mark in the
+the approval its source was given. A conversation with an active monitor shows a hollow ring in the
 sidebar. In the chat, the agent can list and cancel the conversation's monitors itself.
 
 The app's event stream carries `monitor.updated`:

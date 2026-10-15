@@ -121,7 +121,9 @@ def _emit_ingest_poison_event(task_name, bound):
     if not user or not source_id:
         return
     from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import close_failed_ingest_progress
 
+    close_failed_ingest_progress(source_id)
     publish_user_event(
         user,
         "source.ingest.failed",

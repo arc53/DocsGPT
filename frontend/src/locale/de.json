@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Unterhaltung"
   },
   "backgroundJobs": {
-    "unread": "Ungelesen",
     "card": {
       "status": {
         "working": "Im Hintergrund",
@@ -464,6 +463,7 @@
             "semantic": "Semantisch"
           },
           "maxTokens": "Max. Tokens pro Chunk",
+          "maxTokensHint": "Maximal 4.096 Tokens.",
           "minTokens": "Min. Tokens pro Chunk",
           "duplicateHeaders": "Überschriften über Chunks hinweg duplizieren"
         }
@@ -746,7 +746,15 @@
           "allAttributes": "Alle Attribute"
         }
       },
-      "loadError": "Die Protokolle konnten nicht geladen werden."
+      "loadError": "Die Protokolle konnten nicht geladen werden.",
+      "running": "läuft",
+      "failedAtStep": "fehlgeschlagen bei Schritt {{step}}",
+      "failedAtStepOf": "fehlgeschlagen bei Schritt {{step}} von {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Geteilt",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -2146,13 +2154,15 @@
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",
+    "stoppedTitle": "Gestoppt",
     "errors": {
       "contextLength": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien.",
       "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "contextLengthSized": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien.",
       "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
-      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut."
+      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut.",
+      "stopped": "Du hast diese Antwort gestoppt, bevor etwas geschrieben wurde. Versuche es erneut, um eine zu erhalten."
     },
     "reasoning": "Begründung",
     "wikiWrite": {
@@ -2740,6 +2750,7 @@
           "dec": "Dez"
         },
         "frequencyLabel": "Häufigkeit",
+        "customTiming": "Dieser Zeitplan läuft nach einem eigenen Takt: {{pattern}}. Ändere die Zeit unten, um ihn zu ersetzen.",
         "dayOfWeek": "Wochentag"
       },
       "status": {
@@ -2770,7 +2781,8 @@
         "error": "Fehler",
         "errorWithType": "Fehler ({{type}})",
         "output": "Ausgabe",
-        "truncated": "(gekürzt)"
+        "truncated": "(gekürzt)",
+        "openConversation": "Gespräch öffnen"
       },
       "toolCard": {
         "cancelFailed": "Abbrechen fehlgeschlagen",
@@ -2809,7 +2821,18 @@
           "oct": "Oktober",
           "nov": "November",
           "dec": "Dezember"
-        }
+        },
+        "weekdays": "Jeden Werktag um {{time}}",
+        "weekends": "Jeden Wochenendtag um {{time}}",
+        "days": "Jeden {{days}} um {{time}}",
+        "hourly": "Jede Stunde",
+        "hourlyAt": "Jede Stunde um :{{minute}}",
+        "hourlyRange": "Jede Stunde von {{from}} bis {{to}}",
+        "hourlyRangeWeekdays": "Werktags jede Stunde von {{from}} bis {{to}}",
+        "everyMinutes_one": "Jede {{formatted}} Minute",
+        "everyMinutes_other": "Alle {{formatted}} Minuten",
+        "everyHours_one": "Jede {{formatted}} Stunde",
+        "everyHours_other": "Alle {{formatted}} Stunden"
       },
       "runLog": {
         "when": "Wann",
@@ -2839,7 +2862,8 @@
         "overdue": "Überfällig"
       },
       "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden.",
-      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "allSchedules": "Alle Zeitpläne"
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",
@@ -3222,7 +3246,8 @@
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich",
         "insights": "Auswertungen",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automatisierungen"
       }
     },
     "openSidebar": "Seitenleiste öffnen",
@@ -3302,7 +3327,6 @@
     "loadError": "Deine Monitore konnten nicht geladen werden",
     "actionError": "Das hat nicht geklappt. Versuche es erneut.",
     "untitled": "Monitor",
-    "watching": "Wird beobachtet",
     "every": "Alle {{interval}}",
     "onEvent": "Wenn es passiert",
     "openConversation": "Gespräch öffnen",
@@ -3379,5 +3403,282 @@
       "conversationGone": "Beendet: Die Unterhaltung kann nicht mehr fortgesetzt werden"
     },
     "endedBecause": "Beendet: {{reason}}"
+  },
+  "activity": {
+    "label": "Aktivität",
+    "schedules": {
+      "label": "Zeitpläne",
+      "subtitle": "Alle wiederkehrenden Ausführungen und einmaligen Aufgaben deiner Agenten, dazu die, die der Assistent in einem Chat angelegt hat.",
+      "search": "Zeitpläne durchsuchen",
+      "createdInChat": "Im Chat erstellt",
+      "createdInChatHint": "Ohne Agent. Jeder gehört zu dem Chat, in dem er entstanden ist.",
+      "agentSchedules": "Zeitpläne des Agenten",
+      "openChat": "Chat öffnen",
+      "noMatches": "Keine Zeitpläne passen zu deiner Suche.",
+      "loadError": "Deine Zeitpläne konnten nicht geladen werden",
+      "empty": "Noch keine Zeitpläne",
+      "emptyHint": "Lege hier einen an oder bitte den Assistenten im Chat, etwas nach Zeitplan zu erledigen.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Agenten wählen",
+      "agentSearch": "Agenten suchen",
+      "agentEmpty": "Keine Agenten, die du planen kannst",
+      "teamAgent": "Agent eines Teammitglieds, den du über ein Team verwaltest"
+    },
+    "marks": {
+      "failed": "Etwas ist fehlgeschlagen",
+      "needsYou": "Wartet auf deine Freigabe",
+      "working": "Läuft",
+      "unread": "Ungelesen",
+      "watching": "Beobachtet Änderungen"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Hintergrundauftrag",
+      "code": "Codeausführung",
+      "schedule": "Geplante Ausführung",
+      "workflow": "Workflow",
+      "webhook": "Webhook-Ausführung",
+      "ingest": "Wissen",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} läuft",
+      "running_other": "{{formatted}} laufen",
+      "needsYou_one": "{{formatted}} braucht dich",
+      "needsYou_other": "{{formatted}} brauchen dich"
+    },
+    "now": {
+      "label": "Jetzt",
+      "subtitle": "Was läuft, was auf dich wartet und was als Nächstes läuft. Aktualisiert sich live.",
+      "loadError": "Deine Aktivität konnte nicht geladen werden",
+      "stopFailed": "Die Antwort konnte nicht gestoppt werden. Versuche es erneut oder stoppe sie im Chat.",
+      "thinking": "denkt nach",
+      "writing": "schreibt die Antwort",
+      "ranByHand": "manuell gestartet",
+      "due": "fällig {{time}}",
+      "chunks": "{{done}} von {{total}} Abschnitten eingebettet",
+      "background": "Hintergrund",
+      "running": "Läuft",
+      "stop": "Stoppen",
+      "cancel": "Abbrechen",
+      "open": "Öffnen",
+      "approve": "{{tools}} freigeben",
+      "approveAction": "Werkzeugaktion freigeben",
+      "expires": "läuft ab {{time}}",
+      "approval": "Freigabe",
+      "review": "Prüfen",
+      "pausedAfter_one": "{{name}} nach {{formatted}} Fehler pausiert",
+      "pausedAfter_other": "{{name}} nach {{formatted}} Fehlern pausiert",
+      "errorType": {
+        "auth_expired": "eine Anmeldung ist abgelaufen",
+        "tool_not_allowed": "ein Werkzeug war nicht erlaubt",
+        "budget_exceeded": "Token-Budget überschritten",
+        "timeout": "Zeitüberschreitung",
+        "agent_error": "der Agent ist fehlgeschlagen",
+        "internal": "ein interner Fehler",
+        "missed": "Zeitpunkt verpasst",
+        "overlap": "die vorherige Ausführung lief noch",
+        "stream_error": "der Antwortstrom brach ab",
+        "empty_output": "es kam nichts heraus"
+      },
+      "viewRuns": "Ausführungen ansehen",
+      "fromChat": "Aus {{name}}",
+      "timesToday_one": "{{formatted}} Ausführung in den nächsten 24 Stunden",
+      "timesToday_other": "{{formatted}} Ausführungen in den nächsten 24 Stunden",
+      "oneTime": "einmalig",
+      "stats": {
+        "running": "Läuft",
+        "background_one": "{{formatted}} im Hintergrund",
+        "background_other": "{{formatted}} im Hintergrund",
+        "needsYou": "Braucht dich",
+        "approvalExpires": "Eine Freigabe läuft {{time}} ab",
+        "next24h": "Nächste 24 Stunden",
+        "nextAt": "Als Nächstes um {{time}}, {{name}}",
+        "failed": "Fehlgeschlagen, letzte 24 Stunden",
+        "viewInHistory": "Im Verlauf ansehen"
+      },
+      "needsYou": "Braucht dich",
+      "reconnect": "{{name}} muss neu verbunden werden",
+      "reconnectAction": "Neu verbinden",
+      "runningTitle": "Läuft",
+      "filter": "Anzeigen",
+      "filters": {
+        "all": "Alle",
+        "chats": "Chats",
+        "automations": "Automatisierungen",
+        "knowledge": "Wissen"
+      },
+      "nothingRunning": "Gerade läuft nichts",
+      "upNext": "Als Nächstes",
+      "nothingPlanned": "In den nächsten 24 Stunden läuft nichts",
+      "watching": "Beobachtet",
+      "allMonitors": "Alle Monitore",
+      "nothingWatched": "Nichts wird beobachtet",
+      "checked": "geprüft {{time}}",
+      "openCalendar": "Kalender öffnen",
+      "step": "Schritt {{step}}",
+      "stepOf": "Schritt {{step}} von {{total}}",
+      "apiRequests_one": "{{formatted}} Anfrage",
+      "apiRequests_other": "{{formatted}} Anfragen",
+      "reading": "liest den Inhalt",
+      "operation": {
+        "upload": "Upload",
+        "sync": "Synchronisierung",
+        "reingest": "Neu indexieren"
+      },
+      "syncBatch": {
+        "daily": "Tägliche Synchronisierung",
+        "weekly": "Wöchentliche Synchronisierung",
+        "monthly": "Monatliche Synchronisierung"
+      },
+      "syncSources_one": "{{formatted}} Quelle",
+      "syncSources_other": "{{formatted}} Quellen",
+      "syncBlocked_one": "{{formatted}} muss neu verbunden werden",
+      "syncBlocked_other": "{{formatted}} müssen neu verbunden werden"
+    },
+    "calendar": {
+      "label": "Kalender",
+      "subtitle": "Geplante Ausführungen, vergangene nach Ergebnis und was beobachtet wird.",
+      "loadError": "Der Kalender konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
+      "runNowError": "Der Lauf konnte nicht gestartet werden. Versuche es erneut.",
+      "todayButton": "Heute",
+      "previous": "Zurück",
+      "next": "Weiter",
+      "agentFilter": "Agent",
+      "allAgents": "Alle Agenten",
+      "viewLabel": "Ansicht",
+      "views": {
+        "day": "Tag",
+        "week": "Woche",
+        "month": "Monat",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitore",
+      "knowledgeSyncs": "Wissenssynchronisierung",
+      "hidePast": "Vergangene ausblenden",
+      "legend": {
+        "planned": "Geplant",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "paused": "Pausiert oder übersprungen",
+        "missed": "Verpasst",
+        "sync": "Wissenssynchronisierung"
+      },
+      "truncated": "Einige sehr häufige Zeitpläne zeigen in diesem Zeitraum nur ihre ersten Ausführungen.",
+      "watching": "Beobachtet",
+      "state": {
+        "planned": "Geplant",
+        "paused": "Pausiert",
+        "pending": "Startet",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "skipped": "Übersprungen",
+        "timeout": "Zeitüberschreitung",
+        "missed": "Verpasst"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} weitere",
+      "more_other": "+{{formatted}} weitere",
+      "today": "Heute",
+      "tomorrow": "Morgen",
+      "empty": "In diesen Tagen ist nichts geplant",
+      "blockDone_one": "{{done}} von {{formatted}} Ausführung erledigt",
+      "blockDone_other": "{{done}} von {{formatted}} Ausführungen erledigt",
+      "slotCount_one": "{{formatted}} Lauf",
+      "slotCount_other": "{{formatted}} Läufe",
+      "oneTime": "Einmalig",
+      "recurring": "Wiederkehrend",
+      "when": "Wann",
+      "repeats": "Wiederholt",
+      "fromChat": "Aus Chat",
+      "pausedNote": "Dieser Zeitplan ist pausiert, diese Ausführung findet also nicht statt. Setze ihn auf seiner Seite fort.",
+      "dayRuns": "Ausführungen an diesem Tag",
+      "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
+      "openSchedule": "Zeitplan öffnen",
+      "timezone": "Zeitzone des Zeitplans",
+      "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft.",
+      "syncRepeats": {
+        "daily": "Täglich, gezählt ab dem Start des Schedulers",
+        "weekly": "Wöchentlich, gezählt ab dem Start des Schedulers",
+        "monthly": "Alle 30 Tage, gezählt ab dem Start des Schedulers"
+      },
+      "sources": "Quellen",
+      "needsReconnecting": "Muss neu verbunden werden",
+      "lastSynced": "Synchronisiert {{time}}",
+      "notSyncedYet": "Noch nicht synchronisiert",
+      "openKnowledge": "Wissen öffnen"
+    },
+    "history": {
+      "label": "Verlauf",
+      "subtitle": "Abgeschlossene Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore. Einstellungen › Protokolle enthält das vollständige technische Protokoll.",
+      "search": "Ausführungen durchsuchen",
+      "statusFilter": "Status",
+      "kindFilter": "Art",
+      "statusFilters": {
+        "all": "Alle Status",
+        "failed": "Fehlgeschlagen",
+        "success": "Erfolgreich",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "kindFilters": {
+        "all": "Alle",
+        "schedule": "Zeitpläne",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Hintergrund",
+        "monitor": "Monitor-Weckrufe"
+      },
+      "kind": {
+        "schedule": "Zeitplan",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Hintergrund",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Erfolg",
+        "failed": "Fehlgeschlagen",
+        "timeout": "Zeitüberschreitung",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "trigger": {
+        "cron": "Zeitplan",
+        "manual": "Manuell",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Änderung erkannt",
+        "trigger": "Webhook-Link",
+        "approval": "Freigabe-Link",
+        "monitor_paused": "Monitor pausiert",
+        "monitor_expired": "Monitor abgelaufen"
+      },
+      "columns": {
+        "when": "Wann",
+        "run": "Ausführung",
+        "owner": "Agent / Chat",
+        "kind": "Art",
+        "trigger": "Auslöser",
+        "status": "Status",
+        "duration": "Dauer",
+        "tokens": "Token"
+      },
+      "yesterday": "Gestern",
+      "loadError": "Der Verlauf konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
+      "noMatches": "Keine Ausführungen passen zu diesen Filtern",
+      "empty": "Noch keine abgeschlossenen Ausführungen",
+      "emptyHint": "Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore erscheinen hier, sobald sie fertig sind.",
+      "loadMore": "Mehr laden",
+      "retention": "Standardmäßig werden geplante Ausführungen 90 Tage aufbewahrt, Webhook-Ausführungen 30 und Hintergrundaufträge und Monitor-Weckrufe 7. Workflow-Ausführungen bleiben in der Liste, ihr Trace wird 30 Tage aufbewahrt.",
+      "period_one": "Letzter {{formatted}} Tag",
+      "period_other": "Letzte {{formatted}} Tage",
+      "periodFilter": "Zeitraum"
+    }
   }
 }

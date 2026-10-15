@@ -11,6 +11,7 @@ from docsgpt.parser.tokenization import (
     HuggingFaceCounter,
     TiktokenCounter,
     get_token_counter,
+    split_to_token_limit,
 )
 
 SAMPLES = [
@@ -188,6 +189,34 @@ class TestCounterContract:
             base.count("x")
         with pytest.raises(NotImplementedError):
             base.split("x", 1)
+
+    def test_verified_split_empty_text(self, monkeypatch):
+        monkeypatch.setattr(tokenization, "get_encoding", _StubEncoding)
+        assert split_to_token_limit(TiktokenCounter(), "", 10) == []
+
+    def test_verified_split_rejects_unsplittable_character(self):
+        class ImpossibleCounter:
+            count = staticmethod(lambda text: 2)
+            split = staticmethod(lambda text, limit: [text])
+
+        with pytest.raises(ValueError, match="cannot split"):
+            split_to_token_limit(ImpossibleCounter(), "x", 1)
+
+    def test_verified_first_window_recovers_if_splitter_drops_text(self):
+        class DroppingFirstCounter:
+            count = staticmethod(len)
+
+            @staticmethod
+            def split(text, limit, first_max_tokens=None):
+                if first_max_tokens is not None:
+                    return []
+                return [text[i : i + limit] for i in range(0, len(text), limit)]
+
+        pieces = split_to_token_limit(
+            DroppingFirstCounter(), "abcdef", 4, first_max_tokens=2
+        )
+        assert "".join(pieces) == "abcdef"
+        assert all(len(piece) <= 2 for piece in pieces)
 
 
 class TestFallbackWhenTokenizerUnavailable:

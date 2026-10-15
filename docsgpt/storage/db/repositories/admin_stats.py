@@ -13,7 +13,7 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 
@@ -226,8 +226,8 @@ class AdminStatsRepository:
         where = ""
         count_params: dict = {}
         if user_id_filter is not None:
-            where = "WHERE u.user_id ILIKE '%' || :uid || '%'"
-            count_params["uid"] = user_id_filter
+            where = "WHERE u.user_id ILIKE :uid ESCAPE '\\'"
+            count_params["uid"] = f"%{like_escape(user_id_filter)}%"
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users u {where}"), count_params
         ).scalar_one()

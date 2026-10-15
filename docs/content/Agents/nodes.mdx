@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else and Code - and the shared state they read and write.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components';
@@ -290,3 +290,11 @@ a workflow breaks:
 - Every Code node has code, and any JSON schema it has is valid.
 
 A run stops after 50 node steps, so a loop needs an exit condition.
+
+## One workflow per agent
+
+A workflow belongs to the agent it was built in, and deleting a workflow agent
+deletes its workflow. Over the API, creating an agent (`POST /api/create_agent`)
+with a `workflow` that another agent already uses, or switching an agent to one
+with `PUT /api/update_agent/<agent_id>`, answers `409` with "This workflow
+belongs to another agent". Create a new workflow for the new agent instead.

@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Conversation"
   },
   "backgroundJobs": {
-    "unread": "Unread",
     "card": {
       "status": {
         "working": "In background",
@@ -464,6 +463,7 @@
             "semantic": "Semantic"
           },
           "maxTokens": "Max tokens per chunk",
+          "maxTokensHint": "Maximum 4,096 tokens.",
           "minTokens": "Min tokens per chunk",
           "duplicateHeaders": "Duplicate headers across chunks"
         }
@@ -746,7 +746,15 @@
           "allAttributes": "All attributes"
         }
       },
-      "loadError": "Could not load the logs."
+      "loadError": "Could not load the logs.",
+      "running": "running",
+      "failedAtStep": "failed at step {{step}}",
+      "failedAtStepOf": "failed at step {{step}} of {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Shared",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -2146,13 +2154,15 @@
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",
+    "stoppedTitle": "Stopped",
     "errors": {
       "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
       "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
       "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
       "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
       "serverError": "Please try again later. We apologize for any inconvenience.",
-      "clientDisconnect": "The response stopped before anything was produced. Try again."
+      "clientDisconnect": "The response stopped before anything was produced. Try again.",
+      "stopped": "You stopped this answer before it wrote anything. Try again to get one."
     },
     "reasoning": "Reasoning",
     "wikiWrite": {
@@ -2740,6 +2750,7 @@
           "dec": "Dec"
         },
         "frequencyLabel": "Frequency",
+        "customTiming": "This schedule runs on a custom timing: {{pattern}}. Change the timing below to replace it.",
         "dayOfWeek": "Day of the week"
       },
       "status": {
@@ -2770,7 +2781,8 @@
         "error": "Error",
         "errorWithType": "Error ({{type}})",
         "output": "Output",
-        "truncated": "(truncated)"
+        "truncated": "(truncated)",
+        "openConversation": "Open conversation"
       },
       "toolCard": {
         "cancelFailed": "Cancel failed",
@@ -2809,7 +2821,18 @@
           "oct": "October",
           "nov": "November",
           "dec": "December"
-        }
+        },
+        "weekdays": "Every weekday at {{time}}",
+        "weekends": "Every weekend day at {{time}}",
+        "days": "Every {{days}} at {{time}}",
+        "hourly": "Every hour",
+        "hourlyAt": "Every hour at :{{minute}}",
+        "hourlyRange": "Every hour from {{from}} to {{to}}",
+        "hourlyRangeWeekdays": "Every hour from {{from}} to {{to}} on weekdays",
+        "everyMinutes_one": "Every {{formatted}} minute",
+        "everyMinutes_other": "Every {{formatted}} minutes",
+        "everyHours_one": "Every {{formatted}} hour",
+        "everyHours_other": "Every {{formatted}} hours"
       },
       "runLog": {
         "when": "When",
@@ -2839,7 +2862,8 @@
         "overdue": "Overdue"
       },
       "deleteFailed": "Couldn't delete this schedule.",
-      "deleteConsequence": "Its run history is deleted too. This can't be undone."
+      "deleteConsequence": "Its run history is deleted too. This can't be undone.",
+      "allSchedules": "All schedules"
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared.",
@@ -3222,7 +3246,8 @@
         "personal": "Personal",
         "workspace": "Workspace",
         "insights": "Insights",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automations"
       }
     },
     "openSidebar": "Open sidebar",
@@ -3261,7 +3286,7 @@
       "admins": "Admins",
       "usage": "Usage",
       "quotas": "Quotas",
-      "audit": "Activity",
+      "audit": "Audit log",
       "connectors": "Connectors"
     },
     "quotas": {
@@ -3321,7 +3346,6 @@
     "loadError": "Couldn't load your monitors",
     "actionError": "That didn't work. Try again.",
     "untitled": "Monitor",
-    "watching": "Watching for changes",
     "every": "Every {{interval}}",
     "onEvent": "When it happens",
     "openConversation": "Open conversation",
@@ -3398,5 +3422,282 @@
       "conversationGone": "Ended: its conversation can no longer be resumed"
     },
     "endedBecause": "Ended: {{reason}}"
+  },
+  "activity": {
+    "label": "Activity",
+    "schedules": {
+      "label": "Schedules",
+      "subtitle": "Every recurring run and one-time task across your agents, plus the ones the assistant set up in a chat.",
+      "search": "Search schedules",
+      "createdInChat": "Created in chat",
+      "createdInChatHint": "No agent. Each one belongs to the chat that made it.",
+      "agentSchedules": "Agent schedules",
+      "openChat": "Open chat",
+      "noMatches": "No schedules match your search.",
+      "loadError": "Couldn't load your schedules",
+      "empty": "No schedules yet",
+      "emptyHint": "Create one here, or ask the assistant in a chat to do something on a schedule.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Choose an agent",
+      "agentSearch": "Search agents",
+      "agentEmpty": "No agents you can schedule",
+      "teamAgent": "A teammate's agent you manage through a team"
+    },
+    "marks": {
+      "failed": "Something failed",
+      "needsYou": "Waiting for your approval",
+      "working": "Working",
+      "unread": "Unread",
+      "watching": "Watching for changes"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Background job",
+      "code": "Code execution",
+      "schedule": "Scheduled run",
+      "workflow": "Workflow",
+      "webhook": "Webhook run",
+      "ingest": "Knowledge",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} running",
+      "running_other": "{{formatted}} running",
+      "needsYou_one": "{{formatted}} needs you",
+      "needsYou_other": "{{formatted}} need you"
+    },
+    "now": {
+      "label": "Now",
+      "subtitle": "What is running, what is waiting for you, and what runs next. Updates live.",
+      "loadError": "Couldn't load your activity",
+      "stopFailed": "Couldn't stop the answer. Try again, or open the chat and stop it there.",
+      "thinking": "thinking",
+      "writing": "writing the answer",
+      "ranByHand": "run now",
+      "due": "due {{time}}",
+      "chunks": "{{done}} of {{total}} chunks embedded",
+      "background": "Background",
+      "running": "Running",
+      "stop": "Stop",
+      "cancel": "Cancel",
+      "open": "Open",
+      "approve": "Approve {{tools}}",
+      "approveAction": "Approve a tool action",
+      "expires": "expires {{time}}",
+      "approval": "Approval",
+      "review": "Review",
+      "pausedAfter_one": "{{name}} paused after {{formatted}} failure",
+      "pausedAfter_other": "{{name}} paused after {{formatted}} failures",
+      "errorType": {
+        "auth_expired": "a sign-in expired",
+        "tool_not_allowed": "a tool was not allowed",
+        "budget_exceeded": "over its token budget",
+        "timeout": "timed out",
+        "agent_error": "the agent failed",
+        "internal": "an internal error",
+        "missed": "missed its time",
+        "overlap": "the previous run was still going",
+        "stream_error": "the answer stream broke",
+        "empty_output": "it produced nothing"
+      },
+      "viewRuns": "View runs",
+      "fromChat": "From {{name}}",
+      "timesToday_one": "{{formatted}} run in the next 24 hours",
+      "timesToday_other": "{{formatted}} runs in the next 24 hours",
+      "oneTime": "one-time",
+      "stats": {
+        "running": "Running",
+        "background_one": "{{formatted}} in the background",
+        "background_other": "{{formatted}} in the background",
+        "needsYou": "Needs you",
+        "approvalExpires": "An approval expires {{time}}",
+        "next24h": "Next 24 hours",
+        "nextAt": "Next at {{time}}, {{name}}",
+        "failed": "Failed, last 24 hours",
+        "viewInHistory": "View in History"
+      },
+      "needsYou": "Needs you",
+      "reconnect": "{{name}} needs reconnecting",
+      "reconnectAction": "Reconnect",
+      "runningTitle": "Running",
+      "filter": "Show",
+      "filters": {
+        "all": "All",
+        "chats": "Chats",
+        "automations": "Automations",
+        "knowledge": "Knowledge"
+      },
+      "nothingRunning": "Nothing is running",
+      "upNext": "Up next",
+      "nothingPlanned": "Nothing runs in the next 24 hours",
+      "watching": "Watching",
+      "allMonitors": "All monitors",
+      "nothingWatched": "Nothing is being watched",
+      "checked": "checked {{time}}",
+      "openCalendar": "Open calendar",
+      "step": "step {{step}}",
+      "stepOf": "step {{step}} of {{total}}",
+      "apiRequests_one": "{{formatted}} request",
+      "apiRequests_other": "{{formatted}} requests",
+      "reading": "reading the content",
+      "operation": {
+        "upload": "Upload",
+        "sync": "Sync",
+        "reingest": "Re-index"
+      },
+      "syncBatch": {
+        "daily": "Daily sync",
+        "weekly": "Weekly sync",
+        "monthly": "Monthly sync"
+      },
+      "syncSources_one": "{{formatted}} source",
+      "syncSources_other": "{{formatted}} sources",
+      "syncBlocked_one": "{{formatted}} needs reconnecting",
+      "syncBlocked_other": "{{formatted}} need reconnecting"
+    },
+    "calendar": {
+      "label": "Calendar",
+      "subtitle": "Planned runs, past runs by how they went, and what is being watched.",
+      "loadError": "Couldn't load the calendar",
+      "runLoadError": "Couldn't open the run. Try again.",
+      "runNowError": "Couldn't start the run. Try again.",
+      "todayButton": "Today",
+      "previous": "Previous",
+      "next": "Next",
+      "agentFilter": "Agent",
+      "allAgents": "All agents",
+      "viewLabel": "View",
+      "views": {
+        "day": "Day",
+        "week": "Week",
+        "month": "Month",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitors",
+      "knowledgeSyncs": "Knowledge syncs",
+      "hidePast": "Hide past runs",
+      "legend": {
+        "planned": "Planned",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "paused": "Paused or skipped",
+        "missed": "Missed",
+        "sync": "Knowledge sync"
+      },
+      "truncated": "Some very frequent schedules show only their first runs in this range.",
+      "watching": "Watching",
+      "state": {
+        "planned": "Planned",
+        "paused": "Paused",
+        "pending": "Starting",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "timeout": "Timed out",
+        "missed": "Missed"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} more",
+      "more_other": "+{{formatted}} more",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "empty": "Nothing is planned in these days",
+      "blockDone_one": "{{done}} of {{formatted}} run done",
+      "blockDone_other": "{{done}} of {{formatted}} runs done",
+      "slotCount_one": "{{formatted}} run",
+      "slotCount_other": "{{formatted}} runs",
+      "oneTime": "One-time",
+      "recurring": "Recurring",
+      "when": "When",
+      "repeats": "Repeats",
+      "fromChat": "From chat",
+      "pausedNote": "This schedule is paused, so this run will not happen. Resume it on its schedule page.",
+      "dayRuns": "This day's runs",
+      "queued": "Run started. It shows in Now and in the run log.",
+      "openSchedule": "Open schedule",
+      "timezone": "Schedule time zone",
+      "missedNote": "This run never started: the scheduler was down or behind at the time. Run now to catch up, or check that the worker runs with beat.",
+      "syncRepeats": {
+        "daily": "Every day, counted from when the scheduler started",
+        "weekly": "Every week, counted from when the scheduler started",
+        "monthly": "Every 30 days, counted from when the scheduler started"
+      },
+      "sources": "Sources",
+      "needsReconnecting": "Needs reconnecting",
+      "lastSynced": "Synced {{time}}",
+      "notSyncedYet": "Not synced yet",
+      "openKnowledge": "Open Knowledge"
+    },
+    "history": {
+      "label": "History",
+      "subtitle": "Finished runs of your schedules, webhooks, workflows, background jobs and monitors. Settings › Logs keeps the full technical log.",
+      "search": "Search runs",
+      "statusFilter": "Status",
+      "kindFilter": "Kind",
+      "statusFilters": {
+        "all": "All statuses",
+        "failed": "Failed",
+        "success": "Succeeded",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled"
+      },
+      "kindFilters": {
+        "all": "All",
+        "schedule": "Schedules",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Background",
+        "monitor": "Monitor wakes"
+      },
+      "kind": {
+        "schedule": "Schedule",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Background",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled"
+      },
+      "trigger": {
+        "cron": "Schedule",
+        "manual": "Run now",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Change found",
+        "trigger": "Webhook link",
+        "approval": "Approval link",
+        "monitor_paused": "Monitor paused",
+        "monitor_expired": "Monitor expired"
+      },
+      "columns": {
+        "when": "When",
+        "run": "Run",
+        "owner": "Agent / chat",
+        "kind": "Kind",
+        "trigger": "Trigger",
+        "status": "Status",
+        "duration": "Duration",
+        "tokens": "Tokens"
+      },
+      "yesterday": "Yesterday",
+      "loadError": "Couldn't load the history",
+      "runLoadError": "Couldn't open the run. Try again.",
+      "noMatches": "No runs match these filters",
+      "empty": "No finished runs yet",
+      "emptyHint": "Runs of your schedules, webhooks, workflows, background jobs and monitors show up here when they finish.",
+      "loadMore": "Load more",
+      "retention": "By default, scheduled runs are kept for 90 days, webhook runs for 30, and background jobs and monitor wakes for 7. Workflow runs stay listed, and their trace is kept for 30 days.",
+      "period_one": "Last {{formatted}} day",
+      "period_other": "Last {{formatted}} days",
+      "periodFilter": "Period"
+    }
   }
 }

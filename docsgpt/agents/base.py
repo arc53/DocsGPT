@@ -328,6 +328,10 @@ class BaseAgent(ABC):
         self.context_limit_reached = False
         self.conversation_id: Optional[str] = None
         self.initial_user_id: Optional[str] = None
+        # What started this turn: the chat or API answer's message id, a
+        # scheduled run's id, a webhook's task id. A workflow run records it,
+        # so Activity shows the run's step on the right one.
+        self.started_by: Optional[str] = None
 
         self.request_id = request_id
         # The turn came through ``/v1/chat/completions``: the client owns the
