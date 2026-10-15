@@ -726,6 +726,7 @@ conversations_table = Table(
     Column("legacy_mongo_id", Text),
     # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
     Column("unread_at", DateTime(timezone=True)),
+    Column("read_at", DateTime(timezone=True)),
 )
 
 conversation_messages_table = Table(

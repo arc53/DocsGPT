@@ -1,11 +1,10 @@
 """The unread mark on a conversation (``conversations.unread_at``).
 
 Set when a message lands that the owner has not seen (a continuation turn
-while they were elsewhere), cleared when they open the conversation. It holds
-when the conversation became unread: a later unseen message leaves it, so
-Activity can tell a failure that came while unread from one seen before.
-Neither write touches ``date`` or ``updated_at``, so marking never reorders
-the sidebar.
+while they were elsewhere), cleared when they open the conversation. Reading
+also stamps ``read_at``, which Activity compares a failed job against: one
+that ended before it was seen. Neither write touches ``date`` or
+``updated_at``, so marking never reorders the sidebar.
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ class ConversationUnreadRepository:
             return False
         result = self._conn.execute(
             text(
-                "UPDATE conversations SET unread_at = COALESCE(unread_at, now()) "
+                "UPDATE conversations SET unread_at = now() "
                 "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
             ),
             {"id": conversation_id, "user_id": user_id},
@@ -43,18 +42,21 @@ class ConversationUnreadRepository:
         return bool(result.rowcount)
 
     def mark_read(self, conversation_id: str, user_id: str) -> bool:
-        """Clear the unread mark.
+        """Clear the unread mark and stamp ``read_at``, unread or not.
 
         Returns:
             True when there was a mark to clear.
         """
         if not looks_like_uuid(conversation_id):
             return False
-        result = self._conn.execute(
+        was_unread = self._conn.execute(
             text(
-                "UPDATE conversations SET unread_at = NULL "
-                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id AND unread_at IS NOT NULL"
+                "UPDATE conversations c SET unread_at = NULL, read_at = now() "
+                "FROM (SELECT unread_at FROM conversations "
+                "      WHERE id = CAST(:id AS uuid) AND user_id = :user_id FOR UPDATE) before "
+                "WHERE c.id = CAST(:id AS uuid) AND c.user_id = :user_id "
+                "RETURNING before.unread_at IS NOT NULL"
             ),
             {"id": conversation_id, "user_id": user_id},
-        )
-        return bool(result.rowcount)
+        ).scalar()
+        return bool(was_unread)

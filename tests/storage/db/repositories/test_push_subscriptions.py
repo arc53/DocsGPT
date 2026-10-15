@@ -90,23 +90,15 @@ class TestUnread:
         assert repo.mark_read(cid, "u1") is True
         assert repo.mark_read(cid, "u1") is False
 
-    def test_marking_again_keeps_when_it_became_unread(self, pg_conn):
-        # Activity tells a failure seen before from one that came while
-        # unread by this time, so a later message must not move it.
+    def test_reading_records_when_even_if_nothing_was_unread(self, pg_conn):
+        # Activity tells a failure seen before from a new one by this time.
         repo = ConversationUnreadRepository(pg_conn)
         cid = self._conversation(pg_conn)
-        pg_conn.execute(
-            text("UPDATE conversations SET unread_at = now() - interval '1 hour' WHERE id = CAST(:id AS uuid)"),
-            {"id": cid},
-        )
-        first = pg_conn.execute(
-            text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": cid}
+        assert repo.mark_read(cid, "u1") is False
+        read_at = pg_conn.execute(
+            text("SELECT read_at FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": cid}
         ).scalar()
-        assert repo.mark_unread(cid, "u1") is True
-        again = pg_conn.execute(
-            text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": cid}
-        ).scalar()
-        assert again == first
+        assert read_at is not None
 
     def test_only_the_owner(self, pg_conn):
         repo = ConversationUnreadRepository(pg_conn)

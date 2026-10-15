@@ -502,10 +502,13 @@ class TestFailures:
             {"m": minutes_ago, "id": str(job["id"])},
         )
 
-    def _unread_since(self, conn, conv, minutes_ago):
+    def _read_then_unread(self, conn, conv, read_minutes_ago):
         conn.execute(
-            text("UPDATE conversations SET unread_at = now() - make_interval(mins => :m) WHERE id = CAST(:id AS uuid)"),
-            {"m": minutes_ago, "id": conv},
+            text(
+                "UPDATE conversations SET read_at = now() - make_interval(mins => :m), "
+                "unread_at = now() WHERE id = CAST(:id AS uuid)"
+            ),
+            {"m": read_minutes_ago, "id": conv},
         )
 
     def test_a_failure_seen_before_does_not_come_back(self, pg_conn):
@@ -513,13 +516,24 @@ class TestFailures:
         # marked it unread again: the failure was already seen.
         conv = _chat(pg_conn)
         self._failed_job(pg_conn, conv, minutes_ago=30)
-        self._unread_since(pg_conn, conv, minutes_ago=5)
+        self._read_then_unread(pg_conn, conv, read_minutes_ago=20)
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == []
 
-    def test_a_failure_while_unread_is_marked(self, pg_conn):
+    def test_a_failure_after_the_last_read_is_marked(self, pg_conn):
+        # The unread mark lands after the job ends (its follow-up notifies):
+        # what matters is that the user hasn't read the chat since.
         conv = _chat(pg_conn)
-        self._unread_since(pg_conn, conv, minutes_ago=30)
         self._failed_job(pg_conn, conv, minutes_ago=5)
+        self._read_then_unread(pg_conn, conv, read_minutes_ago=30)
+        assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
+
+    def test_a_failure_in_a_chat_never_read_is_marked(self, pg_conn):
+        conv = _chat(pg_conn)
+        self._failed_job(pg_conn, conv, minutes_ago=5)
+        pg_conn.execute(
+            text("UPDATE conversations SET unread_at = now() + interval '1 minute' WHERE id = CAST(:id AS uuid)"),
+            {"id": conv},
+        )
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
 
     def test_an_answer_the_user_stopped_is_not_a_failure(self, pg_conn):

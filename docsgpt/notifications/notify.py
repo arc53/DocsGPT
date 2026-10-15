@@ -75,6 +75,8 @@ def _notify(
     conversation_id = str(conversation_id) if conversation_id else None
     if conversation_id and presence.is_watching(user_id, conversation_id):
         logger.debug("notify: user %s is watching %s; nothing to send", user_id, conversation_id)
+        # Seen on screen: read, so Activity won't mark it failed later.
+        _mark_read(conversation_id, user_id)
         return WATCHING
     if conversation_id:
         _mark_unread(conversation_id, user_id)
@@ -93,6 +95,17 @@ def _notify(
     if _queue_push(user_id, kind=kind, title=title, body=body, url=url, conversation_id=conversation_id):
         return PUSH
     return STORED
+
+
+def _mark_read(conversation_id: str, user_id: str) -> None:
+    from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
+    from docsgpt.storage.db.session import db_session
+
+    try:
+        with db_session() as conn:
+            ConversationUnreadRepository(conn).mark_read(conversation_id, user_id)
+    except Exception:
+        logger.exception("marking conversation %s read failed", conversation_id)
 
 
 def _mark_unread(conversation_id: str, user_id: str) -> None:
