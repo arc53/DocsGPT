@@ -323,6 +323,22 @@ def test_run_row_names_what_started_it(pg_engine, tmp_path, monkeypatch):
     assert run["inputs"] == {"query": "go", "started_by": "message-1"}
 
 
+def test_run_row_names_the_agent_that_ran_it(pg_engine, tmp_path, monkeypatch):
+    """Several agents can share a workflow; Activity names the run by the one that ran it."""
+    _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+    agent = _agent(wf_id, [])
+    agent.agent_id = "11111111-1111-1111-1111-111111111111"
+    _patch_engine(monkeypatch)
+
+    list(agent._gen_inner("go", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    with pg_engine.connect() as conn:
+        run = WorkflowRunsRepository(conn).get(engine.workflow_run_id)
+    assert run["inputs"]["agent_id"] == "11111111-1111-1111-1111-111111111111"
+
+
 def test_unowned_workflow_creates_no_run_row(pg_engine, tmp_path, monkeypatch):
     """A draft/unowned workflow id never persists a run row and skips the bridge."""
     storage = _wire(pg_engine, tmp_path, monkeypatch)

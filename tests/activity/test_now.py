@@ -203,8 +203,13 @@ class TestWorkflowRuns:
 
     def _run(
         self, conn, workflow_id: str, progress: dict | None = None, age: int = 0, started_by: str | None = None,
+        agent_id: str | None = None,
     ) -> None:
-        inputs = {"query": "q", "started_by": started_by} if started_by else None
+        inputs = {
+            "query": "q",
+            **({"started_by": started_by} if started_by else {}),
+            **({"agent_id": agent_id} if agent_id else {}),
+        } if started_by or agent_id else None
         conn.execute(
             text(
                 "INSERT INTO workflow_runs (workflow_id, user_id, status, started_at, progress, inputs) "
@@ -227,6 +232,37 @@ class TestWorkflowRuns:
         flows = [item for item in snap["running"] if item["kind"] == "workflow"]
         assert len(flows) == 1
         assert flows[0]["agent_name"] == "Renewal Desk"
+
+    def _teammates_workflow(self, conn) -> tuple[str, str]:
+        """u2's workflow under a private agent and, newer, a shared one; returns (workflow, shared)."""
+        workflow = str(
+            conn.execute(
+                text("INSERT INTO workflows (user_id, name) VALUES ('u2', 'Renewal flow') RETURNING id")
+            ).scalar()
+        )
+        conn.execute(
+            text(
+                "INSERT INTO agents (user_id, name, status, workflow_id, created_at) "
+                "VALUES ('u2', 'Private draft', 'published', CAST(:w AS uuid), now() - interval '1 day')"
+            ),
+            {"w": workflow},
+        )
+        return workflow, _agent(conn, "Shared desk", user_id="u2", workflow_id=workflow)
+
+    def test_a_run_is_named_by_the_agent_that_ran_it(self, pg_conn):
+        workflow, shared = self._teammates_workflow(pg_conn)
+        self._run(pg_conn, workflow, agent_id=shared)
+        [flow] = [i for i in activity_now.build_now(pg_conn, "u1")["running"] if i["kind"] == "workflow"]
+        assert (flow["agent_id"], flow["agent_name"]) == (shared, "Shared desk")
+
+    def test_an_older_run_never_names_another_users_agent(self, pg_conn):
+        # A run from before the agent was recorded falls back to the runner's
+        # own agents: the owner's private one is not the teammate's to see.
+        workflow, _ = self._teammates_workflow(pg_conn)
+        self._run(pg_conn, workflow)
+        [flow] = [i for i in activity_now.build_now(pg_conn, "u1")["running"] if i["kind"] == "workflow"]
+        assert flow["agent_id"] is None
+        assert flow["agent_name"] is None
 
     def test_a_run_inside_a_running_chat_is_folded_into_it(self, pg_conn):
         workflow = self._workflow(pg_conn)

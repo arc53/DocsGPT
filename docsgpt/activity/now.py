@@ -247,7 +247,8 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Workflow runs still going, with the step they are on.
 
     Most are folded into the chat, scheduled run or webhook that started them
-    (``_fold_workflows``); the agent is the oldest one built on the workflow.
+    (``_fold_workflows``); the agent is the one that ran it (several can share
+    a workflow).
     """
     rows = query_rows(
         conn,
@@ -257,7 +258,12 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         FROM workflow_runs r
         JOIN workflows w ON w.id = r.workflow_id
         LEFT JOIN LATERAL (
-            SELECT id, name FROM agents WHERE workflow_id = r.workflow_id
+            -- The agent that ran it; a run from before that was recorded
+            -- falls back to the runner's own oldest, never another user's.
+            SELECT id, name FROM agents
+            WHERE workflow_id = r.workflow_id
+              AND CASE WHEN r.inputs ? 'agent_id' THEN id::text = r.inputs ->> 'agent_id'
+                       ELSE user_id = r.user_id END
             ORDER BY created_at ASC LIMIT 1
         ) a ON TRUE
         WHERE r.user_id = :user_id AND r.status = 'running'

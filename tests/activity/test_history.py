@@ -141,6 +141,38 @@ class TestKinds:
         kinds = [r["kind"] for r in history.list_history(pg_conn, "u1")["runs"]]
         assert kinds == ["webhook"]
 
+    def test_a_workflow_run_is_named_by_its_agent_and_never_another_users(self, pg_conn):
+        # u2's workflow under a private agent and, newer, a shared one; u1 ran the shared one.
+        workflow = str(
+            pg_conn.execute(text("INSERT INTO workflows (user_id, name) VALUES ('u2', 'Renewal') RETURNING id")).scalar()
+        )
+        agents = {}
+        for name, age in (("Private draft", "2 days"), ("Shared desk", "1 day")):
+            agents[name] = str(
+                pg_conn.execute(
+                    text(
+                        "INSERT INTO agents (user_id, name, status, workflow_id, created_at) "
+                        "VALUES ('u2', :n, 'published', CAST(:w AS uuid), now() - CAST(:age AS interval)) "
+                        "RETURNING id"
+                    ),
+                    {"n": name, "w": workflow, "age": age},
+                ).scalar()
+            )
+        for inputs in ({"query": "q", "agent_id": agents["Shared desk"]}, None):
+            pg_conn.execute(
+                text(
+                    "INSERT INTO workflow_runs (workflow_id, user_id, status, started_at, ended_at, inputs) "
+                    "VALUES (CAST(:w AS uuid), 'u1', 'completed', now() - interval '5 minutes', "
+                    "now() - interval '4 minutes', CAST(:i AS jsonb))"
+                ),
+                {"w": workflow, "i": json.dumps(inputs) if inputs else None},
+            )
+        runs = history.list_history(pg_conn, "u1", kind="workflow")["runs"]
+        assert sorted((r["agent_id"] or "", r["title"]) for r in runs) == [
+            ("", "Renewal"),
+            (agents["Shared desk"], "Shared desk"),
+        ]
+
 
 class TestFilters:
     def test_by_kind_status_and_text(self, pg_conn):

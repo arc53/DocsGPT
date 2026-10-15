@@ -100,7 +100,12 @@ _WORKFLOW = """
     FROM workflow_runs r
     JOIN workflows w ON w.id = r.workflow_id
     LEFT JOIN LATERAL (
-        SELECT id, name FROM agents WHERE workflow_id = r.workflow_id
+        -- The agent that ran it; a run from before that was recorded
+        -- falls back to the runner's own oldest, never another user's.
+        SELECT id, name FROM agents
+        WHERE workflow_id = r.workflow_id
+          AND CASE WHEN r.inputs ? 'agent_id' THEN id::text = r.inputs ->> 'agent_id'
+                   ELSE user_id = r.user_id END
         ORDER BY created_at ASC LIMIT 1
     ) ag ON TRUE
     WHERE r.user_id = :user_id

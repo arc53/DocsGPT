@@ -390,12 +390,17 @@ class WorkflowAgent(BaseAgent):
             query: The run's input.
 
         Returns:
-            ``{"query": ...}``, plus ``started_by`` (see ``BaseAgent``) when set.
+            ``{"query": ...}``, plus ``started_by`` (see ``BaseAgent``) and
+            ``agent_id`` (the agent that ran it; several can share a
+            workflow) when set.
         """
         inputs: Dict[str, Any] = {"query": query}
         started_by = getattr(self, "started_by", None)
         if started_by:
             inputs["started_by"] = str(started_by)
+        agent_id = getattr(self, "agent_id", None)
+        if agent_id:
+            inputs["agent_id"] = str(agent_id)
         return inputs
 
     def _bridge_attachments(
