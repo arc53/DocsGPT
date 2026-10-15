@@ -12,7 +12,10 @@ const activity = vi.hoisted(() => ({
 vi.mock('../api/services/activityService', () => ({ default: activity }));
 const schedules = vi.hoisted(() => ({ getRun: vi.fn(), runNow: vi.fn() }));
 vi.mock('../api/services/schedulesService', () => ({ default: schedules }));
-vi.mock('../hooks', () => ({ useMediaQuery: () => ({ isMobile: false }) }));
+vi.mock('../hooks', () => ({
+  MOBILE_QUERY: '(max-width: 1023.98px)',
+  useMediaQuery: () => ({ isMobile: false }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }));
@@ -294,6 +297,28 @@ describe('Calendar page', () => {
     expect(activity.planned).toHaveBeenCalledTimes(calls);
     await fetched('event');
     expect(activity.planned).toHaveBeenCalledTimes(calls + 1);
+  });
+
+  it('asks a phone for the agenda first, not the week', async () => {
+    // useMediaQuery settles after the first render; a phone fetched the
+    // week window, then the agenda's.
+    const matchMedia = vi
+      .spyOn(window, 'matchMedia')
+      .mockImplementation(
+        (query: string) =>
+          ({ matches: query.includes('max-width'), media: query }) as never,
+      );
+    try {
+      await render();
+      const [from, to] = activity.planned.mock.calls[0];
+      expect(
+        Math.round(
+          ((to as Date).getTime() - (from as Date).getTime()) / 86_400_000,
+        ),
+      ).toBe(14);
+    } finally {
+      matchMedia.mockRestore();
+    }
   });
 
   it('lists a summed-up day as one row with its span and count', async () => {

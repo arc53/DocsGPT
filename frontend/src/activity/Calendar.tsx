@@ -25,7 +25,7 @@ import { runScheduleNow } from '../agents/schedules/schedulesSlice';
 import type { ScheduleRun } from '../agents/types/schedule';
 import activityService from '../api/services/activityService';
 import schedulesService from '../api/services/schedulesService';
-import { useMediaQuery } from '../hooks';
+import { MOBILE_QUERY, useMediaQuery } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { selectMonitorStatusKey } from '../monitors/monitorsSlice';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -81,7 +81,11 @@ export default function Calendar() {
   const monitorKey = useSelector(selectMonitorStatusKey);
   const { isMobile } = useMediaQuery();
 
-  const [view, setView] = useState<CalendarView>(isMobile ? 'agenda' : 'week');
+  // useMediaQuery settles after the first render; read the screen now, so a
+  // phone's first fetch is the agenda's, not the week's.
+  const [view, setView] = useState<CalendarView>(() =>
+    isMobile || window.matchMedia?.(MOBILE_QUERY).matches ? 'agenda' : 'week',
+  );
   const [anchor, setAnchor] = useState(() => new Date());
   const [agent, setAgent] = useState<string>(ALL);
   // The chosen agent's name, to keep it listed in windows it has no slot in.
