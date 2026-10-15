@@ -1,6 +1,7 @@
 import { ArrowRight, Play } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +21,8 @@ import {
 
 import { agentSchedulesPath } from '../../agents/paths';
 import { formatCron } from '../../agents/schedules/cronBuilder';
+import { showActionToast } from '../../notifications/actionToastSlice';
+import type { AppDispatch } from '../../store';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import { ACTIVITY_SCHEDULES_PATH } from '../paths';
 import { formatClock } from './dates';
@@ -49,7 +52,7 @@ export type EventPanelProps = {
     | { kind: 'block'; block: FrequentBlock }
     | null;
   onClose: () => void;
-  /** Runs the schedule once now; resolves when the run is queued. */
+  /** Runs the schedule once now; resolves once queued, rejects if refused. */
   onRunNow: (scheduleId: string) => Promise<void>;
   /** Opens a past run's details (a slot of a frequent schedule's day). */
   onOpenRun: (event: ScheduleEvent) => void;
@@ -68,6 +71,7 @@ export default function EventPanel({
   onOpenRun,
 }: EventPanelProps) {
   const { t } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
   const [running, setRunning] = useState(false);
   const [queued, setQueued] = useState(false);
   if (!selection) return null;
@@ -92,6 +96,13 @@ export default function EventPanel({
     try {
       await onRunNow(event.schedule_id);
       setQueued(true);
+    } catch {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('activity.calendar.runNowError'),
+        }),
+      );
     } finally {
       setRunning(false);
     }

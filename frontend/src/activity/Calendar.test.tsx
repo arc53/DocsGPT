@@ -19,6 +19,7 @@ vi.mock('react-i18next', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+import actionToastReducer from '../notifications/actionToastSlice';
 import activityReducer, { loadActivityNow } from './activitySlice';
 import Calendar from './Calendar';
 import type { PlannedWindow, ScheduleEvent, SyncEvent } from './calendar/types';
@@ -146,6 +147,7 @@ describe('Calendar page', () => {
     const store = configureStore({
       reducer: {
         activity: activityReducer,
+        actionToast: actionToastReducer,
         preference: () => ({ token: 'tok' }),
         schedules: (s = {}) => s,
         monitors: (
@@ -382,6 +384,25 @@ describe('Calendar page', () => {
     expect(panel()?.textContent).not.toContain('activity.calendar.queued');
     expect(runNow().disabled).toBe(false);
     expect(schedules.runNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a refused Run now in a toast and leaves the button ready', async () => {
+    schedules.runNow.mockReset().mockRejectedValue(new Error('in flight'));
+    const store = await render();
+    const panel = () => document.querySelector('[data-slot="sheet-content"]');
+    const runNow = () =>
+      Array.from(panel()!.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('agents.schedules.runNow'),
+      )!;
+
+    await act(async () => slotButton('Daily support digest').click());
+    await act(async () => runNow().click());
+    expect(store.getState().actionToast.current).toMatchObject({
+      variant: 'destructive',
+      message: 'activity.calendar.runNowError',
+    });
+    expect(panel()?.textContent).not.toContain('activity.calendar.queued');
+    expect(runNow().disabled).toBe(false);
   });
 
   it('keeps a day summary under "Hide past" while it has slots to come', async () => {
