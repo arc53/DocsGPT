@@ -177,8 +177,12 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // them): one request up to 100 rows, past that one per 100, side by side.
   const logsByPageRef = useRef(logsByPage);
   logsByPageRef.current = logsByPage;
+  // The latest refresh. The poll and an activity change can each start one;
+  // an older one answering last would put back runs that have ended.
+  const refreshSeqRef = useRef(0);
   const refreshLoadedPages = async () => {
     const issuedKey = filterKey;
+    const seq = ++refreshSeqRef.current;
     const loaded = logsByPageRef.current;
     const running = Object.values(loaded).some((rows) =>
       rows.some((log) => log.running),
@@ -213,6 +217,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         has_more: last.has_more || last.logs.length > keep,
       };
       if (issuedKey !== filterKeyRef.current) return;
+      if (seq !== refreshSeqRef.current) return;
       const previous = logsByPageRef.current;
       if (!previous[1]) return;
       const merged = mergeLoadedPages(

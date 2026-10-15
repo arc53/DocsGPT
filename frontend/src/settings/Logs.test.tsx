@@ -299,6 +299,32 @@ describe('Logs running rows', () => {
     expect(container.textContent).toContain('[stream_answer]');
   });
 
+  it('drops an older refresh that answers after a newer one', async () => {
+    // The poll and a revision can each start a refresh; the older one,
+    // read before the run ended, must not mark it running again.
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+
+    let answerOlder: (value: unknown) => void = () => undefined;
+    getLogs.mockReturnValueOnce(
+      new Promise((resolve) => (answerOlder = resolve)),
+    );
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+
+    getLogs.mockResolvedValueOnce(
+      page([{ ...log, id: 'chat-9', timestamp: new Date().toISOString() }]),
+    );
+    store.state.activity.now = { running: [] };
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    expect(container.textContent).not.toContain('settings.logs.running');
+
+    await act(async () => answerOlder(page([answer])));
+    expect(container.textContent).not.toContain('settings.logs.running');
+    expect(container.textContent).toContain('[stream_answer]');
+  });
+
   it('refreshes a run on a later page when activity changes', async () => {
     const finished = (n: number) => ({
       ...log,
