@@ -8,7 +8,7 @@ from time import monotonic
 from typing import Any, List, Optional, Sequence
 
 from docsgpt import tracing
-from docsgpt.guardrails.base import ScanContext
+from docsgpt.guardrails.base import ScanContext, stage_deadline
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
 from docsgpt.guardrails.types import (
@@ -19,6 +19,7 @@ from docsgpt.guardrails.types import (
     Stage,
     StageDecision,
     apply_spans,
+    capped,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,17 +95,29 @@ class GuardrailEngine:
     def has_stage(self, stage: Stage) -> bool:
         return self.config.has_any(stage)
 
+    @staticmethod
+    def _verdict(control, stage: Stage, outcome: CheckOutcome) -> ControlVerdict:
+        """The control's verdict, its action capped by what the outcome may carry.
+
+        An outcome that could not be evaluated is also capped by its check's
+        ``unevaluated_at_most``, so a check that must never stop a turn it
+        could not scan stays a flag even on a fail-closed agent.
+        """
+        action = capped(control.action, outcome.at_most)
+        if not outcome.evaluated:
+            try:
+                limit = GuardrailCreator.get(control.check).unevaluated_at_most(control.settings)
+            except Exception:
+                limit = None
+            action = capped(action, limit)
+        return ControlVerdict(check=control.check, stage=stage, action=action, outcome=outcome)
+
     def _run_control(self, control, text: str, stage: Stage) -> ControlVerdict:
         try:
             check = GuardrailCreator.create(control.check, control.settings)
         except Exception as exc:
             logger.warning("Guardrail check %s unavailable: %s", control.check, exc)
-            return ControlVerdict(
-                check=control.check,
-                stage=stage,
-                action=control.action,
-                outcome=CheckOutcome.not_evaluated(f"unavailable: {exc}"),
-            )
+            return self._verdict(control, stage, CheckOutcome.not_evaluated(f"unavailable: {exc}"))
         try:
             outcome = check.scan(text, stage, self.context)
         except Exception as exc:
@@ -112,9 +125,7 @@ class GuardrailEngine:
                 "Guardrail check %s raised at stage %s: %s", control.check, stage.value, exc
             )
             outcome = CheckOutcome.not_evaluated(f"error: {type(exc).__name__}")
-        return ControlVerdict(
-            check=control.check, stage=stage, action=control.action, outcome=outcome
-        )
+        return self._verdict(control, stage, outcome)
 
     @staticmethod
     def _needs_deadline(control) -> bool:
@@ -181,7 +192,7 @@ class GuardrailEngine:
             slot: dict = {"control": control, "verdict": None}
             thread = Thread(
                 target=tracing.wrap(self._fill_slot),
-                args=(slot, control, text, stage),
+                args=(slot, control, text, stage, deadline),
                 daemon=True,
                 name=f"guardrail-{control.check}",
             )
@@ -194,12 +205,7 @@ class GuardrailEngine:
             slot["thread"].join(timeout=max(0.0, deadline - monotonic()))
             verdict = slot["verdict"]
             if verdict is None:
-                verdict = ControlVerdict(
-                    check=slot["control"].check,
-                    stage=stage,
-                    action=slot["control"].action,
-                    outcome=CheckOutcome.not_evaluated("timeout"),
-                )
+                verdict = self._verdict(slot["control"], stage, CheckOutcome.not_evaluated("timeout"))
             verdicts.append(verdict)
 
         if len(controls) > _MAX_WORKERS:
@@ -211,24 +217,19 @@ class GuardrailEngine:
             )
             for control in controls[_MAX_WORKERS:]:
                 verdicts.append(
-                    ControlVerdict(
-                        check=control.check,
-                        stage=stage,
-                        action=control.action,
-                        outcome=CheckOutcome.not_evaluated("concurrency cap"),
-                    )
+                    self._verdict(control, stage, CheckOutcome.not_evaluated("concurrency cap"))
                 )
         return verdicts
 
-    def _fill_slot(self, slot: dict, control, text: str, stage: Stage) -> None:
+    def _fill_slot(self, slot: dict, control, text: str, stage: Stage, deadline: float) -> None:
+        # Set here, in the check's own thread, so the check can size its
+        # remote call to the time the stage has left.
+        stage_deadline.set(deadline)
         try:
             slot["verdict"] = self._run_control(control, text, stage)
         except Exception as exc:
-            slot["verdict"] = ControlVerdict(
-                check=control.check,
-                stage=stage,
-                action=control.action,
-                outcome=CheckOutcome.not_evaluated(f"error: {type(exc).__name__}"),
+            slot["verdict"] = self._verdict(
+                control, stage, CheckOutcome.not_evaluated(f"error: {type(exc).__name__}")
             )
 
     def _reduce(self, decision: StageDecision) -> None:

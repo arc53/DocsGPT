@@ -1719,6 +1719,30 @@ Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
 
+### `GUARDRAILS_INJECTION_INPUT_MODE`
+
+Type `"off" | "monitor" | "on" | "auto"`, default `off`.
+
+Give every agent an `injection_model` check on user input, scored by the decision model. `monitor` flags; `on` also blocks at GUARDRAILS_INJECTION_THRESHOLD, on agents that enforce (`scan_all`); `auto` flags while the check's predicted time on this machine fits GUARDRAILS_INJECTION_INPUT_BUDGET. An agent's own `injection_model` input control replaces it. The first mode other than `off` downloads the decision model (~0.5 GB).
+
+### `GUARDRAILS_INJECTION_INPUT_BUDGET`
+
+Type `float`, default `0.5`, must be `> 0`.
+
+Under GUARDRAILS_INJECTION_INPUT_MODE=auto, the longest predicted time, in seconds, the input check may add before an answer starts.
+
+### `GUARDRAILS_INJECTION_THRESHOLD`
+
+Type `float`, default `0.9`, must be `>= 0.0` and `<= 1.0`.
+
+Default `threshold` of an `injection_model` control: the probability from which the control's own action (such as block) applies.
+
+### `GUARDRAILS_INJECTION_FLAG_THRESHOLD`
+
+Type `float`, default `0.5`, must be `>= 0.0` and `<= 1.0`.
+
+Default `flag_threshold` of an `injection_model` control: from this probability up to the threshold a text is flagged as suspected, never blocked.
+
 
 ## Execution traces
 

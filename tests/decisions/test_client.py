@@ -90,7 +90,10 @@ class TestModes:
             "available": True, "mode": "local", "status": "idle", "reason": None,
             "model": "arc53/arc-decide-0.4b-v0.2",
             "version": "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907",
-            "runtime": "onnx-int8", "speed": None, "features": {},
+            "runtime": "onnx-int8", "speed": None,
+            "features": {"injection_input": {
+                "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 0.5, "reason": "configured",
+            }},
         }
         assert decisions.get_decider()._backend is None  # reporting status loads nothing
 

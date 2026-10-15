@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from docsgpt.decisions.latency import SpeedProfile
-from docsgpt.decisions.types import FeatureSpec
+from docsgpt.decisions.latency import GUARD, SpeedProfile
+from docsgpt.decisions.types import FeatureSpec, Shape
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ _on: dict[str, bool] = {}
 
 
 def register(spec: FeatureSpec) -> FeatureSpec:
-    """Add a feature (at import of the module that owns it); registering a name again replaces it."""
+    """Add a feature; registering a name again replaces it."""
     _specs[spec.name] = spec
     return spec
 
@@ -95,3 +95,20 @@ def specs() -> list[FeatureSpec]:
 def reset() -> None:
     """Forget the ``auto`` verdicts (after a fork); registrations stay, since they come from imports."""
     _on.clear()
+
+
+# The features DocsGPT ships are registered here rather than by the modules that call the model, so every process
+# knows all of them whatever it has imported: the API warms the model at start for any that is not ``off``, and
+# ``docsgpt decisions status`` lists them.
+
+#: The ``injection_model`` guardrail check on user input (``GUARDRAILS_INJECTION_INPUT_MODE``). It is predicted on a
+#: message of up to 320 tokens with the one ``injection`` question; under ``auto`` it only flags.
+INJECTION_INPUT = register(
+    FeatureSpec(
+        name="injection_input",
+        mode_setting="GUARDRAILS_INJECTION_INPUT_MODE",
+        budget_setting="GUARDRAILS_INJECTION_INPUT_BUDGET",
+        shape=Shape(state_tokens=320, question_tokens=GUARD.question_tokens),
+        auto_mode="monitor",
+    )
+)
