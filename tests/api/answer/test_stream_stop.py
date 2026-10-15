@@ -207,6 +207,36 @@ class TestStopFromActivity:
         assert len(failed) == 1
         assert (failed[0].kwargs.get("metadata") or {}).get("error_code") != "stopped"
 
+    def test_a_stopped_turn_keeps_its_logs_entry(self, mock_mongo_db, flask_app):
+        # Logs lists running chats; once stopped it must list the turn as
+        # a finished one, as it does a turn that ran out or failed.
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with patch.object(BaseAnswerResource, "_persist_turn_log") as logged:
+            _run(flask_app, _chatty(), stop_after=0.2)
+        assert logged.call_count == 1
+        kwargs = logged.call_args.kwargs
+        assert kwargs["message_id"] == MESSAGE_ID
+        assert kwargs["response"].startswith("c0 ")
+        assert kwargs["extra"] == {"stopped": True}
+        assert kwargs.get("error") is None
+
+    def test_a_dropped_connection_writes_no_logs_entry(self, mock_mongo_db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        gone = threading.Event()
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"answer": f"c{i} "}
+
+        with patch.object(BaseAnswerResource, "_persist_turn_log") as logged:
+            _run(flask_app, _gen, stop_after=None, client_gone=gone)
+        assert logged.call_count == 0
+
     def test_a_gone_client_gets_nothing_more(self, mock_mongo_db, flask_app):
         # /v1: the route saw the client leave; nothing is written after.
         gone = threading.Event()

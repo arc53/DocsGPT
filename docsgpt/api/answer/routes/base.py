@@ -1878,6 +1878,25 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            # A Stop is the user's own end of the turn: it keeps its Logs
+            # entry, as a turn that runs out or fails does. A dropped
+            # connection writes none.
+            if reserved_message_id is not None and (
+                isinstance(stream_exit, StreamStopped) or stop_requested(reserved_message_id)
+            ):
+                self._persist_turn_log(
+                    decoded_token=decoded_token,
+                    user_api_key=user_api_key,
+                    agent_id=agent_id,
+                    question=question,
+                    response=response_full,
+                    sources=source_log_docs,
+                    tool_calls=getattr(agent, "tool_calls", tool_calls) or tool_calls,
+                    attachment_ids=attachment_ids,
+                    request_id=request_id,
+                    message_id=reserved_message_id,
+                    extra={"stopped": True},
+                )
             if isinstance(stream_exit, StreamStopped) and terminal is not None:
                 # The client is still listening: send it the terminal event,
                 # numbered as journaled. Yielding is only safe because this
