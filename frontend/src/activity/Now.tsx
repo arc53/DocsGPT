@@ -157,7 +157,9 @@ export default function Now() {
   const connections = useSelector(selectConnections);
   const monitors = useSelector(selectMonitors);
   const summary = useActivitySummary();
-  const clock = useClock();
+  // Stopwatches need every second; with nothing running, the overdue marks
+  // and "in 5 min" only need the minute.
+  const clock = useClock(true, snapshot?.running.length ? 1000 : 30_000);
   const [filter, setFilter] = useState<Filter>('all');
   // Rows whose Stop / Cancel / Resume is on its way.
   const [pending, setPending] = useState<Record<string, true>>({});
