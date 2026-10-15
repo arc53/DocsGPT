@@ -1158,7 +1158,7 @@ schedules_table = Table(
     Column("consecutive_failure_count", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    # Set on create, a timing edit and a resume; never by the dispatcher (0054).
+    # Set on create, a timing edit and a resume; never by the dispatcher (0053).
     Column("plan_changed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
