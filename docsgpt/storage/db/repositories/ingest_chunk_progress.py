@@ -87,13 +87,19 @@ class IngestChunkProgressRepository:
     def record_chunk(
         self, source_id: str, last_index: int, embedded_chunks: int
     ) -> None:
-        """Persist progress after a chunk is embedded."""
+        """Persist progress after a chunk is embedded.
+
+        Also sets ``status`` back to ``'active'``: an ingest that is still
+        embedding is not stalled, though another ingest of the same source
+        may have failed and closed the row (``mark_failed``) meanwhile.
+        """
         self._conn.execute(
             text(
                 """
                 UPDATE ingest_chunk_progress
                 SET last_index = :last_index,
                     embedded_chunks = :embedded_chunks,
+                    status = 'active',
                     last_updated = now()
                 WHERE source_id = CAST(:source_id AS uuid)
                 """

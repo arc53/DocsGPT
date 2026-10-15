@@ -34,7 +34,7 @@ def steps(monkeypatch):
     monkeypatch.setattr(
         worker,
         "close_failed_ingest_progress",
-        lambda source_id: seen.append(("close", str(source_id))),
+        lambda source_id, **kw: seen.append(("close", str(source_id))),
     )
     monkeypatch.setattr(
         worker,
@@ -81,6 +81,56 @@ class TestFailedIngestClosesProgress:
             {"id": source_id},
         ).scalar()
         assert status == "stalled"
+
+    def _failed_ingest_status(self, pg_conn, task_self, monkeypatch) -> str:
+        """Fail an ingest with a half-embedded row; return the row's status after."""
+        from docsgpt import worker
+
+        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
+        source_id = str(uuid.uuid4())
+        IngestChunkProgressRepository(pg_conn).init_progress(source_id, 10)
+        _patch_ingest_pipeline_min(monkeypatch, raise_in_pipeline=True)
+        with pytest.raises(RuntimeError):
+            worker.ingest_worker(
+                task_self,
+                directory="inputs",
+                formats=[".txt"],
+                job_name="job1",
+                file_path="inputs/eve/job1/a.txt",
+                filename="a.txt",
+                user="eve",
+                retriever="classic",
+                source_id=source_id,
+            )
+        return pg_conn.execute(
+            text("SELECT status FROM ingest_chunk_progress WHERE source_id = CAST(:id AS uuid)"),
+            {"id": source_id},
+        ).scalar()
+
+    @staticmethod
+    def _durable(task_self, *, retries: int, dont_autoretry_for: tuple = ()):
+        task_self.request.retries = retries
+        task_self.max_retries = 3
+        task_self.autoretry_for = (Exception,)
+        task_self.dont_autoretry_for = dont_autoretry_for
+        return task_self
+
+    def test_a_failure_celery_will_retry_leaves_the_row_open(
+        self, patch_worker_db, pg_conn, task_self, monkeypatch
+    ):
+        # Closed, the source would read as failed through the retry wait.
+        task = self._durable(task_self, retries=1)
+        assert self._failed_ingest_status(pg_conn, task, monkeypatch) == "active"
+
+    def test_the_last_attempt_closes_the_row(self, patch_worker_db, pg_conn, task_self, monkeypatch):
+        task = self._durable(task_self, retries=3)
+        assert self._failed_ingest_status(pg_conn, task, monkeypatch) == "stalled"
+
+    def test_an_error_celery_never_retries_closes_the_row(
+        self, patch_worker_db, pg_conn, task_self, monkeypatch
+    ):
+        task = self._durable(task_self, retries=0, dont_autoretry_for=(RuntimeError,))
+        assert self._failed_ingest_status(pg_conn, task, monkeypatch) == "stalled"
 
     def test_ingest_worker_closes_before_publishing(self, patch_worker_db, task_self, monkeypatch, steps):
         from docsgpt import worker

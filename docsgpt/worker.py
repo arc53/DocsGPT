@@ -283,18 +283,55 @@ def _start_ingest_heartbeat(source_id):
     return thread, stop_event
 
 
-def close_failed_ingest_progress(source_id: Optional[str]) -> None:
+def _celery_will_retry(task: Any, error: Optional[BaseException]) -> bool:
+    """Whether Celery's autoretry runs ``task`` again after ``error``.
+
+    Mirrors ``celery.app.autoretry``: an error in ``autoretry_for`` and not
+    in ``dont_autoretry_for``, with attempts left. Anything it can't read
+    (a direct call, a test double) counts as the last attempt.
+
+    Args:
+        task: The bound Celery task (the worker's ``self``).
+        error: The error the attempt failed with.
+
+    Returns:
+        True when another attempt follows.
+    """
+    retries = getattr(getattr(task, "request", None), "retries", None)
+    max_retries = getattr(task, "max_retries", None)
+    if error is None or not isinstance(retries, int) or not isinstance(max_retries, int):
+        return False
+    if retries >= max_retries:
+        return False
+    autoretry_for = getattr(task, "autoretry_for", ())
+    dont_autoretry_for = getattr(task, "dont_autoretry_for", ())
+    if not isinstance(autoretry_for, tuple) or not isinstance(dont_autoretry_for, tuple):
+        return False
+    return isinstance(error, autoretry_for) and not isinstance(error, dont_autoretry_for)
+
+
+def close_failed_ingest_progress(
+    source_id: Optional[str],
+    *,
+    task: Any = None,
+    error: Optional[BaseException] = None,
+) -> None:
     """Close a failed ingest's progress row before ``source.ingest.failed`` goes out.
 
     The pages refetch on that event; left ``active``, the row would show
     as in flight (Activity › Now, the sources list) until the reconciler's
-    stalled sweep. Best effort: a failure here is logged, never raised over
-    the ingest's own error.
+    stalled sweep. A failure Celery will retry leaves the row open: the
+    source is still being ingested, and a closed row reads as failed (the
+    sources list, the wiki-convert guard) through the retry wait. Best
+    effort: a failure here is logged, never raised over the ingest's own
+    error.
 
     Args:
         source_id: The source whose ingest failed; ``None`` does nothing.
+        task: The bound Celery task, to tell a retried attempt from the last.
+        error: The error the attempt failed with.
     """
-    if not source_id:
+    if not source_id or _celery_will_retry(task, error):
         return
     try:
         with db_session() as conn:
@@ -863,7 +900,7 @@ def ingest_worker(
             _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
-        close_failed_ingest_progress(source_id_for_events)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -1264,7 +1301,7 @@ def reingest_source_worker(self, source_id, user):
 
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
-        close_failed_ingest_progress(source_id)
+        close_failed_ingest_progress(source_id, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -1514,7 +1551,7 @@ def remote_worker(
         _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
-        close_failed_ingest_progress(source_id_for_events)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -4155,7 +4192,7 @@ def ingest_connector(
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
-        close_failed_ingest_progress(source_id_for_events)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",

@@ -115,3 +115,13 @@ class TestMarkFailed:
         assert row["status"] == "active"
         # Same attempt: the checkpoint survives the failure.
         assert row["embedded_chunks"] == 4
+
+    def test_a_chunk_from_a_live_ingest_reopens_it(self, pg_conn):
+        # Another ingest of the same source failed and closed the row while
+        # this one was still embedding; its next chunk says it is alive.
+        sid = "3c000000-0000-0000-0000-0000000000d5"
+        self._row(pg_conn, sid, done=4)
+        repo = IngestChunkProgressRepository(pg_conn)
+        repo.mark_failed(sid)
+        repo.record_chunk(sid, last_index=4, embedded_chunks=5)
+        assert _status(pg_conn, sid) == "active"
