@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { selectFailedConversations } from '../activity/activitySlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 
@@ -37,6 +38,7 @@ export default function BackgroundNotifications() {
   const token = useSelector(selectToken);
   const pushConfig = useSelector(selectPushConfig);
   const unread = useSelector(selectUnread);
+  const failed = useSelector(selectFailedConversations);
   const visible = usePageVisible();
   const subscribedFor = useRef<string | null>(null);
 
@@ -73,9 +75,12 @@ export default function BackgroundNotifications() {
       navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [navigate]);
 
-  // The conversation on screen is read.
+  // The conversation on screen is read. A failed answer marks its chat
+  // unread on the server without an event, so Activity's failed mark counts.
   const onScreen = conversationIdFromPath(pathname);
-  const onScreenUnread = Boolean(onScreen && unread[onScreen]);
+  const onScreenUnread = Boolean(
+    onScreen && (unread[onScreen] || failed.has(onScreen)),
+  );
   useEffect(() => {
     if (visible && onScreen && onScreenUnread) {
       void dispatch(markConversationRead(onScreen));
