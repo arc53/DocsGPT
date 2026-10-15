@@ -390,6 +390,60 @@ describe('Logs running rows', () => {
     expect(getLogs.mock.calls[2][0]).toMatchObject({ page: 2, page_size: 10 });
   });
 
+  it('refreshes a run past the hundredth row', async () => {
+    // Rows 0-109 newest first; row 105 is a schedule run on page 11.
+    const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
+    const rows = Array.from({ length: 110 }, (_, n) =>
+      n === 105
+        ? {
+            ...workflow,
+            id: 'schedule-105',
+            action: 'schedule_run',
+            event_type: 'schedule',
+            timestamp: at(n),
+            workflow_progress: undefined,
+          }
+        : { ...log, id: `chat-${n}`, timestamp: at(n) },
+    );
+    let ended = false;
+    getLogs.mockImplementation(
+      async ({
+        page: number,
+        page_size: size,
+      }: {
+        page: number;
+        page_size: number;
+      }) => {
+        const all = rows.map((row) =>
+          ended && row.id === 'schedule-105' ? { ...row, running: false } : row,
+        );
+        const slice = all.slice((number - 1) * size, number * size);
+        return {
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              logs: slice,
+              has_more: number * size < all.length,
+            }),
+        };
+      },
+    );
+    await act(async () => root.render(<Logs />));
+    for (let n = 2; n <= 11; n++) await act(async () => sentinel.reach());
+    expect(container.textContent).toContain('settings.logs.running');
+
+    ended = true;
+    getLogs.mockClear();
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    const asked = getLogs.mock.calls.map(([q]) => [q.page, q.page_size]);
+    expect(asked).toEqual([
+      [1, 100],
+      [2, 100],
+    ]);
+    expect(container.textContent).not.toContain('settings.logs.running');
+  });
+
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
     // Opening a chat patches the snapshot; the minute poll may replace it
     // with an equal one. Neither is news for the logs.

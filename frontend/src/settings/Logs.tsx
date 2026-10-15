@@ -46,8 +46,8 @@ const RUNNING_POLL_MS = 30_000;
 /** Rows per page. */
 const PAGE_SIZE = 10;
 
-/** The most pages one refresh reads again: the endpoint's largest page is 100 rows. */
-const MAX_REFRESH_PAGES = 10;
+/** The most rows one request reads: the endpoint's largest page. */
+const MAX_REQUEST_ROWS = 100;
 
 type LogsProps = {
   agentId?: string;
@@ -159,7 +159,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // Reloads the loaded pages in place: new rows come in on top and runs that
   // ended give way to their finished rows. Only page 1 while no loaded page
   // shows a run; while one does, every loaded page (a run can sit on any of
-  // them), read as one request.
+  // them): one request up to 100 rows, past that one per 100, side by side.
   const logsByPageRef = useRef(logsByPage);
   logsByPageRef.current = logsByPage;
   const refreshLoadedPages = async () => {
@@ -168,16 +168,25 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     const running = Object.values(loaded).some((rows) =>
       rows.some((log) => log.running),
     );
-    const pages = running
-      ? Math.min(
-          Math.max(1, ...Object.keys(loaded).map(Number)),
-          MAX_REFRESH_PAGES,
-        )
-      : 1;
+    const pages = running ? Math.max(1, ...Object.keys(loaded).map(Number)) : 1;
+    const rows = pages * PAGE_SIZE;
     try {
-      const response = await requestPage(1, pages * PAGE_SIZE);
-      if (!response.ok) return;
-      const data = await response.json();
+      const responses = await Promise.all(
+        rows <= MAX_REQUEST_ROWS
+          ? [requestPage(1, rows)]
+          : Array.from({ length: Math.ceil(rows / MAX_REQUEST_ROWS) }, (_, i) =>
+              requestPage(i + 1, MAX_REQUEST_ROWS),
+            ),
+      );
+      if (responses.some((response) => !response.ok)) return;
+      const parts = await Promise.all(
+        responses.map((response) => response.json()),
+      );
+      // The server adds running webhook rows to request 1 only.
+      const data = {
+        logs: parts.flatMap((part) => part.logs),
+        has_more: parts[parts.length - 1].has_more,
+      };
       if (issuedKey !== filterKeyRef.current) return;
       const previous = logsByPageRef.current;
       if (!previous[1]) return;
