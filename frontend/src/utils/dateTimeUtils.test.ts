@@ -7,7 +7,9 @@ import {
   formatDateOnly,
   formatDateTime,
   formatDeadline,
+  formatClock,
   formatTimestamp,
+  headingLocale,
   intlLocale,
 } from './dateTimeUtils';
 
@@ -169,5 +171,40 @@ describe('intlLocale', () => {
     expect(intlLocale('not a tag')).toBe('en');
     expect(() => new Intl.ListFormat(intlLocale('undefined'))).not.toThrow();
     expect(formatCount(1234, 'undefined')).toBe('1,234');
+  });
+});
+
+describe('formatClock', () => {
+  it('reads a time of day as en-GB 24-hour, in every language', () => {
+    expect(formatClock(new Date(2026, 9, 12, 15, 0))).toBe('15:00');
+    expect(formatClock(new Date(2026, 9, 12, 8, 5))).toBe('08:05');
+    expect(formatClock(new Date(2026, 9, 12, 0, 30))).toBe('00:30');
+  });
+});
+
+describe('headingLocale', () => {
+  // Mon 12 Oct 2026, local time.
+  const DAY = new Date(2026, 9, 12);
+  const heading = (language: string) =>
+    new Intl.DateTimeFormat(headingLocale(language), {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(DAY);
+
+  it('spells English headings day before month, as en-GB', () => {
+    expect(headingLocale('en')).toBe('en-GB');
+    expect(heading('en')).toBe('Monday 12 October');
+  });
+
+  it("names days and months in the reader's language otherwise", () => {
+    expect(headingLocale('de')).toBe('de');
+    expect(headingLocale('jp')).toBe('ja');
+    expect(headingLocale('zhTW')).toBe('zh-TW');
+    expect(heading('de')).toBe('Montag, 12. Oktober');
+  });
+
+  it('falls back to en-GB for a language Intl rejects', () => {
+    expect(headingLocale('undefined')).toBe('en-GB');
   });
 });

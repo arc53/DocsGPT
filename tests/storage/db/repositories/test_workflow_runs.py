@@ -133,3 +133,28 @@ class TestMarkStaleRunningFailed:
         assert reaped == 0
         assert repo.get(recent["id"])["status"] == "running"
         assert repo.get(done["id"])["status"] == "completed"
+
+
+class TestSetProgress:
+    _PROGRESS = {
+        "done": 2,
+        "total": 5,
+        "current": {"node_id": "n3", "title": "Draft reply", "type": "agent", "started_at": "2026-10-14T10:00:00+00:00"},
+    }
+
+    def test_records_progress_on_a_running_run(self, pg_conn):
+        wf = _wf(pg_conn)
+        repo = _repo(pg_conn)
+        run = repo.create(wf["id"], "user-1", "running")
+        assert repo.set_progress(str(run["id"]), "user-1", self._PROGRESS) is True
+        assert repo.get(run["id"])["progress"] == self._PROGRESS
+
+    def test_leaves_finished_and_foreign_runs(self, pg_conn):
+        wf = _wf(pg_conn)
+        repo = _repo(pg_conn)
+        done = repo.create(wf["id"], "user-1", "completed")
+        running = repo.create(wf["id"], "user-1", "running")
+        assert repo.set_progress(str(done["id"]), "user-1", self._PROGRESS) is False
+        assert repo.set_progress(str(running["id"]), "user-2", self._PROGRESS) is False
+        assert repo.get(done["id"])["progress"] is None
+        assert repo.get(running["id"])["progress"] is None

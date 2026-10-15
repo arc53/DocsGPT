@@ -973,6 +973,13 @@ class TestIngestPoisonEvent:
     upload toast resolves instead of hanging on "training".
     """
 
+    @pytest.fixture(autouse=True)
+    def _no_progress_close(self):
+        # Closing the progress row opens a DB session; covered in
+        # tests/worker/test_ingest_failure_progress.py.
+        with patch("docsgpt.worker.close_failed_ingest_progress"):
+            yield
+
     @pytest.mark.unit
     def test_publishes_failed_event(self):
         from docsgpt.api.user.tasks import _emit_ingest_poison_event

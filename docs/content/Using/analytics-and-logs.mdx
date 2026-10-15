@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, filter the Logs list and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components'
@@ -12,6 +12,8 @@ DocsGPT records every chat, API call, scheduled run and webhook run. You can rev
 
 - **Settings → Analytics** and **Settings → Logs** (under **Insights**) cover your account.
 - An agent's **Logs** tab covers that one agent: the same charts, its guardrail activity and its logs.
+
+For a readable list of what your automations did (scheduled, webhook and workflow runs, background jobs and monitor wakes), use [Activity → History](/Using/activity#history); Logs stays the full technical record.
 
 For metrics and traces sent to an external backend such as Grafana or Honeycomb, see [Observability](/Deploying/Observability). Admins can see usage for the whole instance under **Admin → Usage** (see [Admin dashboard](/Deploying/Access-Control#admin-dashboard)).
 
@@ -50,7 +52,7 @@ The charts below them:
 
 ## Logs
 
-The Logs list shows the newest entries first and loads more as you scroll. Narrow it with:
+The Logs list shows the newest entries first and loads more as you scroll. Runs are placed at the time they started. A run that is still going (an answer being written, a scheduled, webhook or workflow run) is listed as **running**, with how long it has run and, for a workflow, the step it is on. The list updates on its own: when the run ends, its finished entry replaces it. An answer being written also says who asked: **API** for calls through the API, **Shared** for someone using a shared agent, **Chat** for a chat in the app. Narrow the list with:
 
 - the level: **All levels**, **Info**, **Warning** or **Error**;
 - the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**;

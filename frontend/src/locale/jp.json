@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "会話"
   },
   "backgroundJobs": {
-    "unread": "未読",
     "card": {
       "status": {
         "working": "バックグラウンドで実行中",
@@ -745,7 +744,15 @@
           "allAttributes": "すべての属性"
         }
       },
-      "loadError": "ログを読み込めませんでした。"
+      "loadError": "ログを読み込めませんでした。",
+      "running": "実行中",
+      "failedAtStep": "ステップ {{step}} で失敗",
+      "failedAtStepOf": "ステップ {{step}}/{{total}} で失敗",
+      "origin": {
+        "api": "API",
+        "shared": "共有",
+        "chat": "チャット"
+      }
     },
     "teams": {
       "label": "チーム",
@@ -2137,13 +2144,15 @@
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",
+    "stoppedTitle": "停止しました",
     "errors": {
       "contextLength": "このメッセージと添付ファイルは、モデルのコンテキストウィンドウに収まりません。ファイルの数を減らすか、小さいファイルを送ってください。",
       "contextLengthKnowledge": "このメッセージと添付ファイルは、モデルのコンテキストウィンドウに収まりません。ファイルの数を減らすか小さいファイルを送るか、「ナレッジに追加」を使って、ファイル全体を送る代わりに検索してください。",
       "contextLengthSized": "このメッセージと添付ファイルには約 {{needed, number}} トークンが必要で、モデルが扱える量（{{available, number}} トークン）を超えています。ファイルの数を減らすか、小さいファイルを送ってください。",
       "contextLengthSizedKnowledge": "このメッセージと添付ファイルには約 {{needed, number}} トークンが必要で、モデルが扱える量（{{available, number}} トークン）を超えています。ファイルの数を減らすか小さいファイルを送るか、「ナレッジに追加」を使って、ファイル全体を送る代わりに検索してください。",
       "serverError": "しばらくしてからもう一度お試しください。ご不便をおかけして申し訳ありません。",
-      "clientDisconnect": "応答が生成される前に中断されました。もう一度お試しください。"
+      "clientDisconnect": "応答が生成される前に中断されました。もう一度お試しください。",
+      "stopped": "何も書かれる前にこの応答を停止しました。もう一度お試しください。"
     },
     "reasoning": "推論",
     "wikiWrite": {
@@ -2729,6 +2738,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "頻度",
+        "customTiming": "このスケジュールはカスタムのタイミングで実行されます: {{pattern}}。下のタイミングを変更すると置き換わります。",
         "dayOfWeek": "曜日"
       },
       "status": {
@@ -2759,7 +2769,8 @@
         "error": "エラー",
         "errorWithType": "エラー（{{type}}）",
         "output": "出力",
-        "truncated": "（切り詰め）"
+        "truncated": "（切り詰め）",
+        "openConversation": "会話を開く"
       },
       "toolCard": {
         "cancelFailed": "キャンセルに失敗しました",
@@ -2798,7 +2809,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "平日の毎日 {{time}}",
+        "weekends": "週末の毎日 {{time}}",
+        "days": "毎週 {{days}} {{time}}",
+        "hourly": "1時間ごと",
+        "hourlyAt": "毎時 {{minute}} 分",
+        "hourlyRange": "{{from}}から{{to}}まで1時間ごと",
+        "hourlyRangeWeekdays": "平日の{{from}}から{{to}}まで1時間ごと",
+        "everyMinutes_one": "{{formatted}} 分ごと",
+        "everyMinutes_other": "{{formatted}} 分ごと",
+        "everyHours_one": "{{formatted}} 時間ごと",
+        "everyHours_other": "{{formatted}} 時間ごと"
       },
       "runLog": {
         "when": "日時",
@@ -2828,7 +2850,8 @@
         "overdue": "期限超過"
       },
       "deleteFailed": "このスケジュールを削除できませんでした。",
-      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。"
+      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。",
+      "allSchedules": "すべてのスケジュール"
     },
     "shared": {
       "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
@@ -3211,7 +3234,8 @@
         "personal": "個人",
         "workspace": "ワークスペース",
         "insights": "インサイト",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "オートメーション"
       }
     },
     "openSidebar": "サイドバーを開く",
@@ -3291,7 +3315,6 @@
     "loadError": "モニターを読み込めませんでした",
     "actionError": "うまくいきませんでした。もう一度お試しください。",
     "untitled": "モニター",
-    "watching": "変化を見守り中",
     "every": "{{interval}} ごと",
     "onEvent": "発生時",
     "openConversation": "会話を開く",
@@ -3368,5 +3391,282 @@
       "conversationGone": "終了: 会話を再開できなくなりました"
     },
     "endedBecause": "終了: {{reason}}"
+  },
+  "activity": {
+    "label": "アクティビティ",
+    "schedules": {
+      "label": "スケジュール",
+      "subtitle": "すべてのエージェントの定期実行と1回限りのタスク、そしてアシスタントがチャットで設定したものです。",
+      "search": "スケジュールを検索",
+      "createdInChat": "チャットで作成",
+      "createdInChatHint": "エージェントなし。それぞれ作成元のチャットに属します。",
+      "agentSchedules": "エージェントのスケジュール",
+      "openChat": "チャットを開く",
+      "noMatches": "検索に一致するスケジュールはありません。",
+      "loadError": "スケジュールを読み込めませんでした",
+      "empty": "スケジュールはまだありません",
+      "emptyHint": "ここで作成するか、チャットでアシスタントに定期的な作業を頼んでください。",
+      "agentLabel": "エージェント",
+      "agentPlaceholder": "エージェントを選択",
+      "agentSearch": "エージェントを検索",
+      "agentEmpty": "スケジュールできるエージェントはありません",
+      "teamAgent": "チームを通じて管理しているメンバーのエージェント"
+    },
+    "marks": {
+      "failed": "失敗があります",
+      "needsYou": "承認待ち",
+      "working": "実行中",
+      "unread": "未読",
+      "watching": "変更を監視中"
+    },
+    "kind": {
+      "chat": "チャット",
+      "job": "バックグラウンドジョブ",
+      "code": "コード実行",
+      "schedule": "スケジュール実行",
+      "workflow": "ワークフロー",
+      "webhook": "Webhook 実行",
+      "ingest": "ナレッジ",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} 件実行中",
+      "running_other": "{{formatted}} 件実行中",
+      "needsYou_one": "{{formatted}} 件の対応待ち",
+      "needsYou_other": "{{formatted}} 件の対応待ち"
+    },
+    "now": {
+      "label": "現在",
+      "subtitle": "実行中のもの、あなたの対応を待っているもの、次に実行されるもの。リアルタイムで更新されます。",
+      "loadError": "アクティビティを読み込めませんでした",
+      "stopFailed": "回答を停止できませんでした。もう一度試すか、チャットを開いて停止してください。",
+      "thinking": "考え中",
+      "writing": "回答を作成中",
+      "ranByHand": "手動実行",
+      "due": "予定 {{time}}",
+      "chunks": "{{total}} チャンク中 {{done}} 件を埋め込み済み",
+      "background": "バックグラウンド",
+      "running": "実行中",
+      "stop": "停止",
+      "cancel": "キャンセル",
+      "open": "開く",
+      "approve": "{{tools}} を承認",
+      "approveAction": "ツールの操作を承認",
+      "expires": "{{time}}に期限切れ",
+      "approval": "承認",
+      "review": "確認",
+      "pausedAfter_one": "{{name}} は {{formatted}} 回失敗したため一時停止中",
+      "pausedAfter_other": "{{name}} は {{formatted}} 回失敗したため一時停止中",
+      "errorType": {
+        "auth_expired": "サインインの期限切れ",
+        "tool_not_allowed": "許可されていないツール",
+        "budget_exceeded": "トークン予算を超過",
+        "timeout": "タイムアウト",
+        "agent_error": "エージェントが失敗",
+        "internal": "内部エラー",
+        "missed": "実行時刻を逃した",
+        "overlap": "前回の実行が継続中",
+        "stream_error": "回答のストリームが途切れた",
+        "empty_output": "出力がなかった"
+      },
+      "viewRuns": "実行を表示",
+      "fromChat": "{{name}} から",
+      "timesToday_one": "今後24時間で {{formatted}} 回",
+      "timesToday_other": "今後24時間で {{formatted}} 回",
+      "oneTime": "1回限り",
+      "stats": {
+        "running": "実行中",
+        "background_one": "バックグラウンドで {{formatted}} 件",
+        "background_other": "バックグラウンドで {{formatted}} 件",
+        "needsYou": "対応待ち",
+        "approvalExpires": "承認の期限: {{time}}",
+        "next24h": "今後24時間",
+        "nextAt": "次は {{time}}、{{name}}",
+        "failed": "失敗（過去24時間）",
+        "viewInHistory": "履歴で表示"
+      },
+      "needsYou": "対応待ち",
+      "reconnect": "{{name}} の再接続が必要です",
+      "reconnectAction": "再接続",
+      "runningTitle": "実行中",
+      "filter": "表示",
+      "filters": {
+        "all": "すべて",
+        "chats": "チャット",
+        "automations": "オートメーション",
+        "knowledge": "ナレッジ"
+      },
+      "nothingRunning": "実行中のものはありません",
+      "upNext": "次の予定",
+      "nothingPlanned": "今後24時間に実行予定のものはありません",
+      "watching": "監視中",
+      "allMonitors": "すべてのモニター",
+      "nothingWatched": "監視中のものはありません",
+      "checked": "{{time}}に確認",
+      "openCalendar": "カレンダーを開く",
+      "step": "ステップ {{step}}",
+      "stepOf": "ステップ {{step}}/{{total}}",
+      "apiRequests_one": "{{formatted}} 件のリクエスト",
+      "apiRequests_other": "{{formatted}} 件のリクエスト",
+      "reading": "コンテンツを読み込み中",
+      "operation": {
+        "upload": "アップロード",
+        "sync": "同期",
+        "reingest": "再インデックス"
+      },
+      "syncBatch": {
+        "daily": "毎日の同期",
+        "weekly": "毎週の同期",
+        "monthly": "毎月の同期"
+      },
+      "syncSources_one": "{{formatted}} 件のソース",
+      "syncSources_other": "{{formatted}} 件のソース",
+      "syncBlocked_one": "{{formatted}} 件は再接続が必要",
+      "syncBlocked_other": "{{formatted}} 件は再接続が必要"
+    },
+    "calendar": {
+      "label": "カレンダー",
+      "subtitle": "予定された実行、結果ごとの過去の実行、監視中のもの。",
+      "loadError": "カレンダーを読み込めませんでした",
+      "runLoadError": "実行を開けませんでした。もう一度お試しください。",
+      "runNowError": "実行を開始できませんでした。もう一度お試しください。",
+      "todayButton": "今日",
+      "previous": "前へ",
+      "next": "次へ",
+      "agentFilter": "エージェント",
+      "allAgents": "すべてのエージェント",
+      "viewLabel": "表示",
+      "views": {
+        "day": "日",
+        "week": "週",
+        "month": "月",
+        "agenda": "予定リスト"
+      },
+      "monitors": "モニター",
+      "knowledgeSyncs": "ナレッジ同期",
+      "hidePast": "過去の実行を隠す",
+      "legend": {
+        "planned": "予定",
+        "running": "実行中",
+        "success": "成功",
+        "failed": "失敗",
+        "paused": "一時停止またはスキップ",
+        "missed": "未実行",
+        "sync": "ナレッジの同期"
+      },
+      "truncated": "非常に頻繁なスケジュールは、この期間の最初の実行のみ表示されます。",
+      "watching": "監視中",
+      "state": {
+        "planned": "予定",
+        "paused": "一時停止",
+        "pending": "開始中",
+        "running": "実行中",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "スキップ",
+        "timeout": "タイムアウト",
+        "missed": "未実行"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "他 {{formatted}} 件",
+      "more_other": "他 {{formatted}} 件",
+      "today": "今日",
+      "tomorrow": "明日",
+      "empty": "この期間に予定はありません",
+      "blockDone_one": "{{formatted}} 回中 {{done}} 回完了",
+      "blockDone_other": "{{formatted}} 回中 {{done}} 回完了",
+      "slotCount_one": "{{formatted}} 回",
+      "slotCount_other": "{{formatted}} 回",
+      "oneTime": "1回限り",
+      "recurring": "定期",
+      "when": "日時",
+      "repeats": "繰り返し",
+      "fromChat": "チャットから",
+      "pausedNote": "このスケジュールは一時停止中のため、この実行は行われません。スケジュールのページで再開してください。",
+      "dayRuns": "この日の実行",
+      "queued": "実行を開始しました。「現在」と実行ログに表示されます。",
+      "openSchedule": "スケジュールを開く",
+      "timezone": "スケジュールのタイムゾーン",
+      "missedNote": "この実行は開始されませんでした。その時点でスケジューラーが停止しているか遅れていました。今すぐ実行するか、ワーカーが beat 付きで動いているか確認してください。",
+      "syncRepeats": {
+        "daily": "毎日（スケジューラーの起動時刻から計算）",
+        "weekly": "毎週（スケジューラーの起動時刻から計算）",
+        "monthly": "30日ごと（スケジューラーの起動時刻から計算）"
+      },
+      "sources": "ソース",
+      "needsReconnecting": "再接続が必要",
+      "lastSynced": "{{time}} に同期",
+      "notSyncedYet": "未同期",
+      "openKnowledge": "ナレッジを開く"
+    },
+    "history": {
+      "label": "履歴",
+      "subtitle": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの完了した実行です。詳細な技術ログは「設定 › ログ」にあります。",
+      "search": "実行を検索",
+      "statusFilter": "ステータス",
+      "kindFilter": "種類",
+      "statusFilters": {
+        "all": "すべてのステータス",
+        "failed": "失敗",
+        "success": "成功",
+        "skipped": "スキップ",
+        "cancelled": "キャンセル"
+      },
+      "kindFilters": {
+        "all": "すべて",
+        "schedule": "スケジュール",
+        "webhook": "Webhook",
+        "workflow": "ワークフロー",
+        "job": "バックグラウンド",
+        "monitor": "モニター通知"
+      },
+      "kind": {
+        "schedule": "スケジュール",
+        "webhook": "Webhook",
+        "workflow": "ワークフロー",
+        "job": "バックグラウンド",
+        "monitor": "モニター"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失敗",
+        "timeout": "タイムアウト",
+        "skipped": "スキップ",
+        "cancelled": "キャンセル"
+      },
+      "trigger": {
+        "cron": "スケジュール",
+        "manual": "手動",
+        "webhook": "Webhook",
+        "chat": "チャット",
+        "monitor": "変更を検出",
+        "trigger": "Webhook リンク",
+        "approval": "承認リンク",
+        "monitor_paused": "モニター一時停止",
+        "monitor_expired": "モニター期限切れ"
+      },
+      "columns": {
+        "when": "日時",
+        "run": "実行",
+        "owner": "エージェント / チャット",
+        "kind": "種類",
+        "trigger": "トリガー",
+        "status": "ステータス",
+        "duration": "所要時間",
+        "tokens": "トークン"
+      },
+      "yesterday": "昨日",
+      "loadError": "履歴を読み込めませんでした",
+      "runLoadError": "実行を開けませんでした。もう一度お試しください。",
+      "noMatches": "この条件に一致する実行はありません",
+      "empty": "完了した実行はまだありません",
+      "emptyHint": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの実行は、完了するとここに表示されます。",
+      "loadMore": "さらに読み込む",
+      "retention": "既定では、スケジュール実行は90日、Webhook 実行は30日、バックグラウンドジョブとモニター通知は7日間保存されます。ワークフローの実行は一覧に残り、トレースは30日間保存されます。",
+      "period_one": "過去 {{formatted}} 日",
+      "period_other": "過去 {{formatted}} 日",
+      "periodFilter": "期間"
+    }
   }
 }

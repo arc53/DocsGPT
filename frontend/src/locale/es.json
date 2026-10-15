@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Conversación"
   },
   "backgroundJobs": {
-    "unread": "No leído",
     "card": {
       "status": {
         "working": "En segundo plano",
@@ -746,7 +745,15 @@
           "allAttributes": "Todos los atributos"
         }
       },
-      "loadError": "No se pudieron cargar los registros."
+      "loadError": "No se pudieron cargar los registros.",
+      "running": "en curso",
+      "failedAtStep": "falló en el paso {{step}}",
+      "failedAtStepOf": "falló en el paso {{step}} de {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Compartido",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Equipos",
@@ -2147,13 +2154,15 @@
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",
+    "stoppedTitle": "Detenida",
     "errors": {
       "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
       "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
       "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
       "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
       "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
-      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo."
+      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo.",
+      "stopped": "Detuviste esta respuesta antes de que escribiera nada. Inténtalo de nuevo para obtener una."
     },
     "reasoning": "Razonamiento",
     "wikiWrite": {
@@ -2741,6 +2750,7 @@
           "dec": "Dic"
         },
         "frequencyLabel": "Frecuencia",
+        "customTiming": "Esta programación usa un horario personalizado: {{pattern}}. Cambia el horario de abajo para reemplazarlo.",
         "dayOfWeek": "Día de la semana"
       },
       "status": {
@@ -2771,7 +2781,8 @@
         "error": "Error",
         "errorWithType": "Error ({{type}})",
         "output": "Salida",
-        "truncated": "(truncada)"
+        "truncated": "(truncada)",
+        "openConversation": "Abrir conversación"
       },
       "toolCard": {
         "cancelFailed": "No se pudo cancelar",
@@ -2810,7 +2821,18 @@
           "oct": "octubre",
           "nov": "noviembre",
           "dec": "diciembre"
-        }
+        },
+        "weekdays": "Todos los días laborables a las {{time}}",
+        "weekends": "Cada día del fin de semana a las {{time}}",
+        "days": "Cada {{days}} a las {{time}}",
+        "hourly": "Cada hora",
+        "hourlyAt": "Cada hora a los :{{minute}}",
+        "hourlyRange": "Cada hora de {{from}} a {{to}}",
+        "hourlyRangeWeekdays": "Cada hora de {{from}} a {{to}} los días laborables",
+        "everyMinutes_one": "Cada {{formatted}} minuto",
+        "everyMinutes_other": "Cada {{formatted}} minutos",
+        "everyHours_one": "Cada {{formatted}} hora",
+        "everyHours_other": "Cada {{formatted}} horas"
       },
       "runLog": {
         "when": "Cuándo",
@@ -2840,7 +2862,8 @@
         "overdue": "Atrasada"
       },
       "deleteFailed": "No se pudo eliminar esta programación.",
-      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer."
+      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer.",
+      "allSchedules": "Todas las programaciones"
     },
     "shared": {
       "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",
@@ -3223,7 +3246,8 @@
         "personal": "Personal",
         "workspace": "Espacio de trabajo",
         "insights": "Estadísticas",
-        "administration": "Administración"
+        "administration": "Administración",
+        "automations": "Automatizaciones"
       }
     },
     "openSidebar": "Abrir barra lateral",
@@ -3303,7 +3327,6 @@
     "loadError": "No se pudieron cargar tus monitores",
     "actionError": "No funcionó. Inténtalo de nuevo.",
     "untitled": "Monitor",
-    "watching": "Vigilando cambios",
     "every": "Cada {{interval}}",
     "onEvent": "Cuando ocurra",
     "openConversation": "Abrir conversación",
@@ -3380,5 +3403,282 @@
       "conversationGone": "Terminado: su conversación ya no se puede reanudar"
     },
     "endedBecause": "Terminado: {{reason}}"
+  },
+  "activity": {
+    "label": "Actividad",
+    "schedules": {
+      "label": "Programaciones",
+      "subtitle": "Todas las ejecuciones recurrentes y tareas únicas de tus agentes, además de las que el asistente creó en un chat.",
+      "search": "Buscar programaciones",
+      "createdInChat": "Creadas en un chat",
+      "createdInChatHint": "Sin agente. Cada una pertenece al chat que la creó.",
+      "agentSchedules": "Programaciones del agente",
+      "openChat": "Abrir chat",
+      "noMatches": "Ninguna programación coincide con tu búsqueda.",
+      "loadError": "No se pudieron cargar tus programaciones",
+      "empty": "Aún no hay programaciones",
+      "emptyHint": "Crea una aquí o pide al asistente en un chat que haga algo de forma programada.",
+      "agentLabel": "Agente",
+      "agentPlaceholder": "Elige un agente",
+      "agentSearch": "Buscar agentes",
+      "agentEmpty": "No hay agentes que puedas programar",
+      "teamAgent": "Agente de un compañero que gestionas a través de un equipo"
+    },
+    "marks": {
+      "failed": "Algo falló",
+      "needsYou": "Esperando tu aprobación",
+      "working": "En curso",
+      "unread": "Sin leer",
+      "watching": "Vigilando cambios"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Tarea en segundo plano",
+      "code": "Ejecución de código",
+      "schedule": "Ejecución programada",
+      "workflow": "Flujo de trabajo",
+      "webhook": "Ejecución por webhook",
+      "ingest": "Conocimiento",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} en curso",
+      "running_other": "{{formatted}} en curso",
+      "needsYou_one": "{{formatted}} te necesita",
+      "needsYou_other": "{{formatted}} te necesitan"
+    },
+    "now": {
+      "label": "Ahora",
+      "subtitle": "Qué se está ejecutando, qué espera tu respuesta y qué se ejecuta después. Se actualiza en vivo.",
+      "loadError": "No se pudo cargar tu actividad",
+      "stopFailed": "No se pudo detener la respuesta. Inténtalo de nuevo o detenla desde el chat.",
+      "thinking": "pensando",
+      "writing": "escribiendo la respuesta",
+      "ranByHand": "ejecución manual",
+      "due": "prevista {{time}}",
+      "chunks": "{{done}} de {{total}} fragmentos incrustados",
+      "background": "Segundo plano",
+      "running": "En curso",
+      "stop": "Detener",
+      "cancel": "Cancelar",
+      "open": "Abrir",
+      "approve": "Aprobar {{tools}}",
+      "approveAction": "Aprobar una acción de herramienta",
+      "expires": "caduca {{time}}",
+      "approval": "Aprobación",
+      "review": "Revisar",
+      "pausedAfter_one": "{{name}} en pausa tras {{formatted}} fallo",
+      "pausedAfter_other": "{{name}} en pausa tras {{formatted}} fallos",
+      "errorType": {
+        "auth_expired": "un inicio de sesión caducó",
+        "tool_not_allowed": "una herramienta no estaba permitida",
+        "budget_exceeded": "superó su presupuesto de tokens",
+        "timeout": "se agotó el tiempo",
+        "agent_error": "el agente falló",
+        "internal": "un error interno",
+        "missed": "se perdió su hora",
+        "overlap": "la ejecución anterior seguía en curso",
+        "stream_error": "se cortó la respuesta",
+        "empty_output": "no produjo nada"
+      },
+      "viewRuns": "Ver ejecuciones",
+      "fromChat": "De {{name}}",
+      "timesToday_one": "{{formatted}} ejecución en las próximas 24 horas",
+      "timesToday_other": "{{formatted}} ejecuciones en las próximas 24 horas",
+      "oneTime": "única",
+      "stats": {
+        "running": "En curso",
+        "background_one": "{{formatted}} en segundo plano",
+        "background_other": "{{formatted}} en segundo plano",
+        "needsYou": "Te necesita",
+        "approvalExpires": "Una aprobación caduca {{time}}",
+        "next24h": "Próximas 24 horas",
+        "nextAt": "Siguiente a las {{time}}, {{name}}",
+        "failed": "Fallidas, últimas 24 horas",
+        "viewInHistory": "Ver en el historial"
+      },
+      "needsYou": "Te necesita",
+      "reconnect": "{{name}} necesita reconectarse",
+      "reconnectAction": "Reconectar",
+      "runningTitle": "En curso",
+      "filter": "Mostrar",
+      "filters": {
+        "all": "Todo",
+        "chats": "Chats",
+        "automations": "Automatizaciones",
+        "knowledge": "Conocimiento"
+      },
+      "nothingRunning": "No se está ejecutando nada",
+      "upNext": "A continuación",
+      "nothingPlanned": "Nada se ejecuta en las próximas 24 horas",
+      "watching": "Vigilando",
+      "allMonitors": "Todos los monitores",
+      "nothingWatched": "No se está vigilando nada",
+      "checked": "revisado {{time}}",
+      "openCalendar": "Abrir calendario",
+      "step": "paso {{step}}",
+      "stepOf": "paso {{step}} de {{total}}",
+      "apiRequests_one": "{{formatted}} solicitud",
+      "apiRequests_other": "{{formatted}} solicitudes",
+      "reading": "leyendo el contenido",
+      "operation": {
+        "upload": "Subida",
+        "sync": "Sincronización",
+        "reingest": "Reindexación"
+      },
+      "syncBatch": {
+        "daily": "Sincronización diaria",
+        "weekly": "Sincronización semanal",
+        "monthly": "Sincronización mensual"
+      },
+      "syncSources_one": "{{formatted}} fuente",
+      "syncSources_other": "{{formatted}} fuentes",
+      "syncBlocked_one": "{{formatted}} necesita reconectarse",
+      "syncBlocked_other": "{{formatted}} necesitan reconectarse"
+    },
+    "calendar": {
+      "label": "Calendario",
+      "subtitle": "Ejecuciones previstas, ejecuciones pasadas según su resultado y lo que se vigila.",
+      "loadError": "No se pudo cargar el calendario",
+      "runLoadError": "No se pudo abrir la ejecución. Inténtalo de nuevo.",
+      "runNowError": "No se pudo iniciar la ejecución. Inténtalo de nuevo.",
+      "todayButton": "Hoy",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "agentFilter": "Agente",
+      "allAgents": "Todos los agentes",
+      "viewLabel": "Vista",
+      "views": {
+        "day": "Día",
+        "week": "Semana",
+        "month": "Mes",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitores",
+      "knowledgeSyncs": "Sincronizaciones",
+      "hidePast": "Ocultar ejecuciones pasadas",
+      "legend": {
+        "planned": "Prevista",
+        "running": "En curso",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "paused": "En pausa u omitida",
+        "missed": "Perdida",
+        "sync": "Sincronización de conocimiento"
+      },
+      "truncated": "Algunas programaciones muy frecuentes solo muestran sus primeras ejecuciones en este rango.",
+      "watching": "Vigilando",
+      "state": {
+        "planned": "Prevista",
+        "paused": "En pausa",
+        "pending": "Iniciando",
+        "running": "En curso",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "skipped": "Omitida",
+        "timeout": "Tiempo agotado",
+        "missed": "Perdida"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} más",
+      "more_other": "+{{formatted}} más",
+      "today": "Hoy",
+      "tomorrow": "Mañana",
+      "empty": "No hay nada previsto en estos días",
+      "blockDone_one": "{{done}} de {{formatted}} ejecución hecha",
+      "blockDone_other": "{{done}} de {{formatted}} ejecuciones hechas",
+      "slotCount_one": "{{formatted}} ejecución",
+      "slotCount_other": "{{formatted}} ejecuciones",
+      "oneTime": "Única",
+      "recurring": "Recurrente",
+      "when": "Cuándo",
+      "repeats": "Se repite",
+      "fromChat": "Del chat",
+      "pausedNote": "Esta programación está en pausa, así que esta ejecución no se hará. Reanúdala en su página.",
+      "dayRuns": "Ejecuciones de este día",
+      "queued": "Ejecución iniciada. Aparece en Ahora y en el registro de ejecuciones.",
+      "openSchedule": "Abrir programación",
+      "timezone": "Zona horaria de la programación",
+      "missedNote": "Esta ejecución nunca empezó: el planificador estaba parado o con retraso en ese momento. Ejecútala ahora o comprueba que el worker funciona con beat.",
+      "syncRepeats": {
+        "daily": "Cada día, contado desde que se inició el planificador",
+        "weekly": "Cada semana, contado desde que se inició el planificador",
+        "monthly": "Cada 30 días, contado desde que se inició el planificador"
+      },
+      "sources": "Fuentes",
+      "needsReconnecting": "Necesita reconectarse",
+      "lastSynced": "Sincronizado {{time}}",
+      "notSyncedYet": "Aún sin sincronizar",
+      "openKnowledge": "Abrir Conocimiento"
+    },
+    "history": {
+      "label": "Historial",
+      "subtitle": "Ejecuciones terminadas de tus programaciones, webhooks, flujos de trabajo, tareas en segundo plano y monitores. Ajustes › Registros guarda el registro técnico completo.",
+      "search": "Buscar ejecuciones",
+      "statusFilter": "Estado",
+      "kindFilter": "Tipo",
+      "statusFilters": {
+        "all": "Todos los estados",
+        "failed": "Fallidas",
+        "success": "Correctas",
+        "skipped": "Omitidas",
+        "cancelled": "Canceladas"
+      },
+      "kindFilters": {
+        "all": "Todo",
+        "schedule": "Programaciones",
+        "webhook": "Webhooks",
+        "workflow": "Flujos",
+        "job": "Segundo plano",
+        "monitor": "Avisos de monitores"
+      },
+      "kind": {
+        "schedule": "Programación",
+        "webhook": "Webhook",
+        "workflow": "Flujo de trabajo",
+        "job": "Segundo plano",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Correcta",
+        "failed": "Fallida",
+        "timeout": "Tiempo agotado",
+        "skipped": "Omitida",
+        "cancelled": "Cancelada"
+      },
+      "trigger": {
+        "cron": "Programación",
+        "manual": "Manual",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Cambio detectado",
+        "trigger": "Enlace de webhook",
+        "approval": "Enlace de aprobación",
+        "monitor_paused": "Monitor en pausa",
+        "monitor_expired": "Monitor caducado"
+      },
+      "columns": {
+        "when": "Cuándo",
+        "run": "Ejecución",
+        "owner": "Agente / chat",
+        "kind": "Tipo",
+        "trigger": "Origen",
+        "status": "Estado",
+        "duration": "Duración",
+        "tokens": "Tokens"
+      },
+      "yesterday": "Ayer",
+      "loadError": "No se pudo cargar el historial",
+      "runLoadError": "No se pudo abrir la ejecución. Inténtalo de nuevo.",
+      "noMatches": "Ninguna ejecución coincide con estos filtros",
+      "empty": "Aún no hay ejecuciones terminadas",
+      "emptyHint": "Las ejecuciones de tus programaciones, webhooks, flujos, tareas en segundo plano y monitores aparecen aquí al terminar.",
+      "loadMore": "Cargar más",
+      "retention": "Por defecto, las ejecuciones programadas se guardan 90 días, las ejecuciones por webhook 30, y las tareas en segundo plano y los avisos de monitores 7. Las ejecuciones de flujos siguen en la lista y su traza se guarda 30 días.",
+      "period_one": "Último {{formatted}} día",
+      "period_other": "Últimos {{formatted}} días",
+      "periodFilter": "Periodo"
+    }
   }
 }

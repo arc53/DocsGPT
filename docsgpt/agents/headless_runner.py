@@ -175,6 +175,7 @@ def run_agent_headless(
                 public_link_caller=public_link_caller,
                 message_id=message_id,
                 background=background,
+                request_id=request_id,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -201,6 +202,7 @@ def _run_agent_headless(
     public_link_caller: bool = False,
     message_id: Optional[str] = None,
     background: Any = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -408,6 +410,9 @@ def _run_agent_headless(
     agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
     if conversation_id:
         agent.conversation_id = str(conversation_id)
+    # Not ``agent.request_id``: that one reaches the token-usage rows.
+    if message_id or request_id:
+        agent.started_by = str(message_id or request_id)
 
     answer_full = ""
     thought = ""

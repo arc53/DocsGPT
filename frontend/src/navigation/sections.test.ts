@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ACTIVITY_SECTION,
   ADMIN_SECTION,
   AGENTS_SECTION,
   buildAgentSection,
@@ -76,15 +77,30 @@ describe('getActiveItem', () => {
   });
 });
 
-describe('monitors in settings', () => {
-  it('sit with the workspace tools, not under insights', () => {
-    const groups = getVisibleGroups(SETTINGS_SECTION, { isAdmin: false });
-    const workspace = groups.find((group) => group.key === 'workspace');
-    const insights = groups.find((group) => group.key === 'insights');
-    expect(workspace?.items.map((i) => i.key)).toContain('monitors');
-    expect(insights?.items.map((i) => i.key)).not.toContain('monitors');
-    const keys = workspace?.items.map((i) => i.key) ?? [];
-    expect(keys.indexOf('monitors')).toBe(keys.indexOf('tools') + 1);
+describe('activity section', () => {
+  it('owns /activity and lists schedules and monitors as automations', () => {
+    expect(getSectionForPath('/activity')?.key).toBe('activity');
+    expect(getSectionForPath('/activity/monitors')?.key).toBe('activity');
+    const groups = getVisibleGroups(ACTIVITY_SECTION, { isAdmin: false });
+    expect(groups[0].items.map((i) => i.key)).toEqual([
+      'now',
+      'calendar',
+      'history',
+    ]);
+    const automations = groups.find((group) => group.key === 'automations');
+    expect(automations?.items.map((i) => i.key)).toEqual([
+      'schedules',
+      'monitors',
+    ]);
+  });
+
+  it('marks Now active on the section root', () => {
+    expect(getActiveItem(ACTIVITY_SECTION, '/activity')?.key).toBe('now');
+  });
+
+  it('leaves monitors out of settings', () => {
+    const keys = getSectionItems(SETTINGS_SECTION).map((i) => i.key);
+    expect(keys).not.toContain('monitors');
   });
 });
 

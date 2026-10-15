@@ -1530,6 +1530,114 @@
     "version": "1.0"
   },
   "paths": {
+    "/api/activity/history": {
+      "get": {
+        "description": "The caller's finished runs of every kind, newest first: scheduled, webhook and workflow runs, background jobs, and monitor wakes, with one status vocabulary.\nReturns:\n    A Flask response with ``runs`` and ``has_more``, or 400 for an\n    unknown ``kind`` or ``status``.",
+        "operationId": "get_activity_history",
+        "parameters": [
+          {
+            "description": "One of schedule, webhook, workflow, job, monitor; all when left out.",
+            "in": "query",
+            "name": "kind",
+            "type": "string"
+          },
+          {
+            "description": "One of success, failed, timeout, skipped, cancelled (failed includes timed out); all when left out.",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Text matched against the run, agent and conversation names.",
+            "in": "query",
+            "name": "q",
+            "type": "string"
+          },
+          {
+            "description": "How far back to look (default 30, at most 90).",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          },
+          {
+            "description": "Rows per page (default 50, at most 200).",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Rows to skip.",
+            "in": "query",
+            "name": "offset",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return one page of the caller's finished runs",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/activity/now": {
+      "get": {
+        "description": "What runs for the caller now (chat answers, background jobs, scheduled, webhook and workflow runs, ingests), what waits for them (tool approvals, schedules paused after failures), what runs in the next 24 hours, and the 24-hour counts.\nReturns:\n    A Flask response with ``running``, ``needs_you``, ``up_next``,\n    ``approval_conversations``, ``failed_conversations`` and ``stats``.",
+        "operationId": "get_activity_now",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's Now snapshot",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/activity/planned": {
+      "get": {
+        "description": "The caller's calendar for a window: planned schedule runs (from cron or run_at), past and in-flight runs with their status, coming knowledge syncs (one event per frequency each time it fires, kind sync), and monitors as date ranges. The window may span at most 62 days. A frequent schedule with more events than one schedule may list is summed up per day in tz: one event per day and routine state, with count and until.\nReturns:\n    A Flask response with ``from``, ``to``, ``events`` (schedule and\n    sync events, by ``kind``), ``monitors`` and ``truncated``, or 400\n    for a bad window or time zone.",
+        "operationId": "get_activity_planned",
+        "parameters": [
+          {
+            "description": "Window start, ISO 8601.",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Window end (exclusive), ISO 8601.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "The viewer's IANA time zone, which days are split in (default UTC).",
+            "in": "query",
+            "name": "tz",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's calendar window",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/add_chunk": {
       "post": {
         "description": "Adds a new chunk to the document",
@@ -3904,7 +4012,7 @@
     },
     "/api/get_user_logs": {
       "post": {
-        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline.",
+        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline. Runs are ordered by their start time; ones still going (answers, scheduled, workflow and webhook runs) carry running: true until their finished row replaces them.",
         "operationId": "post_get_user_logs",
         "parameters": [
           {
@@ -4268,6 +4376,30 @@
         "x-pat-scopes": [
           "tools:write"
         ]
+      }
+    },
+    "/api/messages/{message_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "message_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Stop the caller's chat answer that is still being written. The stream ends as if its client had disconnected and keeps what it wrote. Answers 202 once the request is stored; the stream sees it within a few seconds, or when a long tool call returns.\nArgs:\n    message_id: The answer's message id.\n\nReturns:\n    202 when the stop was requested, 404 when the caller has no such\n    message, 409 when it is not running (finished, or paused for a\n    tool approval), 503 without Redis.",
+        "operationId": "post_message_cancel",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Ask a running answer to stop",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/messages/{message_id}/tail": {
@@ -4743,6 +4875,24 @@
         ],
         "x-pat-scopes": [
           "teams:read"
+        ]
+      }
+    },
+    "/api/schedules": {
+      "get": {
+        "description": "List the caller's schedules across every agent: their own, agentless ones created in chat, and those of teammates' agents they manage through a team (team: true). Monitors are not included.\nReturns:\n    A Flask response with ``schedules``: schedule rows plus\n    ``agent_name``, ``agent_image`` (a signed URL, never a storage\n    path), ``origin_conversation_name`` and ``team`` (a schedule of a\n    teammate's agent the caller manages through a team).",
+        "operationId": "get_user_schedules",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's schedules with agent and origin-chat names",
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
         ]
       }
     },
@@ -6765,6 +6915,10 @@
     {
       "description": "Answer related operations",
       "name": "answer"
+    },
+    {
+      "description": "What runs now and what is planned",
+      "name": "activity"
     },
     {
       "description": "Analytics and reporting operations",

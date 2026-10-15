@@ -510,9 +510,17 @@ const ConversationBubble = forwardRef<
             // error is often a raw provider exception, so it is mono detail
             // under a readable title; a curated error (it has a code) is
             // written for the user and reads as prose.
+            // An answer its user stopped is a note: nothing went wrong.
             <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
-              <Alert variant="destructive">
-                <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
+              <Alert
+                variant={errorCode === 'stopped' ? 'info' : 'destructive'}
+                {...(errorCode === 'stopped' && { role: 'note' })}
+              >
+                <AlertTitle>
+                  {errorCode === 'stopped'
+                    ? t('conversation.stoppedTitle')
+                    : t('conversation.failedTitle')}
+                </AlertTitle>
                 <AlertDescription>
                   <p
                     className={cn(

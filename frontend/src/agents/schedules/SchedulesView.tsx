@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
-import userService from '../../api/services/userService';
 import { Plus } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +25,7 @@ import {
 } from '../../utils/dateTimeUtils';
 import AgentPageToolbar, { LastUsedMeta } from '../components/AgentPageToolbar';
 import SectionShell from '../../navigation/SectionShell';
-import type { Agent } from '../types';
+import { ACTIVITY_SCHEDULES_PATH } from '../../activity/paths';
 import type {
   Schedule,
   ScheduleCreatePayload,
@@ -36,11 +35,7 @@ import type {
 import RunDetailDrawer from './RunDetailDrawer';
 import ScheduleFormModal from './ScheduleFormModal';
 import ScheduleRow from './ScheduleRow';
-import {
-  approvalGatedTools,
-  type AgentToolSummary,
-  type ApprovalToolInfo,
-} from './toolApproval';
+import useScheduleAgentContext from './useScheduleAgentContext';
 import {
   createSchedule,
   deleteSchedule,
@@ -65,8 +60,8 @@ export default function SchedulesView() {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
 
-  const [agent, setAgent] = useState<Agent | undefined>();
-  const [loadingAgent, setLoadingAgent] = useState<boolean>(true);
+  const { agent, loadingAgent, approvalTools } =
+    useScheduleAgentContext(agentId);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -106,53 +101,8 @@ export default function SchedulesView() {
 
   useEffect(() => {
     if (!agentId) return;
-    const fetchAgent = async () => {
-      setLoadingAgent(true);
-      try {
-        const response = await userService.getAgent(agentId, token);
-        if (!response.ok) throw new Error('Failed to fetch agent');
-        const data = await response.json();
-        setAgent(data);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoadingAgent(false);
-      }
-    };
-    fetchAgent();
-  }, [agentId, token]);
-
-  useEffect(() => {
-    if (!agentId) return;
     dispatch(loadSchedulesForAgent({ agentId, token }));
   }, [dispatch, agentId, token]);
-
-  // The caller's tools with their actions, to tell which of the agent's
-  // tools need approval. A failed read lists every tool as needing it.
-  const [userTools, setUserTools] = useState<ApprovalToolInfo[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    userService
-      .getUserTools(token)
-      .then((response: Response) => (response.ok ? response.json() : null))
-      .then((data: { tools?: ApprovalToolInfo[] } | null) => {
-        if (!cancelled) setUserTools(data?.tools ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setUserTools([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  const approvalTools = useMemo(() => {
-    if (!agent) return [];
-    const details: AgentToolSummary[] = agent.tool_details?.length
-      ? agent.tool_details
-      : (agent.tools ?? []).map((id) => ({ id, name: id }));
-    return approvalGatedTools(details, userTools);
-  }, [agent, userTools]);
 
   const recurring = useMemo(
     () => schedules.filter((s) => s.trigger_type === 'recurring'),
@@ -224,10 +174,17 @@ export default function SchedulesView() {
   const latestFailure = stats?.latest_failure;
 
   const newScheduleButton = (
-    <Button type="button" size="field" shape="pill" onClick={openCreate}>
-      <Plus />
-      {t('agents.schedules.newRecurring')}
-    </Button>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="field" shape="pill" asChild>
+        <Link to={ACTIVITY_SCHEDULES_PATH}>
+          {t('agents.schedules.allSchedules')}
+        </Link>
+      </Button>
+      <Button type="button" size="field" shape="pill" onClick={openCreate}>
+        <Plus />
+        {t('agents.schedules.newRecurring')}
+      </Button>
+    </div>
   );
 
   const renderList = (list: Schedule[], emptyKey: string) =>

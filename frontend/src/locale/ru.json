@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Диалог"
   },
   "backgroundJobs": {
-    "unread": "Непрочитано",
     "card": {
       "status": {
         "working": "В фоне",
@@ -794,7 +793,15 @@
           "allAttributes": "Все атрибуты"
         }
       },
-      "loadError": "Не удалось загрузить журналы."
+      "loadError": "Не удалось загрузить журналы.",
+      "running": "выполняется",
+      "failedAtStep": "сбой на шаге {{step}}",
+      "failedAtStepOf": "сбой на шаге {{step}} из {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Общий доступ",
+        "chat": "Чат"
+      }
     },
     "teams": {
       "label": "Команды",
@@ -2259,13 +2266,15 @@
     },
     "retry": "Повторить",
     "failedTitle": "Не удалось сгенерировать ответ",
+    "stoppedTitle": "Остановлено",
     "errors": {
       "contextLength": "Это сообщение с прикреплёнными файлами не помещается в контекстное окно модели. Отправьте меньше файлов или файлы поменьше.",
       "contextLengthKnowledge": "Это сообщение с прикреплёнными файлами не помещается в контекстное окно модели. Отправьте меньше файлов или файлы поменьше либо используйте «Добавить в знания», чтобы искать по ним, а не отправлять их целиком.",
       "contextLengthSized": "Этому сообщению с прикреплёнными файлами нужно больше токенов, чем может принять модель: около {{needed, number}} при лимите {{available, number}}. Отправьте меньше файлов или файлы поменьше.",
       "contextLengthSizedKnowledge": "Этому сообщению с прикреплёнными файлами нужно больше токенов, чем может принять модель: около {{needed, number}} при лимите {{available, number}}. Отправьте меньше файлов или файлы поменьше либо используйте «Добавить в знания», чтобы искать по ним, а не отправлять их целиком.",
       "serverError": "Пожалуйста, попробуйте позже. Приносим извинения за неудобства.",
-      "clientDisconnect": "Ответ прервался, прежде чем что-либо было получено. Попробуйте ещё раз."
+      "clientDisconnect": "Ответ прервался, прежде чем что-либо было получено. Попробуйте ещё раз.",
+      "stopped": "Вы остановили этот ответ до того, как он что-либо написал. Попробуйте ещё раз, чтобы получить ответ."
     },
     "reasoning": "Рассуждение",
     "wikiWrite": {
@@ -2865,6 +2874,7 @@
           "dec": "Дек"
         },
         "frequencyLabel": "Периодичность",
+        "customTiming": "Это расписание работает по особому графику: {{pattern}}. Измените время ниже, чтобы заменить его.",
         "dayOfWeek": "День недели"
       },
       "status": {
@@ -2895,7 +2905,8 @@
         "error": "Ошибка",
         "errorWithType": "Ошибка ({{type}})",
         "output": "Результат",
-        "truncated": "(обрезано)"
+        "truncated": "(обрезано)",
+        "openConversation": "Открыть разговор"
       },
       "toolCard": {
         "cancelFailed": "Не удалось отменить",
@@ -2936,7 +2947,22 @@
           "oct": "октября",
           "nov": "ноября",
           "dec": "декабря"
-        }
+        },
+        "weekdays": "По будням в {{time}}",
+        "weekends": "По выходным в {{time}}",
+        "days": "Каждый {{days}} в {{time}}",
+        "hourly": "Каждый час",
+        "hourlyAt": "Каждый час в :{{minute}}",
+        "hourlyRange": "Каждый час с {{from}} до {{to}}",
+        "hourlyRangeWeekdays": "По будням каждый час с {{from}} до {{to}}",
+        "everyMinutes_one": "Каждую {{formatted}} минуту",
+        "everyMinutes_few": "Каждые {{formatted}} минуты",
+        "everyMinutes_many": "Каждые {{formatted}} минут",
+        "everyMinutes_other": "Каждые {{formatted}} минуты",
+        "everyHours_one": "Каждый {{formatted}} час",
+        "everyHours_few": "Каждые {{formatted}} часа",
+        "everyHours_many": "Каждые {{formatted}} часов",
+        "everyHours_other": "Каждые {{formatted}} часа"
       },
       "runLog": {
         "when": "Когда",
@@ -2970,7 +2996,8 @@
         "overdue": "Просрочено"
       },
       "deleteFailed": "Не удалось удалить это расписание.",
-      "deleteConsequence": "История запусков тоже будет удалена. Это действие нельзя отменить."
+      "deleteConsequence": "История запусков тоже будет удалена. Это действие нельзя отменить.",
+      "allSchedules": "Все расписания"
     },
     "shared": {
       "notFound": "Агент не найден. Убедитесь, что агент является общим.",
@@ -3367,7 +3394,8 @@
         "personal": "Личное",
         "workspace": "Рабочее пространство",
         "insights": "Аналитика",
-        "administration": "Администрирование"
+        "administration": "Администрирование",
+        "automations": "Автоматизация"
       }
     },
     "openSidebar": "Открыть боковую панель",
@@ -3447,7 +3475,6 @@
     "loadError": "Не удалось загрузить мониторы",
     "actionError": "Не получилось. Попробуйте снова.",
     "untitled": "Монитор",
-    "watching": "Следит за изменениями",
     "every": "Каждые {{interval}}",
     "onEvent": "Когда произойдёт",
     "openConversation": "Открыть разговор",
@@ -3524,5 +3551,308 @@
       "conversationGone": "Завершён: беседу больше нельзя продолжить"
     },
     "endedBecause": "Завершён: {{reason}}"
+  },
+  "activity": {
+    "label": "Активность",
+    "schedules": {
+      "label": "Расписания",
+      "subtitle": "Все повторяющиеся запуски и разовые задачи ваших агентов, а также те, что ассистент создал в чате.",
+      "search": "Поиск расписаний",
+      "createdInChat": "Созданы в чате",
+      "createdInChatHint": "Без агента. Каждое относится к чату, в котором создано.",
+      "agentSchedules": "Расписания агента",
+      "openChat": "Открыть чат",
+      "noMatches": "Нет расписаний, подходящих под запрос.",
+      "loadError": "Не удалось загрузить расписания",
+      "empty": "Расписаний пока нет",
+      "emptyHint": "Создайте его здесь или попросите ассистента в чате делать что-то по расписанию.",
+      "agentLabel": "Агент",
+      "agentPlaceholder": "Выберите агента",
+      "agentSearch": "Поиск агентов",
+      "agentEmpty": "Нет агентов, для которых можно создать расписание",
+      "teamAgent": "Агент коллеги, которым вы управляете через команду"
+    },
+    "marks": {
+      "failed": "Что-то не удалось",
+      "needsYou": "Ждёт вашего одобрения",
+      "working": "Выполняется",
+      "unread": "Непрочитано",
+      "watching": "Следит за изменениями"
+    },
+    "kind": {
+      "chat": "Чат",
+      "job": "Фоновая задача",
+      "code": "Выполнение кода",
+      "schedule": "Запуск по расписанию",
+      "workflow": "Рабочий процесс",
+      "webhook": "Запуск по вебхуку",
+      "ingest": "Знания",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "выполняется: {{formatted}}",
+      "running_few": "выполняется: {{formatted}}",
+      "running_many": "выполняется: {{formatted}}",
+      "running_other": "выполняется: {{formatted}}",
+      "needsYou_one": "ждёт вас: {{formatted}}",
+      "needsYou_few": "ждут вас: {{formatted}}",
+      "needsYou_many": "ждут вас: {{formatted}}",
+      "needsYou_other": "ждут вас: {{formatted}}"
+    },
+    "now": {
+      "label": "Сейчас",
+      "subtitle": "Что выполняется, что ждёт вас и что запустится дальше. Обновляется в реальном времени.",
+      "loadError": "Не удалось загрузить активность",
+      "stopFailed": "Не удалось остановить ответ. Попробуйте ещё раз или остановите его в чате.",
+      "thinking": "думает",
+      "writing": "пишет ответ",
+      "ranByHand": "запущено вручную",
+      "due": "по плану {{time}}",
+      "chunks": "встроено фрагментов: {{done}} из {{total}}",
+      "background": "В фоне",
+      "running": "Выполняется",
+      "stop": "Остановить",
+      "cancel": "Отменить",
+      "open": "Открыть",
+      "approve": "Одобрить {{tools}}",
+      "approveAction": "Одобрить действие инструмента",
+      "expires": "истекает {{time}}",
+      "approval": "Одобрение",
+      "review": "Проверить",
+      "pausedAfter_one": "{{name}}: пауза после {{formatted}} сбоя",
+      "pausedAfter_few": "{{name}}: пауза после {{formatted}} сбоев",
+      "pausedAfter_many": "{{name}}: пауза после {{formatted}} сбоев",
+      "pausedAfter_other": "{{name}}: пауза после {{formatted}} сбоев",
+      "errorType": {
+        "auth_expired": "истёк вход",
+        "tool_not_allowed": "инструмент не разрешён",
+        "budget_exceeded": "превышен лимит токенов",
+        "timeout": "превышено время",
+        "agent_error": "сбой агента",
+        "internal": "внутренняя ошибка",
+        "missed": "пропущено время запуска",
+        "overlap": "предыдущий запуск ещё шёл",
+        "stream_error": "поток ответа прервался",
+        "empty_output": "результат пуст"
+      },
+      "viewRuns": "Показать запуски",
+      "fromChat": "Из «{{name}}»",
+      "timesToday_one": "{{formatted}} запуск за 24 часа",
+      "timesToday_few": "{{formatted}} запуска за 24 часа",
+      "timesToday_many": "{{formatted}} запусков за 24 часа",
+      "timesToday_other": "{{formatted}} запуска за 24 часа",
+      "oneTime": "разовая",
+      "stats": {
+        "running": "Выполняется",
+        "background_one": "в фоне: {{formatted}}",
+        "background_few": "в фоне: {{formatted}}",
+        "background_many": "в фоне: {{formatted}}",
+        "background_other": "в фоне: {{formatted}}",
+        "needsYou": "Ждёт вас",
+        "approvalExpires": "Одобрение истекает {{time}}",
+        "next24h": "Следующие 24 часа",
+        "nextAt": "Далее в {{time}}: {{name}}",
+        "failed": "Сбои за 24 часа",
+        "viewInHistory": "Открыть в истории"
+      },
+      "needsYou": "Ждёт вас",
+      "reconnect": "{{name}}: нужно переподключить",
+      "reconnectAction": "Переподключить",
+      "runningTitle": "Выполняется",
+      "filter": "Показать",
+      "filters": {
+        "all": "Все",
+        "chats": "Чаты",
+        "automations": "Автоматизация",
+        "knowledge": "Знания"
+      },
+      "nothingRunning": "Ничего не выполняется",
+      "upNext": "Далее",
+      "nothingPlanned": "В ближайшие 24 часа ничего не запланировано",
+      "watching": "Под наблюдением",
+      "allMonitors": "Все мониторы",
+      "nothingWatched": "Ничего не отслеживается",
+      "checked": "проверено {{time}}",
+      "openCalendar": "Открыть календарь",
+      "step": "шаг {{step}}",
+      "stepOf": "шаг {{step}} из {{total}}",
+      "apiRequests_one": "{{formatted}} запрос",
+      "apiRequests_other": "{{formatted}} запросов",
+      "apiRequests_few": "{{formatted}} запроса",
+      "apiRequests_many": "{{formatted}} запросов",
+      "reading": "читает содержимое",
+      "operation": {
+        "upload": "Загрузка",
+        "sync": "Синхронизация",
+        "reingest": "Переиндексация"
+      },
+      "syncBatch": {
+        "daily": "Ежедневная синхронизация",
+        "weekly": "Еженедельная синхронизация",
+        "monthly": "Ежемесячная синхронизация"
+      },
+      "syncSources_one": "{{formatted}} источник",
+      "syncSources_other": "{{formatted}} источников",
+      "syncSources_few": "{{formatted}} источника",
+      "syncSources_many": "{{formatted}} источников",
+      "syncBlocked_one": "{{formatted}} нужно переподключить",
+      "syncBlocked_other": "{{formatted}} нужно переподключить",
+      "syncBlocked_few": "{{formatted}} нужно переподключить",
+      "syncBlocked_many": "{{formatted}} нужно переподключить"
+    },
+    "calendar": {
+      "label": "Календарь",
+      "subtitle": "Запланированные запуски, прошедшие запуски с результатом и то, что отслеживается.",
+      "loadError": "Не удалось загрузить календарь",
+      "runLoadError": "Не удалось открыть запуск. Попробуйте ещё раз.",
+      "runNowError": "Не удалось начать запуск. Попробуйте ещё раз.",
+      "todayButton": "Сегодня",
+      "previous": "Назад",
+      "next": "Вперёд",
+      "agentFilter": "Агент",
+      "allAgents": "Все агенты",
+      "viewLabel": "Вид",
+      "views": {
+        "day": "День",
+        "week": "Неделя",
+        "month": "Месяц",
+        "agenda": "Список"
+      },
+      "monitors": "Мониторы",
+      "knowledgeSyncs": "Синхронизация знаний",
+      "hidePast": "Скрыть прошедшие",
+      "legend": {
+        "planned": "Запланировано",
+        "running": "Выполняется",
+        "success": "Успешно",
+        "failed": "Сбой",
+        "paused": "Пауза или пропуск",
+        "missed": "Не запущено",
+        "sync": "Синхронизация знаний"
+      },
+      "truncated": "Для очень частых расписаний показаны только первые запуски в этом диапазоне.",
+      "watching": "Наблюдение",
+      "state": {
+        "planned": "Запланировано",
+        "paused": "На паузе",
+        "pending": "Запускается",
+        "running": "Выполняется",
+        "success": "Успешно",
+        "failed": "Сбой",
+        "skipped": "Пропущено",
+        "timeout": "Превышено время",
+        "missed": "Пропущено"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_few": "{{name}} ×{{formatted}}",
+      "block_many": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "ещё {{formatted}}",
+      "more_few": "ещё {{formatted}}",
+      "more_many": "ещё {{formatted}}",
+      "more_other": "ещё {{formatted}}",
+      "today": "Сегодня",
+      "tomorrow": "Завтра",
+      "empty": "На эти дни ничего не запланировано",
+      "blockDone_one": "выполнено {{done}} из {{formatted}}",
+      "blockDone_few": "выполнено {{done}} из {{formatted}}",
+      "blockDone_many": "выполнено {{done}} из {{formatted}}",
+      "blockDone_other": "выполнено {{done}} из {{formatted}}",
+      "slotCount_one": "{{formatted}} запуск",
+      "slotCount_few": "{{formatted}} запуска",
+      "slotCount_many": "{{formatted}} запусков",
+      "slotCount_other": "{{formatted}} запуска",
+      "oneTime": "Разовая",
+      "recurring": "Повторяющаяся",
+      "when": "Когда",
+      "repeats": "Повтор",
+      "fromChat": "Из чата",
+      "pausedNote": "Расписание на паузе, поэтому этот запуск не состоится. Возобновите его на странице расписания.",
+      "dayRuns": "Запуски в этот день",
+      "queued": "Запуск начат. Он появится в разделе «Сейчас» и в журнале запусков.",
+      "openSchedule": "Открыть расписание",
+      "timezone": "Часовой пояс расписания",
+      "missedNote": "Этот запуск так и не начался: планировщик в то время не работал или отставал. Запустите сейчас или проверьте, что воркер работает с beat.",
+      "syncRepeats": {
+        "daily": "Каждый день, считая от запуска планировщика",
+        "weekly": "Каждую неделю, считая от запуска планировщика",
+        "monthly": "Каждые 30 дней, считая от запуска планировщика"
+      },
+      "sources": "Источники",
+      "needsReconnecting": "Нужно переподключить",
+      "lastSynced": "Синхронизировано {{time}}",
+      "notSyncedYet": "Ещё не синхронизировано",
+      "openKnowledge": "Открыть знания"
+    },
+    "history": {
+      "label": "История",
+      "subtitle": "Завершённые запуски ваших расписаний, вебхуков, рабочих процессов, фоновых задач и мониторов. Полный технический журнал — в «Настройки › Журналы».",
+      "search": "Поиск запусков",
+      "statusFilter": "Статус",
+      "kindFilter": "Тип",
+      "statusFilters": {
+        "all": "Все статусы",
+        "failed": "Сбои",
+        "success": "Успешные",
+        "skipped": "Пропущенные",
+        "cancelled": "Отменённые"
+      },
+      "kindFilters": {
+        "all": "Все",
+        "schedule": "Расписания",
+        "webhook": "Вебхуки",
+        "workflow": "Процессы",
+        "job": "Фоновые",
+        "monitor": "Срабатывания мониторов"
+      },
+      "kind": {
+        "schedule": "Расписание",
+        "webhook": "Вебхук",
+        "workflow": "Рабочий процесс",
+        "job": "Фоновая",
+        "monitor": "Монитор"
+      },
+      "status": {
+        "success": "Успешно",
+        "failed": "Сбой",
+        "timeout": "Превышено время",
+        "skipped": "Пропущено",
+        "cancelled": "Отменено"
+      },
+      "trigger": {
+        "cron": "По расписанию",
+        "manual": "Вручную",
+        "webhook": "Вебхук",
+        "chat": "Чат",
+        "monitor": "Найдено изменение",
+        "trigger": "Ссылка вебхука",
+        "approval": "Ссылка одобрения",
+        "monitor_paused": "Монитор на паузе",
+        "monitor_expired": "Срок монитора истёк"
+      },
+      "columns": {
+        "when": "Когда",
+        "run": "Запуск",
+        "owner": "Агент / чат",
+        "kind": "Тип",
+        "trigger": "Источник",
+        "status": "Статус",
+        "duration": "Длительность",
+        "tokens": "Токены"
+      },
+      "yesterday": "Вчера",
+      "loadError": "Не удалось загрузить историю",
+      "runLoadError": "Не удалось открыть запуск. Попробуйте ещё раз.",
+      "noMatches": "Нет запусков с такими фильтрами",
+      "empty": "Завершённых запусков пока нет",
+      "emptyHint": "Запуски расписаний, вебхуков, процессов, фоновых задач и мониторов появляются здесь после завершения.",
+      "loadMore": "Загрузить ещё",
+      "retention": "По умолчанию запуски по расписанию хранятся 90 дней, запуски по вебхуку — 30, фоновые задачи и срабатывания мониторов — 7. Запуски процессов остаются в списке, а их трассировка хранится 30 дней.",
+      "period_one": "За {{formatted}} день",
+      "period_few": "За {{formatted}} дня",
+      "period_many": "За {{formatted}} дней",
+      "period_other": "За {{formatted}} дня",
+      "periodFilter": "Период"
+    }
   }
 }

@@ -645,6 +645,24 @@ describe('ConversationBubble', () => {
     expect(buttonByText('add-knowledge')).toBeDefined();
   });
 
+  it('shows an answer the user stopped as a note, not a failure', async () => {
+    const stopped = 'You stopped this answer before it wrote anything.';
+    await render(
+      <ConversationBubble
+        type="ERROR"
+        message={stopped}
+        errorCode="stopped"
+        retryBtn={<button type="button">retry</button>}
+      />,
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    const note = container.querySelector<HTMLElement>('[role="note"]')!;
+    expect(note.dataset.variant).toBe('info');
+    expect(note.textContent).toContain(tr('conversation.stoppedTitle'));
+    expect(note.textContent).toContain(stopped);
+    expect(buttonByText('retry')).toBeDefined();
+  });
+
   it('makes the Sources header a step row that opens the All sources sheet', async () => {
     const sources = [1, 2, 3, 4].map((n) => ({
       title: `Doc ${n}`,

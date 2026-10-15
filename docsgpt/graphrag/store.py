@@ -22,6 +22,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
+from docsgpt.storage.db.base_repository import like_escape
 from docsgpt.vectorstore import pgconn
 
 DEFAULT_NAME_EMBEDDING_DIM = 768
@@ -69,18 +70,6 @@ def graph_type_key(type_value: Optional[str]) -> str:
         missing type.
     """
     return "".join(ch for ch in (type_value or "").lower() if ch.isalnum())
-
-
-def _escape_like(value: str) -> str:
-    """Escape ``value`` so ``LIKE``/``ILIKE`` treats it as a literal.
-
-    Args:
-        value: Raw user text.
-
-    Returns:
-        str: ``value`` with ``\\``, ``%`` and ``_`` backslash-escaped.
-    """
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _safe_identifier(name: str) -> str:
@@ -957,7 +946,7 @@ class GraphStore:
         clean = (query or "").strip()
         if clean:
             clauses.append("name ILIKE %s ESCAPE '\\'")
-            params.append(f"%{_escape_like(clean)}%")
+            params.append(f"%{like_escape(clean)}%")
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -1424,6 +1413,8 @@ class GraphStore:
         clean = (name or "").strip()
         if not clean:
             return []
+        # The name comes from an LLM: "_" and "%" in it match literally.
+        pattern = like_escape(clean)
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -1433,11 +1424,12 @@ class GraphStore:
                 FROM graph_edges e
                 JOIN graph_nodes s ON s.id = e.src_node_id
                 JOIN graph_nodes d ON d.id = e.dst_node_id
-                WHERE e.source_id = %s AND (s.name ILIKE %s OR d.name ILIKE %s)
+                WHERE e.source_id = %s
+                  AND (s.name ILIKE %s ESCAPE '\\' OR d.name ILIKE %s ESCAPE '\\')
                 ORDER BY e.weight DESC NULLS LAST
                 LIMIT %s;
                 """,
-                (source_id, f"%{clean}%", f"%{clean}%", max(1, int(limit))),
+                (source_id, f"%{pattern}%", f"%{pattern}%", max(1, int(limit))),
             )
             return [
                 {"source": row[0], "type": row[1], "target": row[2], "description": row[3]}
@@ -1466,6 +1458,8 @@ class GraphStore:
         clean = (name or "").strip()
         if not clean:
             return []
+        # The name comes from an LLM: "_" and "%" in it match literally.
+        pattern = like_escape(clean)
         table, text_col, metadata_col, source_col = _pgvector_identifiers()
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -1474,18 +1468,19 @@ class GraphStore:
                 sql.SQL(
                     """
                     SELECT d.{metadata}, d.{text},
-                           bool_or(lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
+                           bool_or(lower(n.name) = %s OR lower(n.name) LIKE %s ESCAPE '\\') AS is_subject
                     FROM graph_node_chunks gc
                     JOIN graph_nodes n ON n.id = gc.node_id
                     JOIN {table} d ON d.id::text = gc.chunk_id
                     WHERE gc.source_id = %s AND d.{source} = %s
-                      AND (lower(n.name) = %s OR lower(n.name) LIKE %s OR n.name ILIKE %s)
+                      AND (lower(n.name) = %s OR lower(n.name) LIKE %s ESCAPE '\\'
+                           OR n.name ILIKE %s ESCAPE '\\')
                     -- One page per chunk. Grouping on the subject flag as well
                     -- split a chunk two entities link -- one naming it, one
                     -- merely mentioned -- into two identical pages, spending
                     -- the caller's page budget twice on the same text.
                     GROUP BY d.{metadata}, d.{text}
-                    ORDER BY is_subject DESC, (d.{text} ILIKE %s) DESC
+                    ORDER BY is_subject DESC, (d.{text} ILIKE %s ESCAPE '\\') DESC
                     LIMIT %s;
                     """
                 ).format(
@@ -1495,10 +1490,10 @@ class GraphStore:
                     source=_identifier(source_col),
                 ),
                 (
-                    clean.lower(), f"{clean.lower()} %",
+                    clean.lower(), f"{pattern.lower()} %",
                     source_id, source_id,
-                    clean.lower(), f"{clean.lower()} %", f"%{clean}%",
-                    f"{clean}%",
+                    clean.lower(), f"{pattern.lower()} %", f"%{pattern}%",
+                    f"{pattern}%",
                     max(1, int(limit)),
                 ),
             )
