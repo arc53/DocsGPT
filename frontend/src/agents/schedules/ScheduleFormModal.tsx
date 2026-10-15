@@ -195,18 +195,27 @@ export default function ScheduleFormModal({
     setRunAtError(field === 'runAt' ? message : null);
   };
 
+  // Whether the user touched a timing field: compared by value, a timing
+  // the form can't show could never be replaced by the one it falls back to.
+  const [timingTouched, setTimingTouched] = useState(false);
+  const changeTiming = (next: ScheduleFormValues) => {
+    setValues(next);
+    setTimingTouched(true);
+  };
   const setFrequency = (frequency: ScheduleFrequency) =>
-    setValues((current) => ({ ...current, frequency }));
+    changeTiming({ ...values, frequency });
 
   const isEdit = Boolean(initial?.id);
   const editsRecurring = isEdit && initial?.trigger_type === 'recurring';
-  const timingUnchanged = sameTiming(values, defaults);
   // A saved timing the form can't show (an API cron such as weekdays at 9)
   // loads as the form's fallback; it is kept until a timing field changes.
   const customCron =
     editsRecurring && initial?.cron && !parseCron(initial.cron)
       ? initial.cron
       : null;
+  const timingUnchanged = customCron
+    ? !timingTouched
+    : sameTiming(values, defaults);
 
   const submit = async () => {
     if (!instruction.trim()) {
@@ -352,7 +361,7 @@ export default function ScheduleFormModal({
 
         <OnPicker
           values={values}
-          onChange={setValues}
+          onChange={changeTiming}
           tDay={(key) => t(`agents.schedules.modal.days.${key}`)}
           tMonth={(key) => t(`agents.schedules.modal.months.${key}`)}
           labels={{
