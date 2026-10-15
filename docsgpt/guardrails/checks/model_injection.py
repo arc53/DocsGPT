@@ -153,9 +153,10 @@ class ModelInjectionCheck(GuardrailCheck):
         threshold = float(self.settings.get("threshold", instance.GUARDRAILS_INJECTION_THRESHOLD))
         scored = f"windows={len(answered)}/{total}"
         # A window over the flag threshold settles it even when others went
-        # unscored; anything less needs every window.
-        if p is None or (p < flag_threshold and len(answered) < len(pieces)):
-            reason = next((r for r in batch.reasons if r), "unscored")
+        # unscored; anything less needs every window of the text, including
+        # those past MAX_WINDOWS that were never sent.
+        if p is None or (p < flag_threshold and len(answered) < total):
+            reason = next((r for r in batch.reasons if r), "too_long" if len(answered) == len(pieces) else "unscored")
             error = "timeout" if reason == "timeout" else f"unscored: {reason}"
             seen = f" p={p:.3f}" if p is not None else ""
             return CheckOutcome(evaluated=False, error=error, detail=f"{error}{seen} {scored}")

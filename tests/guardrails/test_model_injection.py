@@ -209,6 +209,13 @@ class TestWindows:
         assert len(fake.calls[0].requests) == 3
         assert outcome.categories == ["PROMPT_INJECTION"] and outcome.detail == "p=0.950 windows=3/5"
 
+    def test_windows_past_the_cap_keep_a_clean_text_unevaluated(self):
+        text = "a" * 42  # five windows, three sent
+        fake = FakeDecider({"injection": 0.01}, tokenizer=CharTokenizer())
+        outcome = scan(fake, text)
+        assert len(fake.calls[0].requests) == 3
+        assert not outcome.evaluated and outcome.detail == "unscored: too_long p=0.010 windows=3/5"
+
     def test_a_hit_in_an_answered_window_counts_when_others_timed_out(self, monkeypatch):
         fake = FakeDecider({"injection": 0.95}, tokenizer=CharTokenizer())
         real = fake.decide_batch
