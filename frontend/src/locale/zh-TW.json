@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "對話"
   },
   "backgroundJobs": {
-    "unread": "未讀",
     "card": {
       "status": {
         "working": "背景執行中",
@@ -3314,7 +3313,6 @@
     "loadError": "無法載入你的監控",
     "actionError": "操作失敗，請再試一次。",
     "untitled": "監控",
-    "watching": "正在留意變化",
     "every": "每 {{interval}}",
     "onEvent": "發生時",
     "openConversation": "開啟對話",

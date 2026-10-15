@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Conversation"
   },
   "backgroundJobs": {
-    "unread": "Unread",
     "card": {
       "status": {
         "working": "In background",
@@ -3345,7 +3344,6 @@
     "loadError": "Couldn't load your monitors",
     "actionError": "That didn't work. Try again.",
     "untitled": "Monitor",
-    "watching": "Watching for changes",
     "every": "Every {{interval}}",
     "onEvent": "When it happens",
     "openConversation": "Open conversation",

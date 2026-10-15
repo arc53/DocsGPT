@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Unterhaltung"
   },
   "backgroundJobs": {
-    "unread": "Ungelesen",
     "card": {
       "status": {
         "working": "Im Hintergrund",
@@ -3326,7 +3325,6 @@
     "loadError": "Deine Monitore konnten nicht geladen werden",
     "actionError": "Das hat nicht geklappt. Versuche es erneut.",
     "untitled": "Monitor",
-    "watching": "Wird beobachtet",
     "every": "Alle {{interval}}",
     "onEvent": "Wenn es passiert",
     "openConversation": "Gespräch öffnen",

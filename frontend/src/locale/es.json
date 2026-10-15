@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Conversación"
   },
   "backgroundJobs": {
-    "unread": "No leído",
     "card": {
       "status": {
         "working": "En segundo plano",
@@ -3326,7 +3325,6 @@
     "loadError": "No se pudieron cargar tus monitores",
     "actionError": "No funcionó. Inténtalo de nuevo.",
     "untitled": "Monitor",
-    "watching": "Vigilando cambios",
     "every": "Cada {{interval}}",
     "onEvent": "Cuando ocurra",
     "openConversation": "Abrir conversación",

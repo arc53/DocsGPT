@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "会話"
   },
   "backgroundJobs": {
-    "unread": "未読",
     "card": {
       "status": {
         "working": "バックグラウンドで実行中",
@@ -3314,7 +3313,6 @@
     "loadError": "モニターを読み込めませんでした",
     "actionError": "うまくいきませんでした。もう一度お試しください。",
     "untitled": "モニター",
-    "watching": "変化を見守り中",
     "every": "{{interval}} ごと",
     "onEvent": "発生時",
     "openConversation": "会話を開く",

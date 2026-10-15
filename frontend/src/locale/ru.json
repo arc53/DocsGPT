@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "Диалог"
   },
   "backgroundJobs": {
-    "unread": "Непрочитано",
     "card": {
       "status": {
         "working": "В фоне",
@@ -3474,7 +3473,6 @@
     "loadError": "Не удалось загрузить мониторы",
     "actionError": "Не получилось. Попробуйте снова.",
     "untitled": "Монитор",
-    "watching": "Следит за изменениями",
     "every": "Каждые {{interval}}",
     "onEvent": "Когда произойдёт",
     "openConversation": "Открыть разговор",

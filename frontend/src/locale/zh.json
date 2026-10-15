@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "对话"
   },
   "backgroundJobs": {
-    "unread": "未读",
     "card": {
       "status": {
         "working": "后台运行中",
@@ -3313,7 +3312,6 @@
     "loadError": "无法加载你的监控",
     "actionError": "操作失败，请重试。",
     "untitled": "监控",
-    "watching": "正在关注变化",
     "every": "每 {{interval}}",
     "onEvent": "发生时",
     "openConversation": "打开对话",
