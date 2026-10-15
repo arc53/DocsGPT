@@ -191,7 +191,10 @@ describe('Logs running rows', () => {
     ok: true,
     json: () => Promise.resolve({ logs, has_more: false }),
   });
-  const started = new Date(Date.now() - 65_000).toISOString();
+  // The clock is pinned (beforeEach), so an elapsed time reads the same
+  // however long the suite took to get here.
+  const NOW = Date.parse('2026-10-15T12:00:00Z');
+  const started = new Date(NOW - 65_000).toISOString();
   const answer = {
     id: 'chat-run-1',
     action: 'answer',
@@ -220,6 +223,8 @@ describe('Logs running rows', () => {
   };
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     getLogs.mockReset();
     store.state.activity.now = null;
     store.state.activity.revision = 0;
@@ -231,6 +236,7 @@ describe('Logs running rows', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
   });
 
   it('marks a run that is still going, with who started it and its step', async () => {
