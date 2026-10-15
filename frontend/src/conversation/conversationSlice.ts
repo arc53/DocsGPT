@@ -1122,7 +1122,7 @@ export const conversationSlice = createSlice({
       recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     // Records the workflow run id so the answer bubble can render the run's
-    // produced artifacts (WorkflowRunArtifacts fetches by this id).
+    // produced artifacts (useRunArtifacts lists them by this id).
     setWorkflowRunId(
       state,
       action: PayloadAction<{ index: number; workflowRunId: string }>,

@@ -53,8 +53,10 @@ type ArtifactPanelProps = {
   /** The version to show first (the one its card names); else the current one. */
   version?: number;
   conversationId: string | null;
-  /** Back to the list it was opened from (an answer's files). */
+  /** Back to where it was opened from: an answer's files, or the preview's run. */
   onBack?: () => void;
+  /** The Back arrow's name; "Back to files" by default. */
+  backLabel?: string;
 };
 
 const ARTIFACT_TITLE_KEY_BY_TYPE: Record<
@@ -254,6 +256,7 @@ export default function ArtifactPanel({
   version,
   conversationId,
   onBack,
+  backLabel,
 }: ArtifactPanelProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
@@ -454,7 +457,11 @@ export default function ArtifactPanel({
       <PanelHeader
         title={title || t('components.artifact.preview')}
         onBack={onBack}
-        backLabel={onBack ? t('conversation.artifacts.backToList') : undefined}
+        backLabel={
+          onBack
+            ? (backLabel ?? t('conversation.artifacts.backToList'))
+            : undefined
+        }
       />
       <PanelBody scroll={false}>{renderContent()}</PanelBody>
     </>

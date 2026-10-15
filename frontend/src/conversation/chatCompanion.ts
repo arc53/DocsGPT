@@ -33,7 +33,8 @@ export type AnswerSource = {
  * SidePanel instead.
  */
 export const ChatCompanionContext = createContext<{
-  openSources: (sources: AnswerSource[], index?: number) => void;
+  /** Unset where sources keep their modal panel (the builder preview). */
+  openSources?: (sources: AnswerSource[], index?: number) => void;
   /** The artifact (and version) the docked panel shows, so its card is marked open. */
   openArtifact?: { id: string; version?: number } | null;
   /** Shows an answer's full artifact list (its “N more files” card). */

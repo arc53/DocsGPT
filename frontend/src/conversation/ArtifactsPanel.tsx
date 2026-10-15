@@ -47,17 +47,21 @@ const GROUPS: Group[] = ['documents', 'images', 'data', 'other'];
  *   items: The answer's artifacts, in the order its cards show them.
  *   open: The artifact showing, or null for the list.
  *   onOpenChange: Shows an artifact, or the list again with null.
+ *   onBack: Leaves the list (the builder preview's way back to its run).
  *   conversationId: The chat, for the artifact panel's own fetches.
  */
 export default function ArtifactsPanel({
   items,
   open,
   onOpenChange,
+  onBack,
   conversationId,
 }: {
   items: ArtifactCardItem[];
   open: OpenArtifactRequest | null;
   onOpenChange: (open: OpenArtifactRequest | null) => void;
+  /** Back from the list itself (the builder preview's run); none in chat. */
+  onBack?: () => void;
   conversationId: string | null;
 }) {
   const { t } = useTranslation();
@@ -84,6 +88,8 @@ export default function ArtifactsPanel({
         description={t('conversation.artifacts.fileCount', {
           count: items.length,
         })}
+        onBack={onBack}
+        backLabel={onBack ? t('agents.workflow.preview.backToRun') : undefined}
       />
       <PanelBody>
         {GROUPS.map((group) => {

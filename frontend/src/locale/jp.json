@@ -2942,15 +2942,7 @@
       "redo": "やり直す",
       "redoHint": "やり直す (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "このアーティファクトはプレビューできません",
-        "loadListFailed": "アーティファクトを読み込めませんでした",
-        "loadFailed": "アーティファクトを読み込めませんでした",
-        "loading": "アーティファクトを読み込み中...",
-        "inProgress": "実行中です。ノードが生成したアーティファクトがここに表示されます。",
-        "empty": "この実行ではアーティファクトは生成されませんでした。",
-        "back": "アーティファクト一覧に戻る",
-        "untitled": "アーティファクト {{id}}",
-        "fileKind": "ファイル"
+        "loadListFailed": "アーティファクトを読み込めませんでした"
       },
       "builder": {
         "deleteFailed": "ワークフローエージェントを削除できませんでした",
@@ -3115,11 +3107,11 @@
         "stepCount_other": "（{{count}} ステップ）",
         "outputLabel": "出力:",
         "errorLabel": "エラー:",
-        "artifacts": "アーティファクト",
         "minimapHeading": "ワークフロー",
         "emptyTitle": "ワークフローをテスト",
         "unsavedDraftAttachments": "プレビューでドキュメントを添付する前にワークフローを保存してください。",
-        "stepCount_one": "（{{count}} ステップ）"
+        "stepCount_one": "（{{count}} ステップ）",
+        "backToRun": "実行に戻る"
       },
       "documents": {
         "modeAll": "すべての入力ドキュメント",

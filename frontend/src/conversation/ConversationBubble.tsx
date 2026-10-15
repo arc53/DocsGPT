@@ -169,7 +169,8 @@ const ConversationBubble = forwardRef<
   // opens that source's reader; none opens the list.
   const openSources = useCallback(
     (index?: number) => {
-      if (companion && sources) companion.openSources(sources, index);
+      if (companion?.openSources && sources)
+        companion.openSources(sources, index);
       else {
         setOpenSourceIndex(index ?? null);
         setIsSidebarOpen(true);

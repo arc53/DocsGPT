@@ -2961,15 +2961,7 @@
       "removeAssignment": "Remove assignment {{index}}",
       "removeCondition": "Remove condition {{index}}",
       "artifacts": {
-        "previewUnsupported": "This artifact cannot be previewed",
-        "loadListFailed": "Failed to load artifacts",
-        "loadFailed": "Failed to load artifact",
-        "loading": "Loading artifacts...",
-        "inProgress": "Run in progress — artifacts appear here as nodes produce them.",
-        "empty": "No artifacts produced by this run.",
-        "back": "Back to artifacts",
-        "untitled": "Artifact {{id}}",
-        "fileKind": "file"
+        "loadListFailed": "Failed to load artifacts"
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
@@ -3135,10 +3127,10 @@
         "stepCount_other": "({{count}} steps)",
         "outputLabel": "Output:",
         "errorLabel": "Error:",
-        "artifacts": "Artifacts",
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",
-        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview."
+        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
+        "backToRun": "Back to the run"
       },
       "documents": {
         "modeAll": "All input docs",

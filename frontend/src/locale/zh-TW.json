@@ -2942,15 +2942,7 @@
       "redo": "重做",
       "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "此產出物無法預覽",
-        "loadListFailed": "無法載入產出物",
-        "loadFailed": "無法載入產出物",
-        "loading": "正在載入產出物...",
-        "inProgress": "執行中——節點產生的產出物會顯示在這裡。",
-        "empty": "此次執行未產生產出物。",
-        "back": "返回產出物列表",
-        "untitled": "產出物 {{id}}",
-        "fileKind": "檔案"
+        "loadListFailed": "無法載入產出物"
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",
@@ -3115,11 +3107,11 @@
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "輸出：",
         "errorLabel": "錯誤：",
-        "artifacts": "產出物",
         "minimapHeading": "工作流程",
         "emptyTitle": "測試工作流程",
         "unsavedDraftAttachments": "在預覽中附加文件前，請先儲存工作流程。",
-        "stepCount_one": "（{{count}} 步）"
+        "stepCount_one": "（{{count}} 步）",
+        "backToRun": "返回執行"
       },
       "documents": {
         "modeAll": "所有輸入文件",

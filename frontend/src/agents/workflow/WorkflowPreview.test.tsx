@@ -10,9 +10,8 @@ vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
 }));
 
-vi.mock('./WorkflowRunArtifacts', () => ({ default: () => null }));
 
-import { ExecutionDetails, RunArtifactsSection } from './WorkflowPreview';
+import { ExecutionDetails } from './WorkflowPreview';
 import type { WorkflowNode } from '../types/workflow';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -126,23 +125,5 @@ describe('WorkflowPreview execution sections', () => {
     expect(badges[0].className).toContain('font-mono');
     expect(badges[0].textContent).toContain('region');
     expect(badges[0].textContent).toContain('EU');
-  });
-
-  it('draws the Artifacts toggle as the same step row', async () => {
-    await act(async () => {
-      root.render(
-        <RunArtifactsSection
-          workflowRunId="run-1"
-          isOpen={false}
-          onToggle={() => undefined}
-        />,
-      );
-    });
-    const toggle = container.querySelector<HTMLButtonElement>('button')!;
-    expect(toggle.dataset.variant).toBe('ghost');
-    expect(toggle.dataset.size).toBe('sm');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.className).toContain('ml-3.5');
-    expect(toggle.querySelector('p')).toBeNull();
   });
 });

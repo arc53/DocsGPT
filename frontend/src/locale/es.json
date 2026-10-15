@@ -2956,15 +2956,7 @@
       "redo": "Rehacer",
       "redoHint": "Rehacer (Ctrl+Mayús+Z)",
       "artifacts": {
-        "previewUnsupported": "Este artefacto no se puede previsualizar",
-        "loadListFailed": "No se pudieron cargar los artefactos",
-        "loadFailed": "No se pudo cargar el artefacto",
-        "loading": "Cargando artefactos...",
-        "inProgress": "Ejecución en curso: los artefactos aparecen aquí a medida que los nodos los generan.",
-        "empty": "Esta ejecución no generó artefactos.",
-        "back": "Volver a los artefactos",
-        "untitled": "Artefacto {{id}}",
-        "fileKind": "archivo"
+        "loadListFailed": "No se pudieron cargar los artefactos"
       },
       "builder": {
         "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",
@@ -3130,10 +3122,10 @@
         "stepCount_other": "({{count}} pasos)",
         "outputLabel": "Salida:",
         "errorLabel": "Error:",
-        "artifacts": "Artefactos",
         "minimapHeading": "Flujo de trabajo",
         "emptyTitle": "Prueba el flujo de trabajo",
-        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa."
+        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa.",
+        "backToRun": "Volver a la ejecución"
       },
       "documents": {
         "modeAll": "Todos los documentos de entrada",

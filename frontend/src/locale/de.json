@@ -2956,15 +2956,7 @@
       "redo": "Wiederholen",
       "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
-        "previewUnsupported": "Dieses Artefakt kann nicht in der Vorschau angezeigt werden",
-        "loadListFailed": "Artefakte konnten nicht geladen werden",
-        "loadFailed": "Artefakt konnte nicht geladen werden",
-        "loading": "Artefakte werden geladen...",
-        "inProgress": "Lauf aktiv – Artefakte erscheinen hier, sobald Knoten sie erzeugen.",
-        "empty": "Dieser Lauf hat keine Artefakte erzeugt.",
-        "back": "Zurück zu den Artefakten",
-        "untitled": "Artefakt {{id}}",
-        "fileKind": "Datei"
+        "loadListFailed": "Artefakte konnten nicht geladen werden"
       },
       "builder": {
         "deleteFailed": "Workflow-Agent konnte nicht gelöscht werden",
@@ -3130,10 +3122,10 @@
         "stepCount_other": "({{count}} Schritte)",
         "outputLabel": "Ausgabe:",
         "errorLabel": "Fehler:",
-        "artifacts": "Artefakte",
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",
-        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst."
+        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst.",
+        "backToRun": "Zurück zum Lauf"
       },
       "documents": {
         "modeAll": "Alle Eingabedokumente",

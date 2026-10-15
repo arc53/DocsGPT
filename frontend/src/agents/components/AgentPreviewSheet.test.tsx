@@ -6,9 +6,41 @@ vi.mock('react-i18next', () => ({
 
 const dispatch = vi.fn();
 vi.mock('react-redux', () => ({ useDispatch: () => dispatch }));
+vi.mock('@/components/ArtifactPanel', () => ({
+  default: (props: {
+    artifactId: string;
+    backLabel?: string;
+    onBack?: () => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="artifact"
+      data-back={props.backLabel}
+      onClick={props.onBack}
+    >
+      {props.artifactId}
+    </button>
+  ),
+}));
+vi.mock('../../conversation/ArtifactsPanel', () => ({ default: () => null }));
 import { createRoot, type Root } from 'react-dom/client';
 
-import AgentPreviewSheet from './AgentPreviewSheet';
+import AgentPreviewSheet, { usePreviewArtifacts } from './AgentPreviewSheet';
+
+function OpensAnArtifact() {
+  const artifacts = usePreviewArtifacts();
+  return (
+    <button
+      type="button"
+      data-testid="open"
+      onClick={() =>
+        artifacts?.openArtifact({ id: 'a1', toolName: '', version: 2 })
+      }
+    >
+      open
+    </button>
+  );
+}
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -42,6 +74,38 @@ describe('AgentPreviewSheet', () => {
       );
     });
   };
+
+  // No room for a docked panel beside the drawer: the artifact takes it over,
+  // and the preview stays mounted underneath so a running answer streams on.
+  it('shows an opened artifact in place of the preview, with Back to the run', async () => {
+    await act(async () => {
+      root.render(
+        <AgentPreviewSheet open onOpenChange={() => undefined} title="Preview">
+          <div data-testid="body">
+            <OpensAnArtifact />
+          </div>
+        </AgentPreviewSheet>,
+      );
+    });
+    const body = () =>
+      document.querySelector('[data-testid="body"]') as HTMLElement;
+    await act(async () =>
+      (
+        document.querySelector('[data-testid="open"]') as HTMLButtonElement
+      ).click(),
+    );
+    const artifact = document.querySelector(
+      '[data-testid="artifact"]',
+    ) as HTMLButtonElement;
+    expect(artifact.textContent).toBe('a1');
+    expect(artifact.dataset.back).toBe('agents.workflow.preview.backToRun');
+    expect(document.body.textContent).not.toContain('Preview');
+    expect(body().parentElement?.className).toContain('hidden');
+
+    await act(async () => artifact.click());
+    expect(document.querySelector('[data-testid="artifact"]')).toBeNull();
+    expect(body().parentElement?.className).not.toContain('hidden');
+  });
 
   it('is a right Sheet at the workflow preview widths', async () => {
     await render();
