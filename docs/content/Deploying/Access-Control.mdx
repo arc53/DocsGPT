@@ -103,8 +103,8 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/admin/overview` | Instance overview counts. |
-| `GET` | `/api/admin/users` | List users (paginated; supports a `user_id` filter). |
-| `GET` | `/api/admin/users/<id>` | Drill into a single user. |
+| `GET` | `/api/admin/users` | List users with the email on file (paginated; the `user_id` filter matches the user id or the email). |
+| `GET` | `/api/admin/users/<id>` | Drill into a single user, with their user id and the email on file. |
 | `PATCH` | `/api/admin/users/<id>` | Activate / deactivate a user (deactivation revokes their sessions). |
 | `POST` | `/api/admin/users/<id>/role` | Grant the admin role (a manual grant; idempotent). |
 | `DELETE` | `/api/admin/users/<id>/role` | Revoke the manual admin grant. Refuses with `409` to remove the last admin. It removes only a manual grant: for an admin who holds the role through `OIDC_ADMIN_GROUPS` it returns `200 {"revoked": false}` and they stay admin. Remove them from the group at the IdP instead; it takes effect at their next sign-in or renewal. |
