@@ -303,7 +303,19 @@ def test_worker_runs_the_beat_scheduler() -> None:
 
 def test_worker_reaches_the_api_inside_the_cluster() -> None:
     env = {e["name"]: e.get("value") for e in _main_container("docsgpt-worker")["env"]}
-    assert env["API_URL"] == "http://docsgpt-api-service"
+    assert env["WORKER_API_URL"] == "http://docsgpt-api-service"
+
+
+@pytest.mark.parametrize("name", ["docsgpt-api", "docsgpt-worker"])
+def test_app_pods_preserve_the_public_api_url_from_the_secret(name: str) -> None:
+    container = _main_container(name)
+    assert {"secretRef": {"name": "docsgpt-secrets"}} in container["envFrom"]
+    # Explicit env entries override envFrom. Publishing the app must keep the
+    # browser-facing address on the worker too, where OAuth callbacks are built.
+    secret = dict(_secret_data(), API_URL="https://docs.example.com")
+    env = dict(secret)
+    env.update({e["name"]: e.get("value") for e in container["env"]})
+    assert env["API_URL"] == "https://docs.example.com"
 
 
 def test_images_are_pinned() -> None:

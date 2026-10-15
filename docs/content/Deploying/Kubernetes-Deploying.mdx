@@ -1,7 +1,7 @@
 ---
 title: Deploying DocsGPT on Kubernetes
 description: Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-11
 ---
 
 import { Callout } from 'nextra/components'
@@ -172,7 +172,7 @@ Keep `VECTOR_STORE: pgvector` with a shared volume.
 With no `AUTH_TYPE`, anyone who can reach DocsGPT uses it as the same user, with access to every conversation, source and connected service. Before you publish it:
 
 1. Set `AUTH_TYPE` in `docsgpt-secrets.yaml`. Use `oidc` for separate accounts, with `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_FRONTEND_URL` set to your public `https://` address; see [SSO with OIDC](/Deploying/OIDC-SSO) and the [Security checklist](/Deploying/Security).
-2. Set `API_URL` in `docsgpt-secrets.yaml` to the same public address, for example `https://docsgpt.example.com`. The API builds agent image URLs, agent webhook URLs, the device pairing address and the MCP OAuth callback from it. Unset, they point at `http://localhost:7091`, which works only through `port-forward`. The worker keeps its own in-cluster `API_URL` from `docsgpt-deploy.yaml`.
+2. Set `API_URL` in `docsgpt-secrets.yaml` to the same public address, for example `https://docsgpt.example.com`. The API builds agent image URLs, agent webhook URLs, the device pairing address and the MCP OAuth callback from it. Unset, they point at `http://localhost:7091`, which works only through `port-forward`. Both the API and worker inherit this public address. The worker uses `WORKER_API_URL: http://docsgpt-api-service` from `docsgpt-deploy.yaml` for internal index handoff, so its OAuth callbacks still use the public `API_URL`.
 3. Apply the secret and restart the pods, which read it only when they start:
 
    ```sh
