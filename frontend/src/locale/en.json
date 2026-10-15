@@ -3511,7 +3511,8 @@
         "approvalExpires": "An approval expires {{time}}",
         "next24h": "Next 24 hours",
         "nextAt": "Next at {{time}}, {{name}}",
-        "failed": "Failed, last 24 hours"
+        "failed": "Failed, last 24 hours",
+        "viewInHistory": "View in History"
       },
       "needsYou": "Needs you",
       "reconnect": "{{name}} needs reconnecting",

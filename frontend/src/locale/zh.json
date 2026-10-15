@@ -3479,7 +3479,8 @@
         "approvalExpires": "有一个批准将于{{time}}过期",
         "next24h": "未来 24 小时",
         "nextAt": "下一个：{{time}}，{{name}}",
-        "failed": "失败（过去 24 小时）"
+        "failed": "失败（过去 24 小时）",
+        "viewInHistory": "在历史中查看"
       },
       "needsYou": "需要你处理",
       "reconnect": "{{name}} 需要重新连接",

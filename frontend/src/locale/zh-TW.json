@@ -3480,7 +3480,8 @@
         "approvalExpires": "有一個核准將於{{time}}過期",
         "next24h": "未來 24 小時",
         "nextAt": "下一個：{{time}}，{{name}}",
-        "failed": "失敗（過去 24 小時）"
+        "failed": "失敗（過去 24 小時）",
+        "viewInHistory": "在歷史中查看"
       },
       "needsYou": "需要你處理",
       "reconnect": "{{name}} 需要重新連線",

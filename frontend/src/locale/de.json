@@ -3492,7 +3492,8 @@
         "approvalExpires": "Eine Freigabe läuft {{time}} ab",
         "next24h": "Nächste 24 Stunden",
         "nextAt": "Als Nächstes um {{time}}, {{name}}",
-        "failed": "Fehlgeschlagen, letzte 24 Stunden"
+        "failed": "Fehlgeschlagen, letzte 24 Stunden",
+        "viewInHistory": "Im Verlauf ansehen"
       },
       "needsYou": "Braucht dich",
       "reconnect": "{{name}} muss neu verbunden werden",

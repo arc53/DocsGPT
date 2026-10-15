@@ -143,7 +143,7 @@ const SNAPSHOT: NowSnapshot = {
   stats: { next_24h: 1, failed_24h: 1 },
 };
 
-const makeStore = () => {
+const makeStore = (snapshot: NowSnapshot = SNAPSHOT) => {
   const store = configureStore({
     reducer: {
       activity: activityReducer,
@@ -163,7 +163,7 @@ const makeStore = () => {
       schedules: (state = {}) => state,
     },
   });
-  store.dispatch(loadActivityNow.fulfilled(SNAPSHOT, 'req'));
+  store.dispatch(loadActivityNow.fulfilled(snapshot, 'req'));
   return store;
 };
 
@@ -185,10 +185,10 @@ describe('Now page', () => {
     container.remove();
   });
 
-  const render = async () => {
+  const render = async (snapshot?: NowSnapshot) => {
     await act(async () => {
       root.render(
-        <Provider store={makeStore()}>
+        <Provider store={makeStore(snapshot)}>
           <TooltipProvider>
             <MemoryRouter>
               <Now />
@@ -249,6 +249,18 @@ describe('Now page', () => {
       );
     });
     expect(stat('activity.now.stats.running')).toContain(String(rows + 1));
+  });
+
+  it('links the failed tile to History only when something failed', async () => {
+    const link = () =>
+      Array.from(container.querySelectorAll('p'))
+        .find((p) => p.textContent === 'activity.now.stats.failed')
+        ?.parentElement?.querySelector('a');
+    await render();
+    expect(link()?.getAttribute('href')).toBe('/activity/history');
+    expect(link()?.textContent).toBe('activity.now.stats.viewInHistory');
+    await render({ ...SNAPSHOT, stats: { next_24h: 1, failed_24h: 0 } });
+    expect(link()).toBeNull();
   });
 
   it('lists running work and what runs next', async () => {

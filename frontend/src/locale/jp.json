@@ -3480,7 +3480,8 @@
         "approvalExpires": "承認の期限: {{time}}",
         "next24h": "今後24時間",
         "nextAt": "次は {{time}}、{{name}}",
-        "failed": "失敗（過去24時間）"
+        "failed": "失敗（過去24時間）",
+        "viewInHistory": "履歴で表示"
       },
       "needsYou": "対応待ち",
       "reconnect": "{{name}} の再接続が必要です",

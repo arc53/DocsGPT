@@ -3492,7 +3492,8 @@
         "approvalExpires": "Una aprobación caduca {{time}}",
         "next24h": "Próximas 24 horas",
         "nextAt": "Siguiente a las {{time}}, {{name}}",
-        "failed": "Fallidas, últimas 24 horas"
+        "failed": "Fallidas, últimas 24 horas",
+        "viewInHistory": "Ver en el historial"
       },
       "needsYou": "Te necesita",
       "reconnect": "{{name}} necesita reconectarse",

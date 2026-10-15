@@ -3650,7 +3650,8 @@
         "approvalExpires": "Одобрение истекает {{time}}",
         "next24h": "Следующие 24 часа",
         "nextAt": "Далее в {{time}}: {{name}}",
-        "failed": "Сбои за 24 часа"
+        "failed": "Сбои за 24 часа",
+        "viewInHistory": "Открыть в истории"
       },
       "needsYou": "Ждёт вас",
       "reconnect": "{{name}}: нужно переподключить",

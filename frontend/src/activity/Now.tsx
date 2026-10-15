@@ -63,6 +63,7 @@ import { useActivitySummary } from './ActivityNavBadge';
 import { formatElapsed, formatRunTime, workflowStep } from './format';
 import {
   ACTIVITY_CALENDAR_PATH,
+  ACTIVITY_HISTORY_PATH,
   ACTIVITY_MONITORS_PATH,
   ACTIVITY_SCHEDULES_PATH,
 } from './paths';
@@ -706,6 +707,22 @@ export default function Now() {
             tone={snapshot.stats.failed_24h > 0 ? 'destructive' : 'default'}
             valueTone={
               snapshot.stats.failed_24h > 0 ? 'destructive' : undefined
+            }
+            sub={
+              snapshot.stats.failed_24h > 0 ? (
+                <Button
+                  variant="link"
+                  size="inline"
+                  asChild
+                  // eslint-disable-next-line shadcn/no-restyle -- keeps the tile's destructive tone at hint size
+                  className="text-destructive text-xs font-normal"
+                >
+                  <Link to={ACTIVITY_HISTORY_PATH}>
+                    {t('activity.now.stats.viewInHistory')}
+                    <ArrowRight aria-hidden className="size-3" />
+                  </Link>
+                </Button>
+              ) : undefined
             }
           />
         </div>
