@@ -101,6 +101,14 @@ class TestListUsers:
         assert [r["user_id"] for r in rows] == ["lu_a"]
 
 
+    def test_filter_matches_literally(self, pg_conn):
+        UsersRepository(pg_conn).upsert("lu_x1")
+        UsersRepository(pg_conn).upsert("luXx1")
+        total, rows = AdminStatsRepository(pg_conn).list_users("lu_x", 0, 200)
+        assert total == 1
+        assert [r["user_id"] for r in rows] == ["lu_x1"]
+
+
 class TestTopTokenUsers:
     def test_ordered_by_spend_desc(self, pg_conn):
         since = datetime.now(timezone.utc) - timedelta(days=30)

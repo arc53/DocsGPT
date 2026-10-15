@@ -55,8 +55,8 @@ def _no_extra_trust(monkeypatch):
     monkeypatch.setattr(settings, "API_URL", "https://api.example.org")
 
 
-def _agent(conn, *, restrict: bool, origins: list[str]) -> str:
-    key = f"key-{uuid.uuid4().hex}"
+def _agent(conn, *, restrict: bool, origins: list[str], key: str | None = None) -> str:
+    key = key or f"key-{uuid.uuid4().hex}"
     config = {"restrict_origins": restrict, "allowed_origins": origins}
     AgentsRepository(conn).create("owner", "widget", "published", key=key, config=config)
     return key
@@ -65,6 +65,12 @@ def _agent(conn, *, restrict: bool, origins: list[str]) -> str:
 @pytest.fixture
 def restricted(db) -> str:
     return _agent(db, restrict=True, origins=[ALLOWED])
+
+
+@pytest.fixture
+def restricted_uuid_key(db) -> str:
+    """A restricted agent whose key has a real key's shape, as a bearer token is read only then."""
+    return _agent(db, restrict=True, origins=[ALLOWED], key=str(uuid.uuid4()))
 
 
 @pytest.fixture
@@ -191,6 +197,13 @@ class TestWhereTheKeyTravels:
             "/api/artifacts",
             query_string=[("api_key", unrestricted), ("api_key", restricted)],
             headers={"Origin": OTHER},
+        )
+        assert resp.status_code == 403
+
+    def test_an_agent_key_shaped_bearer_outside_v1(self, client, restricted_uuid_key):
+        # The artifact routes accept an agent key as a bearer token.
+        resp = client.get(
+            "/api/artifacts", headers={"Authorization": f"Bearer {restricted_uuid_key}", "Origin": OTHER},
         )
         assert resp.status_code == 403
 
@@ -338,6 +351,18 @@ class TestOutsideFlask:
             )
         assert resp.status_code == 403
         assert resp.json() == {"success": False, "message": DENIED_MESSAGE}
+        load.assert_not_called()
+
+    def test_artifact_download_refuses_a_bearer_key_from_an_unlisted_origin(self, restricted_uuid_key):
+        from docsgpt.api.user.artifacts.download import artifact_download_routes
+
+        client = TestClient(Starlette(routes=artifact_download_routes))
+        with patch("docsgpt.api.user.artifacts.download._load_version") as load:
+            resp = client.get(
+                f"/api/artifacts/{uuid.uuid4()}/download",
+                headers={"Authorization": f"Bearer {restricted_uuid_key}", "Origin": OTHER},
+            )
+        assert resp.status_code == 403
         load.assert_not_called()
 
     def test_artifact_download_does_not_trust_a_forged_host(self, restricted):

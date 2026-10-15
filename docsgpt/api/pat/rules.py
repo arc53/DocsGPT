@@ -207,6 +207,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/<string:agent_id>/schedules", "POST"): _rule(
         "schedules:write", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Lists schedules of every agent, so a token limited to some agents can't use it.
+    ("/api/schedules", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs/<string:run_id>", "GET"): _rule(
@@ -270,6 +272,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/update_tool_status", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/delete_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/mcp_server/test", "POST"): _rule("tools:write", open=True),
+    # Cancels a sign-in the caller started; the route checks it is theirs.
+    ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
     # Models
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
@@ -354,6 +358,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/shared_agent": ("*",),
     "/api/shared_conversation/<string:identifier>": ("*",),
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
+    # Spans every chat, agent and run of the user, like conversations do.
+    "/api/activity/now": ("*",),
+    "/api/activity/planned": ("*",),
+    "/api/activity/history": ("*",),
+    "/api/messages/<string:message_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),

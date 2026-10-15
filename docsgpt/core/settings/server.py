@@ -32,7 +32,11 @@ class ServerSettings(SettingsGroup):
         ),
     )
     PUBLIC_API_BASE_URL: Optional[str] = Field(
-        default=None, description="Public base URL for user-facing endpoint references in prompts."
+        default=None,
+        description=(
+            "Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact "
+            "download URLs API responses carry (relative paths when unset)."
+        ),
     )
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = Field(
         default=30,

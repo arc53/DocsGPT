@@ -1,0 +1,95 @@
+---
+title: Activity
+description: See what runs in DocsGPT right now, what waits for you and what runs next, browse planned and past runs on a calendar and in a history list, stop a running answer, and read the status marks on sidebar chats.
+lastUpdated: 2026-10-15
+---
+
+import { Callout } from 'nextra/components'
+
+# Activity
+
+**Activity**, right under **New Chat** in the sidebar, shows the work DocsGPT does for you outside the chat you have open. The row shows how many things are running, and a dot while something needs you: amber for an approval or a connection to reconnect, red when a schedule paused itself after failing several runs in a row.
+
+Activity has these pages:
+
+- **Now**: what runs this minute, what waits for you and what runs next.
+- **Calendar**: planned and past runs over a day, a week or a month.
+- **History**: every finished run in one list.
+- **Schedules**: every schedule across your agents (see [Agent Schedules](/Agents/schedules#all-your-schedules-in-activity)).
+- **Monitors**: what the assistant is watching for you (see [Monitors](/Tools/monitors#managing-monitors)).
+
+## Now
+
+**Now** updates live and has four parts:
+
+- **Needs you** lists tool calls waiting for your approval (with when the approval expires), schedules that paused themselves after failing several runs in a row, and connections whose sign-in expired. **Review** opens the chat with the approval, **Resume** restarts the schedule and **Reconnect** opens **Settings → Connectors**. The section is hidden while nothing needs you.
+- **Running** lists chat answers being written in any of your chats, background jobs (code execution and other long tool calls), scheduled runs, webhook runs, workflow runs and knowledge being indexed, with how long each has run and its progress when there is one. A workflow run shows the step it is on, such as "step 3 of 5 · Draft reply", with a bar; a workflow that branches shows the step number without a total or bar. A workflow agent's run started from a chat, a schedule or a webhook shows on that row. Knowledge being indexed says whether it is an upload, a sync or a re-index, shows "reading the content" while its files are read and then how many chunks are embedded, and counts the time from when it was queued. Answers your agents are writing for API calls show as one row per agent, such as "API · 3 requests"; **Open** goes to that agent's Logs, which list each request. Filter it with **All**, **Chats**, **Automations** and **Knowledge**.
+- **Up next** lists the schedules and knowledge syncs due in the next 24 hours. An hourly schedule shows once, with how many times it runs. Syncs show as one row per frequency, such as "Daily sync · 4 sources", with the sources' names and how many need their connection reconnected before they can sync. A time already past shows as **Overdue**, which means the worker's scheduler (beat) is behind or not running.
+- **Watching** lists your active monitors.
+
+The cards on top count what is running, what needs you, the runs due in the next 24 hours, and the scheduled runs and background jobs that failed in the last 24 hours.
+
+### Stop a running answer
+
+**Stop** on a chat answer ends it from the Now page, as if you had stopped it in the chat: the answer keeps what it wrote so far. The answer stops within a few seconds, or, when it is inside a long tool call, as soon as that call returns. An answer stopped before it wrote anything shows a **Stopped** note in the chat instead of an error, and the chat isn't marked as failed. A client reading the answer from [`/stream`](/API/agent-api#sse-event-types) gets an `error` event with `code: "stopped"` as the last event. **Cancel** on a background job asks the job to stop, as the **Cancel** on its card in the chat does.
+
+<Callout type="info">
+Stopping an answer from another page needs Redis, which every DocsGPT install runs. Without it, **Stop** reports that it couldn't stop the answer; stop it in the chat instead.
+</Callout>
+
+## Calendar
+
+**Calendar** shows your schedules and knowledge syncs over time as a **Day**, **Week**, **Month** or **Agenda** (a list of days). A phone offers only **Month** and **Agenda**, and opens on **Agenda**. Use **Today** and the arrows to move, and filter by agent.
+
+- **Future slots** come from each schedule's repeat rule or one-time date. A paused schedule's slots are dashed: they will not run until you resume it.
+- **Past slots** show how the run went: green when it succeeded, red when it failed or timed out, dashed when it was skipped. A run in progress is blue.
+- **Missed slots** have an amber dashed border and the label **Missed**: a time an active schedule should have run but no run started, usually because the worker or its beat scheduler was down. They appear 10 minutes after the slot, and only since the schedule was created, its time last changed or it was last resumed, so changing a schedule's time doesn't leave old times behind. They also go back no further than runs are kept (`SCHEDULE_RUN_OUTPUT_RETENTION_DAYS`, 90 days by default): an older time with no run may well have run. A paused schedule's past times are never marked missed.
+- **Frequent schedules** (hourly or more often) are one tall block per day, such as **Inbox triage ×11**, instead of a slot per run. Select it to list the day's runs. When the range holds more than 1,000 of a schedule's runs, as a month of an hourly schedule does, the list sums up each status into one row with its time span and count, such as 00:00–23:00 with 24 runs. Failed and timed-out runs, and runs in progress, stay listed one by one so you can open them.
+- **Watching** shows each active monitor as a bar from when it was set up to when it expires. Month and Agenda list them as chips above the calendar instead. A monitor isn't drawn as slots: a page checked every 30 minutes would fill the week. The **Monitors** chip hides them.
+- **Knowledge syncs** are drawn at the time they run, one per frequency, such as **Daily sync** at 03:12 each day. They have their own grey dashed look and show a warning sign when a source needs its connection reconnected. Every source of a frequency syncs together when the worker's sync task for it runs; that time counts from when the scheduler first ran, not from a set time of day. Only coming syncs are shown, and none while the scheduler is more than 15 minutes behind or not running. The **Knowledge syncs** chip hides them, and the agent filter doesn't apply to them.
+
+Select a future slot to see when it runs and how it repeats, with **Run now** and **Open schedule**. Select a knowledge sync to see its sources, when each last synced and which need reconnecting, with **Open Knowledge**. Select a past slot to see that run's status, times, tokens, output and error, and **Open conversation** when the run wrote to one.
+
+The chips above the calendar turn parts of it on and off: **Monitors**, **Knowledge syncs** and **Hide past runs**, which leaves only what is still to come.
+
+<Callout type="info">
+The calendar shows times in your browser's time zone. A schedule's own time zone is in its details.
+</Callout>
+
+## History
+
+**History** lists finished runs of every kind, newest first and grouped by day: scheduled runs, webhook runs, workflow runs, background jobs, and the times a monitor, trigger link or approval link woke its chat. Each row shows when it ended, the agent or chat, what started it, its status, how long it took and its tokens (when the run records them).
+
+- Filter by kind (**Schedules**, **Webhooks**, **Workflows**, **Background**, **Monitor wakes**) and by status, or search the run, agent and chat names.
+- Select a scheduled run to see its details, a webhook or workflow run to see its execution trace, and a background job or monitor wake to open its chat.
+- A workflow agent's run started by a webhook or a schedule is listed once, as that webhook or scheduled run.
+
+Pick the last 7, 30 (the default) or 90 days. How far back each kind goes depends on how long it is kept, by default:
+
+- **Scheduled runs**: 90 days (`SCHEDULE_RUN_OUTPUT_RETENTION_DAYS`). Each schedule's 50 most recent runs stay in its run log however old they are.
+- **Webhook runs**: 30 days (`TRACES_RETENTION_DAYS`).
+- **Workflow runs**: not deleted, so they stay listed for the whole 90 days. Their execution trace is deleted after 30 days (`TRACES_RETENTION_DAYS`).
+- **Background jobs** and **monitor wakes**: 7 days (`BACKGROUND_RESULT_RETENTION_DAYS`).
+
+**Settings → Logs** stays the full technical log, with chats, searches and API calls too (see [Analytics and Logs](/Using/analytics-and-logs)).
+
+## Status marks on sidebar chats
+
+A chat in the sidebar shows at most one mark, the most urgent one. Hover over it to see every state the chat is in.
+
+| Mark | Means | Goes away when |
+| --- | --- | --- |
+| Red dot | Something failed while you were away: the last answer, or a background job | You open the chat |
+| Amber dot | A tool call waits for your approval | You approve or deny it, or it expires after 30 minutes |
+| Spinner | The chat is writing an answer or runs a background job | It finishes |
+| Purple dot | Something new arrived while you were away | You open the chat |
+| Hollow ring | The chat has an active [monitor](/Tools/monitors) | The monitor ends or is paused |
+
+## Over the API
+
+- `GET /api/activity/now` returns the Now page's running items, the approvals and paused schedules under **Needs you**, **Up next** and the 24-hour counts, plus the chats waiting for an approval or with a failure, for the sidebar marks. The page adds the rest itself: **Watching** comes from `GET /api/monitors` (see [Managing monitors](/Tools/monitors#managing-monitors)), and the connections to reconnect from your connections' state.
+- `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>&tz=<zone>` returns a calendar window of at most 62 days: `events`, `monitors` and `truncated`. Each event has a `kind`: `schedule` (planned slots with `state` `planned` or `paused`, missed slots with `missed`, and runs with their status and `run_id`) or `sync` (a frequency's coming sync, with its `frequency` and `sources`). `tz` is the IANA time zone days are split in, `UTC` by default; an unknown zone answers `400`. A frequent schedule (hourly or more often) with more than 1,000 events in the window is summed up per day: one event per day and state, with `count` (how many runs) and `until` (the last one's time), while failed, timed-out and running runs stay events of their own. `truncated` lists the ids of schedules whose events were cut short.
+- `GET /api/activity/history` returns one page of finished runs, newest first, as `runs` and `has_more`. It takes `kind` (`schedule`, `webhook`, `workflow`, `job` or `monitor`), `status` (`failed` includes timed-out runs), `q` to search names, `days` (default 30, at most 90), `limit` (default 50, at most 200) and `offset`.
+- `POST /api/messages/<message_id>/cancel` stops a running answer. It answers `202` once the stop is requested, `409` when the answer isn't running or waits for a tool approval, and `503` without Redis.
+
+All four take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.

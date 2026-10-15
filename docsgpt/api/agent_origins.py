@@ -3,12 +3,12 @@
 An agent's ``config.allowed_origins`` (on while ``config.restrict_origins`` is)
 limits which websites can call it with its key. The key is accepted in many
 places (a JSON or form ``api_key``, an ``api_key`` query parameter, the ``/v1``
-and ``/mcp`` bearer token), so the check runs once per request rather than in
-each route: :func:`enforce_agent_origin` is a Flask ``before_request`` hook,
-and the two ASGI-only entry points, the MCP tool and the artifact download,
-call :func:`origin_refusal` themselves. A view that reads the raw body
-itself is marked with :func:`reads_raw_body`, and the hook leaves its body
-unread.
+and ``/mcp`` bearer token, an artifact route's bearer token), so the check
+runs once per request rather than in each route: :func:`enforce_agent_origin`
+is a Flask ``before_request`` hook, and the two ASGI-only entry points, the
+MCP tool and the artifact download, call :func:`origin_refusal` themselves. A
+view that reads the raw body itself is marked with :func:`reads_raw_body`,
+and the hook leaves its body unread.
 
 The ``Origin`` header is set by browsers, so this keeps other websites from
 embedding a key, not a script that sets its own header. A request with no
@@ -143,6 +143,8 @@ def origin_refusal(api_keys: Iterable[Optional[str]], headers: Mapping[str, str]
 
 def _flask_request_keys() -> list[str]:
     """Every agent key the current Flask request carries, wherever a route may read it."""
+    from docsgpt.api.user.artifacts.authz import bearer_agent_key
+
     keys = request.args.getlist("api_key")
     if not _view_reads_raw_body():
         if request.mimetype in _FORM_MIMETYPES:
@@ -151,11 +153,13 @@ def _flask_request_keys() -> list[str]:
             body = request.get_json(silent=True)
             if isinstance(body, dict):
                 keys.append(body.get("api_key"))
-    # Elsewhere a bearer token is a user's session or access token, never an agent key.
-    if request.path.startswith("/v1/"):
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            keys.append(auth[7:])
+    # On ``/v1`` the bearer token is the agent key. Elsewhere it is one only
+    # when it has an agent key's shape (the artifact routes accept one), never
+    # a user's session or access token.
+    auth = request.headers.get("Authorization", "")
+    if request.path.startswith("/v1/") and auth.startswith("Bearer "):
+        keys.append(auth[7:])
+    keys.append(bearer_agent_key(request.headers))
     return [key for key in keys if isinstance(key, str)]
 
 

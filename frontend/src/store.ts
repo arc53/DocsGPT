@@ -1,5 +1,8 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import activityReducer, {
+  activityListenerMiddleware,
+} from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
@@ -84,12 +87,14 @@ const store = configureStore({
     connectors: connectorsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,
+    activity: activityReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
       backgroundListenerMiddleware.middleware,
+      activityListenerMiddleware.middleware,
     ),
 });
 

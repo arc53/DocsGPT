@@ -151,6 +151,13 @@ def test_resolve_session_id_prefers_conversation_then_run():
     assert none._resolve_session_id() is None
 
 
+def test_resolve_session_id_falls_back_to_the_agent_run():
+    run = CodeExecutorTool({"run_scope_id": "agent-run-1"}, user_id="u")
+    assert run._resolve_session_id() == "agent-run-1"
+    conv = CodeExecutorTool({"conversation_id": "conv-1", "run_scope_id": "agent-run-1"}, user_id="u")
+    assert conv._resolve_session_id() == "conv-1"
+
+
 def test_resolve_session_id_sanitizes_disallowed_chars():
     tool = CodeExecutorTool({"conversation_id": "../evil id;rm"}, user_id="u")
     sid = tool._resolve_session_id()
@@ -372,6 +379,19 @@ def test_execute_action_requires_user_and_parent():
     no_parent = CodeExecutorTool({}, user_id="u")
     out2 = no_parent.execute_action("run_code", code="print(1)")
     assert out2["status"] == "error" and "conversation_id" in out2["error"]
+
+
+def test_an_agent_run_without_a_conversation_runs_code_but_saves_no_files(monkeypatch):
+    """A scheduled or webhook run has no conversation to attach files to, so none are captured."""
+    from docsgpt.agents.tools import code_executor as ce
+
+    manager = _FakeManager(ExecResult(status="ok", stdout="3.12"))
+    monkeypatch.setattr(ce.SandboxCreator, "get_manager", lambda: manager)
+    tool = CodeExecutorTool({"run_scope_id": "agent-run-1", "tool_id": "t1"}, user_id="u")
+    payload = tool.execute_action("run_code", code="print(1)")
+    assert payload["status"] == "ok"
+    assert manager.opened[0][0] == "agent-run-1"
+    assert manager.list_calls == 0
 
 
 # ---------------------------------------------------------------------------

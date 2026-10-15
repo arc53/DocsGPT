@@ -42,13 +42,15 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
 | Event | Kind | What the agent does |
 | --- | --- | --- |
 | Issue opened or reopened | `issue_opened` | Scores usefulness, clarity and spam; labels; asks for missing details, links a duplicate, or redirects a vulnerability report to private reporting; closes spam at 0.95+ |
-| Comment asking to work on an issue | `issue_claim` | Assigns the first person who asks; reassigns when the current assignment is stale; declines when someone already has a PR or the claimant is over-committed (2 open assignments, counting claims they made elsewhere in the last 30 minutes, or 3 open PRs) |
+| Comment asking to work on an issue | `issue_claim` | Assigns the first person who asks; an author who answered "willing to submit a PR" in the issue form counts as the first. Reassigns when the current assignment is stale; declines when someone already has a PR, a merged PR already fixes it, or the claimant is over-committed (2 open assignments, counting claims they made elsewhere in the last 30 minutes, or 3 open PRs) |
 | Issue author replies to `needs-info` | `issue_author_reply` | Removes `needs-info` when answered |
 | PR opened or ready | `pr_opened` | Quick pass: `needs-screenshot`, `heavy-dependency`, competing PRs, spam |
-| CodeRabbit or CI finished | `pr_review` | Verdict `ready`, `changes_needed`, `not_a_fit` or `spam`; one review comment per PR, rewritten on each new commit; `waiting-on-author` / `maintainer-review` |
+| CodeRabbit or CI finished | `pr_review` | Verdict `ready`, `changes_needed`, `not_a_fit` or `spam`; a new review comment when the verdict or the open items change; `waiting-on-author` / `maintainer-review`; Telegram only when a maintainer has to act and the verdict changed. Skipped when the only new commits merge the base branch in |
+| Comment that @-mentions the bot | `issue_mention`, `pr_mention` | Replies on the issue or PR; a maintainer's mention is a request it carries out, like a chat |
 | Daily schedule | `stale_sweep` | `stale` after 14 idle days waiting on the author, closes 30 days later, frees assignments idle for 30 days |
 
-Maintainers' comments and PRs, and anything a bot opens or comments, are skipped. Issues
+Maintainers' comments and PRs, and anything a bot opens or comments, are skipped, except a
+maintainer's comment that @-mentions the bot. Issues
 maintainers open are triaged too (labels, duplicates, the Telegram report) but get no comment.
 Maintainers are the logins in the `TRIAGE_MAINTAINERS` variable (default: the list in
 `relay.py`) plus anyone GitHub reports as owner, member or collaborator; org membership is

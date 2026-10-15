@@ -20,6 +20,7 @@ from urllib.parse import urljoin, urlsplit
 import requests
 
 from docsgpt import tracing
+from docsgpt.activity.flags import mark_ingest_running
 from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
@@ -280,6 +281,63 @@ def _start_ingest_heartbeat(source_id):
     )
     thread.start()
     return thread, stop_event
+
+
+def _celery_will_retry(task: Any, error: Optional[BaseException]) -> bool:
+    """Whether Celery's autoretry runs ``task`` again after ``error``.
+
+    Mirrors ``celery.app.autoretry``: an error in ``autoretry_for`` and not
+    in ``dont_autoretry_for``, with attempts left. Anything it can't read
+    (a direct call, a test double) counts as the last attempt.
+
+    Args:
+        task: The bound Celery task (the worker's ``self``).
+        error: The error the attempt failed with.
+
+    Returns:
+        True when another attempt follows.
+    """
+    retries = getattr(getattr(task, "request", None), "retries", None)
+    max_retries = getattr(task, "max_retries", None)
+    if error is None or not isinstance(retries, int) or not isinstance(max_retries, int):
+        return False
+    if retries >= max_retries:
+        return False
+    autoretry_for = getattr(task, "autoretry_for", ())
+    dont_autoretry_for = getattr(task, "dont_autoretry_for", ())
+    if not isinstance(autoretry_for, tuple) or not isinstance(dont_autoretry_for, tuple):
+        return False
+    return isinstance(error, autoretry_for) and not isinstance(error, dont_autoretry_for)
+
+
+def close_failed_ingest_progress(
+    source_id: Optional[str],
+    *,
+    task: Any = None,
+    error: Optional[BaseException] = None,
+) -> None:
+    """Close a failed ingest's progress row before ``source.ingest.failed`` goes out.
+
+    The pages refetch on that event; left ``active``, the row would show
+    as in flight (Activity › Now, the sources list) until the reconciler's
+    stalled sweep. A failure Celery will retry leaves the row open: the
+    source is still being ingested, and a closed row reads as failed (the
+    sources list, the wiki-convert guard) through the retry wait. Best
+    effort: a failure here is logged, never raised over the ingest's own
+    error.
+
+    Args:
+        source_id: The source whose ingest failed; ``None`` does nothing.
+        task: The bound Celery task, to tell a retried attempt from the last.
+        error: The error the attempt failed with.
+    """
+    if not source_id or _celery_will_retry(task, error):
+        return
+    try:
+        with db_session() as conn:
+            IngestChunkProgressRepository(conn).mark_failed(str(source_id))
+    except Exception:
+        logging.warning("Could not close the progress row of %s", source_id, exc_info=True)
 
 
 def _stop_ingest_heartbeat(thread, stop_event):
@@ -655,18 +713,22 @@ def ingest_worker(
     # Only emit ``queued`` on the original attempt. Celery retries re-run
     # the body, and re-publishing here would oscillate the toast through
     # ``queued`` again between ``failed`` and ``completed``.
+    queued = {
+        "job_name": job_name,
+        "filename": filename,
+        "source_id": source_id_for_events,
+        "operation": "upload",
+    }
     if self.request.retries == 0:
         publish_user_event(
             user,
             "source.ingest.queued",
-            {
-                "job_name": job_name,
-                "filename": filename,
-                "source_id": source_id_for_events,
-                "operation": "upload",
-            },
+            queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
+    else:
+        # The failed attempt before cleared the Activity marker.
+        mark_ingest_running(user, queued)
 
     # Wrap the entire body in try/except so a failure between the
     # ``queued`` publish above and the inner work (e.g. tempdir
@@ -838,6 +900,7 @@ def ingest_worker(
             _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -916,19 +979,23 @@ def reingest_source_worker(self, source_id, user):
         # conditions also imply broader system trouble. Gate on first
         # attempt only so Celery retries don't re-emit ``queued`` after
         # a prior attempt already published ``failed``.
+        queued = {
+            "source_id": source_id,
+            "name": source_name,
+            # ``filename`` labels the upload toast on auto-create.
+            "filename": source_name,
+            "operation": "reingest",
+        }
         if self.request.retries == 0:
             publish_user_event(
                 user,
                 "source.ingest.queued",
-                {
-                    "source_id": source_id,
-                    "name": source_name,
-                    # ``filename`` labels the upload toast on auto-create.
-                    "filename": source_name,
-                    "operation": "reingest",
-                },
+                queued,
                 scope={"kind": "source", "id": source_id},
             )
+        else:
+            # The failed attempt before cleared the Activity marker.
+            mark_ingest_running(user, queued)
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
@@ -1234,6 +1301,7 @@ def reingest_source_worker(self, source_id, user):
 
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -1290,18 +1358,22 @@ def remote_worker(
     # ``update_state``) so the toast UI always sees a queued envelope
     # before any subsequent failed event. Gated on first attempt so
     # Celery retries don't re-emit ``queued`` after a prior ``failed``.
+    queued = {
+        "source_id": source_id_for_events,
+        "job_name": name_job,
+        "loader": loader,
+        "operation": operation_mode,
+    }
     if self.request.retries == 0:
         publish_user_event(
             user,
             "source.ingest.queued",
-            {
-                "source_id": source_id_for_events,
-                "job_name": name_job,
-                "loader": loader,
-                "operation": operation_mode,
-            },
+            queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
+    else:
+        # The failed attempt before cleared the Activity marker.
+        mark_ingest_running(user, queued)
 
     # Wrap ``update_state`` plus the entire body so any pre-loader
     # failure (Celery backend down, OS resource issue) still emits a
@@ -1479,6 +1551,7 @@ def remote_worker(
         _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -3440,6 +3513,15 @@ def agent_webhook_worker(self, agent_id, payload):
     self.update_state(state="PROGRESS", meta={"current": 50})
     from celery.exceptions import SoftTimeLimitExceeded
 
+    # A webhook run has no row until it ends: mark it for Activity › Now.
+    owner_id = agent_config.get("user_id")
+    run_id = getattr(getattr(self, "request", None), "id", None)
+    # Walks the whole payload, which can be tens of thousands of characters.
+    retrieval_query = _webhook_retrieval_query(payload)
+    _mark_webhook_run(
+        owner_id, run_id, agent_config, started=True,
+        summary=retrieval_query[:_WEBHOOK_SUMMARY_MAX_CHARS],
+    )
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
@@ -3448,10 +3530,10 @@ def agent_webhook_worker(self, agent_id, payload):
         outcome = run_agent_headless(
             agent_config,
             input_data,
-            retrieval_query=_webhook_retrieval_query(payload),
+            retrieval_query=retrieval_query,
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
-            request_id=getattr(getattr(self, "request", None), "id", None),
+            request_id=run_id,
         )
         result = {
             "answer": outcome.get("answer", ""),
@@ -3479,7 +3561,56 @@ def agent_webhook_worker(self, agent_id, payload):
         )
         return {"status": "success", "result": result}
     finally:
+        _mark_webhook_run(owner_id, run_id, agent_config, started=False)
         self.update_state(state="PROGRESS", meta={"current": 100})
+
+
+# How much of a webhook run's text its Activity marker keeps for the Logs row.
+_WEBHOOK_SUMMARY_MAX_CHARS = 200
+
+
+def _mark_webhook_run(
+    owner_id: Any, run_id: Any, agent_config: dict, *, started: bool, summary: Optional[str] = None
+) -> None:
+    """Add or remove a webhook run's Activity marker and tell open pages.
+
+    Best-effort: a failure here never touches the run.
+
+    Args:
+        owner_id: The agent's owner, whose Activity lists the run.
+        run_id: The Celery task id.
+        agent_config: The agent row.
+        started: True when the run starts, False when it ends.
+        summary: What the run is about (the payload's human-written text),
+            shown on its Logs row while it runs.
+    """
+    if not owner_id or not run_id:
+        return
+    try:
+        from docsgpt.activity.flags import mark_run_finished, mark_run_started
+        from docsgpt.events.publisher import publish_user_event
+
+        if started:
+            mark_run_started(
+                str(owner_id),
+                str(run_id),
+                {
+                    "kind": "webhook",
+                    "agent_id": str(agent_config.get("id") or ""),
+                    "agent_name": agent_config.get("name"),
+                    "summary": summary,
+                },
+                ttl_seconds=int(settings.WEBHOOK_RUN_TIMEOUT) + 60,
+            )
+        else:
+            mark_run_finished(str(owner_id), str(run_id))
+        publish_user_event(
+            str(owner_id),
+            "activity.updated",
+            {"kind": "webhook", "run_id": str(run_id), "running": started},
+        )
+    except Exception:
+        logging.exception("webhook: Activity marker update failed for %s", run_id)
 
 
 # Fields a person writes, in the order they best say what an event is about.
@@ -3594,6 +3725,74 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
             )
     except Exception:
         logging.warning("Could not link source %s to connection %s", source_id, connection_id, exc_info=True)
+
+
+def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
+    """Combine a connector's selection fingerprint with the source's processing settings.
+
+    Changing the chunking or retrieval settings changes the result, so the
+    next sync re-ingests even when no file changed.
+
+    Args:
+        selection_fingerprint: The loader's fingerprint of the selected files, or ``None``.
+        config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+
+    Returns:
+        A hex digest, or ``None`` when the loader gave no fingerprint.
+    """
+    if not selection_fingerprint:
+        return None
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError:
+            # Not JSON: hash the raw string, which still changes when the settings do.
+            pass
+    payload = json.dumps({"selection": selection_fingerprint, "config": config or {}}, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _connector_selection_unchanged(
+    loader: Any, source_config: Dict[str, Any], config: Any, source_id: str, user: str
+) -> bool:
+    """Whether a connector source's selection matches the fingerprint stored at its last ingest.
+
+    Any doubt (no stored fingerprint, a loader without one, an error reading
+    either) answers ``False``, so the sync re-ingests as before.
+
+    Args:
+        loader: The connector loader the sync would download with.
+        source_config: The stored selection (``file_ids``, ``folder_ids``, ``recursive``).
+        config: The source's ``SourceConfig`` dict, or ``None``.
+        source_id: The source being synced.
+        user: The source's owner.
+    """
+    try:
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        remote_data = (source or {}).get("remote_data")
+        if isinstance(remote_data, str):
+            remote_data = json.loads(remote_data)
+        previous = remote_data.get("sync_fingerprint") if isinstance(remote_data, dict) else None
+        if not previous:
+            return False
+        current = _connector_sync_fingerprint(loader.sync_fingerprint(source_config), config)
+    except Exception:
+        logging.warning("Could not check source %s for changes; syncing it in full", source_id, exc_info=True)
+        return False
+    return current == previous
+
+
+def _mark_source_synced(source_id: str, user: str) -> None:
+    """Record that a source was synced just now, without changing its index."""
+    try:
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            source = repo.get_any(source_id, user)
+            if source is not None:
+                repo.update(str(source["id"]), user, {"date": datetime.datetime.now(datetime.timezone.utc)})
+    except Exception:
+        logging.warning("Failed to update last_sync for source %s", source_id, exc_info=True)
 
 
 def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
@@ -3731,18 +3930,22 @@ def ingest_connector(
     # First-attempt gate: Celery retries re-run the body, and a
     # repeated ``queued`` here would oscillate the toast through
     # ``queued`` again between ``failed`` and ``completed``.
+    queued = {
+        "source_id": source_id_for_events,
+        "job_name": job_name,
+        "loader": source_type,
+        "operation": operation_mode,
+    }
     if self.request.retries == 0:
         publish_user_event(
             user,
             "source.ingest.queued",
-            {
-                "source_id": source_id_for_events,
-                "job_name": job_name,
-                "loader": source_type,
-                "operation": operation_mode,
-            },
+            queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
+    else:
+        # The failed attempt before cleared the Activity marker.
+        mark_ingest_running(user, queued)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -3773,6 +3976,35 @@ def ingest_connector(
                 "folder_ids": folder_ids or [],
                 "recursive": recursive,
             }
+
+            # A sync whose selection has not changed since the last ingest
+            # (same files, same modified times, same settings) keeps the
+            # index it has instead of downloading and embedding it again.
+            if operation_mode == "sync" and doc_id and _connector_selection_unchanged(
+                remote_loader, api_source_config, config, source_id_for_events, user
+            ):
+                logging.info(f"No changes in {source_type} source {source_id_for_events}; sync skipped")
+                _mark_source_synced(source_id_for_events, user)
+                publish_user_event(
+                    user,
+                    "source.ingest.completed",
+                    {
+                        "source_id": source_id_for_events,
+                        "job_name": job_name,
+                        "loader": source_type,
+                        "operation": operation_mode,
+                        "tokens": 0,
+                        "no_changes": True,
+                    },
+                    scope={"kind": "source", "id": source_id_for_events},
+                )
+                return {
+                    "user": user,
+                    "name": job_name,
+                    "type": source_type,
+                    "id": source_id_for_events,
+                    "status": "unchanged",
+                }
 
             # Step 2: Download files to temp directory
             self.update_state(
@@ -3882,6 +4114,15 @@ def ingest_connector(
 
             tokens = count_tokens_docs(docs)
 
+            # The fingerprint lets the next sync skip an unchanged selection.
+            # It is left out when a file failed, so that sync tries again.
+            remote_data = {"provider": source_type, **api_source_config}
+            sync_fingerprint = _connector_sync_fingerprint(
+                download_info.get("sync_fingerprint"), config
+            )
+            if sync_fingerprint:
+                remote_data["sync_fingerprint"] = sync_fingerprint
+
             # Step 6: Upload index files
             file_data = {
                 "user": user,
@@ -3890,9 +4131,7 @@ def ingest_connector(
                 "retriever": retriever,
                 "id": source_id_for_events,
                 "type": "connector:file",
-                "remote_data": json.dumps(
-                    {"provider": source_type, **api_source_config}
-                ),
+                "remote_data": json.dumps(remote_data),
                 "directory_structure": json.dumps(directory_structure),
                 "sync_frequency": sync_frequency,
             }
@@ -3953,6 +4192,7 @@ def ingest_connector(
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",

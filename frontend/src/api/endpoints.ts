@@ -181,6 +181,7 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
+    MCP_OAUTH_CANCEL: '/api/mcp_server/oauth_cancel',
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
@@ -209,6 +210,13 @@ const endpoints = {
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
+    ACTIVITY_NOW: '/api/activity/now',
+    ACTIVITY_HISTORY: (params: string) => `/api/activity/history?${params}`,
+    ACTIVITY_PLANNED: (from: string, to: string, tz: string) =>
+      `/api/activity/planned?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&tz=${encodeURIComponent(tz)}`,
+    MESSAGE_CANCEL: (messageId: string) =>
+      `/api/messages/${encodeURIComponent(messageId)}/cancel`,
+    USER_SCHEDULES: '/api/schedules',
     AGENT_SCHEDULES: (agentId: string) => `/api/agents/${agentId}/schedules`,
     AGENT_SCHEDULE_STATS: (agentId: string, days?: number) =>
       `/api/agents/${agentId}/schedules/stats?days=${days ?? 30}`,

@@ -627,3 +627,66 @@ class TestMCPOAuthCallbackIssuer:
         manager.handle_oauth_callback.assert_called_once_with(
             "s", "c", None, iss="https://mcp.linear.app",
         )
+
+
+class TestMCPOAuthCancel:
+    def _post(self, app, body, user="user1"):
+        from docsgpt.api.user.tools.mcp import MCPOAuthCancel
+
+        with app.test_request_context("/api/mcp_server/oauth_cancel", method="POST", json=body):
+            from flask import request
+
+            request.decoded_token = {"sub": user} if user else None
+            return MCPOAuthCancel().post()
+
+    def test_cancels_the_callers_sign_in(self, app):
+        manager = MagicMock()
+        manager.cancel.return_value = True
+        with patch("docsgpt.api.user.tools.mcp.get_redis_instance", return_value=MagicMock()), \
+                patch("docsgpt.api.user.tools.mcp.MCPOAuthManager", return_value=manager):
+            response = self._post(app, {"task_id": "task-1"})
+
+        assert response.status_code == 200
+        manager.cancel.assert_called_once_with("task-1", "user1")
+
+    def test_someone_elses_sign_in_is_not_found(self, app):
+        manager = MagicMock()
+        manager.cancel.return_value = False
+        with patch("docsgpt.api.user.tools.mcp.get_redis_instance", return_value=MagicMock()), \
+                patch("docsgpt.api.user.tools.mcp.MCPOAuthManager", return_value=manager):
+            response = self._post(app, {"task_id": "task-1"}, user="mallory")
+
+        assert response.status_code == 404
+
+    def test_requires_a_task_id(self, app):
+        response = self._post(app, {})
+
+        assert response.status_code == 400
+
+    def test_requires_sign_in(self, app):
+        response = self._post(app, {"task_id": "task-1"}, user=None)
+
+        assert response.status_code == 401
+
+    def test_the_test_route_records_who_started_the_sign_in(self, app):
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
+
+        mock_mcp_tool = MagicMock()
+        mock_mcp_tool.test_connection.return_value = {"requires_oauth": True, "task_id": "task-1"}
+        manager = MagicMock()
+        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=mock_mcp_tool), \
+                patch("docsgpt.api.user.tools.mcp.get_redis_instance", return_value=MagicMock()), \
+                patch("docsgpt.api.user.tools.mcp.MCPOAuthManager", return_value=manager):
+            with app.test_request_context(
+                "/api/mcp_server/test",
+                method="POST",
+                json={"config": {"server_url": "https://example.com/mcp", "transport_type": "http",
+                                 "auth_type": "oauth"}},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = TestMCPServerConfig().post()
+
+        assert response.json["task_id"] == "task-1"
+        manager.register_task.assert_called_once_with("task-1", "user1")

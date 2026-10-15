@@ -1,7 +1,7 @@
 ---
 title: Realtime Events & Notifications
 description: Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -43,7 +43,7 @@ data: {"type":"source.ingest.completed","ts":"2026-06-20T16:13:20.000Z","user_id
 | `type` | The event type (table below). |
 | `ts` | When the event was published (UTC, ISO 8601). |
 | `user_id`, `topic` | The user the event is for, and its internal channel name. |
-| `scope` | What the event is about: `kind` (`source`, `attachment`, `conversation`, `schedule`, `connection`, `mcp_oauth`, `team`, `resource`) and `id`. Match on it to tell events for different items apart. |
+| `scope` | What the event is about: `kind` (`source`, `attachment`, `conversation`, `schedule`, `monitor`, `job`, `user`, `connection`, `mcp_oauth`, `team`, `resource`) and `id`. Match on it to tell events for different items apart. Some events have an empty scope. |
 | `payload` | Event-specific fields. |
 | `id` | The same id as the `id:` line; your cursor for reconnecting. |
 
@@ -63,10 +63,18 @@ Event types:
 | `tool.approval.cleared` | conversation | A pending approval is gone: it expired, or the paused turn failed. | `conversation_id`, `reason` (`expired` or `failed`) |
 | `connection.reconnect_needed` | connection | A connected account needs signing in again. | `connection_id`, `connector_key`, `name`, `source_count`, `tool_count` |
 | `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect`, `mcp.oauth.completed`, `mcp.oauth.failed` | mcp_oauth (`id` is the OAuth task id) | An MCP server's OAuth sign-in progressed. | `task_id` on every event; `message` on `in_progress` and `awaiting_redirect`; the `authorization_url` to open on `awaiting_redirect`; `tools` and `tools_count` on `completed`; `error` on `failed` |
+| `message.started`, `message.finished` | conversation | A chat answer started, or it ended (finished, failed or stopped). Sent only for chats listed in your sidebar, not for API, `/v1` or shared-agent answers. | `conversation_id`, `message_id` |
+| `job.updated` | conversation (`job` without a conversation) | A [background job](/Tools/background-jobs) changed status or progress. | `job_id`, `conversation_id`, `status`, `progress`, `tool_name`, `action_name`, `status_message`, `notices` |
+| `conversation.continued` | conversation | A finished background job, a monitor, a trigger link or an approval link added a turn to a conversation. | `conversation_id`, `message_id`, `source` |
+| `notification.created` | conversation (`user` without a conversation) | Something happened in a conversation you aren't looking at; the web app shows it as a toast. | `kind`, `title`, `body`, `url`, `conversation_id` |
+| `monitor.updated` | monitor | A [monitor](/Tools/monitors) was checked, woke the agent, paused or ended. | `monitor_id`, `status`, `wakes_left`, `last_checked_at`, `conversation_id`, `check_count`, `last_error`, `paused_reason` |
+| `schedule.run.started` | schedule | A scheduled run started. | `run_id`, `schedule_id`, `agent_id`, `trigger_type`, `status` (`running`) |
 | `schedule.run.completed`, `schedule.run.failed` | schedule | A scheduled run finished. | `run_id`, `schedule_id`, `agent_id`, `status`, and `error_type`/`error` on failure |
 | `schedule.autopaused` | schedule | A schedule paused itself after repeated failures. | `run_id`, `schedule_id`, `consecutive_failure_count` |
 | `schedule.completed`, `schedule.resumed`, `schedule.cancelled` | schedule | A schedule's status changed. | `schedule_id`, `status` |
 | `schedule.message.appended` | conversation | A scheduled run added a message to a conversation. | `conversation_id`, `message_id`, `schedule_id`, `run_id` |
+| `activity.updated` | | A webhook run started or ended. | `kind` (`webhook`), `run_id`, `running` |
+| `workflow.run.step` | | A workflow run you started began a step. | `workflow_run_id`, `workflow_id`, `progress`: `done` (steps finished), `total` (`null` when the workflow branches), `current` (`node_id`, `title`, `type`, `started_at`) |
 | `team.member_added` | team | You were added to a team. | `team_id`, `team_name`, `role`, `added_by` |
 | `resource.shared` | resource | Something was shared with you through a team. | `resource_type`, `resource_id`, `resource_name`, `access_level`, `team_id`, `team_name`, `shared_by` |
 | `backlog.truncated` | | Your `Last-Event-ID` is older than what a replay can return (past `EVENTS_STREAM_MAXLEN` or `EVENTS_REPLAY_MAX_AGE_HOURS`) or is malformed. Clear your cursor and refetch state. | `oldest_retained_id` (empty for a malformed cursor) |

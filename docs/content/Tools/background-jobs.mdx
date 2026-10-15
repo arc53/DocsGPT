@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Auto-Resume
 description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components';
@@ -186,7 +186,7 @@ conversation, the user is notified according to where they are:
 3. **No tab open**: a Web Push notification to the browsers the user turned it on in, if the operator set it
    up (below).
 
-Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it.
+Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
 
 Tabs report what they show to `POST /api/presence` (`{tab_id, conversation_id, visible, closing?}`) when their
 route or visibility changes and every 20 seconds while visible; a report counts for 45 seconds, and a closing
