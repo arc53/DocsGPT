@@ -268,7 +268,7 @@ export const ARTIFACT_CARD_SLOTS = 4;
 /**
  * An answer's artifact cards: two columns once its own column fits two
  * (a container query, so a narrow column such as the builder preview stacks
- * them on any screen), one below that, at most 768px wide.
+ * them on any screen), one below that, across the full answer column.
  *
  * Args:
  *   items: The cards, in the order to show them.
@@ -304,7 +304,7 @@ export function ArtifactCardList({
     // a definite width, or the cards' height is laid out as if stacked.
     <div className="w-full min-w-0">
       <div className={cn('@container', className)}>
-        <ul className="grid max-w-3xl grid-cols-1 gap-2 @min-[33rem]:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-2 @min-[33rem]:grid-cols-2">
           {shown.map((item) => (
             <li key={item.id} className="min-w-0">
               <ArtifactCard
