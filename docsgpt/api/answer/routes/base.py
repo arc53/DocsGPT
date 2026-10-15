@@ -758,6 +758,9 @@ class BaseAnswerResource:
         stop_asked = threading.Event()
         # Whether ``message.started`` went out, so ``message.finished`` pairs it.
         started_published = False
+        # Whether the turn's Logs entry is written: a Stop landing on the last
+        # frame must not write a second one.
+        turn_logged = False
         event_user_id = (decoded_token or {}).get("sub")
 
         def _mark_streaming_once() -> None:
@@ -1660,6 +1663,7 @@ class BaseAnswerResource:
                 error=stream_error,
                 extra=extra,
             )
+            turn_logged = True
 
             yield _emit({"type": "end"})
             # Drain the journal buffer so the terminal ``end`` event is
@@ -1885,7 +1889,7 @@ class BaseAnswerResource:
             # A Stop is the user's own end of the turn: it keeps its Logs
             # entry, as a turn that runs out or fails does. A dropped
             # connection writes none.
-            if reserved_message_id is not None and (
+            if not turn_logged and reserved_message_id is not None and (
                 isinstance(stream_exit, StreamStopped) or stop_requested(reserved_message_id)
             ):
                 self._persist_turn_log(

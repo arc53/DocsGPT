@@ -223,6 +223,37 @@ class TestStopFromActivity:
         assert kwargs["extra"] == {"stopped": True}
         assert kwargs.get("error") is None
 
+    def test_a_stop_on_the_last_frame_logs_the_turn_once(self, mock_mongo_db, flask_app):
+        # The answer finished and was logged; the Stop lands as the stream
+        # yields its final frame. That close must not log the turn again.
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            resource.conversation_service = _service()
+            agent = MagicMock()
+            agent.gen.side_effect = _chatty(chunks=3, gap=0)
+            with patch.object(base_mod, "stop_requested", return_value=True), patch.object(
+                base_mod, "clear_stop"
+            ), patch.object(base_mod, "publish_user_event"), patch.object(
+                BaseAnswerResource, "_persist_turn_log"
+            ) as logged:
+                stream = resource.complete_stream(
+                    question="q",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_persist=True,
+                    visibility="listed",
+                )
+                for frame in stream:
+                    if _frame_type(frame) == "end":
+                        stream.close()
+                        break
+        assert logged.call_count == 1
+
     def test_a_dropped_connection_writes_no_logs_entry(self, mock_mongo_db, flask_app):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
