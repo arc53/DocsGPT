@@ -32,6 +32,7 @@ import { showActionToast } from '../notifications/actionToastSlice';
 import type { AppDispatch } from '../store';
 import { intlLocale } from '../utils/dateTimeUtils';
 import { selectActivityRevision } from './activitySlice';
+import { agentOptions } from './calendar/agentFilter';
 import AgendaList from './calendar/AgendaList';
 import { addDays, stepAnchor, viewWindow } from './calendar/dates';
 import EventPanel from './calendar/EventPanel';
@@ -83,6 +84,11 @@ export default function Calendar() {
   const [view, setView] = useState<CalendarView>(isMobile ? 'agenda' : 'week');
   const [anchor, setAnchor] = useState(() => new Date());
   const [agent, setAgent] = useState<string>(ALL);
+  // The chosen agent's name, to keep it listed in windows it has no slot in.
+  const [chosenAgent, setChosenAgent] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [showMonitors, setShowMonitors] = useState(true);
   const [showSyncs, setShowSyncs] = useState(true);
   const [hidePast, setHidePast] = useState(false);
@@ -162,20 +168,20 @@ export default function Calendar() {
     return () => window.clearTimeout(timer);
   }, [data]);
 
-  // Agents that have a slot in the window, for the filter.
-  const agents = useMemo(() => {
-    const byId = new Map<string, string>();
-    let chat = false;
-    for (const event of data?.events ?? []) {
-      if (event.kind === 'sync') continue;
-      if (event.agent_id) byId.set(event.agent_id, event.agent_name ?? '');
-      else chat = true;
-    }
-    return {
-      list: [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1])),
-      chat,
-    };
-  }, [data]);
+  // Agents that have a slot in the window, and the chosen one, for the filter.
+  const agents = useMemo(
+    () =>
+      agentOptions(
+        data?.events ?? [],
+        agent === ALL ? null : agent === CHAT ? 'chat' : chosenAgent,
+      ),
+    [data, agent, chosenAgent],
+  );
+  const chooseAgent = (id: string) => {
+    setAgent(id);
+    const name = agents.list.find(([option]) => option === id)?.[1];
+    setChosenAgent(name === undefined ? null : { id, name });
+  };
 
   const events = useMemo(
     () =>
@@ -333,7 +339,7 @@ export default function Calendar() {
           </h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={agent} onValueChange={setAgent}>
+          <Select value={agent} onValueChange={chooseAgent}>
             <SelectTrigger
               className="w-[180px]"
               size="field"
