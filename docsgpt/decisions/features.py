@@ -1,0 +1,85 @@
+"""The registry of features that call the decision model, and what ``auto`` resolves each one to.
+
+Every feature has a mode setting, ``off|monitor|on|auto``, and ships ``off``. ``auto`` is an opt-in that turns the
+feature on (or to ``monitor``, for a shadow-first feature) only while the latency predicted on this machine fits
+the feature's budget. Once on, it turns off only above 1.25x the budget, so a verdict near the line does not flap;
+each change is logged with its numbers. Explicit ``off``, ``monitor`` and ``on`` always win.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from docsgpt.decisions.latency import SpeedProfile
+from docsgpt.decisions.types import FeatureSpec
+
+logger = logging.getLogger(__name__)
+
+#: Factor over the budget at which an ``auto`` feature that is on turns off again.
+HYSTERESIS = 1.25
+
+_specs: dict[str, FeatureSpec] = {}
+_on: dict[str, bool] = {}
+
+
+def register(spec: FeatureSpec) -> FeatureSpec:
+    """Add a feature (at import of the module that owns it); registering a name again replaces it."""
+    _specs[spec.name] = spec
+    return spec
+
+
+def configured(spec: FeatureSpec) -> str:
+    """The feature's mode setting, ``off`` when the setting is unset."""
+    from docsgpt.core.settings import settings
+
+    return getattr(settings, spec.mode_setting, None) or "off"
+
+
+def verdict(spec: FeatureSpec, profile: Optional[SpeedProfile]) -> tuple[bool, Optional[float], str]:
+    """Whether ``auto`` would run the feature now.
+
+    Returns:
+        ``(on, predicted seconds, reason)``; the reason is ``not_measured``, ``fits`` or ``over_budget``.
+    """
+    from docsgpt.core.settings import settings
+
+    if profile is None:
+        return False, None, "not_measured"
+    budget = float(getattr(settings, spec.budget_setting))
+    predicted = profile.predict_s(spec.shape)
+    was_on = _on.get(spec.name, False)
+    on = predicted <= budget * (HYSTERESIS if was_on else 1.0)
+    if on != was_on:
+        logger.info("Decision feature %s under auto is now %s: predicted %.2fs against a budget of %.2fs",
+                    spec.name, "on" if on else "off", predicted, budget)
+    _on[spec.name] = on
+    return on, predicted, "fits" if on else "over_budget"
+
+
+def effective(spec: FeatureSpec, enabled: bool, profile: Optional[SpeedProfile]) -> tuple[str, Optional[float], str]:
+    """What the feature does now: ``off``, ``monitor`` or ``on``, with the prediction and the reason.
+
+    Args:
+        spec: The feature.
+        enabled: Whether the decision model is on at all (``DECISION_MODE`` is not ``none``).
+        profile: This machine's latency model, or ``None`` before it is measured.
+    """
+    mode = configured(spec)
+    predicted = profile.predict_s(spec.shape) if profile else None
+    if not enabled:
+        return "off", predicted, "decisions_off"
+    if mode != "auto":
+        return mode, predicted, "configured"
+    on, predicted, reason = verdict(spec, profile)
+    return (spec.auto_mode if on else "off"), predicted, reason
+
+
+def specs() -> list[FeatureSpec]:
+    """Every registered feature."""
+    return list(_specs.values())
+
+
+def reset() -> None:
+    """Forget the ``auto`` verdicts (after a fork); registrations stay, since they come from imports."""
+    _on.clear()

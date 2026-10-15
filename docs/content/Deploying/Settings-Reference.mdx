@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-15
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -460,6 +460,113 @@ Celery queue the embed task is routed to.
 Type `int`, default `60`, must be `> 0`.
 
 Seconds the API waits for the worker to return an embedding.
+
+
+## Decision model
+
+The small classifier that answers typed questions about a state; every feature that uses it ships off.
+
+### `DECISION_MODE`
+
+Type `"none" | "local"`, default unset.
+
+`none` turns the decision model off everywhere; `local` runs it inside the API process. Unset means `local`, which loads nothing until a feature asks for it.
+
+### `DECISION_MODEL`
+
+Type `str`, default unset.
+
+Decision model repository. Unset follows the runtime: arc53/arc-decide-0.4b-v0.2 on ONNX.
+
+### `DECISION_MODEL_REVISION`
+
+Type `str`, default unset.
+
+Hub commit to download instead of the pinned one. The pin keeps question wording and calibration from changing under stored scores.
+
+### `DECISION_MODEL_PATH`
+
+Type `str`, default unset.
+
+A local copy of the model (a snapshot folder or its onnx folder). Nothing is downloaded; for air-gapped installs.
+
+### `DECISION_CACHE_DIR`
+
+Type `str`, default `<DOCSGPT_HOME>/models/decision`.
+
+Where the decision model is downloaded, at its pinned revision, the first time it is needed or by `docsgpt decisions prefetch`.
+
+### `DECISION_THREADS`
+
+Type `int`, default unset, must be `>= 1`.
+
+Threads for the decision model. Unset uses the CPUs this process may use (affinity, cgroup quota, physical cores); onnxruntime's own default counts every host core, which is far slower in a container.
+
+### `DECISION_LOCAL_QUEUE`
+
+Type `int`, default `32`, must be `>= 1`.
+
+Calls that may wait for the model in the interactive lane before new ones fail.
+
+### `DECISION_BACKGROUND_QUEUE`
+
+Type `int`, default `8`, must be `>= 1`.
+
+Calls that may wait for the model in the background lane before new ones fail.
+
+### `DECISION_BACKGROUND_SHARE`
+
+Type `float`, default `0.25`, must be `>= 0.05` and `<= 1.0`.
+
+Largest share of wall time background decision work may keep the CPU busy; interactive calls are never throttled.
+
+### `DECISION_PRELOAD`
+
+Type `bool`, default `false`.
+
+Download, load and time the decision model when an API process starts (under gunicorn, as the image and `docsgpt api` run it), even with every feature off.
+
+### `DECISION_LOAD_RETRY_SECONDS`
+
+Type `int`, default `300`, must be `>= 1`.
+
+Seconds before a failed download or load of the decision model is retried.
+
+### `DECISION_MIN_FREE_MB`
+
+Type `int`, default unset, must be `>= 0`.
+
+Refuse to load the decision model with less free memory than this, in MB. Unset uses the model's own figure: 1200 for v0.2 (it peaks under 1 GB).
+
+### `DECISION_HOT_TIMEOUT`
+
+Type `float`, default `3.0`, must be `> 0`.
+
+Default deadline, in seconds, of a decision someone is waiting for.
+
+### `DECISION_BACKGROUND_TIMEOUT`
+
+Type `float`, default `120.0`, must be `> 0`.
+
+Default deadline, in seconds, of a background decision.
+
+### `DECISION_MAX_BATCH_STATES`
+
+Type `int`, default `128`, must be `>= 1` and `<= 1000`.
+
+Most states one decision call may carry; more is a caller bug.
+
+### `DECISION_MAX_TEXT_CHARS`
+
+Type `int`, default `4500`, must be `>= 200` and `<= 20000`.
+
+Characters a long state field is cut to before the decision model's tokenizer has loaded.
+
+### `DECISION_CACHE_SIZE`
+
+Type `int`, default `2048`, must be `>= 0`.
+
+Decision answers kept in memory per process; 0 disables the cache.
 
 
 ## Retrieval

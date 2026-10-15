@@ -188,6 +188,20 @@ def _no_worker_delegation(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _decisions_off(monkeypatch):
+    """Run with the decision model off (``DECISION_MODE=none``) and a fresh client.
+
+    Unset, the mode is ``local``, where the first call downloads and loads the
+    model. No test may do either: the decision tests switch the mode back on
+    themselves, with fake engines, or install ``FakeDecider``.
+    """
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "DECISION_MODE", "none", raising=False)
+    monkeypatch.setattr("docsgpt.decisions._client", None)
+
+
+@pytest.fixture(autouse=True)
 def _graphrag_off_by_default(monkeypatch):
     """Run with GraphRAG at its shipped default (off), as CI does.
 

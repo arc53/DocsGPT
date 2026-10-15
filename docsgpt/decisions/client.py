@@ -1,0 +1,248 @@
+"""The process-wide decision client: validation, the answer cache, and the mode that picks a backend.
+
+Callers get answers or ``None``, never an exception at run time: a model that is off, loading, refused or busy
+answers ``None`` with a reason, and the feature falls back to what it does without the model. Caller bugs (a
+malformed question, too many states) are the exception, raised synchronously as ``ValueError``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import threading
+import time
+from collections import OrderedDict
+from typing import Any, Optional
+
+from docsgpt.decisions import features, files, questions
+from docsgpt.decisions.models import ModelSpec, select, version
+from docsgpt.decisions.types import BatchResult, Budget, Decision, ModelInfo, Request
+from docsgpt.decisions.vendor.arc_decide import to_text
+
+logger = logging.getLogger(__name__)
+
+
+def validate(requests: list[Request]) -> None:
+    """Raise ``ValueError`` for a batch the model cannot take: more than ``DECISION_MAX_BATCH_STATES`` requests
+    or any malformed question set."""
+    from docsgpt.core.settings import settings
+
+    if len(requests) > settings.DECISION_MAX_BATCH_STATES:
+        raise ValueError(f"{len(requests)} states in one call; the limit is {settings.DECISION_MAX_BATCH_STATES}")
+    for request in requests:
+        if not isinstance(request, Request):
+            raise ValueError("decide_batch takes Request objects")
+        questions.validate(request.questions)
+
+
+class _AnswerCache:
+    """A per-process LRU of answers keyed on model version, rendered state and rendered questions."""
+
+    def __init__(self) -> None:
+        self._items: OrderedDict[str, tuple] = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def key(model_version: str, request: Request) -> str:
+        """The content key; question order is kept, since it is the order of the answers and of choice options."""
+        payload = json.dumps(list(request.questions.items()), ensure_ascii=False)
+        return hashlib.sha256("\x1f".join([model_version, to_text(request.state), payload]).encode()).hexdigest()
+
+    def get(self, key: str) -> Optional[tuple]:
+        with self._lock:
+            value = self._items.get(key)
+            if value is not None:
+                self._items.move_to_end(key)
+            return value
+
+    def put(self, key: str, value: tuple) -> None:
+        from docsgpt.core.settings import settings
+
+        size = settings.DECISION_CACHE_SIZE
+        if size <= 0:
+            return
+        with self._lock:
+            self._items[key] = value
+            self._items.move_to_end(key)
+            while len(self._items) > size:
+                self._items.popitem(last=False)
+
+
+class DecisionClient:
+    """What ``docsgpt.decisions.get_decider()`` returns: one per process, never ``None``."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._backend = None
+        self._cache = _AnswerCache()
+
+    @property
+    def mode(self) -> str:
+        """``none`` or ``local``."""
+        from docsgpt.core.settings import settings
+
+        return settings.DECISION_MODE or "local"
+
+    @property
+    def enabled(self) -> bool:
+        """False when ``DECISION_MODE=none``: every call then answers ``None`` at once."""
+        return self.mode != "none"
+
+    def _spec(self) -> Optional[ModelSpec]:
+        return select("onnx")
+
+    def _local(self, create: bool):
+        """The in-process backend; created (not loaded) on first use, never in a Celery worker."""
+        if self._backend is None and create:
+            from docsgpt.decisions.backends.onnx import OnnxBackend
+
+            with self._lock:
+                if self._backend is None:
+                    self._backend = OnnxBackend(self._spec())
+        return self._backend
+
+    def _unusable(self) -> Optional[str]:
+        """Why no call can be answered here, or ``None``."""
+        if not self.enabled:
+            return "off"
+        if self._spec() is None:
+            return "wrong_model"
+        from docsgpt.celery_init import in_worker
+
+        if in_worker():  # task processes never load the model; they will call the API's (later work)
+            return "no_decider"
+        return None
+
+    def decide(self, state: Any, questions: dict[str, dict], *, feature: str,
+               budget: Budget = Budget.HOT) -> Optional[Decision]:
+        """Every question about one state, or ``None``. See ``decide_batch``."""
+        return self.decide_batch([Request(state, questions)], feature=feature, budget=budget)[0]
+
+    def decide_batch(self, requests: list[Request], *, feature: str, budget: Budget = Budget.HOT) -> BatchResult:
+        """Answer many states in one call, in order, each item independently.
+
+        Args:
+            requests: Up to ``DECISION_MAX_BATCH_STATES`` requests; each carries its own questions.
+            feature: Short label of the calling feature (``rag_rerank``, ``injection_input``, ...).
+            budget: Lane and deadline. The deadline covers waiting, loading and compute; items not reached by it
+                come back ``None`` with ``timeout``.
+
+        Returns:
+            One ``Decision`` or ``None`` per request, with ``reasons`` and a batch ``status``.
+
+        Raises:
+            ValueError: For caller bugs, whatever the mode: see ``questions.validate``.
+        """
+        started = time.monotonic()
+        validate(requests)
+        if not requests:
+            return BatchResult([], [])
+        reason = self._unusable()
+        if reason:
+            return self._result(feature, [None] * len(requests), [reason] * len(requests))
+        backend = self._local(create=True)
+        info = self.model_info()
+        decisions: list[Optional[Decision]] = [None] * len(requests)
+        reasons: list[Optional[str]] = [None] * len(requests)
+        keys: list[Optional[str]] = [None] * len(requests)
+        todo = []
+        for i, request in enumerate(requests):
+            try:
+                keys[i] = self._cache.key(info.version, request)
+            except (TypeError, ValueError):  # the state does not render
+                reasons[i] = "bad_item"
+                continue
+            hit = self._cache.get(keys[i])
+            if hit is None:
+                todo.append(i)
+            else:
+                answers, truncated, input_tokens = hit
+                decisions[i] = Decision(answers, info, cached=True, truncated=truncated, input_tokens=input_tokens)
+        if todo:
+            outcomes = backend.run([requests[i] for i in todo], budget.lane, started + budget.timeout())
+            info = self.model_info()  # a load during the call may have changed the calibration
+            for i, outcome in zip(todo, outcomes):
+                if isinstance(outcome, str):
+                    reasons[i] = outcome
+                    continue
+                decisions[i] = Decision(outcome.answers, info, outcome.ms, outcome.queue_ms,
+                                        truncated=outcome.truncated, input_tokens=outcome.input_tokens)
+                self._cache.put(keys[i], (outcome.answers, outcome.truncated, outcome.input_tokens))
+        return self._result(feature, decisions, reasons)
+
+    @staticmethod
+    def _result(feature: str, decisions: list[Optional[Decision]], reasons: list[Optional[str]]) -> BatchResult:
+        result = BatchResult(decisions, reasons)
+        if result.status != "ok":
+            logger.debug("Decision call for %s: %s (%s)", feature, result.status,
+                         ", ".join(sorted({r for r in reasons if r})))
+        return result
+
+    def warm(self) -> None:
+        """Start loading the model in the background; never blocks, and does nothing where calls cannot run."""
+        if self._unusable() is None:
+            self._local(create=True).warm()
+
+    def model_info(self) -> Optional[ModelInfo]:
+        """The model calls go to, without loading it; ``None`` when off or misconfigured."""
+        spec = self._spec()
+        if not self.enabled or spec is None:
+            return None
+        backend = self._local(create=False)
+        calibration = backend.calibration if backend else spec.calibration
+        return ModelInfo(id=spec.id, revision=files.revision(spec), runtime=f"onnx-{spec.onnx_dtype}",
+                         mode=self.mode, prompt_hash=spec.prompt_hash, calibration=calibration,
+                         version=version(spec, calibration))
+
+    def model_version(self) -> Optional[str]:
+        """``<repo>/p<prompt_hash>/c<calibration>``, available without loading; ``None`` when off."""
+        info = self.model_info()
+        return info.version if info else None
+
+    def speed(self):
+        """This machine's ``SpeedProfile``, or ``None`` before the model has loaded and been timed."""
+        backend = self._local(create=False)
+        return backend.profile if backend and self.enabled else None
+
+    def status(self) -> dict:
+        """The state ``/api/config`` reports. Reads only this process's own state: no load, no network."""
+        info = self.model_info()
+        backend = self._local(create=False)
+        if not self.enabled:
+            state, reason = "off", None
+        elif info is None:
+            state, reason = "unavailable", "wrong_model"
+        elif backend is None:
+            state, reason = "idle", None
+        else:
+            state, reason = backend.status, backend.reason
+        profile = self.speed()
+        verdicts = {}
+        for spec in features.specs():
+            effective, predicted, why = features.effective(spec, self.enabled, profile)
+            verdicts[spec.name] = {
+                "mode": features.configured(spec),
+                "effective": effective,
+                "predicted_s": None if predicted is None else round(predicted, 3),
+                "budget_s": _budget(spec),
+                "reason": why,
+            }
+        return {
+            "available": self.enabled and state not in ("unavailable", "off"),
+            "mode": self.mode,
+            "status": state,
+            "reason": reason,
+            "model": info.id if info else None,
+            "version": info.version if info else None,
+            "runtime": info.runtime if info else None,
+            "speed": profile.report() if profile else None,
+            "features": verdicts,
+        }
+
+
+def _budget(spec) -> Optional[float]:
+    from docsgpt.core.settings import settings
+
+    value = getattr(settings, spec.budget_setting, None)
+    return None if value is None else float(value)

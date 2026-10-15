@@ -1,0 +1,322 @@
+"""The ONNX backend's lifecycle and pass execution, on a fake engine: no model, no network."""
+
+import json
+import threading
+import time
+
+import pytest
+
+from docsgpt.core.settings import settings
+from docsgpt.decisions import files, tokens
+from docsgpt.decisions.backends import onnx
+from docsgpt.decisions.backends.onnx import LoadRefused, OnnxBackend, Outcome
+from docsgpt.decisions.models import V02
+from docsgpt.decisions.questions import Q
+from docsgpt.decisions.types import Request
+from docsgpt.decisions.vendor.arc_decide import prefix_text, to_text
+
+from .conftest import load_fixture
+from .fakes import CharTokenizer, FakeClock, FakeEngine, expected_p
+
+NOUL = {"type": "noul", "instructions": "Is it?"}
+OTHER = {"type": "noul", "instructions": "Is it something else entirely?"}
+
+
+@pytest.fixture(autouse=True)
+def _clean_tokenizer():
+    yield
+    tokens.reset()
+
+
+class Opener:
+    """Counts loads; returns a fake engine, raises, or waits for ``release`` first."""
+
+    def __init__(self, engine=None, error=None, gated=False):
+        self.engine, self.error, self.count = engine, error, 0
+        self.release = threading.Event()
+        if not gated:
+            self.release.set()
+
+    def __call__(self, backend):
+        self.count += 1
+        self.release.wait(5)
+        if self.error:
+            raise self.error
+        return self.engine
+
+
+def settle(backend, timeout=5.0):
+    end = time.monotonic() + timeout
+    while backend.status == "loading" and time.monotonic() < end:
+        time.sleep(0.005)
+    return backend.status
+
+
+def loaded(engine, clock=None) -> OnnxBackend:
+    backend = OnnxBackend(V02, open_engine=Opener(engine), **({"clock": clock} if clock else {}))
+    backend.warm()
+    assert settle(backend) == "ready"
+    return backend
+
+
+def far() -> float:
+    return time.monotonic() + 30
+
+
+@pytest.mark.unit
+class TestLifecycle:
+    def test_nothing_loads_until_asked(self):
+        opener = Opener(FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json")))
+        backend = OnnxBackend(V02, open_engine=opener)
+        assert (backend.status, opener.count) == ("idle", 0)
+
+    def test_a_hot_call_does_not_wait_for_the_load(self):
+        opener = Opener(FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json")), gated=True)
+        backend = OnnxBackend(V02, open_engine=opener)
+        started = time.monotonic()
+        assert backend.run([Request("x", {"q": NOUL})] * 2, "hot", far()) == ["loading", "loading"]
+        assert time.monotonic() - started < 1
+        opener.release.set()
+        assert settle(backend) == "ready"
+        assert isinstance(backend.run([Request("x", {"q": NOUL})], "hot", far())[0], Outcome)
+
+    def test_a_background_call_waits_for_the_load(self):
+        opener = Opener(FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json")), gated=True)
+        backend = OnnxBackend(V02, open_engine=opener)
+        threading.Timer(0.1, opener.release.set).start()
+        (outcome,) = backend.run([Request("x", {"q": NOUL})], "background", far())
+        assert isinstance(outcome, Outcome)
+        assert opener.count == 1
+
+    def test_the_tokenizer_comes_up_with_the_model(self):
+        assert tokens.count_tokens("abc") is None
+        loaded(FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json")))
+        assert tokens.count_tokens("abc") == 3
+
+    def test_a_failed_load_is_latched_then_retried(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_LOAD_RETRY_SECONDS", 300)
+        clock = FakeClock()
+        opener = Opener(error=files.FilesUnavailable("offline", "no files"), gated=True)
+        backend = OnnxBackend(V02, open_engine=opener, clock=clock)
+        assert backend.run([Request("x", {"q": NOUL})], "hot", clock() + 3) == ["loading"]
+        opener.release.set()
+        assert settle(backend) == "unavailable" and backend.reason == "offline"
+        assert backend.run([Request("x", {"q": NOUL})], "background", clock() + 3) == ["offline"]
+        assert opener.count == 1
+        clock.advance(301)
+        backend.warm()
+        settle(backend)
+        assert opener.count == 2
+
+    @pytest.mark.parametrize("error, reason", [
+        (LoadRefused("memory", "too little"), "memory"),
+        (LoadRefused("wrong_model", "prompt"), "wrong_model"),
+        (files.FilesUnavailable("download", "reset"), "download"),
+        (RuntimeError("corrupt graph"), "load_failed"),
+    ])
+    def test_failure_reasons(self, error, reason):
+        backend = OnnxBackend(V02, open_engine=Opener(error=error))
+        backend.warm()
+        assert settle(backend) == "unavailable"
+        assert backend.reason == reason
+
+    def test_the_timing_run_fits_this_machines_cost(self):
+        clock = FakeClock()
+        c, a, b = 0.02, 0.0004, 3e-7
+        engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"), clock=clock,
+                            cost=lambda n, k: c + n * (a + b * k))
+        backend = loaded(engine, clock)
+        profile = backend.profile
+        assert (profile.c, profile.a, profile.b) == pytest.approx((c, a, b), rel=1e-6)
+        assert profile.overhead == len(prefix_text(""))
+        assert profile.threads == 2
+
+    def test_a_different_calibration_becomes_the_identity(self, caplog):
+        meta = load_fixture("arcd_serving-0.4b-v0.2.json")
+        meta["temperature"]["noul"] = 1.5
+        backend = loaded(FakeEngine(meta))
+        assert backend.calibration != V02.calibration
+        assert "calibration" in caplog.text
+
+
+@pytest.fixture
+def model_folder(tmp_path, monkeypatch):
+    """An ONNX folder with real metadata and no graph, with the session constructor stubbed out."""
+    folder = tmp_path / "onnx"
+    folder.mkdir()
+    (folder / "arcd_serving.json").write_text(json.dumps(load_fixture("arcd_serving-0.4b-v0.2.json")))
+    (tmp_path / "questions.json").write_text(json.dumps(load_fixture("questions.json")))
+    monkeypatch.setattr(files, "ensure_onnx", lambda spec: folder)
+    monkeypatch.setattr(onnx.memory, "headroom_mb", lambda: 4000.0)
+    monkeypatch.setattr(settings, "DECISION_MIN_FREE_MB", None)
+    monkeypatch.setattr(settings, "DECISION_THREADS", 3)
+    built = []
+    monkeypatch.setattr(onnx, "Engine", lambda path, threads: built.append((path, threads)) or "engine")
+    return folder, built
+
+
+@pytest.mark.unit
+class TestOpen:
+    def test_opens_the_folder_with_the_thread_setting(self, model_folder):
+        folder, built = model_folder
+        assert OnnxBackend(V02)._open() == "engine"
+        assert built == [(str(folder), 3)]
+
+    def test_refused_below_the_models_memory_floor(self, model_folder, monkeypatch):
+        monkeypatch.setattr(onnx.memory, "headroom_mb", lambda: 1000.0)
+        with pytest.raises(LoadRefused) as caught:
+            OnnxBackend(V02)._open()
+        assert caught.value.reason == "memory"
+        assert model_folder[1] == []
+
+    def test_the_memory_floor_is_a_setting(self, model_folder, monkeypatch):
+        monkeypatch.setattr(onnx.memory, "headroom_mb", lambda: 1000.0)
+        monkeypatch.setattr(settings, "DECISION_MIN_FREE_MB", 800)
+        assert OnnxBackend(V02)._open() == "engine"
+
+    def test_unknown_headroom_does_not_block(self, model_folder, monkeypatch):
+        monkeypatch.setattr(onnx.memory, "headroom_mb", lambda: None)
+        assert OnnxBackend(V02)._open() == "engine"
+
+    def test_another_prompt_is_refused(self, model_folder):
+        folder, built = model_folder
+        meta = load_fixture("arcd_serving-0.4b-v0.2.json")
+        meta["prompt_hash"] = "000000000000"
+        (folder / "arcd_serving.json").write_text(json.dumps(meta))
+        with pytest.raises(LoadRefused) as caught:
+            OnnxBackend(V02)._open()
+        assert caught.value.reason == "wrong_model" and built == []
+
+    def test_a_model_without_a_state_limit_is_refused(self, model_folder):
+        folder, _ = model_folder
+        meta = load_fixture("arcd_serving-0.4b-v0.2.json")
+        del meta["max_state_tokens"]
+        (folder / "arcd_serving.json").write_text(json.dumps(meta))
+        with pytest.raises(LoadRefused) as caught:
+            OnnxBackend(V02)._open()
+        assert caught.value.reason == "wrong_model"
+
+    def test_changed_question_wording_is_reported(self, model_folder, caplog):
+        folder, _ = model_folder
+        shipped = load_fixture("questions.json")
+        shipped["injection"]["instructions"] = "Reworded?"
+        (folder.parent / "questions.json").write_text(json.dumps(shipped))
+        OnnxBackend(V02)._open()
+        assert "'injection' differs" in caplog.text
+
+
+@pytest.fixture
+def engine():
+    return FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"))
+
+
+@pytest.mark.unit
+class TestPasses:
+    def test_one_hot_question_is_one_pass_on_the_one_layer_buffer(self, engine):
+        backend = loaded(engine)
+        engine.kv.passes.clear()
+        (outcome,) = backend.run([Request("hello", {"q": NOUL})], "hot", far())
+        assert engine.kv.passes == [(len(prefix_text("hello")) + len(CharTokenizer().encode(
+            "Question: Is it?\nAnswer with only yes or no.\nAnswer:")), 0, True)]
+        assert outcome.answers["q"]["noul"] == pytest.approx(expected_p("hello", NOUL))
+
+    def test_several_questions_share_one_prefill(self, engine):
+        backend = loaded(engine)
+        engine.kv.passes.clear()
+        state = {"text": "x" * 600}
+        (outcome,) = backend.run([Request(state, {"a": NOUL, "b": OTHER})], "hot", far())
+        prefix = len(prefix_text(to_text(state)))
+        assert [cached for _, cached, _ in engine.kv.passes] == [*range(0, prefix, 256), prefix, prefix]
+        assert outcome.answers["a"]["noul"] == pytest.approx(expected_p(to_text(state), NOUL))
+        assert outcome.answers["b"]["noul"] == pytest.approx(expected_p(to_text(state), OTHER))
+        suffixes = sum(n for n, cached, _ in engine.kv.passes if cached == prefix)
+        assert outcome.input_tokens == prefix + suffixes
+
+    def test_background_prefills_in_chunks_even_for_one_question(self, engine):
+        backend = loaded(engine)
+        (outcome,) = backend.run([Request("y" * 300, {"q": NOUL})], "background", far())
+        background = engine.buffers[1]
+        assert [single for _, _, single in background.passes] == [False] * len(background.passes)
+        assert max(n for n, _, _ in background.passes) <= 256
+        assert outcome.answers["q"]["noul"] == pytest.approx(expected_p("y" * 300, NOUL))
+
+    def test_long_states_keep_their_head(self):
+        engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"), max_state_tokens=50)
+        backend = loaded(engine)
+        (outcome,) = backend.run([Request("z" * 80, {"q": NOUL})], "hot", far())
+        assert outcome.truncated
+        assert outcome.answers["q"]["noul"] == pytest.approx(expected_p("z" * 50 + " ...[truncated]", NOUL))
+
+    def test_family_keys_are_answered(self, engine):
+        backend = loaded(engine)
+        (outcome,) = backend.run([Request("t", {"tag:billing": NOUL, "relevant": Q.RELEVANT})], "hot", far())
+        assert set(outcome.answers) == {"tag:billing", "relevant"}
+
+
+@pytest.mark.unit
+class TestBatches:
+    def test_items_past_the_deadline_time_out(self):
+        clock = FakeClock()
+        engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"), clock=clock, cost=lambda n, k: 1.0)
+        backend = loaded(engine, clock)
+        out = backend.run([Request(f"s{i}", {"q": NOUL}) for i in range(3)], "hot", clock() + 1.5)
+        assert isinstance(out[0], Outcome)
+        assert out[1:] == ["timeout", "timeout"]
+
+    def test_a_full_lane_turns_calls_away(self, engine):
+        backend = loaded(engine)
+        backend._inside["hot"] = backend._limits["hot"]
+        assert backend.run([Request("x", {"q": NOUL})], "hot", far()) == ["queue_full"]
+        assert isinstance(backend.run([Request("x", {"q": NOUL})], "background", far())[0], Outcome)
+
+    def test_one_bad_item_never_fails_the_batch(self, engine):
+        backend = loaded(engine)
+        out = backend.run([Request(object(), {"q": NOUL}), Request("fine", {"q": NOUL})], "hot", far())
+        assert out[0] == "bad_item" and isinstance(out[1], Outcome)
+
+    def test_a_failing_pass_is_a_bad_item(self, engine, monkeypatch):
+        backend = loaded(engine)
+        calls = []
+
+        def flaky(ids, start, io, chunk):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("onnxruntime error")
+            return 0.5
+
+        monkeypatch.setattr(engine.kv, "extend", flaky)
+        out = backend.run([Request("a", {"q": NOUL}), Request("b", {"q": NOUL})], "hot", far())
+        assert out[0] == "bad_item" and isinstance(out[1], Outcome)
+
+
+@pytest.mark.unit
+class TestBuffers:
+    def test_hot_and_background_keep_separate_state_across_interleaved_passes(self):
+        engine = FakeEngine(load_fixture("arcd_serving-0.4b-v0.2.json"), delay=0.005)
+        backend = loaded(engine)
+        state = {"text": "background " * 60}
+        questions = {"a": NOUL, "b": OTHER, "c": Q.RELEVANT}
+        results = {}
+        sweep = threading.Thread(target=lambda: results.setdefault(
+            "background", backend.run([Request(state, questions)], "background", far())))
+        sweep.start()
+        hot = [backend.run([Request(f"hot {i} " * 40, {"a": NOUL, "b": OTHER})], "hot", far())[0] for i in range(5)]
+        sweep.join(10)
+        (background,) = results["background"]
+        for key, question in questions.items():
+            assert background.answers[key]["noul"] == pytest.approx(expected_p(to_text(state), question))
+        for i, outcome in enumerate(hot):
+            assert outcome.answers["a"]["noul"] == pytest.approx(expected_p(f"hot {i} " * 40, NOUL))
+        assert len(engine.buffers) == 2 and engine.buffers[1].passes
+
+    def test_the_background_buffer_is_dropped_after_a_minute_idle(self, engine):
+        clock = FakeClock()
+        backend = loaded(engine, clock)
+        backend.run([Request("x", {"q": NOUL})], "background", clock() + 5)
+        assert backend._background is not None
+        clock.advance(30)
+        backend._drop_background()
+        assert backend._background is not None
+        clock.advance(31)
+        backend._drop_background()
+        assert backend._background is None
