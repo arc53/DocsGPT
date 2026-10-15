@@ -98,6 +98,15 @@ def _notify(
 
 
 def _mark_read(conversation_id: str, user_id: str) -> None:
+    """Mark a conversation read for its owner, who saw the news land on screen.
+
+    Activity marks a chat failed only when its background job failed after
+    the owner last read it. A failure never raises: the notification stands.
+
+    Args:
+        conversation_id: The conversation.
+        user_id: Its owner.
+    """
     from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
     from docsgpt.storage.db.session import db_session
 
