@@ -82,7 +82,9 @@ const activitySlice = createSlice({
   name: 'activity',
   initialState,
   reducers: {
-    resetActivity: () => initialState,
+    // Another account: its fetch comes next, and an answer to one sent
+    // before (no request id matches this) is the last account's.
+    resetActivity: () => ({ ...initialState, requestId: 'reset' }),
   },
   extraReducers: (builder) => {
     builder
