@@ -79,4 +79,38 @@ describe('composer controls', () => {
     expect(badge(three)?.[0]).toContain('aria-hidden="true"');
     expect(three).toContain('aria-label="settings.tools.triggerLabel"');
   });
+
+  it('names one source and counts several beside the Knowledge label', () => {
+    const doc = (name: string) => ({ name, date: '', model: '' });
+    const render = (selectedDocs: ReturnType<typeof doc>[]) =>
+      renderToStaticMarkup(
+        <SourcesTrigger
+          open={false}
+          onOpenChange={noop}
+          items={[]}
+          selectedIds={[]}
+          onToggle={noop}
+          selectedDocs={selectedDocs}
+          onUploadClick={noop}
+        />,
+      );
+    const badge = (html: string) =>
+      html.match(/<span[^>]*data-slot="badge"[^>]*>([^<]*)<\/span>/);
+
+    const none = render([]);
+    expect(badge(none)).toBeNull();
+    expect(none).toContain('conversation.sources.knowledge');
+
+    const one = render([doc('Q3 contracts')]);
+    expect(badge(one)).toBeNull();
+    expect(one).toContain('Q3 contracts');
+    expect(one).not.toContain('aria-label');
+
+    const two = render([doc('Q3 contracts'), doc('Rate cards')]);
+    expect(badge(two)?.[1]).toBe('2');
+    expect(badge(two)?.[0]).toContain('aria-hidden="true"');
+    expect(two).toContain('conversation.sources.knowledge');
+    expect(two).toContain('title="Q3 contracts, Rate cards"');
+    expect(two).toContain('aria-label="conversation.sources.triggerLabel"');
+  });
 });

@@ -2094,6 +2094,8 @@
       "view_more": "查看更多 {{count}} 個來源",
       "noSourcesAvailable": "還沒有知識",
       "selectedCount": "已選 {{count}} 個",
+      "triggerLabel_one": "知識庫，已選 {{formatted}} 個",
+      "triggerLabel_other": "知識庫，已選 {{formatted}} 個",
       "groupOwn": "你的",
       "groupTeam": "團隊共享",
       "fromConnector": "來自 {{name}}",

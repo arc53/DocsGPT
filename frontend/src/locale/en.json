@@ -2102,6 +2102,8 @@
       "view_more_other": "{{count}} more sources",
       "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
+      "triggerLabel_one": "Knowledge, {{formatted}} selected",
+      "triggerLabel_other": "Knowledge, {{formatted}} selected",
       "groupOwn": "Yours",
       "groupTeam": "Shared with team",
       "fromConnector": "From {{name}}",

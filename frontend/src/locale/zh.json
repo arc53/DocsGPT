@@ -2093,6 +2093,8 @@
       "view_more": "还有{{count}}个来源",
       "noSourcesAvailable": "还没有知识",
       "selectedCount": "已选 {{count}} 个",
+      "triggerLabel_one": "知识库，已选 {{formatted}} 个",
+      "triggerLabel_other": "知识库，已选 {{formatted}} 个",
       "groupOwn": "你的",
       "groupTeam": "团队共享",
       "fromConnector": "来自 {{name}}",
