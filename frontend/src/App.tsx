@@ -40,6 +40,7 @@ import PageNotFound from './PageNotFound';
 const DesignSystem = import.meta.env.DEV
   ? lazy(() => import('./design/DesignSystem'))
   : null;
+import Activity from './activity';
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
@@ -197,6 +198,7 @@ export default function App() {
             path="/agents/:agentId/c/:conversationId"
             element={<Conversation />}
           />
+          <Route path="/activity/*" element={<Activity />} />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />

@@ -34,7 +34,6 @@
     "toolApprovalFallbackName": "對話"
   },
   "backgroundJobs": {
-    "unread": "未讀",
     "card": {
       "status": {
         "working": "背景執行中",
@@ -745,7 +744,15 @@
           "allAttributes": "所有屬性"
         }
       },
-      "loadError": "無法載入日誌。"
+      "loadError": "無法載入日誌。",
+      "running": "執行中",
+      "failedAtStep": "在第 {{step}} 步失敗",
+      "failedAtStepOf": "在第 {{step}} 步失敗（共 {{total}} 步）",
+      "origin": {
+        "api": "API",
+        "shared": "共用",
+        "chat": "聊天"
+      }
     },
     "teams": {
       "label": "團隊",
@@ -2136,13 +2143,15 @@
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",
+    "stoppedTitle": "已停止",
     "errors": {
       "contextLength": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案。",
       "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
       "contextLengthSized": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案。",
       "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
       "serverError": "請稍後再試。造成不便，敬請見諒。",
-      "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。"
+      "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。",
+      "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -2728,6 +2737,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "頻率",
+        "customTiming": "此排程使用自訂時間：{{pattern}}。變更下方的時間即可取代它。",
         "dayOfWeek": "星期"
       },
       "status": {
@@ -2758,7 +2768,8 @@
         "error": "錯誤",
         "errorWithType": "錯誤（{{type}}）",
         "output": "輸出",
-        "truncated": "（已截斷）"
+        "truncated": "（已截斷）",
+        "openConversation": "開啟對話"
       },
       "toolCard": {
         "cancelFailed": "取消失敗",
@@ -2797,7 +2808,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "每個工作日 {{time}}",
+        "weekends": "每個週末 {{time}}",
+        "days": "每{{days}} {{time}}",
+        "hourly": "每小時",
+        "hourlyAt": "每小時第 {{minute}} 分",
+        "hourlyRange": "{{from}} 至 {{to}} 每小時",
+        "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小時",
+        "everyMinutes_one": "每 {{formatted}} 分鐘",
+        "everyMinutes_other": "每 {{formatted}} 分鐘",
+        "everyHours_one": "每 {{formatted}} 小時",
+        "everyHours_other": "每 {{formatted}} 小時"
       },
       "runLog": {
         "when": "時間",
@@ -2827,7 +2849,8 @@
         "overdue": "已逾期"
       },
       "deleteFailed": "無法刪除此排程。",
-      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。"
+      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。",
+      "allSchedules": "所有排程"
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。",
@@ -3210,7 +3233,8 @@
         "personal": "個人",
         "workspace": "工作區",
         "insights": "洞察",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "自動化"
       }
     },
     "openSidebar": "開啟側邊欄",
@@ -3290,7 +3314,6 @@
     "loadError": "無法載入你的監控",
     "actionError": "操作失敗，請再試一次。",
     "untitled": "監控",
-    "watching": "正在留意變化",
     "every": "每 {{interval}}",
     "onEvent": "發生時",
     "openConversation": "開啟對話",
@@ -3367,5 +3390,282 @@
       "conversationGone": "已結束：其對話已無法繼續"
     },
     "endedBecause": "已結束：{{reason}}"
+  },
+  "activity": {
+    "label": "活動",
+    "schedules": {
+      "label": "排程",
+      "subtitle": "你所有代理的週期性執行與一次性任務，以及助理在聊天中建立的任務。",
+      "search": "搜尋排程",
+      "createdInChat": "在聊天中建立",
+      "createdInChatHint": "沒有代理。每個都屬於建立它的聊天。",
+      "agentSchedules": "代理排程",
+      "openChat": "開啟聊天",
+      "noMatches": "沒有符合搜尋的排程。",
+      "loadError": "無法載入你的排程",
+      "empty": "還沒有排程",
+      "emptyHint": "在這裡建立，或在聊天中請助理依排程做事。",
+      "agentLabel": "代理",
+      "agentPlaceholder": "選擇代理",
+      "agentSearch": "搜尋代理",
+      "agentEmpty": "沒有可以設定排程的代理",
+      "teamAgent": "你透過團隊管理的隊友代理"
+    },
+    "marks": {
+      "failed": "有失敗",
+      "needsYou": "等待你的核准",
+      "working": "執行中",
+      "unread": "未讀",
+      "watching": "正在監控變化"
+    },
+    "kind": {
+      "chat": "聊天",
+      "job": "背景工作",
+      "code": "程式碼執行",
+      "schedule": "排程執行",
+      "workflow": "工作流程",
+      "webhook": "Webhook 執行",
+      "ingest": "知識",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} 個執行中",
+      "running_other": "{{formatted}} 個執行中",
+      "needsYou_one": "{{formatted}} 項需要你處理",
+      "needsYou_other": "{{formatted}} 項需要你處理"
+    },
+    "now": {
+      "label": "目前",
+      "subtitle": "正在執行的、等待你處理的，以及接下來要執行的。即時更新。",
+      "loadError": "無法載入你的活動",
+      "stopFailed": "無法停止該回答。請重試，或開啟聊天在那裡停止。",
+      "thinking": "思考中",
+      "writing": "正在撰寫回答",
+      "ranByHand": "手動執行",
+      "due": "排定於 {{time}}",
+      "chunks": "已嵌入 {{done}}/{{total}} 個區塊",
+      "background": "背景",
+      "running": "執行中",
+      "stop": "停止",
+      "cancel": "取消",
+      "open": "開啟",
+      "approve": "核准 {{tools}}",
+      "approveAction": "核准工具操作",
+      "expires": "{{time}}過期",
+      "approval": "核准",
+      "review": "查看",
+      "pausedAfter_one": "{{name}} 失敗 {{formatted}} 次後已暫停",
+      "pausedAfter_other": "{{name}} 失敗 {{formatted}} 次後已暫停",
+      "errorType": {
+        "auth_expired": "登入已過期",
+        "tool_not_allowed": "工具未被允許",
+        "budget_exceeded": "超出權杖預算",
+        "timeout": "逾時",
+        "agent_error": "代理失敗",
+        "internal": "內部錯誤",
+        "missed": "錯過了執行時間",
+        "overlap": "上一次執行仍在進行",
+        "stream_error": "回答串流中斷",
+        "empty_output": "沒有產生任何輸出"
+      },
+      "viewRuns": "查看執行",
+      "fromChat": "來自 {{name}}",
+      "timesToday_one": "未來 24 小時執行 {{formatted}} 次",
+      "timesToday_other": "未來 24 小時執行 {{formatted}} 次",
+      "oneTime": "一次性",
+      "stats": {
+        "running": "執行中",
+        "background_one": "背景 {{formatted}} 個",
+        "background_other": "背景 {{formatted}} 個",
+        "needsYou": "需要你處理",
+        "approvalExpires": "有一個核准將於{{time}}過期",
+        "next24h": "未來 24 小時",
+        "nextAt": "下一個：{{time}}，{{name}}",
+        "failed": "失敗（過去 24 小時）",
+        "viewInHistory": "在歷史中查看"
+      },
+      "needsYou": "需要你處理",
+      "reconnect": "{{name}} 需要重新連線",
+      "reconnectAction": "重新連線",
+      "runningTitle": "執行中",
+      "filter": "顯示",
+      "filters": {
+        "all": "全部",
+        "chats": "聊天",
+        "automations": "自動化",
+        "knowledge": "知識"
+      },
+      "nothingRunning": "沒有正在執行的內容",
+      "upNext": "接下來",
+      "nothingPlanned": "未來 24 小時沒有排定執行的內容",
+      "watching": "監控中",
+      "allMonitors": "所有監控",
+      "nothingWatched": "沒有正在監控的內容",
+      "checked": "{{time}}檢查過",
+      "openCalendar": "開啟行事曆",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "apiRequests_one": "{{formatted}} 個請求",
+      "apiRequests_other": "{{formatted}} 個請求",
+      "reading": "正在讀取內容",
+      "operation": {
+        "upload": "上傳",
+        "sync": "同步",
+        "reingest": "重新索引"
+      },
+      "syncBatch": {
+        "daily": "每日同步",
+        "weekly": "每週同步",
+        "monthly": "每月同步"
+      },
+      "syncSources_one": "{{formatted}} 個來源",
+      "syncSources_other": "{{formatted}} 個來源",
+      "syncBlocked_one": "{{formatted}} 個需要重新連線",
+      "syncBlocked_other": "{{formatted}} 個需要重新連線"
+    },
+    "calendar": {
+      "label": "行事曆",
+      "subtitle": "排定的執行、依結果顯示的過往執行，以及正在監控的內容。",
+      "loadError": "無法載入行事曆",
+      "runLoadError": "無法開啟此次執行。請重試。",
+      "runNowError": "無法啟動執行。請重試。",
+      "todayButton": "今天",
+      "previous": "上一頁",
+      "next": "下一頁",
+      "agentFilter": "代理",
+      "allAgents": "所有代理",
+      "viewLabel": "檢視",
+      "views": {
+        "day": "日",
+        "week": "週",
+        "month": "月",
+        "agenda": "議程"
+      },
+      "monitors": "監控",
+      "knowledgeSyncs": "知識同步",
+      "hidePast": "隱藏過往執行",
+      "legend": {
+        "planned": "已排定",
+        "running": "執行中",
+        "success": "成功",
+        "failed": "失敗",
+        "paused": "已暫停或略過",
+        "missed": "已錯過",
+        "sync": "知識同步"
+      },
+      "truncated": "部分非常頻繁的排程在此範圍內只顯示前幾次執行。",
+      "watching": "監控中",
+      "state": {
+        "planned": "已排定",
+        "paused": "已暫停",
+        "pending": "啟動中",
+        "running": "執行中",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "已略過",
+        "timeout": "逾時",
+        "missed": "已錯過"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "另有 {{formatted}} 項",
+      "more_other": "另有 {{formatted}} 項",
+      "today": "今天",
+      "tomorrow": "明天",
+      "empty": "這些天沒有排定項目",
+      "blockDone_one": "已完成 {{done}}/{{formatted}} 次",
+      "blockDone_other": "已完成 {{done}}/{{formatted}} 次",
+      "slotCount_one": "{{formatted}} 次",
+      "slotCount_other": "{{formatted}} 次",
+      "oneTime": "一次性",
+      "recurring": "週期性",
+      "when": "時間",
+      "repeats": "重複",
+      "fromChat": "來自聊天",
+      "pausedNote": "此排程已暫停，因此這次執行不會發生。請在排程頁面恢復它。",
+      "dayRuns": "當天的執行",
+      "queued": "已開始執行。它會顯示在「目前」和執行記錄中。",
+      "openSchedule": "開啟排程",
+      "timezone": "排程時區",
+      "missedNote": "這次執行從未開始：當時排程器已停止或落後。立即執行以補上，或檢查 worker 是否帶 beat 執行。",
+      "syncRepeats": {
+        "daily": "每天，從排程器啟動時開始計算",
+        "weekly": "每週，從排程器啟動時開始計算",
+        "monthly": "每 30 天，從排程器啟動時開始計算"
+      },
+      "sources": "來源",
+      "needsReconnecting": "需要重新連線",
+      "lastSynced": "已於 {{time}} 同步",
+      "notSyncedYet": "尚未同步",
+      "openKnowledge": "開啟知識庫"
+    },
+    "history": {
+      "label": "歷史",
+      "subtitle": "你的排程、Webhook、工作流程、背景工作和監控已完成的執行。完整的技術記錄在「設定 › 記錄」中。",
+      "search": "搜尋執行",
+      "statusFilter": "狀態",
+      "kindFilter": "類型",
+      "statusFilters": {
+        "all": "所有狀態",
+        "failed": "失敗",
+        "success": "成功",
+        "skipped": "已略過",
+        "cancelled": "已取消"
+      },
+      "kindFilters": {
+        "all": "全部",
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "job": "背景",
+        "monitor": "監控喚醒"
+      },
+      "kind": {
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "job": "背景",
+        "monitor": "監控"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失敗",
+        "timeout": "逾時",
+        "skipped": "已略過",
+        "cancelled": "已取消"
+      },
+      "trigger": {
+        "cron": "排程",
+        "manual": "手動",
+        "webhook": "Webhook",
+        "chat": "聊天",
+        "monitor": "發現變化",
+        "trigger": "Webhook 連結",
+        "approval": "核准連結",
+        "monitor_paused": "監控已暫停",
+        "monitor_expired": "監控已過期"
+      },
+      "columns": {
+        "when": "時間",
+        "run": "執行",
+        "owner": "代理 / 聊天",
+        "kind": "類型",
+        "trigger": "觸發",
+        "status": "狀態",
+        "duration": "時長",
+        "tokens": "權杖"
+      },
+      "yesterday": "昨天",
+      "loadError": "無法載入歷史",
+      "runLoadError": "無法開啟此次執行。請重試。",
+      "noMatches": "沒有符合這些篩選條件的執行",
+      "empty": "還沒有已完成的執行",
+      "emptyHint": "你的排程、Webhook、工作流程、背景工作和監控的執行完成後會顯示在這裡。",
+      "loadMore": "載入更多",
+      "retention": "預設情況下，排程執行保留 90 天，Webhook 執行保留 30 天，背景工作和監控喚醒保留 7 天。工作流程執行會持續列出，其追蹤保留 30 天。",
+      "period_one": "最近 {{formatted}} 天",
+      "period_other": "最近 {{formatted}} 天",
+      "periodFilter": "時間範圍"
+    }
   }
 }

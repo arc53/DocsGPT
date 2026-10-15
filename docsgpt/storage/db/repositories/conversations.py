@@ -23,7 +23,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import conversations_table, conversation_messages_table
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
@@ -334,17 +334,17 @@ class ConversationsRepository:
                 "  SELECT field AS match_field, txt AS match_text "
                 "  FROM ( "
                 "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
-                "    WHERE c.name ILIKE :pattern "
+                "    WHERE c.name ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'prompt'::text, m.prompt, 1 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.prompt ILIKE :pattern "
+                "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.response ILIKE :pattern "
+                "      AND m.response ILIKE :pattern ESCAPE '\\' "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
@@ -355,7 +355,7 @@ class ConversationsRepository:
             ),
             {
                 "user_id": user_id,
-                "pattern": f"%{query}%",
+                "pattern": f"%{like_escape(query)}%",
                 "limit": limit,
             },
         )
