@@ -128,6 +128,18 @@ class TestApiRequests:
         _message(pg_conn, _chat(pg_conn, agent_id=mine, visibility="hidden"), "streaming", heartbeat_age=600)
         assert activity_now.build_now(pg_conn, "u1")["running"] == []
 
+    def test_an_answer_paused_for_approval_is_not_running(self, pg_conn):
+        # It waits under needs_you until its heartbeat would go stale.
+        agent = _agent(pg_conn, "Support bot")
+        conv = _chat(pg_conn, user_id="u2", agent_id=agent, visibility="hidden")
+        message_id = _message(pg_conn, conv, "streaming")
+        PendingToolStateRepository(pg_conn).save_state(
+            conv, "u2",
+            messages=[], tools_dict={}, tool_schemas=[], agent_config={"reserved_message_id": message_id},
+            pending_tool_calls=[{"call_id": "c1", "tool_name": "send_email", "pause_type": "awaiting_approval"}],
+        )
+        assert activity_now.build_now(pg_conn, "u1")["running"] == []
+
     def test_absorbs_the_agents_workflow_runs(self, pg_conn):
         workflow = TestWorkflowRuns()._workflow(pg_conn)
         agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)

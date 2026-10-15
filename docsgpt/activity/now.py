@@ -109,7 +109,8 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     API, OpenAI-compatible and shared-agent calls write hidden conversations,
     some under the caller's user id; a busy agent would flood the list, so
     each agent is one row whose ``count`` is its requests. The agent's Logs
-    list them one by one.
+    list them one by one. An answer paused for a tool approval is left out,
+    as in ``_running_chats``: it waits under ``needs_you``.
     """
     rows = query_rows(
         conn,
@@ -122,6 +123,12 @@ def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         WHERE a.user_id = :user_id
           AND c.visibility <> 'listed'
           AND m.status IN ('pending', 'streaming')
+          AND NOT EXISTS (
+              SELECT 1 FROM pending_tool_state p
+              WHERE p.conversation_id = m.conversation_id AND p.user_id = m.user_id
+                AND p.status = 'pending'
+                AND p.agent_config ->> 'reserved_message_id' = m.id::text
+          )
           AND COALESCE(
                 (m.message_metadata ->> 'last_heartbeat_at')::timestamptz,
                 m.timestamp
