@@ -127,12 +127,18 @@ export default function History() {
   const [query, setQuery] = useState('');
   // Rows and "more to load" change together: a refresh that finds a gap
   // replaces both, one that merges keeps the tail's `hasMore`.
+  // The list remembers the filters it was loaded under: under others it is
+  // not shown (a new filter loads, then fails, on its own), so a Retry starts
+  // that filter over instead of appending to the last one's runs.
   const [list, setList] = useState<{
+    key: string;
     runs: HistoryRun[];
     hasMore: boolean;
   } | null>(null);
-  const runs = list?.runs ?? null;
-  const hasMore = list?.hasMore ?? false;
+  const filterKey = [kind, status, query, period].join('|');
+  const shown = list?.key === filterKey ? list : null;
+  const runs = shown?.runs ?? null;
+  const hasMore = shown?.hasMore ?? false;
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [activeRun, setActiveRun] = useState<ScheduleRun | null>(null);
@@ -176,13 +182,11 @@ export default function History() {
         const page = await fetchPage(offset);
         if (gen !== generation.current) return;
         setList((current) => ({
+          key: filterKey,
           runs:
-            offset === 0
+            offset === 0 || current?.key !== filterKey
               ? page.runs
-              : [
-                  ...(current?.runs ?? []),
-                  ...unseen(current?.runs ?? [], page.runs),
-                ],
+              : [...current.runs, ...unseen(current.runs, page.runs)],
           hasMore: page.has_more,
         }));
       } catch {
@@ -191,7 +195,7 @@ export default function History() {
         if (gen === generation.current) setLoading(false);
       }
     },
-    [fetchPage],
+    [fetchPage, filterKey],
   );
 
   /**
@@ -204,19 +208,20 @@ export default function History() {
       const page = await fetchPage(0);
       if (gen !== generation.current) return;
       setList((current) => {
+        if (current !== null && current.key !== filterKey) return current;
         const fresh = unseen(current?.runs ?? [], page.runs);
         if (current !== null && fresh.length === 0) return current;
         // Nothing in common: more than a page landed (or nothing was listed),
         // so a merge would leave a gap. Start over from this page.
         if (current === null || fresh.length === page.runs.length) {
-          return { runs: page.runs, hasMore: page.has_more };
+          return { key: filterKey, runs: page.runs, hasMore: page.has_more };
         }
         return { ...current, runs: [...fresh, ...current.runs] };
       });
     } catch {
       // The next change in activity tries again.
     }
-  }, [fetchPage]);
+  }, [fetchPage, filterKey]);
 
   useEffect(() => {
     void load(0);
@@ -225,7 +230,7 @@ export default function History() {
   // New runs land after the events that refetch the Now snapshot, which
   // moves `revision`. Only that acts here; filters reload through `load`.
   const seenRevision = useRef(revision);
-  const loaded = list !== null;
+  const loaded = shown !== null;
   useEffect(() => {
     if (revision === seenRevision.current) return;
     seenRevision.current = revision;

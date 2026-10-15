@@ -214,6 +214,40 @@ describe('History page', () => {
     expect(container.textContent).not.toContain('activity.history.loadMore');
   });
 
+  it("shows loading, not the last filter's runs, while a new filter loads", async () => {
+    await render();
+    activity.history.mockReturnValueOnce(deferred().promise);
+    await clickKind('webhook');
+    expect(
+      container.querySelector('[data-slot="loading-state"]'),
+    ).not.toBeNull();
+    expect(titles()).toEqual([]);
+  });
+
+  it('retries a filter that failed to load from its start', async () => {
+    await render();
+    activity.history.mockRejectedValueOnce(new Error('down'));
+    await clickKind('webhook');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'activity.history.loadError',
+    );
+    expect(titles()).toEqual([]);
+
+    activity.history.mockResolvedValueOnce({
+      runs: named('webhook run'),
+      has_more: false,
+    });
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(activity.history.mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: 'webhook',
+      offset: 0,
+    });
+    expect(titles()).toEqual(['webhook run']);
+  });
+
   it('shows the latest filter when an older request answers last', async () => {
     const webhooks = deferred();
     const jobs = deferred();
