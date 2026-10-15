@@ -30,7 +30,7 @@ DECISION_MODE=none      # turn it off everywhere, whatever the feature settings 
 DECISION_PRELOAD=true   # download, load and time it when the API starts, even with every feature off
 ```
 
-The model runs inside the API process, and Celery workers never load it. If a call cannot be answered (the model is off, loading or busy), the feature falls back to what it does without it, so a missing model never fails a request.
+By default the model runs inside the API process, and Celery workers never load it. It can also run on a server of its own, such as vLLM on a GPU: see [API mode](#api-mode). If a call cannot be answered (the model is off, loading, busy or unreachable), the feature falls back to what it does without it, so a missing model never fails a request.
 
 ## Turning features on
 
@@ -53,7 +53,49 @@ docsgpt decisions prefetch
 
 For a machine with no internet access, run that on a connected machine and copy the directory, or point `DECISION_MODEL_PATH` at a copy of the model: nothing is downloaded then. `HF_HUB_OFFLINE=1` is honoured. A missing file or a failed download leaves the model unavailable, logs the fix, and is retried after `DECISION_LOAD_RETRY_SECONDS`. See [Air-Gapped Deployment](/Deploying/Air-Gapped).
 
-The model sends no text anywhere: running in the API process, its only outbound call is that one-time download.
+Running in the API process, the model sends no text anywhere: its only outbound call is that one-time download. [API mode](#api-mode) sends text to the server you point it at.
+
+## API mode
+
+Instead of loading the model in the API process, DocsGPT can call a decision server. Set its address in `.env`; with `DECISION_BASE_URL` set, `DECISION_MODE` defaults to `api`, and both the API and the Celery worker call the server:
+
+```env
+DECISION_BASE_URL=http://127.0.0.1:7095   # the server's root, without /v1
+DECISION_KEY=                             # bearer key; unset sends INTERNAL_KEY
+```
+
+Two kinds of server work:
+
+- **A `/v1/decide` server** (the default `DECISION_PROTOCOL=decide`): `POST /v1/decide`, `POST /v1/decide/batch` and `GET /v1/models`, as `arcd serve`, the model's research server, answers them. The server renders, cuts and calibrates; DocsGPT checks every answer against the question it asked. A server that does not report which model it runs is taken to run `arc53/arc-decide-0.6b-v0.1`; set `DECISION_MODEL` if it runs another.
+- **Stock vLLM** (`DECISION_PROTOCOL=vllm`) on an NVIDIA GPU, serving `arc53/arc-decide-0.6b-v0.1` at its pinned revision. DocsGPT builds the prompt, cuts the state and applies the model's calibration itself, and reads one label token per question:
+
+```bash
+vllm serve arc53/arc-decide-0.6b-v0.1 --revision a03cd6bc45fa7b75e05489454e2084bd3516db17 \
+  --logprobs-mode processed_logprobs --max-logprobs 16 --enable-prefix-caching --max-model-len 4096 \
+  --gpu-memory-utilization 0.2
+```
+
+```env
+DECISION_BASE_URL=http://127.0.0.1:8000
+DECISION_PROTOCOL=vllm
+```
+
+The two `logprobs` flags are required: without them the answers come back empty and every call fails open. `--gpu-memory-utilization 0.2` (about 4.8 GB of a 24 GB card) leaves room for an LLM on the same card. To let interactive decisions overtake background ones, start vLLM with `--scheduling-policy priority` and set `DECISION_VLLM_PRIORITY=true`.
+
+In API mode DocsGPT downloads only the model's tokenizer (11 MB, at the same pinned revision) into `DECISION_CACHE_DIR`, so it counts tokens and reports truncation exactly as the server cuts a state. On an air-gapped host, `docsgpt decisions prefetch` fetches it with the rest of the model.
+
+**The server receives the text** of every message, chunk or conversation a feature asks about. Point `DECISION_BASE_URL` only at a server you trust with that data, as you would an LLM provider: it acts as a data processor for your users' content. `INTERNAL_KEY` is sent as the bearer key when `DECISION_KEY` is unset, so set `DECISION_KEY` for any server outside your own stack.
+
+When the server fails, features carry on without it:
+
+- Each request's timeout is the time left before the feature's deadline. A connection error or a 502, 503 or 504 is retried once (`DECISION_API_RETRIES`), and only while 30% of that time remains; timeouts and other errors are not retried.
+- After 3 consecutive failures (`DECISION_BREAKER_FAILURES`), calls are skipped for 30 seconds (`DECISION_BREAKER_COOLDOWN`); then one is let through, and its success resumes them.
+- A server that refuses the key (HTTP 401) is logged once, and calls stop until a later check of the server succeeds.
+- A server that answers one bad item with an error for the whole batch, as `arcd serve` does, has that batch sent again one item at a time.
+
+States are sent in batches of `DECISION_BATCH_SIZE` (32). Up to `DECISION_API_CONCURRENCY` (4) requests are in flight for decisions someone waits on, and `DECISION_BACKGROUND_CONCURRENCY` (1) for background work, which never takes an interactive slot. DocsGPT reads the server's `GET /v1/models` before the first call and every `DECISION_PROBE_SECONDS` (30).
+
+For [Measured `auto`](#measured-auto), a server that reports its own timing on `/v1/models` is predicted from it, plus the round trip of each request. Any other server, `arcd serve` and vLLM included, is timed by sending the same few constant calls through it, when it is first used and again whenever it comes back after failing.
 
 ## Memory and speed on CPU
 
@@ -98,8 +140,9 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
 }
 ```
 
-- `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits.
-- `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn.
+- `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`, and in API mode `degraded` while calls to a failing server are skipped. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits; in API mode also `circuit_open`, `auth` (the server refused the key) and `no_decider` (`DECISION_MODE=api` without `DECISION_BASE_URL`).
+- `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn. In API mode they include the transport, and `speed` adds `round_trip_ms` and `measured_by` (`server` when the server reported its own timing, `client` when DocsGPT timed it).
+- `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports, or `remote`.
 - `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`.
 
 The public `/api/config` carries only `decision_available`.
