@@ -7,6 +7,13 @@ from docsgpt.decisions import files
 from docsgpt.decisions.models import V02
 
 
+def write_onnx(folder, skip=()):
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in files.ONNX_FILES:
+        if name not in skip:
+            (folder / name).write_bytes(b"x")
+
+
 class FakeHub:
     """Stands in for ``huggingface_hub.snapshot_download``: writes the ONNX files as real files."""
 
@@ -19,8 +26,7 @@ class FakeHub:
         if self.fail:
             raise OSError("connection reset")
         if self.with_onnx:
-            (local_dir / "onnx").mkdir(parents=True, exist_ok=True)
-            (local_dir / "onnx" / "model.onnx").write_bytes(b"graph")
+            write_onnx(local_dir / "onnx")
         (local_dir / "questions.json").write_text("{}")
         return str(local_dir)
 
@@ -102,8 +108,7 @@ class TestOffline:
     @pytest.mark.parametrize("layout", ["snapshot", "onnx folder"])
     def test_model_path_is_used_as_it_is(self, hub, monkeypatch, tmp_path, layout):
         snapshot = tmp_path / "copied"
-        (snapshot / "onnx").mkdir(parents=True)
-        (snapshot / "onnx" / "model.onnx").write_bytes(b"graph")
+        write_onnx(snapshot / "onnx")
         given = snapshot if layout == "snapshot" else snapshot / "onnx"
         monkeypatch.setattr(settings, "DECISION_MODEL_PATH", str(given))
         assert files.ensure_onnx(V02) == snapshot / "onnx"
@@ -115,3 +120,12 @@ class TestOffline:
             files.ensure_onnx(V02)
         assert caught.value.reason == "offline"
         assert hub.calls == []
+
+    @pytest.mark.parametrize("missing", files.ONNX_FILES)
+    def test_an_incomplete_folder_is_not_present(self, hub, monkeypatch, tmp_path, missing):
+        write_onnx(tmp_path / "copied" / "onnx", skip=(missing,))
+        monkeypatch.setattr(settings, "DECISION_MODEL_PATH", str(tmp_path / "copied"))
+        assert files.local_onnx_dir(V02) is None
+        with pytest.raises(files.FilesUnavailable) as caught:
+            files.ensure_onnx(V02)
+        assert missing in str(caught.value)

@@ -57,10 +57,14 @@ def snapshot_dir(spec: ModelSpec) -> Path:
     return Path(settings.DECISION_CACHE_DIR) / spec.id / revision(spec)
 
 
+#: Every file the ONNX client opens; a folder missing any of them would fail at load, so it does not count as present.
+ONNX_FILES = ("model.onnx", "model.onnx.data", "arcd_serving.json", "config.json", "tokenizer.json")
+
+
 def _onnx_in(folder: Path) -> Optional[Path]:
-    """The folder holding ``model.onnx``: ``folder/onnx`` or ``folder`` itself."""
+    """The complete ONNX folder: ``folder/onnx`` or ``folder`` itself."""
     for candidate in (folder / "onnx", folder):
-        if (candidate / "model.onnx").is_file():
+        if all((candidate / name).is_file() for name in ONNX_FILES):
             return candidate
     return None
 
@@ -88,7 +92,7 @@ def ensure_onnx(spec: ModelSpec) -> Path:
         return found
     if settings.DECISION_MODEL_PATH:
         raise FilesUnavailable(
-            "offline", f"DECISION_MODEL_PATH ({settings.DECISION_MODEL_PATH}) holds no model.onnx"
+            "offline", f"DECISION_MODEL_PATH ({settings.DECISION_MODEL_PATH}) lacks one of {', '.join(ONNX_FILES)}"
         )
     if offline():
         raise FilesUnavailable(
@@ -132,7 +136,7 @@ def _download(spec: ModelSpec, rev: str) -> Path:
         except Exception as exc:  # noqa: BLE001 -- any failure leaves the partial folder to resume from
             raise FilesUnavailable("download", f"could not download {spec.id} at {rev}: {exc}") from exc
         if _onnx_in(partial) is None:
-            raise FilesUnavailable("download", f"{spec.id} at {rev} has no onnx/model.onnx")
+            raise FilesUnavailable("download", f"{spec.id} at {rev} lacks one of onnx/{{{','.join(ONNX_FILES)}}}")
         if target.exists():
             shutil.rmtree(target)
         os.replace(partial, target)
