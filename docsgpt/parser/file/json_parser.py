@@ -2,13 +2,13 @@ import json
 from typing import Any, Dict, List, Union
 from pathlib import Path
 
-from docsgpt.parser.file.base_parser import BaseParser
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
 
 class JSONParser(BaseParser):
     r"""JSON (.json) parser.
 
     Parses JSON files into a list of strings or a concatenated document.
-    It handles both JSON objects (dictionaries) and arrays (lists).
+    Arrays produce one row per item; objects and scalar values produce one row.
 
     Args:
         concat_rows (bool): Whether to concatenate all rows into one document.
@@ -43,15 +43,30 @@ class JSONParser(BaseParser):
         return {}
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
-        """Parse JSON file."""
-        
-        with open(file, 'r', encoding='utf-8') as f:
-                data = json.load(f, **self._json_config)
+        """Parse JSON into text rows without iterating over scalar values.
 
-        if isinstance(data, dict):
+        Args:
+            file: JSON file to read.
+            errors: Base parser compatibility argument. JSON decoding stays strict.
+
+        Returns:
+            A joined string, or a list of row strings when concatenation is disabled.
+
+        Raises:
+            DocumentParseError: If the file contains invalid JSON or UTF-8.
+        """
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                data = json.load(f, **self._json_config)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise DocumentParseError(
+                f"Failed to parse {file.name}: the file must contain valid UTF-8 JSON."
+            ) from exc
+
+        if not isinstance(data, list):
             data = [data]
 
+        rows = [str(item) for item in data]
         if self._concat_rows:
-            return self._row_joiner.join([str(item) for item in data])
-        else:
-            return data
+            return self._row_joiner.join(rows)
+        return rows
