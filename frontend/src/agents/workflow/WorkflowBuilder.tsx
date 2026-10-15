@@ -1855,7 +1855,7 @@ function WorkflowBuilderInner() {
 
   return (
     <>
-      <MobileBlocker />
+      <MobileBlocker agent={canManageAgent ? currentAgent : null} />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
           <AgentPageHeader
