@@ -86,6 +86,10 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // skips that cycle instead of fetching a stale page under the new
   // filters (which could latch hasMore=false and freeze the list).
   const resetPendingRef = useRef(false);
+  // Moves whenever the pages start over (new filters, or a refresh that
+  // read past them): a Load more still out asked for a page of the old
+  // paging, and its rows and has_more no longer fit.
+  const generationRef = useRef(0);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), 400);
@@ -98,6 +102,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       return;
     }
     resetPendingRef.current = true;
+    generationRef.current += 1;
     setLoadFailed(false);
     setLogsByPage({});
     setPage(1);
@@ -122,13 +127,19 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
 
     const issuedKey = filterKey;
     const issuedPage = page;
+    const issuedGeneration = generationRef.current;
     setLoadingLogs(true);
     setLoadFailed(false);
     try {
       const response = await requestPage(page);
       if (!response.ok) throw new Error('Failed to fetch logs');
       const data = await response.json();
-      if (issuedKey !== filterKeyRef.current || resetPendingRef.current) return;
+      if (
+        issuedKey !== filterKeyRef.current ||
+        issuedGeneration !== generationRef.current ||
+        resetPendingRef.current
+      )
+        return;
 
       setLogsByPage((prev) => ({
         ...prev,
@@ -137,7 +148,11 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       setHasMore(data.has_more);
     } catch (error) {
       console.error(error);
-      if (issuedKey === filterKeyRef.current) setLoadFailed(true);
+      if (
+        issuedKey === filterKeyRef.current &&
+        issuedGeneration === generationRef.current
+      )
+        setLoadFailed(true);
     } finally {
       if (issuedKey === filterKeyRef.current) setLoadingLogs(false);
     }
@@ -209,6 +224,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       );
       if (merged.reset) {
         // Loading more goes on from the refreshed pages.
+        generationRef.current += 1;
         setLogsByPage(merged.pages);
         setPage(pages);
         setHasMore(true);

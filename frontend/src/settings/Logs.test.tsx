@@ -390,6 +390,39 @@ describe('Logs running rows', () => {
     expect(getLogs.mock.calls[2][0]).toMatchObject({ page: 2, page_size: 10 });
   });
 
+  it('drops a Load more that was out when a refresh reset the pages', async () => {
+    const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
+    const rows = (prefix: string, from: number) =>
+      Array.from({ length: 10 }, (_, i) => ({
+        ...log,
+        id: `${prefix}-${i}`,
+        question: `${prefix} question ${i}`,
+        timestamp: at(from + i),
+      }));
+    const more = (logs: object[], has_more: boolean) => ({
+      ok: true,
+      json: () => Promise.resolve({ logs, has_more }),
+    });
+    getLogs.mockResolvedValueOnce(more(rows('old', 600), true));
+    await act(async () => root.render(<Logs />));
+
+    // Load more asks for page 2 and is still out...
+    let answerStale: (value: unknown) => void = () => undefined;
+    getLogs.mockReturnValueOnce(
+      new Promise((resolve) => (answerStale = resolve)),
+    );
+    await act(async () => sentinel.reach());
+    // ...when ten new answers finish and the refresh starts the pages over.
+    getLogs.mockResolvedValueOnce(more(rows('new', 0), true));
+    store.state.activity.revision += 1;
+    await act(async () => root.render(<Logs />));
+    // Its page 2 was read before the new rows shifted the paging.
+    await act(async () => answerStale(more(rows('stale', 700), false)));
+
+    expect(container.textContent).not.toContain('stale question');
+    expect(sentinel.enabled).toBe(true);
+  });
+
   it('refreshes a run past the hundredth row', async () => {
     // Rows 0-109 newest first; row 105 is a schedule run on page 11.
     const at = (n: number) => new Date(Date.now() - n * 1000).toISOString();
