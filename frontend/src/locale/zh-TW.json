@@ -463,6 +463,7 @@
             "semantic": "語意"
           },
           "maxTokens": "每區塊最大 Token 數",
+          "maxTokensHint": "最多 4,096 個 Token。",
           "minTokens": "每區塊最小 Token 數",
           "duplicateHeaders": "在各區塊間重複標頭"
         }
