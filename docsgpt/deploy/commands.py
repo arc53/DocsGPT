@@ -1082,6 +1082,134 @@ def _redis_to_check(args, env: Mapping[str, str]) -> dict:
     return {key: value for key, value in pairs if value}
 
 
+#: Where a Docker stack's backend and worker reach the decision model unless ``.env`` says otherwise.
+SIDECAR_URL = "http://decider:7095"
+
+
+def _decision_settings(env: Mapping[str, str]):
+    """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, shape)``."""
+    with _service_environment(env):
+        from docsgpt.core.settings import Settings
+        from docsgpt.decisions import features
+
+        _forget_shell_settings(env)
+        settings = Settings(_env_file=None)
+        registered = {
+            spec.name: (getattr(settings, spec.mode_setting, None) or "off",
+                        float(getattr(settings, spec.budget_setting)), spec.shape)
+            for spec in features.specs()
+        }
+    return settings, registered
+
+
+def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, str, Any]:
+    """``GET /v1/models`` on a decision server: ``(level, what it said, its SpeedProfile or None)``.
+
+    ``host.docker.internal`` is the host itself here, which is where doctor runs.
+    """
+    import httpx2
+
+    from docsgpt.decisions.backends.http import without_userinfo
+    from docsgpt.decisions.latency import SpeedProfile
+    from docsgpt.decisions.models import lookup, version
+
+    base, auth = without_userinfo(url.rstrip("/").removesuffix("/v1"))
+    parts = urlsplit(base)
+    if parts.hostname == "host.docker.internal":
+        base = urlunsplit(parts._replace(netloc=parts.netloc.replace("host.docker.internal", "127.0.0.1")))
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    try:
+        with httpx2.Client(timeout=3.0) as client:
+            response = client.get(f"{base}/v1/models", headers=headers, auth=auth)
+    except httpx2.HTTPError as exc:
+        return "warn", f"{_endpoint(base)} does not answer ({type(exc).__name__})", None
+    if response.status_code in (401, 403):
+        return "warn", f"{_endpoint(base)} refused DECISION_KEY", None
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+    if response.status_code != 200 or not isinstance(data, dict):
+        return "warn", f"{_endpoint(base)} answered HTTP {response.status_code}", None
+    if protocol == "vllm":
+        served = [str(m.get("id")) for m in data.get("data") or [] if isinstance(m, dict)]
+        return "ok", f"vLLM at {_endpoint(base)} serving {', '.join(served) or 'nothing'}", None
+    entries = data.get("models") or [{}]
+    entry = entries[0] if isinstance(entries[0], dict) else {}
+    spec = lookup(str(entry.get("name") or ""))
+    if spec is None or "prompt_hash" not in entry:
+        return "ok", f"{_endpoint(base)} serving {entry.get('name') or 'an unnamed model'}", None
+    status = entry.get("status") or "unknown"
+    detail = (f"{_endpoint(base)} {status}{' (' + entry['reason'] + ')' if entry.get('reason') else ''}, "
+              f"{entry.get('runtime')}, {version(spec, entry.get('calibration'))}")
+    try:
+        profile = SpeedProfile.from_wire(entry["speed"]) if isinstance(entry.get("speed"), dict) else None
+    except (KeyError, TypeError, ValueError):
+        profile = None
+    return ("warn" if status == "unavailable" else "ok"), detail, profile
+
+
+def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
+    """The decision model: where it runs, what that reports, and every feature's mode and ``auto`` verdict.
+
+    Decisions fail open, so this is never a failure: a feature that is on with no model behind it is a warning.
+
+    Args:
+        env: The stack's settings file.
+        docker: Whether the services run in this stack's containers, which reach the decider sidecar.
+    """
+    try:
+        settings, registered = _decision_settings(env)
+    except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
+        return Check("decisions", "warn", f"the settings do not load: {_first_error(exc)}")
+    if settings.DECISION_MODE == "none":
+        return Check("decisions", "ok", "off (DECISION_MODE=none)")
+    on = [name for name, (mode, _, _) in registered.items() if mode != "off"]
+    url = settings.DECISION_BASE_URL or (SIDECAR_URL if docker and settings.DECISION_MODE != "local" else None)
+    profile, level = None, "ok"
+    if url == SIDECAR_URL and not settings.DECISION_BASE_URL:
+        where = "the stack's decider container (`docsgpt logs decider`)"
+        if sys.platform == "darwin" and on:
+            level = "warn"
+            where += ("; Docker on a Mac has no GPU, so run `docsgpt decide-server --device mps` on the host and "
+                      "set DECISION_BASE_URL=http://host.docker.internal:7095")
+    elif url:
+        key = settings.DECISION_KEY or (env.get("INTERNAL_KEY") if docker else None)
+        level, where, profile = _probe_decider(url, key, settings.DECISION_PROTOCOL)
+    else:
+        where = _local_decisions(settings)
+    verdicts = []
+    for name, (mode, budget, shape) in registered.items():
+        if mode == "auto" and profile is not None:
+            predicted = profile.predict_s(shape)
+            mode = f"auto, {'on' if predicted <= budget else 'off'} at {predicted:.2f}s of {budget:g}s"
+        verdicts.append(f"{name} {mode}")
+    if not on:
+        level = "ok"
+    return Check("decisions", level, f"{where}; {', '.join(verdicts) or 'no features'}")
+
+
+def _local_decisions(settings: Any) -> str:
+    """The in-process model: whether its files are here and the memory a load would have."""
+    from docsgpt.decisions import files, memory
+    from docsgpt.decisions.models import DEFAULT_FOR_RUNTIME, lookup
+
+    spec = lookup(settings.DECISION_MODEL or DEFAULT_FOR_RUNTIME["onnx"])
+    if spec is None:
+        return f"DECISION_MODEL ({settings.DECISION_MODEL}) is not a known decision model"
+    if settings.DECISION_MODEL_PATH:
+        folder = Path(settings.DECISION_MODEL_PATH).expanduser()
+    else:
+        folder = Path(settings.DECISION_CACHE_DIR) / spec.id / (settings.DECISION_MODEL_REVISION or spec.revision)
+    found = files.onnx_folder(folder)
+    text = f"in the API process, {spec.id} {'in ' + str(found) if found else 'not downloaded yet'}"
+    free = memory.headroom_mb()
+    if free is not None:
+        need = settings.DECISION_MIN_FREE_MB if settings.DECISION_MIN_FREE_MB is not None else spec.min_free_mb
+        text += f", {free:.0f} MB free (a load needs {need})"
+    return text
+
+
 def doctor(args, context: Optional[Context] = None) -> int:
     """Check what DocsGPT needs on this machine, and say what is missing."""
     from docsgpt.core import paths
@@ -1094,6 +1222,8 @@ def doctor(args, context: Optional[Context] = None) -> int:
         except FileNotFoundError as exc:
             raise DeployError(str(exc)) from exc
     env = envfile.read(env_path)
+    directory = stack.stack_dir(args.dir)
+    docker = _mode(directory) == "docker" and (directory / stack.COMPOSE_FILE).is_file()
     checks = [
         Check("settings", "ok" if env_path.is_file() else "warn",
               f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
@@ -1101,6 +1231,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
         _check_redis(_redis_to_check(args, env)),
         _check_provider(env),
         _check_model(env),
+        _check_decisions(env, docker),
     ]
 
     # The one command that exists to explain a broken setup must not fall over on one.
@@ -1111,7 +1242,6 @@ def doctor(args, context: Optional[Context] = None) -> int:
     else:
         checks.append(Check("port", "warn", f"{port} is in use, which is expected if DocsGPT is running"))
 
-    directory = stack.stack_dir(args.dir)
     if _mode(directory) == "native":
         services = context.service_manager() if context else native.services_for_platform()
         names = _service_names(directory)
