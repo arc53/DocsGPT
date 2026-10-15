@@ -42,6 +42,7 @@ const respond = (body: unknown, ok = true) =>
 
 const getUsers = vi.fn();
 const getAdmins = vi.fn();
+const getUser = vi.fn();
 const grantAdmin = vi.fn();
 const revokeAdmin = vi.fn();
 const setUserActive = vi.fn();
@@ -50,6 +51,7 @@ vi.mock('../api/services/adminService', () => ({
   default: {
     getUsers: (...a: unknown[]) => getUsers(...a),
     getAdmins: (...a: unknown[]) => getAdmins(...a),
+    getUser: (...a: unknown[]) => getUser(...a),
     grantAdmin: (...a: unknown[]) => grantAdmin(...a),
     revokeAdmin: (...a: unknown[]) => revokeAdmin(...a),
     setUserActive: (...a: unknown[]) => setUserActive(...a),
@@ -100,6 +102,7 @@ describe('admin Users actions', () => {
     [
       getUsers,
       getAdmins,
+      getUser,
       grantAdmin,
       revokeAdmin,
       setUserActive,
@@ -140,6 +143,69 @@ describe('admin Users actions', () => {
     await flush();
     return result;
   };
+
+  it('a row shows the email over the full user id', async () => {
+    await render({ email: 'priya@example.com' });
+    const cell = container.querySelector('tbody td')!;
+    expect(cell.textContent).toContain('priya@example.com');
+    expect(cell.textContent).toContain('priya');
+  });
+
+  it('a row without an email shows the user id alone', async () => {
+    await render({ email: null });
+    expect(container.querySelector('tbody td')!.textContent).toBe('priya');
+  });
+
+  it('the detail dialog shows the email and the user id', async () => {
+    await render({ email: 'priya@example.com' });
+    getUser.mockImplementation(() =>
+      respond({
+        success: true,
+        user: { user_id: 'priya', email: 'priya@example.com', active: true },
+        roles: ['user'],
+        counts: {},
+        recent_events: [],
+      }),
+    );
+    await clickOption('View details');
+    expect(getUser).toHaveBeenCalledWith('priya', 'tok');
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const items = Array.from(dialog.querySelectorAll('dt')).map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    expect(items).toContainEqual(['Email', 'priya@example.com']);
+    expect(items).toContainEqual(['User ID', 'priya']);
+  });
+
+  it('the detail dialog says when no email is on file', async () => {
+    await render();
+    getUser.mockImplementation(() =>
+      respond({
+        success: true,
+        user: { user_id: 'priya', email: null, active: true },
+        roles: ['user'],
+        counts: {},
+        recent_events: [],
+      }),
+    );
+    await clickOption('View details');
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const items = Array.from(dialog.querySelectorAll('dt')).map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    expect(items).toContainEqual(['Email', 'Not on file']);
+    expect(items).toContainEqual(['User ID', 'priya']);
+  });
+
+  it('a confirm names the user by email', async () => {
+    await render({ email: 'priya@example.com' });
+    await clickOption('Deactivate');
+    expect(confirmProps.current?.message).toBe(
+      'Deactivate "priya@example.com"?',
+    );
+  });
 
   it('Make admin shows no success toast and reloads the list', async () => {
     grantAdmin.mockImplementation(() => respond({ success: true }));
