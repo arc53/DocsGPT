@@ -191,6 +191,12 @@ describe('activitySlice', () => {
     const polled = () =>
       fetched(reducer(undefined, { type: '@@init' }), snapshot(), 'poll');
 
+    it('stays put for the first snapshot, which is no news', () => {
+      // A page opened first (History, Calendar) loaded already; moving
+      // here would load it a second time.
+      expect(revision(polled())).toBe(0);
+    });
+
     it('stays put when a poll brings the same snapshot', () => {
       const first = polled();
       const again = fetched(first, snapshot(), 'poll');

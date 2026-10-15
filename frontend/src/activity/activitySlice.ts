@@ -107,7 +107,9 @@ const activitySlice = createSlice({
         const ended = (state.now?.running ?? []).some(
           (item) => !fresh.has(item.id),
         );
-        if (action.meta.arg === 'event' || ended || settled !== state.settled) {
+        // The first snapshot is no news: a page opened first loaded already.
+        const changed = state.settled !== null && settled !== state.settled;
+        if (action.meta.arg === 'event' || ended || changed) {
           state.revision += 1;
         }
         state.settled = settled;
