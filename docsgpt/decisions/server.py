@@ -17,7 +17,8 @@ Every shipped stack runs it as the ``decider`` sidecar, which the API and the Ce
   time. Without one the server binds only to a loopback address.
 - **Logs** hold counts and latencies, never what is decided.
 
-``DecideService`` is the routes' work without HTTP, so the API's internal route can serve the same contract.
+``DecideService`` is the routes' work without HTTP, so the API's internal routes serve the same contract to Celery
+workers in local mode (``docsgpt.api.internal.routes``).
 """
 
 from __future__ import annotations
@@ -171,11 +172,12 @@ class DecideService:
                 "usage": {"input_tokens": outcome.input_tokens, "output_tokens": 0}}
 
 
-def _lane(value: Optional[str]) -> Lane:
+def lane_of(value: Optional[str]) -> Lane:
+    """The lane an ``X-Decision-Priority`` header asks for: ``background``, else ``hot``."""
     return "background" if (value or "").strip().lower() == "background" else "hot"
 
 
-def _deadline(value: Optional[str], lane: Lane, now: float) -> float:
+def deadline_of(value: Optional[str], lane: Lane, now: float) -> float:
     """The call's deadline: ``X-Decision-Deadline-Ms`` from now, else the lane's default timeout."""
     from docsgpt.core.settings import settings
 
@@ -222,8 +224,8 @@ def create_app(service: DecideService, clock: Callable[[], float] = time.monoton
             denied = refused(request)
             if denied:
                 return denied
-            lane = _lane(request.headers.get("x-decision-priority"))
-            deadline = _deadline(request.headers.get("x-decision-deadline-ms"), lane, clock())
+            lane = lane_of(request.headers.get("x-decision-priority"))
+            deadline = deadline_of(request.headers.get("x-decision-deadline-ms"), lane, clock())
             body = await body_of(request)
             if body is None:
                 return JSONResponse({"error": "bad_request", "detail": "the body is not JSON"}, status_code=400)

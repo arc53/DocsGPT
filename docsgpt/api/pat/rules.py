@@ -398,6 +398,7 @@ DENIED_PREFIXES = (
     "/api/connectors/",
     "/api/connections",
     "/api/devices",
+    "/api/internal/",
     "/scim/",
     "/static/",
     "/swaggerui/",

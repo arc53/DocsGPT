@@ -1,6 +1,7 @@
 """Every decision call as a ``decision`` span, a usage count and an OTel metric; never a ``token_usage`` row."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 from opentelemetry.sdk.metrics import MeterProvider
@@ -177,6 +178,14 @@ class TestOtel:
         decisions.get_decider()._backend = remote(DecideBackend, FakeDecideServer())
         trace = _traced(lambda: decisions.decide("s", {"q": NOUL}, feature="f", budget=Budget.hot(2.0)))
         assert self._exported(trace)["decision f"].kind == SpanKind.CLIENT
+
+    @pytest.mark.parametrize("mode, runtime, client", [
+        ("local", "onnx-int8", False), ("api", "onnx-int8", True), ("local", "api-process:onnx-int8", True),
+    ])
+    def test_a_worker_calling_the_api_process_is_a_client(self, mode, runtime, client):
+        span = SimpleNamespace(kind=tracing.KIND_DECISION,
+                               attributes={"docsgpt.decision.mode": mode, "docsgpt.decision.runtime": runtime})
+        assert trace_otel._is_client(span) is client
 
     def test_metrics(self, monkeypatch):
         monkeypatch.setattr(settings, "TRACES_OTEL_EXPORT", True)

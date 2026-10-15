@@ -84,11 +84,14 @@ class TestModes:
         assert batch.reasons == ["wrong_model"] and batch.status == "unavailable"
         assert decisions.status()["status"] == "unavailable"
 
-    def test_a_worker_never_loads(self, monkeypatch):
+    def test_a_worker_without_the_internal_key_has_no_decider(self, monkeypatch):
+        """With the key it calls the API process's model (``test_internal_route``); it never loads one itself."""
         monkeypatch.setattr(settings, "DECISION_MODE", "local")
+        monkeypatch.setattr(settings, "INTERNAL_KEY", None)
         monkeypatch.setattr("docsgpt.celery_init.in_worker", lambda: True)
         batch = decisions.decide_batch([Request("s", {"q": NOUL})], feature="test")
         assert batch.reasons == ["no_decider"]
+        assert (decisions.status()["status"], decisions.status()["reason"]) == ("unavailable", "no_decider")
         decisions.warm()
         assert decisions.get_decider()._backend is None
 

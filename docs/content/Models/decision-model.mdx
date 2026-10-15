@@ -35,11 +35,15 @@ Where it runs depends on the install:
 | Install | Where the model runs |
 | --- | --- |
 | Docker (`docsgpt up`, every Compose file) and Kubernetes | The [`decider`](#the-decider), a container of its own that the API and the worker call. |
-| Without Docker (`docsgpt up --native`, pip, a checkout) | Inside the API process; Celery workers never load it. |
+| Without Docker (`docsgpt up --native`, pip, a checkout) | Inside the API process; Celery workers [call it there](#workers-without-docker) and never load it. |
 | A Mac, fast | A native `decide-server` on the Mac's GPU: see [On a Mac's GPU](#on-a-macs-gpu). |
 | An NVIDIA GPU | vLLM: see [On an NVIDIA GPU](#on-an-nvidia-gpu). |
 
 If a call cannot be answered (the model is off, loading, busy or unreachable), the feature falls back to what it does without it, so a missing model never fails a request.
+
+### Workers without Docker
+
+Without a decider, a Celery worker sends its calls to the API process's model. It reaches the API where it already hands over finished indexes, `WORKER_API_URL` or else `API_URL`, at `/api/internal/decisions/v1/decide` (and `/v1/decide/batch`, `/v1/models`, `/v1/load`), with `INTERNAL_KEY`. The worker keeps only the 11 MB tokenizer, and its first call starts the API's load as the API's own first call would. A worker without `INTERNAL_KEY` gets no answers. With `DECISION_MODE=none` or `api`, the API answers these routes with 503 and loads nothing.
 
 ## Turning features on
 
@@ -214,9 +218,9 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
 }
 ```
 
-- `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`, and in API mode `degraded` while calls to a failing server are skipped. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits; in API mode also `circuit_open`, `auth` (the server refused the key) and `no_decider` (`DECISION_MODE=api` without `DECISION_BASE_URL`).
+- `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`, and in API mode `degraded` while calls to a failing server are skipped. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits; in API mode also `circuit_open`, `auth` (the server refused the key) and `no_decider` (`DECISION_MODE=api` without `DECISION_BASE_URL`, or a [worker](#workers-without-docker) without `INTERNAL_KEY`).
 - `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn. In API mode they include the transport, and `speed` adds `round_trip_ms` and `measured_by` (`server` when the server reported its own timing, `client` when DocsGPT timed it).
-- `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports (`onnx-int8` for the decider, `torch-mps-fp16` on a Mac's GPU, `torch-cuda-bf16` on an NVIDIA one), or `remote`.
+- `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports (`onnx-int8` for the decider, `torch-mps-fp16` on a Mac's GPU, `torch-cuda-bf16` on an NVIDIA one), or `remote`. A worker calling the API process reports `api-process:onnx-int8` (`api-process` before its first call).
 - `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`.
 
 The public `/api/config` carries only `decision_available`.

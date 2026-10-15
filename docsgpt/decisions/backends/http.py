@@ -2,7 +2,7 @@
 
 ``DECISION_BASE_URL`` points at the sidecar ``docsgpt decide-server``, a host server on a Mac's GPU, ``arcd serve``
 or vLLM. This module holds what both protocols share, and the ``decide`` protocol itself (``backends.vllm`` has the
-other):
+other), which a Celery worker in local mode also speaks to the API process (``ApiProcessBackend``):
 
 - **One pooled HTTP client per process,** built on first use and again in a forked child, so no connection crosses
   a fork. Each lane sends through its own thread pool, sized by the lane's concurrency
@@ -12,8 +12,8 @@ other):
 - **The breaker** (``decisions.breaker``) skips calls for a cooldown after consecutive transport failures.
 - **The key.** ``Authorization: Bearer`` ``DECISION_KEY`` when it is set, and no header otherwise. There is no
   fallback to ``INTERNAL_KEY``: it guards DocsGPT's internal API and must never reach whatever server
-  ``DECISION_BASE_URL`` names. A 401 or 403 is logged once and makes the backend ``unavailable`` (``auth``) until a
-  later probe is let in.
+  ``DECISION_BASE_URL`` names; only ``ApiProcessBackend`` sends it, to the API. A 401 or 403 is logged once and
+  makes the backend ``unavailable`` (``auth``) until a later probe is let in.
 - **The probe.** ``GET /v1/models`` before the first call and every ``DECISION_PROBE_SECONDS``: the server's model,
   status and, from ``docsgpt decide-server``, its timing profile, plus the round trip. A server that reports no
   profile (``arcd serve``, vLLM) is timed through the endpoint with the synthetic calls the local backend times, at
@@ -74,6 +74,12 @@ TIMING_TIMEOUT_S = 60.0
 
 #: Probe round trips the median is taken over.
 ROUND_TRIPS = 5
+
+#: Where the API serves the ``decide`` contract to its own Celery workers in local mode.
+INTERNAL_ROUTES = "/api/internal/decisions"
+
+#: The runtime a worker reports in local mode, where its calls go to the API process's model.
+API_PROCESS = "api-process"
 
 #: Item errors a server may send in place of an answer that keep their meaning here.
 ITEM_REASONS = BACKEND_REASONS | {"timeout", "bad_item"}
@@ -203,6 +209,8 @@ class RemoteBackend:
     needs_tokenizer = False
     #: Whether every question is its own request.
     per_question = False
+    #: The setting holding the key this backend sends, for the log line when the server refuses it.
+    key_setting = "DECISION_KEY"
 
     def __init__(self, transport: Any = None, clock: Callable[[], float] = time.monotonic):
         """Create an idle backend; nothing is sent or fetched.
@@ -213,7 +221,7 @@ class RemoteBackend:
         """
         from docsgpt.core.settings import settings
 
-        url, self._userinfo = without_userinfo((settings.DECISION_BASE_URL or "").rstrip("/"))
+        url, self._userinfo = without_userinfo(self._address().rstrip("/"))
         self.base_url = url[: -len("/v1")] if url.endswith("/v1") else url
         self.spec: ModelSpec = select(self.runtime_key)
         self.calibration = self.spec.calibration
@@ -243,6 +251,12 @@ class RemoteBackend:
         self._timing = False
         self._timed_at: Optional[float] = None
         self._said: set[str] = set()
+
+    def _address(self) -> str:
+        """The server's root URL, as configured."""
+        from docsgpt.core.settings import settings
+
+        return settings.DECISION_BASE_URL or ""
 
     def close(self) -> None:
         """Close the HTTP client and stop the lane pools (tests; a process keeps its backend for life)."""
@@ -479,6 +493,10 @@ class RemoteBackend:
             self._pid = pid
 
     def _headers(self, lane: Optional[Lane], deadline: float) -> dict:
+        return self._key()
+
+    def _key(self) -> dict:
+        """The header carrying this process's key, if it has one: ``DECISION_KEY`` as a bearer key."""
         from docsgpt.core.settings import settings
 
         if not settings.DECISION_KEY:
@@ -545,7 +563,8 @@ class RemoteBackend:
             with self._lock:
                 self._refused = "auth"
             self._log_once("auth", logging.WARNING, "The decision server refused this process's key (HTTP %s): set "
-                           "DECISION_KEY to the key the server expects. Decisions fail open meanwhile.", status)
+                           "%s to the key the server expects. Decisions fail open meanwhile.", status,
+                           self.key_setting)
             return Reply(reason="auth", ms=ms)
         if status in (404, 405) and optional:
             self._succeeded()
@@ -860,6 +879,36 @@ class DecideBackend(RemoteBackend):
         self._server_status = status if isinstance(status, str) else None
         self._server_reason = reason if isinstance(reason, str) else None
         self.spec, self.calibration, self.revision, self.runtime = spec, calibration, revision, runtime
+
+
+class ApiProcessBackend(DecideBackend):
+    """Local mode in a Celery task process: the API process's model, through the API's internal routes.
+
+    A worker never loads the model. It calls the ``decide`` contract under ``/api/internal/decisions`` at
+    ``WORKER_API_URL`` (else ``API_URL``), the address its other calls into the API use, with ``X-Internal-Key``.
+    ``DECISION_KEY`` is not sent there, and this is the only backend that sends ``INTERNAL_KEY``: never to
+    ``DECISION_BASE_URL``. The runtime it reports is ``api-process``, then ``api-process:<the API's runtime>``.
+    """
+
+    runtime_key = "onnx"
+    key_setting = "INTERNAL_KEY"
+
+    def __init__(self, transport: Any = None, clock: Callable[[], float] = time.monotonic):
+        super().__init__(transport, clock)
+        self.runtime = API_PROCESS
+
+    def _address(self) -> str:
+        from docsgpt.core.settings import settings
+
+        return (settings.WORKER_API_URL or settings.API_URL).rstrip("/") + INTERNAL_ROUTES
+
+    def _key(self) -> dict:
+        from docsgpt.core.settings import settings
+
+        return {"X-Internal-Key": settings.INTERNAL_KEY} if settings.INTERNAL_KEY else {}
+
+    def _adopt(self, spec: ModelSpec, calibration: str, revision: str, runtime: str, entry: dict) -> None:
+        super()._adopt(spec, calibration, revision, f"{API_PROCESS}:{runtime}", entry)
 
 
 def _checked(answers: Any, questions: dict[str, dict]) -> Optional[dict[str, dict]]:

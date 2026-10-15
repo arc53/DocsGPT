@@ -16,9 +16,10 @@ class DecisionSettings(SettingsGroup):
     DECISION_MODE: Optional[Literal["none", "local", "api"]] = Field(
         default=None,
         description=(
-            "`none` turns the decision model off everywhere; `local` runs it inside the API process; `api` calls "
-            "the server at `DECISION_BASE_URL`. Unset means `api` when `DECISION_BASE_URL` is set and `local` "
-            "otherwise; neither loads anything until a feature asks for it."
+            "`none` turns the decision model off everywhere; `local` runs it inside the API process, which Celery "
+            "workers call with `INTERNAL_KEY`; `api` calls the server at `DECISION_BASE_URL`. Unset means `api` "
+            "when `DECISION_BASE_URL` is set and `local` otherwise; neither loads anything until a feature asks for "
+            "it."
         ),
     )
     DECISION_BASE_URL: Optional[str] = Field(

@@ -137,9 +137,11 @@ def _root_attributes(trace: Trace) -> Dict[str, Any]:
 
 
 def _is_client(span: Any) -> bool:
-    """Whether a span calls out of the process: an LLM or embedding call, or the decision model in API mode."""
+    """Whether a span calls out of the process: an LLM or embedding call, or the decision model in API mode or, from
+    a Celery worker in local mode, in the API process (runtime ``api-process:...``)."""
     if span.kind == KIND_DECISION:
-        return span.attributes.get("docsgpt.decision.mode") == "api"
+        runtime = str(span.attributes.get("docsgpt.decision.runtime") or "")
+        return span.attributes.get("docsgpt.decision.mode") == "api" or runtime.startswith("api-process")
     return span.kind in (KIND_LLM, KIND_EMBEDDING)
 
 

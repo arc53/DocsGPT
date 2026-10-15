@@ -20,33 +20,13 @@ from docsgpt.decisions.models import V01, V02
 from docsgpt.decisions.types import Request
 
 from .conftest import load_fixture
-from .fakes import CharTokenizer, FakeEngine
+from .fakes import CharTokenizer, FakeBackend, FakeEngine
 
 NOUL = {"type": "noul", "instructions": "Is it?"}
 
 
 def answer(p=0.7):
     return {"q": {"type": "noul", "noul": p}}
-
-
-class FakeBackend:
-    """What ``DecideService`` needs from a backend; ``outcomes`` scripts what ``run`` returns."""
-
-    def __init__(self, outcomes=None):
-        self.spec, self.calibration, self.runtime = V02, V02.calibration, "onnx-int8"
-        self.status, self.reason, self.profile = "idle", None, None
-        self.outcomes = outcomes
-        self.calls, self.warmed = [], 0
-
-    def run(self, requests, lane, deadline):
-        self.calls.append((requests, lane, deadline))
-        if self.outcomes is not None:
-            return list(self.outcomes)
-        return [Outcome({key: {"type": "noul", "noul": 0.7} for key in r.questions}, 1.0, 0.0, False, 12)
-                for r in requests]
-
-    def warm(self):
-        self.warmed += 1
 
 
 @pytest.fixture

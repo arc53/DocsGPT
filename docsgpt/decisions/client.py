@@ -1,7 +1,8 @@
 """The process-wide decision client: validation, the answer cache, and the mode that picks a backend.
 
-``local`` runs the model in this process (``backends.onnx``); ``api`` calls the server at ``DECISION_BASE_URL``
-with the ``decide`` protocol (``backends.http``) or as stock vLLM (``backends.vllm``).
+``local`` runs the model in the API process (``backends.onnx``), which Celery task processes call through the
+API's internal routes (``backends.http.ApiProcessBackend``); ``api`` calls the server at ``DECISION_BASE_URL`` with
+the ``decide`` protocol (``backends.http``) or as stock vLLM (``backends.vllm``).
 
 Callers get answers or ``None``, never an exception at run time: a model that is off, loading, refused or busy
 answers ``None`` with a reason, and the feature falls back to what it does without the model. Caller bugs (a
@@ -17,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -46,6 +48,13 @@ def _mode() -> str:
     from docsgpt.core.settings import settings
 
     return settings.DECISION_MODE or ("api" if settings.DECISION_BASE_URL else "local")
+
+
+def _in_worker() -> bool:
+    """Whether this is a Celery task process; one that never imported the Celery app is not, so a process that only
+    asks (``decide-server``, the CLI) does not import it."""
+    celery_init = sys.modules.get("docsgpt.celery_init")
+    return celery_init is not None and celery_init.in_worker()
 
 
 def validate(requests: list[Request]) -> None:
@@ -116,7 +125,7 @@ class DecisionClient:
         return select(runtime())
 
     def _get(self, create: bool):
-        """The backend: created (nothing loaded or sent) on first use; in local mode never in a Celery worker."""
+        """The backend: created (nothing loaded or sent) on first use."""
         if self._backend is None and create:
             with self._lock:
                 if self._backend is None:
@@ -134,6 +143,10 @@ class DecisionClient:
             from docsgpt.decisions.backends.http import DecideBackend
 
             return DecideBackend()
+        if _in_worker():  # task processes never load the model: they call the API process's
+            from docsgpt.decisions.backends.http import ApiProcessBackend
+
+            return ApiProcessBackend()
         from docsgpt.decisions.backends.onnx import OnnxBackend
 
         return OnnxBackend(self._spec())
@@ -144,15 +157,21 @@ class DecisionClient:
             return "off"
         if self._spec() is None:
             return "wrong_model"
+        from docsgpt.core.settings import settings
+
         if self.mode == "api":
-            from docsgpt.core.settings import settings
-
             return None if settings.DECISION_BASE_URL else "no_decider"
-        from docsgpt.celery_init import in_worker
-
-        if in_worker():  # task processes never load the model; they will call the API's (later work)
+        if _in_worker() and not settings.INTERNAL_KEY:  # the API's internal routes refuse every call without it
             return "no_decider"
         return None
+
+    def served(self):
+        """The backend the API's internal routes serve to Celery workers: this process's own model, created (not
+        loaded) on first use; ``None`` where this process runs none (mode ``none`` or ``api``, an unknown model, a
+        worker)."""
+        if self.mode != "local" or self._unusable() or _in_worker():
+            return None
+        return self._get(create=True)
 
     def decide(self, state: Any, questions: dict[str, dict], *, feature: str,
                budget: Budget = Budget.HOT) -> Optional[Decision]:
@@ -278,10 +297,13 @@ class DecisionClient:
         if not self.enabled or spec is None:
             return None
         backend = self._get(create=False)
-        if self.mode == "api":
-            if backend is not None:  # what the server reported at its last probe
+        if self.mode == "api" or _in_worker():
+            if backend is not None:  # what the server (in a worker, the API) reported at its last probe
                 return backend.model_info(self.mode)
-            return ModelInfo(id=spec.id, revision=files.revision(spec), runtime=runtime(), mode=self.mode,
+            from docsgpt.decisions.backends.http import API_PROCESS
+
+            label = runtime() if self.mode == "api" else API_PROCESS
+            return ModelInfo(id=spec.id, revision=files.revision(spec), runtime=label, mode=self.mode,
                              prompt_hash=spec.prompt_hash, calibration=spec.calibration, version=version(spec))
         calibration = backend.calibration if backend else spec.calibration
         return ModelInfo(id=spec.id, revision=files.revision(spec), runtime=f"onnx-{spec.onnx_dtype}",
@@ -306,7 +328,7 @@ class DecisionClient:
         """
         info = self.model_info()
         backend = self._get(create=False)
-        unusable = self._unusable() if self.mode == "api" else None
+        unusable = self._unusable() if self.enabled else None
         if not self.enabled:
             state, reason = "off", None
         elif info is None:

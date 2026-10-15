@@ -470,7 +470,7 @@ The small classifier that answers typed questions about a state; every feature t
 
 Type `"none" | "local" | "api"`, default unset.
 
-`none` turns the decision model off everywhere; `local` runs it inside the API process; `api` calls the server at `DECISION_BASE_URL`. Unset means `api` when `DECISION_BASE_URL` is set and `local` otherwise; neither loads anything until a feature asks for it.
+`none` turns the decision model off everywhere; `local` runs it inside the API process, which Celery workers call with `INTERNAL_KEY`; `api` calls the server at `DECISION_BASE_URL`. Unset means `api` when `DECISION_BASE_URL` is set and `local` otherwise; neither loads anything until a feature asks for it.
 
 ### `DECISION_BASE_URL`
 

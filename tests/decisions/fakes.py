@@ -1,5 +1,5 @@
 """Fakes for the decision backends: an ONNX engine whose KV buffer checks every pass reads rows it holds, a fake
-clock, a stand-in PyTorch model, and decision servers (the ``decide`` protocol and stock vLLM) behind an
+clock, a stand-in PyTorch model, a backend for ``DecideService`` to serve, and decision servers (the ``decide`` protocol and stock vLLM) behind an
 ``httpx2.MockTransport``."""
 
 import contextlib
@@ -12,6 +12,8 @@ from collections import deque
 
 import httpx2
 
+from docsgpt.decisions.backends import Outcome
+from docsgpt.decisions.models import V02
 from docsgpt.decisions.vendor.arc_decide import Decider as Release
 from docsgpt.decisions.vendor.arc_decide import prefix_text, suffix_text
 
@@ -260,3 +262,23 @@ def stand_in(decider, serving, tokenizer=None):
     decider.head, decider.decoder = FakeHead(rows), fake_decoder
     decider.max_state_tokens = serving["max_state_tokens"]
     return decider
+
+
+class FakeBackend:
+    """What ``DecideService`` needs from a backend; ``outcomes`` scripts what ``run`` returns."""
+
+    def __init__(self, outcomes=None):
+        self.spec, self.calibration, self.runtime = V02, V02.calibration, "onnx-int8"
+        self.status, self.reason, self.profile = "idle", None, None
+        self.outcomes = outcomes
+        self.calls, self.warmed = [], 0
+
+    def run(self, requests, lane, deadline):
+        self.calls.append((requests, lane, deadline))
+        if self.outcomes is not None:
+            return list(self.outcomes)
+        return [Outcome({key: {"type": "noul", "noul": 0.7} for key in r.questions}, 1.0, 0.0, False, 12)
+                for r in requests]
+
+    def warm(self):
+        self.warmed += 1
