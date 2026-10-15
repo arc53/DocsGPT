@@ -9,8 +9,10 @@ import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
+import { artifactKind } from '../conversation/artifactCards';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { useArtifactKindLabel } from './ArtifactCard';
 import { isDocumentArtifact, type DocumentArtifact } from './artifactViewUtils';
 import CopyButton from './CopyButton';
 import DocumentArtifactView from './DocumentArtifactView';
@@ -274,6 +276,17 @@ export default function ArtifactPanel({
 
   const title =
     documentArtifact?.title || getArtifactTitle(t, artifact, toolName);
+  const kindLabel = useArtifactKindLabel();
+  // A file names its kind under the title, as its card does.
+  const currentRow = documentArtifact?.versions.find(
+    (v) => v.version === documentArtifact.current_version,
+  );
+  const documentKind = documentArtifact
+    ? artifactKind({
+        filename: currentRow?.filename,
+        mimeType: currentRow?.mime_type,
+      })
+    : null;
 
   // Reset last successful todo artifact ID when conversation changes
   useEffect(() => {
@@ -431,11 +444,12 @@ export default function ArtifactPanel({
     // Avoid rendering an empty panel if the artifact couldn't be loaded for any reason.
     if (!artifact) {
       return (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-muted-foreground text-sm">
-            {t('components.artifact.notFound')}
-          </p>
-        </div>
+        <EmptyState
+          size="sm"
+          illustration="none"
+          title={t('components.artifact.notFound')}
+          className="h-full"
+        />
       );
     }
     switch (artifact.artifact_type) {
@@ -456,6 +470,7 @@ export default function ArtifactPanel({
     <>
       <PanelHeader
         title={title || t('components.artifact.preview')}
+        description={documentKind ? kindLabel(documentKind) : undefined}
         onBack={onBack}
         backLabel={
           onBack

@@ -65,6 +65,12 @@ export function artifactKindIcon(kind: ArtifactKind): LucideIcon {
   return KIND_ICON[kind];
 }
 
+/** An artifact kind's name ("HTML page", "Spreadsheet", "Note"). */
+export function useArtifactKindLabel() {
+  const { t } = useTranslation();
+  return (kind: ArtifactKind) => t(KIND_LABEL_KEY[kind]);
+}
+
 /** The muted line under an artifact's title: its kind, then its version. */
 export function useArtifactMeta() {
   const { t } = useTranslation();

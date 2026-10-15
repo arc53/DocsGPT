@@ -10,7 +10,6 @@ vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
 }));
 
-
 import { ExecutionDetails } from './WorkflowPreview';
 import type { WorkflowNode } from '../types/workflow';
 

@@ -118,6 +118,48 @@ describe('ArtifactPanel', () => {
     expect(restore()).toBeUndefined();
   });
 
+  it('says an artifact it cannot show is not found, as an EmptyState', async () => {
+    await act(async () => {
+      root.render(
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <ArtifactPanel artifactId={null} conversationId="c1" />
+        </SidePanel>,
+      );
+    });
+    const empty = container.querySelector('[data-slot="empty-state"]');
+    expect(empty?.textContent).toBe('components.artifact.notFound');
+    expect(empty?.getAttribute('data-size')).toBe('sm');
+  });
+
+  // Like its card: the title, then what kind of file it is.
+  it('names the kind of file under the title', async () => {
+    documentMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        artifact: {
+          id: 'a1',
+          kind: 'document',
+          title: 'QBR',
+          current_version: 1,
+          versions: [
+            { version: 1, filename: 'qbr.pdf', mime_type: 'application/pdf' },
+          ],
+        },
+      }),
+    });
+    await act(async () => {
+      root.render(
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <ArtifactPanel artifactId="a1" conversationId="c1" />
+        </SidePanel>,
+      );
+    });
+    const header = container.querySelector('[data-slot="panel-header"]')!;
+    expect(header.textContent).toContain('QBR');
+    expect(header.textContent).toContain('conversation.artifacts.kind.pdf');
+  });
+
   it('shows a failed load as an alert with Retry that refetches', async () => {
     documentMock.mockResolvedValue({ ok: false, status: 500 });
     legacyMock.mockRejectedValue(new Error('offline'));
