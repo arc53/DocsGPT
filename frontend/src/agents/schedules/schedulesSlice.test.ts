@@ -9,6 +9,7 @@ import {
 } from '../../notifications/notificationsSlice';
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
+  resetSchedules,
   createSchedule,
   applyEvent,
   deleteSchedule,
@@ -449,6 +450,12 @@ describe('schedulesSlice cross-agent list', () => {
       );
       state = reducer(state, answer());
       expect(state.all).toEqual([]);
+    });
+
+    it('drops a load sent before a reset', () => {
+      let state = reducer(loading(), resetSchedules());
+      state = reducer(state, answer());
+      expect(state.all).toBeNull();
     });
 
     it('applies only the latest load', () => {

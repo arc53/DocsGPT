@@ -271,7 +271,9 @@ const schedulesSlice = createSlice({
         }
       }
     },
-    resetSchedules: () => initialState,
+    // An answer to a load sent before (no request id matches this) is the
+    // last account's.
+    resetSchedules: () => ({ ...initialState, allRequestId: 'reset' }),
   },
   extraReducers: (builder) => {
     builder
