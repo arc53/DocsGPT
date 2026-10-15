@@ -267,8 +267,9 @@ spec:
         env:
         - name: DEPLOYMENT_TYPE
           value: "cloud"
-        # The worker hands finished indexes to the API over the in-cluster Service.
-        - name: API_URL
+        # Keep API_URL from the Secret for public links and OAuth callbacks.
+        # Index handoff uses the in-cluster Service instead.
+        - name: WORKER_API_URL
           value: "http://docsgpt-api-service"
         - name: AUTO_MIGRATE
           value: "false"

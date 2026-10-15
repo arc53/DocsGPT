@@ -249,11 +249,14 @@ class TestResolveRedirectUri:
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "API_URL", "https://api.docsgpt.co")
+        monkeypatch.setattr(settings, "WORKER_API_URL", "http://worker.docsgpt.co")
+        monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
+        monkeypatch.setattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
             "auth_type": "none",
         })
-        assert "/api/mcp_server/callback" in tool.redirect_uri
+        assert tool.redirect_uri == "https://api.docsgpt.co/api/mcp_server/callback"
 
 
 # =====================================================================
@@ -886,6 +889,31 @@ class TestGetActionsMetadata:
         tool.available_tools = [{"name": "ping", "description": "Ping"}]
         meta = tool.get_actions_metadata()
         assert meta[0]["parameters"]["properties"] == {}
+
+    @pytest.mark.parametrize(
+        "input_schema",
+        [
+            {"type": "object"},
+            {"type": "object", "properties": None},
+        ],
+    )
+    def test_tools_without_property_definitions(self, mcp_config, input_schema):
+        tool = _make_tool(mcp_config)
+        tool.available_tools = [
+            {
+                "name": "no_args",
+                "description": "Takes no arguments",
+                "inputSchema": input_schema,
+            }
+        ]
+
+        meta = tool.get_actions_metadata()
+
+        assert meta[0]["parameters"] == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
 
     def test_tools_with_flat_schema(self, mcp_config):
         tool = _make_tool(mcp_config)
