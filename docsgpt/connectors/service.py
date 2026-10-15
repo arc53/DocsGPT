@@ -1255,7 +1255,9 @@ def create_tool_for_connection(
     doc = (tool.__doc__ or template).strip().split("\n", 1)
     if actions is None:
         actions = tool.get_actions_metadata()
-    actions = apply_default_permissions(template, _transform_actions(actions))
+    actions = apply_default_permissions(
+        template, _transform_actions(actions), definition.default_actions if definition else (),
+    )
     for index, action in enumerate(actions):
         permission = (permissions or {}).get(action.get("name"))
         if permission:

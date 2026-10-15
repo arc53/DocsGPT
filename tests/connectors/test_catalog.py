@@ -289,3 +289,82 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_clickup_is_a_remote_oauth_preset():
+    clickup = catalog.get_definition("mcp:clickup")
+
+    assert clickup.name == "ClickUp"
+    assert clickup.icon == "clickup"
+    assert clickup.category == "projects"
+    assert clickup.auth_kind == "mcp_oauth"
+    assert clickup.mcp_base_url == "https://mcp.clickup.com"
+    assert clickup.capabilities == ("read", "write")
+    assert clickup.docs_url == (
+        "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
+    )
+
+
+def test_zapier_preset_uses_remote_oauth_catalog_contract():
+    zapier = catalog.get_definition("mcp:zapier")
+
+    assert zapier.name == "Zapier"
+    assert zapier.icon == "zapier"
+    assert zapier.category == "business"
+    assert zapier.mcp_url == "https://mcp.zapier.com/api/v1/connect"
+    assert zapier.auth_kind == "mcp_oauth"
+    assert zapier.capabilities == ("read", "write")
+    assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
+
+
+def test_calcom_preset_uses_remote_oauth_catalog_contract():
+    calcom = catalog.get_definition("mcp:calcom")
+
+    assert calcom.name == "Cal.com"
+    assert calcom.icon == "calcom"
+    assert calcom.category == "business"
+    assert calcom.mcp_url == "https://mcp.cal.com/mcp"
+    assert calcom.auth_kind == "mcp_oauth"
+    assert calcom.capabilities == ("read", "write")
+    assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_alphavantage_preset_uses_remote_oauth_catalog_contract():
+    alphavantage = catalog.get_definition("mcp:alphavantage")
+
+    assert alphavantage.name == "Alpha Vantage"
+    assert alphavantage.icon == "alphavantage"
+    assert alphavantage.category == "business"
+    assert alphavantage.mcp_url == "https://mcp.alphavantage.co/mcp"
+    assert alphavantage.auth_kind == "mcp_oauth"
+    assert alphavantage.capabilities == ("read",)
+    assert alphavantage.docs_url == "https://github.com/alphavantage/alpha_vantage_mcp"
+
+
+def test_alphavantage_starts_with_core_tools_under_the_openai_limit():
+    """133 tools exceed OpenAI's 128 per request; the core ones and the TOOL_CALL fallback start on."""
+    default_actions = catalog.get_definition("mcp:alphavantage").default_actions
+
+    assert 0 < len(default_actions) <= 32
+    assert len(set(default_actions)) == len(default_actions)
+    assert {"GLOBAL_QUOTE", "SYMBOL_SEARCH", "COMPANY_OVERVIEW", "EARNINGS", "CPI", "TOOL_CALL"} <= set(
+        default_actions
+    )
+
+
+def test_presets_without_default_actions_turn_every_action_on():
+    assert catalog.get_definition("mcp:notion").default_actions == ()
+
+
+def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
+    presets = tmp_path / "mcp.yaml"
+    presets.write_text(
+        "- key: mcp:example\n"
+        "  name: Example\n"
+        "  description: Example records.\n"
+        "  mcp_url: https://mcp.example.com/mcp\n"
+        "  default_actions: [search, fetch]\n"
+    )
+    monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
+
+    assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
