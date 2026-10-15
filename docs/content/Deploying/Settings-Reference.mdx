@@ -514,6 +514,12 @@ Type `str`, default `<DOCSGPT_HOME>/models/decision`.
 
 Where the decision model is downloaded, at its pinned revision, the first time it is needed or by `docsgpt decisions prefetch`.
 
+### `DECISION_DEVICE`
+
+Type `"cpu" | "mps" | "cuda"`, default `cpu`.
+
+Where `docsgpt decide-server` runs the model: `cpu` (ONNX) or, with the `decisions-torch` extra, `mps` (a Mac's GPU) or `cuda` (PyTorch). Read by `decide-server` only; the API and the worker never load PyTorch, which cannot share a macOS process with faiss.
+
 ### `DECISION_THREADS`
 
 Type `int`, default unset, must be `>= 1`.

@@ -1,10 +1,13 @@
 """Fakes for the decision backends: an ONNX engine whose KV buffer checks every pass reads rows it holds, a fake
-clock, and decision servers (the ``decide`` protocol and stock vLLM) behind an ``httpx2.MockTransport``."""
+clock, a stand-in PyTorch model, and decision servers (the ``decide`` protocol and stock vLLM) behind an
+``httpx2.MockTransport``."""
 
+import contextlib
 import json
 import math
 import threading
 import time
+import types
 from collections import deque
 
 import httpx2
@@ -199,3 +202,61 @@ class FakeVllmServer(FakeServer):
             return httpx2.Response(200, json={"choices": [{"index": 0, "text": "", "logprobs": {
                 "tokens": [f"token_id:{allowed[0]}"], "token_logprobs": [0.0], "top_logprobs": [top]}}]})
         return httpx2.Response(404)
+
+
+class FakeLogits:
+    """What ``(head @ h).float()`` gives the release client: label logits indexed by head row."""
+
+    def __init__(self, ids, rows):
+        self.ids, self.rows = ids, rows
+
+    def float(self):
+        return self
+
+    def cpu(self):
+        return self
+
+    def __getitem__(self, column):
+        return types.SimpleNamespace(item=lambda: logit(self.ids, self.rows[column]))
+
+
+class FakeHead:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __matmul__(self, hidden):
+        return FakeLogits(hidden, self.rows)
+
+
+class FakeCache:
+    def __init__(self):
+        self.ids = []
+
+    def crop(self, length):
+        self.ids = self.ids[:length]
+
+
+def fake_decoder(ids, past_key_values=None, use_cache=True):
+    """The decoder stand-in: the "hidden state" at the last position is every id read so far."""
+    cache = past_key_values or FakeCache()
+    cache.ids = cache.ids + list(ids)
+    return types.SimpleNamespace(past_key_values=cache, last_hidden_state={(0, -1): list(cache.ids)})
+
+
+def fake_torch() -> types.ModuleType:
+    """The few ``torch`` calls the PyTorch clients make around the model."""
+    torch = types.ModuleType("torch")
+    torch.inference_mode = contextlib.nullcontext
+    torch.tensor = lambda rows, device=None: rows[0]
+    return torch
+
+
+def stand_in(decider, serving, tokenizer=None):
+    """Give a PyTorch client built with ``__new__`` (its ``__init__`` downloads and loads the model) the stand-in
+    model, the tokenizer and the published ``arcd_serving.json``."""
+    decider.meta, decider.tokenizer, decider.device = serving, tokenizer or CharTokenizer(), "cpu"
+    rows = sorted({t for h in serving["heads"].values() for t in h["tokens"]})
+    decider.column = {t: i for i, t in enumerate(rows)}
+    decider.head, decider.decoder = FakeHead(rows), fake_decoder
+    decider.max_state_tokens = serving["max_state_tokens"]
+    return decider

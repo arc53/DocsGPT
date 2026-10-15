@@ -159,3 +159,15 @@ class TestVerdict:
     def test_unset_mode_is_off(self, feature):
         feature.settings.TEST_FEATURE_MODE = None
         assert features.configured(feature.spec) == "off"
+
+
+@pytest.mark.unit
+class TestWire:
+    def test_the_plan_crosses_the_wire(self):
+        torch = SpeedProfile(c=0.01, a=0.001, b=0.0, overhead=50, threads=0, measured_at=0.0, plan="torch")
+        assert SpeedProfile.from_wire(torch.wire()) == torch
+        assert SpeedProfile.from_wire({**profile().wire(), "plan": None}).plan == "onnx"
+
+    def test_a_torch_profile_predicts_on_its_plan(self):
+        torch = SpeedProfile(c=1.0, a=0.0, b=0.0, overhead=0, threads=0, plan="torch")
+        assert torch.predict_s(Shape(100, (20,))) == pytest.approx(2.0)  # the state, then the question

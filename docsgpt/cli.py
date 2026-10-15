@@ -371,17 +371,26 @@ def _decisions(args: argparse.Namespace) -> int:
     from docsgpt.decisions.models import select
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    spec = select("onnx")
+    runtime = getattr(args, "runtime", "onnx")
+    spec = select(runtime)
     if spec is None:
         print("docsgpt: DECISION_MODEL names a model this version does not know", file=sys.stderr)
         return 2
     try:
-        folder = files.ensure_onnx(spec)
+        folder = files.ensure_torch(spec) if runtime == "torch" else files.ensure_onnx(spec)
     except files.FilesUnavailable as exc:
         print(f"docsgpt: {exc}", file=sys.stderr)
         return 1
-    print(f"docsgpt: decision model {spec.id} at {files.revision(spec)} is in {folder}", file=sys.stderr)
+    print(f"docsgpt: decision model {spec.id} ({runtime}) at {files.revision(spec)} is in {folder}", file=sys.stderr)
     return 0
+
+
+def _decide_server(args: argparse.Namespace) -> int:
+    """Serve the decision model over ``/v1/decide`` in this process; see ``docsgpt.decisions.server``."""
+    from docsgpt.decisions import server
+
+    _announce_home()
+    return server.serve(args.host, args.port, args.device)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -429,13 +438,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     decisions = commands.add_parser("decisions", help="manage the decision model's files")
     decision_actions = decisions.add_subparsers(dest="decisions_action", metavar="<action>")
-    decision_actions.add_parser(
+    prefetch = decision_actions.add_parser(
         "prefetch", help="download the pinned decision model into DECISION_CACHE_DIR (for offline installs)"
+    )
+    prefetch.add_argument(
+        "--runtime", choices=("onnx", "torch"), default="onnx",
+        help="onnx (default: the API and the decider on CPU) or torch (decide-server --device mps|cuda)",
     )
     decision_actions.add_parser(
         "status", help="show the decision model settings, feature modes and whether its files are downloaded"
     )
     decisions.set_defaults(func=_decisions)
+
+    decide_server = commands.add_parser(
+        "decide-server", help="serve the decision model over HTTP (/v1/decide) for the API and the worker"
+    )
+    decide_server.add_argument(
+        "--host", default=DEFAULT_HOST, help="interface to listen on (default: localhost; others need DECISION_KEY)"
+    )
+    decide_server.add_argument("--port", type=int, default=7095)
+    decide_server.add_argument(
+        "--device", choices=("cpu", "mps", "cuda"),
+        help="cpu (ONNX), or mps / cuda with the decisions-torch extra (default: DECISION_DEVICE, else cpu)",
+    )
+    decide_server.set_defaults(func=_decide_server)
 
     for name, (module, help_text) in SCRIPTS.items():
         commands.add_parser(name, help=f"{help_text} (docsgpt.scripts.{module})", add_help=False)

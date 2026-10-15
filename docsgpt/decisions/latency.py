@@ -1,8 +1,9 @@
 """How long a decision takes on this machine: the pass plan, the latency model and its fit.
 
 "Calibration" here means timing, unrelated to the model's probability calibration (``calibration_hash``). The ONNX
-backend runs a call as a fixed sequence of passes (``plan``), and one pass that appends ``n`` tokens after ``k``
-cached rows costs ``c + n * (a + b * (k + n / 2))``: a fixed cost per pass, the weights per token, and attention per
+backend runs a call as a fixed sequence of passes (``plan``; the torch runtime of ``docsgpt decide-server`` has a
+plan of its own), and one pass that appends ``n`` tokens after ``k`` cached rows costs
+``c + n * (a + b * (k + n / 2))``: a fixed cost per pass, the weights per token, and attention per
 token over the rows it reads, which are the cached ones plus, causally, on average half of the pass's own. Short
 passes barely show that last part; one long single pass (a whole relevance chunk) pays it in full. A short timing
 run at load fits ``c``, ``a`` and ``b``, so the time of any call shape is predicted by summing its passes; real
@@ -67,18 +68,22 @@ class Pass:
         return self.end - self.begin
 
 
-def plan(prefix: int, suffixes: Sequence[int], lane: Lane) -> list[Pass]:
+def plan(prefix: int, suffixes: Sequence[int], lane: Lane, kind: str = "onnx") -> list[Pass]:
     """The passes a call runs, in order.
 
-    A hot call with one question is one pass, as in the release client. Otherwise the prompt is prefilled in
-    256-token passes and every question extends it; the background lane always takes this path, so it can yield
-    to hot work between passes.
+    On ONNX, a hot call with one question is one pass, as in the release client. Otherwise the prompt is
+    prefilled in 256-token passes and every question extends it; the background lane always takes this path, so
+    it can yield to hot work between passes. On torch, as in the release PyTorch client, the prompt is one pass
+    and every question one more, in either lane.
 
     Args:
         prefix: Tokens of the prompt with the state in it.
         suffixes: Tokens of each question's suffix.
         lane: ``hot`` or ``background``.
+        kind: ``onnx`` or ``torch``, the runtime whose plan this is.
     """
+    if kind == "torch":
+        return [Pass(-1, 0, prefix, 0)] + [Pass(i, 0, n, prefix) for i, n in enumerate(suffixes)]
     if lane == "hot" and len(suffixes) == 1:
         return [Pass(-1, 0, prefix + suffixes[0], 0, single=True)]
     passes = [Pass(-1, a, b, a) for a, b, _ in steps(prefix, 0, CHUNK)]
@@ -132,6 +137,7 @@ class SpeedProfile:
         threads: Threads the model ran with.
         measured_at: Unix time of the timing run.
         drift: Running ratio of measured to predicted pass time; scales every prediction.
+        plan: The pass plan predictions follow, ``onnx`` or ``torch`` (see ``plan``).
     """
 
     c: float
@@ -141,6 +147,7 @@ class SpeedProfile:
     threads: int
     measured_at: float = field(default_factory=time.time)
     drift: float = 1.0
+    plan: str = "onnx"
 
     def pass_s(self, tokens: int, cached: int) -> float:
         """Unscaled seconds of one pass."""
@@ -148,7 +155,7 @@ class SpeedProfile:
 
     def predict_s(self, shape: Shape) -> float:
         """Seconds a call of this shape takes, drift included (queueing excluded)."""
-        passes = plan(shape.state_tokens + self.overhead, shape.question_tokens, shape.lane)
+        passes = plan(shape.state_tokens + self.overhead, shape.question_tokens, shape.lane, self.plan)
         return self.drift * shape.states * sum(self.pass_s(p.tokens, p.cached) for p in passes)
 
     def observe(self, step: Pass, seconds: float) -> None:
@@ -164,7 +171,7 @@ class SpeedProfile:
     def wire(self) -> dict:
         """The fitted numbers, as a decision server reports them on ``GET /v1/models`` (``speed``)."""
         return {"c": self.c, "a": self.a, "b": self.b, "overhead": self.overhead, "threads": self.threads,
-                "measured_at": self.measured_at, "drift": self.drift}
+                "measured_at": self.measured_at, "drift": self.drift, "plan": self.plan}
 
     @classmethod
     def from_wire(cls, data: dict) -> "SpeedProfile":
@@ -177,7 +184,7 @@ class SpeedProfile:
         return cls(float(data["c"]), float(data["a"]), float(data["b"]), overhead=int(data["overhead"]),
                    threads=int(data.get("threads") or 0),
                    measured_at=time.time() if measured_at is None else float(measured_at),
-                   drift=float(data.get("drift") or 1.0))
+                   drift=float(data.get("drift") or 1.0), plan="torch" if data.get("plan") == "torch" else "onnx")
 
     def report(self) -> dict:
         """The profile as ``/api/admin/decisions`` shows it."""

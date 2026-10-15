@@ -70,6 +70,14 @@ class DecisionSettings(SettingsGroup):
             "`docsgpt decisions prefetch`."
         ),
     )
+    DECISION_DEVICE: Literal["cpu", "mps", "cuda"] = Field(
+        default="cpu",
+        description=(
+            "Where `docsgpt decide-server` runs the model: `cpu` (ONNX) or, with the `decisions-torch` extra, "
+            "`mps` (a Mac's GPU) or `cuda` (PyTorch). Read by `decide-server` only; the API and the worker never "
+            "load PyTorch, which cannot share a macOS process with faiss."
+        ),
+    )
     DECISION_THREADS: Optional[int] = Field(
         default=None,
         ge=1,
@@ -184,7 +192,7 @@ class DecisionSettings(SettingsGroup):
         ),
     )
 
-    @field_validator("DECISION_MODE", "DECISION_PROTOCOL", mode="before")
+    @field_validator("DECISION_MODE", "DECISION_PROTOCOL", "DECISION_DEVICE", mode="before")
     @classmethod
     def _normalize_mode(cls, v):
         return normalize_choice(v)

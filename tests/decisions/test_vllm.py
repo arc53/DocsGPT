@@ -1,9 +1,6 @@
 """API mode with stock vLLM: the prompt, the request, and answers equal to the release PyTorch client's."""
 
-import contextlib
 import logging
-import sys
-import types
 
 import pytest
 
@@ -11,10 +8,9 @@ from docsgpt.decisions import Q, Request, files, tokens
 from docsgpt.decisions.backends import Outcome
 from docsgpt.decisions.backends.vllm import Calibration, VllmBackend
 from docsgpt.decisions.models import V01, V02
-from docsgpt.decisions.vendor.arc_decide import Decider as Release
 
 from .conftest import load_fixture
-from .fakes import CharTokenizer, FakeVllmServer, logit
+from .fakes import CharTokenizer, FakeVllmServer, fake_decoder
 
 INTENT = {"type": "choice", "instructions": "Which intent does this message express?",
           "criteria": {"billing": "money", "bug": None, "how_to": None, "account": None, "other": None}}
@@ -55,62 +51,6 @@ def run(backend, requests, lane="hot", seconds=5.0):
     return backend.run(requests, lane, backend._clock() + seconds)
 
 
-class _Logits:
-    """What ``(head @ h).float()`` gives the release client: label logits indexed by head row."""
-
-    def __init__(self, ids, rows):
-        self.ids, self.rows = ids, rows
-
-    def float(self):
-        return self
-
-    def __getitem__(self, column):
-        return types.SimpleNamespace(item=lambda: logit(self.ids, self.rows[column]))
-
-
-class _Head:
-    def __init__(self, rows):
-        self.rows = rows
-
-    def __matmul__(self, hidden):
-        return _Logits(hidden, self.rows)
-
-
-class _Cache:
-    def __init__(self):
-        self.ids = []
-
-    def crop(self, length):
-        self.ids = self.ids[:length]
-
-
-def _decoder(ids, past_key_values=None, use_cache=True):
-    """The decoder stand-in: the "hidden state" at the last position is every id read so far."""
-    cache = past_key_values or _Cache()
-    cache.ids = cache.ids + list(ids)
-    return types.SimpleNamespace(past_key_values=cache, last_hidden_state={(0, -1): list(cache.ids)})
-
-
-@pytest.fixture
-def reference(monkeypatch):
-    """The release PyTorch client, unmodified, over the stand-in model and the published ``arcd_serving.json``."""
-    torch = types.ModuleType("torch")
-    torch.inference_mode = contextlib.nullcontext
-    torch.tensor = lambda rows, device=None: rows[0]
-    monkeypatch.setitem(sys.modules, "torch", torch)
-
-    def make(serving):
-        decider = Release.__new__(Release)  # its __init__ downloads and loads the model
-        decider.meta, decider.tokenizer, decider.device = serving, CharTokenizer(), "cpu"
-        rows = sorted({t for h in serving["heads"].values() for t in h["tokens"]})
-        decider.column = {t: i for i, t in enumerate(rows)}
-        decider.head, decider.decoder = _Head(rows), _decoder
-        decider.max_state_tokens = serving["max_state_tokens"]
-        return decider
-
-    return make
-
-
 def assert_close(got, want):
     if isinstance(want, dict):
         assert list(got) == list(want)
@@ -140,7 +80,7 @@ class TestExactness:
         release = reference(load_fixture("arcd_serving-0.6b-v0.1.json"))
         seen = []
         release.decoder = lambda ids, past_key_values=None, use_cache=True: (
-            seen.append(list(ids)) or _decoder(ids, past_key_values, use_cache))
+            seen.append(list(ids)) or fake_decoder(ids, past_key_values, use_cache))
         release.decide(STATES[0], {"relevant": Q.RELEVANT})
         run(backend, [Request(STATES[0], {"relevant": Q.RELEVANT})])
         (sent,) = [e["body"]["prompt"] for e in server.log if e["path"] == "/v1/completions"]

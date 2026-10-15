@@ -329,6 +329,36 @@ class TestDecisions:
         report = json.loads(capsys.readouterr().out)
         assert report["mode"] == "none" and "files" not in report
 
+    def test_prefetch_for_the_torch_runtime(self, monkeypatch, tmp_path):
+        from docsgpt.decisions import files
+
+        calls = []
+        monkeypatch.setattr(files, "ensure_torch", lambda spec: calls.append(spec.id) or tmp_path)
+        monkeypatch.setattr(files, "ensure_onnx", lambda spec: pytest.fail("the torch runtime needs no ONNX files"))
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        assert cli.main(["decisions", "prefetch", "--runtime", "torch"]) == 0
+        assert calls == ["arc53/arc-decide-0.4b-v0.2"]
+
+
+class TestDecideServer:
+    def test_runs_the_server_with_its_options(self, monkeypatch):
+        served = []
+        monkeypatch.setattr("docsgpt.decisions.server.serve", lambda *args: served.append(args) or 0)
+        monkeypatch.setattr(cli, "_announce_home", lambda: None)
+        assert cli.main(["decide-server", "--device", "mps", "--port", "7100"]) == 0
+        assert served == [("127.0.0.1", 7100, "mps")]
+
+    def test_the_device_defaults_to_the_setting(self, monkeypatch):
+        served = []
+        monkeypatch.setattr("docsgpt.decisions.server.serve", lambda *args: served.append(args) or 0)
+        monkeypatch.setattr(cli, "_announce_home", lambda: None)
+        assert cli.main(["decide-server"]) == 0
+        assert served == [("127.0.0.1", 7095, None)]
+
+    def test_an_unknown_device_is_a_usage_error(self):
+        with pytest.raises(SystemExit):
+            cli.main(["decide-server", "--device", "tpu"])
+
 
 class TestScripts:
     def test_arguments_pass_through_untouched(self, monkeypatch):

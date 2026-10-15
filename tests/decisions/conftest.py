@@ -2,6 +2,7 @@
 and API mode against a fake server."""
 
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -12,8 +13,9 @@ from docsgpt.core.settings import settings
 from docsgpt.decisions.backends.http import RemoteBackend
 from docsgpt.decisions.backends.onnx import OnnxBackend
 from docsgpt.decisions.models import V02
+from docsgpt.decisions.vendor.arc_decide import Decider as Release
 
-from .fakes import FakeEngine
+from .fakes import FakeEngine, fake_torch, stand_in
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "decisions"
 
@@ -127,3 +129,10 @@ def local(monkeypatch):
         time.sleep(0.005)
     yield client, engine
     decisions.tokens.reset()
+
+
+@pytest.fixture
+def reference(monkeypatch):
+    """The release PyTorch client, unmodified, over the stand-in model and a published ``arcd_serving.json``."""
+    monkeypatch.setitem(sys.modules, "torch", fake_torch())
+    return lambda serving: stand_in(Release.__new__(Release), serving)

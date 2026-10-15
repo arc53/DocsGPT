@@ -127,9 +127,10 @@ V01 = ModelSpec(
 
 REGISTRY: dict[str, ModelSpec] = {spec.id: spec for spec in (V02, V01)}
 
-#: The model each runtime uses when ``DECISION_MODEL`` is unset. ``remote`` is a ``decide`` server that does not
-#: report its model (``arcd serve``); one that does is taken at its word.
-DEFAULT_FOR_RUNTIME = {"onnx": V02.id, "vllm": V01.id, "remote": V01.id}
+#: The model each runtime uses when ``DECISION_MODEL`` is unset. ``torch`` is ``docsgpt decide-server`` on a GPU;
+#: ``remote`` is a ``decide`` server that does not report its model (``arcd serve``); one that does is taken at its
+#: word.
+DEFAULT_FOR_RUNTIME = {"onnx": V02.id, "torch": V02.id, "vllm": V01.id, "remote": V01.id}
 
 
 def lookup(model_id: str) -> Optional[ModelSpec]:

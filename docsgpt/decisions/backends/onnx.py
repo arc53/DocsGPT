@@ -142,6 +142,9 @@ def _check_questions(folder: Path) -> None:
 class OnnxBackend:
     """The decision model in this process, loaded on first use."""
 
+    #: The pass plan calls run (``latency.plan``).
+    PLAN = "onnx"
+
     def __init__(self, spec: ModelSpec, open_engine: Optional[Callable[["OnnxBackend"], Engine]] = None,
                  clock: Callable[[], float] = time.monotonic):
         """Create an idle backend; nothing is read or loaded.
@@ -178,6 +181,11 @@ class OnnxBackend:
         self._rebuild = False  # the CPU budget changed; rebuild at the next moment no call is in flight
         self._tick_timer: Optional[threading.Timer] = None
 
+    @property
+    def runtime(self) -> str:
+        """What the model runs on, as ``ModelInfo.runtime`` names it."""
+        return f"onnx-{self.spec.onnx_dtype}"
+
     # Loading
 
     def warm(self) -> None:
@@ -195,7 +203,7 @@ class OnnxBackend:
     def _open(self) -> Engine:
         from docsgpt.core.settings import settings
 
-        folder = files.ensure_onnx(self.spec)
+        folder = self._files()
         need = settings.DECISION_MIN_FREE_MB if settings.DECISION_MIN_FREE_MB is not None else self.spec.min_free_mb
         free = memory.headroom_mb()
         if free is None:
@@ -209,6 +217,16 @@ class OnnxBackend:
         if not serving.get("max_state_tokens"):  # the release client would fall back to 1,400 tokens
             raise LoadRefused("wrong_model", "the model's arcd_serving.json has no max_state_tokens")
         _check_questions(folder)
+        return self._build_engine(folder)
+
+    def _files(self) -> Path:
+        """The model's folder, downloaded first if needed (raises ``files.FilesUnavailable``)."""
+        return files.ensure_onnx(self.spec)
+
+    def _build_engine(self, folder: Path) -> Engine:
+        """The engine over the checked files in ``folder``."""
+        from docsgpt.core.settings import settings
+
         return Engine(str(folder), threads=settings.DECISION_THREADS or cpu_budget())
 
     def _load(self) -> None:
@@ -277,7 +295,7 @@ class OnnxBackend:
         buf.reserve(TIMING_STATE + len(question))
         samples = []
         for i, (prefix, suffixes) in enumerate([guard, guard, state]):
-            for step in plan(len(prefix), [len(s) for s in suffixes], "hot"):
+            for step in plan(len(prefix), [len(s) for s in suffixes], "hot", self.PLAN):
                 if gated:
                     try:
                         self._gate.acquire("hot", self._clock() + RETIME_WAIT_S, self._predict(step))
@@ -293,7 +311,7 @@ class OnnxBackend:
                 if i:  # the first call warms up and is not timed
                     samples.append((step.tokens, step.cached, elapsed))
         c, a, b = fit(samples)
-        return SpeedProfile(c, a, b, overhead=len(enc(prefix_text(""))), threads=engine.threads)
+        return SpeedProfile(c, a, b, overhead=len(enc(prefix_text(""))), threads=engine.threads, plan=self.PLAN)
 
     # Measured auto: release, CPU budget, re-timing
 
@@ -438,7 +456,7 @@ class OnnxBackend:
             text = engine.tokenizer.decode(ids[: engine.max_state_tokens]) + " ...[truncated]"
         prefix = enc(prefix_text(text))
         suffixes = [enc(suffix_text(q)) for q in request.questions.values()]
-        passes = plan(len(prefix), [len(s) for s in suffixes], lane)
+        passes = plan(len(prefix), [len(s) for s in suffixes], lane, self.PLAN)
         needed = len(prefix) + max(map(len, suffixes))
         predicted = sum(map(self._predict, passes)) * 1000 if self.profile else None
 

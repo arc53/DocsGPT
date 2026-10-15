@@ -129,3 +129,53 @@ class TestOffline:
         with pytest.raises(files.FilesUnavailable) as caught:
             files.ensure_onnx(V02)
         assert missing in str(caught.value)
+
+
+def write_torch(folder):
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in files.TORCH_FILES:
+        (folder / name).write_bytes(b"x")
+
+
+@pytest.mark.unit
+class TestTorchFiles:
+    @pytest.fixture
+    def torch_hub(self, hub, monkeypatch):
+        """The fake Hub writing whichever runtime's files were asked for."""
+
+        def snapshot(repo_id, revision, allow_patterns, local_dir):
+            hub.calls.append({"repo_id": repo_id, "revision": revision, "allow_patterns": allow_patterns,
+                              "local_dir": local_dir})
+            if "onnx/*" in allow_patterns:
+                write_onnx(local_dir / "onnx")
+            else:
+                write_torch(local_dir)
+            return str(local_dir)
+
+        monkeypatch.setattr("huggingface_hub.snapshot_download", snapshot)
+        return hub
+
+    def test_fetches_the_safetensors_files_at_the_pin(self, torch_hub, tmp_path):
+        folder = files.ensure_torch(V02)
+        assert folder == tmp_path / "cache" / V02.id / V02.revision
+        (call,) = torch_hub.calls
+        assert call["revision"] == V02.revision
+        assert "model.safetensors" in call["allow_patterns"] and "onnx/*" not in call["allow_patterns"]
+
+    @pytest.mark.parametrize("first, second", [("onnx", "torch"), ("torch", "onnx")])
+    def test_one_runtimes_download_keeps_the_others_files(self, torch_hub, first, second):
+        ensure = {"onnx": files.ensure_onnx, "torch": files.ensure_torch}
+        ensure[first](V02)
+        ensure[second](V02)
+        assert files.local_onnx_dir(V02) is not None and files.local_torch_dir(V02) is not None
+        assert len(torch_hub.calls) == 2
+        files.ensure_onnx(V02)
+        files.ensure_torch(V02)
+        assert len(torch_hub.calls) == 2
+
+    def test_offline_names_the_torch_prefetch(self, torch_hub, monkeypatch):
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        with pytest.raises(files.FilesUnavailable) as caught:
+            files.ensure_torch(V02)
+        assert "prefetch --runtime torch" in str(caught.value)
+        assert torch_hub.calls == []

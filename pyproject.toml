@@ -147,6 +147,16 @@ docling = [
   "torchvision>=0.29.1,<0.30",
   "transformers>=5.17.0,<6",
 ]
+# `docsgpt decide-server --device mps|cuda`: the decision model on a Mac's GPU
+# (or an NVIDIA one) through PyTorch, as a native process. Never installed in
+# an image, and never imported by the API or the worker: torch and faiss each
+# ship an OpenMP runtime, and both in one macOS process abort it. The floors
+# are docling's, so the lock shares its versions (and, on Linux, its CPU-only
+# torch: install a CUDA build of torch on top for --device cuda).
+decisions-torch = [
+  "torch>=2.14.1,<3",
+  "transformers>=5.17.0,<6",
+]
 # VECTOR_STORE=milvus. milvus-lite (the embedded server) pulls pyarrow.
 milvus = [
   "pymilvus>=3.0.2,<4",
