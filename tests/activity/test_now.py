@@ -639,7 +639,9 @@ class TestFailures:
         )
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == [conv]
 
-    def test_an_answer_the_user_stopped_is_not_a_failure(self, pg_conn):
+    @pytest.mark.parametrize("code", ["stopped", "client_disconnect"])
+    def test_an_answer_the_user_ended_is_not_a_failure(self, pg_conn, code):
+        # Stop, or left for another chat or reloaded before it wrote anything.
         conv = _chat(pg_conn)
         message_id = _message(pg_conn, conv, "failed")
         pg_conn.execute(
@@ -649,9 +651,9 @@ class TestFailures:
         pg_conn.execute(
             text(
                 "UPDATE conversation_messages SET message_metadata = message_metadata || "
-                "'{\"error_code\": \"stopped\"}'::jsonb WHERE id = CAST(:id AS uuid)"
+                "jsonb_build_object('error_code', CAST(:code AS text)) WHERE id = CAST(:id AS uuid)"
             ),
-            {"id": message_id},
+            {"id": message_id, "code": code},
         )
         assert activity_now.build_now(pg_conn, "u1")["failed_conversations"] == []
 

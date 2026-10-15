@@ -646,8 +646,9 @@ def _failed_last_day(conn: Connection, user_id: str) -> int:
 def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
     """Unread chats whose latest answer, or latest background job, failed.
 
-    An answer its user stopped before it wrote anything is failed too, but
-    not counted. A job counts only if it ended after the user last read the
+    An answer its user ended before it wrote anything (stopped it, or left
+    for another chat or reloaded) is failed too, but not counted: the same
+    codes ``finalize_message`` leaves unmarked (``_USER_ENDED_CODES``). A job counts only if it ended after the user last read the
     chat (``read_at``, or never read): one that failed before was seen, and
     a later reply must not bring it back. Cleared the way the unread mark
     is: by opening the chat.
@@ -668,7 +669,8 @@ def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
                  WHERE j.conversation_id = c.id
                  ORDER BY j.created_at DESC LIMIT 1) IN ('failed', 'lost')
                 OR (SELECT CASE
-                               WHEN m.message_metadata ->> 'error_code' = 'stopped' THEN 'stopped'
+                               WHEN m.message_metadata ->> 'error_code' IN ('stopped', 'client_disconnect')
+                               THEN 'stopped'
                                ELSE m.status
                            END
                     FROM conversation_messages m
