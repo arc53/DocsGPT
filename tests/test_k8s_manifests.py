@@ -365,3 +365,50 @@ def test_ingress_example_targets_the_api_service() -> None:
     backend = ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]
     assert backend["name"] == "docsgpt-api-service"
     assert ingress["spec"]["tls"], "the example must terminate TLS"
+
+
+def _decision_key_from_the_secret(container: dict[str, Any]) -> bool:
+    env = {e["name"]: e for e in container.get("env", [])}
+    ref = env.get("DECISION_KEY", {}).get("valueFrom", {}).get("secretKeyRef")
+    return ref == {"name": "docsgpt-secrets", "key": "INTERNAL_KEY"}
+
+
+def test_the_decider_serves_the_model_from_its_own_volume() -> None:
+    decider = _main_container("docsgpt-decider")
+    assert decider["command"] == ["python", "-m", "docsgpt", "decide-server", "--host", "0.0.0.0", "--port", "7095",
+                                  "--device", "cpu"]
+    assert decider["readinessProbe"]["httpGet"] == {"path": "/health", "port": 7095}
+    assert decider["resources"]["limits"]["memory"] == "2Gi"
+    assert {"secretRef": {"name": "docsgpt-secrets"}} in decider["envFrom"]
+    assert _decision_key_from_the_secret(decider)
+    spec = _pod_spec(_named("Deployment", "docsgpt-decider"))
+    assert spec["securityContext"]["fsGroup"] == 999
+    (volume,) = spec["volumes"]
+    assert volume["persistentVolumeClaim"]["claimName"] == "docsgpt-decision-models"
+    assert decider["volumeMounts"] == [{"name": volume["name"], "mountPath": "/app/models/decision"}]
+    assert _named("PersistentVolumeClaim", "docsgpt-decision-models")["spec"]["accessModes"] == ["ReadWriteOnce"]
+    assert _named("Deployment", "docsgpt-decider")["spec"]["strategy"] == {"type": "Recreate"}
+
+
+def test_the_decider_service_targets_it() -> None:
+    service = _named("Service", "docsgpt-decider-service")
+    assert service["spec"]["selector"] == {"app": "docsgpt-decider"}
+    assert service["spec"]["ports"][0]["port"] == service["spec"]["ports"][0]["targetPort"] == 7095
+
+
+def test_the_image_user_id_is_the_fs_group() -> None:
+    dockerfile = (REPO_ROOT / "docsgpt" / "Dockerfile").read_text()
+    assert "groupadd -r -g 999 appuser" in dockerfile and "useradd -r -u 999 -g appuser" in dockerfile
+
+
+@pytest.mark.parametrize("name", ["docsgpt-api", "docsgpt-worker"])
+def test_api_and_worker_call_the_decider_and_never_hold_the_model(name: str) -> None:
+    container = _main_container(name)
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    assert env["DECISION_BASE_URL"] == "http://docsgpt-decider-service:7095"
+    assert _decision_key_from_the_secret(container)
+    volumes = {v["name"]: v for v in _pod_spec(_named("Deployment", name))["volumes"]}
+    (mount,) = [m for m in container["volumeMounts"] if m["mountPath"] == "/app/models/decision"]
+    assert "emptyDir" in volumes[mount["name"]], "only the tokenizer lands here"
+    assert container["resources"]["limits"]["memory"] == "4Gi"
+    assert container.get("readinessProbe", {}).get("httpGet", {}).get("path") in (None, "/api/health")

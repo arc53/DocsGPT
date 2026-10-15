@@ -10,6 +10,12 @@
 #
 # Uploads are stored in the bucket named in docsgpt-secrets (STORAGE_TYPE=s3)
 # and vectors in pgvector, so any number of API and worker replicas share them.
+#
+# Both call the decision model at docsgpt-decider-service (decider-deploy.yaml)
+# and never load it themselves; the emptyDir at /app/models/decision holds the
+# model's tokenizer (11 MB), fetched once a decision feature is on. To call a
+# vLLM server instead, change DECISION_BASE_URL below and add
+# DECISION_PROTOCOL: vllm to docsgpt-secrets.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -140,6 +146,20 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        - name: DECISION_BASE_URL
+          value: "http://docsgpt-decider-service:7095"
+        - name: DECISION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: INTERNAL_KEY
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      - name: decision-models
+        emptyDir:
+          sizeLimit: 64Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -275,3 +295,17 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        - name: DECISION_BASE_URL
+          value: "http://docsgpt-decider-service:7095"
+        - name: DECISION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: INTERNAL_KEY
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      - name: decision-models
+        emptyDir:
+          sizeLimit: 64Mi

@@ -1,7 +1,10 @@
 # Builds the images from this checkout. The API (7091) and UI (5173) are published
 # on DOCSGPT_BIND (default 127.0.0.1, this machine only; 0.0.0.0 for every
 # interface, after setting AUTH_TYPE), Postgres and Redis on 127.0.0.1 only. Run it
-# with --env-file .env from the repository root so DOCSGPT_BIND is read.
+# with --env-file .env from the repository root so DOCSGPT_BIND is read, and
+# INTERNAL_KEY, which keys the decider (DECISION_KEY, unless .env sets one).
+# The decider serves the decision model and loads nothing until a decision
+# feature is turned on; the backend does not wait for it (decisions fail open).
 name: docsgpt-oss
 services:
   frontend:
@@ -57,6 +60,8 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}
+      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
@@ -66,6 +71,7 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
@@ -97,6 +103,8 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}
+      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       # Host data stays under application/ (the old package directory) for this
       # release so an upgraded checkout keeps its indexes; it moves with the
@@ -104,11 +112,32 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # The decision model (docsgpt decide-server), on the CPU, idle until a
+  # decision feature is turned on.
+  decider:
+    user: root
+    build:
+      context: ..
+      dockerfile: docsgpt/Dockerfile
+      args:
+        EXTRAS: ${EXTRAS:-}
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - ../.env
+    environment:
+      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
 
   redis:
     image: redis:6-alpine
@@ -133,3 +162,4 @@ services:
 
 volumes:
   postgres_data:
+  decision_models:

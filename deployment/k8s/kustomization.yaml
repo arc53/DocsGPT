@@ -2,8 +2,9 @@
 #
 # Postgres (with pgvector) holds user data and vectors, Redis is the Celery
 # broker and cache, uploads go to the S3-compatible bucket set in
-# docsgpt-secrets.yaml, and the API serves the web UI. Fill in the REPLACE_ME
-# values in docsgpt-secrets.yaml first.
+# docsgpt-secrets.yaml, and the API serves the web UI. The decider serves the
+# decision model, idle until a decision feature is turned on. Fill in the
+# REPLACE_ME values in docsgpt-secrets.yaml first.
 #
 # Opt-in manifests that are NOT applied here:
 #   ingress-example.yaml                          publish the UI and API over TLS
@@ -20,7 +21,9 @@ resources:
   - deployments/postgres-deploy.yaml
   - deployments/redis-deploy.yaml
   - deployments/docsgpt-deploy.yaml
+  - deployments/decider-deploy.yaml
   - services/postgres-service.yaml
   - services/redis-service.yaml
   - services/docsgpt-service.yaml
+  - services/decider-service.yaml
   - jobs/postgres-init-job.yaml
