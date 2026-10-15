@@ -100,6 +100,38 @@ class TestCronRuns:
         expected = _one_at_a_time(expression, tz_name, after, until, 2000)
         assert cron_runs(expression, tz_name, after=after, until=until, limit=2000) == expected
 
+    @pytest.mark.parametrize(
+        "expression",
+        ["*/5 8-18 * * 1-5", "0 9 1,15 * 1", "0 0 1 * *", "45 23 * * 0", "0,30 * 3 * *"],
+    )
+    @pytest.mark.parametrize("tz_name", ["Europe/Warsaw", "America/New_York", "Australia/Lord_Howe"])
+    @pytest.mark.parametrize(
+        "after", [_utc(2026, 3, 1, 7, 13), _utc(2026, 9, 20, 22, 59), _utc(2026, 3, 29, 1, 30)]
+    )
+    def test_matches_next_cron_run_over_weeks(self, expression, tz_name, after):
+        until = after + timedelta(days=45)
+        expected = _one_at_a_time(expression, tz_name, after, until, 5000)
+        assert cron_runs(expression, tz_name, after=after, until=until, limit=5000) == expected
+
+    def test_a_frequent_cron_walks_the_clock_once_per_day(self):
+        # A 15-minute cron over six weeks fires 4,032 times; croniter takes
+        # about 17µs a step, and the Calendar expands every schedule a user
+        # has. The times of a day repeat on every day without a clock change.
+        real = scheduler_utils.croniter.get_next
+        steps = []
+
+        def counted(self, *args, **kwargs):
+            steps.append(1)
+            return real(self, *args, **kwargs)
+
+        after = _utc(2026, 3, 16)
+        until = after + timedelta(days=42)  # across the spring-forward night
+        expected = _one_at_a_time("*/15 * * * *", "Europe/Warsaw", after, until, 5000)
+        with patch.object(scheduler_utils.croniter, "get_next", counted):
+            runs = cron_runs("*/15 * * * *", "Europe/Warsaw", after=after, until=until, limit=5000)
+        assert runs == expected
+        assert len(steps) < 600
+
     def test_keeps_to_the_window_and_the_limit(self):
         after = _utc(2026, 5, 1, 9)
         runs = cron_runs("0 * * * *", "UTC", after=after, until=_utc(2026, 5, 1, 12), limit=10)

@@ -235,7 +235,11 @@ def _is_frequent(row: Dict[str, Any], cache: Dict[str, bool]) -> bool:
 
 
 def _planned_slots(
-    row: Dict[str, Any], start: datetime, end: datetime, limit: Optional[int] = None,
+    row: Dict[str, Any],
+    start: datetime,
+    end: datetime,
+    limit: Optional[int] = None,
+    expansions: Optional[Dict[Tuple[Any, ...], List[datetime]]] = None,
 ) -> Tuple[List[datetime], bool]:
     """Future fire times of one schedule inside ``[start, end)``.
 
@@ -244,6 +248,8 @@ def _planned_slots(
         start: Window start.
         end: Window end (exclusive).
         limit: The most times listed (default ``MAX_SLOTS_PER_SCHEDULE``).
+        expansions: Cron expansions already made for this window, by cron,
+            zone, bounds and limit; schedules with the same timing share one.
 
     Returns:
         ``(times, truncated)``; ``truncated`` when the cap cut the list.
@@ -262,31 +268,40 @@ def _planned_slots(
         return ([fire] if fire is not None and start <= fire < stop else []), False
     if not row.get("cron"):
         return [], False
-    try:
-        # One past the cap tells a full window from a cut one.
-        times = cron_runs(
-            row["cron"], row.get("timezone"),
-            after=start - timedelta(seconds=1), until=stop, limit=limit + 1,
-        )
-    except ScheduleValidationError:
-        logger.warning("activity: schedule %s has an invalid cron", row.get("id"))
-        return [], False
+    key = (row["cron"], row.get("timezone"), start, stop, limit)
+    times = expansions.get(key) if expansions is not None else None
+    if times is None:
+        try:
+            # One past the cap tells a full window from a cut one.
+            times = cron_runs(
+                row["cron"], row.get("timezone"),
+                after=start - timedelta(seconds=1), until=stop, limit=limit + 1,
+            )
+        except ScheduleValidationError:
+            logger.warning("activity: schedule %s has an invalid cron", row.get("id"))
+            return [], False
+        if expansions is not None:
+            expansions[key] = times
     return times[:limit], len(times) > limit
 
 
 def _past_slots(
-    row: Dict[str, Any], start: datetime, end: datetime, limit: Optional[int] = None,
+    row: Dict[str, Any],
+    start: datetime,
+    end: datetime,
+    limit: Optional[int] = None,
+    expansions: Optional[Dict[Tuple[Any, ...], List[datetime]]] = None,
 ) -> Tuple[List[datetime], bool]:
     """Fire times a schedule should have had in ``[start, end)``.
 
     A one-time task counts only while it is still waiting (``next_run_at``
-    set): once it ran, its run row covers the slot. ``limit`` is as for
-    ``_planned_slots``.
+    set): once it ran, its run row covers the slot. ``limit`` and
+    ``expansions`` are as for ``_planned_slots``.
     """
     if row.get("trigger_type") == "once":
         fire = _as_datetime(row.get("next_run_at"))
         return ([fire] if fire is not None and start <= fire < end else []), False
-    return _planned_slots({**row, "trigger_type": "recurring"}, start, end, limit)
+    return _planned_slots({**row, "trigger_type": "recurring"}, start, end, limit, expansions)
 
 
 def _sum_up_days(events: List[Dict[str, Any]], zone: Any) -> List[Dict[str, Any]]:
@@ -395,6 +410,7 @@ def build_planned(
     zone = resolve_timezone(parse_zone(tz))
     current = now or datetime.now(timezone.utc)
     frequent_cache: Dict[str, bool] = {}
+    expansions: Dict[Tuple[Any, ...], List[datetime]] = {}
     events: List[Dict[str, Any]] = []
     taken: set = set()
     truncated: List[str] = []
@@ -432,14 +448,16 @@ def build_planned(
     for row in _schedules(conn, user_id, end):
         frequent = _is_frequent(row, frequent_cache)
         limit = MAX_FREQUENT_SLOTS if frequent else MAX_SLOTS_PER_SCHEDULE
-        slots, cut = _planned_slots(row, future_start, end, limit)
+        slots, cut = _planned_slots(row, future_start, end, limit, expansions)
         if cut:
             truncated.append(str(row["id"]))
         state = "paused" if row.get("status") == "paused" else "planned"
+        base = _base(row, frequent)
+        schedule_id = str(row["id"])
         for at in slots:
-            if (str(row["id"]), _minute(at)) in taken:
+            if (schedule_id, _minute(at)) in taken:
                 continue
-            events.append({**_base(row, frequent), "at": _iso(at), "state": state})
+            events.append({**base, "at": _iso(at), "state": state})
         # Past slots that never got a run: the scheduler was down or behind.
         # Only for active schedules (pause history isn't kept, so a paused
         # one's quiet slots may be its pause), and only since its plan last
@@ -454,14 +472,14 @@ def build_planned(
         )
         if since >= missed_until:
             continue
-        past, cut = _past_slots(row, since, missed_until, limit)
+        past, cut = _past_slots(row, since, missed_until, limit, expansions)
         if cut:
-            truncated.append(str(row["id"]))
-        cut_at = runs_cut_at.get(str(row["id"]))
+            truncated.append(schedule_id)
+        cut_at = runs_cut_at.get(schedule_id)
         for at in past:
-            if (str(row["id"]), _minute(at)) in taken or (cut_at is not None and at > cut_at):
+            if (schedule_id, _minute(at)) in taken or (cut_at is not None and at > cut_at):
                 continue
-            events.append({**_base(row, frequent), "at": _iso(at), "state": "missed"})
+            events.append({**base, "at": _iso(at), "state": "missed"})
 
     events = _sum_up_days(events, zone)
     events += calendar_slots(conn, user_id, start, end, sync_schedule(), now=current)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -103,6 +103,13 @@ def cron_runs(
     the zone resolved once, and one iterator walks the local clock, so DST
     lands as it does there.
 
+    A cron's times of day are the same on every day it fires (the minute and
+    hour fields don't depend on the date), so the walk goes one step at a
+    time only through the first whole day and days whose clock changes. On
+    any other day it steps once, to find the day, and repeats the times. A
+    croniter step costs about 17µs, and a 15-minute cron has 4,032 of them
+    in six weeks.
+
     Args:
         expression: A 5-field cron expression.
         tz_name: The schedule's IANA zone (default UTC).
@@ -120,14 +127,48 @@ def cron_runs(
     tz = resolve_timezone(tz_name)
     if after.tzinfo is None:
         after = after.replace(tzinfo=timezone.utc)
-    itr = croniter(expression, after.astimezone(tz))
+    seen = after.astimezone(tz)
+    itr = croniter(expression, seen)
+    # Offsets from local midnight of one whole day without a clock change.
+    times: Optional[List[timedelta]] = None
     out: List[datetime] = []
+    fire = itr.get_next(datetime)
     while len(out) < limit:
-        fire = itr.get_next(datetime).astimezone(timezone.utc)
-        if fire >= until:
-            break
-        out.append(fire)
+        day = fire.date()
+        start = _local_midnight(day, tz)
+        plain = _local_midnight(day + timedelta(days=1), tz) - start == timedelta(days=1)
+        if plain and times is not None:
+            since = fire.astimezone(timezone.utc) - start
+            for offset in times:
+                if offset < since:
+                    continue
+                at = start + offset
+                if at >= until or len(out) >= limit:
+                    return out
+                out.append(at)
+            # On to the next day the cron fires.
+            seen = (start + times[-1]).astimezone(tz)
+            itr = croniter(expression, seen)
+            fire = itr.get_next(datetime)
+            continue
+        whole = seen.date() < day
+        offsets: List[timedelta] = []
+        while fire.date() == day:
+            at = fire.astimezone(timezone.utc)
+            if at >= until or len(out) >= limit:
+                return out
+            out.append(at)
+            offsets.append(at - start)
+            seen = fire
+            fire = itr.get_next(datetime)
+        if plain and whole and times is None:
+            times = offsets
     return out
+
+
+def _local_midnight(day: date, tz: ZoneInfo) -> datetime:
+    """The start of ``day`` on the ``tz`` clock, in UTC."""
+    return datetime.combine(day, time(), tzinfo=tz).astimezone(timezone.utc)
 
 
 def parse_delay(delay: str) -> timedelta:

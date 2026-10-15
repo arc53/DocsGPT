@@ -210,6 +210,17 @@ class TestMonitorsAndSyncs:
 
 
 class TestCap:
+    def test_schedules_with_the_same_timing_share_one_expansion(self, pg_conn, monkeypatch):
+        expanded = []
+        real = planned.cron_runs
+        monkeypatch.setattr(planned, "cron_runs", lambda *a, **kw: expanded.append(a) or real(*a, **kw))
+        for name in ("Digest A", "Digest B", "Digest C"):
+            _schedule(pg_conn, name=name)
+        events = _week(pg_conn)["events"]
+        assert len([e for e in events if e["state"] == "planned"]) == 3 * 4
+        # One expansion for the future slots, one for the missed ones.
+        assert len(expanded) == 2
+
     def test_a_minute_cron_is_truncated(self, pg_conn, monkeypatch):
         # Even summed up per day, a frequent schedule lists at most
         # MAX_FREQUENT_SLOTS slots.
