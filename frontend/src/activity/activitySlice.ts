@@ -3,6 +3,7 @@ import {
   createListenerMiddleware,
   createSelector,
   createSlice,
+  isAnyOf,
   type PayloadAction,
 } from '@reduxjs/toolkit';
 
@@ -41,8 +42,14 @@ export type ActivityState = {
   liveAtRequest: string[];
   /** Chats whose answer finished after the latest fetch went out. */
   finishedSinceRequest: string[];
-  /** Chats opened after the latest fetch went out; it may still call them failed. */
+  /**
+   * Chats opened whose read the server may not have stored when the latest
+   * fetch went out (opened since, or still being marked read then); it may
+   * still call them failed.
+   */
   readSinceRequest: string[];
+  /** Chats being marked read, until the server answers. */
+  readPending: string[];
 };
 
 const initialState: ActivityState = {
@@ -56,6 +63,7 @@ const initialState: ActivityState = {
   liveAtRequest: [],
   finishedSinceRequest: [],
   readSinceRequest: [],
+  readPending: [],
 };
 
 /** Whether a fetch's answer is the latest one's (or none is being tracked). */
@@ -96,7 +104,7 @@ const activitySlice = createSlice({
         state.requestId = action.meta.requestId;
         state.liveAtRequest = Object.keys(state.live);
         state.finishedSinceRequest = [];
-        state.readSinceRequest = [];
+        state.readSinceRequest = [...state.readPending];
       })
       .addCase(loadActivityNow.fulfilled, (state, action) => {
         if (!isLatest(state, action.meta.requestId)) return;
@@ -148,12 +156,20 @@ const activitySlice = createSlice({
       })
       // Opening a chat clears its unread mark, and with it the failed mark.
       .addCase(markConversationRead.pending, (state, action) => {
+        state.readPending.push(action.meta.arg);
         if (state.loading) state.readSinceRequest.push(action.meta.arg);
         if (!state.now) return;
         state.now.failed_conversations = state.now.failed_conversations.filter(
           (id) => id !== action.meta.arg,
         );
       })
+      .addMatcher(
+        isAnyOf(markConversationRead.fulfilled, markConversationRead.rejected),
+        (state, action) => {
+          const at = state.readPending.indexOf(action.meta.arg);
+          if (at !== -1) state.readPending.splice(at, 1);
+        },
+      )
       .addMatcher(
         (action) => action.type === sseEventReceived.type,
         (state, action: PayloadAction<SSEEvent>) => {

@@ -159,6 +159,29 @@ describe('activitySlice', () => {
       expect(working(state).has('c2')).toBe(true);
     });
 
+    it('does not bring back the failed mark from a fetch sent before the read landed', () => {
+      // Opened, then a fetch goes out while marking it read is still in
+      // flight: the server may still read it unread.
+      let state = reducer(loaded(), markConversationRead.pending('read', 'c4'));
+      state = reducer(state, loadActivityNow.pending('b', 'event'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'b', 'event'),
+      );
+      expect(selectFailedConversations(wrap(state)).has('c4')).toBe(false);
+      // Once the read is stored, a fetch sent after it is believed.
+      state = reducer(
+        state,
+        markConversationRead.fulfilled(undefined as never, 'read', 'c4'),
+      );
+      state = reducer(state, loadActivityNow.pending('c', 'poll'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'c', 'poll'),
+      );
+      expect(selectFailedConversations(wrap(state)).has('c4')).toBe(true);
+    });
+
     it('does not bring back the failed mark of a chat opened while the request was out', () => {
       // The server read the chat unread before it was opened.
       let state = reducer(loaded(), loadActivityNow.pending('a', 'event'));
@@ -168,7 +191,12 @@ describe('activitySlice', () => {
         loadActivityNow.fulfilled(snapshot(), 'a', 'event'),
       );
       expect(selectFailedConversations(wrap(state)).has('c4')).toBe(false);
-      // The next fetch read it after: whatever it says stands.
+      // The read is stored, and the next fetch read after it: whatever it
+      // says stands.
+      state = reducer(
+        state,
+        markConversationRead.fulfilled(undefined as never, 'read', 'c4'),
+      );
       state = reducer(state, loadActivityNow.pending('b', 'poll'));
       state = reducer(
         state,
