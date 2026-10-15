@@ -406,6 +406,13 @@ describe('formatCron common patterns', () => {
     expect(formatCron(expression)).toBe(label);
   });
 
+  it('calls a step that does not divide the hour or day what it is', () => {
+    // */5 in the hour field fires at 0, 5, 10, 15 and 20, then 4 hours
+    // later at midnight: not every 5 hours.
+    expect(formatCron('0 */5 * * *')).toBe('Custom: 0 */5 * * *');
+    expect(formatCron('*/7 * * * *')).toBe('Custom: */7 * * * *');
+  });
+
   it('still falls back for shapes it cannot read', () => {
     expect(formatCron('5 4 1-7 * 2')).toBe('Custom: 5 4 1-7 * 2');
   });

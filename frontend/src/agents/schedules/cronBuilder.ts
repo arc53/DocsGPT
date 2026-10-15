@@ -402,7 +402,9 @@ function describePattern(expression: string, t?: TFunction): string | null {
   const everyN = /^\*\/(\d{1,2})$/;
   // Every N minutes, all day, every day.
   const minutes = everyN.exec(mn);
-  if (minutes && hr === '*' && allDays) {
+  // Only a step that divides the hour (or the day) is truly every N: */7
+  // fires at :56 and then :00, four minutes later.
+  if (minutes && hr === '*' && allDays && 60 % Number(minutes[1]) === 0) {
     const count = Number(minutes[1]);
     return say('everyMinutes', `Every ${count} minutes`, { count });
   }
@@ -410,7 +412,7 @@ function describePattern(expression: string, t?: TFunction): string | null {
   if (minute === null) return null;
   // Every N hours, every day.
   const hours = everyN.exec(hr);
-  if (hours && allDays && minute === 0) {
+  if (hours && allDays && minute === 0 && 24 % Number(hours[1]) === 0) {
     const count = Number(hours[1]);
     return say('everyHours', `Every ${count} hours`, { count });
   }
