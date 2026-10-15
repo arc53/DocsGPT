@@ -6,6 +6,7 @@ import type { Schedule } from '../types/schedule';
 import {
   browserTimezone,
   buildCron,
+  describeCustomCron,
   buildRunAtUtc,
   formatCron,
   parseCron,
@@ -295,6 +296,17 @@ describe('parseScheduleToFormValues', () => {
     });
     const v = parseScheduleToFormValues(s, 'UTC');
     expect(buildRunAtUtc(v.date, v.time, 'UTC')).toBe(runAt);
+  });
+});
+
+describe('describeCustomCron', () => {
+  it('names a pattern it knows as formatCron does', () => {
+    expect(describeCustomCron('0 9 * * 1-5')).toBe(formatCron('0 9 * * 1-5'));
+  });
+
+  it('gives any other cron as written, with no "Custom:" before it', () => {
+    // The alert already says the timing is custom.
+    expect(describeCustomCron('0 9 1,15 * *')).toBe('0 9 1,15 * *');
   });
 });
 

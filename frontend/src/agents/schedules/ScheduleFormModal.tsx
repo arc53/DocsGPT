@@ -32,7 +32,7 @@ import {
   browserTimezone,
   buildCron,
   buildRunAtUtc,
-  formatCron,
+  describeCustomCron,
   parseCron,
   parseScheduleToFormValues,
   supportedTimezones,
@@ -352,7 +352,7 @@ export default function ScheduleFormModal({
           <Alert variant="info" role="note">
             <AlertDescription>
               {t('agents.schedules.modal.customTiming', {
-                pattern: formatCron(customCron, t),
+                pattern: describeCustomCron(customCron, t),
                 interpolation: { escapeValue: false },
               })}
             </AlertDescription>
