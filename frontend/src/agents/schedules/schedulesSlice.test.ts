@@ -452,6 +452,31 @@ describe('schedulesSlice cross-agent list', () => {
       expect(state.all).toEqual([]);
     });
 
+    it("hides the last account's list while another token loads", () => {
+      let state = reducer(loading(), answer());
+      expect(state.all).toHaveLength(1);
+      // The same token reloading keeps the list on screen meanwhile.
+      state = reducer(
+        state,
+        loadAllSchedules.pending('again', { token: null }),
+      );
+      expect(state.all).toHaveLength(1);
+      state = reducer(
+        state,
+        loadAllSchedules.pending('other', { token: 'other-account' }),
+      );
+      expect(state.all).toBeNull();
+      // A failed load leaves nothing of the last account to show.
+      state = reducer(
+        state,
+        loadAllSchedules.rejected(new Error('down'), 'other', {
+          token: 'other-account',
+        }),
+      );
+      expect(state.all).toBeNull();
+      expect(state.allError).toBe(true);
+    });
+
     it('drops a load sent before a reset', () => {
       let state = reducer(loading(), resetSchedules());
       state = reducer(state, answer());

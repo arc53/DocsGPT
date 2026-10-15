@@ -26,6 +26,12 @@ export type SchedulesState = {
   /** The latest cross-agent load: only its answer is applied. */
   allRequestId: string | null;
   /**
+   * The token `all` was loaded with. A load with another one (an account
+   * switch without a page reload) clears it, so a failed load can't leave
+   * the last account's schedules on screen.
+   */
+  allToken: string | null;
+  /**
    * Schedules saved or deleted while that load was out. Its answer was read
    * before them, so they are applied on top of it.
    */
@@ -43,6 +49,7 @@ const initialState: SchedulesState = {
   allLoading: false,
   allError: false,
   allRequestId: null,
+  allToken: null,
   allChangedSinceRequest: { saved: [], deleted: [] },
   runsBySchedule: {},
   runsEndBySchedule: {},
@@ -290,6 +297,8 @@ const schedulesSlice = createSlice({
         state.error = action.error.message ?? 'failed to load schedules';
       })
       .addCase(loadAllSchedules.pending, (state, action) => {
+        if (action.meta.arg.token !== state.allToken) state.all = null;
+        state.allToken = action.meta.arg.token;
         state.allLoading = true;
         state.allError = false;
         state.allRequestId = action.meta.requestId;
