@@ -769,7 +769,6 @@
       "save": "Guardar",
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
-      "noDescription": "Sin descripción",
       "loadError": "No se pudieron cargar los equipos.",
       "roleAdmin": "admin",
       "roleMember": "miembro",

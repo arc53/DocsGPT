@@ -769,7 +769,6 @@
       "save": "Save",
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
-      "noDescription": "No description",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",

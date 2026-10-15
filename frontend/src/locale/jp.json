@@ -768,7 +768,6 @@
       "save": "保存",
       "createTeamError": "チームを作成できませんでした。",
       "noTeams": "チームはまだありません。",
-      "noDescription": "説明なし",
       "loadError": "チームの読み込みに失敗しました。",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",

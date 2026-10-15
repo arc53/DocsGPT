@@ -768,7 +768,6 @@
       "save": "保存",
       "createTeamError": "无法创建团队。",
       "noTeams": "暂无团队。",
-      "noDescription": "无描述",
       "loadError": "加载团队失败。",
       "roleAdmin": "管理员",
       "roleMember": "成员",
