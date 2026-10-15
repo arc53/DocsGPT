@@ -282,10 +282,11 @@ class TestProcess:
                              env={**os.environ, "DECISION_MODE": "local"})
         assert out.stdout.strip() == "[]"
 
-    def test_a_forked_worker_child_starts_fresh(self, monkeypatch):
-        from celery.signals import worker_process_init
+    def test_a_forked_worker_child_starts_fresh(self):
+        # Called directly: sending worker_process_init would also run the other receivers, which dispose the
+        # database engine.
+        from docsgpt.celery_init import _reset_decisions_on_fork
 
-        monkeypatch.setattr("docsgpt.celery_init._IS_WORKER_PROCESS", False)  # the signal sets it
         first = decisions.get_decider()
-        worker_process_init.send(sender=None)
+        _reset_decisions_on_fork()
         assert decisions.get_decider() is not first

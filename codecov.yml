@@ -1,2 +1,5 @@
 ignore:
   - "*/tests/*"
+  # Release clients copied from the model repo and checked by hash; their onnxruntime paths run only in
+  # the opt-in parity test against the real model (tests/integration/test_decisions_parity.py).
+  - "docsgpt/decisions/vendor/*"
