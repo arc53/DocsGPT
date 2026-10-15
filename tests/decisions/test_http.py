@@ -326,8 +326,8 @@ class TestHeaders:
         with caplog.at_level(logging.WARNING, logger="docsgpt.decisions.backends.http"):
             backend._probe()
             run(backend, [Request("s", {"q": NOUL})])
-        (said,) = [r.message for r in caplog.records if "plain HTTP" in r.message]
-        assert "decide.example.com" in said and "secret" not in said
+        (record,) = [r for r in caplog.records if "plain HTTP" in r.message]
+        assert record.args == ("decide.example.com",) and "secret" not in record.getMessage()
 
     def test_deadline_and_priority(self, remote):
         server = FakeDecideServer()
