@@ -1514,6 +1514,7 @@
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
         "mcp_drawio": "使用 draw.io 创建可编辑的流程图和其他图表。",
         "mcp_coingecko": "查询实时加密货币价格、市值、交易量、热门币种和价格历史。",
+        "mcp_microsoftlearn": "搜索并参考微软与 Azure 官方文档、架构指南和代码示例。",
         "mcp_clickup": "搜索、读取和更新 ClickUp 任务、文档与列表，并添加评论。",
         "mcp_zapier": "使用 Zapier MCP 账户中启用的操作读取或更新已连接的应用。",
         "mcp_trello": "查找 Trello 看板和卡片，并创建和更新卡片。",
