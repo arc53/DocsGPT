@@ -989,12 +989,12 @@
         "tool": "Les éditeurs peuvent modifier les actions et remplacer les identifiants, mais pas lire les secrets.",
         "toolNoCredentials": "Les éditeurs peuvent modifier les actions, mais pas les identifiants.",
         "prompt": "Les éditeurs peuvent modifier le texte.",
-        "noShareNoDelete": "Ils ne peuvent ni le partager ni le supprimer.",
-        "shareOnly": "Ils peuvent aussi le partager, mais pas le supprimer.",
-        "deleteOnly": "Ils peuvent aussi le supprimer, mais pas le partager.",
-        "shareAndDelete": "Ils peuvent aussi le partager et le supprimer.",
-        "noShare": "Ils ne peuvent ni le partager ni le supprimer.",
-        "share": "Ils peuvent aussi le partager, mais pas le supprimer."
+        "noShareNoDelete": "Ils ne peuvent ni partager ni supprimer.",
+        "shareOnly": "Ils peuvent aussi partager, mais pas supprimer.",
+        "deleteOnly": "Ils peuvent aussi supprimer, mais pas partager.",
+        "shareAndDelete": "Ils peuvent aussi partager et supprimer.",
+        "noShare": "Ils ne peuvent ni partager ni supprimer.",
+        "share": "Ils peuvent aussi partager, mais pas supprimer."
       },
       "capabilities": {
         "agent": {

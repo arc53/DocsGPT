@@ -47,3 +47,26 @@ describe('locale parity with en', () => {
     },
   );
 });
+
+// Intl gives fr (and es) a `many` category (1,000,000). A family without
+// `_many` falls back to the English `_other` for those counts.
+const leaves = (tree: Tree, prefix = ''): string[] =>
+  Object.entries(tree).flatMap(([key, value]) =>
+    typeof value === 'string'
+      ? [prefix + key]
+      : leaves(value, `${prefix}${key}.`),
+  );
+
+describe('plural forms', () => {
+  it.each(Object.entries({ fr }))(
+    '%s has a _many form wherever it has _one and _other',
+    (_name, locale) => {
+      const keys = new Set(leaves(locale as object as Tree));
+      const missing = [...keys]
+        .filter((key) => key.endsWith('_other'))
+        .map((key) => key.slice(0, -'_other'.length))
+        .filter((base) => keys.has(`${base}_one`) && !keys.has(`${base}_many`));
+      expect(missing).toEqual([]);
+    },
+  );
+});
