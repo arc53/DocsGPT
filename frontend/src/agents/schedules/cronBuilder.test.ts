@@ -1,5 +1,6 @@
 import en from '../../locale/en.json';
 import ru from '../../locale/ru.json';
+import zh from '../../locale/zh.json';
 import i18next from 'i18next';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -394,7 +395,7 @@ describe('formatCron with a translate function', () => {
 describe('formatCron day lists in other languages', () => {
   // The day list is joined in the UI language (Intl.ListFormat reads the
   // global i18next language), then dropped into the locale's template.
-  const LOCALES = { ru };
+  const LOCALES = { ru, zh };
 
   beforeAll(async () => {
     await i18next.init({
@@ -416,6 +417,8 @@ describe('formatCron day lists in other languages', () => {
   it.each([
     ['ru', '0 9 * * 1,3,5', 'По понедельникам, средам и пятницам в '],
     ['ru', '0 9 * * 1', 'По понедельникам в '],
+    ['zh', '0 9 * * 1,3,5', '每周一、三和五 '],
+    ['zh', '0 9 * * 1', '每周一 '],
   ])('%s reads %s as "%s…"', async (lng, expression, start) => {
     await i18next.changeLanguage(lng);
     expect(formatCron(expression, i18next.t)).toMatch(new RegExp(`^${start}`));
