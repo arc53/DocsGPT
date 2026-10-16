@@ -116,6 +116,7 @@ describe('usePresence', () => {
     const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
     await act(async () => {
       window.dispatchEvent(new Event('blur'));
+      vi.advanceTimersByTime(0);
     });
     expect(last()?.[0]).toMatchObject({
       conversation_id: 'c1',
@@ -131,6 +132,20 @@ describe('usePresence', () => {
       window.dispatchEvent(new Event('focus'));
     });
     expect(last()?.[0]).toMatchObject({ visible: true });
+  });
+
+  it('still counts the user looking when focus moves into a frame on the page', async () => {
+    // The window blurs before the frame holds focus; once it does, the page
+    // has focus again and no event says so.
+    await render();
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+      focused.mockReturnValue(true);
+      vi.advanceTimersByTime(0);
+    });
+    const reports = service.reportPresence.mock.calls.map(([body]) => body);
+    expect(reports.every((body) => body.visible)).toBe(true);
   });
 
   it('heartbeats while visible, not while hidden', async () => {

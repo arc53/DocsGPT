@@ -7,7 +7,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 
 import { conversationIdFromPath } from './backgroundListener';
-import { isPageAttended } from './usePageVisible';
+import { isPageAttended, subscribeAttention } from './usePageVisible';
 
 /** How often a visible tab re-reports; the server forgets a report after 45 s. */
 export const PRESENCE_HEARTBEAT_MS = 20_000;
@@ -77,7 +77,7 @@ export function usePresence(): void {
       );
     };
     send();
-    const onChange = () => send();
+    const stopAttention = subscribeAttention(() => send());
     const onPageHide = () => send(true);
     // A page restored from the back/forward cache is open again.
     const onPageShow = (event: PageTransitionEvent) => {
@@ -86,16 +86,11 @@ export function usePresence(): void {
     const heartbeat = window.setInterval(() => {
       if (document.visibilityState === 'visible') send();
     }, PRESENCE_HEARTBEAT_MS);
-    document.addEventListener('visibilitychange', onChange);
-    window.addEventListener('focus', onChange);
-    window.addEventListener('blur', onChange);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
     return () => {
       window.clearInterval(heartbeat);
-      document.removeEventListener('visibilitychange', onChange);
-      window.removeEventListener('focus', onChange);
-      window.removeEventListener('blur', onChange);
+      stopAttention();
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('pageshow', onPageShow);
     };
