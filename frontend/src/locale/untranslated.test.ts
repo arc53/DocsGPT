@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import de from './de.json';
 import en from './en.json';
+import es from './es.json';
 import fr from './fr.json';
 
 type Tree = { [key: string]: string | Tree };
@@ -23,7 +24,7 @@ const isProse = (value: string): boolean =>
 
 const english = new Map(strings(en));
 
-const LOCALES = { de, fr };
+const LOCALES = { de, es, fr };
 
 describe('locales are translated', () => {
   it.each(Object.entries(LOCALES))(

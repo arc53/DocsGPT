@@ -48,7 +48,7 @@ describe('locale parity with en', () => {
   );
 });
 
-// Intl gives fr (and es) a `many` category (1,000,000). A family without
+// Intl gives es and fr a `many` category (1,000,000). A family without
 // `_many` falls back to the English `_other` for those counts.
 const leaves = (tree: Tree, prefix = ''): string[] =>
   Object.entries(tree).flatMap(([key, value]) =>
@@ -58,7 +58,7 @@ const leaves = (tree: Tree, prefix = ''): string[] =>
   );
 
 describe('plural forms', () => {
-  it.each(Object.entries({ fr }))(
+  it.each(Object.entries({ es, fr }))(
     '%s has a _many form wherever it has _one and _other',
     (_name, locale) => {
       const keys = new Set(leaves(locale as object as Tree));
