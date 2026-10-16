@@ -31,7 +31,9 @@
     "dismiss": "關閉",
     "toolApprovalTitle": "需要核准工具",
     "toolApprovalReview": "檢視",
-    "toolApprovalFallbackName": "對話"
+    "toolApprovalFallbackName": "對話",
+    "moreToasts_other": "還有 {{count}} 則",
+    "fewerToasts": "收合"
   },
   "backgroundJobs": {
     "card": {

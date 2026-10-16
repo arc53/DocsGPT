@@ -31,7 +31,11 @@
     "dismiss": "Descartar",
     "toolApprovalTitle": "Se requiere aprobar una herramienta",
     "toolApprovalReview": "Revisar",
-    "toolApprovalFallbackName": "Conversación"
+    "toolApprovalFallbackName": "Conversación",
+    "moreToasts_one": "{{count}} más",
+    "moreToasts_many": "{{count}} más",
+    "moreToasts_other": "{{count}} más",
+    "fewerToasts": "Mostrar menos"
   },
   "backgroundJobs": {
     "card": {

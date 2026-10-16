@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Auto-Resume
 description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
-lastUpdated: 2026-10-14
+lastUpdated: 2026-10-16
 ---
 
 import { Callout } from 'nextra/components';
@@ -180,16 +180,20 @@ through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_job
 When a continuation answers (never for `NO_REPLY`), or a one-time scheduled task (a reminder) answers in its
 conversation, the user is notified according to where they are:
 
-1. **Watching the conversation** (a visible tab shows it): nothing; the chat updates.
-2. **A DocsGPT tab open elsewhere**: a toast with an **Open** button that goes to the conversation. A hidden tab
-   also shows a system notification, if the browser allows it.
+1. **Watching the conversation** (a tab shows it, is visible, and its window has focus): nothing; the chat
+   updates.
+2. **A DocsGPT tab open elsewhere**, or the conversation open in a window that is behind another app or not
+   focused: a toast with an **Open** button that goes to the conversation. A tab nobody is looking at (hidden, or
+   its window not focused) also shows a system notification, if the browser allows it.
 3. **No tab open**: a Web Push notification to the browsers the user turned it on in, if the operator set it
    up (below).
 
-Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
+Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it, or
+until they come back to the window that already shows it. The tab title counts the chats that need the user, unread, failed or waiting for an approval: `(2) DocsGPT`. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
 
 Tabs report what they show to `POST /api/presence` (`{tab_id, conversation_id, visible, closing?}`) when their
-route or visibility changes and every 20 seconds while visible; a report counts for 45 seconds, and a closing
+route, visibility or window focus changes and every 20 seconds while visible; `visible` is true only while the
+tab is visible and its window has focus; a report counts for 45 seconds, and a closing
 tab says so. When Redis is unavailable, the user counts as away, so the notification still goes out.
 
 The toast and the push lead with the kind of event:

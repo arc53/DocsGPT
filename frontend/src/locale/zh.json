@@ -31,7 +31,9 @@
     "dismiss": "忽略",
     "toolApprovalTitle": "需要批准工具",
     "toolApprovalReview": "查看",
-    "toolApprovalFallbackName": "对话"
+    "toolApprovalFallbackName": "对话",
+    "moreToasts_other": "还有 {{count}} 条",
+    "fewerToasts": "收起"
   },
   "backgroundJobs": {
     "card": {
