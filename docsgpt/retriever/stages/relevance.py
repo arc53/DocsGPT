@@ -163,6 +163,15 @@ def instance_mode() -> str:
     return mode
 
 
+def rerank_enabled() -> bool:
+    """Whether the operator turned the rerank on (``DECISION_RERANK_MODE`` not ``off``), from settings alone.
+
+    Unlike ``instance_mode`` it never measures, loads or times the model, so a public route can ask it; under
+    ``auto`` the rerank may still resolve off.
+    """
+    return settings.DECISION_RERANK_MODE != "off" and decisions.get_decider().enabled
+
+
 def source_mode(retriever: str, reranker: Any, instance: str, in_rollout: bool) -> tuple[str, Optional[str]]:
     """The rerank mode of one source and its rollout arm.
 
@@ -275,6 +284,10 @@ class RelevanceStage:
                 result = fallback
             top = round(max(scores.values), 4) if scores.values else None
             context["top_relevance"] = top
+            # Every candidate's score, kept or not, for a caller that shows them (the retrieval test's compare).
+            context["scored"] = (
+                [(doc, round(p, 4)) for doc, p in zip(candidates, scores.values)] if scores.values else []
+            )
             fallback_ids = {id(doc) for doc in fallback}
             kept = [doc for doc, _ in chosen] if chosen is not None else fallback
             span.set(

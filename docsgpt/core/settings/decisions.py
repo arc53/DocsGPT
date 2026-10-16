@@ -260,8 +260,9 @@ class DecisionSettings(SettingsGroup):
         default=False,
         description=(
             "Run prescreens set to `backend: decision` on the decision model: one call that keeps chunks at or "
-            "above DECISION_PRESCREEN_THRESHOLD, most relevant first. While false, those prescreens run on the LLM "
-            "as `backend: llm` does, and no source can make the model load."
+            "above DECISION_PRESCREEN_THRESHOLD, most relevant first. When true, the API process (or the decide "
+            "server) loads the model at start, so the first prescreen does not fail open while it loads. While "
+            "false, those prescreens run on the LLM as `backend: llm` does, and no source can make the model load."
         ),
     )
     DECISION_PRESCREEN_THRESHOLD: float = Field(

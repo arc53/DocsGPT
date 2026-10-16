@@ -717,6 +717,14 @@ class TestDoctorDecisions:
         check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=False)
         assert str(folder) in check.detail
 
+    def test_the_decision_prescreen_is_listed_and_counts_as_a_feature_on(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(commands.sys, "platform", "darwin")
+        check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=True)
+        assert check.level == "ok" and "rag_prescreen off" in check.detail
+        check = commands._check_decisions({"DECISION_PRESCREEN_ENABLED": "true"}, docker=True)
+        assert "rag_prescreen on" in check.detail
+        assert check.level == "warn" and "--device mps" in check.detail
+
     def test_mode_none(self):
         assert commands._check_decisions({"DECISION_MODE": "none"}, docker=False).detail == "off (DECISION_MODE=none)"
 

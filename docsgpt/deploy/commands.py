@@ -1158,6 +1158,8 @@ def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, st
 def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     """The decision model: where it runs, what that reports, and every feature's mode and ``auto`` verdict.
 
+    The decision prescreen (``DECISION_PRESCREEN_ENABLED``) is listed with the features as ``rag_prescreen``.
+
     Decisions fail open, so this is never a failure: a feature that is on with no model behind it is a warning.
 
     Args:
@@ -1172,6 +1174,9 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     if settings.DECISION_MODE == "none":
         return Check("decisions", "ok", "off (DECISION_MODE=none)")
     on = [name for name, (mode, _, _) in registered.items() if mode != "off"]
+    if settings.DECISION_PRESCREEN_ENABLED:
+        # No mode of its own: the switch lets sources run it, and the API loads the model at start.
+        on.append("rag_prescreen")
     url = settings.DECISION_BASE_URL if settings.DECISION_MODE != "local" else None
     profile, level = None, "ok"
     if settings.DECISION_MODE == "api" and not url:
@@ -1197,6 +1202,7 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
             predicted = profile.predict_s(shape)
             mode = f"auto, {'on' if predicted <= budget else 'off'} at {predicted:.2f}s of {budget:g}s"
         verdicts.append(f"{name} {mode}")
+    verdicts.append(f"rag_prescreen {'on' if settings.DECISION_PRESCREEN_ENABLED else 'off'}")
     if not on:
         level = "ok"
     sidecar = stack.runs_decider(env) or settings.DECISION_BASE_URL == stack.DECIDER_URL

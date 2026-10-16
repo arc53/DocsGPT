@@ -1069,6 +1069,10 @@
     },
     "SourceSearchModel": {
       "properties": {
+        "compare": {
+          "description": "Also return `candidates`: every chunk the stages received, in retriever order, with its relevance and whether it was kept.",
+          "type": "boolean"
+        },
         "query": {
           "description": "The query to retrieve for",
           "type": "string"

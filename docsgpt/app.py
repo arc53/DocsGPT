@@ -242,6 +242,7 @@ def health():
 def get_config():
     from docsgpt import decisions
     from docsgpt.graphrag import graphrag_available
+    from docsgpt.retriever.stages.relevance import decision_prescreen_enabled, rerank_enabled
     from docsgpt.stt.stt_creator import STTCreator
     from docsgpt.tts.tts_creator import TTSCreator
 
@@ -262,6 +263,12 @@ def get_config():
         # details (status, speed, feature verdicts) are admin-only:
         # /api/admin/decisions.
         "decision_available": decisions.available(),
+        # Whether the operator turned on the rerank (DECISION_RERANK_MODE, not
+        # yet resolved under auto) and the decision prescreen, which the source
+        # settings offer only then. Read from settings alone, so this route
+        # never loads, warms or times the model.
+        "decision_rerank_enabled": bool(rerank_enabled()),
+        "decision_prescreen_enabled": bool(decision_prescreen_enabled()),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

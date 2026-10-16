@@ -87,6 +87,8 @@ class Dispatcher(BaseRetriever):
         usage_source: str = "rag_prescreen",
         conversation_id: Optional[str] = None,
         relevance_feature: Optional[str] = None,
+        apply_rollout: bool = True,
+        record_candidates: bool = False,
     ):
         """Build the dispatcher.
 
@@ -114,14 +116,26 @@ class Dispatcher(BaseRetriever):
                 for a conversation not created yet.
             relevance_feature: Decision feature label of every relevance stage,
                 instead of ``rag_rerank`` / ``rag_prescreen``.
+            apply_rollout: False puts the request in the rollout whatever
+                ``DECISION_RERANK_ROLLOUT_PERCENT`` says (the retrieval test,
+                which has no conversation to hash).
+            record_candidates: Keep every group's candidates as its stages
+                received them in ``last_candidates``, for the retrieval test's
+                comparison with retriever order.
         """
         self._usage_source = usage_source
         self._relevance_feature = relevance_feature
         self._rollout_key = conversation_id or request_id
+        self._apply_rollout = apply_rollout
+        self._record_candidates = record_candidates
         # After ``search()``: the best relevance any stage scored (None when
-        # none did) and how many candidates the groups handed their stages.
+        # none did), how many candidates the groups handed their stages and,
+        # with ``record_candidates``, those candidates: ``{"doc", "base",
+        # "relevance"}`` in retriever order, ``base`` when the retrieval would
+        # have returned the doc without the rerank's wider pool.
         self.last_top_relevance: Optional[float] = None
         self.last_candidate_count = 0
+        self.last_candidates: List[Dict[str, Any]] = []
         self._ctor_kwargs = dict(
             include_scores=include_scores,
             chat_history=chat_history,
@@ -169,7 +183,9 @@ class Dispatcher(BaseRetriever):
         def rerank(key: str, retrieval: Optional[RetrievalConfig]) -> tuple:
             if "instance" not in resolved:
                 resolved["instance"] = instance_mode()
-                resolved["rollout"] = rollout_on(self._rollout_key, settings.DECISION_RERANK_ROLLOUT_PERCENT)
+                resolved["rollout"] = not self._apply_rollout or rollout_on(
+                    self._rollout_key, settings.DECISION_RERANK_ROLLOUT_PERCENT
+                )
             reranker = retrieval.reranker_config() if retrieval is not None else None
             mode, arm = source_mode(key, reranker, resolved["instance"], resolved["rollout"])
             return mode, arm, reranker
@@ -420,6 +436,7 @@ class Dispatcher(BaseRetriever):
         ) as span:
             self.last_top_relevance = None
             self.last_candidate_count = 0
+            self.last_candidates = []
             if "control" in arms:
                 # The control arm asks the model nothing; its entry is what an
                 # A/B comparison counts the arm by.
@@ -436,7 +453,13 @@ class Dispatcher(BaseRetriever):
         context = self._context(query, retriever, group)
         context["selection_size"] = len(base_selection(docs))
         self.last_candidate_count += len(docs)
+        before = [(doc, doc.get("_base", True)) for doc in docs] if self._record_candidates else []
         docs = self._run_stages(docs, context, self._group_stages(group))
+        if before:
+            scored = {id(doc): p for doc, p in context.get("scored") or []}
+            self.last_candidates.extend(
+                {"doc": doc, "base": bool(base), "relevance": scored.get(id(doc))} for doc, base in before
+            )
         top = context.get("top_relevance")
         if top is not None and (self.last_top_relevance is None or top > self.last_top_relevance):
             self.last_top_relevance = top
