@@ -85,6 +85,9 @@ def build_group_stages(
     3. The rerank ``RelevanceStage`` when the group's rerank mode is ``on`` or ``monitor`` and no decision
        prescreen already scored it. After an LLM prescreen it reorders the survivors.
 
+    The Dispatcher gives every decision prescreen policy a group of its own sources, so step 2 never judges
+    another source's chunks and step 3 still runs for the sources beside it.
+
     A group with none of these gets no stages, so retrieval stays exactly as it was with zero extra calls.
 
     Args:

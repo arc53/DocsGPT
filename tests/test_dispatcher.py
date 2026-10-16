@@ -663,6 +663,46 @@ class TestRelevanceComposition:
         assert len(call.requests) == 3 and len(out) == 3
         assert [d["relevance"] for d in out] == sorted((d["relevance"] for d in out), reverse=True)
 
+    def test_a_decision_prescreen_judges_only_its_own_sources(self, stores, rerank_mode, _patch_llm_creator):
+        for sid in ("llm", "screened", "plain"):
+            stores[sid] = _ranked_store(_corpus(sid))
+        rerank_mode("on", DECISION_PRESCREEN_ENABLED=True)
+        sources = [
+            {"id": "plain", "retrieval": RetrievalConfig()},
+            {"id": "screened", "retrieval": RetrievalConfig(
+                chunks=2, prescreen={"candidate_k": 10, "max_keep": 2, "backend": "decision", "min_relevance": 0.99},
+            )},
+            {"id": "llm", "retrieval": RetrievalConfig(chunks=2, prescreen={"candidate_k": 4, "max_keep": 4})},
+        ]
+        screener = Mock(model_id="m")
+        screener.gen = Mock(return_value='{"keep": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}')
+        fake = FakeDecider({"relevant": _scores_from_text})
+        with installed(fake), patch(
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener
+        ):
+            d, out = _search(sources)
+        assert [(g["doc_ids"], g["relevance"]["mode"]) for g in d._groups] == [
+            (["plain", "llm"], "on"), (["screened"], "on"),
+        ]
+        prescreen = next(c for c in fake.calls if c.feature == "rag_prescreen")
+        assert {r.state["passage"].split("-")[0] for r in prescreen.requests} == {"screened"}
+        # The sources beside it are still screened by the LLM and reranked, and its 0.99 floor cuts none of theirs.
+        rerank = next(c for c in fake.calls if c.feature == "rag_rerank")
+        assert {r.state["passage"].split("-")[0] for r in rerank.requests} == {"llm", "plain"}
+        assert screener.gen.called
+        by_source = {d["source"] for d in out}
+        assert {"llm", "plain"} <= by_source
+        assert sum(d["source"] == "screened" for d in out) == 1  # min_keep, below the floor
+
+    def test_without_the_gate_decision_prescreens_share_their_group(self, rerank_mode, _patch_llm_creator):
+        rerank_mode("off")
+        sources = [
+            {"id": "a", "retrieval": RetrievalConfig(prescreen={"candidate_k": 10, "backend": "decision"})},
+            {"id": "b", "retrieval": RetrievalConfig()},
+        ]
+        d = Dispatcher(source={"question": "q", "active_docs": ["a", "b"]}, sources=sources)
+        assert [g["doc_ids"] for g in d._groups] == [["a", "b"]]
+
     def test_a_decision_prescreen_fails_open_to_its_cap(self, stores, rerank_mode, _patch_llm_creator):
         rerank_mode("off", DECISION_PRESCREEN_ENABLED=True)
         stores["a"] = _ranked_store(_corpus("a"))
