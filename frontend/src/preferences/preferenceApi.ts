@@ -83,6 +83,9 @@ export async function getConversations(
       name: item.name,
       agent_id: item.agent_id ?? null,
       date: item.date,
+      // The server's unread mark: a failed or finished answer, or a follow-up,
+      // that landed while the user was away. syncUnread reads it.
+      ...(typeof item.unread === 'boolean' ? { unread: item.unread } : {}),
     }));
     return { data: conversations, loading: false };
   } catch (error) {

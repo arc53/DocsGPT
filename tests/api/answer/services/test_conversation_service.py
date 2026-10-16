@@ -866,6 +866,50 @@ class TestFinalizeMessage:
         mock_llm.gen.assert_not_called()
 
 
+class TestFinalizeMarksUnreadWhenAway:
+    """A finished answer marks its listed chat unread unless the owner watches it."""
+
+    @staticmethod
+    def _finish(pg_conn, user, *, visibility="listed", watching=False, mark=True):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.notifications.presence.is_watching", return_value=watching
+        ):
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question="q",
+                decoded_token={"sub": user},
+                visibility=visibility,
+            )
+            svc.finalize_message(
+                res["message_id"], "answer", status="complete", mark_unread_when_away=mark,
+            )
+        return pg_conn.execute(
+            sql_text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": str(res["conversation_id"])},
+        ).scalar()
+
+    def test_marked_when_the_owner_is_away(self, pg_conn):
+        assert self._finish(pg_conn, "u-unread-away") is not None
+
+    def test_not_marked_while_the_owner_watches(self, pg_conn):
+        assert self._finish(pg_conn, "u-unread-watch", watching=True) is None
+
+    def test_not_marked_for_a_chat_with_no_sidebar_row(self, pg_conn):
+        assert self._finish(pg_conn, "u-unread-hidden", visibility="hidden") is None
+
+    def test_not_marked_unless_the_caller_asks(self, pg_conn):
+        # A Stop or a dropped connection saves its partial answer as complete
+        # too; those are the user's own doing.
+        assert self._finish(pg_conn, "u-unread-off", mark=False) is None
+
+
 class TestSaveUserQuestionFinalizeFailedFlow:
     """LLM fails immediately; question stays queryable with status='failed' + error metadata."""
 

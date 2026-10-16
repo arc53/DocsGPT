@@ -474,6 +474,38 @@ describe('conversation listener — a new chat in the sidebar', () => {
     expect(preferenceApi.getConversations).not.toHaveBeenCalled();
   });
 
+  it('refreshes the list when a chat it is not showing finishes, for its unread mark', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-old', 'conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-old', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the chat it shows to its own stream end', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-open',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-open', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
   it('swaps in the generated title when it is ready', async () => {
     const store = makeStore();
     store.dispatch(listed(['conv-old']));

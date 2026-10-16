@@ -417,6 +417,7 @@ class ConversationService:
         error: Optional[BaseException] = None,
         title_inputs: Optional[Dict[str, Any]] = None,
         async_title_generation: bool = False,
+        mark_unread_when_away: bool = False,
     ) -> MessageUpdateOutcome:
         """Commit the response and tool_call confirms in one transaction.
 
@@ -425,6 +426,11 @@ class ConversationService:
         finalize from "the row was already terminal" — the latter must
         still be treated as success when the prior state was
         ``complete``.
+
+        ``mark_unread_when_away``: the answer finished on its own (not a Stop
+        or a dropped connection, which also save as ``complete``), so a listed
+        chat is marked unread unless its owner is watching it, as a failure
+        is. Only the caller knows how the stream ended.
         """
         if not message_id:
             return MessageUpdateOutcome.INVALID
@@ -481,16 +487,18 @@ class ConversationService:
             repo.confirm_executed_tool_calls(message_id)
             # Activity marks a chat failed while it is unread; a Stop or a
             # dropped connection (New Chat, a reload) is the user's own doing.
-            failed_chat = (
+            failed = status == "failed" and merged_metadata.get("error_code") not in _USER_ENDED_CODES
+            finished = status == "complete" and mark_unread_when_away
+            landed_chat = (
                 ConversationUnreadRepository(conn).listed_chat_of_message(message_id)
-                if status == "failed" and merged_metadata.get("error_code") not in _USER_ENDED_CODES
+                if failed or finished
                 else None
             )
         # Outside the txn: whether the owner is watching is a Redis read.
-        if failed_chat is not None:
+        if landed_chat is not None:
             from docsgpt.notifications.notify import mark_unread_unless_watching
 
-            mark_unread_unless_watching(*failed_chat, begin=db_session)
+            mark_unread_unless_watching(*landed_chat, begin=db_session)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
         # ``failed`` counts too: the conversation is still listed, and

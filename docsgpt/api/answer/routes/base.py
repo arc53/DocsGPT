@@ -1509,6 +1509,8 @@ class BaseAnswerResource:
                             ),
                         } if llm is not None else None,
                         async_title_generation=llm is not None,
+                        # It ran to the end: unread unless the user watches it.
+                        mark_unread_when_away=True,
                     )
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was

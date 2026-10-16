@@ -1575,6 +1575,19 @@ conversationListenerMiddleware.startListening({
         listenerApi.getState,
         listenerApi.dispatch,
       );
+    } else if (envelope.type === 'message.finished') {
+      // An answer that ended while the user was elsewhere is marked unread
+      // on the server; refresh the list for its mark. The chat this tab
+      // shows refreshes at its own stream's end.
+      const state = listenerApi.getState() as RootState;
+      if (state.conversation.conversationId === conversationId) return;
+      try {
+        listenerApi.dispatch(
+          receiveConversations(await getConversations(state.preference.token)),
+        );
+      } catch (error) {
+        console.error('message.finished: conversations refresh failed', error);
+      }
     } else if (envelope.type === 'conversation.renamed') {
       // The generated title, saved after the answer ended.
       const name = String(payload.name ?? '');
