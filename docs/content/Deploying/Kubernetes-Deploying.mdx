@@ -217,10 +217,11 @@ kubectl apply -k deployment/k8s/
 ```
 
 It runs `docsgpt-decider`, which serves the model to the API and the worker at `docsgpt-decider-service:7095`, and
-sets `DECISION_BASE_URL` on both. The model is downloaded into the `docsgpt-decision-models` PersistentVolumeClaim
+sets `DECISION_BASE_URL` and `DECISION_KEY` on both. The model is downloaded into the `docsgpt-decision-models` PersistentVolumeClaim
 (2Gi, `ReadWriteOnce`, written as the image's user through `fsGroup: 999`), where it survives restarts. The decider
 requests 1Gi and 500m and is limited to 2Gi and 4 CPUs. Its key, `DECISION_KEY`, comes from `INTERNAL_KEY` in the
-secret, as on the API and the worker. The API's readiness never depends on it: decisions fail open. To turn it off,
+secret, for the decider and its callers alike; only the component sends it, so a server you set in the secret gets
+the `DECISION_KEY` you set there and never `INTERNAL_KEY`. The API's readiness never depends on it: decisions fail open. To turn it off,
 comment the component out, apply again, and delete what it created, which `kubectl apply` leaves running:
 `kubectl delete deployment/docsgpt-decider service/docsgpt-decider-service pvc/docsgpt-decision-models`.
 

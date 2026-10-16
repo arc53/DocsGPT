@@ -431,7 +431,9 @@ def test_the_component_points_the_api_and_the_worker_at_it() -> None:
         (container,) = _pod_spec(patch)["containers"]
         assert container["name"] == patch["metadata"]["name"], "merged into the main container by name"
         patched[container["name"]] = {e["name"]: e.get("value") for e in container["env"]}
-    assert patched == {name: {"DECISION_BASE_URL": DECIDER_URL} for name in ("docsgpt-api", "docsgpt-worker")}
+        assert _decision_key_from_the_secret(container), "the key the decider expects"
+    assert patched == {name: {"DECISION_BASE_URL": DECIDER_URL, "DECISION_KEY": None}
+                       for name in ("docsgpt-api", "docsgpt-worker")}
 
 
 def test_the_image_user_id_is_the_fs_group() -> None:
@@ -444,7 +446,7 @@ def test_by_default_the_api_holds_the_model_and_the_worker_only_its_tokenizer(na
     container = _main_container(name)
     env = {e["name"]: e.get("value") for e in container["env"]}
     assert "DECISION_BASE_URL" not in env and "DECISION_BASE_URL" not in _secret_data()
-    assert _decision_key_from_the_secret(container), "ready for the component"
+    assert "DECISION_KEY" not in env, "INTERNAL_KEY must not reach a server set in docsgpt-secrets"
     volumes = {v["name"]: v for v in _pod_spec(_named("Deployment", name))["volumes"]}
     (mount,) = [m for m in container["volumeMounts"] if m["mountPath"] == "/app/models/decision"]
     assert volumes[mount["name"]]["emptyDir"]["sizeLimit"] == size

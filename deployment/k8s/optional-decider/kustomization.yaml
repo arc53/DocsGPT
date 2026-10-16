@@ -11,7 +11,8 @@ resources:
   - decider-deploy.yaml
   - decider-service.yaml
 
-# The API and the worker already send DECISION_KEY (INTERNAL_KEY); this adds the address.
+# The address, and the key the decider expects (INTERNAL_KEY). Only this component sends
+# INTERNAL_KEY as DECISION_KEY: a server set in docsgpt-secrets gets the DECISION_KEY set there.
 patches:
   - patch: |-
       apiVersion: apps/v1
@@ -26,6 +27,11 @@ patches:
               env:
               - name: DECISION_BASE_URL
                 value: "http://docsgpt-decider-service:7095"
+              - name: DECISION_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: docsgpt-secrets
+                    key: INTERNAL_KEY
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
@@ -39,3 +45,8 @@ patches:
               env:
               - name: DECISION_BASE_URL
                 value: "http://docsgpt-decider-service:7095"
+              - name: DECISION_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: docsgpt-secrets
+                    key: INTERNAL_KEY

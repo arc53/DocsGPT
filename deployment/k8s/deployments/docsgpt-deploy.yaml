@@ -148,11 +148,6 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
-        - name: DECISION_KEY
-          valueFrom:
-            secretKeyRef:
-              name: docsgpt-secrets
-              key: INTERNAL_KEY
         volumeMounts:
         - name: decision-models
           mountPath: /app/models/decision
@@ -296,11 +291,6 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
-        - name: DECISION_KEY
-          valueFrom:
-            secretKeyRef:
-              name: docsgpt-secrets
-              key: INTERNAL_KEY
         volumeMounts:
         - name: decision-models
           mountPath: /app/models/decision
