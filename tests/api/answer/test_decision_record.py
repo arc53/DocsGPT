@@ -136,7 +136,8 @@ class TestTheProcessor:
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor.__new__(StreamProcessor)
-        assert processor.decision_record is processor.decision_record
+        assert isinstance(processor.decision_record, record.DecisionRecord)
+        assert processor.decision_record is processor.__dict__["decision_record"]  # made once, then kept
 
 
 @pytest.fixture
