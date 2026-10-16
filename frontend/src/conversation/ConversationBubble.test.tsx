@@ -24,6 +24,20 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const runArtifactsMock = vi.fn(
+  (): {
+    items: unknown[];
+    failed: boolean;
+    retry: () => void;
+  } => ({ items: [], failed: false, retry: () => {} }),
+);
+vi.mock('./useRunArtifacts', () => ({
+  useRunArtifacts: () => runArtifactsMock(),
+}));
+
+import { useState } from 'react';
+
+import type { ArtifactCardItem } from './artifactCards';
 import { ChatCompanionContext } from './chatCompanion';
 import ConversationBubble from './ConversationBubble';
 import { ToolCallsType } from './types';
@@ -197,38 +211,221 @@ describe('ConversationBubble', () => {
     expect(card.getAttribute('data-padding')).toBe('sm');
   });
 
-  it('renders artifact chips as secondary pills and feedback as muted icon buttons', async () => {
+  it('folds an answer past four artifacts into one that opens its list', async () => {
+    const openArtifactList = vi.fn();
+    const files = ['a.pdf', 'b.xlsx', 'c.docx', 'd.png', 'e.csv'];
+    await render(
+      <ChatCompanionContext.Provider
+        value={{ openSources: () => {}, openArtifactList }}
+      >
+        <ConversationBubble
+          type="ANSWER"
+          message="Done."
+          onOpenArtifact={() => {}}
+          toolCalls={[
+            {
+              tool_name: 'code_executor',
+              action_name: 'run_code',
+              call_id: 'c1',
+              arguments: {},
+              status: 'completed',
+              artifacts: files.map((f, i) => ({ id: `id-${i}`, filename: f })),
+            } as ToolCallsType,
+          ]}
+        />
+      </ChatCompanionContext.Provider>,
+    );
+    const cards = container.querySelectorAll('[data-slot="artifact-card"]');
+    expect(cards).toHaveLength(4);
+    await act(async () =>
+      (
+        cards[3].querySelector('[data-artifact-open]') as HTMLButtonElement
+      ).click(),
+    );
+    expect(openArtifactList).toHaveBeenCalledOnce();
+    expect(openArtifactList.mock.calls[0][0]).toHaveLength(5);
+  });
+
+  const fileCall = (files: string[]): ToolCallsType =>
+    ({
+      tool_name: 'code_executor',
+      action_name: 'run_code',
+      call_id: 'c1',
+      arguments: {},
+      status: 'completed',
+      artifacts: files.map((f, i) => ({ id: `id-${i}`, filename: f })),
+    }) as ToolCallsType;
+
+  // Two answers can lead with the same artifact (an edit keeps its id); only
+  // the one whose list is open is marked, and its list follows its files.
+  it('marks and updates only the answer whose list is open', async () => {
+    const syncArtifactList = vi.fn();
+    const five = ['a.pdf', 'b.xlsx', 'c.docx', 'd.png', 'e.csv'];
+    let addFile: () => void = () => {};
+    let openKey: string | null = null;
+    function Harness() {
+      const [owner, setOwner] = useState<string | null>(null);
+      const [files, setFiles] = useState(five);
+      addFile = () => setFiles([...five, 'f.json']);
+      openKey = owner;
+      return (
+        <ChatCompanionContext.Provider
+          value={{
+            openArtifactList: (_items: ArtifactCardItem[], key: string) =>
+              setOwner(key),
+            openArtifactListKey: owner,
+            syncArtifactList,
+          }}
+        >
+          <ConversationBubble
+            type="ANSWER"
+            message="First"
+            onOpenArtifact={() => {}}
+            toolCalls={[fileCall(files)]}
+          />
+          <ConversationBubble
+            type="ANSWER"
+            message="Second"
+            onOpenArtifact={() => {}}
+            toolCalls={[fileCall(five)]}
+          />
+        </ChatCompanionContext.Provider>
+      );
+    }
+    await render(<Harness />);
+    // Each answer's fourth card is its “N more files”.
+    const moreButtons = () =>
+      Array.from(container.querySelectorAll('ul')).map(
+        (list) =>
+          list.querySelectorAll<HTMLButtonElement>('[data-artifact-open]')[3],
+      );
+    expect(moreButtons()).toHaveLength(2);
+    await act(async () => moreButtons()[0].click());
+    expect(
+      moreButtons().map((b) => b.getAttribute('aria-current') === 'true'),
+    ).toEqual([true, false]);
+
+    syncArtifactList.mockClear();
+    await act(async () => addFile());
+    const synced = syncArtifactList.mock.calls.filter(
+      ([key]) => key === openKey,
+    );
+    expect(synced.at(-1)![1]).toHaveLength(6);
+  });
+
+  // The builder preview's companion opens artifacts only.
+  it('keeps sources in their own panel when the companion has no sources slot', async () => {
+    const sources = [1, 2].map((n) => ({
+      title: `Doc ${n}`,
+      text: `Excerpt ${n}`,
+      source: `doc-${n}.pdf`,
+    }));
+    await render(
+      <ChatCompanionContext.Provider value={{ openArtifactList: () => {} }}>
+        <ConversationBubble type="ANSWER" message="Answer" sources={sources} />
+      </ChatCompanionContext.Provider>,
+    );
+    const header = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[data-variant="ghost"]',
+      ),
+    ).find((b) => b.textContent?.includes(tr('conversation.sources.title')))!;
+    expect(header.getAttribute('aria-haspopup')).toBe('dialog');
+    await act(async () => header.click());
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  // An artifact-only run: nothing to show until it has a file.
+  it('renders nothing for a finished run with no answer and no files', async () => {
     await render(
       <ConversationBubble
         type="ANSWER"
-        message="Done."
-        feedback="LIKE"
-        handleFeedback={() => {}}
+        workflowRunId="run-1"
         onOpenArtifact={() => {}}
-        toolCalls={[
-          {
-            tool_name: 'code_executor',
-            action_name: 'code_executor_run',
-            call_id: 'call-2',
-            arguments: {},
-            status: 'completed',
-            artifact_id: 'art-1',
-          } as ToolCallsType,
-        ]}
       />,
     );
+    expect(container.innerHTML).toBe('');
+  });
 
-    const viewArtifact =
-      (en.conversation as Record<string, unknown>).viewArtifact ??
-      'conversation.viewArtifact';
-    const chips = container.querySelectorAll(
-      `button[aria-label="${viewArtifact}"]`,
-    );
-    expect(chips.length).toBe(1);
-    chips.forEach((chip) => {
-      expect((chip as HTMLElement).dataset.variant).toBe('secondary');
-      expect((chip as HTMLElement).dataset.shape).toBe('pill');
+  it('shows a run with no answer once it has files', async () => {
+    runArtifactsMock.mockReturnValueOnce({
+      items: [
+        {
+          id: 'r1',
+          title: 'QBR',
+          kind: 'pdf',
+          version: 1,
+          filename: 'qbr.pdf',
+          toolName: '',
+          downloadable: true,
+        },
+      ],
+      failed: false,
+      retry: () => {},
     });
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        workflowRunId="run-1"
+        onOpenArtifact={() => {}}
+      />,
+    );
+    expect(
+      container.querySelectorAll('[data-slot="artifact-card"]'),
+    ).toHaveLength(1);
+  });
+
+  it('renders artifacts as cards under the answer and feedback as muted icon buttons', async () => {
+    const onOpenArtifact = vi.fn();
+    await render(
+      <ChatCompanionContext.Provider
+        value={{
+          openSources: () => {},
+          openArtifact: { id: 'art-1', version: 2 },
+        }}
+      >
+        <ConversationBubble
+          type="ANSWER"
+          message="Done."
+          feedback="LIKE"
+          handleFeedback={() => {}}
+          onOpenArtifact={onOpenArtifact}
+          toolCalls={[
+            {
+              tool_name: 'code_executor',
+              action_name: 'code_executor_run',
+              call_id: 'call-2',
+              arguments: {},
+              status: 'completed',
+              artifact_id: 'art-1',
+              artifacts: [
+                { id: 'art-1', filename: 'claims.csv', ref: 'A1', version: 2 },
+              ],
+            } as ToolCallsType,
+          ]}
+        />
+      </ChatCompanionContext.Provider>,
+    );
+
+    const cards = container.querySelectorAll('[data-slot="artifact-card"]');
+    expect(cards.length).toBe(1);
+    expect(cards[0].textContent).toContain('claims.csv');
+    // The card the docked panel shows is marked open.
+    expect(cards[0].className).toContain('bg-secondary');
+    const open = cards[0].querySelector(
+      '[data-artifact-open]',
+    ) as HTMLButtonElement;
+    await act(async () => open.click());
+    // It opens the version the card names.
+    expect(onOpenArtifact).toHaveBeenCalledWith({
+      id: 'art-1',
+      toolName: 'code_executor',
+      version: 2,
+    });
+    // The action row holds only the answer's own actions now.
+    expect(
+      container.querySelector('[data-variant="secondary"][data-shape="pill"]'),
+    ).toBeNull();
 
     const like = container.querySelector(
       `button[aria-label="${tr('conversation.feedback.removeLike')}"]`,

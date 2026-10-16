@@ -2175,6 +2175,8 @@ class ToolExecutor:
                         # The version this call produced, so a later edit in the
                         # same turn cannot make this call's entry describe it.
                         **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
+                        # The name the chat's artifact card shows; the filename stays the download name.
+                        **({"title": a["title"]} if isinstance(a.get("title"), str) and a["title"].strip() else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")

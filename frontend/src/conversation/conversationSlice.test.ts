@@ -408,6 +408,18 @@ describe('resendQuery', () => {
     expect(state.queries[0].response).toBeUndefined();
     expect(state.queries[0].error).toBeUndefined();
   });
+
+  // The re-asked turn gets a new run; the old one's files are not its own.
+  it('drops the previous workflow run', () => {
+    let state = reducer(
+      undefined,
+      setConversation([
+        { prompt: 'p', response: 'r', workflow_run_id: 'run-1' },
+      ]),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].workflow_run_id).toBeUndefined();
+  });
 });
 
 describe('mapServerQueryToClient feedback', () => {

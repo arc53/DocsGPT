@@ -793,7 +793,6 @@
       "save": "Enregistrer",
       "createTeamError": "Impossible de créer l’équipe.",
       "noTeams": "Aucune équipe pour l’instant.",
-      "noDescription": "Aucune description",
       "loadError": "Échec du chargement des équipes.",
       "roleAdmin": "admin",
       "roleMember": "membre",
@@ -1243,6 +1242,9 @@
       "pageRange_one": "{{from}}–{{to}} sur {{formatted}} outil",
       "pageRange_other": "{{from}}–{{to}} sur {{formatted}} outils",
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} outils",
+      "triggerLabel_one": "Outils, {{formatted}} sélectionné",
+      "triggerLabel_other": "Outils, {{formatted}} sélectionnés",
+      "triggerLabel_many": "Outils, {{formatted}} sélectionnés",
       "manageInConnectors": "Gérer dans les connecteurs",
       "defaultBadge": "Par défaut",
       "noToolsYet": "Aucun outil pour l’instant",
@@ -1327,7 +1329,7 @@
       "deleteWarning": "Supprimer « {{modelName}} » ?",
       "actionsMenuAria": "Actions pour {{modelName}}",
       "modelsGroup": {
-        "builtin": "Modèles DocsGPT",
+        "builtin": "Intégrés",
         "user": "Mes modèles"
       },
       "actions": {
@@ -1946,8 +1948,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Rechercher des conversations",
-      "noResults": "Aucun résultat",
-      "loading": "Chargement…"
+      "noResults": "Aucun résultat"
     },
     "configTool": {
       "title": "Configuration de l’outil",
@@ -2155,6 +2156,9 @@
       "view_more_many": "{{count}} autres sources",
       "noSourcesAvailable": "Aucune connaissance pour l’instant",
       "selectedCount": "{{count}} sélectionné(s)",
+      "triggerLabel_one": "Connaissances, {{formatted}} sélectionnée",
+      "triggerLabel_other": "Connaissances, {{formatted}} sélectionnées",
+      "triggerLabel_many": "Connaissances, {{formatted}} sélectionnées",
       "groupOwn": "Les vôtres",
       "groupTeam": "Partagées avec l’équipe",
       "fromConnector": "Depuis {{name}}",
@@ -2345,7 +2349,6 @@
       "cost": "Vous avez utilisé {{used}} sur votre budget d’utilisation de {{limit}}. Il sera réinitialisé le {{resetsAt}}."
     },
     "send": "Envoyer",
-    "viewArtifact": "Voir l’artefact",
     "stopSpeaking": "Arrêter la lecture",
     "loadingAudio": "Chargement de l’audio",
     "voice": {
@@ -2418,6 +2421,35 @@
     "stepGroup": {
       "title": "Outils",
       "failed": "{{count}} en échec"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "Page HTML",
+        "pdf": "PDF",
+        "slides": "Diapositives",
+        "document": "Document",
+        "spreadsheet": "Feuille de calcul",
+        "data": "Fichier de données",
+        "image": "Image",
+        "file": "Fichier"
+      },
+      "version": "v{{version}}",
+      "download": "Télécharger {{title}}",
+      "more_one": "{{count}} autre fichier",
+      "more_other": "{{count}} autres fichiers",
+      "more_many": "{{count}} autres fichiers",
+      "fileCount_one": "{{count}} fichier",
+      "fileCount_other": "{{count}} fichiers",
+      "fileCount_many": "{{count}} fichiers",
+      "showAll": "Afficher les {{count}}",
+      "listTitle": "Fichiers de cette réponse",
+      "backToList": "Retour aux fichiers",
+      "group": {
+        "documents": "Documents",
+        "images": "Images",
+        "data": "Données",
+        "other": "Autres fichiers"
+      }
     }
   },
   "agents": {
@@ -3004,15 +3036,8 @@
       "removeAssignment": "Retirer l’affectation {{index}}",
       "removeCondition": "Retirer la condition {{index}}",
       "artifacts": {
-        "previewUnsupported": "Impossible de prévisualiser cet artefact",
         "loadListFailed": "Échec du chargement des artefacts",
-        "loadFailed": "Échec du chargement de l’artefact",
-        "loading": "Chargement des artefacts…",
-        "inProgress": "Exécution en cours — les artefacts apparaissent ici à mesure que les nœuds les produisent.",
-        "empty": "Aucun artefact produit par cette exécution.",
-        "back": "Retour aux artefacts",
-        "untitled": "Artefact {{id}}",
-        "fileKind": "fichier"
+        "untitled": "Artefact {{id}}"
       },
       "builder": {
         "deleteFailed": "Échec de la suppression de l’agent de workflow",
@@ -3145,8 +3170,8 @@
         "extract": "Extraire"
       },
       "mobileBlocker": {
-        "title": "Ordinateur requis",
-        "body": "L’éditeur de workflows nécessite un écran plus grand pour une expérience optimale. Ouvrez cette page sur un ordinateur de bureau ou portable."
+        "title": "Ouvrez sur un écran plus grand",
+        "body": "L’éditeur de workflows nécessite un écran plus large. Utilisez un ordinateur ou tournez votre tablette en mode paysage."
       },
       "nodes": {
         "start": "Départ",
@@ -3181,10 +3206,10 @@
         "stepCount_many": "({{count}} étapes)",
         "outputLabel": "Sortie :",
         "errorLabel": "Erreur :",
-        "artifacts": "Artefacts",
         "minimapHeading": "Workflow",
         "emptyTitle": "Tester le workflow",
-        "unsavedDraftAttachments": "Enregistrez le workflow avant de joindre des documents dans l’aperçu."
+        "unsavedDraftAttachments": "Enregistrez le workflow avant de joindre des documents dans l’aperçu.",
+        "backToRun": "Retour à l’exécution"
       },
       "documents": {
         "modeAll": "Tous les documents d’entrée",
@@ -3270,9 +3295,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
+    "title": "Page introuvable",
     "message": "La page que vous recherchez n’existe pas.",
-    "goHome": "Retour à l’accueil"
+    "goHome": "Aller à l’accueil"
   },
   "filePicker": {
     "searchPlaceholder": "Rechercher des fichiers et dossiers",

@@ -925,11 +925,7 @@ export default function Teams() {
                         <CardDescription size="xs" className="line-clamp-2">
                           {team.description}
                         </CardDescription>
-                      ) : (
-                        <p className="text-muted-foreground/50 text-xs italic">
-                          {t('settings.teams.noDescription')}
-                        </p>
-                      )}
+                      ) : null}
                       <CardFooter className="gap-1.5">
                         <Users className="size-3.5" aria-hidden />
                         <span>
