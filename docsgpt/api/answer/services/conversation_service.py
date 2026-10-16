@@ -617,13 +617,17 @@ class ConversationService:
         if not completion or not completion.strip():
             completion = fallback_name or "New Conversation"
         name = completion.strip()
-        conn.execute(
+        # Only over the name read before the LLM call: a rename the user saved
+        # during that call wins, and the chat is not announced as renamed.
+        updated = conn.execute(
             sql_text(
                 "UPDATE conversations SET name = :name, updated_at = now() "
-                "WHERE id = CAST(:id AS uuid)"
+                "WHERE id = CAST(:id AS uuid) AND name IS NOT DISTINCT FROM CAST(:current AS text)"
             ),
-            {"id": conv_id, "name": name},
+            {"id": conv_id, "name": name, "current": current_name},
         )
+        if updated.rowcount == 0:
+            return None
         return name, current_name or fallback_name
 
     def update_compression_metadata(

@@ -871,6 +871,96 @@ class TestFinalizeMessage:
         publish.assert_not_called()
         mock_llm.gen.assert_not_called()
 
+    def test_rename_during_title_generation_is_kept(self, pg_conn):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-fin-title-race"
+        question = "long question that becomes the fallback name"
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.conversation_service.publish_user_event"
+        ) as publish:
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+                visibility="listed",
+            )
+
+            # The user renames the chat while the title LLM call runs.
+            def rename_then_title(**_kwargs):
+                pg_conn.execute(
+                    sql_text("UPDATE conversations SET name = 'Mine' WHERE id = CAST(:id AS uuid)"),
+                    {"id": str(res["conversation_id"])},
+                )
+                return "Short Title"
+
+            mock_llm = MagicMock()
+            mock_llm.gen.side_effect = rename_then_title
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        mock_llm.gen.assert_called_once()
+        publish.assert_not_called()
+        conv = ConversationsRepository(pg_conn).get_any(res["conversation_id"], user)
+        assert conv["name"] == "Mine"
+
+    def test_unnamed_chat_gets_a_title(self, pg_conn):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-fin-title-null"
+        question = "long question that becomes the fallback name"
+        mock_llm = MagicMock()
+        mock_llm.gen.return_value = "Short Title"
+        with _patch_db(pg_conn):
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+            )
+            pg_conn.execute(
+                sql_text("UPDATE conversations SET name = NULL WHERE id = CAST(:id AS uuid)"),
+                {"id": str(res["conversation_id"])},
+            )
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        conv = ConversationsRepository(pg_conn).get_any(res["conversation_id"], user)
+        assert conv["name"] == "Short Title"
+
 
 class TestFinalizeMarksUnreadWhenAway:
     """A finished answer marks its listed chat unread unless the owner watches it."""
