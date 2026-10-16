@@ -9,6 +9,7 @@ from docsgpt.storage.db.source_config import (
     ChunkingConfig,
     GraphConfig,
     PreScreenConfig,
+    RerankerConfig,
     RetrievalConfig,
     SourceConfig,
 )
@@ -175,6 +176,61 @@ class TestPreScreenConfig:
         # A garbage stored prescreen blob never crashes the read path.
         rc = RetrievalConfig.model_construct(prescreen={"candidate_k": "x"})
         assert rc.prescreen_config() is None
+
+
+@pytest.mark.unit
+class TestDecisionPrescreen:
+    def test_stored_rows_without_a_backend_are_llm(self):
+        cfg = SourceConfig.parse({"retrieval": {"prescreen": {"candidate_k": 40, "max_keep": 8}}})
+        ps = cfg.retrieval.prescreen_config()
+        assert ps.backend == "llm" and ps.min_relevance is None
+
+    def test_decision_backend_with_a_threshold(self):
+        ps = PreScreenConfig(backend="decision", candidate_k=40, min_relevance=0.3)
+        assert (ps.backend, ps.min_relevance) == ("decision", 0.3)
+
+    def test_decision_backend_takes_at_most_one_call_of_candidates(self):
+        PreScreenConfig(backend="decision", candidate_k=100)
+        with pytest.raises(ValidationError):
+            PreScreenConfig(backend="decision", candidate_k=101)
+        # The LLM backend keeps its own ceiling.
+        assert PreScreenConfig(backend="llm", candidate_k=300).candidate_k == 300
+
+    @pytest.mark.parametrize("bad", [{"backend": "cross-encoder"}, {"min_relevance": 1.5}, {"min_relevance": -0.1}])
+    def test_rejects_bad_values(self, bad):
+        with pytest.raises(ValidationError):
+            PreScreenConfig(**bad)
+
+
+@pytest.mark.unit
+class TestRerankerConfig:
+    def test_defaults(self):
+        r = RerankerConfig()
+        assert (r.type, r.min_relevance, r.candidate_k) == ("decision", None, None)
+
+    def test_fills_the_reserved_slot(self):
+        r = RetrievalConfig(reranker={"type": "decision", "min_relevance": 0.1, "candidate_k": 30})
+        assert r.reranker == {"type": "decision", "min_relevance": 0.1, "candidate_k": 30}
+        assert r.reranker_config() == RerankerConfig(min_relevance=0.1, candidate_k=30)
+        assert RetrievalConfig(reranker={"type": "off"}).reranker_config().type == "off"
+        assert RetrievalConfig().reranker_config() is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [{"type": "cohere"}, {"min_relevance": 2}, {"candidate_k": 0}, {"candidate_k": 101}, {"model": "x"}],
+    )
+    def test_strict_on_write(self, bad):
+        with pytest.raises(ValidationError):
+            RetrievalConfig(reranker=bad)
+
+    def test_lenient_on_read(self):
+        # The slot was reserved and took any dict; such a row keeps the rest of its config.
+        cfg = SourceConfig.parse({"retrieval": {"chunks": 4, "reranker": {"kind": "cross-encoder"}}})
+        assert cfg.retrieval.chunks == 4 and cfg.retrieval.reranker is None
+
+    def test_accessor_is_lenient(self):
+        r = RetrievalConfig.model_construct(reranker={"type": "bogus"})
+        assert r.reranker_config() is None
 
 
 @pytest.mark.unit
