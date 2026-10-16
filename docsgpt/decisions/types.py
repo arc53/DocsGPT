@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 Lane = Literal["hot", "background"]
 
@@ -191,6 +191,9 @@ class FeatureSpec:
         shape: The call the prediction is for.
         auto_mode: What ``auto`` turns into when the prediction fits: ``on``, or ``monitor`` for a feature that
             starts in shadow mode.
+        shape_for: For a feature whose call depends on settings or on where the model runs: ``(settings,
+            runtime)`` to the call's shape, ``runtime`` being ``ModelInfo.runtime`` or ``None`` when unknown;
+            ``shape`` is then the shape for the defaults (see ``features.shape_of``).
     """
 
     name: str
@@ -198,3 +201,4 @@ class FeatureSpec:
     budget_setting: str
     shape: Shape
     auto_mode: Literal["on", "monitor"] = "on"
+    shape_for: Optional[Callable[[Any, Optional[str]], Shape]] = None

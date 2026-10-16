@@ -1102,7 +1102,7 @@ def _decision_settings(env: Mapping[str, str]):
         settings = Settings(_env_file=None)
         registered = {
             spec.name: (getattr(settings, spec.mode_setting, None) or "off",
-                        float(getattr(settings, spec.budget_setting)), spec.shape)
+                        float(getattr(settings, spec.budget_setting)), features.shape_of(spec, settings))
             for spec in features.specs()
         }
     return settings, registered

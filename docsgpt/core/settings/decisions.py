@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import Field, field_validator
+from pydantic_settings import NoDecode
 
 from docsgpt.core.paths import home_dir
-from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
+from docsgpt.core.settings._shared import EnvList, SettingsGroup, normalize_choice
 
 
 class DecisionSettings(SettingsGroup):
@@ -193,7 +194,108 @@ class DecisionSettings(SettingsGroup):
         ),
     )
 
-    @field_validator("DECISION_MODE", "DECISION_PROTOCOL", "DECISION_DEVICE", mode="before")
+    # Model-scored relevance in retrieval (the rerank stage and the decision prescreen backend).
+    DECISION_RERANK_MODE: Literal["off", "monitor", "on", "auto"] = Field(
+        default="off",
+        description=(
+            "Rerank retrieved chunks by the decision model's relevance score: classic and hybrid sources fetch "
+            "DECISION_RERANK_CANDIDATE_K candidates and keep as many chunks as they would without it, most "
+            "relevant first. `monitor` scores and records without changing the result; `auto` is `on` while the "
+            "predicted call on this machine fits DECISION_RERANK_BUDGET (a GPU or API-mode server, rarely a CPU). "
+            "A source's `reranker` setting overrides it. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false."
+        ),
+    )
+    DECISION_RERANK_BUDGET: float = Field(
+        default=3.0,
+        gt=0,
+        description=(
+            "Under DECISION_RERANK_MODE=auto, the longest predicted time, in seconds, of one rerank call "
+            "(DECISION_RERANK_CANDIDATE_K chunks; best-window passages on a CPU, whole chunks elsewhere)."
+        ),
+    )
+    DECISION_RERANK_ROLLOUT_PERCENT: int = Field(
+        default=100,
+        ge=0,
+        le=100,
+        description=(
+            "Share of conversations, by a hash of the conversation id, that the instance rerank mode applies to; "
+            "the rest are the `control` arm. The decision record and the trace carry the arm."
+        ),
+    )
+    DECISION_RERANK_RETRIEVERS: Annotated[list[str], NoDecode, EnvList()] = Field(
+        default=["classic", "hybrid"],
+        description=(
+            "Retrievers the instance rerank mode applies to, as a JSON list or comma-separated keys. A source of "
+            "another retriever (graphrag) can still turn it on with its own `reranker` setting."
+        ),
+    )
+    DECISION_RERANK_CANDIDATE_K: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description=(
+            "Candidates a reranked retrieval fetches and scores; a source's `reranker.candidate_k` overrides it."
+        ),
+    )
+    DECISION_RERANK_THRESHOLD: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Reranked chunks scoring below this relevance are dropped (keeping DECISION_RELEVANCE_MIN_KEEP); 0 "
+            "reorders only. A source's `reranker.min_relevance` overrides it."
+        ),
+    )
+    DECISION_RERANK_CANDIDATE_TOKENS: int = Field(
+        default=60000,
+        ge=1,
+        description=(
+            "Token budget of the rerank's candidate fetch, so a small model context does not cut the candidates in "
+            "retriever order; the request's own document budget applies after the rerank."
+        ),
+    )
+    DECISION_PRESCREEN_THRESHOLD: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Default `min_relevance` of a prescreen with `backend: decision`: chunks scoring below it are dropped, "
+            "keeping DECISION_RELEVANCE_MIN_KEEP."
+        ),
+    )
+    DECISION_RELEVANCE_MIN_KEEP: int = Field(
+        default=1,
+        ge=0,
+        description="Chunks a relevance threshold always keeps from a non-empty retrieval, most relevant first.",
+    )
+    DECISION_RELEVANCE_MAX_PASSAGES: int = Field(
+        default=100,
+        ge=1,
+        le=128,
+        description="Most chunks one relevance call scores; later candidates are not considered.",
+    )
+    DECISION_RELEVANCE_TIMEOUT: float = Field(
+        default=2.0,
+        gt=0,
+        description=(
+            "Deadline, in seconds, of one relevance call; past it the retrieval returns what it would without the "
+            "model."
+        ),
+    )
+    DECISION_RELEVANCE_CPU_PASSAGE_TOKENS: int = Field(
+        default=256,
+        ge=128,
+        le=2048,
+        description=(
+            "Where the decision model runs on a CPU, each chunk is scored on its first 64 tokens plus the window "
+            "sharing the most words with the query, this many tokens in all; GPU and API-mode servers score whole "
+            "chunks."
+        ),
+    )
+
+    @field_validator(
+        "DECISION_MODE", "DECISION_PROTOCOL", "DECISION_DEVICE", "DECISION_RERANK_MODE", mode="before"
+    )
     @classmethod
     def _normalize_mode(cls, v):
         return normalize_choice(v)
