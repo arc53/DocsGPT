@@ -506,6 +506,56 @@ describe('conversation listener — a new chat in the sidebar', () => {
     expect(preferenceApi.getConversations).not.toHaveBeenCalled();
   });
 
+  const finished = (conversationId: string, id: string) =>
+    ENVELOPE({
+      id,
+      type: 'message.finished',
+      payload: { conversation_id: conversationId, message_id: 'm-1' },
+    });
+
+  it('keeps the list on screen when a background refresh fails', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-old', 'conv-open']));
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: null,
+      loading: false,
+    });
+    store.dispatch(sseEventReceived(finished('conv-old', 'evt-fail')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+    expect(
+      store.getState().preference.conversations.data?.map((c) => c.id),
+    ).toEqual(['conv-old', 'conv-open']);
+  });
+
+  it('folds a burst of events into one follow-up fetch, newest list last', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    const pending: Array<(names: string) => void> = [];
+    (preferenceApi.getConversations as unknown as Mock).mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          pending.push((name) =>
+            resolve({ data: [{ id: 'conv-a', name }], loading: false }),
+          ),
+        ),
+    );
+    for (let i = 0; i < 5; i += 1) {
+      store.dispatch(sseEventReceived(finished('conv-a', `evt-burst-${i}`)));
+    }
+    await flush();
+    expect(pending).toHaveLength(1);
+    pending[0]('first');
+    await flush();
+    expect(pending).toHaveLength(2);
+    pending[1]('second');
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(2);
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'second',
+    );
+  });
+
   it('swaps in the generated title when it is ready', async () => {
     const store = makeStore();
     store.dispatch(listed(['conv-old']));

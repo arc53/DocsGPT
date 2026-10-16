@@ -1431,6 +1431,50 @@ export const CONTINUATION_REFRESH_WAIT_MS = 10 * 60 * 1000;
 
 export const conversationListenerMiddleware = createListenerMiddleware();
 
+let listRefresh: Promise<void> | null = null;
+let listRefreshAgain = false;
+
+/**
+ * Refresh the sidebar list for an event, one fetch at a time. A refresh asked
+ * for while one runs folds into a single follow-up fetch, so a burst of events
+ * (a replayed backlog, several chats finishing) costs two requests and an
+ * older list never lands over a newer one. A failed fetch keeps the list on
+ * screen.
+ *
+ * Args:
+ *   getState: The store's state getter; the token is read at each fetch.
+ *   dispatch: The store's dispatch.
+ *
+ * Returns:
+ *   A promise that settles once the list is current, follow-up included.
+ */
+function refreshConversationList(
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  if (listRefresh) {
+    listRefreshAgain = true;
+    return listRefresh;
+  }
+  listRefresh = (async () => {
+    try {
+      do {
+        listRefreshAgain = false;
+        const { token } = (getState() as RootState).preference;
+        try {
+          const fetched = await getConversations(token);
+          if (fetched.data) dispatch(receiveConversations(fetched));
+        } catch (error) {
+          console.error('conversations refresh failed', error);
+        }
+      } while (listRefreshAgain);
+    } finally {
+      listRefresh = null;
+    }
+  })();
+  return listRefresh;
+}
+
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
@@ -1448,7 +1492,6 @@ conversationListenerMiddleware.startListening({
     if (!conversationId) return;
 
     const state = listenerApi.getState() as RootState;
-    const token = state.preference.token;
 
     // Skip mid-stream: loadConversation -> updateConversationId flips status
     // to 'idle', and the next SSE chunk dies on the 'idle' guard in
@@ -1466,12 +1509,7 @@ conversationListenerMiddleware.startListening({
     }
 
     // Refresh sidebar; server reorders by updated_at which just bumped.
-    try {
-      const fetched = await getConversations(token);
-      listenerApi.dispatch(receiveConversations(fetched));
-    } catch (error) {
-      console.error(`${envelope.type}: conversations refresh failed`, error);
-    }
+    await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
 
     // A continuation that landed while the user's own answer streamed shows
     // once that stream ends, if the chat is still open.
@@ -1540,11 +1578,7 @@ async function listNewConversation(
   if (listed || listingConversations.has(conversationId)) return;
   listingConversations.add(conversationId);
   try {
-    dispatch(
-      receiveConversations(await getConversations(state.preference.token)),
-    );
-  } catch (error) {
-    console.error('new chat: conversations refresh failed', error);
+    await refreshConversationList(getState, dispatch);
   } finally {
     listingConversations.delete(conversationId);
   }
@@ -1581,13 +1615,7 @@ conversationListenerMiddleware.startListening({
       // shows refreshes at its own stream's end.
       const state = listenerApi.getState() as RootState;
       if (state.conversation.conversationId === conversationId) return;
-      try {
-        listenerApi.dispatch(
-          receiveConversations(await getConversations(state.preference.token)),
-        );
-      } catch (error) {
-        console.error('message.finished: conversations refresh failed', error);
-      }
+      await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
     } else if (envelope.type === 'conversation.renamed') {
       // The generated title, saved after the answer ended.
       const name = String(payload.name ?? '');
