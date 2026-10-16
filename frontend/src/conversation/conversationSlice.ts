@@ -1624,10 +1624,26 @@ conversationListenerMiddleware.startListening({
         return;
       await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
     } else if (envelope.type === 'conversation.renamed') {
-      // The generated title, saved after the answer ended.
+      // The generated title, saved after the answer ended. It replaces the
+      // question-prefix name it names as `previous`: a chat the user renamed
+      // meanwhile (an event replayed after the stream dropped) keeps its
+      // name. A chat not listed yet, or a list fetch that read before the
+      // title, gets a list that holds it.
       const name = String(payload.name ?? '');
-      if (name) {
+      if (!name) return;
+      const previous =
+        typeof payload.previous === 'string' ? payload.previous : null;
+      const chat = (
+        listenerApi.getState() as RootState
+      ).preference.conversations.data?.find((c) => c.id === conversationId);
+      if (chat && (previous === null || chat.name === previous)) {
         listenerApi.dispatch(renameConversation({ id: conversationId, name }));
+      }
+      if (!chat || listRefresh) {
+        await refreshConversationList(
+          listenerApi.getState,
+          listenerApi.dispatch,
+        );
       }
     }
   },

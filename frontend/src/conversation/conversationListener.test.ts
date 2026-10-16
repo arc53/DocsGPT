@@ -582,6 +582,49 @@ describe('conversation listener — a new chat in the sidebar', () => {
     );
   });
 
+  const renamed = (conversationId: string, previous?: string) =>
+    ENVELOPE({
+      id: `evt-rename-${conversationId}`,
+      type: 'conversation.renamed',
+      payload: {
+        conversation_id: conversationId,
+        name: 'Weather in Dubai',
+        ...(previous === undefined ? {} : { previous }),
+      },
+    });
+
+  it('keeps a name the user gave the chat over a late generated title', async () => {
+    // A replay after the event stream dropped: the user renamed it meanwhile.
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(
+      prefSlice.actions.renameConversation({ id: 'conv-old', name: 'Mine' }),
+    );
+    store.dispatch(sseEventReceived(renamed('conv-old', 'conv-old')));
+    await flush();
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'Mine',
+    );
+  });
+
+  it('swaps the fallback name it replaces for the generated title', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(sseEventReceived(renamed('conv-old', 'conv-old')));
+    await flush();
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'Weather in Dubai',
+    );
+  });
+
+  it('refreshes the list for a title of a chat it does not list yet', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(sseEventReceived(renamed('conv-new', 'What is the')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps in the generated title when it is ready', async () => {
     const store = makeStore();
     store.dispatch(listed(['conv-old']));

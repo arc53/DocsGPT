@@ -811,10 +811,16 @@ class TestFinalizeMessage:
             pg_conn, "u-fin-title-event", visibility="listed"
         )
         conversation_id = str(res["conversation_id"])
+        # ``previous`` lets a tab skip the event when the chat was renamed by
+        # hand meanwhile (a replay after the event stream dropped).
         publish.assert_called_once_with(
             "u-fin-title-event",
             "conversation.renamed",
-            {"conversation_id": conversation_id, "name": "Short Title"},
+            {
+                "conversation_id": conversation_id,
+                "name": "Short Title",
+                "previous": "long question that becomes the fallback name"[:50],
+            },
             scope={"kind": "conversation", "id": conversation_id},
         )
 

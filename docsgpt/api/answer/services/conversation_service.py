@@ -525,7 +525,9 @@ class ConversationService:
 
         A listed chat's new name then goes to its owner's tabs as
         ``conversation.renamed``, after the commit, so the sidebar swaps the
-        question-prefix fallback for it without refetching its list.
+        question-prefix fallback for it without refetching its list. The
+        event names the fallback as ``previous``: a tab that shows another
+        name by then (the user renamed it) keeps that one.
         """
         try:
             with db_session() as conn:
@@ -537,11 +539,11 @@ class ConversationService:
             )
             return
         if renamed is not None:
-            conversation_id, user_id, name = renamed
+            conversation_id, user_id, name, previous = renamed
             publish_user_event(
                 user_id,
                 "conversation.renamed",
-                {"conversation_id": conversation_id, "name": name},
+                {"conversation_id": conversation_id, "name": name, "previous": previous},
                 scope={"kind": "conversation", "id": conversation_id},
             )
 
@@ -550,7 +552,7 @@ class ConversationService:
         conn,
         message_id: str,
         title_inputs: Dict[str, Any],
-    ) -> Optional[tuple[str, str, str]]:
+    ) -> Optional[tuple[str, str, str, str]]:
         """Generate an LLM-summarised conversation name if one isn't set yet.
 
         Args:
@@ -560,8 +562,9 @@ class ConversationService:
                 ``fallback_name``.
 
         Returns:
-            ``(conversation_id, user_id, name)`` when a sidebar-listed chat was
-            renamed, else None (nothing to do, or a chat with no sidebar row).
+            ``(conversation_id, user_id, name, previous)`` when a sidebar-listed
+            chat was renamed from ``previous``, else None (nothing to do, or a
+            chat with no sidebar row).
         """
         llm = title_inputs.get("llm")
         question = title_inputs.get("question") or ""
@@ -618,7 +621,7 @@ class ConversationService:
         )
         if visibility != "listed" or not user_id:
             return None
-        return conv_id, str(user_id), name
+        return conv_id, str(user_id), name, current_name or fallback_name
 
     def update_compression_metadata(
         self, conversation_id: str, compression_metadata: Dict[str, Any]
