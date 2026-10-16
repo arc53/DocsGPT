@@ -528,6 +528,21 @@ class TestFirstUse:
         backend._time()
         assert backend.profile is None
 
+    def test_a_server_not_up_at_first_use_is_timed_once_a_probe_answers(self, remote, spawned, char_tokenizer):
+        server = FakeDecideServer()
+        backend = remote(DecideBackend, server)
+        server.route = lambda path, body, route=server.route: (httpx2.Response(503) if path == "/v1/models"
+                                                               else route(path, body))
+        backend.warm()
+        spawned[0][1]()  # first use: the probe fails, so nothing is timed
+        assert backend.profile is None and backend._timed_at is None
+        del server.route
+        backend._probe()
+        backend.warm()
+        assert [name for name, _ in spawned] == ["decision-api-start", "decision-api-timing"]
+        spawned[1][1]()
+        assert backend.profile is not None and backend.profile.report()["measured_by"] == "client"
+
     def test_a_failed_tokenizer_is_fetched_again_after_the_retry_window(self, remote, spawned, monkeypatch):
         clock = FakeClock()
         backend = remote(DecideBackend, FakeDecideServer(), clock=clock)

@@ -314,8 +314,10 @@ class RemoteBackend:
             first, self._started = not self._started, True
             tokenizer = (self._tokenizer_failed is not None and not self._tokenizer_loading
                          and now - self._tokenizer_failed[1] >= retry)
-            retime = (self.profile is None and self._client_timed and self._probed_at is not None
-                      and not self._timing and self._timed_at is not None and now - self._timed_at >= retry)
+            # also when first use could not time it: the server was not up yet, or the tokenizer was not loaded
+            retime = (not first and self.profile is None and self._client_timed and self._probed_at is not None
+                      and self._tokenizer is not None and not self._timing
+                      and (self._timed_at is None or now - self._timed_at >= retry))
             follow = (not first and self._server_loading() and not self._probing and self._last_probe is not None
                       and now - self._last_probe >= retry)
         if first:
