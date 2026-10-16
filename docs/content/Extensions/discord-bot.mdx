@@ -1,7 +1,7 @@
 ---
 title: Discord Bot Integration
 description: A step-by-step guide to connecting a Discord bot to DocsGPT.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-16
 ---
 
 # Discord Bot Integration
@@ -10,7 +10,7 @@ This guide provides detailed steps to create a Discord bot and integrate it with
 
 ## Step 1: Create a Discord Application
 
-1. Go to the [Discord Developer Portal](https://discord.com).
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Click on **New Application** in the top right corner, give it a name, and save.
 
 ## Step 2: Configure Bot Tokens and Intents
@@ -20,24 +20,49 @@ This guide provides detailed steps to create a Discord bot and integrate it with
 3. Scroll down to the **Privileged Gateway Intents** section.
 4. Enable the **Message Content Intent**. This is mandatory for the extension to read thread follow-ups and respond to channel messages.
 
-## Step 3: Configure Environment Variables
+## Step 3: Deploying the Discord Bot Extension
 
-To connect the bot to your DocsGPT backend, you need to add your tokens to your deployment configuration.
+To run the bot, you need to use the separate Discord DocsGPT Extension repository.
 
-### Using Docker Compose
+1. **Clone the repository** to your local machine or server:
+   ```bash
+   git clone https://github.com/arc53/discord-docsgpt-extension
+   cd discord-docsgpt-extension
+   ```
 
-Open your `.env` file or environment variables settings and add your tokens, making sure to target the correct local API port (`7091`):
+2. **Configure your environment**:
+   Create a .env file in the root of the discord-docsgpt-extension directory and add your keys:
+   DISCORD_TOKEN=your_discord_bot_token
+# Get your API key inside DocsGPT: Dashboard -> Agents -> your agent -> API key
+   API_KEY=your_docsgpt_agent_key
+   API_BASE=https://app.docsgpt.cloud
+   ```
 
-```env
-DISCORD_TOKEN=your_copied_discord_bot_token_here
-API_KEY=your_published_agent_api_key_here
-API_URL=http://localhost:7091
-```
+3. **Start the application** using Docker Compose from within the repository folder:
+   ```bash
+   docker compose up -d
+   ```
 
-## Step 4: Run the Extension
 
-Do not use npm commands to run the extension. Instead, start the Discord extension using **Docker Compose** or the **Cargo-based setup** as detailed in the extension repository's primary `README.md` file.
+## Step 4: Inviting the Bot to Your Server
 
-```bash
-docker compose down && docker compose up -d
-```
+Before the bot can read messages, you must invite it using the correct web browser settings.
+
+1. Go directly to the [Discord Developer Portal Applications Page](https://discord.com/developers/applications).
+2. Select your application and navigate to the **OAuth2** tab in the left sidebar, then click **URL Generator**.
+3. Under **Scopes**, select `bot` and `applications.commands`.
+4. Under **Bot Permissions**, select the following minimum requirements:
+   - View Channels
+   - Send Messages
+   - Send Messages in Threads
+   - Create Public Threads
+   - Read Message History
+5. Copy the generated URL at the bottom of the page, paste it into your browser tab, select your server, and click **Authorize**.
+
+## Step 5: Verifying the Connection
+
+1. Open your regular Discord application or website.
+2. Go into your server and click on any text channel your bot can see.
+3. Type the `@` symbol followed by your bot's name (for example: `@MyDocsGPTBot hello`) and press enter to send a message.
+4. Your bot will instantly create a dedicated text thread right there in the chat and reply to you directly.
+
