@@ -173,6 +173,8 @@ def plan(
     elif decider is not None:
         if existing.get("DECISION_BASE_URL") == DECIDER_URL:
             wanted["DECISION_BASE_URL"] = None
+            if existing.get("DECISION_MODE") == "api":  # without a URL that would leave no model at all
+                wanted["DECISION_MODE"] = None
         profiles.discard(DECIDER_PROFILE)
     if profiles != _profiles(existing):
         kept = [name for name in _profile_list(existing) if name in profiles]

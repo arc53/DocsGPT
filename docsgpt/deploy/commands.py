@@ -1140,8 +1140,8 @@ def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, st
     if protocol == "vllm":
         served = [str(m.get("id")) for m in data.get("data") or [] if isinstance(m, dict)]
         return "ok", f"vLLM at {_endpoint(base)} serving {', '.join(served) or 'nothing'}", None
-    entries = data.get("models") or [{}]
-    entry = entries[0] if isinstance(entries[0], dict) else {}
+    entries = data.get("models")
+    entry = entries[0] if isinstance(entries, list) and entries and isinstance(entries[0], dict) else {}
     spec = lookup(str(entry.get("name") or ""))
     if spec is None or "prompt_hash" not in entry:
         return "ok", f"{_endpoint(base)} serving {entry.get('name') or 'an unnamed model'}", None

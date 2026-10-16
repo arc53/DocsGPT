@@ -771,6 +771,14 @@ class TestDoctorDecisions:
         assert str(request.url) == "http://127.0.0.1:7095/v1/models"
         assert request.headers["authorization"] == "Bearer k"
 
+    @pytest.mark.parametrize("models", [{"name": "x"}, "arc53/arc-decide-0.4b-v0.2", [], ["x"]])
+    def test_a_wrong_shaped_model_list_is_reported_not_raised(self, server, models):
+        _, reply = server
+        reply["json"] = {"models": models}
+        check = commands._check_decisions({"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_KEY": "k"},
+                                          docker=False)
+        assert "an unnamed model" in check.detail
+
     @pytest.mark.parametrize("docker", [True, False])
     def test_internal_key_is_never_sent(self, server, docker):
         seen, reply = server

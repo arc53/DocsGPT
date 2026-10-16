@@ -86,7 +86,7 @@ To turn it on:
   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
   ```
 
-  The first starts the container, the second points the backend and the worker at it, and the third is the key they send it; the decider refuses to start without one and logs why. A stack that already uses the `https` profile lists both: `COMPOSE_PROFILES=https,decider`. To turn it off, remove the first two lines, run `up -d` again and remove the container with `docker compose --profile decider rm --stop --force decider`.
+  The first starts the container, the second points the backend and the worker at it, and the third is the key they send it; the decider refuses to start without one and logs why. A stack that already uses the `https` profile lists both: `COMPOSE_PROFILES=https,decider`. To turn it off, remove the first two lines, run `up -d` again and remove the container with the same `--env-file` and `-f` options you start the stack with, for example `docker compose --env-file .env -f deployment/docker-compose-hub.yaml --profile decider rm --stop --force decider` from a checkout.
 - **`docsgpt up --decider`** writes the first two lines to the stack's `.env`, and a random `DECISION_KEY` when it has none; every later `docsgpt up` keeps them. `docsgpt up --no-decider` removes the first two and the container, and keeps the key.
 - **Kubernetes.** Uncomment `components: - optional-decider` in `deployment/k8s/kustomization.yaml` and apply it again with `kubectl apply -k deployment/k8s/`. The component adds the `docsgpt-decider` Deployment, its Service and the `docsgpt-decision-models` volume claim, and sets `DECISION_BASE_URL` on the API and the worker; see [Kubernetes](/Deploying/Kubernetes-Deploying#the-decision-model).
 

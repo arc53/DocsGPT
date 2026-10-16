@@ -147,6 +147,13 @@ class TestExposure:
         updates = stack.plan(existing, image_tag="x", decider=True, fresh_database=False)
         assert updates["DECISION_BASE_URL"] == stack.DECIDER_URL and updates["DECISION_PROTOCOL"] is None
 
+    def test_turning_the_decider_off_brings_the_model_back_into_the_api(self):
+        existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DECISION_MODE": "api"}
+        updates = stack.plan(existing, image_tag="x", decider=False, fresh_database=False)
+        assert updates["DECISION_BASE_URL"] is None and updates["DECISION_MODE"] is None
+        elsewhere = {**existing, "DECISION_BASE_URL": "http://gpu:8000"}
+        assert "DECISION_MODE" not in stack.plan(elsewhere, image_tag="x", decider=False, fresh_database=False)
+
     def test_turning_the_decider_off_keeps_another_server(self):
         existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://host.docker.internal:7095"}
         updates = stack.plan(existing, image_tag="x", decider=False, fresh_database=False)
