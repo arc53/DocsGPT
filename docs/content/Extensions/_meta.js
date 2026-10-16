@@ -1,6 +1,7 @@
 export default {
-  "index": "Introduction",
+  "chat-widget": "Chat Widget",
   "search-widget": "Search Widget",
-  "chatwoot": "Chatwoot",
+  "Chatwoot-extension": "Chatwoot Extension",
+  "community": "Community Integrations",
   "discord-bot": "Discord Bot Integration"
 }
