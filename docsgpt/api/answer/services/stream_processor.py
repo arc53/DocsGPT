@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.decisions.record import DecisionRecord, activate as activate_decision_record
 from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -451,11 +452,12 @@ T = TypeVar("T")
 
 
 def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
-    """Run a request-setup method inside the request's execution trace.
+    """Run a request-setup method inside the request's execution trace and decision record.
 
     Agent setup does real work worth seeing in the trace -- pre-fetch
     retrieval, history compression -- before ``complete_stream`` runs, so
-    the trace is started here, in the request thread, and handed on.
+    the trace is started here, in the request thread, and handed on. The
+    decision record goes to the stream on the agent (``decision_record``).
     """
 
     @functools.wraps(method)
@@ -464,7 +466,7 @@ def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
         if trace is None:
             trace = tracing.start_trace(source=getattr(self, "trace_source", "stream"))
             self.trace = trace
-        with tracing.activate(trace):
+        with tracing.activate(trace), activate_decision_record(self.decision_record):
             try:
                 return method(self, *args, **kwargs)
             finally:
@@ -573,6 +575,15 @@ class StreamProcessor:
         # one made this turn); the agent stamps it on the turn's metadata.
         self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
+
+    @functools.cached_property
+    def decision_record(self) -> DecisionRecord:
+        """The turn's decision record.
+
+        Setup records into it, the agent carries it to ``complete_stream``
+        (``agent.decision_record``), and a resume continues the paused turn's.
+        """
+        return DecisionRecord()
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -2422,6 +2433,9 @@ class StreamProcessor:
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        # The paused rounds' decisions, continued in the next round.
+        self.decision_record.resume(agent_config.get("decisions"))
+        agent.decision_record = self.decision_record
         if isinstance(saved_files, dict):
             agent.resume_paused_attachments(saved_listing)
 
@@ -2718,5 +2732,6 @@ class StreamProcessor:
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
+        agent.decision_record = self.decision_record
 
         return agent

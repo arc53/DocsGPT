@@ -694,7 +694,8 @@
           "hits_one": "{{count}} résultat",
           "hits_other": "{{count}} résultats",
           "hits_many": "{{count}} résultats",
-          "cached": "en cache"
+          "cached": "en cache",
+          "answered": "{{answered}}/{{total}} répondues"
         },
         "status": {
           "ok": "OK",
@@ -708,6 +709,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "Appel LLM",
+          "decision": "Appel au modèle de décision",
           "tool": "Appel d’outil",
           "retrieval": "Récupération",
           "search": "Recherche vectorielle",

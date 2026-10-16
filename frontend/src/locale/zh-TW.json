@@ -669,7 +669,8 @@
           "chunks_other": "{{count}} 個片段",
           "hits_one": "{{count}} 個命中",
           "hits_other": "{{count}} 個命中",
-          "cached": "快取"
+          "cached": "快取",
+          "answered": "已回答 {{answered}}/{{total}}"
         },
         "status": {
           "ok": "正常",
@@ -683,6 +684,7 @@
         "kinds": {
           "agent": "代理",
           "llm": "LLM 呼叫",
+          "decision": "決策模型呼叫",
           "tool": "工具呼叫",
           "retrieval": "檢索",
           "search": "向量搜尋",

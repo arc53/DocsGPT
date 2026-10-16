@@ -304,6 +304,7 @@ httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
 huggingface-hub==1.16.1
     # via
+    #   docsgpt
     #   fastembed
     #   tokenizers
 hyperframe==6.1.0

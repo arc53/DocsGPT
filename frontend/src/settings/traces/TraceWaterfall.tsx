@@ -6,6 +6,7 @@ import {
   Database,
   ListFilter,
   ListTree,
+  Scale,
   Search,
   ShieldCheck,
   Wrench,
@@ -29,13 +30,15 @@ import {
 
 /**
  * Icon per span kind, and one of the five chart series per group of kinds:
- * the agent and its steps, model calls, tool calls, retrieval (with its
- * embedding, per-source search and rerank), and guardrails.
+ * the agent and its steps, model calls (the decision model's included), tool
+ * calls, retrieval (with its embedding, per-source search and rerank), and
+ * guardrails.
  */
 const KIND_STYLE: Record<string, { icon: React.ElementType; bar: string }> = {
   agent: { icon: Bot, bar: 'bg-chart-1' },
   step: { icon: ListTree, bar: 'bg-chart-1' },
   llm: { icon: Brain, bar: 'bg-chart-2' },
+  decision: { icon: Scale, bar: 'bg-chart-2' },
   tool: { icon: Wrench, bar: 'bg-chart-3' },
   retrieval: { icon: Search, bar: 'bg-chart-4' },
   search: { icon: Database, bar: 'bg-chart-4' },

@@ -162,6 +162,23 @@ class TestConfigRoute:
         assert data["attachment_budget_share"] == 0.4
 
     @pytest.mark.unit
+    def test_decision_model_is_reported_off(self, client):
+        data = json.loads(client.get("/api/config").data)
+        assert data["decision_available"] is False
+
+    @pytest.mark.unit
+    def test_only_availability_of_the_decision_model_is_public(self, client, monkeypatch):
+        from docsgpt import decisions
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DECISION_MODE", None)
+        monkeypatch.setattr(settings, "DECISION_MODEL", None)
+        data = json.loads(client.get("/api/config").data)
+        assert [key for key in data if key.startswith("decision_")] == ["decision_available"]
+        assert data["decision_available"] is True
+        assert decisions.get_decider()._backend is None
+
+    @pytest.mark.unit
     def test_oidc_config_exposes_login_paths(self, client):
         with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "oidc"
