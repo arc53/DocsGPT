@@ -24,6 +24,7 @@ import {
   createToastAvoidRegistry,
   TOAST_STACK_BOTTOM_PX,
   ToastAvoidContext,
+  useToastShown,
 } from './toast-layout';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -353,6 +354,29 @@ describe('ToastViewport layout', () => {
     await act(async () => more.click());
     expect(shown()).toHaveLength(3);
     expect(more.textContent).toBe('notifications.fewerToasts');
+  });
+
+  it('tells a folded card it is off screen, until the stack opens', async () => {
+    small = true;
+    function Card({ label }: { label: string }) {
+      const [shown, ref] = useToastShown();
+      return (
+        <Toast ref={ref}>
+          {label}:{shown ? 'shown' : 'folded'}
+        </Toast>
+      );
+    }
+    await renderStack([<Card key="a" label="a" />, <Card key="b" label="b" />]);
+    const labels = () =>
+      Array.from(
+        container.querySelectorAll<HTMLElement>('[data-slot="toast"]'),
+      ).map((card) => card.textContent);
+    expect(labels()).toEqual(['a:folded', 'b:shown']);
+    const more = container.querySelector<HTMLButtonElement>(
+      '[data-slot="toast-more"] button',
+    )!;
+    await act(async () => more.click());
+    expect(labels()).toEqual(['a:shown', 'b:shown']);
   });
 
   it('drops the fold once one card is left', async () => {

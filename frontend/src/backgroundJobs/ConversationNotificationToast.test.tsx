@@ -238,6 +238,33 @@ describe('ConversationNotificationToast', () => {
     expect(cards()).toHaveLength(0);
   });
 
+  it('waits while the stack folds it, and starts over once shown', async () => {
+    // On a phone the stack shows only its newest card; the rest are hidden
+    // behind "N more" and must not time out unseen.
+    vi.useFakeTimers();
+    store.dispatch(sseEventReceived(notification('n1')));
+    await renderAt('/');
+    const card = cards()[0] as HTMLElement;
+    await act(async () => {
+      card.hidden = true;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(NOTIFICATION_DISMISS_MS + 10);
+    });
+    expect(cards()).toHaveLength(1);
+    await act(async () => {
+      card.hidden = false;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(NOTIFICATION_DISMISS_MS - 1000);
+    });
+    expect(cards()).toHaveLength(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1010);
+    });
+    expect(cards()).toHaveLength(0);
+  });
+
   it('shows at most three at once', async () => {
     for (const id of ['a', 'b', 'c', 'd']) {
       store.dispatch(

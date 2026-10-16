@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, type RefObject } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type RefObject,
+} from 'react';
 
 /**
  * Where the toast stack sits: in the bottom-right corner, or just above a
@@ -85,4 +92,33 @@ export function useAvoidToasts(ref: RefObject<HTMLElement | null>): void {
     if (!registry || !element) return;
     return registry.add(element);
   }, [registry, ref]);
+}
+
+/**
+ * Whether a toast card is on screen: false while the stack folds it behind
+ * "N more" on a phone (the viewport sets `hidden` on it). A card that closes
+ * itself after a while waits while folded and starts over once shown.
+ *
+ * Returns the flag and a ref for the card's `Toast`.
+ */
+export function useToastShown(): [
+  boolean,
+  (element: HTMLElement | null) => (() => void) | undefined,
+] {
+  const [shown, setShown] = useState(true);
+  const ref = useCallback((element: HTMLElement | null) => {
+    if (!element) return undefined;
+    const read = () => setShown(!element.hidden);
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(element, {
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
+    return () => {
+      observer.disconnect();
+      setShown(true);
+    };
+  }, []);
+  return [shown, ref];
 }

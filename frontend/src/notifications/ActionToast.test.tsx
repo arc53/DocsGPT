@@ -91,4 +91,20 @@ describe('ActionToast', () => {
     await act(async () => vi.advanceTimersByTime(1600));
     expect(container.querySelector('[data-slot="toast"]')).toBeNull();
   });
+
+  it('waits while the stack folds it', async () => {
+    vi.useFakeTimers();
+    await show('success', 'done');
+    const card = container.querySelector<HTMLElement>('[data-slot="toast"]')!;
+    await act(async () => {
+      card.hidden = true;
+    });
+    await act(async () => vi.advanceTimersByTime(ACTION_TOAST_DISMISS_MS + 10));
+    expect(container.querySelector('[data-slot="toast"]')).not.toBeNull();
+    await act(async () => {
+      card.hidden = false;
+    });
+    await act(async () => vi.advanceTimersByTime(ACTION_TOAST_DISMISS_MS + 10));
+    expect(container.querySelector('[data-slot="toast"]')).toBeNull();
+  });
 });

@@ -14,6 +14,7 @@ import {
   ToastMessage,
   ToastTitle,
 } from '../components/ui/toast';
+import { useToastShown } from '../components/ui/toast-layout';
 import {
   selectRecentEvents,
   type SSEEvent,
@@ -65,24 +66,25 @@ function NotificationCard({
 }) {
   const { t } = useTranslation();
   const visible = usePageVisible();
+  const [shown, cardRef] = useToastShown();
   const id = event.id as string;
   const payload = (event.payload ?? {}) as Payload;
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !shown) return;
     const timer = window.setTimeout(
       () => onDismiss(id),
       NOTIFICATION_DISMISS_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [id, visible, onDismiss]);
+  }, [id, visible, shown, onDismiss]);
 
   const title =
     userTitle(payload.title) || t('backgroundJobs.notify.fallbackTitle');
   const body = clip(payload.body, BODY_MAX_CHARS);
 
   return (
-    <Toast data-testid="conversation-notification">
+    <Toast ref={cardRef} data-testid="conversation-notification">
       <ToastHeader variant="default">
         <ToastTitle wrap>{t(notificationHeadingKey(payload.kind))}</ToastTitle>
         <ToastActions>

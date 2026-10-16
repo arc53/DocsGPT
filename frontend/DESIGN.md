@@ -986,8 +986,10 @@ composer it stays in the corner. It stops short of the header, scrolling
 only once its cards would overflow (so their shadow is not clipped
 otherwise), and its own box lets clicks through to the page. Below `sm` it
 spans the screen and shows only its newest card, the others behind an
-"N more" button. A new toast component returns only its
-`Toast` cards and is added to that viewport. A result the screen can't show
+"N more" button. A card that closes itself after a while puts the ref from
+`useToastShown` (`ui/toast-layout.ts`) on its `Toast` and runs its timer
+only while shown, so a folded card never times out unseen. A new toast
+component returns only its `Toast` cards and is added to that viewport. A result the screen can't show
 dispatches `showActionToast({ variant: 'success' | 'destructive', message })`
 from `notifications/actionToastSlice.ts`: a chunk saved from the graph
 reader's edit drawer, which closes as it saves ("Chunk saved"); a copy from a

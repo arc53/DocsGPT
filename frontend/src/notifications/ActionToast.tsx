@@ -10,6 +10,7 @@ import {
   ToastHeader,
   ToastTitle,
 } from '../components/ui/toast';
+import { useToastShown } from '../components/ui/toast-layout';
 
 import { dismissActionToast, selectActionToast } from './actionToastSlice';
 
@@ -26,20 +27,21 @@ export default function ActionToast() {
   const { t } = useTranslation();
   const toast = useSelector(selectActionToast);
   const id = toast?.id;
+  const [shown, cardRef] = useToastShown();
 
   useEffect(() => {
-    if (id === undefined) return;
+    if (id === undefined || !shown) return;
     const timer = window.setTimeout(
       () => dispatch(dismissActionToast(id)),
       ACTION_TOAST_DISMISS_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [id, dispatch]);
+  }, [id, shown, dispatch]);
 
   if (!toast) return null;
 
   return (
-    <Toast>
+    <Toast ref={cardRef}>
       <ToastHeader variant={toast.variant}>
         <ToastTitle wrap>{toast.message}</ToastTitle>
         <ToastActions>
