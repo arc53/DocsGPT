@@ -230,7 +230,8 @@ class DecisionClient:
         predicted = []
         if todo:
             outcomes = backend.run([requests[i] for i in todo], budget.lane, started + budget.timeout())
-            info = self.model_info()  # a load during the call may have changed the calibration
+            # a load or the first probe during the call may have changed the identity; the answers are that model's
+            before, info = info, self.model_info()
             for i, outcome in zip(todo, outcomes):
                 if isinstance(outcome, str):
                     reasons[i] = outcome
@@ -239,7 +240,8 @@ class DecisionClient:
                                         truncated=outcome.truncated, input_tokens=outcome.input_tokens)
                 if outcome.predicted_ms is not None:
                     predicted.append(outcome.predicted_ms)
-                self._cache.put(keys[i], (outcome.answers, outcome.truncated, outcome.input_tokens))
+                key = keys[i] if info.version == before.version else self._cache.key(info.version, requests[i])
+                self._cache.put(key, (outcome.answers, outcome.truncated, outcome.input_tokens))
         return BatchResult(decisions, reasons), (sum(predicted) if predicted else None)
 
     def _report(self, span: Any, feature: str, lane: Lane, requests: list[Request], result: BatchResult,

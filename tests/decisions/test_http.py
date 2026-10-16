@@ -506,6 +506,49 @@ class TestFirstUse:
         backend.warm()
         assert [name for name, _ in spawned] == ["decision-api-start", "decision-api-load"]
 
+    def test_a_server_down_at_first_use_is_probed_and_asked_to_load_again(
+            self, remote, spawned, char_tokenizer, monkeypatch, api):
+        api(DECISION_PROBE_SECONDS=30)
+        monkeypatch.setattr(http, "LOAD_POLL_S", (0.0,))
+        clock = FakeClock()
+        server = FakeDecideServer({**DOCSGPT_ENTRY, "status": "idle", "speed": None})
+        backend = remote(DecideBackend, server, clock=clock)
+        server.route = lambda path, body, route=server.route: (httpx2.Response(503) if path == "/v1/models"
+                                                               else route(path, body))
+        backend.warm()
+        spawned[0][1]()  # the server is not up yet: no answer, so no load request
+        backend.warm()
+        assert len(spawned) == 1 and "/v1/load" not in server.paths()
+        del server.route
+        states = iter([("idle", None)])
+
+        def models(path, body, route=server.route):
+            if path == "/v1/models":
+                server.entry["status"], server.entry["speed"] = next(states, ("ready", DOCSGPT_ENTRY["speed"]))
+            return route(path, body)
+
+        server.route = models
+        clock.advance(30)
+        backend.warm()  # an auto feature asking again: the whole first use runs again
+        assert [name for name, _ in spawned] == ["decision-api-start", "decision-api-start"]
+        spawned[1][1]()
+        assert "/v1/load" in server.paths() and backend.status == "ready"
+
+    def test_following_an_idle_server_asks_it_to_load(self, remote, spawned, api, monkeypatch):
+        api(DECISION_LOAD_RETRY_SECONDS=60)
+        monkeypatch.setattr(http, "LOAD_POLL_S", (0.0,))
+        clock = FakeClock()
+        server = FakeDecideServer({**DOCSGPT_ENTRY, "status": "idle", "speed": None})
+        backend = remote(DecideBackend, server, clock=clock)
+        backend.warm()
+        backend._probe()  # answered (say by a call), idle, and never asked to load
+        clock.advance(60)
+        backend.warm()
+        assert [name for name, _ in spawned] == ["decision-api-start", "decision-api-load"]
+        server.entry["status"] = "ready"
+        spawned[1][1]()
+        assert server.paths() == ["/v1/load"]
+
     def test_arcd_serve_is_timed_through_the_endpoint(self, remote, spawned, char_tokenizer):
         server = FakeDecideServer()
         backend = remote(DecideBackend, server)
@@ -620,6 +663,18 @@ class TestClient:
         assert res.p("q") == pytest.approx(0.7)
         assert (res.model.id, res.model.mode, res.model.runtime) == (V02.id, "api", "onnx-int8")
         assert decisions.status()["speed"]["measured_by"] == "server"
+
+    def test_answers_are_cached_under_the_identity_the_server_reported(self, api, remote):
+        api(DECISION_CACHE_SIZE=64)
+        server = FakeDecideServer(DOCSGPT_ENTRY)
+        client = decisions.get_decider()
+        client._backend = remote(DecideBackend, server)
+        assert decisions.model_info().id == V01.id  # assumed until the first probe, which the call makes
+        first = decisions.decide("s", {"q": NOUL}, feature="test", budget=Budget.hot(2.0))
+        again = decisions.decide("s", {"q": NOUL}, feature="test", budget=Budget.hot(2.0))
+        assert first.model.id == V02.id and not first.cached
+        assert again.cached and again.model.version == first.model.version
+        assert server.paths().count("/v1/decide") == 1
 
     def test_breaker_open_makes_the_batch_unavailable(self, api, remote):
         api(DECISION_BREAKER_FAILURES=1)

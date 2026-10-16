@@ -304,7 +304,9 @@ class RemoteBackend:
     def warm(self) -> None:
         """Start the first-use work in the background (probe, load request, tokenizer, timing); never blocks.
 
-        Later calls repeat only what failed, after ``DECISION_LOAD_RETRY_SECONDS``.
+        Later calls repeat only what failed, after ``DECISION_LOAD_RETRY_SECONDS``; while no probe has been answered
+        (a server not up yet), the whole first use again every ``DECISION_PROBE_SECONDS``, since features in ``auto``
+        mode make no call that would probe it.
         """
         from docsgpt.core.settings import settings
 
@@ -318,12 +320,14 @@ class RemoteBackend:
             retime = (not first and self.profile is None and self._client_timed and self._probed_at is not None
                       and self._tokenizer is not None and not self._timing
                       and (self._timed_at is None or now - self._timed_at >= retry))
+            again = (not first and self._probed_at is None and not self._probing and self._last_probe is not None
+                     and now - self._last_probe >= settings.DECISION_PROBE_SECONDS)
             follow = (not first and self._server_loading() and not self._probing and self._last_probe is not None
                       and now - self._last_probe >= retry)
-        if first:
+        if first or again:
             self._spawn(self._first_use, "decision-api-start")
         elif follow:
-            self._spawn(self._follow_load, "decision-api-load")
+            self._spawn(lambda: self._follow_load(load=True), "decision-api-load")
         elif tokenizer:
             self._spawn(self._load_tokenizer, "decision-tokenizer")
         elif retime:
@@ -342,12 +346,17 @@ class RemoteBackend:
         """Whether the server is still on its way to ready: loading, or idle without having given up."""
         return self._server_status == "loading" or (self._server_status == "idle" and self._server_reason is None)
 
-    def _follow_load(self) -> None:
+    def _follow_load(self, load: bool = False) -> None:
         """Probe until a server that was asked to load reports where it got.
 
         Without this the status stays at the first probe's ``idle`` until a call is let through, and features in
         ``auto`` mode, which wait for the server's profile, never make one.
+
+        Args:
+            load: Ask a server that is still idle to load first (it was not asked at first use, or it restarted).
         """
+        if load and self._server_status == "idle" and self._server_reason is None:
+            self._load()
         end = self._clock() + LOAD_WAIT_S
         for i in itertools.count():
             if not self._server_loading() or self._refused or self._clock() >= end:
