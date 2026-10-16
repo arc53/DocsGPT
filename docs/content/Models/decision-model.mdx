@@ -21,7 +21,7 @@ Every feature that uses the decision model is off by default, and nothing is dow
 | `on` | Asks the model and acts on the answer. |
 | `auto` | Runs only if its predicted time on this machine fits its budget; see [Measured `auto`](#measured-auto). |
 
-The first feature you set to anything but `off` downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, then loads it in the background. Until it is ready, features carry on without it. The features and their settings are in [Turning features on](#turning-features-on).
+The first feature you set to anything but `off`, or `DECISION_PRESCREEN_ENABLED`, downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, then loads it in the background. Until it is ready, features carry on without it. The features and their settings are in [Turning features on](#turning-features-on).
 
 Two settings apply to the model as a whole:
 
@@ -53,8 +53,10 @@ Each feature has its own switch, so you can turn them on one at a time:
 | --- | --- | --- |
 | The injection check on user input, for every agent (flags only) | `GUARDRAILS_INJECTION_INPUT_MODE=monitor` in `.env`; `on` also blocks on agents that enforce their guardrails, and `auto` flags only while the check fits its 0.5 s budget on this machine | `off` |
 | The injection check on one agent | an `injection_model` control at the agent's `input` stage | none |
+| Relevance reranking of retrieved chunks (classic and hybrid sources) | `DECISION_RERANK_MODE=on` in `.env`, `monitor` to score and record only, or `auto` to run it only while a rerank of `DECISION_RERANK_CANDIDATE_K` chunks fits its 3 s budget on this machine; a source can then opt out or in with its `reranker` | `off` |
+| The decision prescreen | `DECISION_PRESCREEN_ENABLED=true` in `.env`, then `"backend": "decision"` on a source's prescreen; it loads the model when the API starts | `false` |
 
-Both are described in [Agent Guardrails](/Agents/guardrails#injection-check-on-every-agent).
+The injection check is described in [Agent Guardrails](/Agents/guardrails#injection-check-on-every-agent), the rerank and the decision prescreen in [Per-Source Configuration](/Sources/Per-source-configuration#relevance-reranking-and-the-decision-prescreen). A source can never turn the model on by itself: while the operator's setting is off, a source's `reranker` does nothing and a `decision` prescreen runs on the LLM. On a CPU the rerank is too slow for an answer (about 27 s for 20 whole chunks on 4 vCPU, about 14 s with the 256-token window DocsGPT scores there), so `auto` keeps it off; it is meant for a GPU or an API-mode server.
 
 ## Offline and air-gapped installs
 
@@ -216,7 +218,7 @@ Decision calls never count toward users' token limits: the model runs on your ha
 
 ## Checking it
 
-`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. In API mode it asks the decision server once, so the model, load status and speed it shows are the server's (`"server": "no answer"` when it cannot reach it). `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing.
+`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. In API mode it asks the decision server once, so the model, load status and speed it shows are the server's (`"server": "no answer"` when it cannot reach it). `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing; the decision prescreen is listed as `rag_prescreen on` or `off`.
 
 A running server reports what its API process sees at `GET /api/admin/decisions` (admins only):
 
@@ -233,7 +235,8 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
   "speed": {"threads": 4, "measured_at": "2026-10-15T09:12:03+00:00", "drift": 1.02,
             "guard_s": 0.152, "relevance_s": 1.41, "analytics_s": 4.1},
   "features": {
-    "injection_input": {"mode": "auto", "effective": "monitor", "predicted_s": 0.38, "budget_s": 0.5, "reason": "fits"}
+    "injection_input": {"mode": "auto", "effective": "monitor", "predicted_s": 0.38, "budget_s": 0.5, "reason": "fits"},
+    "rag_rerank": {"mode": "auto", "effective": "off", "predicted_s": 14.2, "budget_s": 3.0, "reason": "over_budget"}
   }
 }
 ```
@@ -241,6 +244,6 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
 - `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`, and in API mode `degraded` while calls to a failing server are skipped. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits; in API mode also `circuit_open`, `auth` (the server refused the key) and `no_decider` (`DECISION_MODE=api` without `DECISION_BASE_URL`, or a [worker](#celery-workers) without `INTERNAL_KEY`).
 - `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn. In API mode they include the transport, and `speed` adds `round_trip_ms` and `measured_by` (`server` when the server reported its own timing, `client` when DocsGPT timed it).
 - `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports (`onnx-int8` for the decider, `torch-mps-fp16` on a Mac's GPU, `torch-cuda-bf16` on an NVIDIA one), or `remote`. A worker calling the API process reports `api-process:onnx-int8` (`api-process` before its first call).
-- `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`.
+- `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`. `rag_rerank` is predicted for one call over `DECISION_RERANK_CANDIDATE_K` chunks: best-window passages where the model runs on a CPU, whole chunks elsewhere.
 
-The public `/api/config` carries only `decision_available`.
+The public `/api/config` carries three booleans and nothing about timings: `decision_available`, `decision_rerank_enabled` (`DECISION_RERANK_MODE` is not `off`; under `auto` the rerank may still resolve off, which only `features.rag_rerank.effective` here shows) and `decision_prescreen_enabled`. The source settings use them to show the relevance controls; reading them never loads or times the model.
