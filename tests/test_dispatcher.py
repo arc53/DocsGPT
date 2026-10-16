@@ -872,6 +872,21 @@ class TestOperatorGates:
             _, out = _search([{"id": "g", "retrieval": RetrievalConfig(retriever="hybrid", reranker={})}])
         assert len(fake.calls) == 1 and all("relevance" in d for d in out)
 
+    def test_a_source_reranker_never_raises_monitor(self, stores, rerank_mode, _patch_llm_creator):
+        stores["g"] = _ranked_store(_corpus("g"))
+        sources = [{"id": "g", "retrieval": RetrievalConfig(retriever="hybrid", reranker={"type": "decision"})}]
+        rerank_mode("off")
+        _, baseline = _search(sources)
+        rerank_mode("monitor")
+        rec = record.DecisionRecord()
+        fake = FakeDecider({"relevant": _scores_from_text})
+        with installed(fake), record.activate(rec):
+            d, out = _search(sources)
+        assert d._groups[0]["relevance"]["mode"] == "monitor" and fake.calls
+        assert out == baseline
+        (entry,) = rec._doc["entries"]
+        assert entry["applied"] is False and entry["outcome"]["arm"] == "source"
+
     def _prescreen(self, backend):
         return [{
             "id": "a",

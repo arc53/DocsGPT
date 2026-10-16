@@ -384,7 +384,9 @@ class TestModes:
     def test_a_source_opts_in_only_while_the_operator_has_the_rerank_on(self):
         # On: beyond the instance's retrievers and outside the rollout.
         assert source_mode("graphrag", RerankerConfig(), "on", True) == ("on", "source")
-        assert source_mode("classic", RerankerConfig(), "monitor", False) == ("on", "source")
+        # A source never raises the operator's mode: under monitor it is only recorded.
+        assert source_mode("classic", RerankerConfig(), "monitor", False) == ("monitor", "source")
+        assert source_mode("graphrag", RerankerConfig(), "monitor", True) == ("monitor", "source")
         # Off: a stored opt-in is the same as opting out.
         assert source_mode("graphrag", RerankerConfig(), "off", True) == ("off", None)
         assert source_mode("classic", RerankerConfig(min_relevance=0.3), "off", True) == ("off", None)

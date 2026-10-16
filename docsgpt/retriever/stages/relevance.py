@@ -177,9 +177,9 @@ def source_mode(retriever: str, reranker: Any, instance: str, in_rollout: bool) 
 
     The operator turns the rerank on (``DECISION_RERANK_MODE``); a source cannot. While the instance mode is
     ``off`` every source is off, a stored ``reranker: {type: decision}`` included, so no source can make the
-    process load the model. While it is on, such a source is reranked even where the instance default does not
-    reach (a retriever outside ``DECISION_RERANK_RETRIEVERS``, the control arm), and ``type: off`` opts a source
-    out.
+    process load the model. Otherwise such a source runs in the instance's mode, even where the instance default
+    does not reach (a retriever outside ``DECISION_RERANK_RETRIEVERS``, the control arm); a source never raises
+    the mode, so under ``monitor`` it is only recorded. ``type: off`` opts a source out.
 
     Args:
         retriever: The source's retriever key (``classic`` for the classic aliases).
@@ -194,7 +194,7 @@ def source_mode(retriever: str, reranker: Any, instance: str, in_rollout: bool) 
     if instance == "off" or (reranker is not None and reranker.type == "off"):
         return "off", None
     if reranker is not None:
-        return "on", "source"
+        return instance, "source"
     if retriever not in {key.lower() for key in settings.DECISION_RERANK_RETRIEVERS}:
         return "off", None
     if not in_rollout:

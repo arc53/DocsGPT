@@ -202,9 +202,9 @@ class DecisionSettings(SettingsGroup):
             "DECISION_RERANK_CANDIDATE_K candidates and keep as many chunks as they would without it, most "
             "relevant first. `monitor` scores and records without changing the result; `auto` is `on` while the "
             "predicted call on this machine fits DECISION_RERANK_BUDGET (a GPU or API-mode server, rarely a CPU). "
-            "While it is not off, a source's `reranker` can opt that source in (any retriever, outside the rollout) or "
-            "out; while it is off, no source is reranked and the model is never loaded for it. No stage runs with "
-            "PER_SOURCE_RETRIEVAL_ENABLED=false."
+            "While it is not off, a source's `reranker` can opt that source in, in this same mode (any retriever, "
+            "outside the rollout), or out; while it is off, no source is reranked and the model is never loaded for "
+            "it. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false."
         ),
     )
     DECISION_RERANK_BUDGET: float = Field(

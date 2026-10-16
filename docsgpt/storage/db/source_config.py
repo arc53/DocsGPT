@@ -79,9 +79,10 @@ class RerankerConfig(BaseModel):
     """A source's rerank by the decision model, under the instance's ``DECISION_RERANK_MODE``.
 
     The operator turns the rerank on; while that mode is ``off`` this config
-    does nothing. While it is on, ``type="decision"`` reranks the source with
-    these overrides even where the instance default does not reach (another
-    retriever, the rollout's control arm), and ``type="off"`` opts the source
+    does nothing. Otherwise ``type="decision"`` reranks the source in that mode
+    (only recording under ``monitor``) with these overrides, even where the
+    instance default does not reach (another retriever, the rollout's control
+    arm), and ``type="off"`` opts the source
     out, for example a source of one-line rows, which score low against any
     query. No ``reranker`` at all follows the instance mode.
     """

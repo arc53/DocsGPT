@@ -194,7 +194,7 @@ While `DECISION_RERANK_MODE` is not `off`, a source's `reranker` refines it:
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `type` | `decision` | `decision` reranks this source even where the instance default does not reach (a `graphrag` source, the rollout's control arm); `off` opts it out, for example a source of one-line rows, which score low against any query. |
+| `type` | `decision` | `decision` reranks this source in the instance's mode even where the instance default does not reach (a `graphrag` source, the rollout's control arm); under `monitor` it is only scored and recorded, since a source never raises the operator's mode. `off` opts it out, for example a source of one-line rows, which score low against any query. |
 | `min_relevance` | `null` | Drop chunks scoring below this (0–1), keeping at least `DECISION_RELEVANCE_MIN_KEEP` (1). `null` uses `DECISION_RERANK_THRESHOLD` (0, reorder only). |
 | `candidate_k` | `null` | Candidates fetched and scored, 1–100. `null` uses `DECISION_RERANK_CANDIDATE_K` (20). |
 
