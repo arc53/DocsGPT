@@ -497,6 +497,7 @@ describe('conversation listener — a new chat in the sidebar', () => {
 
   it('leaves the chat it shows to its own stream end', async () => {
     attention.attended = true;
+    window.history.pushState({}, '', '/c/conv-open');
     const store = makeStore('conv-open');
     store.dispatch(listed(['conv-open']));
     store.dispatch(
@@ -509,7 +510,48 @@ describe('conversation listener — a new chat in the sidebar', () => {
       ),
     );
     await flush();
+    window.history.pushState({}, '', '/');
     expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('leaves a new chat it is streaming to its own stream end', async () => {
+    attention.attended = true;
+    window.history.pushState({}, '', '/c/new');
+    const store = makeStore('conv-new', 'loading');
+    store.dispatch(listed(['conv-new']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-new',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-new', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    window.history.pushState({}, '', '/');
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the last chat it showed once the user moved to another page', async () => {
+    // The chat stays in state on /settings, but nobody is looking at it: the
+    // server marked it unread.
+    attention.attended = true;
+    window.history.pushState({}, '', '/settings');
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-settings',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-open', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    window.history.pushState({}, '', '/');
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes the chat it shows while the user is away, for its unread mark', async () => {

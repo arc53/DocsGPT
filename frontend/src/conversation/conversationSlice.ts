@@ -14,6 +14,7 @@ import {
   type SSEEvent,
 } from '../notifications/notificationsSlice';
 import { isPageAttended } from '../backgroundJobs/usePageVisible';
+import { shownConversationId } from '../backgroundJobs/usePresence';
 import { getConversations } from '../preferences/preferenceApi';
 import {
   receiveConversations,
@@ -1615,13 +1616,15 @@ conversationListenerMiddleware.startListening({
       // on the server; refresh the list for its mark. The chat this tab
       // shows needs none while the user looks at it: nothing was marked.
       // Unwatched, it may have been, by an answer from another tab or device
-      // that this tab never streamed.
+      // that this tab never streamed. "Shows" is what presence reports (the
+      // route), not the last chat in state: on /settings that one is unwatched.
       const state = listenerApi.getState() as RootState;
-      if (
-        state.conversation.conversationId === conversationId &&
-        isPageAttended()
-      )
-        return;
+      const shown = shownConversationId(
+        typeof window === 'undefined' ? '/' : window.location.pathname,
+        state.conversation.conversationId,
+        state.conversation.status === 'loading',
+      );
+      if (shown === conversationId && isPageAttended()) return;
       await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
     } else if (envelope.type === 'conversation.renamed') {
       // The generated title, saved after the answer ended. It replaces the
