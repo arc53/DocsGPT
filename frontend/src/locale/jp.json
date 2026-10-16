@@ -684,6 +684,7 @@
         "kinds": {
           "agent": "エージェント",
           "llm": "LLM 呼び出し",
+          "decision": "判定モデル呼び出し",
           "tool": "ツール呼び出し",
           "retrieval": "検索",
           "search": "ベクトル検索",

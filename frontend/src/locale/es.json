@@ -685,6 +685,7 @@
         "kinds": {
           "agent": "Agente",
           "llm": "Llamada al LLM",
+          "decision": "Llamada al modelo de decisión",
           "tool": "Llamada a herramienta",
           "retrieval": "Recuperación",
           "search": "Búsqueda vectorial",

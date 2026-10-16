@@ -1,7 +1,7 @@
 ---
 title: Agent Guardrails
 description: Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns or a local model), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
-lastUpdated: 2026-10-15
+lastUpdated: 2026-10-16
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -363,7 +363,7 @@ The setting never changes an agent's own configuration:
 - An agent that has its own `injection_model` control at the `input` stage, enabled or not, keeps that control instead; so does an agent whose [instance floor](#the-instance-floor) has one.
 - The added control never stops a turn it could not score, even on an agent that fails closed: while the model is loading or late, the turn goes ahead and the journal records the control as *not evaluated*.
 
-Nothing is added when `GUARDRAILS_ENABLED` is `false`, when `GUARDRAILS_CHECKS_ENABLED` leaves `injection_model` out, or when the decision model is off (`DECISION_MODE=none`). Celery workers do not run the model yet, so on [webhook](/API/webhooks) and scheduled runs the control reports *not evaluated*.
+Nothing is added when `GUARDRAILS_ENABLED` is `false`, when `GUARDRAILS_CHECKS_ENABLED` leaves `injection_model` out, or when the decision model is off (`DECISION_MODE=none`). [Webhook](/API/webhooks) and scheduled runs, which run in the Celery worker, are scored too: the worker never loads the model, and calls the stack's decider or, without one, the API process's model (see [workers without Docker](/Models/decision-model#workers-without-docker)). A worker that reaches neither reports the control *not evaluated*.
 
 ### The instance floor
 

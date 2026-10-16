@@ -685,6 +685,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "LLM-Aufruf",
+          "decision": "Entscheidungsmodell-Aufruf",
           "tool": "Tool-Aufruf",
           "retrieval": "Abruf",
           "search": "Vektorsuche",

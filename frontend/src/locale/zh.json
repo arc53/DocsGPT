@@ -684,6 +684,7 @@
         "kinds": {
           "agent": "智能体",
           "llm": "LLM 调用",
+          "decision": "决策模型调用",
           "tool": "工具调用",
           "retrieval": "检索",
           "search": "向量搜索",
