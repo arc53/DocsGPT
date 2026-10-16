@@ -817,7 +817,6 @@
       "save": "Сохранить",
       "createTeamError": "Не удалось создать команду.",
       "noTeams": "Команд пока нет.",
-      "noDescription": "Без описания",
       "loadError": "Не удалось загрузить команды.",
       "roleAdmin": "администратор",
       "roleMember": "участник",
@@ -1276,6 +1275,10 @@
       "pageRange_few": "{{from}}–{{to}} из {{formatted}} инструментов",
       "pageRange_many": "{{from}}–{{to}} из {{formatted}} инструментов",
       "pageRange_other": "{{from}}–{{to}} из {{formatted}} инструмента",
+      "triggerLabel_one": "Инструменты, выбрано: {{formatted}}",
+      "triggerLabel_few": "Инструменты, выбрано: {{formatted}}",
+      "triggerLabel_many": "Инструменты, выбрано: {{formatted}}",
+      "triggerLabel_other": "Инструменты, выбрано: {{formatted}}",
       "manageInConnectors": "Управлять в коннекторах",
       "defaultBadge": "По умолчанию",
       "noToolsYet": "Инструментов пока нет",
@@ -1360,7 +1363,7 @@
       "deleteWarning": "Удалить «{{modelName}}»?",
       "actionsMenuAria": "Действия для {{modelName}}",
       "modelsGroup": {
-        "builtin": "Модели DocsGPT",
+        "builtin": "Встроенные",
         "user": "Мои модели"
       },
       "actions": {
@@ -1997,8 +2000,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Поиск разговоров",
-      "noResults": "Результаты не найдены",
-      "loading": "Загрузка..."
+      "noResults": "Результаты не найдены"
     },
     "configTool": {
       "title": "Настройка инструмента",
@@ -2209,6 +2211,10 @@
       "view_more_other": "ещё {{count}} источников",
       "noSourcesAvailable": "Знаний пока нет",
       "selectedCount": "Выбрано: {{count}}",
+      "triggerLabel_one": "Знания, выбрано: {{formatted}}",
+      "triggerLabel_few": "Знания, выбрано: {{formatted}}",
+      "triggerLabel_many": "Знания, выбрано: {{formatted}}",
+      "triggerLabel_other": "Знания, выбрано: {{formatted}}",
       "groupOwn": "Ваши",
       "groupTeam": "Общие с командой",
       "fromConnector": "Из {{name}}",
@@ -2402,7 +2408,6 @@
       "cost": "Вы использовали {{used}} из бюджета в {{limit}}. Бюджет сбросится {{resetsAt}}."
     },
     "send": "Отправить",
-    "viewArtifact": "Открыть артефакт",
     "stopSpeaking": "Остановить озвучивание",
     "loadingAudio": "Загрузка аудио",
     "voice": {
@@ -2476,6 +2481,37 @@
     "stepGroup": {
       "title": "Инструменты",
       "failed": "Ошибок: {{count}}"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML-страница",
+        "pdf": "PDF",
+        "slides": "Слайды",
+        "document": "Документ",
+        "spreadsheet": "Таблица",
+        "data": "Файл данных",
+        "image": "Изображение",
+        "file": "Файл"
+      },
+      "version": "v{{version}}",
+      "download": "Скачать {{title}}",
+      "more_one": "ещё {{count}} файл",
+      "more_few": "ещё {{count}} файла",
+      "more_many": "ещё {{count}} файлов",
+      "more_other": "ещё {{count}} файлов",
+      "fileCount_one": "{{count}} файл",
+      "fileCount_few": "{{count}} файла",
+      "fileCount_many": "{{count}} файлов",
+      "fileCount_other": "{{count}} файлов",
+      "showAll": "Показать все ({{count}})",
+      "listTitle": "Файлы из этого ответа",
+      "backToList": "Назад к файлам",
+      "group": {
+        "documents": "Документы",
+        "images": "Изображения",
+        "data": "Данные",
+        "other": "Другие файлы"
+      }
     }
   },
   "agents": {
@@ -3067,15 +3103,8 @@
       "redo": "Повторить",
       "redoHint": "Повторить (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "Предпросмотр этого артефакта недоступен",
         "loadListFailed": "Не удалось загрузить артефакты",
-        "loadFailed": "Не удалось загрузить артефакт",
-        "loading": "Загрузка артефактов...",
-        "inProgress": "Запуск выполняется — артефакты появятся здесь по мере их создания узлами.",
-        "empty": "Этот запуск не создал артефактов.",
-        "back": "Назад к артефактам",
-        "untitled": "Артефакт {{id}}",
-        "fileKind": "файл"
+        "untitled": "Артефакт {{id}}"
       },
       "builder": {
         "deleteFailed": "Не удалось удалить агента рабочего процесса",
@@ -3208,8 +3237,8 @@
         "extract": "Извлечь текст"
       },
       "mobileBlocker": {
-        "title": "Требуется компьютер",
-        "body": "Для конструктора рабочих процессов нужен экран побольше. Откройте эту страницу на настольном компьютере или ноутбуке."
+        "title": "Откройте на большом экране",
+        "body": "Конструктору рабочих процессов нужен экран пошире. Откройте его на компьютере или поверните планшет горизонтально."
       },
       "nodes": {
         "start": "Начало",
@@ -3247,10 +3276,10 @@
         "stepCount_other": "({{count}} шага)",
         "outputLabel": "Вывод:",
         "errorLabel": "Ошибка:",
-        "artifacts": "Артефакты",
         "minimapHeading": "Рабочий процесс",
         "emptyTitle": "Протестируйте рабочий процесс",
-        "unsavedDraftAttachments": "Сохраните рабочий процесс, прежде чем прикреплять документы в предпросмотре."
+        "unsavedDraftAttachments": "Сохраните рабочий процесс, прежде чем прикреплять документы в предпросмотре.",
+        "backToRun": "Назад к запуску"
       },
       "documents": {
         "modeAll": "Все входные документы",
@@ -3345,9 +3374,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Страница не найдена",
+    "message": "Страница, которую вы ищете, не существует.",
+    "goHome": "На главную"
   },
   "filePicker": {
     "searchPlaceholder": "Поиск файлов и папок",

@@ -183,6 +183,32 @@ class TestListArtifacts:
         assert resp.status_code == 200
         assert len(resp.json["artifacts"]) == 2
 
+    def test_list_carries_the_current_versions_file(
+        self, _patch_db, flask_app, token_owner
+    ):
+        """A run's artifact card shows its file type, so the list names the current file."""
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
+
+        wf_id = _make_workflow(_patch_db, OWNER)
+        run = WorkflowRunsRepository(_patch_db).create(wf_id, OWNER, "completed")
+        _make_artifact(
+            _patch_db,
+            workflow_run_id=str(run["id"]),
+            title="Q3 QBR",
+            filename="qbr.pdf",
+            mime_type="application/pdf",
+        )
+
+        resp = _call(
+            flask_app, ListArtifacts, token=token_owner,
+            query={"workflow_run_id": str(run["id"])},
+        )
+        assert resp.status_code == 200
+        (item,) = resp.json["artifacts"]
+        assert item["filename"] == "qbr.pdf"
+        assert item["mime_type"] == "application/pdf"
+        assert item["current_version"] == 1
+
     def test_stranger_denied_conversation_list(
         self, _patch_db, flask_app
     ):

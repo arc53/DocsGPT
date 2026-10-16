@@ -40,16 +40,33 @@ export function SectionBackLink({
     ? getSectionForPath(section.parentPath)
     : null;
   return (
+    <BackLink to={to} className={cn('mb-4', className)}>
+      {parent ? t(parent.titleKey) : (section.title ?? t(section.titleKey))}
+    </BackLink>
+  );
+}
+
+/** The muted "← Parent" link that leads a page up one level. */
+export function BackLink({
+  to,
+  className,
+  children,
+}: {
+  to: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
     <Link
       to={to}
       className={cn(
         focusRing,
-        'text-muted-foreground hover:text-foreground mb-4 inline-flex items-center gap-2 rounded-sm text-sm outline-none',
+        'text-muted-foreground hover:text-foreground inline-flex items-center gap-2 rounded-sm text-sm outline-none',
         className,
       )}
     >
       <ArrowLeft className="size-4 shrink-0" aria-hidden />
-      {parent ? t(parent.titleKey) : (section.title ?? t(section.titleKey))}
+      {children}
     </Link>
   );
 }

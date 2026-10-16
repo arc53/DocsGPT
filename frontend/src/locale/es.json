@@ -769,7 +769,6 @@
       "save": "Guardar",
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
-      "noDescription": "Sin descripción",
       "loadError": "No se pudieron cargar los equipos.",
       "roleAdmin": "admin",
       "roleMember": "miembro",
@@ -1210,6 +1209,8 @@
       "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} herramienta",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} herramientas",
+      "triggerLabel_one": "Herramientas, {{formatted}} seleccionada",
+      "triggerLabel_other": "Herramientas, {{formatted}} seleccionadas",
       "manageInConnectors": "Gestionar en Conectores",
       "defaultBadge": "Predeterminada",
       "noToolsYet": "Aún no hay herramientas",
@@ -1294,7 +1295,7 @@
       "deleteWarning": "¿Eliminar \"{{modelName}}\"?",
       "actionsMenuAria": "Acciones para {{modelName}}",
       "modelsGroup": {
-        "builtin": "Modelos de DocsGPT",
+        "builtin": "Integrados",
         "user": "Mis modelos"
       },
       "actions": {
@@ -1897,8 +1898,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Buscar conversaciones",
-      "noResults": "No se encontraron resultados",
-      "loading": "Cargando..."
+      "noResults": "No se encontraron resultados"
     },
     "configTool": {
       "title": "Configuración de la Herramienta",
@@ -2103,6 +2103,8 @@
       "view_more_other": "Ver {{count}} fuentes más",
       "noSourcesAvailable": "Aún no hay conocimiento",
       "selectedCount": "{{count}} seleccionados",
+      "triggerLabel_one": "Conocimiento, {{formatted}} seleccionada",
+      "triggerLabel_other": "Conocimiento, {{formatted}} seleccionadas",
       "groupOwn": "Tuyos",
       "groupTeam": "Compartidas con el equipo",
       "fromConnector": "De {{name}}",
@@ -2290,7 +2292,6 @@
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
     },
     "send": "Enviar",
-    "viewArtifact": "Ver artefacto",
     "stopSpeaking": "Dejar de hablar",
     "loadingAudio": "Cargando audio",
     "voice": {
@@ -2362,6 +2363,33 @@
     "stepGroup": {
       "title": "Herramientas",
       "failed": "{{count}} con error"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "Página HTML",
+        "pdf": "PDF",
+        "slides": "Diapositivas",
+        "document": "Documento",
+        "spreadsheet": "Hoja de cálculo",
+        "data": "Archivo de datos",
+        "image": "Imagen",
+        "file": "Archivo"
+      },
+      "version": "v{{version}}",
+      "download": "Descargar {{title}}",
+      "more_one": "{{count}} archivo más",
+      "more_other": "{{count}} archivos más",
+      "fileCount_one": "{{count}} archivo",
+      "fileCount_other": "{{count}} archivos",
+      "showAll": "Ver los {{count}}",
+      "listTitle": "Archivos de esta respuesta",
+      "backToList": "Volver a los archivos",
+      "group": {
+        "documents": "Documentos",
+        "images": "Imágenes",
+        "data": "Datos",
+        "other": "Otros archivos"
+      }
     }
   },
   "agents": {
@@ -2933,15 +2961,8 @@
       "redo": "Rehacer",
       "redoHint": "Rehacer (Ctrl+Mayús+Z)",
       "artifacts": {
-        "previewUnsupported": "Este artefacto no se puede previsualizar",
         "loadListFailed": "No se pudieron cargar los artefactos",
-        "loadFailed": "No se pudo cargar el artefacto",
-        "loading": "Cargando artefactos...",
-        "inProgress": "Ejecución en curso: los artefactos aparecen aquí a medida que los nodos los generan.",
-        "empty": "Esta ejecución no generó artefactos.",
-        "back": "Volver a los artefactos",
-        "untitled": "Artefacto {{id}}",
-        "fileKind": "archivo"
+        "untitled": "Artefacto {{id}}"
       },
       "builder": {
         "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",
@@ -3074,8 +3095,8 @@
         "extract": "Extraer"
       },
       "mobileBlocker": {
-        "title": "Se requiere un ordenador",
-        "body": "El creador de flujos de trabajo necesita una pantalla más grande para ofrecer la mejor experiencia. Abre esta página en un ordenador de sobremesa o portátil."
+        "title": "Ábrelo en una pantalla más grande",
+        "body": "El creador de flujos de trabajo necesita una pantalla más ancha. Usa un ordenador o gira la tableta en horizontal."
       },
       "nodes": {
         "start": "Inicio",
@@ -3107,10 +3128,10 @@
         "stepCount_other": "({{count}} pasos)",
         "outputLabel": "Salida:",
         "errorLabel": "Error:",
-        "artifacts": "Artefactos",
         "minimapHeading": "Flujo de trabajo",
         "emptyTitle": "Prueba el flujo de trabajo",
-        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa."
+        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa.",
+        "backToRun": "Volver a la ejecución"
       },
       "documents": {
         "modeAll": "Todos los documentos de entrada",
@@ -3197,9 +3218,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Página no encontrada",
+    "message": "La página que buscas no existe.",
+    "goHome": "Ir al inicio"
   },
   "filePicker": {
     "searchPlaceholder": "Buscar archivos y carpetas",

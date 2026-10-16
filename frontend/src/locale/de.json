@@ -769,7 +769,6 @@
       "save": "Speichern",
       "createTeamError": "Team konnte nicht erstellt werden.",
       "noTeams": "Noch keine Teams.",
-      "noDescription": "Keine Beschreibung",
       "loadError": "Teams konnten nicht geladen werden.",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
@@ -1210,6 +1209,8 @@
       "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Werkzeug",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Werkzeugen",
+      "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Werkzeuge, {{formatted}} ausgewählt",
       "manageInConnectors": "In Konnektoren verwalten",
       "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",
@@ -1294,7 +1295,7 @@
       "deleteWarning": "\"{{modelName}}\" löschen?",
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT-Modelle",
+        "builtin": "Integriert",
         "user": "Meine Modelle"
       },
       "actions": {
@@ -1897,8 +1898,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Konversationen durchsuchen",
-      "noResults": "Keine Ergebnisse gefunden",
-      "loading": "Laden..."
+      "noResults": "Keine Ergebnisse gefunden"
     },
     "configTool": {
       "title": "Werkzeug-Konfiguration",
@@ -2103,6 +2103,8 @@
       "view_more_other": "{{count}} weitere Quellen",
       "noSourcesAvailable": "Noch kein Wissen",
       "selectedCount": "{{count}} ausgewählt",
+      "triggerLabel_one": "Wissen, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Wissen, {{formatted}} ausgewählt",
       "groupOwn": "Deine",
       "groupTeam": "Mit dem Team geteilt",
       "fromConnector": "Aus {{name}}",
@@ -2290,7 +2292,6 @@
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
     "send": "Senden",
-    "viewArtifact": "Artefakt anzeigen",
     "stopSpeaking": "Vorlesen beenden",
     "loadingAudio": "Audio wird geladen",
     "voice": {
@@ -2362,6 +2363,33 @@
     "stepGroup": {
       "title": "Werkzeuge",
       "failed": "{{count}} fehlgeschlagen"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML-Seite",
+        "pdf": "PDF",
+        "slides": "Folien",
+        "document": "Dokument",
+        "spreadsheet": "Tabelle",
+        "data": "Datendatei",
+        "image": "Bild",
+        "file": "Datei"
+      },
+      "version": "v{{version}}",
+      "download": "{{title}} herunterladen",
+      "more_one": "{{count}} weitere Datei",
+      "more_other": "{{count}} weitere Dateien",
+      "fileCount_one": "{{count}} Datei",
+      "fileCount_other": "{{count}} Dateien",
+      "showAll": "Alle {{count}} anzeigen",
+      "listTitle": "Dateien aus dieser Antwort",
+      "backToList": "Zurück zu den Dateien",
+      "group": {
+        "documents": "Dokumente",
+        "images": "Bilder",
+        "data": "Daten",
+        "other": "Weitere Dateien"
+      }
     }
   },
   "agents": {
@@ -2933,15 +2961,8 @@
       "redo": "Wiederholen",
       "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
-        "previewUnsupported": "Dieses Artefakt kann nicht in der Vorschau angezeigt werden",
         "loadListFailed": "Artefakte konnten nicht geladen werden",
-        "loadFailed": "Artefakt konnte nicht geladen werden",
-        "loading": "Artefakte werden geladen...",
-        "inProgress": "Lauf aktiv – Artefakte erscheinen hier, sobald Knoten sie erzeugen.",
-        "empty": "Dieser Lauf hat keine Artefakte erzeugt.",
-        "back": "Zurück zu den Artefakten",
-        "untitled": "Artefakt {{id}}",
-        "fileKind": "Datei"
+        "untitled": "Artefakt {{id}}"
       },
       "builder": {
         "deleteFailed": "Workflow-Agent konnte nicht gelöscht werden",
@@ -3074,8 +3095,8 @@
         "extract": "Extrahieren"
       },
       "mobileBlocker": {
-        "title": "Desktop erforderlich",
-        "body": "Der Workflow-Builder braucht für eine gute Bedienung einen größeren Bildschirm. Bitte öffne diese Seite auf einem Desktop- oder Laptop-Computer."
+        "title": "Auf einem größeren Bildschirm öffnen",
+        "body": "Der Workflow-Builder braucht einen breiteren Bildschirm. Nutze einen Computer oder dreh dein Tablet ins Querformat."
       },
       "nodes": {
         "start": "Start",
@@ -3107,10 +3128,10 @@
         "stepCount_other": "({{count}} Schritte)",
         "outputLabel": "Ausgabe:",
         "errorLabel": "Fehler:",
-        "artifacts": "Artefakte",
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",
-        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst."
+        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst.",
+        "backToRun": "Zurück zum Lauf"
       },
       "documents": {
         "modeAll": "Alle Eingabedokumente",
@@ -3197,7 +3218,7 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
+    "title": "Seite nicht gefunden",
     "message": "Die gesuchte Seite existiert nicht.",
     "goHome": "Zur Startseite"
   },

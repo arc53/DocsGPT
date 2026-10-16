@@ -768,7 +768,6 @@
       "save": "儲存",
       "createTeamError": "無法建立團隊。",
       "noTeams": "尚無團隊。",
-      "noDescription": "無描述",
       "loadError": "載入團隊失敗。",
       "roleAdmin": "管理員",
       "roleMember": "成員",
@@ -1209,6 +1208,8 @@
       "savedSecretPlaceholder": "已儲存 · 輸入新值以取代",
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個工具",
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個工具",
+      "triggerLabel_one": "工具，已選 {{formatted}} 個",
+      "triggerLabel_other": "工具，已選 {{formatted}} 個",
       "manageInConnectors": "在連接器中管理",
       "defaultBadge": "預設",
       "noToolsYet": "還沒有工具",
@@ -1293,7 +1294,7 @@
       "deleteWarning": "要刪除「{{modelName}}」嗎？",
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
-        "builtin": "DocsGPT 模型",
+        "builtin": "內建",
         "user": "我的模型"
       },
       "actions": {
@@ -1891,8 +1892,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "搜尋對話",
-      "noResults": "未找到結果",
-      "loading": "載入中..."
+      "noResults": "未找到結果"
     },
     "configTool": {
       "title": "工具設定",
@@ -2095,6 +2095,8 @@
       "view_more": "查看更多 {{count}} 個來源",
       "noSourcesAvailable": "還沒有知識",
       "selectedCount": "已選 {{count}} 個",
+      "triggerLabel_one": "知識庫，已選 {{formatted}} 個",
+      "triggerLabel_other": "知識庫，已選 {{formatted}} 個",
       "groupOwn": "你的",
       "groupTeam": "團隊共享",
       "fromConnector": "來自 {{name}}",
@@ -2280,7 +2282,6 @@
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
     },
     "send": "傳送",
-    "viewArtifact": "檢視 Artifact",
     "stopSpeaking": "停止朗讀",
     "loadingAudio": "正在載入音訊",
     "voice": {
@@ -2351,6 +2352,31 @@
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 個失敗"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML 頁面",
+        "pdf": "PDF",
+        "slides": "投影片",
+        "document": "文件",
+        "spreadsheet": "試算表",
+        "data": "資料檔案",
+        "image": "圖片",
+        "file": "檔案"
+      },
+      "version": "v{{version}}",
+      "download": "下載 {{title}}",
+      "more": "還有{{count}}個檔案",
+      "fileCount": "{{count}} 個檔案",
+      "showAll": "顯示全部 {{count}} 個",
+      "listTitle": "此回答的檔案",
+      "backToList": "返回檔案列表",
+      "group": {
+        "documents": "文件",
+        "images": "圖片",
+        "data": "資料",
+        "other": "其他檔案"
+      }
     }
   },
   "agents": {
@@ -2921,15 +2947,8 @@
       "redo": "重做",
       "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "此產出物無法預覽",
         "loadListFailed": "無法載入產出物",
-        "loadFailed": "無法載入產出物",
-        "loading": "正在載入產出物...",
-        "inProgress": "執行中——節點產生的產出物會顯示在這裡。",
-        "empty": "此次執行未產生產出物。",
-        "back": "返回產出物列表",
-        "untitled": "產出物 {{id}}",
-        "fileKind": "檔案"
+        "untitled": "產出物 {{id}}"
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",
@@ -3062,8 +3081,8 @@
         "extract": "擷取"
       },
       "mobileBlocker": {
-        "title": "需要桌上型裝置",
-        "body": "工作流程建構器需要更大的螢幕才能獲得最佳體驗。請在桌上型電腦或筆記型電腦上開啟此頁面。"
+        "title": "請在更大的螢幕上開啟",
+        "body": "工作流程建構器需要更寬的螢幕。請使用電腦，或將平板電腦轉為橫向。"
       },
       "nodes": {
         "start": "開始",
@@ -3094,11 +3113,11 @@
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "輸出：",
         "errorLabel": "錯誤：",
-        "artifacts": "產出物",
         "minimapHeading": "工作流程",
         "emptyTitle": "測試工作流程",
         "unsavedDraftAttachments": "在預覽中附加文件前，請先儲存工作流程。",
-        "stepCount_one": "（{{count}} 步）"
+        "stepCount_one": "（{{count}} 步）",
+        "backToRun": "返回執行"
       },
       "documents": {
         "modeAll": "所有輸入文件",
@@ -3185,9 +3204,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "找不到頁面",
+    "message": "你要找的頁面不存在。",
+    "goHome": "返回首頁"
   },
   "filePicker": {
     "searchPlaceholder": "搜尋檔案和資料夾",

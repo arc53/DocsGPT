@@ -768,7 +768,6 @@
       "save": "保存",
       "createTeamError": "チームを作成できませんでした。",
       "noTeams": "チームはまだありません。",
-      "noDescription": "説明なし",
       "loadError": "チームの読み込みに失敗しました。",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
@@ -1209,6 +1208,8 @@
       "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
       "pageRange_one": "ツール {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "ツール {{formatted}}件中 {{from}}–{{to}}件",
+      "triggerLabel_one": "ツール、{{formatted}} 件選択中",
+      "triggerLabel_other": "ツール、{{formatted}} 件選択中",
       "manageInConnectors": "コネクタで管理",
       "defaultBadge": "デフォルト",
       "noToolsYet": "ツールはまだありません",
@@ -1293,7 +1294,7 @@
       "deleteWarning": "「{{modelName}}」を削除しますか？",
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
-        "builtin": "DocsGPT モデル",
+        "builtin": "組み込み",
         "user": "マイモデル"
       },
       "actions": {
@@ -1891,8 +1892,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "会話を検索",
-      "noResults": "結果が見つかりません",
-      "loading": "読み込み中..."
+      "noResults": "結果が見つかりません"
     },
     "configTool": {
       "title": "ツール設定",
@@ -2095,6 +2095,8 @@
       "view_more": "さらに{{count}}個のソース",
       "noSourcesAvailable": "ナレッジはまだありません",
       "selectedCount": "{{count}} 件選択中",
+      "triggerLabel_one": "ナレッジ、{{formatted}} 件選択中",
+      "triggerLabel_other": "ナレッジ、{{formatted}} 件選択中",
       "groupOwn": "あなたのもの",
       "groupTeam": "チームと共有",
       "fromConnector": "{{name}} から",
@@ -2280,7 +2282,6 @@
       "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
     },
     "send": "送信",
-    "viewArtifact": "アーティファクトを表示",
     "stopSpeaking": "読み上げを停止",
     "loadingAudio": "音声を読み込み中",
     "voice": {
@@ -2351,6 +2352,31 @@
     "stepGroup": {
       "title": "ツール",
       "failed": "{{count}} 件失敗"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTMLページ",
+        "pdf": "PDF",
+        "slides": "スライド",
+        "document": "ドキュメント",
+        "spreadsheet": "スプレッドシート",
+        "data": "データファイル",
+        "image": "画像",
+        "file": "ファイル"
+      },
+      "version": "v{{version}}",
+      "download": "{{title}} をダウンロード",
+      "more": "さらに{{count}}個のファイル",
+      "fileCount": "{{count}}個のファイル",
+      "showAll": "{{count}}件すべて表示",
+      "listTitle": "この回答のファイル",
+      "backToList": "ファイル一覧に戻る",
+      "group": {
+        "documents": "ドキュメント",
+        "images": "画像",
+        "data": "データ",
+        "other": "その他のファイル"
+      }
     }
   },
   "agents": {
@@ -2921,15 +2947,8 @@
       "redo": "やり直す",
       "redoHint": "やり直す (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "このアーティファクトはプレビューできません",
         "loadListFailed": "アーティファクトを読み込めませんでした",
-        "loadFailed": "アーティファクトを読み込めませんでした",
-        "loading": "アーティファクトを読み込み中...",
-        "inProgress": "実行中です。ノードが生成したアーティファクトがここに表示されます。",
-        "empty": "この実行ではアーティファクトは生成されませんでした。",
-        "back": "アーティファクト一覧に戻る",
-        "untitled": "アーティファクト {{id}}",
-        "fileKind": "ファイル"
+        "untitled": "アーティファクト {{id}}"
       },
       "builder": {
         "deleteFailed": "ワークフローエージェントを削除できませんでした",
@@ -3062,8 +3081,8 @@
         "extract": "抽出"
       },
       "mobileBlocker": {
-        "title": "デスクトップが必要です",
-        "body": "ワークフロービルダーを快適に使うには、より大きな画面が必要です。このページはデスクトップまたはノートパソコンで開いてください。"
+        "title": "より大きな画面で開いてください",
+        "body": "ワークフロービルダーには、より幅の広い画面が必要です。パソコンを使うか、タブレットを横向きにしてください。"
       },
       "nodes": {
         "start": "開始",
@@ -3094,11 +3113,11 @@
         "stepCount_other": "（{{count}} ステップ）",
         "outputLabel": "出力:",
         "errorLabel": "エラー:",
-        "artifacts": "アーティファクト",
         "minimapHeading": "ワークフロー",
         "emptyTitle": "ワークフローをテスト",
         "unsavedDraftAttachments": "プレビューでドキュメントを添付する前にワークフローを保存してください。",
-        "stepCount_one": "（{{count}} ステップ）"
+        "stepCount_one": "（{{count}} ステップ）",
+        "backToRun": "実行に戻る"
       },
       "documents": {
         "modeAll": "すべての入力ドキュメント",
@@ -3185,9 +3204,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "ページが見つかりません",
+    "message": "お探しのページは存在しません。",
+    "goHome": "ホームに戻る"
   },
   "filePicker": {
     "searchPlaceholder": "ファイルとフォルダを検索",
