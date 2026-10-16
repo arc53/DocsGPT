@@ -411,3 +411,85 @@ describe('listener middleware export hygiene', () => {
     expect(typeof setConversation).toBe('function');
   });
 });
+
+describe('conversation listener — a new chat in the sidebar', () => {
+  const flush = async () => {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  const started = (conversationId: string, id = `evt-${conversationId}`) =>
+    ENVELOPE({
+      id,
+      type: 'message.started',
+      payload: { conversation_id: conversationId, message_id: 'm-1' },
+    });
+  const listed = (ids: string[]) =>
+    prefSlice.actions.receiveConversations({
+      data: ids.map((id) => ({ id, name: id })) as never,
+      loading: false,
+    });
+
+  beforeEach(() => {
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: [{ id: 'conv-new', name: 'What is the weather' }],
+      loading: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('lists a chat this tab just started, as soon as the stream names it', async () => {
+    const store = makeStore(null, 'loading');
+    store.dispatch(conversationSlice.actions.setConversationId('conv-new'));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+    expect(
+      store.getState().preference.conversations.data?.map((c) => c.id),
+    ).toEqual(['conv-new']);
+  });
+
+  it('lists a chat started in another tab when its answer starts', async () => {
+    const store = makeStore();
+    store.dispatch(sseEventReceived(started('conv-new')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches once when the stream and the event both announce it', async () => {
+    const store = makeStore(null, 'loading');
+    store.dispatch(conversationSlice.actions.setConversationId('conv-new'));
+    store.dispatch(sseEventReceived(started('conv-new')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a chat the sidebar already lists alone', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(sseEventReceived(started('conv-old')));
+    await flush();
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('swaps in the generated title when it is ready', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-rename',
+          type: 'conversation.renamed',
+          payload: { conversation_id: 'conv-old', name: 'Weather in Dubai' },
+        }),
+      ),
+    );
+    await flush();
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'Weather in Dubai',
+    );
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+});

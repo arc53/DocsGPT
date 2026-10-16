@@ -1,7 +1,7 @@
 ---
 title: Realtime Events & Notifications
 description: Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
-lastUpdated: 2026-10-15
+lastUpdated: 2026-10-16
 ---
 
 import { Callout } from 'nextra/components'
@@ -65,6 +65,7 @@ Event types:
 | `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect`, `mcp.oauth.completed`, `mcp.oauth.failed` | mcp_oauth (`id` is the OAuth task id) | An MCP server's OAuth sign-in progressed. | `task_id` on every event; `message` on `in_progress` and `awaiting_redirect`; the `authorization_url` to open on `awaiting_redirect`; `tools` and `tools_count` on `completed`; `error` on `failed` |
 | `message.started`, `message.finished` | conversation | A chat answer started, or it ended (finished, failed or stopped). Sent only for chats listed in your sidebar, not for API, `/v1` or shared-agent answers. | `conversation_id`, `message_id` |
 | `job.updated` | conversation (`job` without a conversation) | A [background job](/Tools/background-jobs) changed status or progress. | `job_id`, `conversation_id`, `status`, `progress`, `tool_name`, `action_name`, `status_message`, `notices` |
+| `conversation.renamed` | conversation | A chat listed in your sidebar got its generated title, a few seconds after its first answer ended. | `conversation_id`, `name` |
 | `conversation.continued` | conversation | A finished background job, a monitor, a trigger link or an approval link added a turn to a conversation. | `conversation_id`, `message_id`, `source` |
 | `notification.created` | conversation (`user` without a conversation) | Something happened in a conversation you aren't looking at; the web app shows it as a toast. | `kind`, `title`, `body`, `url`, `conversation_id` |
 | `monitor.updated` | monitor | A [monitor](/Tools/monitors) was checked, woke the agent, paused or ended. | `monitor_id`, `status`, `wakes_left`, `last_checked_at`, `conversation_id`, `check_count`, `last_error`, `paused_reason` |

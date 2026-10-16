@@ -16,6 +16,7 @@ import {
 import { getConversations } from '../preferences/preferenceApi';
 import {
   receiveConversations,
+  renameConversation,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
@@ -1517,5 +1518,69 @@ conversationListenerMiddleware.startListening({
         return;
     }
     listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
+  },
+});
+
+// A new chat is on the server, named after its question, from its answer's
+// first event: list it in the sidebar then, so it shows with its working mark
+// while it answers, not only once the answer ends. This tab's stream names it
+// (setConversationId); a chat started in another tab arrives as
+// `message.started`. One list refresh per chat, whichever comes first.
+const listingConversations = new Set<string>();
+
+async function listNewConversation(
+  conversationId: string,
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  const state = getState() as RootState;
+  const listed = state.preference.conversations.data?.some(
+    (chat) => chat.id === conversationId,
+  );
+  if (listed || listingConversations.has(conversationId)) return;
+  listingConversations.add(conversationId);
+  try {
+    dispatch(
+      receiveConversations(await getConversations(state.preference.token)),
+    );
+  } catch (error) {
+    console.error('new chat: conversations refresh failed', error);
+  } finally {
+    listingConversations.delete(conversationId);
+  }
+}
+
+conversationListenerMiddleware.startListening({
+  actionCreator: conversationSlice.actions.setConversationId,
+  effect: async (action, listenerApi) => {
+    if (!action.payload) return;
+    await listNewConversation(
+      action.payload,
+      listenerApi.getState,
+      listenerApi.dispatch,
+    );
+  },
+});
+
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    const conversationId = String(payload.conversation_id ?? '');
+    if (!conversationId) return;
+    if (envelope.type === 'message.started') {
+      await listNewConversation(
+        conversationId,
+        listenerApi.getState,
+        listenerApi.dispatch,
+      );
+    } else if (envelope.type === 'conversation.renamed') {
+      // The generated title, saved after the answer ended.
+      const name = String(payload.name ?? '');
+      if (name) {
+        listenerApi.dispatch(renameConversation({ id: conversationId, name }));
+      }
+    }
   },
 });

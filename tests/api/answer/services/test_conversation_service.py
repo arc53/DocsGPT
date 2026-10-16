@@ -773,6 +773,99 @@ class TestFinalizeMessage:
         assert conv["name"] == "Short Title"
 
 
+    @staticmethod
+    def _finalize_with_title(pg_conn, user, *, visibility, title="Short Title"):
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        question = "long question that becomes the fallback name"
+        mock_llm = MagicMock()
+        mock_llm.gen.return_value = title
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.conversation_service.publish_user_event"
+        ) as publish:
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+                visibility=visibility,
+            )
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        return res, publish
+
+    def test_finalize_title_announces_the_new_name_for_a_listed_chat(self, pg_conn):
+        res, publish = self._finalize_with_title(
+            pg_conn, "u-fin-title-event", visibility="listed"
+        )
+        conversation_id = str(res["conversation_id"])
+        publish.assert_called_once_with(
+            "u-fin-title-event",
+            "conversation.renamed",
+            {"conversation_id": conversation_id, "name": "Short Title"},
+            scope={"kind": "conversation", "id": conversation_id},
+        )
+
+    def test_finalize_title_is_not_announced_for_an_unlisted_chat(self, pg_conn):
+        _, publish = self._finalize_with_title(
+            pg_conn, "u-fin-title-hidden", visibility="hidden"
+        )
+        publish.assert_not_called()
+
+    def test_title_kept_by_a_renamed_chat_is_not_announced(self, pg_conn):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        user = "u-fin-title-kept"
+        question = "long question that becomes the fallback name"
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.conversation_service.publish_user_event"
+        ) as publish:
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+                visibility="listed",
+            )
+            # The user renamed it before the title job ran.
+            pg_conn.execute(
+                sql_text("UPDATE conversations SET name = 'Mine' WHERE id = CAST(:id AS uuid)"),
+                {"id": str(res["conversation_id"])},
+            )
+            mock_llm = MagicMock()
+            mock_llm.gen.return_value = "Short Title"
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        publish.assert_not_called()
+        mock_llm.gen.assert_not_called()
+
+
 class TestSaveUserQuestionFinalizeFailedFlow:
     """LLM fails immediately; question stays queryable with status='failed' + error metadata."""
 

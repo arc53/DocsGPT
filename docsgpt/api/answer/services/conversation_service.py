@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text as sql_text
 
 from docsgpt.core.settings import settings
+from docsgpt.events.publisher import publish_user_event
 from docsgpt.api.answer.services.compression.types import (
     COMPRESSION_SUMMARY_MARKER,
     COMPRESSION_SUMMARY_PROMPT,
@@ -512,14 +513,28 @@ class ConversationService:
     def _generate_title_safely(
         self, message_id: str, title_inputs: Dict[str, Any]
     ) -> None:
-        """Generate a title in its own DB transaction without surfacing errors."""
+        """Generate a title in its own DB transaction without surfacing errors.
+
+        A listed chat's new name then goes to its owner's tabs as
+        ``conversation.renamed``, after the commit, so the sidebar swaps the
+        question-prefix fallback for it without refetching its list.
+        """
         try:
             with db_session() as conn:
-                self._maybe_generate_title(conn, message_id, title_inputs)
+                renamed = self._maybe_generate_title(conn, message_id, title_inputs)
         except Exception as e:
             logger.error(
                 f"finalize_message title generation failed: {e}",
                 exc_info=True,
+            )
+            return
+        if renamed is not None:
+            conversation_id, user_id, name = renamed
+            publish_user_event(
+                user_id,
+                "conversation.renamed",
+                {"conversation_id": conversation_id, "name": name},
+                scope={"kind": "conversation", "id": conversation_id},
             )
 
     def _maybe_generate_title(
@@ -527,28 +542,39 @@ class ConversationService:
         conn,
         message_id: str,
         title_inputs: Dict[str, Any],
-    ) -> None:
-        """Generate an LLM-summarised conversation name if one isn't set yet."""
+    ) -> Optional[tuple[str, str, str]]:
+        """Generate an LLM-summarised conversation name if one isn't set yet.
+
+        Args:
+            conn: The open transaction the rename is written in.
+            message_id: The answered message; its conversation is renamed.
+            title_inputs: ``llm``, ``question``, ``response``, ``model_id`` and
+                ``fallback_name``.
+
+        Returns:
+            ``(conversation_id, user_id, name)`` when a sidebar-listed chat was
+            renamed, else None (nothing to do, or a chat with no sidebar row).
+        """
         llm = title_inputs.get("llm")
         question = title_inputs.get("question") or ""
         response = title_inputs.get("response") or ""
         fallback_name = title_inputs.get("fallback_name") or question[:50]
         if llm is None:
-            return
+            return None
 
         row = conn.execute(
             sql_text(
-                "SELECT c.id, c.name FROM conversation_messages m "
+                "SELECT c.id, c.name, c.user_id, c.visibility FROM conversation_messages m "
                 "JOIN conversations c ON c.id = m.conversation_id "
                 "WHERE m.id = CAST(:mid AS uuid)"
             ),
             {"mid": message_id},
         ).fetchone()
         if row is None:
-            return
-        conv_id, current_name = str(row[0]), row[1]
+            return None
+        conv_id, current_name, user_id, visibility = str(row[0]), row[1], row[2], row[3]
         if current_name and current_name != fallback_name:
-            return
+            return None
 
         messages_summary = [
             {
@@ -574,13 +600,17 @@ class ConversationService:
         )
         if not completion or not completion.strip():
             completion = fallback_name or "New Conversation"
+        name = completion.strip()
         conn.execute(
             sql_text(
                 "UPDATE conversations SET name = :name, updated_at = now() "
                 "WHERE id = CAST(:id AS uuid)"
             ),
-            {"id": conv_id, "name": completion.strip()},
+            {"id": conv_id, "name": name},
         )
+        if visibility != "listed" or not user_id:
+            return None
+        return conv_id, str(user_id), name
 
     def update_compression_metadata(
         self, conversation_id: str, compression_metadata: Dict[str, Any]

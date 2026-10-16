@@ -54,6 +54,19 @@ describe('activitySlice', () => {
     expect([...selectFailedConversations(state)]).toEqual(['c4']);
   });
 
+  it('counts the chat this tab is streaming as working, event stream or not', () => {
+    const streaming = {
+      activity: loaded(),
+      conversation: { conversationId: 'c8', status: 'loading' as const },
+    };
+    expect(selectWorkingConversations(streaming).has('c8')).toBe(true);
+    const done = {
+      ...streaming,
+      conversation: { conversationId: 'c8', status: 'idle' as const },
+    };
+    expect(selectWorkingConversations(done).has('c8')).toBe(false);
+  });
+
   it('marks a chat working as soon as its answer starts', () => {
     const state = reducer(
       loaded(),

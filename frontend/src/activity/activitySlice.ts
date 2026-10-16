@@ -305,11 +305,23 @@ export const selectLiveConversations = (state: WithActivity) =>
 
 const EMPTY: ReadonlySet<string> = new Set();
 
-/** Chats answering or running a background job. */
+/** The chat this tab is streaming an answer into, if any. */
+const selectStreamingConversation = (state: {
+  conversation?: { conversationId: string | null; status: string };
+}) =>
+  state.conversation?.status === 'loading'
+    ? state.conversation.conversationId
+    : null;
+
+/**
+ * Chats answering or running a background job. The chat this tab streams
+ * counts at once, with or without the event stream's `message.started`.
+ */
 export const selectWorkingConversations = createSelector(
-  [selectActivityNow, selectLiveConversations],
-  (now, live): ReadonlySet<string> => {
+  [selectActivityNow, selectLiveConversations, selectStreamingConversation],
+  (now, live, streaming): ReadonlySet<string> => {
     const ids = new Set(Object.keys(live));
+    if (streaming) ids.add(streaming);
     for (const item of now?.running ?? []) {
       if (
         (item.kind === 'chat' || item.kind === 'job') &&
