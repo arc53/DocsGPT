@@ -214,7 +214,7 @@ function Toast({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="toast"
       className={cn(
-        'border-border bg-card text-card-foreground shadow-toast w-68 overflow-hidden rounded-2xl border',
+        'border-border bg-card text-card-foreground shadow-toast w-68 shrink-0 overflow-hidden rounded-2xl border',
         className,
       )}
       {...props}

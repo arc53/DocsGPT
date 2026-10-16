@@ -35,6 +35,14 @@ describe('Toast', () => {
     expect(html).toContain('rounded-2xl');
   });
 
+  it('keeps its height in a capped stack, so the stack scrolls instead', () => {
+    // A clipped flex item may shrink below its content: without shrink-0 the
+    // capped viewport squeezes the cards and cuts off their buttons.
+    expect(renderToStaticMarkup(<Toast>x</Toast>)).toMatch(
+      /class="[^"]*\bshrink-0\b/,
+    );
+  });
+
   it('leaves the live region to the viewport', () => {
     const html = renderToStaticMarkup(
       <ToastViewport>
