@@ -10,6 +10,10 @@ import {
 import activityService from '../api/services/activityService';
 import { markConversationRead } from '../backgroundJobs/backgroundSlice';
 import {
+  removeAllConversations,
+  removeConversation,
+} from '../preferences/preferenceSlice';
+import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
@@ -162,6 +166,22 @@ const activitySlice = createSlice({
         state.now.failed_conversations = state.now.failed_conversations.filter(
           (id) => id !== action.meta.arg,
         );
+      })
+      // A deleted chat has nothing to approve and no failure to read.
+      .addCase(removeConversation, (state, action) => {
+        if (!state.now) return;
+        state.now.failed_conversations = state.now.failed_conversations.filter(
+          (id) => id !== action.payload,
+        );
+        state.now.approval_conversations =
+          state.now.approval_conversations.filter(
+            (id) => id !== action.payload,
+          );
+      })
+      .addCase(removeAllConversations, (state) => {
+        if (!state.now) return;
+        state.now.failed_conversations = [];
+        state.now.approval_conversations = [];
       })
       .addMatcher(
         isAnyOf(markConversationRead.fulfilled, markConversationRead.rejected),

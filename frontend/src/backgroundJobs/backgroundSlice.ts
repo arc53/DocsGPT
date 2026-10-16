@@ -18,6 +18,8 @@ import {
 import {
   appendConversations,
   receiveConversations,
+  removeAllConversations,
+  removeConversation,
 } from '../preferences/preferenceSlice';
 import type { ConversationSummary } from '../preferences/types';
 import {
@@ -281,6 +283,13 @@ export const backgroundSlice = createSlice({
       })
       .addCase(appendConversations, (state, action) => {
         syncUnread(state, action.payload);
+      })
+      // A deleted chat no longer counts in the tab title.
+      .addCase(removeConversation, (state, action) => {
+        delete state.unread[action.payload];
+      })
+      .addCase(removeAllConversations, (state) => {
+        state.unread = {};
       });
   },
 });

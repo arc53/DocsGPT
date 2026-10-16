@@ -191,6 +191,10 @@ export const prefSlice = createSlice({
         (c) => c.id !== action.payload,
       );
     },
+    /** Every conversation was deleted: the list is empty, with no more pages. */
+    removeAllConversations: (state) => {
+      state.conversations = { data: [], loading: false, hasMore: false };
+    },
     /** A rename keeps the chat's place, so it is applied here, not refetched. */
     renameConversation: (
       state,
@@ -273,6 +277,7 @@ export const {
   receiveConversations,
   appendConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversationsLoading,
   setToken,

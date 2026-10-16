@@ -8,6 +8,10 @@ vi.mock('../api/services/activityService', () => ({
 import activityService from '../api/services/activityService';
 import { markConversationRead } from '../backgroundJobs/backgroundSlice';
 import {
+  removeAllConversations,
+  removeConversation,
+} from '../preferences/preferenceSlice';
+import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
@@ -91,6 +95,14 @@ describe('activitySlice', () => {
   it('clears the failed mark when the chat is opened', () => {
     const state = reducer(loaded(), markConversationRead.pending('req', 'c4'));
     expect(selectFailedConversations(wrap(state)).size).toBe(0);
+  });
+
+  it('drops the failed and approval marks of a deleted chat', () => {
+    let state = reducer(loaded(), removeConversation('c4'));
+    expect(selectFailedConversations(wrap(state)).size).toBe(0);
+    expect([...selectApprovalConversations(wrap(state))]).toEqual(['c3']);
+    state = reducer(state, removeAllConversations());
+    expect(selectApprovalConversations(wrap(state)).size).toBe(0);
   });
 
   describe('overlapping fetches', () => {

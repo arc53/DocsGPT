@@ -14,6 +14,8 @@ import { sseEventReceived } from '../notifications/notificationsSlice';
 import {
   appendConversations,
   receiveConversations,
+  removeAllConversations,
+  removeConversation,
 } from '../preferences/preferenceSlice';
 import backgroundReducer, {
   cancelBackgroundJob,
@@ -223,6 +225,17 @@ describe('backgroundSlice', () => {
         }),
       );
       expect(selectIsUnread('c1')(store.getState())).toBe(false);
+    });
+
+    it('go with a deleted conversation', () => {
+      const store = makeStore();
+      store.dispatch(markConversationUnread('c1'));
+      store.dispatch(markConversationUnread('c2'));
+      store.dispatch(removeConversation('c1'));
+      expect(selectIsUnread('c1')(store.getState())).toBe(false);
+      expect(selectIsUnread('c2')(store.getState())).toBe(true);
+      store.dispatch(removeAllConversations());
+      expect(selectIsUnread('c2')(store.getState())).toBe(false);
     });
 
     it('clear at once when the conversation is opened, and tell the server', async () => {

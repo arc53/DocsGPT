@@ -81,6 +81,7 @@ import {
   appendConversations,
   receiveConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversations,
   setConversationsLoading,
@@ -310,6 +311,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setIsDeletingConversation(true);
     return conversationService.deleteAll(token).then((response: Response) => {
       if (!response.ok) throw new Error('Failed to delete conversations');
+      dispatch(removeAllConversations());
       fetchConversations();
     });
   };
