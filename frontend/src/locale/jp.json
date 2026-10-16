@@ -31,7 +31,9 @@
     "dismiss": "閉じる",
     "toolApprovalTitle": "ツールの承認が必要です",
     "toolApprovalReview": "確認",
-    "toolApprovalFallbackName": "会話"
+    "toolApprovalFallbackName": "会話",
+    "moreToasts_other": "他{{count}}件",
+    "fewerToasts": "折りたたむ"
   },
   "backgroundJobs": {
     "card": {

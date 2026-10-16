@@ -31,7 +31,10 @@
     "dismiss": "Schließen",
     "toolApprovalTitle": "Tool-Freigabe erforderlich",
     "toolApprovalReview": "Prüfen",
-    "toolApprovalFallbackName": "Unterhaltung"
+    "toolApprovalFallbackName": "Unterhaltung",
+    "moreToasts_one": "{{count}} weitere",
+    "moreToasts_other": "{{count}} weitere",
+    "fewerToasts": "Weniger anzeigen"
   },
   "backgroundJobs": {
     "card": {

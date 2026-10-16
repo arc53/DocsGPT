@@ -972,11 +972,24 @@ paints under the modal's overlay (see "Where a message lives"). The app has one
 `ToastViewport`, mounted in `App.tsx`; it is the live region
 (`role="status"`, `aria-live="polite"`) and the fixed stack, so `Toast`
 cards carry no role and no toast renders its own rail or positioning. Top
-to bottom it holds `TeamNotificationToast`, `ConnectionHealthToast` (a
+to bottom it holds `TeamNotificationToast`, `PushPermissionToast` (the
+"Get notified when it's done?" Web Push prompt) and
+`ConversationNotificationToast` (a chat reporting back, with Open), both
+from `BackgroundNotifications`, `ConnectionHealthToast` (a
 connection that needs reconnecting, with a Reconnect action),
 `ToolApprovalToast`, `UploadToast` and `ActionToast`, and it moves to the
-bottom-left while any agent preview drawer is open (workflow or classic). A new toast component returns only its
-`Toast` cards and is added to that viewport. A result the screen can't show
+bottom-left while any agent preview drawer is open (workflow or classic).
+The stack never covers a composer: `MessageInput` registers its box with
+`useAvoidToasts` (`ui/toast-layout.ts`), and when a composer reaches under
+the stack's column the stack sits just above it; with room beside the
+composer it stays in the corner. It stops short of the header, scrolling
+only once its cards would overflow (so their shadow is not clipped
+otherwise), and its own box lets clicks through to the page. Below `sm` it
+spans the screen and shows only its newest card, the others behind an
+"N more" button. A card that closes itself after a while puts the ref from
+`useToastShown` (`ui/toast-layout.ts`) on its `Toast` and runs its timer
+only while shown, so a folded card never times out unseen. A new toast
+component returns only its `Toast` cards and is added to that viewport. A result the screen can't show
 dispatches `showActionToast({ variant: 'success' | 'destructive', message })`
 from `notifications/actionToastSlice.ts`: a chunk saved from the graph
 reader's edit drawer, which closes as it saves ("Chunk saved"); a copy from a

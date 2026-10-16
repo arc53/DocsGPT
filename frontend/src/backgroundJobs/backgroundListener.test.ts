@@ -115,6 +115,7 @@ describe('background listener', () => {
     window.history.replaceState({}, '', '/');
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     setVisibility('visible');
     window.history.replaceState({}, '', '/');
   });
@@ -140,6 +141,18 @@ describe('background listener', () => {
     store.dispatch(sseEventReceived(notification()));
     await flush();
     expect(selectIsUnread('c1')(store.getState())).toBe(false);
+  });
+
+  it('the conversation this tab shows, while its window lacks focus', async () => {
+    window.history.replaceState({}, '', '/c/c1');
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const store = makeStore();
+    store.dispatch(sseEventReceived(notification()));
+    await flush();
+    expect(selectIsUnread('c1')(store.getState())).toBe(true);
+    expect(push.showLocalNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ url: '/c/c1', tag: 'docsgpt:c1' }),
+    );
   });
 
   it('falls back to the event scope for the conversation', async () => {

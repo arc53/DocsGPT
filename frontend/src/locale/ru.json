@@ -31,7 +31,12 @@
     "dismiss": "Закрыть",
     "toolApprovalTitle": "Требуется одобрение инструмента",
     "toolApprovalReview": "Проверить",
-    "toolApprovalFallbackName": "Диалог"
+    "toolApprovalFallbackName": "Диалог",
+    "moreToasts_one": "Ещё {{count}}",
+    "moreToasts_few": "Ещё {{count}}",
+    "moreToasts_many": "Ещё {{count}}",
+    "moreToasts_other": "Ещё {{count}}",
+    "fewerToasts": "Свернуть"
   },
   "backgroundJobs": {
     "card": {

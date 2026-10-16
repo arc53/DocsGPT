@@ -15,8 +15,9 @@ import {
 } from './backgroundSlice';
 import ConversationNotificationToast from './ConversationNotificationToast';
 import PushPermissionToast from './PushPermissionToast';
-import { usePageVisible } from './usePageVisible';
+import { usePageAttended } from './usePageVisible';
 import { usePresence } from './usePresence';
+import { useTabTitleCount } from './useTabTitleCount';
 import {
   ensurePushSubscription,
   isPushSupported,
@@ -27,7 +28,8 @@ import {
 
 /**
  * Everything notifications need in the signed-in app, mounted once inside
- * the shared `ToastViewport`: presence reporting, the Web Push setup for a
+ * the shared `ToastViewport`: presence reporting, the count in the tab
+ * title, the Web Push setup for a
  * browser that already allowed it, routing a clicked notification, clearing
  * the unread mark of the conversation on screen, and the two toasts.
  */
@@ -39,10 +41,11 @@ export default function BackgroundNotifications() {
   const pushConfig = useSelector(selectPushConfig);
   const unread = useSelector(selectUnread);
   const failed = useSelector(selectFailedConversations);
-  const visible = usePageVisible();
+  const attended = usePageAttended();
   const subscribedFor = useRef<string | null>(null);
 
   usePresence();
+  useTabTitleCount();
 
   useEffect(() => {
     void dispatch(fetchPushConfig());
@@ -75,17 +78,18 @@ export default function BackgroundNotifications() {
       navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [navigate]);
 
-  // The conversation on screen is read. A failed answer marks its chat
+  // The conversation on screen is read, once the user can be looking at it
+  // (a window behind another app is not). A failed answer marks its chat
   // unread on the server without an event, so Activity's failed mark counts.
   const onScreen = conversationIdFromPath(pathname);
   const onScreenUnread = Boolean(
     onScreen && (unread[onScreen] || failed.has(onScreen)),
   );
   useEffect(() => {
-    if (visible && onScreen && onScreenUnread) {
+    if (attended && onScreen && onScreenUnread) {
       void dispatch(markConversationRead(onScreen));
     }
-  }, [visible, onScreen, onScreenUnread, dispatch]);
+  }, [attended, onScreen, onScreenUnread, dispatch]);
 
   return (
     <>
