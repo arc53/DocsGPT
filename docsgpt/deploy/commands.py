@@ -1188,8 +1188,7 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
             where += ("; Docker on a Mac has no GPU, so run `docsgpt decide-server --device mps` on the host and "
                       "set DECISION_BASE_URL=http://host.docker.internal:7095")
     elif url:
-        key = settings.DECISION_KEY or (env.get("INTERNAL_KEY") if docker else None)
-        level, where, profile = _probe_decider(url, key, settings.DECISION_PROTOCOL)
+        level, where, profile = _probe_decider(url, settings.DECISION_KEY, settings.DECISION_PROTOCOL)
     else:
         where = _local_decisions(settings)
     verdicts = []
@@ -1200,6 +1199,12 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
         verdicts.append(f"{name} {mode}")
     if not on:
         level = "ok"
+    sidecar = stack.runs_decider(env) or settings.DECISION_BASE_URL == stack.DECIDER_URL
+    if docker and sidecar and not settings.DECISION_KEY:
+        # Whatever the features, the decider container does not start without it.
+        level = "warn"
+        where += ("; the decider refuses to start without DECISION_KEY: set one in .env "
+                  "(`docsgpt up --decider` writes one)")
     return Check("decisions", level, f"{where}; {', '.join(verdicts) or 'no features'}")
 
 

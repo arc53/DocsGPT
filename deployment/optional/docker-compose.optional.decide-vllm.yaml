@@ -20,7 +20,10 @@
 #                            raise the share.
 #
 # vLLM logs no prompts (request logging is off unless --enable-log-requests),
-# and it checks the same DECISION_KEY the backend and worker send.
+# and it checks the same DECISION_KEY the backend and worker send. Set it in
+# .env (a long random string, e.g. from openssl rand -hex 32): without it, every
+# compose command that names this file stops with an error rather than run vLLM
+# open to the stack network.
 services:
   decider-vllm:
     image: vllm/vllm-openai:v0.31.0
@@ -40,7 +43,7 @@ services:
       - --gpu-memory-utilization
       - "${DECISION_VLLM_GPU_SHARE:-0.2}"
     environment:
-      - VLLM_API_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
+      - "VLLM_API_KEY=${DECISION_KEY:?set DECISION_KEY in .env and pass --env-file .env; vLLM checks it as its API key}"
     volumes:
       - decision_vllm_cache:/root/.cache/huggingface
     shm_size: 2gb

@@ -119,17 +119,28 @@ class TestExposure:
     def test_by_default_there_is_no_decider(self):
         updates = _first_install()
         assert "COMPOSE_PROFILES" not in updates and "DECISION_BASE_URL" not in updates
+        assert "DECISION_KEY" not in updates
 
     def test_the_decider_turns_on_its_profile_and_points_the_services_at_it(self):
         updates = _first_install(decider=True)
         assert updates["COMPOSE_PROFILES"] == "decider"
         assert updates["DECISION_BASE_URL"] == stack.DECIDER_URL
-        existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DOCSGPT_BIND": "127.0.0.1"}
+        assert updates["DECISION_KEY"] not in (None, updates["INTERNAL_KEY"]), "its own key, never INTERNAL_KEY"
+        existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DECISION_KEY": "d",
+                    "DOCSGPT_BIND": "127.0.0.1"}
         assert stack.runs_decider(existing)
         kept = stack.plan(existing, image_tag="x", fresh_database=False)
-        assert "COMPOSE_PROFILES" not in kept and "DECISION_BASE_URL" not in kept, "it persists"
+        assert not {"COMPOSE_PROFILES", "DECISION_BASE_URL", "DECISION_KEY"} & set(kept), "it persists"
         off = stack.plan(existing, image_tag="x", decider=False, fresh_database=False)
         assert off["COMPOSE_PROFILES"] is None and off["DECISION_BASE_URL"] is None
+        assert "DECISION_KEY" not in off, "a server on the host may still use it"
+
+    def test_the_decider_keeps_an_existing_key_and_gets_one_when_it_has_none(self):
+        existing = {"DECISION_KEY": "own", "DOCSGPT_BIND": "127.0.0.1"}
+        assert "DECISION_KEY" not in stack.plan(existing, image_tag="x", decider=True, fresh_database=False)
+        running = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DOCSGPT_BIND": "127.0.0.1"}
+        updates = stack.plan(running, image_tag="x", fresh_database=False, secret=_secrets())
+        assert updates["DECISION_KEY"] not in (None, updates["INTERNAL_KEY"]), "a decider started before keys existed"
 
     def test_turning_the_decider_on_replaces_a_vllm_protocol(self):
         existing = {"DECISION_BASE_URL": "http://gpu:8000", "DECISION_PROTOCOL": "vllm", "DOCSGPT_BIND": "127.0.0.1"}

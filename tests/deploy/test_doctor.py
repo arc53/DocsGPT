@@ -728,10 +728,18 @@ class TestDoctorDecisions:
 
     def test_a_docker_stack_with_the_decider_points_at_it(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095",
+        env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095", "DECISION_KEY": "d",
                "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok" and "decider container" in check.detail
+
+    @pytest.mark.parametrize("env", [{"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095"},
+                                     {"COMPOSE_PROFILES": "https,decider"},
+                                     {"DECISION_BASE_URL": "http://decider:7095"}])
+    def test_the_decider_without_a_key_is_a_warning_even_with_every_feature_off(self, monkeypatch, env):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        check = commands._check_decisions({**env, "INTERNAL_KEY": "i"}, docker=True)
+        assert check.level == "warn" and "without DECISION_KEY: set one in .env" in check.detail
 
     def test_a_decider_url_without_its_profile_is_a_warning(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
@@ -763,13 +771,12 @@ class TestDoctorDecisions:
         assert str(request.url) == "http://127.0.0.1:7095/v1/models"
         assert request.headers["authorization"] == "Bearer k"
 
-    def test_a_docker_stack_sends_the_key_compose_derives(self, server):
+    @pytest.mark.parametrize("docker", [True, False])
+    def test_internal_key_is_never_sent(self, server, docker):
         seen, reply = server
         reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2"}]}
-        commands._check_decisions({"DECISION_BASE_URL": "http://127.0.0.1:7095", "INTERNAL_KEY": "i"}, docker=True)
-        assert seen[0].headers["authorization"] == "Bearer i"
-        commands._check_decisions({"DECISION_BASE_URL": "http://127.0.0.1:7095", "INTERNAL_KEY": "i"}, docker=False)
-        assert "authorization" not in seen[1].headers
+        commands._check_decisions({"DECISION_BASE_URL": "http://127.0.0.1:7095", "INTERNAL_KEY": "i"}, docker=docker)
+        assert "authorization" not in seen[0].headers
 
     @pytest.mark.parametrize("status, error, said", [(401, None, "refused DECISION_KEY"),
                                                      (500, None, "HTTP 500"),

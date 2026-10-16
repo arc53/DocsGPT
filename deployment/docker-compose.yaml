@@ -1,15 +1,15 @@
 # Builds the images from this checkout. The API (7091) and UI (5173) are published
 # on DOCSGPT_BIND (default 127.0.0.1, this machine only; 0.0.0.0 for every
 # interface, after setting AUTH_TYPE), Postgres and Redis on 127.0.0.1 only. Run it
-# with --env-file .env from the repository root so DOCSGPT_BIND and INTERNAL_KEY
-# are read.
+# with --env-file .env from the repository root so DOCSGPT_BIND is read.
 # The decision model runs in the backend, which the worker calls, and loads
 # nothing until a decision feature is turned on. To serve it from the decider
-# container instead, add two lines to .env:
+# container instead, add three lines to .env:
 #   COMPOSE_PROFILES=decider
 #   DECISION_BASE_URL=http://decider:7095
-# INTERNAL_KEY keys it (DECISION_KEY, unless .env sets one), and the backend
-# does not wait for it (decisions fail open).
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# The decider refuses to start without DECISION_KEY, and the backend does not
+# wait for it (decisions fail open).
 name: docsgpt-oss
 services:
   frontend:
@@ -65,7 +65,6 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
@@ -107,7 +106,6 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       # Host data stays under application/ (the old package directory) for this
       # release so an upgraded checkout keeps its indexes; it moves with the
@@ -137,8 +135,6 @@ services:
     command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
     env_file:
       - ../.env
-    environment:
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       - decision_models:/app/models/decision
     mem_limit: ${DECISION_MEMORY:-2g}

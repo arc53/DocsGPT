@@ -21,7 +21,7 @@ from docsgpt.decisions.models import V01
 DEPLOYMENT = Path(__file__).resolve().parents[2] / "deployment"
 STACKS = ("docker-compose.yaml", "docker-compose-hub.yaml", "docker-compose-standalone.yaml")
 OVERLAY = DEPLOYMENT / "optional" / "docker-compose.optional.decide-vllm.yaml"
-KEY = "DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}"
+EVERY_FILE = [DEPLOYMENT / name for name in (*STACKS, "docker-compose-dev.yaml")] + [OVERLAY]
 CACHE = "decision_models:/app/models/decision"
 
 
@@ -42,7 +42,8 @@ class TestStacks:
         assert decider["command"] == "python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu"
         assert decider["mem_limit"] == "${DECISION_MEMORY:-2g}"
         assert "cpus" not in decider and "ports" not in decider
-        assert KEY in _environment(decider)
+        assert "environment" not in decider, "DECISION_KEY comes from .env, through env_file"
+        assert decider["env_file"]
         assert decider["volumes"] == [CACHE]
 
     def test_it_runs_the_backends_image(self, name):
@@ -52,12 +53,11 @@ class TestStacks:
         assert decider.get("user") == backend.get("user") == "root"
 
     @pytest.mark.parametrize("service", ["backend", "worker"])
-    def test_backend_and_worker_name_no_decision_server_and_keep_the_stack_key(self, name, service):
-        """An unset DECISION_BASE_URL is local mode; set in .env, it arrives through env_file."""
+    def test_backend_and_worker_name_no_decision_server_and_no_key(self, name, service):
+        """An unset DECISION_BASE_URL is local mode; set in .env, it and DECISION_KEY arrive through env_file."""
         target = _load(DEPLOYMENT / name)["services"][service]
         env = _environment(target)
-        assert not [entry for entry in env if entry.split("=")[0] == "DECISION_BASE_URL"]
-        assert KEY in env
+        assert not [entry for entry in env if entry.split("=")[0] in ("DECISION_BASE_URL", "DECISION_KEY")]
         assert CACHE in target["volumes"]
         assert "decider" not in (target.get("depends_on") or {}), "decisions fail open; nothing waits for them"
 
@@ -67,6 +67,15 @@ class TestStacks:
         for service in compose["services"].values():
             for volume in service.get("volumes") or []:
                 assert volume.split(":")[1] != "/app/models", volume
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("path", EVERY_FILE, ids=lambda path: path.name)
+def test_internal_key_never_keys_a_decision_server(path):
+    """``INTERNAL_KEY`` guards the API's internal routes; a DECISION_BASE_URL outside the stack must never get it."""
+    for name, service in _load(path)["services"].items():
+        for entry in _environment(service):
+            assert "INTERNAL_KEY" not in entry, (name, entry)
 
 
 @pytest.mark.unit
@@ -100,23 +109,33 @@ class TestVllmOverlay:
         assert "--enable-log-requests" not in args
         assert service["deploy"]["resources"]["reservations"]["devices"] == [{"capabilities": ["gpu"]}]
 
+    def test_vllm_requires_the_decision_key(self):
+        """``:?`` stops Compose with a message rather than run vLLM with no key."""
+        (key,) = [entry for entry in _environment(_load(OVERLAY)["services"]["decider-vllm"])
+                  if entry.startswith("VLLM_API_KEY=")]
+        assert key.startswith("VLLM_API_KEY=${DECISION_KEY:?set DECISION_KEY in .env")
+
     @pytest.mark.parametrize("service", ["backend", "worker"])
     def test_backend_and_worker_point_at_it(self, service):
         env = _environment(_load(OVERLAY)["services"][service])
         assert "DECISION_BASE_URL=http://decider-vllm:8000" in env and "DECISION_PROTOCOL=vllm" in env
 
 
-def _resolved(where: Path, *files: Path, dotenv: str = "", **environ: str) -> dict[str, Any]:
+def _config(where: Path, *files: Path, dotenv: str = "", **environ: str) -> subprocess.CompletedProcess:
     """``docker compose config`` on copies of ``files`` in ``where``, with ``dotenv`` as the stack's ``.env``, so no
     ``.env`` of this machine is read."""
     (where / ".env").write_text(dotenv, encoding="utf-8")
     for f in files:
         shutil.copy(f, where / f.name)
-    result = subprocess.run(
+    return subprocess.run(
         ["docker", "compose", *[arg for f in files for arg in ("-f", f.name)], "config", "--format", "json"],
         cwd=where, capture_output=True, text=True, timeout=60,
         env={"PATH": os.environ.get("PATH", ""), "HOME": str(where), **environ},
     )
+
+
+def _resolved(where: Path, *files: Path, dotenv: str = "", **environ: str) -> dict[str, Any]:
+    result = _config(where, *files, dotenv=dotenv, **environ)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 
@@ -129,26 +148,35 @@ class TestResolved:
         assert "decider" not in services
         for name in ("backend", "worker"):
             assert "DECISION_BASE_URL" not in services[name]["environment"], name
-            assert services[name]["environment"]["DECISION_KEY"] == "k", name
+            assert "DECISION_KEY" not in services[name]["environment"], name
 
-    def test_two_env_lines_start_the_decider_and_point_both_at_it(self, tmp_path):
-        dotenv = "INTERNAL_KEY=stack-secret\nCOMPOSE_PROFILES=decider\nDECISION_BASE_URL=http://decider:7095\n"
+    def test_three_env_lines_start_the_decider_and_point_both_at_it(self, tmp_path):
+        dotenv = ("INTERNAL_KEY=stack-secret\nCOMPOSE_PROFILES=decider\nDECISION_BASE_URL=http://decider:7095\n"
+                  "DECISION_KEY=decider-secret\n")
         services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", dotenv=dotenv)["services"]
         for name in ("backend", "worker", "decider"):
-            assert services[name]["environment"]["DECISION_KEY"] == "stack-secret", name
+            assert services[name]["environment"]["DECISION_KEY"] == "decider-secret", name
         for name in ("backend", "worker"):
             assert services[name]["environment"]["DECISION_BASE_URL"] == "http://decider:7095", name
 
-    def test_an_explicit_key_and_url_win(self, tmp_path):
-        dotenv = ("INTERNAL_KEY=stack-secret\nDECISION_KEY=own\nCOMPOSE_PROFILES=decider\n"
-                  "DECISION_BASE_URL=http://host.docker.internal:7095\n")
-        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", dotenv=dotenv)["services"]
-        assert services["decider"]["environment"]["DECISION_KEY"] == "own"
-        assert services["worker"]["environment"]["DECISION_BASE_URL"] == "http://host.docker.internal:7095"
+    def test_a_server_outside_the_stack_never_gets_internal_key(self, tmp_path):
+        dotenv = "INTERNAL_KEY=stack-secret\nCOMPOSE_PROFILES=decider\nDECISION_BASE_URL=http://gpu.example.com:7095\n"
+        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", dotenv=dotenv,
+                             INTERNAL_KEY="stack-secret")["services"]
+        for name in ("backend", "worker", "decider"):
+            assert "DECISION_KEY" not in services[name]["environment"], name
 
     def test_the_overlay_layers_on_the_standalone_file(self, tmp_path):
-        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", OVERLAY, INTERNAL_KEY="k")["services"]
+        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", OVERLAY,
+                             dotenv="INTERNAL_KEY=i\nDECISION_KEY=k\n")["services"]
         assert services["backend"]["environment"]["DECISION_PROTOCOL"] == "vllm"
         assert services["decider-vllm"]["environment"]["VLLM_API_KEY"] == "k"
         assert services["worker"]["environment"]["DECISION_BASE_URL"] == "http://decider-vllm:8000"
         assert "decider" not in services
+
+    def test_the_overlay_stops_without_a_key(self, tmp_path):
+        result = _config(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", OVERLAY,
+                         dotenv="INTERNAL_KEY=i\n", INTERNAL_KEY="i")
+        assert result.returncode != 0 and "set DECISION_KEY in .env" in result.stderr
+        alone = _config(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", dotenv="INTERNAL_KEY=i\n")
+        assert alone.returncode == 0, "the stack alone needs no key"

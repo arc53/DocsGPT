@@ -34,17 +34,18 @@
 #   EMBEDDINGS_NAME        defaults to granite here (this stack always starts on
 #                          fresh volumes, so there is no older index to keep
 #                          compatible); the code default stays mpnet for upgrades.
-#   DECISION_KEY           bearer key the backend and worker send the decider
-#                          (default: INTERNAL_KEY)
 #   DECISION_MEMORY        the decider's memory limit (default: 2g)
 #
 # The decision model runs in the backend, which the worker calls, and loads and
 # downloads nothing until a decision feature is turned on in .env; see
 # https://docs.docsgpt.cloud/Models/decision-model. To serve it from the decider
-# container instead (`docsgpt up --decider` does this), add two lines to .env:
+# container instead (`docsgpt up --decider` does this), add three lines to .env:
 #   COMPOSE_PROFILES=decider
 #   DECISION_BASE_URL=http://decider:7095
-# (COMPOSE_PROFILES=https,decider with the HTTPS profile below). DECISION_BASE_URL
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# (COMPOSE_PROFILES=https,decider with the HTTPS profile below). The decider
+# refuses to start without DECISION_KEY, which the backend and worker send it
+# from the same .env; INTERNAL_KEY never keys it. DECISION_BASE_URL
 # can also name another server, e.g. http://host.docker.internal:7095 for
 # `docsgpt decide-server --device mps` on a Mac. The backend does not wait
 # for it: decisions fail open.
@@ -78,7 +79,6 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     # A model server on the host (Ollama, vLLM, ...) is reachable as
     # host.docker.internal on Linux too, as it is on Docker Desktop.
     extra_hosts:
@@ -114,7 +114,6 @@ services:
       - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - API_URL=http://backend:7091
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -142,8 +141,6 @@ services:
     env_file:
       - path: .env
         required: false
-    environment:
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       - decision_models:/app/models/decision
     mem_limit: ${DECISION_MEMORY:-2g}

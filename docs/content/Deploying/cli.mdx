@@ -59,7 +59,7 @@ directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
 | `--port N` | Host port for the UI and API (default `7091`). |
 | `--provider NAME`, `--api-key KEY`, `--model NAME`, `--base-url URL` | The model provider: `docsgpt` (default), `openai`, `anthropic`, `google`, `openrouter`, `groq` or `openai-compatible`. `DOCSGPT_API_KEY` can carry the key instead. |
 | `--docling` / `--no-docling` | Switch to the image with the docling parser engine and OCR, or back. |
-| `--decider` / `--no-decider` | Serve the [decision model](/Models/decision-model#the-decider) from a `decider` container of its own instead of the API process, or go back. Kept for later runs. |
+| `--decider` / `--no-decider` | Serve the [decision model](/Models/decision-model#the-decider) from a `decider` container of its own instead of the API process, or go back. Kept for later runs. `--decider` also writes a random `DECISION_KEY` when `.env` has none; `--no-decider` keeps it. |
 | `--image-tag TAG` | Run another image tag than the package's version, for example `develop`. |
 | `--native`, `--postgres-uri URI`, `--redis-url URL` | Run the API and the worker as services on this machine, against your own Postgres and Redis. See [Install with pip](/Deploying/Pip-Install#run-it-as-services-without-docker). |
 | `-y`, `--yes` | Ask nothing: use the flags, then the defaults. |

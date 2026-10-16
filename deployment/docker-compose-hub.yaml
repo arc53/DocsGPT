@@ -8,7 +8,6 @@
 #   DOCSGPT_BIND           interface the API (7091) and UI (5173) are published on:
 #                          127.0.0.1 (default, this machine only) or 0.0.0.0 (every
 #                          interface; set AUTH_TYPE first, see Deploying/Security)
-#   DECISION_KEY           bearer key for the decider (default: INTERNAL_KEY)
 #   DECISION_MEMORY        the decider's memory limit (default: 2g)
 # Set them in ../.env and pass it with --env-file .env (Compose otherwise looks
 # for deployment/.env), or in the shell. Postgres and Redis are
@@ -17,9 +16,11 @@
 #
 # The decision model runs in the backend, which the worker calls, and loads
 # nothing until a decision feature is turned on. To serve it from the decider
-# container instead, add two lines to ../.env:
+# container instead, add three lines to ../.env:
 #   COMPOSE_PROFILES=decider
 #   DECISION_BASE_URL=http://decider:7095
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# The decider refuses to start without DECISION_KEY.
 name: docsgpt-oss
 services:
 
@@ -55,7 +56,6 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
@@ -86,7 +86,6 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       # Host data stays under application/ (the old package directory) for this
       # release so an upgraded checkout keeps its indexes; it moves with the
@@ -111,8 +110,6 @@ services:
     command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
     env_file:
       - ../.env
-    environment:
-      - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       - decision_models:/app/models/decision
     mem_limit: ${DECISION_MEMORY:-2g}

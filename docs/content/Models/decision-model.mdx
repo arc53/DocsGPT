@@ -78,18 +78,19 @@ By default the model runs inside the API process. The `decider` runs it in a con
 
 To turn it on:
 
-- **Compose.** Add two lines to `.env`, then run your `docker compose ... up -d` again:
+- **Compose.** Add three lines to `.env`, then run your `docker compose ... up -d` again:
 
   ```env
   COMPOSE_PROFILES=decider
   DECISION_BASE_URL=http://decider:7095
+  DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
   ```
 
-  The first starts the container, the second points the backend and the worker at it. A stack that already uses the `https` profile lists both: `COMPOSE_PROFILES=https,decider`. To turn it off, remove both lines, run `up -d` again and remove the container with `docker compose --profile decider rm --stop --force decider`.
-- **`docsgpt up --decider`** writes both lines to the stack's `.env`, and every later `docsgpt up` keeps them. `docsgpt up --no-decider` removes them and the container.
+  The first starts the container, the second points the backend and the worker at it, and the third is the key they send it; the decider refuses to start without one and logs why. A stack that already uses the `https` profile lists both: `COMPOSE_PROFILES=https,decider`. To turn it off, remove the first two lines, run `up -d` again and remove the container with `docker compose --profile decider rm --stop --force decider`.
+- **`docsgpt up --decider`** writes the first two lines to the stack's `.env`, and a random `DECISION_KEY` when it has none; every later `docsgpt up` keeps them. `docsgpt up --no-decider` removes the first two and the container, and keeps the key.
 - **Kubernetes.** Uncomment `components: - optional-decider` in `deployment/k8s/kustomization.yaml` and apply it again with `kubectl apply -k deployment/k8s/`. The component adds the `docsgpt-decider` Deployment, its Service and the `docsgpt-decision-models` volume claim, and sets `DECISION_BASE_URL` on the API and the worker; see [Kubernetes](/Deploying/Kubernetes-Deploying#the-decision-model).
 
-The decider idles at about 100 MB and loads nothing until a feature calls. The API and the worker call it at `DECISION_BASE_URL` (`http://decider:7095` in Compose, `http://docsgpt-decider-service:7095` in Kubernetes) with `DECISION_KEY`, which the stacks set from `INTERNAL_KEY` unless `.env` sets its own. The first feature turned on downloads the model into the decider's volume (`decision_models` in Compose, the `docsgpt-decision-models` claim in Kubernetes), where it survives upgrades; the API and the worker then keep only the 11 MB tokenizer.
+The decider idles at about 100 MB and loads nothing until a feature calls. The API and the worker call it at `DECISION_BASE_URL` (`http://decider:7095` in Compose, `http://docsgpt-decider-service:7095` in Kubernetes) with `DECISION_KEY`: in Compose the one `.env` sets, in Kubernetes `INTERNAL_KEY`, which the component sets for all three and which stays inside the cluster. The first feature turned on downloads the model into the decider's volume (`decision_models` in Compose, the `docsgpt-decision-models` claim in Kubernetes), where it survives upgrades; the API and the worker then keep only the 11 MB tokenizer.
 
 - **Memory and CPU.** Compose limits it to 2 GB (`DECISION_MEMORY` in `.env`), Kubernetes to 2Gi and 4 CPUs; the model peaks under 1 GB. Compose sets no CPU limit: interactive calls are short, and background work takes at most `DECISION_BACKGROUND_SHARE` of the cores.
 - **Health.** The API never waits for it. A decider that is down, restarting or unreachable makes features carry on without the model (see the failure handling under [API mode](#api-mode)). `docsgpt up` and Kubernetes restart it; the checkout Compose files restart none of their services, so there it stays down until the next `docker compose up`. Its own `GET /health` answers while the process runs, loaded or not.
@@ -129,7 +130,7 @@ docker compose --env-file .env -f deployment/docker-compose-hub.yaml \
   -f deployment/optional/docker-compose.optional.decide-vllm.yaml up -d
 ```
 
-It needs an amd64 host with the NVIDIA Container Toolkit. vLLM takes `DECISION_VLLM_GPU_SHARE` of the card's memory (0.2 by default, about 4.8 GB of 24 GB), which leaves room for an LLM such as [Ollama](/Deploying/Docker-Deploying#optional-ollama-setup-local-models) on the same card; if vLLM fails to start on a smaller card, raise it. Until vLLM answers, features carry on without the model. vLLM checks the same `DECISION_KEY` and logs no prompts. With `docsgpt up`, which runs its own Compose file only, run vLLM beside the stack as in [API mode](#api-mode) and set `DECISION_BASE_URL` and `DECISION_PROTOCOL=vllm` in its `.env`.
+It needs an amd64 host with the NVIDIA Container Toolkit. vLLM takes `DECISION_VLLM_GPU_SHARE` of the card's memory (0.2 by default, about 4.8 GB of 24 GB), which leaves room for an LLM such as [Ollama](/Deploying/Docker-Deploying#optional-ollama-setup-local-models) on the same card; if vLLM fails to start on a smaller card, raise it. Until vLLM answers, features carry on without the model. vLLM checks the same `DECISION_KEY` and logs no prompts; set it in `.env`, since without it every `docker compose` command that names the overlay stops with an error rather than start vLLM with no key. With `docsgpt up`, which runs its own Compose file only, run vLLM beside the stack as in [API mode](#api-mode) and set `DECISION_BASE_URL` and `DECISION_PROTOCOL=vllm` in its `.env`.
 
 ## API mode
 
@@ -162,7 +163,7 @@ In API mode DocsGPT downloads only the model's tokenizer (11 MB, at the same pin
 
 **The server receives the text** of every message, chunk or conversation a feature asks about. Point `DECISION_BASE_URL` only at a server you trust with that data, as you would an LLM provider: it acts as a data processor for your users' content. DocsGPT sends `DECISION_KEY` as a bearer key when it is set, and no key otherwise; it never sends `INTERNAL_KEY`, which guards its own internal API, to the decision server.
 
-The Docker and Kubernetes stacks set `DECISION_KEY` on the API, the worker and the decider from their `INTERNAL_KEY`, explicitly, in their own files; DocsGPT itself never falls back to it.
+The Compose files pass `DECISION_KEY` from `.env` like any other setting and never set it from `INTERNAL_KEY`, so a server outside the stack gets no key until you set one. In Kubernetes, only the in-cluster `optional-decider` component sets `DECISION_KEY` from `INTERNAL_KEY`, on the API, the worker and the decider; DocsGPT itself never falls back to it.
 
 When the server fails, features carry on without it:
 

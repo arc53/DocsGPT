@@ -137,6 +137,8 @@ def plan(
     ``decider`` turns the decider sidecar on (its Compose profile, and ``DECISION_BASE_URL``
     pointing at it) or off, leaving a ``DECISION_BASE_URL`` that names another server alone;
     ``None`` keeps what the last ``up`` chose. Without it the model runs in the API process.
+    A stack that runs the decider gets a ``DECISION_KEY`` when it has none; turning the
+    decider off keeps the key, which a server on the host may use.
 
     Given ``lan_ip``, ``API_URL`` follows the address DocsGPT is opened at (see
     :func:`public_api_url`; ``written_api_url`` is the value the last ``up``
@@ -178,7 +180,11 @@ def plan(
     if expose in ("network", "domain") and not existing.get("AUTH_TYPE"):
         wanted["AUTH_TYPE"] = "simple_jwt"
 
-    for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
+    keys = ["INTERNAL_KEY", "JWT_SECRET_KEY"]
+    if DECIDER_PROFILE in profiles:
+        # The decider listens on the stack network and refuses to start without its own key.
+        keys.append("DECISION_KEY")
+    for key in keys:
         if not existing.get(key):
             wanted[key] = secret()
     if fresh_database:

@@ -319,8 +319,9 @@ def serve(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, device: Optional[s
     setup_logging()
     device = device or settings.DECISION_DEVICE
     if not settings.DECISION_KEY and not loopback(host):
-        logger.error("Refusing to serve the decision model on %s without DECISION_KEY: set it here and on the API "
-                     "and worker (the shipped stacks pass INTERNAL_KEY), or bind 127.0.0.1", host)
+        logger.error("Refusing to serve the decision model on %s without DECISION_KEY: set DECISION_KEY in .env "
+                     "(a long random string, e.g. `openssl rand -hex 32`; the API and the worker send the same one), "
+                     "or bind 127.0.0.1", host)
         return 2
     try:
         backend = build_backend(device)

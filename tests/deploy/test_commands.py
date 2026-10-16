@@ -259,6 +259,8 @@ class TestUpAgain:
         assert _run(["up", "--yes", "--dir", str(tmp_path), "--decider"], _context()) == 0
         env = envfile.read(tmp_path / ".env")
         assert env["COMPOSE_PROFILES"] == "decider" and env["DECISION_BASE_URL"] == "http://decider:7095"
+        key = env["DECISION_KEY"]
+        assert len(key) == 64 and key != env["INTERNAL_KEY"]
         docker = FakeDocker(volumes={"docsgpt_postgres_data"})
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
         assert envfile.read(tmp_path / ".env")["COMPOSE_PROFILES"] == "decider"
@@ -267,6 +269,7 @@ class TestUpAgain:
         assert _run(["up", "--yes", "--dir", str(tmp_path), "--no-decider"], _context(docker)) == 0
         env = envfile.read(tmp_path / ".env")
         assert "COMPOSE_PROFILES" not in env and "DECISION_BASE_URL" not in env
+        assert env["DECISION_KEY"] == key
         assert docker.calls == [
             (tmp_path, [*EVERY_PROFILE, "rm", "--stop", "--force", "decider"]),
             (tmp_path, ["up", "-d", "--remove-orphans"]),
