@@ -52,7 +52,7 @@ annotated-doc==0.0.5
     # via typer
 annotated-types==0.8.0
     # via pydantic
-anthropic==1.11.0
+anthropic==1.12.1
     # via docsgpt
 antlr4-python3-runtime==4.9.3
     # via omegaconf
@@ -80,8 +80,12 @@ attrs==26.1.0
     #   referencing
 authlib==1.8.0
     # via fastmcp-slim
-beartype==0.22.9
+beartype==0.22.9 ; python_full_version < '3.15'
     # via py-key-value-aio
+beartype==0.23.1 ; python_full_version >= '3.15'
+    # via
+    #   fastmcp-slim
+    #   py-key-value-aio
 beautifulsoup4==4.15.0
     # via
     #   docling-slim
@@ -93,9 +97,9 @@ billiard==4.3.1
     # via celery
 blinker==1.9.0
     # via flask
-boto3==1.43.108
+boto3==1.43.110
     # via docsgpt
-botocore==1.43.108
+botocore==1.43.114
     # via
     #   boto3
     #   s3transfer
@@ -165,19 +169,19 @@ cyclopts==5.2.0
     # via fastmcp-slim
 dataclasses-json==0.6.7
     # via docsgpt
-daytona==0.222.0
+daytona==0.223.0
     # via docsgpt
-daytona-analytics-api-client==0.222.0
+daytona-analytics-api-client==0.223.0
     # via daytona
-daytona-analytics-api-client-async==0.222.0
+daytona-analytics-api-client-async==0.223.0
     # via daytona
-daytona-api-client==0.222.0
+daytona-api-client==0.223.0
     # via daytona
-daytona-api-client-async==0.222.0
+daytona-api-client-async==0.223.0
     # via daytona
-daytona-toolbox-api-client==0.222.0
+daytona-toolbox-api-client==0.223.0
     # via daytona
-daytona-toolbox-api-client-async==0.222.0
+daytona-toolbox-api-client-async==0.223.0
     # via daytona
 ddgs==9.16.0
     # via docsgpt
@@ -199,7 +203,7 @@ dnspython==2.8.0
     # via email-validator
 doclang==0.7.3
     # via docling-core
-docling==2.134.0
+docling==2.136.0
     # via docsgpt
 docling-core==2.100.0
     # via
@@ -209,7 +213,7 @@ docling-ibm-models==4.0.3
     # via docling-slim
 docling-parse==7.22.2
     # via docling-slim
-docling-slim==2.134.0
+docling-slim==2.136.0
     # via docling
 docstring-parser==0.18.0
     # via
@@ -231,11 +235,11 @@ faker==40.41.0
     # via polyfactory
 fast-ebook==0.2.0
     # via docsgpt
-fastembed==0.8.1
+fastembed==0.9.0
     # via docsgpt
-fastmcp==4.0.11
+fastmcp==4.1.0
     # via docsgpt
-fastmcp-slim==4.0.11
+fastmcp-slim==4.1.0
     # via fastmcp
 filelock==4.0.12
     # via
@@ -277,7 +281,7 @@ google-auth-httplib2==0.4.4
     # via google-api-python-client
 google-auth-oauthlib==1.5.0
     # via docsgpt
-google-genai==2.28.0
+google-genai==2.29.0
     # via docsgpt
 google-re2==1.1.20251105
     # via cel-python
@@ -488,7 +492,7 @@ numpy==2.5.3
     #   faiss-cpu
     #   fastembed
     #   onnxruntime
-    #   opencv-python
+    #   opencv-python-headless
     #   pandas
     #   qdrant-client
     #   rapidocr
@@ -505,17 +509,17 @@ olefile==0.47
     # via python-oxmsg
 omegaconf==2.3.1
     # via rapidocr
-onnxruntime==1.30.0
+onnxruntime==1.31.0
     # via
     #   docsgpt
     #   fastembed
-openai==3.26.0
+openai==3.26.1
     # via docsgpt
 openapi-pydantic==0.6.0
     # via fastmcp-slim
 openapi3-parser==2.0.0
     # via docsgpt
-opencv-python==5.0.0.93
+opencv-python-headless==5.0.0.93
     # via rapidocr
 openpyxl==3.1.5
     # via
@@ -664,7 +668,7 @@ pdf2image==1.17.0
     # via docsgpt
 pendulum==3.2.0
     # via cel-python
-pgvector==0.5.0
+pgvector==0.5.1
     # via docsgpt
 pillow==12.3.0
     # via
@@ -732,7 +736,7 @@ pyclipper==1.4.0
     # via rapidocr
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.13.5
+pydantic==2.14.0
     # via
     #   anthropic
     #   daytona
@@ -756,7 +760,7 @@ pydantic==2.13.5
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.46.5
+pydantic-core==2.50.0
     # via
     #   elevenlabs
     #   pydantic
@@ -780,7 +784,7 @@ pylatexenc==2.11
     # via docling-slim
 pyparsing==3.3.3
     # via httplib2
-pypdf==6.19.0
+pypdf==6.20.0
     # via docsgpt
 pypdfium2==5.14.0
     # via
@@ -854,7 +858,7 @@ pyyaml==6.0.3
     #   uvicorn
 qdrant-client==1.19.1
     # via docsgpt
-rapidocr==3.9.2
+rapidocr==3.10.0
     # via
     #   docling-slim
     #   docsgpt
@@ -950,7 +954,7 @@ sniffio==1.3.1
     #   openai
 soupsieve==2.10
     # via beautifulsoup4
-sqlalchemy==2.1.3
+sqlalchemy==2.1.4
     # via
     #   alembic
     #   docsgpt
@@ -974,7 +978,7 @@ tiktoken==0.14.0
     # via docsgpt
 tldextract==5.4.0
     # via docsgpt
-tokenizers==0.23.2
+tokenizers==0.23.3
     # via
     #   docsgpt
     #   fastembed
