@@ -1831,6 +1831,7 @@ class StreamProcessor:
         return build_dispatcher(
             _legacy_classic,
             sources=per_source,
+            conversation_id=getattr(self, "conversation_id", None),
             **retriever_kwargs,
         )
 

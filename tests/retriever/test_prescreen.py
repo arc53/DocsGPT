@@ -198,3 +198,56 @@ class TestStageBuilders:
         assert max_candidate_k({"a": a, "b": b, "c": c}) == 50
         assert max_candidate_k({"c": c}) is None
         assert max_candidate_k({}) is None
+
+    def test_decision_backend_is_not_an_llm_stage(self):
+        rc = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "decision"})
+        assert build_prescreen_stages({"a": rc}, llm_name="openai", api_key="k", model_id="m") == []
+        # It still widens the fetch.
+        assert max_candidate_k({"a": rc}) == 30
+
+    def test_the_group_factory_composes_both_backends(self):
+        from docsgpt.retriever.stages import build_group_stages
+        from docsgpt.retriever.stages.relevance import RelevanceStage
+
+        llm = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30})
+        decision = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "decision", "max_keep": 5})
+        group = {"retrievals": {"a": llm, "b": decision}, "relevance": {"mode": "on", "candidate_k": 20}}
+        stages = build_group_stages(group, llm={"llm_name": "openai", "api_key": "k", "model_id": "m"})
+        assert [type(s) for s in stages] == [PreScreenStage, RelevanceStage]
+        assert stages[1].policy.feature == "rag_prescreen" and stages[1].policy.keep == 5
+        assert stages[1].policy.threshold == 0.2
+
+    def test_prescreen_module_stands_alone(self):
+        import docsgpt.retriever.stages.prescreen as prescreen
+
+        assert "relevance" not in prescreen.__dict__ and "RelevanceStage" not in prescreen.__dict__
+
+
+@pytest.mark.unit
+class TestSearchQuery:
+    def test_judges_the_query_retrieval_searched_with(self):
+        config = PreScreenConfig(candidate_k=1, batch_size=1, max_keep=1)
+        seen = {}
+
+        def gen(model, messages):
+            seen["user"] = messages[-1]["content"]
+            return '{"keep": [0]}'
+
+        with patch(
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
+            return_value=Mock(gen=gen, model_id="m"),
+        ):
+            stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
+            stage([{"text": "x"}], {"query": "and on Windows?", "search_query": "install on Windows"})
+        assert seen["user"].startswith("Query: install on Windows\n")
+
+    def test_falls_back_to_the_raw_query(self):
+        config = PreScreenConfig(candidate_k=1, batch_size=1, max_keep=1)
+        gen = Mock(return_value='{"keep": [0]}')
+        with patch(
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
+            return_value=Mock(gen=gen, model_id="m"),
+        ):
+            stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
+            stage([{"text": "x"}], {"query": "raw"})
+        assert gen.call_args.kwargs["messages"][-1]["content"].startswith("Query: raw\n")

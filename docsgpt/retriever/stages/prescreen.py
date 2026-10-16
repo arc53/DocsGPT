@@ -152,10 +152,13 @@ class PreScreenStage:
     def __call__(
         self, docs: List[Dict[str, Any]], context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Screen ``docs`` and return survivors capped at ``max_keep``."""
+        """Screen ``docs`` against the query retrieval searched with and return survivors capped at ``max_keep``.
+
+        That is the context's ``search_query`` (the rephrase, on a follow-up turn), else its ``query``.
+        """
         if not docs:
             return docs
-        query = context.get("query") or ""
+        query = context.get("search_query") or context.get("query") or ""
         if not query:
             return docs[: self.config.max_keep]
 
@@ -202,11 +205,12 @@ def build_prescreen_stages(
     request_id: Optional[str] = None,
     usage_source: str = "rag_prescreen",
 ) -> List[Stage]:
-    """Build prescreen stages from a group's per-source retrieval configs.
+    """Build LLM prescreen stages from a group's per-source retrieval configs.
 
-    Returns one stage per distinct prescreen config found across the group's
-    sources (deduplicated by config), or an empty list when none opt in — so
-    the Dispatcher seam stays a pure no-op by default.
+    Returns one stage per distinct ``backend: llm`` prescreen config found
+    across the group's sources (deduplicated by config), or an empty list when
+    none opt in — so the Dispatcher seam stays a pure no-op by default. The
+    ``decision`` backend is built by ``stages.build_group_stages``.
 
     Args:
         retrievals: ``{doc_id: RetrievalConfig}`` for sources with overrides.
@@ -218,7 +222,7 @@ def build_prescreen_stages(
     for retrieval in (retrievals or {}).values():
         getter = getattr(retrieval, "prescreen_config", None)
         ps = getter() if callable(getter) else None
-        if ps is None:
+        if ps is None or ps.backend != "llm":
             continue
         key = (ps.candidate_k, ps.model, ps.batch_size, ps.max_keep)
         if key in seen:
@@ -242,7 +246,7 @@ def build_prescreen_stages(
 
 
 def max_candidate_k(retrievals: Dict[str, Any]) -> Optional[int]:
-    """Largest prescreen ``candidate_k`` across the group, or None.
+    """Largest prescreen ``candidate_k`` across the group (either backend), or None.
 
     The Dispatcher uses this to raise the group's effective top-k so the base
     retriever actually fetches enough candidates for the stage to trim.
