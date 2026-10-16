@@ -59,6 +59,25 @@ class SettlingCheck(GuardrailCheck):
         SettlingCheck.settled_with.append((action, verdict.action))
 
 
+class LateSettlingCheck(GuardrailCheck):
+    """Answers after the stage deadline, and keeps what the engine settled on."""
+
+    name = "_test_late_settling"
+    label = "Late settling"
+    supported_stages = {Stage.INPUT}
+    remote = True
+    settled_with: list = []
+    scanned = threading.Event()
+
+    def scan(self, text, stage, context):
+        time.sleep(0.4)
+        LateSettlingCheck.scanned.set()
+        return CheckOutcome.hit(categories=["TEST"])
+
+    def settled(self, action, verdict):
+        LateSettlingCheck.settled_with.append((action, verdict.action))
+
+
 class SlowCheck(GuardrailCheck):
     name = "_test_slow"
     label = "Slow"
@@ -73,10 +92,10 @@ class SlowCheck(GuardrailCheck):
 @pytest.fixture(autouse=True)
 def _register_test_checks():
     GuardrailCreator._ensure_builtin()
-    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck):
+    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck, LateSettlingCheck):
         GuardrailCreator.register(cls.name, cls)
     yield
-    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck):
+    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck, LateSettlingCheck):
         GuardrailCreator.checks.pop(cls.name, None)
 
 
@@ -216,6 +235,19 @@ class TestFailureSemantics:
         assert decision.unevaluated, "a timed-out check must not read as clean"
         assert decision.unevaluated[0].outcome.error == "timeout"
         assert elapsed < 1.5, f"timeout was not enforced (took {elapsed:.2f}s)"
+
+    def test_a_check_answering_after_the_deadline_is_not_settled(self):
+        """The stage reported it as a timeout, so the check must not record the late verdict as applied."""
+        LateSettlingCheck.settled_with = []
+        LateSettlingCheck.scanned.clear()
+        engine = GuardrailEngine(
+            _config(timeout_ms=100, controls=[{"check": "_test_late_settling", "stage": "input", "action": "block"}])
+        )
+        decision = engine.evaluate("some text", Stage.INPUT)
+        assert decision.unevaluated[0].outcome.error == "timeout"
+        assert LateSettlingCheck.scanned.wait(2.0), "the late scan never finished"
+        time.sleep(0.1)  # the late verdict, if it were settled, is settled right after the scan returns
+        assert LateSettlingCheck.settled_with == []
 
     def test_stage_deadline_is_shared_not_per_check(self):
         """Three slow checks must not cost 3x the timeout."""

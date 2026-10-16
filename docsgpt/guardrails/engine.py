@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from threading import Thread
+from threading import Lock, Thread
 from time import monotonic
-from typing import Any, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence
 
 from docsgpt import tracing
 from docsgpt.guardrails.base import ScanContext, stage_deadline
@@ -112,7 +112,19 @@ class GuardrailEngine:
             action = capped(action, limit)
         return ControlVerdict(check=control.check, stage=stage, action=action, outcome=outcome)
 
-    def _run_control(self, control, text: str, stage: Stage) -> ControlVerdict:
+    def _run_control(
+        self,
+        control,
+        text: str,
+        stage: Stage,
+        publish: Optional[Callable[[ControlVerdict], bool]] = None,
+    ) -> ControlVerdict:
+        """Scan with one control and tell its check the verdict.
+
+        ``publish`` hands the verdict to a stage running controls in parallel;
+        when it returns False the stage already gave up on this control, so the
+        check is not told a verdict the stage never used.
+        """
         try:
             check = GuardrailCreator.create(control.check, control.settings)
         except Exception as exc:
@@ -126,6 +138,8 @@ class GuardrailEngine:
             )
             outcome = CheckOutcome.not_evaluated(f"error: {type(exc).__name__}")
         verdict = self._verdict(control, stage, outcome)
+        if publish is not None and not publish(verdict):
+            return verdict
         try:
             check.settled(control.action, verdict)
         except Exception:
@@ -194,7 +208,7 @@ class GuardrailEngine:
         deadline = monotonic() + max(self.config.timeout_ms, 100) / 1000.0
         slots: List[dict] = []
         for control in controls[:_MAX_WORKERS]:
-            slot: dict = {"control": control, "verdict": None}
+            slot: dict = {"control": control, "verdict": None, "abandoned": False, "lock": Lock()}
             thread = Thread(
                 target=tracing.wrap(self._fill_slot),
                 args=(slot, control, text, stage, deadline),
@@ -208,7 +222,9 @@ class GuardrailEngine:
         verdicts: List[ControlVerdict] = []
         for slot in slots:
             slot["thread"].join(timeout=max(0.0, deadline - monotonic()))
-            verdict = slot["verdict"]
+            with slot["lock"]:
+                verdict = slot["verdict"]
+                slot["abandoned"] = verdict is None
             if verdict is None:
                 verdict = self._verdict(slot["control"], stage, CheckOutcome.not_evaluated("timeout"))
             verdicts.append(verdict)
@@ -231,11 +247,21 @@ class GuardrailEngine:
         # remote call to the time the stage has left.
         stage_deadline.set(deadline)
         try:
-            slot["verdict"] = self._run_control(control, text, stage)
+            self._run_control(control, text, stage, lambda verdict: self._publish(slot, verdict))
         except Exception as exc:
-            slot["verdict"] = self._verdict(
-                control, stage, CheckOutcome.not_evaluated(f"error: {type(exc).__name__}")
+            self._publish(
+                slot,
+                self._verdict(control, stage, CheckOutcome.not_evaluated(f"error: {type(exc).__name__}")),
             )
+
+    @staticmethod
+    def _publish(slot: dict, verdict: ControlVerdict) -> bool:
+        """Hand a control's verdict to its stage; False once the stage stopped waiting for it."""
+        with slot["lock"]:
+            if slot["abandoned"]:
+                return False
+            slot["verdict"] = verdict
+            return True
 
     def _reduce(self, decision: StageDecision) -> None:
         """Fold verdicts into the decision. Most restrictive outcome wins."""
