@@ -36,6 +36,11 @@ vi.mock('../api/services/conversationService', () => ({
   },
 }));
 
+const attention = vi.hoisted(() => ({ attended: true }));
+vi.mock('../backgroundJobs/usePageVisible', () => ({
+  isPageAttended: () => attention.attended,
+}));
+
 vi.mock('../preferences/preferenceApi', async () => {
   const actual = await vi.importActual<typeof preferenceApi>(
     '../preferences/preferenceApi',
@@ -491,6 +496,7 @@ describe('conversation listener — a new chat in the sidebar', () => {
   });
 
   it('leaves the chat it shows to its own stream end', async () => {
+    attention.attended = true;
     const store = makeStore('conv-open');
     store.dispatch(listed(['conv-open']));
     store.dispatch(
@@ -504,6 +510,26 @@ describe('conversation listener — a new chat in the sidebar', () => {
     );
     await flush();
     expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the chat it shows while the user is away, for its unread mark', async () => {
+    // Another tab or device answered it, or this tab streamed it unwatched:
+    // the server marked it unread, and only the list says so.
+    attention.attended = false;
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-away',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-open', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    attention.attended = true;
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
   });
 
   const finished = (conversationId: string, id: string) =>

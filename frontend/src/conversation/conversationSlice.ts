@@ -13,6 +13,7 @@ import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import { isPageAttended } from '../backgroundJobs/usePageVisible';
 import { getConversations } from '../preferences/preferenceApi';
 import {
   receiveConversations,
@@ -1612,9 +1613,15 @@ conversationListenerMiddleware.startListening({
     } else if (envelope.type === 'message.finished') {
       // An answer that ended while the user was elsewhere is marked unread
       // on the server; refresh the list for its mark. The chat this tab
-      // shows refreshes at its own stream's end.
+      // shows needs none while the user looks at it: nothing was marked.
+      // Unwatched, it may have been, by an answer from another tab or device
+      // that this tab never streamed.
       const state = listenerApi.getState() as RootState;
-      if (state.conversation.conversationId === conversationId) return;
+      if (
+        state.conversation.conversationId === conversationId &&
+        isPageAttended()
+      )
+        return;
       await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
     } else if (envelope.type === 'conversation.renamed') {
       // The generated title, saved after the answer ended.
