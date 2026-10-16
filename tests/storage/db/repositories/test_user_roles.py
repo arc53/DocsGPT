@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 def _repo(conn) -> UserRolesRepository:
@@ -102,3 +103,12 @@ class TestListAdmins:
         admins = repo.list_admins()
         assert len(admins) == 1
         assert set(admins[0]["sources"]) == {"manual", "oidc_group"}
+
+    def test_rows_carry_email(self, pg_conn):
+        UsersRepository(pg_conn).upsert("alice", email="alice@example.com")
+        repo = _repo(pg_conn)
+        repo.grant("alice")
+        repo.grant("bob")
+        by_user = {a["user_id"]: a for a in repo.list_admins()}
+        assert by_user["alice"]["email"] == "alice@example.com"
+        assert by_user["bob"]["email"] is None

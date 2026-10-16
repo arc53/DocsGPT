@@ -277,6 +277,24 @@ class TestStuckMessages:
         )
 
     @pytest.mark.unit
+    def test_a_failed_stream_marks_its_chat_unread(self, pg_conn):
+        # Activity shows a failed chat only while it is unread.
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        msg = _seed_pending_message(pg_conn, status="streaming")
+        with _route_engine_to(pg_conn), patch(
+            "docsgpt.notifications.presence.is_watching", return_value=False,
+        ):
+            for _ in range(3):
+                run_reconciliation()
+
+        unread_at = pg_conn.execute(
+            text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": msg["conversation_id"]},
+        ).scalar()
+        assert unread_at is not None
+
+    @pytest.mark.unit
     def test_streaming_status_also_eligible(self, pg_conn):
         from docsgpt.api.user.reconciliation import run_reconciliation
 

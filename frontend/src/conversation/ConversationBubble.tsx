@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Database,
   Download,
-  Eye,
   FileText,
   Paperclip,
   Pencil,
@@ -19,19 +18,22 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useId,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
+import { ArtifactCardList } from '../components/ArtifactCard';
 import CopyButton from '../components/CopyButton';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';
+import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { SidePanel } from '../components/ui/side-panel';
@@ -54,6 +56,11 @@ import ConnectToolCallBar from './ConnectToolCallBar';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
+import {
+  cardsFromToolCalls,
+  orderArtifactCards,
+  type OpenArtifactRequest,
+} from './artifactCards';
 import { deriveArtifactChips } from './artifactChips';
 import {
   type AnswerSource,
@@ -65,6 +72,7 @@ import ResearchProgress from './ResearchProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
 import { shownArguments, ToolCallsType } from './types';
+import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = envVar('VITE_DISABLE_SOURCE_FE') === 'true';
@@ -108,7 +116,7 @@ const ConversationBubble = forwardRef<
      * The chip RAIL still uses this turn's artifacts only.
      */
     conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
-    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+    onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
     onToolAction?: (
       callId: string,
       decision: 'approved' | 'denied',
@@ -162,7 +170,8 @@ const ConversationBubble = forwardRef<
   // opens that source's reader; none opens the list.
   const openSources = useCallback(
     (index?: number) => {
-      if (companion && sources) companion.openSources(sources, index);
+      if (companion?.openSources && sources)
+        companion.openSources(sources, index);
       else {
         setOpenSourceIndex(index ?? null);
         setIsSidebarOpen(true);
@@ -174,6 +183,27 @@ const ConversationBubble = forwardRef<
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
   const completedArtifacts = deriveArtifactChips(toolCalls);
+  // Only a view that can open an artifact lists the run's (a shared chat
+  // can't, and its reader may not own the run).
+  const runArtifacts = useRunArtifacts(
+    onOpenArtifact ? workflowRunId : undefined,
+    isStreaming,
+  );
+  // This turn's artifacts, from its tool calls and its workflow run, as cards.
+  const artifactCards = useMemo(
+    () =>
+      orderArtifactCards([
+        ...cardsFromToolCalls(toolCalls),
+        ...runArtifacts.items,
+      ]),
+    [toolCalls, runArtifacts.items],
+  );
+  // Names this answer's artifact list in the side panel.
+  const artifactListKey = useId();
+  const syncArtifactList = companion?.syncArtifactList;
+  useEffect(() => {
+    syncArtifactList?.(artifactListKey, artifactCards);
+  }, [syncArtifactList, artifactListKey, artifactCards]);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -190,6 +220,22 @@ const ConversationBubble = forwardRef<
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
+  // A workflow run that answered only with files: nothing to show until it
+  // has one (or its list failed), once it has finished.
+  if (
+    type === 'ANSWER' &&
+    workflowRunId &&
+    !isStreaming &&
+    !message &&
+    !thought &&
+    !research &&
+    !toolCalls?.length &&
+    !segments?.length &&
+    !sources?.length &&
+    artifactCards.length === 0 &&
+    !runArtifacts.failed
+  )
+    return null;
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
@@ -348,7 +394,7 @@ const ConversationBubble = forwardRef<
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-haspopup={companion ? undefined : 'dialog'}
+                  aria-haspopup={companion?.openSources ? undefined : 'dialog'}
                   onClick={() => openSources()}
                   className="my-2 ml-3.5 w-fit"
                 >
@@ -473,46 +519,23 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
-        {!message && onOpenArtifact && completedArtifacts.length > 0 && (
-          <div className="my-2 ml-6 flex flex-wrap justify-start gap-2">
-            {completedArtifacts.map((artifact, artifactIndex) => (
-              <Button
-                key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
-                type="button"
-                onClick={() =>
-                  onOpenArtifact({
-                    id: artifact.id,
-                    toolName: artifact.toolName,
-                  })
-                }
-                variant="secondary"
-                shape="pill"
-              >
-                <Eye />
-                <span className="max-w-50 truncate" title={artifact.label}>
-                  {artifact.label}
-                </span>
-              </Button>
-            ))}
-          </div>
-        )}
-        {workflowRunId && (
-          <div className="my-2 mr-5 ml-6">
-            <WorkflowRunArtifacts
-              workflowRunId={workflowRunId}
-              inProgress={isStreaming}
-            />
-          </div>
-        )}
         {type === 'ERROR' ? (
           message && (
             // On the answer's ml-6 text column. Without a code the backend's
             // error is often a raw provider exception, so it is mono detail
             // under a readable title; a curated error (it has a code) is
             // written for the user and reads as prose.
+            // An answer its user stopped is a note: nothing went wrong.
             <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
-              <Alert variant="destructive">
-                <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
+              <Alert
+                variant={errorCode === 'stopped' ? 'info' : 'destructive'}
+                {...(errorCode === 'stopped' && { role: 'note' })}
+              >
+                <AlertTitle>
+                  {errorCode === 'stopped'
+                    ? t('conversation.stoppedTitle')
+                    : t('conversation.failedTitle')}
+                </AlertTitle>
                 <AlertDescription>
                   <p
                     className={cn(
@@ -573,6 +596,37 @@ const ConversationBubble = forwardRef<
             )}
           />
         )}
+        {onOpenArtifact && (
+          <ArtifactCardList
+            items={artifactCards}
+            open={companion?.openArtifact}
+            onShowAll={
+              companion?.openArtifactList
+                ? () =>
+                    companion.openArtifactList?.(artifactCards, artifactListKey)
+                : undefined
+            }
+            showAllOpen={companion?.openArtifactListKey === artifactListKey}
+            onOpen={(item) =>
+              onOpenArtifact({
+                id: item.id,
+                toolName: item.toolName,
+                version: item.version,
+              })
+            }
+            className="mt-3 mr-5 ml-6"
+          />
+        )}
+        {runArtifacts.failed && (
+          <EmptyState
+            tone="destructive"
+            size="sm"
+            illustration="none"
+            title={t('agents.workflow.artifacts.loadListFailed')}
+            onRetry={runArtifacts.retry}
+            className="mr-5 ml-6"
+          />
+        )}
         {message && (
           // ml-4 plus each button's own p-2 puts the first glyph on the answer's
           // ml-6 text column.
@@ -588,34 +642,6 @@ const ConversationBubble = forwardRef<
               </>
             ) : (
               <>
-                {onOpenArtifact &&
-                  completedArtifacts.map((artifact, artifactIndex) => (
-                    <div
-                      key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
-                      className="relative flex items-center justify-center"
-                    >
-                      <Button
-                        type="button"
-                        onClick={() =>
-                          onOpenArtifact({
-                            id: artifact.id,
-                            toolName: artifact.toolName,
-                          })
-                        }
-                        variant="secondary"
-                        shape="pill"
-                        aria-label={t('conversation.viewArtifact')}
-                      >
-                        <Eye />
-                        <span
-                          className="max-w-50 truncate"
-                          title={artifact.label}
-                        >
-                          {artifact.label}
-                        </span>
-                      </Button>
-                    </div>
-                  ))}
                 {!isStreaming && (
                   <>
                     <div className="relative block items-center justify-center">
@@ -714,7 +740,7 @@ const ConversationBubble = forwardRef<
             )}
           </div>
         )}
-        {sources && !companion && (
+        {sources && !companion?.openSources && (
           <SidePanel open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SourcesPanel
               sources={sources}

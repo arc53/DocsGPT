@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -143,6 +143,7 @@ the MCP `search_docs` tool, and graph builds.
 | `search` | One source is searched |
 | `rerank` | Prescreening filters retrieved chunks |
 | `guardrail` | A guardrail calls a remote check or fires |
+| `decision` | A feature asks the [decision model](/Models/decision-model) (numbers only, never the text) |
 | `step` | A workflow node or research phase runs |
 
 Traces are stored in the `request_traces` table and shown in the app: open
@@ -183,6 +184,12 @@ OTel trace id so you can move between the two.
 
 Two metrics are recorded for every model call:
 `gen_ai.client.token.usage` and `gen_ai.client.operation.duration`.
+
+A call to the [decision model](/Models/decision-model) is exported as a
+`decision {feature}` span: a client span in API mode, an internal one when
+the model runs in the process. It records the same two metrics with
+operation `decide` and provider `arc-decide`, plus a
+`docsgpt.decision.calls` counter by feature and status.
 
 Backends that understand the GenAI conventions — Langfuse
 (`/api/public/otel`), Arize Phoenix, Datadog LLM Observability, Grafana —

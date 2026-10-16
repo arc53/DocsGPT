@@ -20,7 +20,11 @@ the same plan:
   sandbox with a short preview (``sandbox``), and with no tool to reach them
   they are ``not_included``;
 * a zip is listed (``archive``) but never inlined: the worker unpacked it,
-  and its members follow it in the rows as files of their own.
+  and its members follow it in the rows as files of their own;
+* in reference mode (``attachments_mode: "reference"`` on the request) this
+  turn's files are not inlined at all: each is listed as ``reference`` for
+  the attachments tool and the code sandbox to work with. Without a tool to
+  reach them the mode is ignored and the files are planned as usual.
 """
 
 from __future__ import annotations
@@ -109,6 +113,7 @@ class FileStatus(str, Enum):
     TOOL = "tool"
     SANDBOX = "sandbox"
     EARLIER = "earlier"
+    REFERENCE = "reference"
     NOT_INCLUDED = "not_included"
     UNREADABLE = "unreadable"
     ARCHIVE = "archive"
@@ -376,6 +381,7 @@ def plan_attachments(
     earlier: Optional[Sequence[Dict[str, Any]]] = None,
     max_native_parts: int = 40,
     sandbox_max_input_bytes: Optional[int] = None,
+    reference: bool = False,
 ) -> AttachmentPlan:
     """Plan this turn's attachments against a token budget.
 
@@ -389,6 +395,9 @@ def plan_attachments(
         sandbox_max_input_bytes: Largest file the sandbox stages; larger
             spreadsheets are planned like any other file. None reads
             ``SANDBOX_MAX_INPUT_BYTES``.
+        reference: Keep this turn's files out of the context and list them
+            as ``reference`` for the tools, when the attachments tool is in
+            the turn.
 
     Returns:
         The plan.
@@ -412,6 +421,7 @@ def plan_attachments(
                 planned.status = FileStatus.EARLIER
 
     reachable = capabilities.attachments_tool
+    by_reference = bool(reference and reachable)
     walk: List[PlannedFile] = []
     for row in current or ():
         if not isinstance(row, dict):
@@ -455,6 +465,12 @@ def plan_attachments(
         if not has_text and not native_ok:
             planned.status = FileStatus.UNREADABLE
             planned.reason = _unreadable_reason(row, capabilities)
+            continue
+
+        if by_reference:
+            # The client asked for the files to be worked on, not read whole:
+            # nothing of them goes into the context.
+            planned.status = FileStatus.REFERENCE
             continue
 
         if capabilities.sandbox and _is_spreadsheet(planned) and _fits_sandbox(row, sandbox_max_input_bytes):
@@ -520,6 +536,39 @@ def plan_attachments(
             planned.sandbox_eligible = _fits_sandbox(planned.attachment, sandbox_max_input_bytes)
 
     return AttachmentPlan(files=files, capabilities=capabilities, budget=max(int(budget), 0))
+
+
+def plan_listing(plan: AttachmentPlan) -> List[Dict[str, Any]]:
+    """The plan's files as an API client sees them: ref, attachment id, name and status.
+
+    A client keeps the mapping to name a file on later turns (by its ``F``
+    ref in the prompt, or its id in ``attachments``) without sending its
+    bytes again.
+
+    Args:
+        plan: The turn's plan.
+
+    Returns:
+        One entry per ref, in ref order.
+    """
+    listing = []
+    for planned in plan.files:
+        entry: Dict[str, Any] = {
+            "ref": planned.ref,
+            "id": planned.attachment_ids[0],
+            "filename": planned.filename,
+            "mime_type": planned.mime_type,
+            "status": planned.status.value,
+        }
+        size = planned.attachment.get("size")
+        if isinstance(size, int) and size > 0:
+            entry["size"] = size
+        if planned.page_count:
+            entry["pages"] = planned.page_count
+        if planned.readable_tokens:
+            entry["tokens"] = planned.readable_tokens
+        listing.append(entry)
+    return listing
 
 
 def is_archive(row: Dict[str, Any]) -> bool:

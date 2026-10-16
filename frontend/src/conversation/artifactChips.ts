@@ -5,6 +5,12 @@ export type ArtifactChip = {
   id: string;
   ref?: string;
   label: string;
+  /** The artifact's title, when its tool reported one. */
+  title?: string;
+  /** The file's name; unset for a note or todo. */
+  filename?: string;
+  /** The version the latest call produced. */
+  version?: number;
   toolName: string;
   callId: string;
 };
@@ -58,6 +64,13 @@ function collectArtifactChips(
         // it ("Code Executor") tells them nothing about which file this is.
         label:
           artifact.filename || formatToolName(toolCall.tool_name) || 'Artifact',
+        title:
+          'title' in artifact && artifact.title ? artifact.title : undefined,
+        filename: artifact.filename || undefined,
+        version:
+          'version' in artifact && typeof artifact.version === 'number'
+            ? artifact.version
+            : undefined,
         toolName: toolCall.tool_name,
         callId: toolCall.call_id,
       }));

@@ -14,6 +14,7 @@ import {
   BreadcrumbSeparator,
 } from '../components/ui/breadcrumb';
 import { Button } from '../components/ui/button';
+import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import {
   Command,
@@ -22,6 +23,7 @@ import {
   CommandList,
 } from '../components/ui/command';
 import { Input } from '../components/ui/input';
+import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken, setAgentFolders } from '../preferences/preferenceSlice';
@@ -302,11 +304,7 @@ export default function MoveToFolderModal({
         </div>
         <div className="border-border border-y px-5 py-1">
           {isLoading ? (
-            <div className="flex h-[200px] items-center justify-center">
-              <span className="text-muted-foreground text-sm">
-                {t('modals.searchConversations.loading')}
-              </span>
-            </div>
+            <LoadingState fill="block" size="sm" className="h-[200px]" />
           ) : hasRows ? (
             <Command
               tabIndex={0}
@@ -388,17 +386,25 @@ export default function MoveToFolderModal({
             </Command>
           ) : (
             <>
+              {/* 200px, the list's height, so the modal doesn't jump
+                between levels. */}
               {currentLevelFolders.length === 0 && folderPath.length > 0 && (
-                <div className="text-muted-foreground flex h-[200px] items-center justify-center text-sm">
-                  {t('agents.folders.noSubfolders')}
-                </div>
+                <EmptyState
+                  size="sm"
+                  illustration="none"
+                  title={t('agents.folders.noSubfolders')}
+                  className="h-[200px]"
+                />
               )}
               {currentLevelFolders.length === 0 &&
                 folderPath.length === 0 &&
                 !currentFolderId && (
-                  <div className="text-muted-foreground flex h-[200px] items-center justify-center text-sm">
-                    {t('agents.folders.noFolders')}
-                  </div>
+                  <EmptyState
+                    size="sm"
+                    illustration="none"
+                    title={t('agents.folders.noFolders')}
+                    className="h-[200px]"
+                  />
                 )}
             </>
           )}

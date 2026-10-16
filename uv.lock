@@ -1442,6 +1442,7 @@ dependencies = [
     { name = "gtts" },
     { name = "gunicorn" },
     { name = "httpx2" },
+    { name = "huggingface-hub" },
     { name = "jinja2" },
     { name = "kombu" },
     { name = "markdownify" },
@@ -1497,6 +1498,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+decisions-torch = [
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+    { name = "transformers" },
+]
 docling = [
     { name = "docling" },
     { name = "rapidocr" },
@@ -1560,6 +1566,7 @@ requires-dist = [
     { name = "gtts", specifier = ">=2.5.4,<3" },
     { name = "gunicorn", specifier = ">=26.0.0,<27" },
     { name = "httpx2", specifier = ">=2.7.0,<3" },
+    { name = "huggingface-hub", specifier = ">=1.16.1,<2" },
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "kombu", specifier = ">=5.6.2,<6" },
     { name = "markdownify", specifier = ">=1.2.3,<2" },
@@ -1610,18 +1617,21 @@ requires-dist = [
     { name = "tiktoken", specifier = ">=0.14.0,<0.15" },
     { name = "tldextract", specifier = ">=5.4.0,<6" },
     { name = "tokenizers", specifier = ">=0.23.2,<0.24" },
+    { name = "torch", marker = "sys_platform == 'linux' and extra == 'decisions-torch'", specifier = ">=2.14.1,<3", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'docling'", specifier = ">=2.14.1,<3", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torch", marker = "sys_platform != 'linux' and extra == 'decisions-torch'", specifier = ">=2.14.1,<3" },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'docling'", specifier = ">=2.14.1,<3" },
     { name = "torchvision", marker = "sys_platform == 'linux' and extra == 'docling'", specifier = ">=0.29.1,<0.30", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "sys_platform != 'linux' and extra == 'docling'", specifier = ">=0.29.1,<0.30" },
     { name = "tqdm", specifier = ">=4.67.3,<5" },
+    { name = "transformers", marker = "extra == 'decisions-torch'", specifier = ">=5.17.0,<6" },
     { name = "transformers", marker = "extra == 'docling'", specifier = ">=5.17.0,<6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30,<1" },
     { name = "uvicorn-worker", specifier = ">=0.4,<1" },
     { name = "websocket-client", specifier = ">=1.9.0,<2" },
     { name = "werkzeug", specifier = ">=3.1.9,<4" },
 ]
-provides-extras = ["docling", "milvus"]
+provides-extras = ["decisions-torch", "docling", "milvus"]
 
 [package.metadata.requires-dev]
 dev = [

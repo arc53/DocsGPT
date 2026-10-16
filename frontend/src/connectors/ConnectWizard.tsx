@@ -51,7 +51,7 @@ import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
 import { connectorDescription, connectorName, isKeyHint } from './i18n';
-import { reconnectsInPlace } from './launchRules';
+import { isMcpOpenPreset, reconnectsInPlace } from './launchRules';
 import LinearPicker, {
   EMPTY_LINEAR_SELECTION,
   linearSourceName,
@@ -68,6 +68,10 @@ import type {
 } from './types';
 
 export type WizardMode = 'connect' | 'reconnect' | 'sync' | 'done';
+
+type McpSaveConfig =
+  McpOAuthConfig | { server_url: string; auth_type: 'none'; timeout: number };
+
 /**
  * Why the wizard opened. `knowledge` (Add knowledge, Knowledge's Connect a
  * service) starts a first connect with Sync into Knowledge on; `tools`, or
@@ -276,6 +280,7 @@ export default function ConnectWizard({
   // done step shows what it can do (for Linear, after choosing what to sync).
   const isMcpPreset =
     connector.auth_kind === 'mcp_oauth' && !!connector.mcp_url;
+  const isOpenMcp = isMcpOpenPreset(connector);
   const mcp = useMcpOAuth();
   const mcpConfig = (): McpOAuthConfig => ({
     server_url: connector.mcp_url ?? '',
@@ -285,13 +290,16 @@ export default function ConnectWizard({
     redirect_uri: `${baseURL.replace(/\/$/, '')}/api/mcp_server/callback`,
   });
 
-  const saveMcp = async (config: McpOAuthConfig, taskId: string | null) => {
+  const saveMcp = async (config: McpSaveConfig, taskId: string | null) => {
     setPending(true);
     try {
       const response = await userService.saveMCPServer(
         {
           displayName: name,
-          config: { ...config, oauth_task_id: taskId ?? '' },
+          config:
+            config.auth_type === 'none'
+              ? config
+              : { ...config, oauth_task_id: taskId ?? '' },
           status: true,
           ...(mcpReconnectToolId && { id: mcpReconnectToolId }),
         },
@@ -299,32 +307,40 @@ export default function ConnectWizard({
       );
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error);
-      const list = await connectorsService.listConnections(token);
-      const saved = (
-        (list?.connections ?? []) as {
-          id: string;
-          connector_key: string;
-          updated_at: string | null;
-        }[]
-      )
-        .filter((c) => c.connector_key === connector.key)
-        .sort((a, b) =>
-          (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
-        )[0];
       connectedRef.current = true;
-      await refresh();
-      if (saved) {
-        setConnectionId(saved.id);
-        const detail = await connectorsService.getConnection(saved.id, token);
-        if (detail?.success) {
-          setTools(detail.connection.tools ?? []);
-          if (detail.connection.account_label)
-            setAccountLabel(detail.connection.account_label);
+      let savedConnectionId: string | null = null;
+      try {
+        const list = await connectorsService.listConnections(token);
+        const saved = (
+          (list?.connections ?? []) as {
+            id: string;
+            connector_key: string;
+            updated_at: string | null;
+          }[]
+        )
+          .filter((c) => c.connector_key === connector.key)
+          .sort((a, b) =>
+            (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
+          )[0];
+        if (saved) {
+          savedConnectionId = saved.id;
+          setConnectionId(saved.id);
+          const detail = await connectorsService.getConnection(saved.id, token);
+          if (detail?.success) {
+            setTools(detail.connection.tools ?? []);
+            if (detail.connection.account_label)
+              setAccountLabel(detail.connection.account_label);
+          }
         }
+      } catch {
+        // The server is saved; summary fetches must not turn that into a failure.
       }
+      await refresh();
       if (mode === 'reconnect' && resumeAfterReconnect()) return;
       // One sign-in also syncs (Linear): choosing what to sync comes next.
-      setStep(canSync && saved && mode === 'connect' ? 'setup' : 'done');
+      setStep(
+        canSync && savedConnectionId && mode === 'connect' ? 'setup' : 'done',
+      );
     } catch (err) {
       setError(
         (err instanceof Error && err.message) ||
@@ -333,6 +349,18 @@ export default function ConnectWizard({
     } finally {
       setPending(false);
     }
+  };
+
+  const connectOpenMcp = () => {
+    setError('');
+    saveMcp(
+      {
+        server_url: connector.mcp_url ?? '',
+        auth_type: 'none',
+        timeout: 30,
+      },
+      null,
+    );
   };
 
   const startMcpSignIn = () => {
@@ -658,7 +686,7 @@ export default function ConnectWizard({
           ))}
         </ToggleGroup>
       )}
-      {usesOAuth || isMcpPreset ? null : (
+      {usesOAuth || isMcpPreset || isOpenMcp ? null : (
         <CredentialForm
           connectorKey={connector.key}
           idPrefix={`connect-${connector.key}`}
@@ -953,16 +981,32 @@ export default function ConnectWizard({
 
   const footer =
     step === 'signin' ? (
-      usesOAuth || isMcpPreset ? (
+      usesOAuth || isMcpPreset || isOpenMcp ? (
         <ModalActions
           cancelLabel={t('cancel')}
           onCancel={cancelSignIn}
-          submitLabel={t('settings.connectors.wizard.signIn', {
-            name,
-            interpolation: { escapeValue: false },
-          })}
-          onSubmit={isMcpPreset ? startMcpSignIn : startSignIn}
-          pending={isMcpPreset && (mcp.pending || pending)}
+          submitLabel={
+            isOpenMcp
+              ? t(
+                  mode === 'reconnect'
+                    ? 'settings.connectors.status.reconnect'
+                    : 'settings.connectors.status.connect',
+                )
+              : t('settings.connectors.wizard.signIn', {
+                  name,
+                  interpolation: { escapeValue: false },
+                })
+          }
+          onSubmit={
+            isOpenMcp
+              ? connectOpenMcp
+              : isMcpPreset
+                ? startMcpSignIn
+                : startSignIn
+          }
+          pending={
+            isOpenMcp ? pending : isMcpPreset && (mcp.pending || pending)
+          }
         />
       ) : (
         <ModalActions

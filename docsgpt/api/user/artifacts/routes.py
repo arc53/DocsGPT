@@ -42,6 +42,9 @@ def _artifact_summary(artifact: dict) -> dict:
         "title": artifact.get("title"),
         "metadata": artifact.get("metadata"),
         "current_version": artifact.get("current_version"),
+        # The current version's file, when the row was listed with it (list_artifacts).
+        "filename": artifact.get("current_filename"),
+        "mime_type": artifact.get("current_mime_type"),
         "created_at": _iso(artifact.get("created_at")),
         "updated_at": _iso(artifact.get("updated_at")),
     }

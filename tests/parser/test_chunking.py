@@ -8,6 +8,7 @@ import pytest
 
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.schema.base import Document
+from tests.parser.counter_fakes import wordpiece_counter
 
 
 # =====================================================================
@@ -100,6 +101,43 @@ class TestSplitDocument:
             assert split_doc.doc_id.startswith("doc1-")
             assert split_doc.extra_info is not None
             assert "token_count" in split_doc.extra_info
+
+    def test_wordpiece_collapsed_span_is_token_capped(self):
+        text = "a" * 32_000 + " b" * 3_000
+        chunker = Chunker(max_tokens=4096, min_tokens=1)
+        chunker.counter = wordpiece_counter()
+
+        result = chunker.split_document(Document(text=text, doc_id="doc1"))
+
+        assert "".join(chunk.text for chunk in result) == text
+        assert all(chunk.extra_info["token_count"] <= 4096 for chunk in result)
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_wordpiece_collapsed_span_respects_header_budget(
+        self, duplicate_headers
+    ):
+        header = "h1\nh2\nh3\n"
+        body = "a" * 32_000 + " b" * 3_000
+        chunker = Chunker(
+            max_tokens=4096,
+            min_tokens=1,
+            duplicate_headers=duplicate_headers,
+        )
+        chunker.counter = wordpiece_counter()
+
+        result = chunker.split_document(
+            Document(text=f"{header}{body}", doc_id="doc1")
+        )
+
+        assert all(chunk.extra_info["token_count"] <= 4096 for chunk in result)
+        bodies = [
+            chunk.text[len(header) :] if chunk.text.startswith(header) else chunk.text
+            for chunk in result
+        ]
+        assert "".join(bodies) == body
+        assert result[0].text.startswith(header)
+        if duplicate_headers:
+            assert all(chunk.text.startswith(header) for chunk in result)
 
     def test_split_preserves_header_on_first(self):
         chunker = Chunker(max_tokens=50, min_tokens=5, duplicate_headers=False)

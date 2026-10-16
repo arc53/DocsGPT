@@ -1232,7 +1232,9 @@ class TestGraphReadQueries:
 
         sql, params = cursor.execute.call_args.args
         assert name not in sql
-        assert params == (sid, f"%{name}%", f"%{name}%", 500)
+        # Bound, and escaped: the "_" in "graph_nodes" matches literally.
+        pattern = name.replace("_", "\\_")
+        assert params == (sid, f"%{pattern}%", f"%{pattern}%", 500)
         assert rows == [
             {"source": "Alder", "type": "streams_to", "target": "Quill", "description": "audit events"}
         ]
@@ -1251,6 +1253,24 @@ class TestGraphReadQueries:
         # text-opens-with ordering, then the clamped limit.
         assert params == ("quill", "quill %", sid, sid, "quill", "quill %", "%Quill%", "Quill%", 1)
         assert pages == [{"metadata": {"title": "quill.md"}, "text": "Quill is a store."}, {"metadata": {}, "text": ""}]
+
+    def test_names_match_literally(self):
+        # The name comes from an LLM; "_" and "%" in it are not wildcards.
+        store, cursor, _ = self._store()
+        sid = str(uuid.uuid4())
+
+        store.entity_relationships(sid, "ACME_Corp 100%")
+        sql, params = cursor.execute.call_args.args
+        assert sql.count("ESCAPE") == 2
+        assert params[1] == params[2] == "%ACME\\_Corp 100\\%%"
+
+        store.entity_pages(sid, "ACME_Corp")
+        query, params = cursor.execute.call_args.args
+        assert query.as_string().count("ESCAPE") == 4
+        assert params == (
+            "acme_corp", "acme\\_corp %", sid, sid,
+            "acme_corp", "acme\\_corp %", "%ACME\\_Corp%", "ACME\\_Corp%", 4,
+        )
 
     def test_chunk_similarities_are_restricted_to_the_reached_chunks(self):
         store, cursor, _ = self._store(rows=[("11", 0.75)])

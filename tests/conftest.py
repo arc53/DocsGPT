@@ -188,6 +188,26 @@ def _no_worker_delegation(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _decisions_off(monkeypatch):
+    """Run with the decision model off (``DECISION_MODE=none``), a fresh client and unwritten usage counts.
+
+    Unset, the mode is ``local``, where the first call downloads and loads the
+    model, or ``api`` when a developer's ``.env`` sets ``DECISION_BASE_URL``. No
+    test may do either: the decision tests switch the mode back on themselves,
+    with fake engines or a mock transport, or install ``FakeDecider``.
+    """
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "DECISION_MODE", "none", raising=False)
+    monkeypatch.setattr(settings, "DECISION_BASE_URL", None, raising=False)
+    monkeypatch.setattr("docsgpt.decisions._client", None)
+    # Usage counts stay in memory: a flush timer would write them to whatever
+    # database a later test, or the developer's .env, points at.
+    monkeypatch.setattr("docsgpt.decisions.usage.FLUSH_SECONDS", 0)
+    monkeypatch.setattr("docsgpt.decisions.usage._counts", {})
+
+
+@pytest.fixture(autouse=True)
 def _graphrag_off_by_default(monkeypatch):
     """Run with GraphRAG at its shipped default (off), as CI does.
 

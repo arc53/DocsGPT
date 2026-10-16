@@ -235,6 +235,64 @@ class TestUpdateCancelFailureCounters:
         assert updated["instruction"] == "new"
         assert updated["tool_allowlist"] == ["a", "b"]
 
+    def _stamped(self, pg_conn, **kw) -> tuple:
+        """A recurring schedule whose ``plan_changed_at`` is a day old."""
+        repo = SchedulesRepository(pg_conn)
+        created = repo.create(
+            user_id="u1", agent_id=_insert_agent(pg_conn), trigger_type="recurring",
+            instruction="i", cron="0 9 * * *", next_run_at=_now() + timedelta(hours=1), **kw,
+        )
+        old = _now() - timedelta(days=1)
+        pg_conn.execute(
+            text("UPDATE schedules SET plan_changed_at = :t WHERE id = CAST(:id AS uuid)"),
+            {"t": old, "id": str(created["id"])},
+        )
+        return repo, str(created["id"]), old
+
+    def test_a_new_schedule_has_a_plan_change_time(self, pg_conn):
+        repo = SchedulesRepository(pg_conn)
+        created = repo.create(
+            user_id="u1", agent_id=_insert_agent(pg_conn), trigger_type="once",
+            instruction="i", run_at=_now() + timedelta(hours=1),
+        )
+        assert created["plan_changed_at"] is not None
+
+    def test_a_timing_edit_moves_plan_changed_at(self, pg_conn):
+        for field, value in (("cron", "0 10 * * *"), ("timezone", "Europe/Berlin"), ("run_at", _now())):
+            repo, schedule_id, old = self._stamped(pg_conn)
+            updated = repo.update(schedule_id, "u1", {field: value})
+            assert datetime.fromisoformat(str(updated["plan_changed_at"])) > old, field
+
+    def test_a_resume_moves_plan_changed_at(self, pg_conn):
+        repo, schedule_id, old = self._stamped(pg_conn, status="paused")
+        updated = repo.update(schedule_id, "u1", {"status": "active"})
+        assert datetime.fromisoformat(str(updated["plan_changed_at"])) > old
+
+    def test_resending_the_same_timing_keeps_plan_changed_at(self, pg_conn):
+        # The edit form always sends the timezone, and may send the cron
+        # it loaded; a rename must not wipe the calendar's missed slots.
+        repo, schedule_id, old = self._stamped(pg_conn, timezone="Europe/Berlin")
+        repo.update(
+            schedule_id, "u1",
+            {"name": "renamed", "cron": "0 9 * * *", "timezone": "Europe/Berlin", "run_at": None},
+        )
+        row = repo.get(schedule_id, "u1")
+        assert datetime.fromisoformat(str(row["plan_changed_at"])) == old
+
+    def test_setting_an_active_schedule_active_keeps_plan_changed_at(self, pg_conn):
+        repo, schedule_id, old = self._stamped(pg_conn)
+        repo.update(schedule_id, "u1", {"status": "active"})
+        row = repo.get(schedule_id, "u1")
+        assert datetime.fromisoformat(str(row["plan_changed_at"])) == old
+
+    def test_other_writes_keep_plan_changed_at(self, pg_conn):
+        repo, schedule_id, old = self._stamped(pg_conn)
+        repo.update(schedule_id, "u1", {"name": "renamed", "status": "paused"})
+        repo.update_internal(schedule_id, {"next_run_at": _now() + timedelta(days=1), "last_run_at": _now()})
+        repo.bump_failure_count(schedule_id)
+        row = repo.get(schedule_id, "u1")
+        assert datetime.fromisoformat(str(row["plan_changed_at"])) == old
+
     def test_cancel_blocks_completed(self, pg_conn):
         repo = SchedulesRepository(pg_conn)
         agent_id = _insert_agent(pg_conn)
@@ -300,3 +358,90 @@ class TestDelete:
         assert repo.delete(str(created["id"]), "u2") is False
         assert repo.delete(str(created["id"]), "u1") is True
         assert repo.get(str(created["id"]), "u1") is None
+
+
+class TestListOwnedWithContext:
+    def _conversation(self, conn, user_id: str = "u1", name: str = "Rotterdam market check") -> str:
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        return str(ConversationsRepository(conn).create(user_id, name)["id"])
+
+    def test_spans_agents_and_agentless_with_names(self, pg_conn):
+        repo = SchedulesRepository(pg_conn)
+        a1 = _insert_agent(pg_conn)
+        a2 = _insert_agent(pg_conn)
+        pg_conn.execute(
+            text("UPDATE agents SET name = 'Deal Desk' WHERE id = CAST(:id AS uuid)"), {"id": a1},
+        )
+        conv = self._conversation(pg_conn)
+        repo.create("u1", a1, "recurring", "scan", cron="0 7 * * *", next_run_at=_now())
+        repo.create("u1", a2, "once", "remind", run_at=_now(), next_run_at=_now())
+        repo.create(
+            "u1", None, "once", "chat task", run_at=_now(), next_run_at=_now(),
+            origin_conversation_id=conv, created_via="chat",
+        )
+        rows = repo.list_owned_with_context("u1")
+        assert len(rows) == 3
+        by_instruction = {r["instruction"]: r for r in rows}
+        assert by_instruction["scan"]["agent_name"] == "Deal Desk"
+        assert by_instruction["chat task"]["agent_id"] is None
+        assert by_instruction["chat task"]["agent_name"] is None
+        assert by_instruction["chat task"]["origin_conversation_name"] == "Rotterdam market check"
+
+    def test_leaves_out_monitors_and_other_users(self, pg_conn):
+        from docsgpt.storage.db.repositories.monitors import MonitorsRepository
+
+        repo = SchedulesRepository(pg_conn)
+        conv = self._conversation(pg_conn)
+        now = _now()
+        MonitorsRepository(pg_conn).create(
+            user_id="u1", conversation_id=conv, agent_id=None, description="BTC below $50k",
+            source_type="webpage", spec={"source": {"type": "webpage", "url": "https://example.com"}},
+            on_match="tell me", end_at=now + timedelta(days=7), next_run_at=now + timedelta(minutes=15),
+            max_wakes=1, interval_seconds=900, state={"hash": "abc"},
+        )
+        repo.create("u2", _insert_agent(pg_conn, "u2"), "recurring", "theirs", cron="* * * * *")
+        assert repo.list_owned_with_context("u1") == []
+
+    def test_team_rows_leave_out_the_owners_chat_name(self, pg_conn):
+        # A team editor reads these rows; the chat that created the schedule
+        # is the owner's own and its title stays with them.
+        repo = SchedulesRepository(pg_conn)
+        agent = _insert_agent(pg_conn, "owner1")
+        conv = self._conversation(pg_conn, user_id="owner1", name="Confidential deal")
+        repo.create(
+            "owner1", agent, "recurring", "weekly check", cron="0 9 * * 1",
+            origin_conversation_id=conv, created_via="chat",
+        )
+        [team_row] = repo.list_for_agents_with_context([agent])
+        assert team_row["instruction"] == "weekly check"
+        assert team_row["origin_conversation_name"] is None
+        [own_row] = repo.list_owned_with_context("owner1")
+        assert own_row["origin_conversation_name"] == "Confidential deal"
+
+    def _older_live_then_newer_finished(self, conn, agent=None, user_id="u1"):
+        repo = SchedulesRepository(conn)
+        live = repo.create(user_id, agent, "recurring", "weekly check", cron="0 9 * * 1")
+        conn.execute(
+            text("UPDATE schedules SET created_at = now() - interval '1 year' WHERE id = CAST(:id AS uuid)"),
+            {"id": str(live["id"])},
+        )
+        for n in range(3):
+            done = repo.create(user_id, agent, "once", f"reminder {n}", run_at=_now(), next_run_at=_now())
+            conn.execute(
+                text("UPDATE schedules SET status = 'completed' WHERE id = CAST(:id AS uuid)"),
+                {"id": str(done["id"])},
+            )
+        return str(live["id"])
+
+    def test_a_live_schedule_is_listed_past_newer_finished_ones(self, pg_conn):
+        # Finished tasks are kept, so enough of them would fill the limit.
+        live = self._older_live_then_newer_finished(pg_conn)
+        rows = SchedulesRepository(pg_conn).list_owned_with_context("u1", limit=2)
+        assert str(rows[0]["id"]) == live
+
+    def test_a_team_agents_live_schedule_is_listed_past_newer_finished_ones(self, pg_conn):
+        agent = _insert_agent(pg_conn, "owner1")
+        live = self._older_live_then_newer_finished(pg_conn, agent, "owner1")
+        rows = SchedulesRepository(pg_conn).list_for_agents_with_context([agent], limit=2)
+        assert str(rows[0]["id"]) == live
