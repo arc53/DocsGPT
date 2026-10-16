@@ -34,16 +34,19 @@
 #   EMBEDDINGS_NAME        defaults to granite here (this stack always starts on
 #                          fresh volumes, so there is no older index to keep
 #                          compatible); the code default stays mpnet for upgrades.
-#   DECISION_BASE_URL      decision server the backend and worker call (default:
-#                          the decider below); e.g. http://host.docker.internal:7095
-#                          for `docsgpt decide-server --device mps` on a Mac
-#   DECISION_KEY           bearer key between them and the decider (default:
-#                          INTERNAL_KEY)
+#   DECISION_KEY           bearer key the backend and worker send the decider
+#                          (default: INTERNAL_KEY)
 #   DECISION_MEMORY        the decider's memory limit (default: 2g)
 #
-# The decider serves the decision model and stays idle (~100 MB), loading and
-# downloading nothing, until a decision feature is turned on in .env; see
-# https://docs.docsgpt.cloud/Models/decision-model. The backend does not wait
+# The decision model runs in the backend, which the worker calls, and loads and
+# downloads nothing until a decision feature is turned on in .env; see
+# https://docs.docsgpt.cloud/Models/decision-model. To serve it from the decider
+# container instead (`docsgpt up --decider` does this), add two lines to .env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
+# (COMPOSE_PROFILES=https,decider with the HTTPS profile below). DECISION_BASE_URL
+# can also name another server, e.g. http://host.docker.internal:7095 for
+# `docsgpt decide-server --device mps` on a Mac. The backend does not wait
 # for it: decisions fail open.
 #
 # HTTPS for a public domain: point the domain's DNS at this machine, open ports
@@ -75,7 +78,6 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
-      - DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}
       - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     # A model server on the host (Ollama, vLLM, ...) is reachable as
     # host.docker.internal on Linux too, as it is on Docker Desktop.
@@ -87,7 +89,7 @@ services:
       - indexes:/app/indexes
       - inputs:/app/inputs
       - vectors:/app/vectors
-      # the decision model's tokenizer (the decider holds the model)
+      # the decision model, or only its tokenizer when the decider holds it
       - decision_models:/app/models/decision
     depends_on:
       redis:
@@ -112,7 +114,6 @@ services:
       - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - API_URL=http://backend:7091
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
-      - DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}
       - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -129,9 +130,11 @@ services:
     restart: unless-stopped
 
   # The decision model (docsgpt decide-server), idle until a decision feature
-  # is turned on. Always on the CPU here: a Mac's GPU is reached by a native
-  # `docsgpt decide-server --device mps` instead (DECISION_BASE_URL above).
+  # is turned on, and only with the decider profile (see the top). Always on the
+  # CPU here: a Mac's GPU is reached by a native `docsgpt decide-server --device
+  # mps` instead (DECISION_BASE_URL above).
   decider:
+    profiles: [decider]
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
     # root, like the backend and worker that share the model cache volume
     user: root

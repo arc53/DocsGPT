@@ -1,4 +1,4 @@
-"""The decider sidecar and the vLLM overlay in the Compose files under ``deployment/``.
+"""The decision model in the Compose files under ``deployment/``: the opt-in decider sidecar and the vLLM overlay.
 
 They are read as YAML, the way Compose sees them before interpolation, so no Docker is needed; where the
 ``docker`` command exists, the standalone file (what ``docsgpt up`` runs) is also resolved by Compose itself.
@@ -38,6 +38,7 @@ def _environment(service: dict[str, Any]) -> list[str]:
 class TestStacks:
     def test_the_decider_serves_on_the_cpu_and_loads_nothing_by_itself(self, name):
         decider = _load(DEPLOYMENT / name)["services"]["decider"]
+        assert decider["profiles"] == ["decider"], "opt-in: the backend holds the model by default"
         assert decider["command"] == "python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu"
         assert decider["mem_limit"] == "${DECISION_MEMORY:-2g}"
         assert "cpus" not in decider and "ports" not in decider
@@ -51,10 +52,11 @@ class TestStacks:
         assert decider.get("user") == backend.get("user") == "root"
 
     @pytest.mark.parametrize("service", ["backend", "worker"])
-    def test_backend_and_worker_call_it_with_the_stack_key(self, name, service):
+    def test_backend_and_worker_name_no_decision_server_and_keep_the_stack_key(self, name, service):
+        """An unset DECISION_BASE_URL is local mode; set in .env, it arrives through env_file."""
         target = _load(DEPLOYMENT / name)["services"][service]
         env = _environment(target)
-        assert "DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}" in env
+        assert not [entry for entry in env if entry.split("=")[0] == "DECISION_BASE_URL"]
         assert KEY in env
         assert CACHE in target["volumes"]
         assert "decider" not in (target.get("depends_on") or {}), "decisions fail open; nothing waits for them"
@@ -104,8 +106,10 @@ class TestVllmOverlay:
         assert "DECISION_BASE_URL=http://decider-vllm:8000" in env and "DECISION_PROTOCOL=vllm" in env
 
 
-def _resolved(where: Path, *files: Path, **environ: str) -> dict[str, Any]:
-    """``docker compose config`` on copies of ``files`` in ``where``, so no ``.env`` of this machine is read."""
+def _resolved(where: Path, *files: Path, dotenv: str = "", **environ: str) -> dict[str, Any]:
+    """``docker compose config`` on copies of ``files`` in ``where``, with ``dotenv`` as the stack's ``.env``, so no
+    ``.env`` of this machine is read."""
+    (where / ".env").write_text(dotenv, encoding="utf-8")
     for f in files:
         shutil.copy(f, where / f.name)
     result = subprocess.run(
@@ -120,15 +124,25 @@ def _resolved(where: Path, *files: Path, **environ: str) -> dict[str, Any]:
 @pytest.mark.unit
 @pytest.mark.skipif(shutil.which("docker") is None, reason="needs the docker command (no daemon)")
 class TestResolved:
-    def test_the_stack_key_reaches_all_three(self, tmp_path):
-        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", INTERNAL_KEY="stack-secret")["services"]
+    def test_by_default_there_is_no_decider_and_no_decision_server(self, tmp_path):
+        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", INTERNAL_KEY="k")["services"]
+        assert "decider" not in services
+        for name in ("backend", "worker"):
+            assert "DECISION_BASE_URL" not in services[name]["environment"], name
+            assert services[name]["environment"]["DECISION_KEY"] == "k", name
+
+    def test_two_env_lines_start_the_decider_and_point_both_at_it(self, tmp_path):
+        dotenv = "INTERNAL_KEY=stack-secret\nCOMPOSE_PROFILES=decider\nDECISION_BASE_URL=http://decider:7095\n"
+        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", dotenv=dotenv)["services"]
         for name in ("backend", "worker", "decider"):
             assert services[name]["environment"]["DECISION_KEY"] == "stack-secret", name
-        assert services["backend"]["environment"]["DECISION_BASE_URL"] == "http://decider:7095"
+        for name in ("backend", "worker"):
+            assert services[name]["environment"]["DECISION_BASE_URL"] == "http://decider:7095", name
 
     def test_an_explicit_key_and_url_win(self, tmp_path):
-        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", INTERNAL_KEY="stack-secret",
-                             DECISION_KEY="own", DECISION_BASE_URL="http://host.docker.internal:7095")["services"]
+        dotenv = ("INTERNAL_KEY=stack-secret\nDECISION_KEY=own\nCOMPOSE_PROFILES=decider\n"
+                  "DECISION_BASE_URL=http://host.docker.internal:7095\n")
+        services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", dotenv=dotenv)["services"]
         assert services["decider"]["environment"]["DECISION_KEY"] == "own"
         assert services["worker"]["environment"]["DECISION_BASE_URL"] == "http://host.docker.internal:7095"
 
@@ -136,4 +150,5 @@ class TestResolved:
         services = _resolved(tmp_path, DEPLOYMENT / "docker-compose-standalone.yaml", OVERLAY, INTERNAL_KEY="k")["services"]
         assert services["backend"]["environment"]["DECISION_PROTOCOL"] == "vllm"
         assert services["decider-vllm"]["environment"]["VLLM_API_KEY"] == "k"
-        assert "decider" in services, "the idle CPU decider stays"
+        assert services["worker"]["environment"]["DECISION_BASE_URL"] == "http://decider-vllm:8000"
+        assert "decider" not in services

@@ -13,7 +13,7 @@ from docsgpt import cli
 from docsgpt.deploy import commands, envfile, stack
 from docsgpt.deploy.docker import DeployError
 
-EVERY_PROFILE = ["--profile", "https"]
+EVERY_PROFILE = ["--profile", "https", "--profile", "decider"]
 
 
 class FakeDocker:
@@ -251,6 +251,24 @@ class TestUpAgain:
         assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "local"], _context(docker)) == 0
         assert docker.calls == [
             (tmp_path, [*EVERY_PROFILE, "rm", "--stop", "--force", "caddy"]),
+            (tmp_path, ["up", "-d", "--remove-orphans"]),
+        ]
+
+    def test_the_decider_stays_on_until_it_is_turned_off(self, tmp_path):
+        """A profile turned off is not an orphan, so `up --remove-orphans` alone would leave the decider running."""
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--decider"], _context()) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["COMPOSE_PROFILES"] == "decider" and env["DECISION_BASE_URL"] == "http://decider:7095"
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
+        assert envfile.read(tmp_path / ".env")["COMPOSE_PROFILES"] == "decider"
+        assert docker.calls == [(tmp_path, ["up", "-d", "--remove-orphans"])]
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--no-decider"], _context(docker)) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert "COMPOSE_PROFILES" not in env and "DECISION_BASE_URL" not in env
+        assert docker.calls == [
+            (tmp_path, [*EVERY_PROFILE, "rm", "--stop", "--force", "decider"]),
             (tmp_path, ["up", "-d", "--remove-orphans"]),
         ]
 

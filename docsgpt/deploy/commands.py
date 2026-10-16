@@ -31,9 +31,9 @@ PROJECT = "docsgpt"
 DATABASE_VOLUME = f"{PROJECT}_postgres_data"
 _MOVING_TAGS = ("latest", "develop")
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# Commands that stop or remove services name every profile, so Caddy goes too
-# even when COMPOSE_PROFILES no longer enables it.
-_EVERY_PROFILE = ("--profile", "https")
+# Commands that stop or remove services name every profile, so Caddy and the
+# decider go too even when COMPOSE_PROFILES no longer enables them.
+_EVERY_PROFILE = ("--profile", "https", "--profile", stack.DECIDER_PROFILE)
 
 EXPOSURE_CHOICES = [
     ("local", "Only this computer"),
@@ -296,6 +296,12 @@ def _refuse_docker_only_options(args) -> None:
             'parser engine into this environment instead, with `uv tool install "docsgpt[docling]"` or '
             '`pip install "docsgpt[docling]"`, then run `docsgpt up --native` again.'
         )
+    if getattr(args, "decider", None):
+        raise DeployError(
+            "--decider starts a container, which a native install does not run: its API process holds the "
+            "decision model. To serve it separately, run `docsgpt decide-server` and set "
+            "DECISION_BASE_URL=http://127.0.0.1:7095 in the settings."
+        )
 
 
 def _port_number(value: object, source: str) -> int:
@@ -535,6 +541,7 @@ def up(args, context: Optional[Context] = None) -> int:
             port=args.port,
             provider=provider,
             docling=args.docling,
+            decider=args.decider,
             lan_ip=lan_address,
             written_api_url=_record(directory).get("api_url"),
         )
@@ -549,6 +556,9 @@ def up(args, context: Optional[Context] = None) -> int:
     if stack.exposure(existing) == "domain" and stack.exposure(env) != "domain":
         # With the https profile off, `up --remove-orphans` would leave Caddy running on ports 80 and 443.
         context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "caddy", check=False)
+    if stack.runs_decider(existing) and not stack.runs_decider(env):
+        # The same for the decider: the backend and worker go back to the model in the API process.
+        context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "decider", check=False)
     if stack.exposure(env) == "network":
         print(
             "DocsGPT will listen on every interface over plain HTTP: its access token travels as "
@@ -1082,10 +1092,6 @@ def _redis_to_check(args, env: Mapping[str, str]) -> dict:
     return {key: value for key, value in pairs if value}
 
 
-#: Where a Docker stack's backend and worker reach the decision model unless ``.env`` says otherwise.
-SIDECAR_URL = "http://decider:7095"
-
-
 def _decision_settings(env: Mapping[str, str]):
     """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, shape)``."""
     with _service_environment(env):
@@ -1156,7 +1162,8 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
 
     Args:
         env: The stack's settings file.
-        docker: Whether the services run in this stack's containers, which reach the decider sidecar.
+        docker: Whether the services run in this stack's containers: the model is then in the backend
+            container, or in the decider sidecar when ``docsgpt up --decider`` started one.
     """
     try:
         settings, registered = _decision_settings(env)
@@ -1165,11 +1172,18 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     if settings.DECISION_MODE == "none":
         return Check("decisions", "ok", "off (DECISION_MODE=none)")
     on = [name for name, (mode, _, _) in registered.items() if mode != "off"]
-    url = settings.DECISION_BASE_URL or (SIDECAR_URL if docker and settings.DECISION_MODE != "local" else None)
+    url = settings.DECISION_BASE_URL if settings.DECISION_MODE != "local" else None
     profile, level = None, "ok"
-    if url == SIDECAR_URL and not settings.DECISION_BASE_URL:
-        where = "the stack's decider container (`docsgpt logs decider`)"
-        if sys.platform == "darwin" and on:
+    if settings.DECISION_MODE == "api" and not url:
+        level, where = "warn", "DECISION_MODE=api without DECISION_BASE_URL"
+    elif docker and url in (None, stack.DECIDER_URL):
+        if url is None:
+            where = "in the backend container (`docsgpt logs backend`), which the worker calls"
+        elif stack.runs_decider(env):
+            where = "the stack's decider container (`docsgpt logs decider`)"
+        else:
+            level, where = "warn", f"{url}, but no decider runs: start it with `docsgpt up --decider`"
+        if sys.platform == "darwin" and on and level == "ok":
             level = "warn"
             where += ("; Docker on a Mac has no GPU, so run `docsgpt decide-server --device mps` on the host and "
                       "set DECISION_BASE_URL=http://host.docker.internal:7095")

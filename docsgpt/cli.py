@@ -217,7 +217,12 @@ def _add_deploy_commands(commands) -> None:
                          help="run the image with the docling parser engine and OCR (several GB larger)")
     docling.add_argument("--no-docling", dest="docling", action="store_const", const=False,
                          help="go back to the default image")
-    up.set_defaults(docling=None)
+    decider = up.add_mutually_exclusive_group()
+    decider.add_argument("--decider", dest="decider", action="store_const", const=True,
+                         help="serve the decision model from a container of its own instead of the API process")
+    decider.add_argument("--no-decider", dest="decider", action="store_const", const=False,
+                         help="remove that container; the API process holds the model again")
+    up.set_defaults(docling=None, decider=None)
     up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
     up.add_argument("--native", action="store_true",
                     help="run the API and worker as services on this machine instead of on Docker")

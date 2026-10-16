@@ -1,5 +1,6 @@
 # The decision model's server (`docsgpt decide-server`), which the API and the
-# worker call at docsgpt-decider-service. It runs the API's image and stays
+# worker call at docsgpt-decider-service once this component is on (see
+# kustomization.yaml next to this file). It runs the API's image and stays
 # idle, loading and downloading nothing, until a decision feature is turned on
 # in docsgpt-secrets; the first one downloads the model (~0.5 GB) into the
 # volume below. The API's readiness never depends on it: decisions fail open.

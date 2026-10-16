@@ -8,14 +8,18 @@
 #   DOCSGPT_BIND           interface the API (7091) and UI (5173) are published on:
 #                          127.0.0.1 (default, this machine only) or 0.0.0.0 (every
 #                          interface; set AUTH_TYPE first, see Deploying/Security)
-#   DECISION_BASE_URL      decision server the backend and worker call (default:
-#                          the decider below, idle until a decision feature is on)
-#   DECISION_KEY           bearer key for it (default: INTERNAL_KEY)
+#   DECISION_KEY           bearer key for the decider (default: INTERNAL_KEY)
 #   DECISION_MEMORY        the decider's memory limit (default: 2g)
 # Set them in ../.env and pass it with --env-file .env (Compose otherwise looks
 # for deployment/.env), or in the shell. Postgres and Redis are
 # published on 127.0.0.1 only, for a backend run on the host. deployment/docker-compose-standalone.yaml runs
 # the same images without a git checkout, with the backend serving the UI on one port.
+#
+# The decision model runs in the backend, which the worker calls, and loads
+# nothing until a decision feature is turned on. To serve it from the decider
+# container instead, add two lines to ../.env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
 name: docsgpt-oss
 services:
 
@@ -51,7 +55,6 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-      - DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}
       - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
@@ -83,7 +86,6 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-      - DECISION_BASE_URL=${DECISION_BASE_URL:-http://decider:7095}
       - DECISION_KEY=${DECISION_KEY:-${INTERNAL_KEY:-}}
     volumes:
       # Host data stays under application/ (the old package directory) for this
@@ -100,8 +102,10 @@ services:
         condition: service_healthy
 
   # The decision model (docsgpt decide-server), on the CPU, idle until a
-  # decision feature is turned on. The backend does not wait for it.
+  # decision feature is turned on. Only with the decider profile (see the top);
+  # the backend does not wait for it.
   decider:
+    profiles: [decider]
     user: root
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-develop}${DOCSGPT_IMAGE_VARIANT:-}
     command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu

@@ -1,6 +1,6 @@
 # The decision model on an NVIDIA GPU: stock vLLM serving
 # arc53/arc-decide-0.6b-v0.1 at its pinned revision, which the backend and the
-# worker call instead of the CPU decider. Layer it on a stack file, e.g.
+# worker call instead of the model on the CPU. Layer it on a stack file, e.g.
 #   docker compose --env-file .env -f deployment/docker-compose-hub.yaml \
 #     -f deployment/optional/docker-compose.optional.decide-vllm.yaml up -d
 # and name both files again for every later compose command. A `docsgpt up`
@@ -10,7 +10,8 @@
 # amd64 hosts with the NVIDIA container toolkit only. Nothing here runs a
 # decision until a decision feature is turned on in .env; vLLM itself loads the
 # model (~1.2 GB of weights, downloaded once into its own volume) when it
-# starts, and the idle CPU decider stays and never loads.
+# starts. The backend then loads no model, and the decider profile has nothing
+# to do: leave it off.
 #
 #   DECISION_VLLM_GPU_SHARE  share of the GPU's memory vLLM takes (default 0.2,
 #                            ~4.8 GB of a 24 GB card), leaving room for an LLM

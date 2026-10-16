@@ -720,11 +720,24 @@ class TestDoctorDecisions:
     def test_mode_none(self):
         assert commands._check_decisions({"DECISION_MODE": "none"}, docker=False).detail == "off (DECISION_MODE=none)"
 
-    def test_a_docker_stack_points_at_its_decider(self, monkeypatch):
+    def test_a_docker_stack_holds_the_model_in_its_backend(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
         check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
-        assert check.level == "ok" and "decider container" in check.detail
+        assert check.level == "ok" and "backend container" in check.detail
         assert "injection_input monitor" in check.detail
+
+    def test_a_docker_stack_with_the_decider_points_at_it(self, monkeypatch):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095",
+               "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        check = commands._check_decisions(env, docker=True)
+        assert check.level == "ok" and "decider container" in check.detail
+
+    def test_a_decider_url_without_its_profile_is_a_warning(self, monkeypatch):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        env = {"DECISION_BASE_URL": "http://decider:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        check = commands._check_decisions(env, docker=True)
+        assert check.level == "warn" and "docsgpt up --decider" in check.detail
 
     def test_on_a_mac_a_feature_in_docker_gets_the_mps_hint(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "darwin")
