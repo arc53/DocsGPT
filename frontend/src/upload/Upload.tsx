@@ -1,8 +1,7 @@
-import { ArrowRight, FileText } from 'lucide-react';
+import { ArrowRight, FileText, FolderUp } from 'lucide-react';
 import { envVar } from '@/env';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
-import type { FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
@@ -56,6 +55,12 @@ import { addUploadTask, updateUploadTask } from './uploadSlice';
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
+import {
+  getFolderName,
+  getUploadPath,
+  hasAcceptedExtension,
+  isHiddenUpload,
+} from './folderUpload';
 import RetrievalOptions, {
   DEFAULT_RETRIEVAL_OPTIONS,
   isPrescreenConfigValid,
@@ -114,6 +119,13 @@ function Upload({
   // Names of the files the last drop turned away (over the size limit or of
   // an unaccepted type), shown under the dropzone.
   const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
+  // Hidden folder picker behind the "Select a folder" button.
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const setFolderInput = useCallback((input: HTMLInputElement | null) => {
+    folderInputRef.current = input;
+    // React has no prop for it; it turns the file picker into a folder picker.
+    if (input) input.webkitdirectory = true;
+  }, []);
   const [activeTab, setActiveTab] = useState<boolean>(true);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
@@ -200,12 +212,30 @@ function Upload({
                   : undefined
               }
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => folderInputRef.current?.click()}
+            >
+              <FolderUp />
+              {t('modals.uploadDoc.selectFolder')}
+            </Button>
+            <input
+              ref={setFolderInput}
+              type="file"
+              multiple
+              className="hidden"
+              data-testid="folder-input"
+              onChange={onFolderPicked}
+            />
             {files.length > 0 && (
               <Card variant="outline" padding="none">
                 <ListRows>
                   {files.map((file) => (
                     <ListRow
-                      key={`${file.name}-${file.size}-${file.lastModified}`}
+                      key={`${getUploadPath(file)}-${file.size}-${file.lastModified}`}
                       leading={
                         <Avatar
                           aria-hidden="true"
@@ -216,7 +246,11 @@ function Upload({
                           <FileText className="size-4" />
                         </Avatar>
                       }
-                      title={<span title={file.name}>{file.name}</span>}
+                      title={
+                        <span title={getUploadPath(file)}>
+                          {getUploadPath(file)}
+                        </span>
+                      }
                       description={formatBytes(file.size)}
                     />
                   ))}
@@ -440,10 +474,21 @@ function Upload({
   });
 
   const onDrop = useCallback(
-    (acceptedFiles: File[], rejections: FileRejection[] = []) => {
+    // Rejections come from the dropzone or from onFolderPicked below.
+    (pickedFiles: File[], rejections: { file: File }[] = []) => {
+      // A folder brings its hidden files (.git, .DS_Store) along. The worker
+      // skips them anyway, so leave them out without listing them as rejected.
+      const acceptedFiles = pickedFiles.filter((file) => !isHiddenUpload(file));
       setfiles(acceptedFiles);
-      setRejectedFiles(rejections.map((rejection) => rejection.file.name));
-      const pickedName = acceptedFiles[0]?.name;
+      setRejectedFiles(
+        rejections
+          .filter((rejection) => !isHiddenUpload(rejection.file))
+          .map((rejection) => getUploadPath(rejection.file)),
+      );
+      const firstFile = acceptedFiles[0];
+      const pickedName = firstFile
+        ? (getFolderName(firstFile) ?? firstFile.name)
+        : undefined;
       if (!nameTouched && pickedName) {
         setIngestor((prev) => ({ ...prev, name: pickedName }));
       }
@@ -462,10 +507,30 @@ function Upload({
     [ingestor.type, nameTouched],
   );
 
+  // The folder picker applies no filter, so check type and size here the way
+  // the dropzone does for a drop.
+  const onFolderPicked = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(event.target.files ?? []);
+    // Let the same folder be picked again.
+    event.target.value = '';
+    const accepted: File[] = [];
+    const rejections: { file: File }[] = [];
+    picked.forEach((file) => {
+      if (
+        hasAcceptedExtension(file, FILE_UPLOAD_ACCEPT) &&
+        file.size <= MAX_UPLOAD_BYTES
+      )
+        accepted.push(file);
+      else rejections.push({ file });
+    });
+    onDrop(accepted, rejections);
+  };
+
   const uploadFile = (clientTaskId: string) => {
     const formData = new FormData();
     files.forEach((file) => {
-      formData.append('file', file);
+      // Sent with its path inside the folder, so the source keeps the tree.
+      formData.append('file', file, getUploadPath(file));
     });
 
     formData.append('name', ingestor.name);

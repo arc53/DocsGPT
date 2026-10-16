@@ -58,6 +58,71 @@ class TestEnforceAudioPathSizeLimit:
                 _enforce_audio_path_size_limit(str(p), "audio.mp3")
 
 
+class TestSafeRelativeUploadPath:
+    def test_keeps_nested_folders(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        assert _safe_relative_upload_path("docs/guide/a.md", {}) == "docs/guide/a.md"
+
+    def test_plain_name_stays_flat(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        assert _safe_relative_upload_path("report.pdf", {}) == "report.pdf"
+
+    def test_drops_traversal_and_empty_parts(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        assert _safe_relative_upload_path("../../etc/passwd", {}) == "etc/passwd"
+        assert _safe_relative_upload_path("/abs//./x.md", {}) == "abs/x.md"
+        assert _safe_relative_upload_path("a\\..\\b.md", {}) == "a/b.md"
+
+    def test_sanitizes_each_part(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        assert _safe_relative_upload_path("my docs/read me.md", {}) == "my_docs/read_me.md"
+
+    def test_unnamed_folder_keeps_its_files_together(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        folder_names: dict[str, str] = {}
+        first = _safe_relative_upload_path("文档/a.md", folder_names)
+        second = _safe_relative_upload_path("文档/b.md", folder_names)
+
+        assert first.split("/")[0] == second.split("/")[0]
+        assert first.endswith("/a.md") and second.endswith("/b.md")
+
+    def test_empty_name_gets_generated_name(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        assert _safe_relative_upload_path("../..", {}) not in ("", ".", "..")
+
+    def test_folders_that_clean_up_the_same_stay_apart(self):
+        from docsgpt.api.user.sources.upload import _safe_relative_upload_path
+
+        folder_names: dict[str, str] = {}
+        first = _safe_relative_upload_path("docs/my docs/README.md", folder_names)
+        second = _safe_relative_upload_path("docs/my_docs/README.md", folder_names)
+        again = _safe_relative_upload_path("docs/my docs/b.md", folder_names)
+
+        assert first == "docs/my_docs/README.md"
+        assert second == "docs/my_docs_2/README.md"
+        assert again == "docs/my_docs/b.md"
+
+
+class TestUniqueUploadPath:
+    def test_free_path_is_kept(self):
+        from docsgpt.api.user.sources.upload import _unique_upload_path
+
+        assert _unique_upload_path("docs/a.md", {"docs/b.md"}) == "docs/a.md"
+
+    def test_taken_path_gets_next_free_number(self):
+        from docsgpt.api.user.sources.upload import _unique_upload_path
+
+        taken = {"docs/a.md", "docs/a_2.md"}
+        assert _unique_upload_path("docs/a.md", taken) == "docs/a_3.md"
+        assert _unique_upload_path("docs", {"docs"}) == "docs_2"
+
+
 class TestUploadFile:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.upload import UploadFile
@@ -379,6 +444,147 @@ class TestUploadFile:
         assert response.status_code == 200
         # Saved once (as the .docx directly, not extracted)
         assert fake_storage.save_file.call_count == 1
+
+    def _post_files(self, app, files):
+        """Upload ``files`` as job ``job``; return (response, saved files, ingest kwargs).
+
+        ``saved`` maps each storage path to the bytes written there.
+        """
+        from docsgpt.api.user.sources.upload import UploadFile
+
+        saved: dict[str, bytes] = {}
+        fake_storage = MagicMock()
+        fake_storage.save_file.side_effect = (
+            lambda file, path: saved.__setitem__(path, file.read())
+        )
+        with patch(
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
+            return_value=MagicMock(id="folder-task"),
+        ) as apply_async, app.test_request_context(
+            "/api/upload", method="POST",
+            data={"user": "alice", "name": "job", "file": files},
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+        assert fake_storage.save_file.call_count == len(saved)
+        kwargs = apply_async.call_args.kwargs["kwargs"] if apply_async.called else None
+        return response, saved, kwargs
+
+    def test_folder_upload_keeps_relative_paths(self, app):
+        from docsgpt.core.settings import settings
+
+        response, saved, kwargs = self._post_files(app, [
+            (io.BytesIO(b"a"), "docs/guide/a.md"),
+            (io.BytesIO(b"b"), "docs/b.md"),
+        ])
+
+        assert response.status_code == 200
+        base_path = f"{settings.UPLOAD_FOLDER}/alice/job"
+        assert sorted(saved) == [
+            f"{base_path}/docs/b.md",
+            f"{base_path}/docs/guide/a.md",
+        ]
+        assert kwargs["file_path"] == base_path
+        assert kwargs["file_name_map"] == {
+            "docs/guide/a.md": "a.md",
+            "docs/b.md": "b.md",
+        }
+
+    def test_plain_file_name_saved_at_source_root(self, app):
+        from docsgpt.core.settings import settings
+
+        response, saved, kwargs = self._post_files(
+            app, [(io.BytesIO(b"x"), "my notes.txt")]
+        )
+
+        assert response.status_code == 200
+        assert list(saved) == [f"{settings.UPLOAD_FOLDER}/alice/job/my_notes.txt"]
+        assert kwargs["file_name_map"] == {"my_notes.txt": "my notes.txt"}
+
+    def test_folder_upload_cannot_escape_source_dir(self, app):
+        from docsgpt.core.settings import settings
+
+        response, saved, _ = self._post_files(app, [
+            (io.BytesIO(b"1"), "../../x.md"),
+            (io.BytesIO(b"2"), "/etc/y.md"),
+            (io.BytesIO(b"3"), "docs/./../z.md"),
+            (io.BytesIO(b"4"), "..\\..\\w.md"),
+        ])
+
+        assert response.status_code == 200
+        base_path = f"{settings.UPLOAD_FOLDER}/alice/job"
+        assert sorted(saved) == [
+            f"{base_path}/docs/z.md",
+            f"{base_path}/etc/y.md",
+            f"{base_path}/w.md",
+            f"{base_path}/x.md",
+        ]
+        for path in saved:
+            assert ".." not in path.split("/")
+
+    def test_zip_inside_folder_extracts_into_that_folder(self, app):
+        import zipfile
+
+        from docsgpt.core.settings import settings
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("inside.txt", "inside")
+        archive.seek(0)
+
+        response, saved, _ = self._post_files(
+            app, [(archive, "docs/bundle.zip")]
+        )
+
+        assert response.status_code == 200
+        assert list(saved) == [f"{settings.UPLOAD_FOLDER}/alice/job/docs/inside.txt"]
+
+    def test_folders_that_clean_up_the_same_keep_both_files(self, app):
+        from docsgpt.core.settings import settings
+
+        response, saved, kwargs = self._post_files(app, [
+            (io.BytesIO(b"spaced"), "docs/my docs/README.md"),
+            (io.BytesIO(b"underscored"), "docs/my_docs/README.md"),
+        ])
+
+        assert response.status_code == 200
+        base_path = f"{settings.UPLOAD_FOLDER}/alice/job"
+        assert saved == {
+            f"{base_path}/docs/my_docs/README.md": b"spaced",
+            f"{base_path}/docs/my_docs_2/README.md": b"underscored",
+        }
+        assert kwargs["file_name_map"] == {
+            "docs/my_docs/README.md": "README.md",
+            "docs/my_docs_2/README.md": "README.md",
+        }
+
+    def test_loose_file_and_zip_member_with_same_path_both_kept(self, app):
+        import zipfile
+
+        from docsgpt.core.settings import settings
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("inside.txt", "zipped")
+        archive.seek(0)
+
+        response, saved, kwargs = self._post_files(app, [
+            (io.BytesIO(b"loose"), "docs/inside.txt"),
+            (archive, "docs/bundle.zip"),
+        ])
+
+        assert response.status_code == 200
+        base_path = f"{settings.UPLOAD_FOLDER}/alice/job"
+        assert saved == {
+            f"{base_path}/docs/inside.txt": b"loose",
+            f"{base_path}/docs/inside_2.txt": b"zipped",
+        }
+        assert kwargs["file_name_map"] == {"docs/inside.txt": "inside.txt"}
 
     def test_audio_too_large_returns_413(self, app):
         from docsgpt.api.user.sources.upload import UploadFile
