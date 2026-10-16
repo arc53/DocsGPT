@@ -85,6 +85,8 @@ A chat in the sidebar shows at most one mark, the most urgent one. Hover over it
 | Purple dot | Something new arrived while you were away, including while the chat was open in a window you weren't looking at | You open the chat, or come back to the window that shows it |
 | Hollow ring | The chat has an active [monitor](/Tools/monitors) | The monitor ends or is paused |
 
+The browser tab's title counts the chats with a red, amber or purple dot, so a tab in the background shows `(2) DocsGPT` when two chats need you. The count drops as you open them.
+
 ## Over the API
 
 - `GET /api/activity/now` returns the Now page's running items, the approvals and paused schedules under **Needs you**, **Up next** and the 24-hour counts, plus the chats waiting for an approval or with a failure, for the sidebar marks. The page adds the rest itself: **Watching** comes from `GET /api/monitors` (see [Managing monitors](/Tools/monitors#managing-monitors)), and the connections to reconnect from your connections' state.

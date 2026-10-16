@@ -189,7 +189,7 @@ conversation, the user is notified according to where they are:
    up (below).
 
 Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it, or
-until they come back to the window that already shows it. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
+until they come back to the window that already shows it. The tab title counts the chats that need the user, unread, failed or waiting for an approval: `(2) DocsGPT`. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
 
 Tabs report what they show to `POST /api/presence` (`{tab_id, conversation_id, visible, closing?}`) when their
 route, visibility or window focus changes and every 20 seconds while visible; `visible` is true only while the

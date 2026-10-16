@@ -17,6 +17,7 @@ import ConversationNotificationToast from './ConversationNotificationToast';
 import PushPermissionToast from './PushPermissionToast';
 import { usePageAttended } from './usePageVisible';
 import { usePresence } from './usePresence';
+import { useTabTitleCount } from './useTabTitleCount';
 import {
   ensurePushSubscription,
   isPushSupported,
@@ -27,7 +28,8 @@ import {
 
 /**
  * Everything notifications need in the signed-in app, mounted once inside
- * the shared `ToastViewport`: presence reporting, the Web Push setup for a
+ * the shared `ToastViewport`: presence reporting, the count in the tab
+ * title, the Web Push setup for a
  * browser that already allowed it, routing a clicked notification, clearing
  * the unread mark of the conversation on screen, and the two toasts.
  */
@@ -43,6 +45,7 @@ export default function BackgroundNotifications() {
   const subscribedFor = useRef<string | null>(null);
 
   usePresence();
+  useTabTitleCount();
 
   useEffect(() => {
     void dispatch(fetchPushConfig());
