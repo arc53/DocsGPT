@@ -5,6 +5,7 @@ import en from './en.json';
 import es from './es.json';
 import fr from './fr.json';
 import jp from './jp.json';
+import ru from './ru.json';
 
 type Tree = { [key: string]: string | Tree };
 
@@ -25,7 +26,7 @@ const isProse = (value: string): boolean =>
 
 const english = new Map(strings(en));
 
-const LOCALES = { de, es, fr, jp };
+const LOCALES = { de, es, fr, jp, ru };
 
 describe('locales are translated', () => {
   it.each(Object.entries(LOCALES))(
