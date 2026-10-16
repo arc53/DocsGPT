@@ -25,7 +25,7 @@ export function quotaErrorMessage(
   locale?: string,
 ): string {
   const isCost = body.dimension === 'cost';
-  // `locale` is an app code (i18n.language); "zhTW" alone makes Intl throw.
+  // `locale` is i18n.language; intlLocale turns a value Intl rejects into en.
   const tag = locale ? intlLocale(locale) : undefined;
   const amount = (value?: number) =>
     isCost

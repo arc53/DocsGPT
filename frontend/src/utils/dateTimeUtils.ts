@@ -109,9 +109,6 @@ export function formatTimestamp(value?: string | null): string {
   return value ? formatDateTime(value) : EMPTY_VALUE;
 }
 
-// The app's language codes (locale/i18n.ts) that aren't BCP 47 tags.
-const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
-
 /**
  * The current UI language as a tag `Intl` understands. A value that is not a
  * valid tag (old builds stored the string "undefined") gives `en`, since every
@@ -120,7 +117,7 @@ const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
 export function intlLocale(language: string = i18next.language): string {
   if (!language) return 'en';
   try {
-    return Intl.getCanonicalLocales(INTL_LOCALES[language] ?? language)[0];
+    return Intl.getCanonicalLocales(language)[0];
   } catch {
     return 'en';
   }
