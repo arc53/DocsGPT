@@ -190,3 +190,15 @@
   auth_kind: mcp
   capabilities: [read]
   docs_url: https://docs.coingecko.com/docs/mcp-server
+
+# Keyless server; provides direct reference to official Microsoft and Azure technical documentation.
+- key: mcp:microsoftlearn
+  name: Microsoft Learn
+  description: Search and reference official Microsoft and Azure documentation, architecture guides and code samples.
+  icon: microsoftlearn
+  category: knowledge
+  mcp_url: https://learn.microsoft.com/api/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://learn.microsoft.com/docs
+
