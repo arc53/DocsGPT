@@ -79,14 +79,13 @@ def warm() -> None:
 def start() -> None:
     """Called once when an API process starts: warm the model if a setting asks for it then.
 
-    That is ``DECISION_PRELOAD``, or any registered feature set to something other than ``off``. A Celery worker
-    never loads the model.
+    That is ``DECISION_PRELOAD``, ``DECISION_PRESCREEN_ENABLED``, or any registered feature set to something other
+    than ``off`` (``features.wanted_at_start``). A Celery worker never loads the model.
     """
-    from docsgpt.core.settings import settings
     from docsgpt.decisions import features
 
     decider = get_decider()
-    if decider.enabled and (settings.DECISION_PRELOAD or any(features.configured(s) != "off" for s in features.specs())):
+    if decider.enabled and features.wanted_at_start():
         decider.warm()
 
 

@@ -247,6 +247,36 @@ class TestStart:
             decisions.start()
         assert fake.warmed == 1
 
+    @pytest.mark.parametrize("setting, value", [("DECISION_RERANK_MODE", "on"), ("DECISION_RERANK_MODE", "monitor"),
+                                                ("DECISION_RERANK_MODE", "auto"),
+                                                ("DECISION_PRESCREEN_ENABLED", True)])
+    def test_relevance_turned_on_warms(self, monkeypatch, setting, value):
+        # The first rerank or decision prescreen would otherwise fail open while the model loads.
+        monkeypatch.setattr(settings, setting, value)
+        fake = FakeDecider()
+        with installed(fake):
+            decisions.start()
+        assert fake.warmed == 1
+
+    def test_every_feature_off_never_warms(self, monkeypatch):
+        for spec in features.specs():
+            monkeypatch.setattr(settings, spec.mode_setting, "off")
+        monkeypatch.setattr(settings, "DECISION_PRESCREEN_ENABLED", False)
+        monkeypatch.setattr(settings, "DECISION_PRELOAD", False)
+        fake = FakeDecider()
+        with installed(fake):
+            decisions.start()
+        assert fake.warmed == 0
+
+    @pytest.mark.parametrize("setting, value", [("DECISION_RERANK_MODE", "on"), ("DECISION_PRESCREEN_ENABLED", True)])
+    def test_mode_none_never_warms_for_relevance(self, monkeypatch, setting, value):
+        monkeypatch.setattr(settings, setting, value)
+        fake = FakeDecider()
+        fake.enabled = False
+        with installed(fake):
+            decisions.start()
+        assert fake.warmed == 0
+
     def test_mode_none_never_warms(self, monkeypatch, feature):
         monkeypatch.setattr(settings, "DECISION_PRELOAD", True)
         client = DecisionClient()

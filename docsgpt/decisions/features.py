@@ -95,14 +95,32 @@ def effective(spec: FeatureSpec, enabled: bool, profile: Optional[SpeedProfile])
     return (spec.auto_mode if on else "off"), predicted, reason
 
 
+def wanted_at_start() -> bool:
+    """Whether a setting asks for the model as soon as a process that serves it starts.
+
+    That is ``DECISION_PRELOAD``, any registered feature set to something other than ``off`` (``auto`` has to
+    measure first), or ``DECISION_PRESCREEN_ENABLED``: the decision prescreen has no mode of its own, the operator
+    turning it on is what lets sources use it, and its first call would otherwise fail open while the model loads.
+    """
+    from docsgpt.core.settings import settings
+
+    return (
+        settings.DECISION_PRELOAD
+        or settings.DECISION_PRESCREEN_ENABLED
+        or any(configured(spec) != "off" for spec in specs())
+    )
+
+
 def nothing_fits(profile: SpeedProfile) -> bool:
     """Whether the model was loaded only to judge ``auto`` and no feature will call it.
 
-    True when some feature is set to ``auto``, every ``auto`` verdict on ``profile`` is off, and no feature is set
-    to ``on`` or ``monitor``.
+    True when some feature is set to ``auto``, every ``auto`` verdict on ``profile`` is off, no feature is set to
+    ``on`` or ``monitor``, and ``DECISION_PRESCREEN_ENABLED`` is off.
     """
+    from docsgpt.core.settings import settings
+
     registered = specs()
-    if not any(configured(spec) == "auto" for spec in registered):
+    if settings.DECISION_PRESCREEN_ENABLED or not any(configured(spec) == "auto" for spec in registered):
         return False
     return all(effective(spec, True, profile)[0] == "off" for spec in registered)
 

@@ -97,7 +97,7 @@ class TestPredict:
 @pytest.fixture
 def feature(monkeypatch):
     """A registered feature reading its mode and budget from a stand-in settings object."""
-    fake = SimpleNamespace(TEST_FEATURE_MODE="auto", TEST_FEATURE_BUDGET=1.0)
+    fake = SimpleNamespace(TEST_FEATURE_MODE="auto", TEST_FEATURE_BUDGET=1.0, DECISION_PRESCREEN_ENABLED=False)
     monkeypatch.setattr("docsgpt.core.settings.settings", fake)
     spec = FeatureSpec("test_feature", "TEST_FEATURE_MODE", "TEST_FEATURE_BUDGET", Shape(0, (0,)))
     monkeypatch.setattr(features, "_specs", {})
@@ -150,6 +150,11 @@ class TestVerdict:
         other = FeatureSpec("other", "OTHER_MODE", "TEST_FEATURE_BUDGET", Shape(0, (0,)))
         feature.settings.OTHER_MODE = mode
         features.register(other)
+        assert not features.nothing_fits(costing(5.0))
+
+    def test_the_decision_prescreen_still_uses_the_model(self, feature):
+        # It has no mode of its own; the operator turning it on is what lets sources call it.
+        feature.settings.DECISION_PRESCREEN_ENABLED = True
         assert not features.nothing_fits(costing(5.0))
 
     def test_without_an_auto_feature_nothing_is_judged(self, feature):
