@@ -470,6 +470,7 @@
           "enable": "Habilitar preselección con LLM",
           "warning": "Obtiene un conjunto de candidatos más grande y usa un LLM para filtrarlo. Esto añade latencia y costo por consulta.",
           "candidateK": "Candidatos a obtener",
+          "candidateKAboveDecisionMax": "El modelo de relevancia puntúa como máximo {{max}} candidatos, menos que los {{chunks}} fragmentos a recuperar. Reduce los fragmentos a {{max}} o usa el backend LLM.",
           "maxKeep": "Máximo de fragmentos a conservar",
           "batchSize": "Tamaño de lote",
           "model": "Modelo (opcional)",

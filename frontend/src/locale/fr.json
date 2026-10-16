@@ -470,6 +470,7 @@
           "enable": "Activer la présélection LLM",
           "warning": "Récupère un ensemble plus large de candidats et utilise un LLM pour le filtrer. Cela augmente la latence et le coût des requêtes.",
           "candidateK": "Candidats à récupérer",
+          "candidateKAboveDecisionMax": "Le modèle de pertinence évalue au plus {{max}} candidats, moins que les {{chunks}} fragments à récupérer. Réduisez les fragments à {{max}} ou utilisez le backend LLM.",
           "maxKeep": "Fragments max. à conserver",
           "batchSize": "Taille de lot",
           "model": "Modèle (facultatif)",

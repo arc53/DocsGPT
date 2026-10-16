@@ -457,6 +457,7 @@
           "enable": "Enable LLM prescreen",
           "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
           "candidateK": "Candidates to fetch",
+          "candidateKAboveDecisionMax": "The relevance model scores at most {{max}} candidates, fewer than the {{chunks}} chunks to retrieve. Lower the chunks to {{max}} or use the LLM backend.",
           "maxKeep": "Max chunks to keep",
           "batchSize": "Batch size",
           "model": "Model (optional)",

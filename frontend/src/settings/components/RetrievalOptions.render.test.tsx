@@ -179,6 +179,38 @@ describe('RetrievalOptions relevance controls', () => {
     expect(container.querySelector('#retrieval-reranker')).toBeNull();
   });
 
+  it.each(['decision', 'llm'] as const)(
+    'explains when the decision cap leaves no candidate count above the chunks (%s)',
+    (backend) => {
+      const value = withPrescreen(backend);
+      render({
+        ...value,
+        retrieval: {
+          ...value.retrieval,
+          chunks: 120,
+          prescreen: { ...value.retrieval.prescreen, candidate_k: 120 },
+        },
+      });
+      const alert = container.querySelector('[role="alert"]');
+      if (backend === 'decision') {
+        expect(alert?.textContent).toBe(
+          'settings.sources.retrievalOptions.prescreen.candidateKAboveDecisionMax',
+        );
+        const field = container.querySelector(
+          'input[aria-invalid="true"]',
+        ) as HTMLInputElement;
+        expect(field.value).toBe('120');
+      } else {
+        expect(alert).toBeNull();
+      }
+    },
+  );
+
+  it('shows no candidate error while the chunks fit the decision cap', () => {
+    render(withPrescreen('decision'), { rerank: false, prescreen: true });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it.each([
     [{ rerank: false, prescreen: true }, 'decision'],
     [{ rerank: true, prescreen: false }, 'llm'],

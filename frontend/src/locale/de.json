@@ -457,6 +457,7 @@
           "enable": "LLM-Vorfilterung aktivieren",
           "warning": "Ruft eine größere Kandidatenmenge ab und filtert sie mit einem LLM. Das erhöht Latenz und Kosten pro Anfrage.",
           "candidateK": "Abzurufende Kandidaten",
+          "candidateKAboveDecisionMax": "Das Relevanzmodell bewertet höchstens {{max}} Kandidaten, weniger als die {{chunks}} abzurufenden Chunks. Senken Sie die Chunks auf {{max}} oder nutzen Sie das LLM-Backend.",
           "maxKeep": "Max. zu behaltende Chunks",
           "batchSize": "Batch-Größe",
           "model": "Modell (optional)",

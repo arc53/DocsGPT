@@ -540,6 +540,11 @@ export default function RetrievalOptions({
     decision.prescreen && prescreen.backend === 'decision';
   const prescreenMaxCandidates =
     prescreen.backend === 'decision' ? DECISION_MAX_CANDIDATES : undefined;
+  // The decision backend's cap can sit below the top-k, which no candidate
+  // count then satisfies; say so rather than leave the save refused.
+  const candidatesBelowChunks =
+    prescreenMaxCandidates !== undefined &&
+    value.retrieval.chunks > prescreenMaxCandidates;
 
   const body = (
     <div className="flex flex-col gap-6">
@@ -797,25 +802,39 @@ export default function RetrievalOptions({
                 </Select>
               </FormField>
             )}
-            <Input
-              type="number"
-              min={value.retrieval.chunks}
-              max={prescreenMaxCandidates}
+            <FormField
               label={tr('prescreen.candidateK')}
-              value={String(prescreen.candidate_k)}
-              disabled={disabled}
-              onChange={(e) =>
-                setPrescreen({
-                  candidate_k: Math.min(
-                    prescreenMaxCandidates ?? Infinity,
-                    Math.max(
-                      value.retrieval.chunks,
-                      Number(e.target.value) || value.retrieval.chunks,
-                    ),
-                  ),
-                })
+              error={
+                candidatesBelowChunks
+                  ? t(
+                      'settings.sources.retrievalOptions.prescreen.candidateKAboveDecisionMax',
+                      {
+                        max: DECISION_MAX_CANDIDATES,
+                        chunks: value.retrieval.chunks,
+                      },
+                    )
+                  : undefined
               }
-            />
+            >
+              <Input
+                type="number"
+                min={value.retrieval.chunks}
+                max={prescreenMaxCandidates}
+                value={String(prescreen.candidate_k)}
+                disabled={disabled}
+                onChange={(e) =>
+                  setPrescreen({
+                    candidate_k: Math.min(
+                      prescreenMaxCandidates ?? Infinity,
+                      Math.max(
+                        value.retrieval.chunks,
+                        Number(e.target.value) || value.retrieval.chunks,
+                      ),
+                    ),
+                  })
+                }
+              />
+            </FormField>
             <Input
               type="number"
               min={1}

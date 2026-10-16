@@ -456,6 +456,7 @@
           "enable": "启用 LLM 预筛选",
           "warning": "会获取更大的候选集并使用 LLM 进行过滤。这会增加查询时的延迟和成本。",
           "candidateK": "获取的候选数量",
+          "candidateKAboveDecisionMax": "相关性模型最多评分 {{max}} 个候选，少于要检索的 {{chunks}} 个分块。请将分块数降至 {{max}} 或改用 LLM 后端。",
           "maxKeep": "最多保留的文本块数",
           "batchSize": "批处理大小",
           "model": "模型（可选）",

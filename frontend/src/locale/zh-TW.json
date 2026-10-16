@@ -456,6 +456,7 @@
           "enable": "啟用 LLM 預篩選",
           "warning": "會擷取較大的候選集合並使用 LLM 篩選。這將增加查詢延遲與成本。",
           "candidateK": "擷取候選數",
+          "candidateKAboveDecisionMax": "相關性模型最多評分 {{max}} 個候選，少於要擷取的 {{chunks}} 個區塊。請將區塊數降至 {{max}} 或改用 LLM 後端。",
           "maxKeep": "保留區塊上限",
           "batchSize": "批次大小",
           "model": "模型（選填）",
