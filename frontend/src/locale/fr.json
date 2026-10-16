@@ -26,8 +26,8 @@
     "memberAddedTitle": "Ajouté à une équipe",
     "memberAddedBody": "Vous avez été ajouté à {{team}} en tant que {{role}}",
     "sharedTitle": "Partagé avec vous",
-    "sharedBody": "{{type}} partagé avec votre équipe : {{name}} ({{access}})",
-    "sharedBodyNoName": "{{type}} partagé avec votre équipe ({{access}})",
+    "sharedBody": "Partage avec votre équipe : {{type}} « {{name}} » ({{access}})",
+    "sharedBodyNoName": "Partage avec votre équipe : {{type}} ({{access}})",
     "dismiss": "Ignorer",
     "toolApprovalTitle": "Approbation d’outil requise",
     "toolApprovalReview": "Examiner",
@@ -1100,7 +1100,7 @@
       "membersLoadError": "Impossible de charger les membres.",
       "deleteTeamConsequence": "Ses membres perdent l’accès à tout ce qui est partagé avec elle. Cette action est irréversible.",
       "delete": "Supprimer",
-      "removeMemberConsequence": "Ils perdent l’accès à tout ce qui est partagé avec {{team}}. Vous pouvez les rajouter à tout moment."
+      "removeMemberConsequence": "Cette personne perd l’accès à tout ce qui est partagé avec {{team}}. Vous pouvez la rajouter à tout moment."
     },
     "tools": {
       "label": "Outils",
@@ -2658,11 +2658,11 @@
         "addedByOther": "Ajouté par quelqu’un d’autre",
         "unknownItem": "Élément sans nom",
         "notAllowed": "Vous ne pouvez pas ajouter {{names}} à cet agent. Le propriétaire ne peut pas les utiliser, et vous ne pouvez partager que ce que vous possédez ou pouvez modifier.",
-        "takeOver": "Exécuter avec mon accès",
-        "takeOverPending": "{{name}} s’exécutera avec votre accès lors de l’enregistrement.",
+        "takeOver": "Exécuter avec mes accès",
+        "takeOverPending": "{{name}} s’exécutera avec vos accès lors de l’enregistrement.",
         "undoTakeOver": "Annuler",
-        "confirmationOutdated": "Cet agent a changé depuis que vous avez confirmé ce qui s’exécute avec votre accès. Vérifiez les avis et enregistrez de nouveau.",
-        "takeOverLabel": "Exécuter {{name}} avec mon accès",
+        "confirmationOutdated": "Cet agent a changé depuis que vous avez confirmé ce qui s’exécute avec vos accès. Vérifiez les avis et enregistrez de nouveau.",
+        "takeOverLabel": "Exécuter {{name}} avec mes accès",
         "addedByYou": "Ajouté par vous"
       },
       "resourceStates": {
@@ -2672,14 +2672,14 @@
           "ownerLostAccessYou": "Vous ne pouvez plus utiliser {{name}}.",
           "ownerLostAccess": "Le propriétaire de l’agent ne peut plus utiliser {{name}}.",
           "sponsorCannotEditAgent": "{{name}} s’exécutait en tant que {{person}}, qui ne peut plus modifier cet agent.",
-          "sponsorCannotEditAgentOther": "{{name}} s’exécutait en tant qu’une personne qui ne peut plus modifier cet agent.",
+          "sponsorCannotEditAgentOther": "{{name}} s’exécutait avec les accès d’une personne qui ne peut plus modifier cet agent.",
           "sponsorCannotEditItem": "{{name}} s’exécutait en tant que {{person}}, qui ne peut plus le modifier.",
-          "sponsorCannotEditItemOther": "{{name}} s’exécutait en tant qu’une personne qui ne peut plus le modifier.",
+          "sponsorCannotEditItemOther": "{{name}} s’exécutait avec les accès d’une personne qui ne peut plus le modifier.",
           "connectionNeedsReconnect": "{{name}} nécessite une nouvelle connexion à son compte {{service}}.",
           "connectionRemoved": "Le compte {{service}} utilisé par {{name}} a été supprimé.",
           "connectorDisabled": "Un administrateur a désactivé {{service}}, donc {{name}} ne peut pas s’exécuter.",
           "unknown": "{{name}} ne s’exécute pas.",
-          "sponsorCannotEditItemYou": "{{name}} s’exécutait avec votre accès, et vous ne pouvez plus le modifier.",
+          "sponsorCannotEditItemYou": "{{name}} s’exécutait avec vos accès, et vous ne pouvez plus le modifier.",
           "connectionNeedsReconnectNoService": "{{name}} nécessite une nouvelle connexion.",
           "connectionRemovedNoService": "Le compte utilisé par {{name}} a été supprimé.",
           "connectorDisabledNoService": "Un administrateur a désactivé {{name}}."
