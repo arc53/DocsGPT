@@ -23,8 +23,8 @@ disable comment. Conditional classes go through `cn(...)`, never a template
 literal (prettier sorts the classes inside `cn`, and `cn` merges conflicts).
 What a role may do is gated with `can(item, action)` and a refused action is
 not rendered (see Access and roles). Every user-visible string, attributes included (`aria-label`, IconButton
-`label`, `placeholder`, `title`, `alt`, `hint`), is a `t()` key in all seven
-locales (`de en es jp ru zh zh-TW`); admin pages are English by design.
+`label`, `placeholder`, `title`, `alt`, `hint`), is a `t()` key in all eight
+locales (`de en es fr jp ru zh zh-TW`); admin pages are English by design.
 Interpolated user text (a name, a timezone, a date) passes `interpolation: {
 escapeValue: false }`, or `/` renders as `&#x2F;`.
 
@@ -1410,7 +1410,7 @@ right only for work that reports its own progress (a sync fires and closes).
 
 - **Title** (`message`): the verb and the quoted name as a question,
   `Delete "{{name}}"?`, in each locale's quotes: `"…"` en / de / es, `「…」`
-  jp / zh-TW, `«…»` ru, `“…”` zh. Never "Are you sure…".
+  jp / zh-TW, `« … »` fr (no-break spaces inside), `«…»` ru, `“…”` zh. Never "Are you sure…".
 - **`description`**: the consequence: what else goes with it, then "This
   can't be undone." (`common.cantUndo`) only when that is true.
 - **Submit**: the bare verb from the domain's own key, never another

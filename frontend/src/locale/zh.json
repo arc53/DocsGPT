@@ -17,7 +17,7 @@
   "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
-  "manageAgents": "管理代理",
+  "manageAgents": "管理智能体",
   "teamAccess": {
     "editor": "编辑者",
     "viewer": "查看者"
@@ -208,7 +208,7 @@
         "editPlaceholder": "使用 Markdown 编写页面…",
         "stamp": {
           "editedBy": "由{{who}}编辑",
-          "agent": "代理",
+          "agent": "智能体",
           "human": "人工",
           "you": "您",
           "unknown": "未知",
@@ -217,8 +217,8 @@
         "convert": {
           "action": "转换为 Wiki",
           "title": "转换为动态 Wiki",
-          "intro": "将“{{name}}”转换为由可编辑页面组成的动态 Wiki，代理可以读取和重写这些页面。",
-          "introGeneric": "将此来源转换为由可编辑页面组成的动态 Wiki，代理可以读取和重写这些页面。",
+          "intro": "将“{{name}}”转换为由可编辑页面组成的动态 Wiki，智能体可以读取和重写这些页面。",
+          "introGeneric": "将此来源转换为由可编辑页面组成的动态 Wiki，智能体可以读取和重写这些页面。",
           "costReparse": "文件将被重新解析为可编辑页面。格式会被简化，PDF 尤其明显。",
           "costSkipped": "非文本文件（图片、二进制文件）将被跳过。",
           "costIrreversible": "此操作不可逆——Wiki 页面将成为内容的唯一来源。",
@@ -238,8 +238,8 @@
         },
         "badge": "动态 Wiki",
         "byline_other": "{{pages}} 个页面 · {{tokens}} 个 token",
-        "explainer": "代理在工作时会阅读并改写这些页面。",
-        "explainerEditable": "代理在工作时会阅读并改写这些页面；任何使用此来源的代理都可以编辑它。",
+        "explainer": "智能体在工作时会阅读并改写这些页面。",
+        "explainerEditable": "智能体在工作时会阅读并改写这些页面；任何使用此来源的智能体都可以编辑它。",
         "home": "首页",
         "filterPages": "筛选页面",
         "pagesTitle": "页面",
@@ -265,8 +265,8 @@
         "enable": {
           "action": "启用 GraphRAG",
           "title": "启用 GraphRAG",
-          "intro": "在“{{name}}”上构建知识图谱，让代理能够基于关联的实体和关系进行推理。",
-          "introGeneric": "在此来源上构建知识图谱，让代理能够基于关联的实体和关系进行推理。",
+          "intro": "在“{{name}}”上构建知识图谱，让智能体能够基于关联的实体和关系进行推理。",
+          "introGeneric": "在此来源上构建知识图谱，让智能体能够基于关联的实体和关系进行推理。",
           "costExtraction": "将对此来源的文本块运行 LLM 以提取实体和关系。",
           "costCost": "每个文本块会调用一次 LLM，因此会消耗令牌，来源较大时可能耗时较长。",
           "estimate": "每个文本块约 1 次 LLM 调用 · 共约 {{lo}}–{{hi}} 个令牌（输入输出各约一半）；输出量取决于文档中实体的密集程度。",
@@ -415,7 +415,7 @@
             "prefetch": "预取到上下文",
             "agentic_tool": "按需搜索工具"
           },
-          "exposureHint": "将此来源预取到提示词中，或让代理按需将其作为工具进行搜索。"
+          "exposureHint": "将此来源预取到提示词中，或让智能体按需将其作为工具进行搜索。"
         },
         "graphRetrieval": {
           "title": "图谱检索",
@@ -428,7 +428,7 @@
           "passageNodesHint": "段落既可因匹配问题被找到，也可因与匹配内容相连而被找到。在此版本之后构建的图谱上效果最佳。",
           "blendVector": "与向量检索结合",
           "blendVectorHint": "加入向量检索结果，避免遗漏图谱未找到的段落。",
-          "agentToolHint": "当此来源的公开方式为“按需搜索工具”，或由智能体型代理使用时，代理也可以自行沿这些关系查找。"
+          "agentToolHint": "当此来源的搜索接入方式为“按需搜索工具”，或由自主型智能体使用时，智能体也可以自行沿这些关系查找。"
         },
         "prescreen": {
           "enable": "启用 LLM 预筛选",
@@ -561,7 +561,7 @@
       "groupOptions": {
         "total": "总计",
         "model": "按模型",
-        "agent": "按代理",
+        "agent": "按智能体",
         "source": "按流程"
       },
       "includeSideChannel": "后台令牌",
@@ -577,7 +577,7 @@
       "stats": {
         "messages": "消息",
         "tokens": "令牌",
-        "tokensHint": "所有由 LLM 计费的令牌。代理在每个工具步骤都会重新发送对话上下文，因此大量使用工具的对话所消耗的令牌，会比可见消息看起来多出许多倍。",
+        "tokensHint": "所有由 LLM 计费的令牌。智能体在每个工具步骤都会重新发送对话上下文，因此大量使用工具的对话所消耗的令牌，会比可见消息看起来多出许多倍。",
         "toolCalls": "工具调用",
         "runSuccess": "运行成功率",
         "feedback": "反馈"
@@ -589,8 +589,8 @@
         "cost": "费用",
         "usedOf": "{{used}} / {{limit}}",
         "scope": {
-          "direct": "不使用代理的聊天",
-          "agent": "通过代理"
+          "direct": "不使用智能体的聊天",
+          "agent": "通过智能体"
         }
       }
     },
@@ -620,7 +620,7 @@
         "graph": "图谱构建"
       },
       "detail": {
-        "agent": "代理",
+        "agent": "智能体",
         "status": "状态",
         "trigger": "触发方式",
         "errorType": "错误类型",
@@ -801,11 +801,11 @@
       "openTeamError": "无法加载团队详情。",
       "sharedResources": "共享资源",
       "sharedWithTeam": "已与此团队共享（{{count}}）",
-      "nothingShared": "尚未共享任何内容。可从代理、来源、提示词或工具的菜单中共享。",
+      "nothingShared": "尚未共享任何内容。可从智能体、来源、提示词或工具的菜单中共享。",
       "unshare": "取消共享",
       "unshareError": "无法取消共享该资源。",
       "resourceType": {
-        "agent": "代理",
+        "agent": "智能体",
         "source": "来源",
         "prompt": "提示词",
         "tool": "工具"
@@ -902,7 +902,7 @@
           },
           "editors_can_delete": {
             "label": "编辑者可以删除",
-            "description": "为所有人删除该代理。"
+            "description": "为所有人删除该智能体。"
           },
           "editors_can_manage_access_details": {
             "label": "编辑者可以管理访问详情",
@@ -910,7 +910,7 @@
           },
           "viewers_can_see_logs": {
             "label": "查看者可以查看日志",
-            "description": "该代理的对话和分析。"
+            "description": "该智能体的对话和分析。"
           }
         },
         "source": {
@@ -930,14 +930,14 @@
         "tool": {
           "editors_can_change_credentials": {
             "label": "编辑者可以更改凭据和连接",
-            "description": "他们替换已保存的密钥；任何人都无法读回。"
+            "description": "他们可以替换已保存的密钥，但任何人都无法读取其内容。"
           },
           "editors_can_share": {
             "label": "编辑者可以共享",
             "description": "添加人员和团队并更改其访问权限。"
           },
           "viewers_can_use_in_agents": {
-            "label": "查看者可以在自己的代理中使用",
+            "label": "查看者可以在自己的智能体中使用",
             "description": "它使用你的凭据运行。",
             "descriptionMember": "每个人使用自己的账号。"
           }
@@ -973,15 +973,15 @@
           "editors": "编辑者：编辑、发布、查看日志和管理计划"
         },
         "source": {
-          "viewers": "查看者：浏览、搜索并在自己的代理中使用",
+          "viewers": "查看者：浏览、搜索并在自己的智能体中使用",
           "editors": "编辑者：编辑分块和文件、同步、更改设置"
         },
         "tool": {
-          "viewers": "查看者：在所有者的代理中使用",
+          "viewers": "查看者：在所有者的智能体中使用",
           "editors": "编辑者：更改操作和审批"
         },
         "prompt": {
-          "viewers": "查看者：阅读并在自己的代理中使用",
+          "viewers": "查看者：阅读并在自己的智能体中使用",
           "editors": "编辑者：修改文本"
         },
         "switch": {
@@ -1010,8 +1010,8 @@
             "off": "编辑者不能更改凭据"
           },
           "viewers_can_use_in_agents": {
-            "on": "查看者可以在自己的代理中使用",
-            "off": "查看者不能在自己的代理中使用"
+            "on": "查看者可以在自己的智能体中使用",
+            "off": "查看者不能在自己的智能体中使用"
           },
           "viewers_can_duplicate": {
             "on": "查看者可以复制",
@@ -1026,7 +1026,7 @@
         "filterLabel": "筛选共享资源",
         "filter": {
           "all": "全部",
-          "agent": "代理",
+          "agent": "智能体",
           "source": "来源",
           "tool": "工具",
           "prompt": "提示词"
@@ -1221,7 +1221,7 @@
     },
     "devices": {
       "label": "设备",
-      "subtitle": "配对远程机器，让代理可以通过 shell 命令操作它们。",
+      "subtitle": "配对远程机器，让智能体可以通过 shell 命令操作它们。",
       "pair": "配对设备",
       "empty": "暂无已配对的设备。",
       "revoke": "撤销",
@@ -1235,7 +1235,7 @@
       "lastSeen": "上次在线：{{time}}",
       "lastSeenLabel": "上次在线",
       "nameLabel": "设备名称",
-      "descriptionLabel": "描述（对代理可见）",
+      "descriptionLabel": "描述（对智能体可见）",
       "descriptionPlaceholder": "这台机器是做什么用的？",
       "identity": "标识",
       "access": "访问",
@@ -1244,7 +1244,7 @@
       "dangerZone": "危险区域",
       "approvalAskDescription": "每条命令运行前都需要批准。",
       "approvalFullDescription": "无需询问即可运行所有命令，安全拒绝列表除外。",
-      "fullAccessWarning": "完全访问：代理无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
+      "fullAccessWarning": "完全访问：智能体无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
       "deviceIdLabel": "设备 ID",
       "offlineHint": "未连接。在该机器上运行 `docsgpt-cli host` 使其上线。",
       "dangerZoneDescription": "撤销将停止设备上的守护进程并移除配对。",
@@ -1261,8 +1261,8 @@
         "nameLabel": "设备名称（可选）",
         "namePlaceholder": "例如 edge-server",
         "descriptionLabel": "描述（可选）",
-        "descriptionPlaceholder": "对代理可见，以便其选择正确的设备。",
-        "fullAccessWarning": "完全访问：代理无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
+        "descriptionPlaceholder": "对智能体可见，以便其选择正确的设备。",
+        "fullAccessWarning": "完全访问：智能体无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
         "stepOne": "1. 在您的远程机器上运行：",
         "installLink": "还没有 docsgpt-cli？安装它",
         "stepTwo": "2. 在提示时输入此代码：",
@@ -1309,7 +1309,7 @@
         "apiKey": "API 密钥"
       },
       "placeholders": {
-        "displayName": "My Mistral",
+        "displayName": "我的 Mistral",
         "modelId": "如 mistral-large-latest",
         "description": "可选描述",
         "baseUrl": "https://api.mistral.ai/v1",
@@ -1386,8 +1386,8 @@
       "revokeAria": "撤销令牌 {{name}}",
       "revokeWarning": "撤销“{{name}}”？",
       "restrictionCount": {
-        "agents_one": "{{count}} 个代理",
-        "agents_other": "{{count}} 个代理",
+        "agents_one": "{{count}} 个智能体",
+        "agents_other": "{{count}} 个智能体",
         "sources_one": "{{count}} 个来源",
         "sources_other": "{{count}} 个来源",
         "prompts_one": "{{count}} 个提示词",
@@ -1398,7 +1398,7 @@
         "workflows_other": "{{count}} 个工作流"
       },
       "families": {
-        "agents": "代理",
+        "agents": "智能体",
         "sources": "来源",
         "prompts": "提示词",
         "tools": "工具",
@@ -1426,7 +1426,7 @@
         "impliedByWrite": "已包含在写入权限中",
         "restrict": "限制为特定资源",
         "restrictHint": "可选。将令牌限制为您选择的项目。列表留空表示允许全部。",
-        "restrictNoFamilies": "请先选择代理、来源、提示词、工具或聊天的权限范围，才能限制其资源。",
+        "restrictNoFamilies": "请先选择智能体、来源、提示词、工具或聊天的权限范围，才能限制其资源。",
         "allSelected": "全部（不限制）",
         "noResources": "未找到任何内容。",
         "searchResources": "搜索...",
@@ -1588,7 +1588,7 @@
         "endpoint_url": "自定义端点 URL",
         "client_id": "客户端 ID",
         "client_secret": "客户端密钥",
-        "user_agent": "User agent",
+        "user_agent": "用户代理（User-Agent）",
         "bucket": "存储桶",
         "prefix": "路径前缀",
         "search_queries": "搜索词",
@@ -1876,7 +1876,7 @@
       "copy": "复制",
       "copied": "已复制",
       "confirm": "我已保存密钥",
-      "apiKeyLabel": "API Key"
+      "apiKeyLabel": "API 密钥"
     },
     "deleteConv": {
       "confirm": "删除所有对话？",
@@ -1900,7 +1900,7 @@
       "apiKeyPlaceholder": "输入 API 密钥",
       "addButton": "添加工具",
       "closeButton": "关闭",
-      "customNamePlaceholder": "Enter custom name (optional)",
+      "customNamePlaceholder": "输入自定义名称（可选）",
       "fieldRequired": "{{field}} 为必填项",
       "positiveNumber": "必须是正数",
       "maxTimeout": "超时时间最长为 300 秒"
@@ -1961,20 +1961,20 @@
       "deleteConfirmation": "删除此分块？"
     },
     "addAction": {
-      "title": "New Action",
-      "actionNamePlaceholder": "Action Name",
-      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
-      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
-      "addButton": "Add"
+      "title": "新建操作",
+      "actionNamePlaceholder": "操作名称",
+      "invalidFormat": "函数名称格式无效。只能使用字母、数字、下划线和连字符。",
+      "formatHelp": "只能使用字母、数字、下划线和连字符（例如 `get_data`、`send_report` 等）",
+      "addButton": "添加"
     },
     "agentDetails": {
       "title": "访问详情",
-      "publicLink": "Public Link",
-      "apiKey": "API Key",
+      "publicLink": "公开链接",
+      "apiKey": "API 密钥",
       "webhookUrl": "Webhook URL",
-      "generate": "Generate",
-      "test": "Test",
-      "learnMore": "Learn more",
+      "generate": "生成",
+      "test": "测试",
+      "learnMore": "了解更多",
       "resetKey": "重置密钥",
       "resetKeyConfirm": "重置“{{name}}”的 API 密钥？",
       "apiWrites": {
@@ -1988,7 +1988,7 @@
         "choose": "选择允许的内容"
       },
       "actionFailed": "操作未成功，请重试。",
-      "apiKeyAfterPublish": "发布该代理后即可创建其 API 密钥。",
+      "apiKeyAfterPublish": "发布该智能体后即可创建其 API 密钥。",
       "resetKeyConsequence": "当前密钥会立即失效，所有使用它的地方都需要更新。此操作无法撤销。",
       "reset": "重置"
     },
@@ -2009,36 +2009,36 @@
       "import": "导入 ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "从 YAML 导入智能体",
+      "description": "上传智能体 YAML 文件。来源和工具会与你的账号进行匹配；缺少的项目可在下一步中映射或创建。新智能体以草稿形式导入；重新导入会更新匹配的智能体，并保留其当前状态。",
+      "dropzoneText": "点击上传或拖放 .yaml 文件",
+      "invalidFileType": "仅支持 .yaml 或 .yml 文件",
+      "readError": "无法读取此智能体文件",
+      "importError": "导入失败",
+      "willCreate": "将创建一个新智能体。",
+      "willUpdate": "将更新一个现有智能体（按 {{matchedBy}} 匹配）。",
+      "workflowCreate": "包含一个有 {{nodes}} 个节点的工作流，将为你自动创建。",
+      "workflowUpdate": "包含一个有 {{nodes}} 个节点的工作流，你现有的工作流将被更新。",
+      "workflowDelete": "不包含工作流。该智能体现有的工作流（{{nodes}} 个节点）及其运行历史和产物将被永久删除。",
+      "sources": "来源",
+      "tools": "工具",
+      "models": "模型",
+      "sourceMatched": "{{name}}：使用你现有的来源",
+      "sourceMissing": "{{name}}：未找到",
+      "leaveUnattached": "暂不关联",
+      "toolBuiltin": "{{type}}：内置",
+      "toolReuse": "{{name}}：复用你现有的工具",
+      "toolUnavailable": "{{type}}：此实例不可用，将被跳过",
+      "toolCreate": "{{name}}：将被创建",
+      "secretPlaceholder": "{{field}}（留空则跳过此工具）",
+      "modelCustom": "{{name}}：自定义模型",
+      "apiKeyPlaceholder": "API 密钥（留空则跳过此模型）",
+      "warningsTitle": "智能体已作为草稿导入。以下项目需要你处理：",
+      "warningsTitlePublished": "你已发布的智能体已更新。以下项目需要你处理：",
+      "cancel": "取消",
+      "review": "检查",
+      "import": "导入",
+      "continueToAgent": "前往智能体"
     },
     "jwt": {
       "title": "添加 JWT 令牌",
@@ -2378,38 +2378,38 @@
     }
   },
   "agents": {
-    "title": "代理",
+    "title": "智能体",
     "edit": "编辑",
     "card": {
-      "pin": "固定代理",
-      "unpin": "取消固定代理",
+      "pin": "固定智能体",
+      "unpin": "取消固定智能体",
       "open": "打开",
       "remove": "移除",
       "draft": "草稿",
-      "actions": "代理操作"
+      "actions": "智能体操作"
     },
     "description": "发现并创建结合指令、额外知识和任意技能组合的DocsGPT自定义版本",
-    "newAgent": "新建代理",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "newAgent": "新建智能体",
+    "importAgent": "导入",
+    "exportAgent": "导出为 YAML",
+    "exportAgentFailed": "导出智能体失败",
     "close": "关闭",
     "shareWithTeam": "与团队共享",
-    "backToAll": "返回所有代理",
+    "backToAll": "返回所有智能体",
     "pageHeader": {
       "crumbs": {
-        "agents": "代理"
+        "agents": "智能体"
       },
       "tabs": {
         "overview": "概览",
         "logs": "日志",
         "schedules": "计划"
       },
-      "fallbackName": "未命名代理",
-      "subnavAriaLabel": "代理子导航"
+      "fallbackName": "未命名智能体",
+      "subnavAriaLabel": "智能体子导航"
     },
     "searchPlaceholder": "搜索...",
-    "noSearchResults": "未找到代理",
+    "noSearchResults": "未找到智能体",
     "tryDifferentSearch": "请尝试不同的搜索词",
     "filters": {
       "all": "全部",
@@ -2421,30 +2421,30 @@
     "sections": {
       "template": {
         "title": "由DocsGPT提供",
-        "description": "DocsGPT提供的代理",
-        "emptyState": "未找到模板代理。"
+        "description": "DocsGPT提供的智能体",
+        "emptyState": "未找到模板智能体。"
       },
       "user": {
-        "title": "我的代理",
-        "description": "您创建或发布的代理",
-        "emptyState": "您还没有创建任何代理。"
+        "title": "我的智能体",
+        "description": "您创建或发布的智能体",
+        "emptyState": "您还没有创建任何智能体。"
       },
       "team": {
         "title": "团队",
-        "description": "队友与您共享的代理",
-        "emptyState": "尚未有代理共享给您的团队。"
+        "description": "队友与您共享的智能体",
+        "emptyState": "尚未有智能体共享给您的团队。"
       },
       "shared": {
         "title": "与我共享",
-        "description": "通过公共链接导入的代理",
-        "emptyState": "未找到共享代理。"
+        "description": "通过公共链接导入的智能体",
+        "emptyState": "未找到共享智能体。"
       }
     },
     "form": {
       "headings": {
-        "new": "新建代理",
-        "edit": "编辑代理",
-        "draft": "新建代理（草稿）"
+        "new": "新建智能体",
+        "edit": "编辑智能体",
+        "draft": "新建智能体（草稿）"
       },
       "buttons": {
         "publish": "发布",
@@ -2461,23 +2461,23 @@
       "sections": {
         "prompt": "提示词",
         "tools": "工具",
-        "agentType": "代理类型",
+        "agentType": "智能体类型",
         "models": "模型",
         "advanced": "高级",
-        "guardrails": "Guardrails",
+        "guardrails": "防护栏",
         "preview": "预览",
         "basics": "基本信息",
         "knowledge": "知识与行为",
         "model": "模型"
       },
       "placeholders": {
-        "agentName": "代理名称",
-        "describeAgent": "描述您的代理",
+        "agentName": "智能体名称",
+        "describeAgent": "描述您的智能体",
         "selectSources": "选择知识",
         "chunksPerQuery": "每次查询的块数",
         "selectType": "选择类型",
         "selectTools": "选择工具",
-        "selectModels": "为此代理选择模型",
+        "selectModels": "为此智能体选择模型",
         "selectDefaultModel": "选择默认模型",
         "enterTokenLimit": "输入令牌限制",
         "enterRequestLimit": "输入请求限制"
@@ -2528,11 +2528,11 @@
         "validJson": "有效的JSON",
         "invalidJson": "无效的JSON - 修复后才能保存",
         "tokenLimiting": "令牌限制",
-        "tokenLimitingDescription": "限制此代理每天可使用的总令牌数",
+        "tokenLimitingDescription": "限制此智能体每天可使用的总令牌数",
         "requestLimiting": "请求限制",
-        "requestLimitingDescription": "限制每天可向此代理发出的总请求数",
+        "requestLimitingDescription": "限制每天可向此智能体发出的总请求数",
         "systemPromptOverride": "允许覆盖提示词",
-        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词",
+        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此智能体的系统提示词",
         "tokenLimit": "令牌上限",
         "requestLimit": "请求上限"
       },
@@ -2544,8 +2544,8 @@
       },
       "dangerZone": {
         "heading": "危险区域",
-        "description": "删除此代理将无法恢复，并会移除其所有计划和运行历史。",
-        "deleteButton": "删除代理"
+        "description": "删除此智能体将无法恢复，并会移除其所有计划和运行历史。",
+        "deleteButton": "删除智能体"
       },
       "externalKb": "外部知识库",
       "errors": {
@@ -2553,53 +2553,53 @@
         "saveDraftFailed": "无法保存草稿，请重试。"
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
-        "needsSetup": "{{count}} need setup",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "enable": "启用防护栏",
+        "enableDescription": "在此智能体的运行中执行所选检查",
+        "mode": "执行模式",
+        "monitorHint": "监控模式只记录本会发生的处理，不会更改任何回答。建议先从这里开始，查看日志后再切换为强制执行。",
+        "checks": "检查项",
+        "latencyHint": "运行此检查时大约增加的延迟",
+        "notConfigured": "未配置",
+        "lockedByFloor": "实例策略要求启用，无法移除",
+        "configure": "配置",
+        "blockMessage": "拦截提示消息",
+        "blockMessageDescription": "当检查拦截请求或回答时向用户显示",
+        "failOpen": "检查失败时继续",
+        "failOpenDescription": "当检查超时或出错时，放行本轮对话。关闭此项则改为终止本轮对话。",
+        "timeout": "检查超时（毫秒）",
+        "loadError": "无法加载防护栏目录",
+        "terms": "禁用词（每行一个）",
+        "termsPlaceholder": "竞争对手名称\n内部代号",
+        "allowHosts": "允许的主机（每行一个）",
+        "blockHosts": "禁止的主机（每行一个）",
+        "policyText": "策略",
+        "minOverlap": "与来源的最低重合度",
+        "minWords": "回答最短长度（词数）",
+        "confidence": "置信度阈值",
+        "confidenceHint": "评判模型必须标记该内容，且置信度不低于此值（默认：0.7）",
+        "activeCount": "{{count}} 项已启用",
+        "needsSetup": "{{count}} 项需要设置",
+        "setupRequired": "保存前请填写此检查的设置。",
+        "pickAtLeastOne": "请至少选择一项，未选择任何项时无法运行此检查。",
+        "remove": "移除",
+        "instanceDisabled": "此实例已关闭防护栏，因此这里的任何配置都不会运行。请让管理员设置 GUARDRAILS_ENABLED。",
+        "floorNotice": "此实例要求启用 {{count}} 项控制，这些控制始终生效。",
+        "floorControl": "{{stage}}：{{action}}（实例策略要求）",
+        "unknownCheck": "此智能体使用了一项在此处不可用的检查（{{check}}）。如果该检查恢复可用，它仍会运行。",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "用户输入",
+          "retrieval": "检索到的来源",
+          "toolResult": "工具结果",
+          "output": "回答"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "仅标记",
+          "redact": "脱敏",
+          "block": "拦截"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
+          "monitorOnly": "仅监控",
+          "scanAll": "全面强制执行"
         }
       },
       "byline": {
@@ -2684,13 +2684,13 @@
       }
     },
     "logs": {
-      "title": "代理日志",
+      "title": "智能体日志",
       "lastUsedAt": "最后使用时间",
       "noUsageHistory": "无使用历史",
-      "tableHeader": "代理端点日志"
+      "tableHeader": "智能体端点日志"
     },
     "schedules": {
-      "title": "代理计划",
+      "title": "智能体计划",
       "newRecurring": "新建计划",
       "closeForm": "关闭表单",
       "edit": "编辑",
@@ -2836,7 +2836,7 @@
         },
         "weekdays": "每个工作日 {{time}}",
         "weekends": "每个周末 {{time}}",
-        "days": "每{{days}} {{time}}",
+        "days": "每周{{days}} {{time}}",
         "hourly": "每小时",
         "hourlyAt": "每小时第 {{minute}} 分",
         "hourlyRange": "{{from}} 至 {{to}} 每小时",
@@ -2878,7 +2878,7 @@
       "allSchedules": "所有计划"
     },
     "shared": {
-      "notFound": "未找到代理。请确保代理已共享。",
+      "notFound": "未找到智能体。请确保智能体已共享。",
       "logoAlt": "智能体标志",
       "sharedBy": "来自 {{name}}",
       "sharedOn": "分享于 {{date}}",
@@ -2887,7 +2887,7 @@
       "loadError": "无法加载此智能体。"
     },
     "preview": {
-      "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。",
+      "testMessage": "在此测试您的智能体。已发布的智能体可以在对话中使用。",
       "emptyTitle": "测试你的智能体"
     },
     "deleteConfirmation": "删除“{{name}}”？",
@@ -2913,26 +2913,26 @@
       "deleteConsequence": "其中的智能体会移出文件夹，不会被删除。"
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "防护栏活动",
+      "description": "此智能体上触发的每项控制，以及每项未能运行的控制。",
+      "lastDays": "最近 {{count}} 天",
+      "blocked": "已拦截",
+      "redacted": "已脱敏",
+      "flagged": "已标记",
+      "notEvaluated": "未评估",
+      "notEvaluatedHint": "检查超时或出错，因此此内容实际上从未被检查。这不等于内容安全。",
+      "byCheck": "按检查项",
+      "allChecks": "全部检查项",
+      "allOutcomes": "全部结果",
+      "tableHeader": "防护栏决策",
+      "when": "时间",
+      "check": "检查项",
+      "stage": "阶段",
+      "outcome": "结果",
+      "detail": "详情",
+      "empty": "此智能体尚未触发任何防护栏。",
+      "emptyForFilter": "没有符合此筛选条件的决策。",
+      "loadError": "无法加载防护栏活动"
     },
     "workflow": {
       "expressionRow": "表达式 {{index}}",
@@ -3037,7 +3037,7 @@
         "deleteNode": "删除节点",
         "deleteConfirmUnnamed": "删除此工作流智能体？",
         "detailsTitle": "工作流详情",
-        "detailsDescription": "显示在代理卡片上的名称、描述和图片。",
+        "detailsDescription": "显示在智能体卡片上的名称、描述和图片。",
         "unsavedChanges": "未保存的更改",
         "editDetailsMenu": "编辑详情"
       },
@@ -3148,20 +3148,20 @@
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流"
     },
     "view": "查看",
-    "deleteFailed": "无法删除该代理，请重试。",
+    "deleteFailed": "无法删除该智能体，请重试。",
     "showAll_one": "查看全部 {{formatted}} 个",
     "showAll_other": "查看全部 {{formatted}} 个",
-    "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理",
-    "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理",
+    "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个智能体",
+    "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个智能体",
     "deleteConsequence": "其计划任务和运行历史也会一并删除。此操作无法撤销。"
   },
   "components": {
     "fileUpload": {
-      "clickToUpload": "Click to upload or drag and drop",
-      "dropFiles": "Drop the files here",
-      "fileTypes": "PNG, JPG, JPEG up to",
+      "clickToUpload": "点击上传或拖放文件",
+      "dropFiles": "将文件拖放到此处",
+      "fileTypes": "PNG、JPG、JPEG，最大",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit",
+      "fileSizeError": "文件超过 {{size}}MB 的限制",
       "preview": "图片预览",
       "remove": "移除文件"
     },
@@ -3243,9 +3243,9 @@
     "renderFailed": "无法渲染图表：{{message}}"
   },
   "navigation": {
-    "agents": "代理",
+    "agents": "智能体",
     "backToApp": "返回应用",
-    "backToAgents": "返回代理",
+    "backToAgents": "返回智能体",
     "sections": {
       "groups": {
         "personal": "个人",
@@ -3257,7 +3257,7 @@
     },
     "openSidebar": "打开侧边栏",
     "closeSidebar": "关闭侧边栏",
-    "editAgent": "编辑代理",
+    "editAgent": "编辑智能体",
     "social": {
       "discord": "加入 Discord 社区",
       "x": "在 X 上关注我们",
@@ -3413,21 +3413,21 @@
     "label": "活动",
     "schedules": {
       "label": "计划",
-      "subtitle": "你所有代理的定期运行和一次性任务，以及助手在聊天中创建的任务。",
+      "subtitle": "你所有智能体的定期运行和一次性任务，以及助手在聊天中创建的任务。",
       "search": "搜索计划",
       "createdInChat": "在聊天中创建",
-      "createdInChatHint": "没有代理。每个都属于创建它的聊天。",
-      "agentSchedules": "代理计划",
+      "createdInChatHint": "没有智能体。每个都属于创建它的聊天。",
+      "agentSchedules": "智能体计划",
       "openChat": "打开聊天",
       "noMatches": "没有符合搜索的计划。",
       "loadError": "无法加载你的计划",
       "empty": "还没有计划",
       "emptyHint": "在这里创建，或在聊天中让助手按计划做事。",
-      "agentLabel": "代理",
-      "agentPlaceholder": "选择代理",
-      "agentSearch": "搜索代理",
-      "agentEmpty": "没有可以安排计划的代理",
-      "teamAgent": "你通过团队管理的队友代理"
+      "agentLabel": "智能体",
+      "agentPlaceholder": "选择智能体",
+      "agentSearch": "搜索智能体",
+      "agentEmpty": "没有可以安排计划的智能体",
+      "teamAgent": "你通过团队管理的队友智能体"
     },
     "marks": {
       "failed": "有失败",
@@ -3479,7 +3479,7 @@
         "tool_not_allowed": "工具未被允许",
         "budget_exceeded": "超出令牌预算",
         "timeout": "超时",
-        "agent_error": "代理失败",
+        "agent_error": "智能体失败",
         "internal": "内部错误",
         "missed": "错过了运行时间",
         "overlap": "上一次运行仍在进行",
@@ -3550,8 +3550,8 @@
       "todayButton": "今天",
       "previous": "上一页",
       "next": "下一页",
-      "agentFilter": "代理",
-      "allAgents": "所有代理",
+      "agentFilter": "智能体",
+      "allAgents": "所有智能体",
       "viewLabel": "视图",
       "views": {
         "day": "日",
@@ -3666,7 +3666,7 @@
       "columns": {
         "when": "时间",
         "run": "运行",
-        "owner": "代理 / 聊天",
+        "owner": "智能体 / 聊天",
         "kind": "类型",
         "trigger": "触发",
         "status": "状态",

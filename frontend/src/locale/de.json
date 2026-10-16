@@ -161,7 +161,7 @@
         "delete": "Prompt löschen",
         "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
         "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
-        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um dessen Version zu sehen."
+        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen."
       }
     },
     "sources": {
@@ -396,7 +396,7 @@
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
         "retrieval": {
-          "title": "Retrieval",
+          "title": "Abruf",
           "note": "Diese Änderungen wirken sofort, kein erneutes Indexieren nötig.",
           "tag": "kein erneutes Indexieren",
           "chunks": "Abzurufende Chunks (Top-k)",
@@ -533,7 +533,7 @@
       "viaConnection": "über {{name}}",
       "loadError": "Dein Wissen konnte nicht geladen werden.",
       "delete": "Löschen",
-      "deleteConsequence": "Seine Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteConsequence": "Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteFileConsequence": "Ihre Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteDirectoryConsequence": "Alles darin wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "syncConsequence": "Der Inhalt wird aus deinem Cloud-Speicher aktualisiert. Dabei können Änderungen an einzelnen Abschnitten überschrieben werden.",
@@ -854,7 +854,7 @@
           "stopped": "Gestoppt",
           "writesOff": "Nicht über API",
           "writesNote": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus.",
-          "writesNoteEditor": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus. Frag den Eigentümer, ob er sie unter Zugangsdaten erlaubt.",
+          "writesNoteEditor": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus. Bitte den Eigentümer, sie unter Zugriffsdetails zu erlauben.",
           "access": {
             "member": "Das eigene {{service}}-Konto jeder Person",
             "memberNoService": "Das eigene Konto jeder Person",
@@ -864,8 +864,8 @@
           },
           "writesSomeOff": "Nicht alles über API",
           "adminOff": "Änderungen von einem Admin deaktiviert",
-          "openAccessDetails": "Zugangsdaten öffnen",
-          "accessDetailsNeedsKey": "Die Zugangsdaten listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat.",
+          "openAccessDetails": "Zugriffsdetails öffnen",
+          "accessDetailsNeedsKey": "Die Zugriffsdetails listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat.",
           "reasonShort": {
             "deleted": "Gelöscht",
             "ownerLostAccessYou": "Du kannst es nicht mehr verwenden",
@@ -906,7 +906,7 @@
             "description": "Den Agenten für alle löschen."
           },
           "editors_can_manage_access_details": {
-            "label": "Bearbeiter dürfen Zugangsdaten verwalten",
+            "label": "Bearbeiter dürfen Zugriffsdetails verwalten",
             "description": "API-Schlüssel, Webhook und öffentlicher Link."
           },
           "viewers_can_see_logs": {
@@ -931,7 +931,7 @@
         "tool": {
           "editors_can_change_credentials": {
             "label": "Bearbeiter dürfen Anmeldedaten und Verbindung ändern",
-            "description": "Sie ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
+            "description": "Bearbeiter ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
           },
           "editors_can_share": {
             "label": "Bearbeiter dürfen teilen",
@@ -955,8 +955,8 @@
         }
       },
       "editorHint": {
-        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugangsdaten.",
-        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugangsdaten.",
+        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugriffsdetails.",
+        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugriffsdetails.",
         "source": "Bearbeiter können Chunks und Dateien bearbeiten, synchronisieren und Einstellungen ändern.",
         "tool": "Bearbeiter können Aktionen ändern und Anmeldedaten ersetzen, aber keine Geheimnisse lesen.",
         "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten.",
@@ -1471,7 +1471,7 @@
         "custom_openapi": "OpenAPI / REST"
       },
       "capability": {
-        "sync": "Sync",
+        "sync": "Synchronisieren",
         "read": "Lesen",
         "write": "Schreiben"
       },
@@ -1559,7 +1559,7 @@
         "noTools": "Noch keine Werkzeuge aus dieser Verbindung.",
         "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
         "rename": "Umbenennen",
-        "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugangsdaten.",
+        "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugriffsdetails.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut."
       },
       "permission": {
@@ -1606,7 +1606,7 @@
         "connectTitle": "{{name}} verbinden",
         "reconnectTitle": "{{name}} neu verbinden",
         "signIn": "Bei {{name}} anmelden",
-        "syncFrequency": "Sync",
+        "syncFrequency": "Synchronisierung",
         "doneTitle": "{{name}} ist verbunden",
         "doneSummaryNone": "Verbunden als {{account}}.",
         "sourcesCount_one": "{{formatted}} Element",
@@ -1974,7 +1974,7 @@
       "addButton": "Hinzufügen"
     },
     "agentDetails": {
-      "title": "Zugangsdaten",
+      "title": "Zugriffsdetails",
       "publicLink": "Öffentlicher Link",
       "apiKey": "API-Schlüssel",
       "webhookUrl": "Webhook-URL",
@@ -2017,36 +2017,36 @@
       "import": "Importieren ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "Agent aus YAML importieren",
+      "description": "Lade eine YAML-Datei eines Agenten hoch. Quellen und Werkzeuge werden deinem Konto zugeordnet; Fehlendes kannst du im nächsten Schritt zuordnen oder neu anlegen. Ein neuer Agent wird als Entwurf importiert; ein erneuter Import aktualisiert den passenden Agenten und behält seinen aktuellen Status bei.",
+      "dropzoneText": "Zum Hochladen klicken oder eine .yaml-Datei per Drag & Drop ablegen",
+      "invalidFileType": "Nur .yaml- oder .yml-Dateien werden unterstützt",
+      "readError": "Diese Agentendatei konnte nicht gelesen werden",
+      "importError": "Import fehlgeschlagen",
+      "willCreate": "Erstellt einen neuen Agenten.",
+      "willUpdate": "Aktualisiert einen vorhandenen Agenten (zugeordnet über {{matchedBy}}).",
+      "workflowCreate": "Enthält einen Workflow mit {{nodes}} Knoten – er wird für dich erstellt.",
+      "workflowUpdate": "Enthält einen Workflow mit {{nodes}} Knoten – dein vorhandener Workflow wird aktualisiert.",
+      "workflowDelete": "Enthält keinen Workflow – der vorhandene Workflow des Agenten ({{nodes}} Knoten), sein Ausführungsverlauf und seine Artefakte werden endgültig gelöscht.",
+      "sources": "Quellen",
+      "tools": "Werkzeuge",
+      "models": "Modelle",
+      "sourceMatched": "{{name}}: deine vorhandene Quelle wird verwendet",
+      "sourceMissing": "{{name}}: nicht gefunden",
+      "leaveUnattached": "Nicht verknüpfen",
+      "toolBuiltin": "{{type}}: integriert",
+      "toolReuse": "{{name}}: dein vorhandenes Werkzeug wird wiederverwendet",
+      "toolUnavailable": "{{type}}: auf dieser Instanz nicht verfügbar, wird übersprungen",
+      "toolCreate": "{{name}}: wird erstellt",
+      "secretPlaceholder": "{{field}} (leer lassen, um dieses Werkzeug zu überspringen)",
+      "modelCustom": "{{name}}: eigenes Modell",
+      "apiKeyPlaceholder": "API-Schlüssel (leer lassen, um dieses Modell zu überspringen)",
+      "warningsTitle": "Agent als Entwurf importiert. Einige Punkte brauchen deine Aufmerksamkeit:",
+      "warningsTitlePublished": "Dein veröffentlichter Agent wurde aktualisiert. Einige Punkte brauchen deine Aufmerksamkeit:",
+      "cancel": "Abbrechen",
+      "review": "Prüfen",
+      "import": "Importieren",
+      "continueToAgent": "Weiter zum Agenten"
     },
     "jwt": {
       "title": "JWT-Token hinzufügen",
@@ -2404,9 +2404,9 @@
     },
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "importAgent": "Importieren",
+    "exportAgent": "Als YAML exportieren",
+    "exportAgentFailed": "Agent konnte nicht exportiert werden",
     "close": "Schließen",
     "shareWithTeam": "Mit Team teilen",
     "backToAll": "Zurück zu allen Agenten",
@@ -2468,7 +2468,7 @@
         "delete": "Löschen",
         "logs": "Protokolle",
         "schedules": "Zeitpläne",
-        "accessDetails": "Zugangsdaten",
+        "accessDetails": "Zugriffsdetails",
         "add": "Hinzufügen",
         "moreActions": "Weitere Aktionen"
       },
@@ -2567,54 +2567,54 @@
         "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
+        "enable": "Guardrails aktivieren",
+        "enableDescription": "Die ausgewählten Prüfungen bei den Ausführungen dieses Agenten durchführen",
+        "mode": "Durchsetzungsmodus",
+        "monitorHint": "Im Beobachtungsmodus wird aufgezeichnet, was passiert wäre, ohne eine Antwort zu ändern. Beginne hier, sieh dir das Protokoll an und wechsle dann zur Durchsetzung.",
+        "checks": "Prüfungen",
+        "latencyHint": "Ungefähre zusätzliche Latenz, wenn diese Prüfung läuft",
+        "notConfigured": "Nicht konfiguriert",
+        "lockedByFloor": "Von der Richtlinie der Instanz vorgeschrieben und nicht entfernbar",
+        "configure": "Konfigurieren",
+        "blockMessage": "Nachricht bei blockierter Antwort",
+        "blockMessageDescription": "Wird dem Nutzer angezeigt, wenn eine Prüfung eine Anfrage oder Antwort blockiert",
+        "failOpen": "Fortfahren, wenn eine Prüfung fehlschlägt",
+        "failOpenDescription": "Wenn eine Prüfung eine Zeitüberschreitung oder einen Fehler hat, wird die Nachricht trotzdem verarbeitet. Schalte dies aus, um die Verarbeitung stattdessen abzubrechen.",
+        "timeout": "Zeitlimit der Prüfung (ms)",
+        "loadError": "Der Guardrail-Katalog konnte nicht geladen werden",
+        "terms": "Verbotene Begriffe (einer pro Zeile)",
+        "termsPlaceholder": "Name eines Wettbewerbers\ninterner Codename",
+        "allowHosts": "Erlaubte Hosts (einer pro Zeile)",
+        "blockHosts": "Blockierte Hosts (einer pro Zeile)",
+        "policyText": "Richtlinie",
+        "minOverlap": "Minimale Übereinstimmung mit den Quellen",
+        "minWords": "Minimale Antwortlänge (Wörter)",
+        "confidence": "Konfidenzschwelle",
+        "confidenceHint": "Das Bewertungsmodell muss den Inhalt beanstanden und sich dabei mindestens so sicher sein (Standard: 0,7)",
+        "activeCount": "{{count}} aktiv",
         "needsSetup_one": "{{count}} benötigt Einrichtung",
         "needsSetup_other": "{{count}} benötigen Einrichtung",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "setupRequired": "Fülle vor dem Speichern die Einstellungen dieser Prüfung aus.",
+        "pickAtLeastOne": "Wähle mindestens einen Eintrag – ohne Auswahl kann die Prüfung nicht laufen.",
+        "remove": "Entfernen",
+        "instanceDisabled": "Guardrails sind für diese Instanz ausgeschaltet, daher wird nichts von dem ausgeführt, was hier konfiguriert ist. Bitte deinen Administrator, GUARDRAILS_ENABLED zu setzen.",
+        "floorNotice": "Diese Instanz schreibt {{count}} Kontrolle(n) vor, die immer gelten.",
+        "floorControl": "{{stage}}: {{action}} – von der Richtlinie der Instanz vorgeschrieben",
+        "unknownCheck": "Dieser Agent nutzt eine Prüfung, die hier nicht verfügbar ist ({{check}}). Sie wird wieder ausgeführt, sobald die Prüfung wieder verfügbar ist.",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "Benutzereingabe",
+          "retrieval": "Abgerufene Quellen",
+          "toolResult": "Werkzeugergebnis",
+          "output": "Antwort"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "Nur markieren",
+          "redact": "Schwärzen",
+          "block": "Blockieren"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
+          "monitorOnly": "Nur beobachten",
+          "scanAll": "Überall durchsetzen"
         }
       },
       "byline": {
@@ -2928,26 +2928,26 @@
       "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "Guardrail-Aktivität",
+      "description": "Jede Kontrolle, die bei diesem Agenten angeschlagen hat, und jede, die nicht ausgeführt werden konnte.",
+      "lastDays": "Letzte {{count}} Tage",
+      "blocked": "Blockiert",
+      "redacted": "Geschwärzt",
+      "flagged": "Markiert",
+      "notEvaluated": "Nicht geprüft",
+      "notEvaluatedHint": "Die Prüfung hatte eine Zeitüberschreitung oder einen Fehler, daher wurde dieser Inhalt nie tatsächlich untersucht. Das ist nicht dasselbe wie unbedenklich.",
+      "byCheck": "Nach Prüfung",
+      "allChecks": "Alle Prüfungen",
+      "allOutcomes": "Alle Ergebnisse",
+      "tableHeader": "Guardrail-Entscheidungen",
+      "when": "Zeitpunkt",
+      "check": "Prüfung",
+      "stage": "Phase",
+      "outcome": "Ergebnis",
+      "detail": "Details",
+      "empty": "Für diesen Agenten gibt es noch keine Guardrail-Ereignisse.",
+      "emptyForFilter": "Keine Entscheidungen entsprechen diesem Filter.",
+      "loadError": "Die Guardrail-Aktivität konnte nicht geladen werden"
     },
     "workflow": {
       "expressionRow": "Ausdruck {{index}}",
@@ -3089,7 +3089,7 @@
         "invalidJson": "muss gültiges JSON sein"
       },
       "filePassing": {
-        "auto": "Auto",
+        "auto": "Automatisch",
         "native": "Nativ",
         "extract": "Extrahieren"
       },
@@ -3542,7 +3542,7 @@
       "apiRequests_other": "{{formatted}} Anfragen",
       "reading": "liest den Inhalt",
       "operation": {
-        "upload": "Upload",
+        "upload": "Hochladen",
         "sync": "Synchronisierung",
         "reingest": "Neu indexieren"
       },

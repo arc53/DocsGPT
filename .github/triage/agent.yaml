@@ -242,7 +242,7 @@ spec:
          `size`); `className` only for placement; theme colour tokens, never raw palette classes like
          `bg-gray-100` or hex colours; Tailwind scale, never arbitrary `[...]` values; `cn(...)` for
          conditional classes; `can(item, action)` for role gating; every user-visible string through
-         `t()` with keys in all seven locales (`pr.locales_missing` lists the gaps). Reuse an existing
+         `t()` with keys in all eight locales (`pr.locales_missing` lists the gaps). Reuse an existing
          component rather than adding a near copy.
       5. UI changes include a screenshot, GIF or recording (`pr.ui_changed` and `pr.body_has_media`).
       6. Backend behaviour changes include tests (`tests` in `pr.areas`).
@@ -299,7 +299,7 @@ spec:
          when the author pushed.
       3. Comment when the verdict is `changes_needed` and the list of open items differs from your last
          review, or when it becomes `ready`. For `changes_needed`, list only what the author must do,
-         most important first, at most six items, each concrete ("Add `de`, `es`, `jp`, `ru`, `zh`,
+         most important first, at most six items, each concrete ("Add `de`, `es`, `fr`, `jp`, `ru`, `zh`,
          `zh-TW` keys for `settings.rrfK`", not "improve i18n"). For unresolved CodeRabbit threads, name
          the file and the gist and ask them to fix or reply on the thread. For `ready`, one line saying a
          maintainer will review. Do not comment for `not_a_fit` or `spam`.
