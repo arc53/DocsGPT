@@ -17,11 +17,18 @@ import {
 import * as preferenceApi from '../preferences/preferenceApi';
 import { type Preference, prefSlice } from '../preferences/preferenceSlice';
 import { type ConversationState } from './conversationModels';
+import { handleFetchAnswer } from './conversationHandlers';
 import {
   conversationListenerMiddleware,
   conversationSlice,
+  fetchAnswer,
   setConversation,
 } from './conversationSlice';
+
+vi.mock('./conversationHandlers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./conversationHandlers')>()),
+  handleFetchAnswer: vi.fn(),
+}));
 
 vi.mock('../api/services/conversationService', () => ({
   default: {
@@ -684,5 +691,74 @@ describe('conversation listener — a new chat in the sidebar', () => {
       'Weather in Dubai',
     );
     expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+});
+
+describe('conversation listener — the list fetched when an answer ends', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keeps a generated title that lands while that list is still on its way', async () => {
+    // The title is saved after the answer, so the list asked for at its end
+    // can read the fallback name and land after `conversation.renamed`.
+    const fallback = 'what is the weather';
+    let landStale!: (result: unknown) => void;
+    const getConversations = preferenceApi.getConversations as unknown as Mock;
+    getConversations.mockReset();
+    getConversations
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            landStale = resolve;
+          }),
+      )
+      .mockResolvedValue({
+        data: [{ id: 'conv-1', name: 'Weather Today' }],
+        loading: false,
+      });
+    vi.mocked(handleFetchAnswer).mockResolvedValue({
+      answer: 'Sunny',
+      thought: '',
+      sources: [],
+      toolCalls: [],
+      conversationId: 'conv-1',
+    } as never);
+
+    const store = makeStore('conv-1');
+    store.dispatch(
+      prefSlice.actions.receiveConversations({
+        data: [{ id: 'conv-1', name: fallback }] as never,
+        loading: false,
+      }),
+    );
+    store.dispatch(conversationSlice.actions.addQuery({ prompt: fallback }));
+    await store.dispatch(
+      fetchAnswer({ question: fallback, attachmentIds: [] }),
+    );
+
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-renamed',
+          type: 'conversation.renamed',
+          payload: {
+            conversation_id: 'conv-1',
+            name: 'Weather Today',
+            previous: fallback,
+          },
+        }),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    landStale({
+      data: [{ id: 'conv-1', name: fallback }],
+      loading: false,
+    });
+    for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 0));
+
+    expect(
+      store.getState().preference.conversations.data?.map((c) => c.name),
+    ).toEqual(['Weather Today']);
   });
 });

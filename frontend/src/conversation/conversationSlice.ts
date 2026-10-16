@@ -393,13 +393,9 @@ export const fetchAnswer = createAsyncThunk<
           ) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(receiveConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -538,13 +534,9 @@ export const fetchAnswer = createAsyncThunk<
                   }),
                 );
               }
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(receiveConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -740,13 +732,9 @@ export const fetchAnswer = createAsyncThunk<
             query: { conversationId: answer.conversationId },
           }),
         );
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(receiveConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
         dispatch(conversationSlice.actions.setStatus('idle'));
       }
     }
@@ -897,13 +885,9 @@ export const submitToolActions = createAsyncThunk<
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(receiveConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
       } else if (data.type === 'id') {
         // conversation ID already set
       } else if (data.type === 'message_id') {
@@ -1437,11 +1421,12 @@ let listRefresh: Promise<void> | null = null;
 let listRefreshAgain = false;
 
 /**
- * Refresh the sidebar list for an event, one fetch at a time. A refresh asked
- * for while one runs folds into a single follow-up fetch, so a burst of events
- * (a replayed backlog, several chats finishing) costs two requests and an
- * older list never lands over a newer one. A failed fetch keeps the list on
- * screen.
+ * Refresh the sidebar list for an event or an answer's end, one fetch at a
+ * time. A refresh asked for while one runs folds into a single follow-up
+ * fetch, so a burst of events (a replayed backlog, several chats finishing)
+ * costs two requests and an older list never lands over a newer one; a
+ * `conversation.renamed` that arrives meanwhile gets a list read after the
+ * title. A failed fetch keeps the list on screen.
  *
  * Args:
  *   getState: The store's state getter; the token is read at each fetch.
