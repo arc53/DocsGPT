@@ -125,3 +125,41 @@ describe('SelectTrigger sizes', () => {
     expect(classes).toContain('focus-visible:ring-3');
   });
 });
+
+describe('SelectContent capped', () => {
+  const open = (capped?: boolean) => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => {
+      root!.render(
+        <Select open value="a">
+          <SelectTrigger aria-label="Model">a</SelectTrigger>
+          <SelectContent capped={capped}>
+            <SelectItem value="a">A</SelectItem>
+          </SelectContent>
+        </Select>,
+      );
+    });
+    const content = document.querySelector<HTMLElement>(
+      '[data-slot="select-content"]',
+    )!;
+    const viewport = content.querySelector<HTMLElement>(
+      '[data-radix-select-viewport]',
+    )!;
+    return { content, viewport };
+  };
+
+  it('caps a long list like CommandList and still stops at the window', () => {
+    const { content, viewport } = open(true);
+    expect(viewport.className.split(' ')).toContain('max-h-75');
+    expect(content.className).toContain(
+      'max-h-(--radix-select-content-available-height)',
+    );
+  });
+
+  it('is only limited by the window by default', () => {
+    const { viewport } = open();
+    expect(viewport.className).not.toContain('max-h-75');
+  });
+});

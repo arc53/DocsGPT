@@ -1019,6 +1019,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
       delete state.queries[index].research;
+      // A new run answers it; the old run's files are not this answer's.
+      delete state.queries[index].workflow_run_id;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;
@@ -1122,7 +1124,7 @@ export const conversationSlice = createSlice({
       recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     // Records the workflow run id so the answer bubble can render the run's
-    // produced artifacts (WorkflowRunArtifacts fetches by this id).
+    // produced artifacts (useRunArtifacts lists them by this id).
     setWorkflowRunId(
       state,
       action: PayloadAction<{ index: number; workflowRunId: string }>,

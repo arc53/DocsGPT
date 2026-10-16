@@ -222,6 +222,8 @@ function WorkflowBuilderInner() {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(
     agentId || null,
   );
+  // A saved workflow's agent is loading (the phone screen waits for it).
+  const [agentLoading, setAgentLoading] = useState(Boolean(agentId));
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -931,6 +933,7 @@ function WorkflowBuilderInner() {
   useEffect(() => {
     const loadAgentDetails = async () => {
       if (!agentId) return;
+      setAgentLoading(true);
       try {
         const response = await userService.getAgent(agentId, token);
         if (!response.ok) throw new Error('Failed to fetch agent');
@@ -948,6 +951,8 @@ function WorkflowBuilderInner() {
         }
       } catch (error) {
         console.error('Failed to load agent:', error);
+      } finally {
+        setAgentLoading(false);
       }
     };
     loadAgentDetails();
@@ -1855,7 +1860,10 @@ function WorkflowBuilderInner() {
 
   return (
     <>
-      <MobileBlocker />
+      <MobileBlocker
+        agent={canManageAgent ? currentAgent : null}
+        loading={agentLoading}
+      />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
           <AgentPageHeader

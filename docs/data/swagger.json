@@ -2016,7 +2016,7 @@
     },
     "/api/admin/users": {
       "get": {
-        "description": "Each row carries ``last_seen`` (max auth-event time). Admin status is\nintentionally not joined here; the dashboard cross-references\nGET /api/admin/admins for badges.",
+        "description": "Each row carries ``last_seen`` (max auth-event time) and the stored\n``email`` (null when none is on file); ``?user_id=`` matches either.\nAdmin status is intentionally not joined here; the dashboard\ncross-references GET /api/admin/admins for badges.",
         "operationId": "get_admin_users_resource",
         "responses": {
           "200": {

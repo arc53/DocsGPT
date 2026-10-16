@@ -23,8 +23,8 @@ disable comment. Conditional classes go through `cn(...)`, never a template
 literal (prettier sorts the classes inside `cn`, and `cn` merges conflicts).
 What a role may do is gated with `can(item, action)` and a refused action is
 not rendered (see Access and roles). Every user-visible string, attributes included (`aria-label`, IconButton
-`label`, `placeholder`, `title`, `alt`, `hint`), is a `t()` key in all seven
-locales (`de en es jp ru zh zh-TW`); admin pages are English by design.
+`label`, `placeholder`, `title`, `alt`, `hint`), is a `t()` key in all eight
+locales (`de en es fr jp ru zh zh-TW`); admin pages are English by design.
 Interpolated user text (a name, a timezone, a date) passes `interpolation: {
 escapeValue: false }`, or `/` renders as `&#x2F;`.
 
@@ -157,13 +157,13 @@ Patterns:
   `has-[[data-state=checked]]:border-primary
   has-[[data-state=checked]]:bg-primary/5`; its wash beats the hover by
   design, so a chosen row never turns grey under the pointer.
-- A brand chip, a small action that opens something an answer produced (an
-  artifact chip under an answer, a citation pill in its text), is also
-  `variant="secondary" shape="pill"`: the default size with a lucide icon
-  first for artifacts, `size="xs"` for citations. It is the same tint as a
-  pressed toggle; the difference is that a chip never toggles and always
-  opens or scrolls to something. The citation pill keeps `h-5 min-w-5`
-  (20px) so it sits in a line of text.
+- A brand chip, a small action that opens something an answer produced (a
+  citation pill in its text), is also `variant="secondary" shape="pill"
+  size="xs"`. It is the same tint as a pressed toggle; the difference is that
+  a chip never toggles and always opens or scrolls to something. The citation
+  pill keeps `h-5 min-w-5` (20px) so it sits in a line of text. An artifact an
+  answer produced is a card, not a chip (`components/ArtifactCard`, see
+  PATTERNS.md › Chat answer column).
 - The user's question bubble is `bg-secondary text-foreground`: the brand
   tint as the fill, with body text in `foreground` (15.7:1 light, 12.4:1
   dark) rather than `secondary-foreground`, which is only 4.5:1 in light.
@@ -613,7 +613,11 @@ form column. Fields that take typing or sit beside one are 16px
 below `md` (iOS zooms on focus under 16px) and 14px from `md`: Input,
 Textarea, SelectTrigger `field`, Button `combobox` `default | field | lg` and
 CommandInput. The `sm` sizes stay 14px. A highlighted list row is
-`bg-accent` in Select, Command and DropdownMenu alike.
+`bg-accent` in Select, Command and DropdownMenu alike. A select list stops at
+the window edge and scrolls; one that can grow long (the landing page's model
+picker) passes `SelectContent capped`, which also stops it at CommandList's
+`max-h-75`. A `max-h-*` in `className` replaces the window limit rather than
+adding to it.
 
 ### Textarea (`ui/textarea.tsx`)
 
@@ -895,7 +899,11 @@ inside a control (a busy Button, a picker's `sm` ring) stay `Spinner`.
 
 Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
 art, page / panel / popover), `illustration` `no-files | none`, `title`,
-`description` (plain `muted-foreground`), `action`. An empty inline or inside
+`description` (plain `muted-foreground`), `action`. `icon` takes a lucide icon
+and draws it muted at 32px in place of the art, for a page the drawing doesn't
+fit: the workflow builder's MobileBlocker (`Monitor`) and the 404
+(`MapPinOff`). `titleAs` (`p` by default, `h1`, `h2`) changes only the title's
+element: a page whose only content is the empty state titles it with `h1`. An empty inline or inside
 a card or panel (no runs yet, no members) is `size="sm" illustration="none"`,
 and a "no results" line in a picker, popover or dense list `size="xs"
 illustration="none"`; never a hand-built muted `<p>`. A page or panel whose fetch failed (see
@@ -1402,7 +1410,7 @@ right only for work that reports its own progress (a sync fires and closes).
 
 - **Title** (`message`): the verb and the quoted name as a question,
   `Delete "{{name}}"?`, in each locale's quotes: `"…"` en / de / es, `「…」`
-  jp / zh-TW, `«…»` ru, `“…”` zh. Never "Are you sure…".
+  jp / zh-TW, `« … »` fr (no-break spaces inside), `«…»` ru, `“…”` zh. Never "Are you sure…".
 - **`description`**: the consequence: what else goes with it, then "This
   can't be undone." (`common.cantUndo`) only when that is true.
 - **Submit**: the bare verb from the domain's own key, never another
@@ -1453,9 +1461,12 @@ it?
   and account menu in the top-right corner (`ActionButtons`, `z-10` under the
   panel's `z-20`); they come back when it closes. One docked slot per page:
   opening another thing replaces what is there, never stacks.
-  The chat's slot (`conversation/chatCompanion`) holds an artifact or an
-  answer's sources; where there is no slot (a shared chat, an agent preview)
-  the sources open modal.
+  The chat's slot (`conversation/chatCompanion`) holds an artifact, an
+  answer's artifact list or its sources; where there is no slot (a shared
+  chat, an agent preview) the sources open modal. In the agent preview an
+  artifact (or an answer's list) takes the drawer over instead, with Back to
+  the run (`PreviewArtifactsContext` in `AgentPreviewSheet`): there is no room
+  for a docked panel beside it.
 
 Two widths, by `size`, never a `w-*` or `max-w-*` class (enforced):
 `default` 480px for every panel, and `wide` (600 / 700 / 800px) only for a
@@ -1493,8 +1504,9 @@ previewed in one shared panel, `agents/components/AgentPreviewSheet`, for
 workflow and classic agents alike: `size="wide"`, the agent's name as the
 one-line description, an `info` Running badge in `actions` while it answers,
 then the preview, which owns its scroller. The workflow preview's Execution
-details and Artifacts rows are the answer's step-row recipe (see PATTERNS.md › Chat answer column), each
-step a `subtle sm` panel with its output in a `filled sm` well. Never
+details row is the answer's step-row recipe (see PATTERNS.md › Chat answer column), each
+step a `subtle sm` panel with its output in a `filled sm` well; a run's
+artifacts are the answer's artifact cards, as in chat. Never
 hand-build a right panel (an `<aside border-l>` column or a `SheetContent
 side="right"`); compose SidePanel.
 
@@ -1528,10 +1540,11 @@ opaque: a strip behind the content, transparent or at `opacity-0` isn't
 sampled, so don't shrink or hide the strip (the measurements are in
 `ui/bar-tint-reset.ts`).
 
-Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`)
-and an answer's sources (`conversation/SourcesPanel`, with a cited source's
-`CitationReader` as its second level) share the chat's docked side panel (see
-Side panels). Don't add another pattern.
+Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`),
+an answer's artifact list (`conversation/ArtifactsPanel`, with an artifact as
+its second level) and an answer's sources (`conversation/SourcesPanel`, with a
+cited source's `CitationReader` as its second level) share the chat's docked
+side panel (see Side panels). Don't add another pattern.
 
 ### ActionMenu (`ui/dropdown-menu.tsx`)
 
@@ -1614,9 +1627,13 @@ runs under the tab bar, and the app shell can be dragged and bounce. ESLint
 (`no-restricted-syntax`) rejects both. Pick by what the height does:
 
 - **`dvh`** (the visible viewport, follows the toolbars): the app shell
-  and the `screen` `LoadingState` (`h-dvh`), full-screen states (`min-h-dvh`:
-  404, MobileBlocker), and caps on things that pop up over the page (a search
-  dropdown's `max-h-[calc(100dvh-200px)]`, `Modal`'s `85dvh`).
+  and the `screen` `LoadingState` (`h-dvh`), full-screen states outside the
+  app shell (`min-h-dvh`: 404, the connector callback, the approval page), and
+  caps on things that pop up over the page (a search dropdown's
+  `max-h-[calc(100dvh-200px)]`, `Modal`'s `85dvh`). A state inside the shell
+  is `h-full`: below `lg` the shell's scroll column is 56px shorter than the
+  screen (the top bar), so a `dvh` height there always scrolls
+  (MobileBlocker).
 - **`svh`** (the smallest viewport, steady): a fixed-size panel inside a page
   that scrolls (the Logs panel's `h-[55svh]`, a list's `max-h-[45svh]`, the
   graph surface's `h-[70svh]`, the source edit drawer's `min-h`), so it doesn't resize while Safari's bars slide in
@@ -1698,8 +1715,7 @@ gap, so drop it).
 `rounded-xl` 14px, `rounded-2xl` 18px, `rounded-3xl` 22px, `rounded-4xl`
 26px (from `--radius`); bare `rounded` is a fixed 4px, so don't use it
 (enforced). `3xl` is the chat's own shapes (the composer, the question
-bubble) and `4xl` the answer's source cards and the landing page's model
-picker; app chrome stops at `2xl`. Skeleton bars: the default. Tinted icon squares:
+bubble) and `4xl` the answer's source cards; app chrome stops at `2xl`. Skeleton bars: the default. Tinted icon squares:
 `rounded-md` at `size-7|8`, `rounded-xl` at `size-12|14`, `rounded-2xl` at
 `size-20`. `rounded-full` only for pills (`shape="pill"` controls and
 fields), avatars, status dots, the workflow palette pills (not their icon
@@ -1777,9 +1793,8 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   `bg-input`. Outside `ui/` the only shadows are: the workflow
   canvas nodes (`shadow-md`, `hover:shadow-lg`: a node lifts off the canvas
   while you drag it); the workflow builder's publish-error panel, which
-  floats over the canvas at popover elevation (`shadow-md`, `z-20`); the sliding panel in `navigation/SidebarLevel.tsx`,
-  which casts a horizontal shadow while it slides; and the Hero model
-  picker's menu (both Approved exceptions). Don't add new ones: a floating panel is a `Popover`,
+  floats over the canvas at popover elevation (`shadow-md`, `z-20`); and the sliding panel in `navigation/SidebarLevel.tsx`,
+  which casts a horizontal shadow while it slides (an Approved exception). Don't add new ones: a floating panel is a `Popover`,
   `DropdownMenu` or `Modal`, which carry their own shadow and stacking; never
   an `absolute` div with a shadow and a hand-picked `z-*`.
 - **Stacking**: `z-10` sticky headers and table heads inside a page, a real
@@ -1818,7 +1833,6 @@ list stays reviewable.
 | `components/ui/calendar.tsx`                                      | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
 | `navigation/SidebarLevel.tsx`                                     | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
 | `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
-| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's model picker keeps its hero look: a borderless muted pill at 16px (`rounded-4xl px-6 py-4 text-base`) whose menu hangs from it as one shape. Three disables: `SelectTrigger`, `SelectContent`, `SelectItem`.                                                                                                                                                                                                                                                                 |
 | `agents/AgentsList.tsx`                                           | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                                                                                        |
 | `lib/markdown.tsx`                                                | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                    |
 | `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
@@ -1826,7 +1840,7 @@ list stays reviewable.
 | `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
 | `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. Two disables: the demo cards and the connect card.                                                                                                                                                                            |
 | `Navigation.tsx`, `conversation/ConversationTile.tsx`             | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
-| `admin/Usage.tsx`                                                 | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
+| `admin/Usage.tsx`                                                 | `shadcn/no-restyle`             | The Top users name is a `link inline` Button inside a table cell; it wraps like the cell's text (`font-normal whitespace-normal text-left`), and a user with no email on file keeps the id's mono type (`font-mono text-xs`). One disable.                                                                                                                                                                                                                                                                                                             |
 | `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
 | `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
 
