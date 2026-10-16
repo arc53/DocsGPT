@@ -972,7 +972,10 @@ paints under the modal's overlay (see "Where a message lives"). The app has one
 `ToastViewport`, mounted in `App.tsx`; it is the live region
 (`role="status"`, `aria-live="polite"`) and the fixed stack, so `Toast`
 cards carry no role and no toast renders its own rail or positioning. Top
-to bottom it holds `TeamNotificationToast`, `ConnectionHealthToast` (a
+to bottom it holds `TeamNotificationToast`, `PushPermissionToast` (the
+"Get notified when it's done?" Web Push prompt) and
+`ConversationNotificationToast` (a chat reporting back, with Open), both
+from `BackgroundNotifications`, `ConnectionHealthToast` (a
 connection that needs reconnecting, with a Reconnect action),
 `ToolApprovalToast`, `UploadToast` and `ActionToast`, and it moves to the
 bottom-left while any agent preview drawer is open (workflow or classic). A new toast component returns only its
