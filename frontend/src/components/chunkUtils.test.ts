@@ -85,6 +85,6 @@ describe('abbreviateCount', () => {
 
   it('leaves counts under a thousand as they are', () => {
     expect(abbreviateCount(999, 'en')).toBe('999');
-    expect(abbreviateCount(0, 'zhTW')).toBe('0');
+    expect(abbreviateCount(0, 'zh-TW')).toBe('0');
   });
 });

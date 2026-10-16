@@ -15,7 +15,12 @@ import de from './de.json'; //German
 
 // Codes older builds stored for the UI language. They aren't BCP 47 tags, so
 // browsers never matched them and Intl gave them English plural rules.
-const LEGACY_CODES: Record<string, string> = { jp: 'ja' };
+const LEGACY_CODES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
+
+// A stored legacy code is read as its tag; a Traditional Chinese browser
+// (zh-HK, zh-MO, zh-Hant…) reads as zh-TW rather than reducing to zh.
+const toAppLanguage = (lng: string): string =>
+  LEGACY_CODES[lng] ?? (/^zh-(hant|hk|mo)\b/i.test(lng) ? 'zh-TW' : lng);
 
 i18n
   .use(LanguageDetector)
@@ -37,7 +42,7 @@ i18n
       zh: {
         translation: zh,
       },
-      zhTW: {
+      'zh-TW': {
         translation: zhTW,
       },
       ru: {
@@ -52,13 +57,13 @@ i18n
     // builds) and maps a region to its language (ru-RU -> ru); the detector
     // then caches the result over the stored value. A new language goes here
     // as well as in `resources`.
-    supportedLngs: ['en', 'es', 'fr', 'ja', 'zh', 'zhTW', 'ru', 'de'],
+    supportedLngs: ['en', 'es', 'fr', 'ja', 'zh', 'zh-TW', 'ru', 'de'],
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
       lookupLocalStorage: 'docsgpt-locale',
-      // A stored legacy code is read as its tag, then cached over it.
-      convertDetectedLanguage: (lng: string) => LEGACY_CODES[lng] ?? lng,
+      // The converted code is cached over the stored one.
+      convertDetectedLanguage: toAppLanguage,
     },
   });
 

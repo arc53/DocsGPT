@@ -117,9 +117,9 @@ describe('formatCount', () => {
     expect(formatCount(1234, 'ru')).toBe('1\u00a0234');
   });
 
-  it('maps the app codes Intl does not know', () => {
+  it('groups in the Japanese and Traditional Chinese style', () => {
     expect(formatCount(1234, 'ja')).toBe('1,234');
-    expect(formatCount(1234, 'zhTW')).toBe('1,234');
+    expect(formatCount(1234, 'zh-TW')).toBe('1,234');
   });
 
   it('leaves small numbers alone', () => {
@@ -158,10 +158,10 @@ describe('formatDeadline', () => {
 });
 
 describe('intlLocale', () => {
-  it('maps app codes to BCP 47 tags', () => {
+  it('passes the app codes through as BCP 47 tags', () => {
     expect(intlLocale('ru-RU')).toBe('ru-RU');
     expect(intlLocale('ja')).toBe('ja');
-    expect(intlLocale('zhTW')).toBe('zh-TW');
+    expect(intlLocale('zh-TW')).toBe('zh-TW');
   });
 
   it('falls back to en for values Intl rejects', () => {
@@ -200,7 +200,7 @@ describe('headingLocale', () => {
   it("names days and months in the reader's language otherwise", () => {
     expect(headingLocale('de')).toBe('de');
     expect(headingLocale('ja')).toBe('ja');
-    expect(headingLocale('zhTW')).toBe('zh-TW');
+    expect(headingLocale('zh-TW')).toBe('zh-TW');
     expect(heading('de')).toBe('Montag, 12. Oktober');
     expect(heading('fr')).toBe('lundi 12 octobre');
   });
