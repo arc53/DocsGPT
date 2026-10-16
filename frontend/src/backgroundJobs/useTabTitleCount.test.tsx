@@ -84,6 +84,30 @@ describe('useTabTitleCount', () => {
     expect(document.title).toBe('(3) DocsGPT');
   });
 
+  it('leaves out an unread mark whose chat the sidebar no longer lists', async () => {
+    // Deleted in another tab, or never listed: no row the user could open
+    // to clear it.
+    const store = configureStore({
+      reducer: {
+        activity: activityReducer,
+        background: backgroundReducer,
+        preference: (
+          state = {
+            token: 'tok',
+            conversations: {
+              data: [{ id: 'c1', name: 'a', agent_id: null }],
+              loading: false,
+            },
+          },
+        ) => state,
+      },
+    });
+    store.dispatch(markConversationUnread('c1'));
+    store.dispatch(markConversationUnread('gone'));
+    await render(store as unknown as ReturnType<typeof makeStore>);
+    expect(document.title).toBe('(1) DocsGPT');
+  });
+
   it('follows the marks as chats are read, and is plain with none left', async () => {
     const store = makeStore();
     store.dispatch(markConversationUnread('c1'));

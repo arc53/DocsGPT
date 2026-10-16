@@ -5,6 +5,7 @@ import {
   selectApprovalConversations,
   selectFailedConversations,
 } from '../activity/activitySlice';
+import type { RootState } from '../store';
 
 import { selectUnread } from './backgroundSlice';
 
@@ -20,17 +21,25 @@ export function titleWithCount(title: string, count: number): string {
  * Put the number of chats that need the user in front of the tab title,
  * "(2) DocsGPT": a chat with something new, a failure or an approval
  * waiting, the sidebar marks that ask for something, each chat counted once.
- * It drops as those chats are read, and the plain title comes back when
- * none are left or the hook unmounts.
+ * An unread mark counts while the sidebar lists its chat (all of them before
+ * the list loads): one deleted elsewhere, or never listed, has no row to
+ * read it from. It drops as those chats are read, and the plain title comes
+ * back when none are left or the hook unmounts.
  */
 export function useTabTitleCount(): void {
   const unread = useSelector(selectUnread);
+  const listed = useSelector(
+    (state: RootState) => state.preference.conversations?.data,
+  );
   const failed = useSelector(selectFailedConversations);
   const approvals = useSelector(selectApprovalConversations);
-  const count = useMemo(
-    () => new Set([...Object.keys(unread), ...failed, ...approvals]).size,
-    [unread, failed, approvals],
-  );
+  const count = useMemo(() => {
+    const listedIds = listed ? new Set(listed.map((chat) => chat.id)) : null;
+    const unreadIds = Object.keys(unread).filter(
+      (id) => !listedIds || listedIds.has(id),
+    );
+    return new Set([...unreadIds, ...failed, ...approvals]).size;
+  }, [unread, listed, failed, approvals]);
 
   useEffect(() => {
     document.title = titleWithCount(document.title, count);
