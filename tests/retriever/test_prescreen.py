@@ -199,20 +199,33 @@ class TestStageBuilders:
         assert max_candidate_k({"c": c}) is None
         assert max_candidate_k({}) is None
 
-    def test_decision_backend_is_not_an_llm_stage(self):
+    def test_decision_backend_screens_with_the_llm_unless_told_otherwise(self):
         rc = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "decision"})
-        assert build_prescreen_stages({"a": rc}, llm_name="openai", api_key="k", model_id="m") == []
-        # It still widens the fetch.
+        (stage,) = build_prescreen_stages({"a": rc}, llm_name="openai", api_key="k", model_id="m")
+        assert isinstance(stage, PreScreenStage)
+        assert build_prescreen_stages(
+            {"a": rc}, llm_name="openai", api_key="k", model_id="m", decision_as_llm=False
+        ) == []
+        # It widens the fetch either way.
         assert max_candidate_k({"a": rc}) == 30
 
-    def test_the_group_factory_composes_both_backends(self):
+    def test_the_group_factory_composes_both_backends(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
         from docsgpt.retriever.stages import build_group_stages
         from docsgpt.retriever.stages.relevance import RelevanceStage
 
         llm = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30})
         decision = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "decision", "max_keep": 5})
         group = {"retrievals": {"a": llm, "b": decision}, "relevance": {"mode": "on", "candidate_k": 20}}
-        stages = build_group_stages(group, llm={"llm_name": "openai", "api_key": "k", "model_id": "m"})
+        context = {"llm_name": "openai", "api_key": "k", "model_id": "m"}
+        with installed(FakeDecider()):
+            # The operator has not turned the decision prescreen on: both screen with the LLM, then the rerank.
+            assert [type(s) for s in build_group_stages(group, llm=context)] == [
+                PreScreenStage, PreScreenStage, RelevanceStage
+            ]
+            monkeypatch.setattr(settings, "DECISION_PRESCREEN_ENABLED", True)
+            stages = build_group_stages(group, llm=context)
         assert [type(s) for s in stages] == [PreScreenStage, RelevanceStage]
         assert stages[1].policy.feature == "rag_prescreen" and stages[1].policy.keep == 5
         assert stages[1].policy.threshold == 0.2

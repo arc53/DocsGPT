@@ -11,7 +11,13 @@ from typing import Any, Callable, Dict, List, Optional
 from docsgpt.core.settings import settings
 from docsgpt.retriever.labels import normalize_source_id
 from docsgpt.retriever.stages.prescreen import build_prescreen_stages
-from docsgpt.retriever.stages.relevance import PRESCREEN, RERANK, RelevancePolicy, RelevanceStage
+from docsgpt.retriever.stages.relevance import (
+    PRESCREEN,
+    RERANK,
+    RelevancePolicy,
+    RelevanceStage,
+    decision_prescreen_enabled,
+)
 
 Stage = Callable[[List[Dict[str, Any]], Dict[str, Any]], List[Dict[str, Any]]]
 
@@ -73,8 +79,9 @@ def build_group_stages(
 ) -> List[Stage]:
     """The stages for one Dispatcher group, in the order they run.
 
-    1. An LLM ``PreScreenStage`` per ``backend: llm`` prescreen config.
-    2. A prescreen-policy ``RelevanceStage`` per ``backend: decision`` config.
+    1. An LLM ``PreScreenStage`` per ``backend: llm`` prescreen config, and per ``backend: decision`` config
+       while ``DECISION_PRESCREEN_ENABLED`` is off (or the decision model is off).
+    2. Otherwise a prescreen-policy ``RelevanceStage`` per ``backend: decision`` config.
     3. The rerank ``RelevanceStage`` when the group's rerank mode is ``on`` or ``monitor`` and no decision
        prescreen already scored it. After an LLM prescreen it reorders the survivors.
 
@@ -88,8 +95,11 @@ def build_group_stages(
             ``rag_prescreen`` and ``rag_rerank`` when omitted.
     """
     retrievals = group.get("retrievals") or {}
-    stages: List[Stage] = list(build_prescreen_stages(retrievals, usage_source=usage_source, **llm))
-    decision = decision_prescreen_stages(retrievals, feature=feature)
+    on_model = decision_prescreen_enabled()
+    stages: List[Stage] = list(
+        build_prescreen_stages(retrievals, usage_source=usage_source, decision_as_llm=not on_model, **llm)
+    )
+    decision = decision_prescreen_stages(retrievals, feature=feature) if on_model else []
     stages += decision
     relevance = group.get("relevance") or {}
     if relevance.get("mode") in ("on", "monitor") and not decision:

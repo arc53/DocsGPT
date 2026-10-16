@@ -166,6 +166,12 @@ def instance_mode() -> str:
 def source_mode(retriever: str, reranker: Any, instance: str, in_rollout: bool) -> tuple[str, Optional[str]]:
     """The rerank mode of one source and its rollout arm.
 
+    The operator turns the rerank on (``DECISION_RERANK_MODE``); a source cannot. While the instance mode is
+    ``off`` every source is off, a stored ``reranker: {type: decision}`` included, so no source can make the
+    process load the model. While it is on, such a source is reranked even where the instance default does not
+    reach (a retriever outside ``DECISION_RERANK_RETRIEVERS``, the control arm), and ``type: off`` opts a source
+    out.
+
     Args:
         retriever: The source's retriever key (``classic`` for the classic aliases).
         reranker: The source's ``RerankerConfig``, or ``None`` to follow the instance.
@@ -176,15 +182,24 @@ def source_mode(retriever: str, reranker: Any, instance: str, in_rollout: bool) 
         ``(mode, arm)``: ``off``, ``monitor`` or ``on``, and ``on``, ``control``, ``source`` or ``None`` when the
         rollout does not apply.
     """
+    if instance == "off" or (reranker is not None and reranker.type == "off"):
+        return "off", None
     if reranker is not None:
-        if reranker.type == "off" or not decisions.get_decider().enabled:
-            return "off", None
         return "on", "source"
-    if instance == "off" or retriever not in {key.lower() for key in settings.DECISION_RERANK_RETRIEVERS}:
+    if retriever not in {key.lower() for key in settings.DECISION_RERANK_RETRIEVERS}:
         return "off", None
     if not in_rollout:
         return "off", "control"
     return instance, "on"
+
+
+def decision_prescreen_enabled() -> bool:
+    """Whether a prescreen with ``backend: decision`` runs on the decision model (``DECISION_PRESCREEN_ENABLED``).
+
+    While it does not, such a prescreen runs as the LLM prescreen, so no source can make the process load the
+    model.
+    """
+    return settings.DECISION_PRESCREEN_ENABLED and decisions.get_decider().enabled
 
 
 class RelevanceStage:

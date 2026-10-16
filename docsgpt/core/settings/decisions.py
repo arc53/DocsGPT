@@ -202,7 +202,9 @@ class DecisionSettings(SettingsGroup):
             "DECISION_RERANK_CANDIDATE_K candidates and keep as many chunks as they would without it, most "
             "relevant first. `monitor` scores and records without changing the result; `auto` is `on` while the "
             "predicted call on this machine fits DECISION_RERANK_BUDGET (a GPU or API-mode server, rarely a CPU). "
-            "A source's `reranker` setting overrides it. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false."
+            "While it is not off, a source's `reranker` can opt that source in (any retriever, outside the rollout) or "
+            "out; while it is off, no source is reranked and the model is never loaded for it. No stage runs with "
+            "PER_SOURCE_RETRIEVAL_ENABLED=false."
         ),
     )
     DECISION_RERANK_BUDGET: float = Field(
@@ -252,6 +254,14 @@ class DecisionSettings(SettingsGroup):
         description=(
             "Token budget of the rerank's candidate fetch, so a small model context does not cut the candidates in "
             "retriever order; the request's own document budget applies after the rerank."
+        ),
+    )
+    DECISION_PRESCREEN_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Run prescreens set to `backend: decision` on the decision model: one call that keeps chunks at or "
+            "above DECISION_PRESCREEN_THRESHOLD, most relevant first. While false, those prescreens run on the LLM "
+            "as `backend: llm` does, and no source can make the model load."
         ),
     )
     DECISION_PRESCREEN_THRESHOLD: float = Field(

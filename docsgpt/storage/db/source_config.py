@@ -36,10 +36,11 @@ class PreScreenConfig(BaseModel):
     ``max_keep`` survivors pass to the answer. With ``backend="llm"`` an LLM
     screens them in batches of ``batch_size`` (``model`` is optional; when None
     the stage reuses the request's resolved model), a query-time LLM cost, so
-    it stays opt-in. With ``backend="decision"`` the decision model scores them
-    in one call and keeps those at or above ``min_relevance``, most relevant
-    first; ``batch_size`` and ``model`` are ignored. Stored rows without a
-    backend are ``llm``.
+    it stays opt-in. With ``backend="decision"``, while the operator has set
+    ``DECISION_PRESCREEN_ENABLED``, the decision model scores them in one call
+    and keeps those at or above ``min_relevance``, most relevant first, and
+    ``batch_size`` and ``model`` are ignored; otherwise it runs as ``llm``.
+    Stored rows without a backend are ``llm``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -75,12 +76,14 @@ class PreScreenConfig(BaseModel):
 
 
 class RerankerConfig(BaseModel):
-    """A source's rerank by the decision model, over the instance's ``DECISION_RERANK_MODE``.
+    """A source's rerank by the decision model, under the instance's ``DECISION_RERANK_MODE``.
 
-    ``type="decision"`` turns it on for the source with these overrides, even
-    where the instance mode is off; ``type="off"`` opts the source out, for
-    example a source of one-line rows, which score low against any query. No
-    ``reranker`` at all follows the instance mode.
+    The operator turns the rerank on; while that mode is ``off`` this config
+    does nothing. While it is on, ``type="decision"`` reranks the source with
+    these overrides even where the instance default does not reach (another
+    retriever, the rollout's control arm), and ``type="off"`` opts the source
+    out, for example a source of one-line rows, which score low against any
+    query. No ``reranker`` at all follows the instance mode.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -360,16 +360,29 @@ class TestModes:
         assert windows.state_tokens == settings.DECISION_RELEVANCE_CPU_PASSAGE_TOKENS + 64 < whole.state_tokens
 
     def test_source_modes(self):
+        assert source_mode("classic", None, "on", True) == ("on", "on")
+        assert source_mode("hybrid", None, "monitor", True) == ("monitor", "on")
+        assert source_mode("classic", None, "on", False) == ("off", "control")
+        assert source_mode("classic", None, "off", True) == ("off", None)
+        assert source_mode("graphrag", None, "on", True) == ("off", None)
+        assert source_mode("classic", RerankerConfig(type="off"), "on", True) == ("off", None)
+
+    def test_a_source_opts_in_only_while_the_operator_has_the_rerank_on(self):
+        # On: beyond the instance's retrievers and outside the rollout.
+        assert source_mode("graphrag", RerankerConfig(), "on", True) == ("on", "source")
+        assert source_mode("classic", RerankerConfig(), "monitor", False) == ("on", "source")
+        # Off: a stored opt-in is the same as opting out.
+        assert source_mode("graphrag", RerankerConfig(), "off", True) == ("off", None)
+        assert source_mode("classic", RerankerConfig(min_relevance=0.3), "off", True) == ("off", None)
+
+    def test_the_prescreen_gate(self, monkeypatch):
+        from docsgpt.retriever.stages.relevance import decision_prescreen_enabled
+
         with installed(FakeDecider()):
-            assert source_mode("classic", None, "on", True) == ("on", "on")
-            assert source_mode("hybrid", None, "monitor", True) == ("monitor", "on")
-            assert source_mode("classic", None, "on", False) == ("off", "control")
-            assert source_mode("classic", None, "off", True) == ("off", None)
-            assert source_mode("graphrag", None, "on", True) == ("off", None)
-            assert source_mode("graphrag", RerankerConfig(), "off", False) == ("on", "source")
-            assert source_mode("classic", RerankerConfig(type="off"), "on", True) == ("off", None)
-        # Without the model a source's own opt-in does nothing.
-        assert source_mode("classic", RerankerConfig(), "off", True) == ("off", None)
+            assert decision_prescreen_enabled() is False
+            monkeypatch.setattr(settings, "DECISION_PRESCREEN_ENABLED", True)
+            assert decision_prescreen_enabled() is True
+        assert decision_prescreen_enabled() is False  # the tests run with DECISION_MODE=none
 
 
 @pytest.mark.unit
@@ -387,6 +400,7 @@ class TestSettings:
         assert (fresh.DECISION_PRESCREEN_THRESHOLD, fresh.DECISION_RELEVANCE_MIN_KEEP) == (0.2, 1)
         assert (fresh.DECISION_RELEVANCE_MAX_PASSAGES, fresh.DECISION_RELEVANCE_TIMEOUT) == (100, 2.0)
         assert fresh.DECISION_RELEVANCE_CPU_PASSAGE_TOKENS == 256
+        assert fresh.DECISION_PRESCREEN_ENABLED is False
 
     def test_retrievers_read_a_comma_list(self, monkeypatch):
         from docsgpt.core.settings import Settings

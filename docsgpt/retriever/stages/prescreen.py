@@ -204,25 +204,29 @@ def build_prescreen_stages(
     model_user_id: Optional[str] = None,
     request_id: Optional[str] = None,
     usage_source: str = "rag_prescreen",
+    decision_as_llm: bool = True,
 ) -> List[Stage]:
     """Build LLM prescreen stages from a group's per-source retrieval configs.
 
     Returns one stage per distinct ``backend: llm`` prescreen config found
     across the group's sources (deduplicated by config), or an empty list when
-    none opt in — so the Dispatcher seam stays a pure no-op by default. The
-    ``decision`` backend is built by ``stages.build_group_stages``.
+    none opt in — so the Dispatcher seam stays a pure no-op by default.
 
     Args:
         retrievals: ``{doc_id: RetrievalConfig}`` for sources with overrides.
         llm_name / api_key / model_id / ...: LLM-resolution context, forwarded
             to each ``PreScreenStage``.
+        decision_as_llm: Screen ``backend: decision`` configs with the LLM too,
+            as while ``DECISION_PRESCREEN_ENABLED`` is off; when False they are
+            left to ``stages.build_group_stages``.
+
     """
     stages: List[Stage] = []
     seen: set = set()
     for retrieval in (retrievals or {}).values():
         getter = getattr(retrieval, "prescreen_config", None)
         ps = getter() if callable(getter) else None
-        if ps is None or ps.backend != "llm":
+        if ps is None or (ps.backend != "llm" and not decision_as_llm):
             continue
         key = (ps.candidate_k, ps.model, ps.batch_size, ps.max_keep)
         if key in seen:
