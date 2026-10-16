@@ -27,6 +27,11 @@ describe('i18n language detection', () => {
     await i18n.changeLanguage('jp');
     expect(i18n.language).toBe('jp');
   });
+
+  it('accepts French and reduces a French region to it', async () => {
+    await i18n.changeLanguage('fr-CA');
+    expect(i18n.language).toBe('fr');
+  });
 });
 
 describe('html lang', () => {
@@ -35,6 +40,8 @@ describe('html lang', () => {
     // browser's translator, whose DOM rewrites crash React.
     await i18n.changeLanguage('de');
     expect(document.documentElement.lang).toBe('de');
+    await i18n.changeLanguage('fr');
+    expect(document.documentElement.lang).toBe('fr');
     await i18n.changeLanguage('zhTW');
     expect(document.documentElement.lang).toBe('zh-TW');
     await i18n.changeLanguage('jp');

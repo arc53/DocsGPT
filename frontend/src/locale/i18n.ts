@@ -6,6 +6,7 @@ import { intlLocale } from '../utils/dateTimeUtils';
 
 import en from './en.json'; //English
 import es from './es.json'; //Spanish
+import fr from './fr.json'; //French
 import jp from './jp.json'; //Japanese
 import zh from './zh.json'; //Mandarin
 import zhTW from './zh-TW.json'; //Traditional Chinese
@@ -22,6 +23,9 @@ i18n
       },
       es: {
         translation: es,
+      },
+      fr: {
+        translation: fr,
       },
       jp: {
         translation: jp,
@@ -44,7 +48,7 @@ i18n
     // builds) and maps a region to its language (ru-RU -> ru); the detector
     // then caches the result over the stored value. A new language goes here
     // as well as in `resources`.
-    supportedLngs: ['en', 'es', 'jp', 'zh', 'zhTW', 'ru', 'de'],
+    supportedLngs: ['en', 'es', 'fr', 'jp', 'zh', 'zhTW', 'ru', 'de'],
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],

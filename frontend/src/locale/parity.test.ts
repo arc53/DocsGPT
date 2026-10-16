@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import de from './de.json';
 import en from './en.json';
 import es from './es.json';
+import fr from './fr.json';
 import jp from './jp.json';
 import ru from './ru.json';
 import zhTW from './zh-TW.json';
@@ -25,7 +26,7 @@ const flatten = (tree: Tree, prefix = ''): string[] =>
 const userFacing = (locale: object): Set<string> =>
   new Set(flatten(locale as Tree).filter((key) => !key.startsWith('admin.')));
 
-const LOCALES = { de, es, jp, ru, zh, zhTW };
+const LOCALES = { de, es, fr, jp, ru, zh, zhTW };
 
 const english = userFacing(en);
 

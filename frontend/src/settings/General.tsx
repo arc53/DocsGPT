@@ -38,6 +38,7 @@ export default function General() {
     { label: 'English', value: 'en' },
     { label: 'Deutsch', value: 'de' },
     { label: 'Español', value: 'es' },
+    { label: 'Français', value: 'fr' },
     { label: '日本語', value: 'jp' },
     { label: '普通话', value: 'zh' },
     { label: '繁體中文（臺灣）', value: 'zhTW' },

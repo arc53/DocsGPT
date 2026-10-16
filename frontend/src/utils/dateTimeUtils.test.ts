@@ -202,6 +202,7 @@ describe('headingLocale', () => {
     expect(headingLocale('jp')).toBe('ja');
     expect(headingLocale('zhTW')).toBe('zh-TW');
     expect(heading('de')).toBe('Montag, 12. Oktober');
+    expect(heading('fr')).toBe('lundi 12 octobre');
   });
 
   it('falls back to en-GB for a language Intl rejects', () => {
