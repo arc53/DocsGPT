@@ -30,7 +30,13 @@ export async function getDocsWithPagination(
   token: string | null,
 ): Promise<GetDocsResponse | null> {
   try {
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
+    const query = new URLSearchParams({
+      sort,
+      order,
+      page: String(pageNumber),
+      rows: String(rowsPerPage),
+      search: searchTerm,
+    }).toString();
     const response = await userService.getDocsWithPagination(query, token);
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
