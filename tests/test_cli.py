@@ -260,6 +260,131 @@ class TestConnectorsReencrypt:
         assert "tool and custom-model secrets" in help_text
 
 
+class TestDecisions:
+    def test_prefetch_downloads_the_selected_model(self, monkeypatch, tmp_path, capsys):
+        from docsgpt.decisions import files
+
+        calls = []
+        monkeypatch.setattr(files, "ensure_onnx", lambda spec: calls.append(spec.id) or tmp_path / "onnx")
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        assert cli.main(["decisions", "prefetch"]) == 0
+        assert calls == ["arc53/arc-decide-0.4b-v0.2"]
+        assert str(tmp_path / "onnx") in capsys.readouterr().err
+
+    def test_prefetch_failure_is_an_error_not_a_traceback(self, monkeypatch, capsys):
+        from docsgpt.decisions import files
+
+        def offline(spec):
+            raise files.FilesUnavailable("offline", "HF_HUB_OFFLINE is set")
+
+        monkeypatch.setattr(files, "ensure_onnx", offline)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        assert cli.main(["decisions", "prefetch"]) == 1
+        assert "HF_HUB_OFFLINE is set" in capsys.readouterr().err
+
+    def test_an_unknown_model_is_refused(self, monkeypatch, capsys):
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", "someone/else")
+        assert cli.main(["decisions", "prefetch"]) == 2
+        assert "DECISION_MODEL" in capsys.readouterr().err
+
+    def test_without_an_action_prints_usage(self, capsys):
+        assert cli.main(["decisions"]) == 2
+        assert "docsgpt decisions prefetch|status" in capsys.readouterr().err
+
+    def test_status_reports_settings_and_files_without_loading(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from docsgpt import decisions
+        from docsgpt.decisions import files
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODE", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        monkeypatch.setattr(files, "local_onnx_dir", lambda spec: tmp_path)
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["mode"] == "local" and report["model"] == "arc53/arc-decide-0.4b-v0.2"
+        assert report["files"] == str(tmp_path) and report["revision"]
+        assert "speed" not in report and "status" not in report
+        assert decisions.get_decider()._backend is None
+
+    def test_status_in_api_mode_reports_the_tokenizer(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from docsgpt.decisions import files
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODE", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_BASE_URL", "http://decider:7095")
+        monkeypatch.setattr(files, "local_tokenizer", lambda spec: tmp_path / "tokenizer.json")
+        monkeypatch.setattr(files, "local_onnx_dir", lambda spec: pytest.fail("API mode needs no model files"))
+        monkeypatch.setattr("docsgpt.decisions.client.DecisionClient.probe", lambda self, timeout=5.0: False)
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["mode"] == "api" and report["model"] == "arc53/arc-decide-0.6b-v0.1"
+        assert report["files"] == str(tmp_path / "tokenizer.json") and report["server"] == "no answer"
+
+    def test_status_in_api_mode_reports_the_servers_model(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from docsgpt import decisions
+        from docsgpt.decisions import files
+        from docsgpt.decisions.backends.http import DecideBackend
+        from docsgpt.decisions.models import V02
+        from tests.decisions.fakes import FakeDecideServer
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODE", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_BASE_URL", "http://decider:7095")
+        monkeypatch.setattr(files, "local_tokenizer", lambda spec: tmp_path / spec.id / "tokenizer.json")
+        server = FakeDecideServer({"name": V02.id, "revision": V02.revision, "prompt_hash": V02.prompt_hash,
+                                   "calibration": V02.calibration, "runtime": "onnx-int8", "status": "ready"})
+        decider = decisions.get_decider()
+        monkeypatch.setattr(decider, "_new_backend", lambda: DecideBackend(transport=server.transport()))
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert (report["model"], report["runtime"], report["status"]) == (V02.id, "onnx-int8", "ready")
+        assert report["server"] == "answered" and report["files"] == str(tmp_path / V02.id / "tokenizer.json")
+        assert server.paths(models=True) == ["/v1/models"]
+        decider._backend.close()
+
+    def test_status_when_off(self, capsys):
+        import json
+
+        assert cli.main(["decisions", "status"]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert report["mode"] == "none" and "files" not in report
+
+    def test_prefetch_for_the_torch_runtime(self, monkeypatch, tmp_path):
+        from docsgpt.decisions import files
+
+        calls = []
+        monkeypatch.setattr(files, "ensure_torch", lambda spec: calls.append(spec.id) or tmp_path)
+        monkeypatch.setattr(files, "ensure_onnx", lambda spec: pytest.fail("the torch runtime needs no ONNX files"))
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_MODEL", None)
+        assert cli.main(["decisions", "prefetch", "--runtime", "torch"]) == 0
+        assert calls == ["arc53/arc-decide-0.4b-v0.2"]
+
+
+class TestDecideServer:
+    def test_runs_the_server_with_its_options(self, monkeypatch):
+        served = []
+        monkeypatch.setattr("docsgpt.decisions.server.serve", lambda *args: served.append(args) or 0)
+        monkeypatch.setattr(cli, "_announce_home", lambda: None)
+        assert cli.main(["decide-server", "--device", "mps", "--port", "7100"]) == 0
+        assert served == [("127.0.0.1", 7100, "mps")]
+
+    def test_the_device_defaults_to_the_setting(self, monkeypatch):
+        served = []
+        monkeypatch.setattr("docsgpt.decisions.server.serve", lambda *args: served.append(args) or 0)
+        monkeypatch.setattr(cli, "_announce_home", lambda: None)
+        assert cli.main(["decide-server"]) == 0
+        assert served == [("127.0.0.1", 7095, None)]
+
+    def test_an_unknown_device_is_a_usage_error(self):
+        with pytest.raises(SystemExit):
+            cli.main(["decide-server", "--device", "tpu"])
+
+
 class TestScripts:
     def test_arguments_pass_through_untouched(self, monkeypatch):
         main = MagicMock(return_value=0)

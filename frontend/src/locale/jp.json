@@ -669,7 +669,8 @@
           "chunks_other": "{{count}} チャンク",
           "hits_one": "{{count}} 件ヒット",
           "hits_other": "{{count}} 件ヒット",
-          "cached": "キャッシュ"
+          "cached": "キャッシュ",
+          "answered": "{{answered}}/{{total}} 件回答"
         },
         "status": {
           "ok": "OK",
@@ -683,6 +684,7 @@
         "kinds": {
           "agent": "エージェント",
           "llm": "LLM 呼び出し",
+          "decision": "判定モデル呼び出し",
           "tool": "ツール呼び出し",
           "retrieval": "検索",
           "search": "ベクトル検索",

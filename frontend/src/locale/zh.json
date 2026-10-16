@@ -669,7 +669,8 @@
           "chunks_other": "{{count}} 个片段",
           "hits_one": "{{count}} 个命中",
           "hits_other": "{{count}} 个命中",
-          "cached": "缓存"
+          "cached": "缓存",
+          "answered": "已回答 {{answered}}/{{total}}"
         },
         "status": {
           "ok": "正常",
@@ -683,6 +684,7 @@
         "kinds": {
           "agent": "智能体",
           "llm": "LLM 调用",
+          "decision": "决策模型调用",
           "tool": "工具调用",
           "retrieval": "检索",
           "search": "向量搜索",

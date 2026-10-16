@@ -30,6 +30,7 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
@@ -107,7 +108,9 @@ def _traced_stream(
     trace the route started is activated here for the whole stream and written
     exactly once when the stream ends -- normally, paused, failed or
     abandoned. The request id is resolved here too so the trace and the
-    stream agree on it.
+    stream agree on it. The turn's decision record is activated with it: the
+    one the processor handed the agent (holding any decisions made during
+    setup, and a resumed turn's earlier rounds), or a new one.
     """
     signature = inspect.signature(method)
 
@@ -135,7 +138,10 @@ def _traced_stream(
                 user_id=decoded_token.get("sub") if isinstance(decoded_token, dict) else None,
                 agent_id=arguments.get("agent_id"),
             )
-        with tracing.activate(trace):
+        decisions = getattr(arguments.get("agent"), "decision_record", None)
+        if not isinstance(decisions, decision_record.DecisionRecord):
+            decisions = decision_record.DecisionRecord()
+        with tracing.activate(trace), decision_record.activate(decisions):
             try:
                 yield from method(*bound.args, **bound.kwargs)
             finally:
@@ -626,6 +632,8 @@ class BaseAnswerResource:
         # The order text, thought and tool calls arrived in, saved under
         # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
         segments = AnswerSegments(query_metadata)
+        # The decision model's entries for the turn, under ``query_metadata["decisions"]``.
+        decision_record.attach(query_metadata)
         paused = False
         # Set when the agent *yields* a terminal ``error`` event instead of
         # raising. Workflow node failures take that route (the engine catches

@@ -718,7 +718,8 @@
           "hits_few": "{{count}} совпадения",
           "hits_many": "{{count}} совпадений",
           "hits_other": "{{count}} совпадения",
-          "cached": "из кэша"
+          "cached": "из кэша",
+          "answered": "отвечено {{answered}}/{{total}}"
         },
         "status": {
           "ok": "ОК",
@@ -732,6 +733,7 @@
         "kinds": {
           "agent": "Агент",
           "llm": "Вызов LLM",
+          "decision": "Вызов модели решений",
           "tool": "Вызов инструмента",
           "retrieval": "Поиск",
           "search": "Векторный поиск",

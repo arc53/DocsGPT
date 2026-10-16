@@ -122,6 +122,7 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/...` | [Usage quotas](/Deploying/Usage-Quotas) for the instance, teams and users. |
 | `GET` `PUT` | `/api/admin/connectors` | Turn [connectors](/Sources/Connectors#admin-setup) on or off and set their sharing mode, write access and the custom MCP server switch. |
+| `GET` | `/api/admin/decisions` | The decision model as the API process sees it: mode, load status, model version, this machine's measured speed and each decision feature's verdict. Nothing loads; the public `/api/config` reports only `decision_available`. |
 
 <Callout type="info" emoji="ℹ️">
 Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.

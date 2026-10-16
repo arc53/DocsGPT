@@ -670,7 +670,8 @@
           "chunks_other": "{{count}} chunks",
           "hits_one": "{{count}} hit",
           "hits_other": "{{count}} hits",
-          "cached": "cached"
+          "cached": "cached",
+          "answered": "{{answered}}/{{total}} answered"
         },
         "status": {
           "ok": "OK",
@@ -684,6 +685,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "LLM call",
+          "decision": "Decision model call",
           "tool": "Tool call",
           "retrieval": "Retrieval",
           "search": "Vector search",

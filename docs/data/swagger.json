@@ -1771,6 +1771,21 @@
         "x-pat-denied": true
       }
     },
+    "/api/admin/decisions": {
+      "get": {
+        "operationId": "get_admin_decisions_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The decision model as this API process sees it",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/admin/devices/audit": {
       "get": {
         "description": "Filter by decision/user/since.",

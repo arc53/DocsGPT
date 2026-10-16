@@ -820,6 +820,11 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_decision_usage.s(),
+        name="cleanup-decision-usage",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_traces.s(),
         name="cleanup-traces",
     )
@@ -1047,6 +1052,29 @@ def cleanup_guardrail_events(self):
     engine = get_engine()
     with engine.begin() as conn:
         deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_decision_usage(self):
+    """Delete ``decision_usage`` days older than ``DECISION_USAGE_RETENTION_DAYS``.
+
+    The rows are small counters, one per day, feature, mode, model version
+    and status, but they are written for as long as a feature is on.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.decision_usage import (
+        DecisionUsageRepository,
+    )
+
+    ttl_days = settings.DECISION_USAGE_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = DecisionUsageRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 

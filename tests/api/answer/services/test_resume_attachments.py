@@ -140,6 +140,22 @@ class TestPausedTurnState:
         assert state["last_compression_at"] == "2026-10-01 10:00:00+00:00"
         assert state["backup_models"] == ["gpt-backup"]
 
+    def test_the_turns_decisions_are_saved(self):
+        from docsgpt.decisions import record
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        rec = record.DecisionRecord()
+        with installed(FakeDecider()), record.activate(rec):
+            record.add("injection_input", {"p": 0.03}, status="ok", applied=False)
+            state = _agent().paused_turn_state()
+
+        assert state["decisions"] == rec.snapshot()
+        assert state["decisions"]["entries"][0]["feature"] == "injection_input"
+        json.dumps(state["decisions"])
+
+    def test_a_turn_without_decisions_saves_none(self):
+        assert _agent().paused_turn_state()["decisions"] is None
+
     def test_a_resumed_turn_saves_what_it_was_given_for_its_next_pause(self):
         listing = [{"ref": "F1", "id": "a-cur", "filename": "contract.txt", "status": "reference"}]
         agent = _agent(attachments=[_att("contract.txt", att_id="a-cur")], attachments_mode="reference")

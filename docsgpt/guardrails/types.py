@@ -24,6 +24,21 @@ class Action(str, Enum):
     BLOCK = "block"
 
 
+# Higher is more restrictive: the floor keeps the stricter of two actions, and an outcome's ``at_most`` caps one.
+ACTION_RANK = {
+    Action.FLAG: 0,
+    Action.REDACT: 1,
+    Action.BLOCK: 2,
+}
+
+
+def capped(action: Action, at_most: Optional[Action]) -> Action:
+    """``action``, lowered to ``at_most`` when that is less restrictive."""
+    if at_most is not None and ACTION_RANK[at_most] < ACTION_RANK[action]:
+        return at_most
+    return action
+
+
 ACTIONS_BY_STAGE = {
     Stage.INPUT: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.RETRIEVAL: {Action.FLAG, Action.REDACT, Action.BLOCK},
@@ -62,6 +77,10 @@ class CheckOutcome:
     score: Optional[float] = None
     detail: str = ""
     error: Optional[str] = None
+    # The most restrictive action this outcome may carry, whatever the
+    # control is set to: one control can then record a low-confidence band
+    # it never enforces.
+    at_most: Optional[Action] = None
 
     @classmethod
     def clean(cls) -> "CheckOutcome":
@@ -78,6 +97,7 @@ class CheckOutcome:
         spans: Optional[List[Span]] = None,
         score: Optional[float] = None,
         detail: str = "",
+        at_most: Optional[Action] = None,
     ) -> "CheckOutcome":
         return cls(
             triggered=True,
@@ -85,6 +105,7 @@ class CheckOutcome:
             spans=spans or [],
             score=score,
             detail=detail,
+            at_most=at_most,
         )
 
 
