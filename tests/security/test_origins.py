@@ -63,6 +63,11 @@ class TestCanonicalOrigin:
             ("https://*.example.com", "wildcard"),
             ("https://user:pass@example.com", "credentials"),
             ("https://example.com:99999", "not a valid origin"),
+            ("https://exa mple.com", "invalid host"),
+            ("https://exa%20mple.com", "invalid host"),
+            ("https://ex\\ample.com", "invalid host"),
+            ("https://a..com", "invalid host"),
+            (f"https://{'a' * 64}.com", "invalid host"),
         ],
     )
     def test_refuses_what_is_not_an_origin(self, value, message):

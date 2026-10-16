@@ -9,10 +9,13 @@ and a request header match by plain string equality.
 
 from __future__ import annotations
 
+import re
 from typing import Mapping, Optional
 from urllib.parse import urlsplit
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+# What a host can hold once in ASCII: dot-separated labels, a trailing dot allowed.
+_HOST = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 # Where ``npm run dev`` serves the frontend.
@@ -89,13 +92,13 @@ def canonical_origin(value: str) -> str:
             host = host.encode("idna").decode("ascii")
         except UnicodeError:
             raise ValueError(f"'{text}' has an invalid host")
+        if not _HOST.fullmatch(host):
+            raise ValueError(f"'{text}' has an invalid host")
     else:
         host = f"[{host}]"
-    netloc = host if port is None else f"{host}:{port}"
-    origin = normalize_origin(f"{parts.scheme}://{netloc}")
-    if origin is None:
-        raise ValueError(f"'{text}' is not a valid origin")
-    return origin
+    if port is not None and port != _DEFAULT_PORTS[parts.scheme]:
+        host = f"{host}:{port}"
+    return f"{parts.scheme}://{host}"
 
 
 def request_origin(headers: Mapping[str, str]) -> Optional[str]:
