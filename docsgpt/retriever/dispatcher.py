@@ -166,11 +166,13 @@ class Dispatcher(BaseRetriever):
         each non-classic retriever key gets its own group. A source whose
         rerank mode differs from the rest of its retriever's sources (one that
         opted out, say) gets a group of its own, so it is never judged by a
-        policy it turned off. Likewise each prescreen that runs on the decision
-        model (``DECISION_PRESCREEN_ENABLED``) groups only the sources that set
-        it, so its threshold and ``max_keep`` never cut another source's chunks
-        and the sources beside it keep their rerank. With no per-source list, a
-        single classic group over ``self.source`` is produced.
+        policy it turned off. Likewise each prescreen policy (LLM or decision
+        model, with the settings that change what it keeps) groups only the
+        sources that set it, so its ``max_keep`` and threshold never cut
+        another source's chunks and the sources beside it keep their own
+        prescreen or rerank. Without any prescreen the grouping is what it has
+        always been. With no per-source list, a single classic group over
+        ``self.source`` is produced.
 
         Each group's ``relevance`` holds its resolved rerank: ``mode``
         (``off``, ``monitor`` or ``on``), the rollout ``arm``, the pool size
@@ -195,16 +197,21 @@ class Dispatcher(BaseRetriever):
             return mode, arm, reranker
 
         def screened(retrieval: RetrievalConfig) -> Optional[tuple]:
-            """The source's decision prescreen policy, or ``None`` when it has none that runs on the model."""
+            """The source's prescreen policy: what it runs on and the settings that change what it keeps.
+
+            ``None`` without a prescreen, so sources that set none group exactly as they always have. A
+            ``backend: decision`` prescreen that does not run on the model is an LLM one, and groups with them.
+            """
             ps = retrieval.prescreen_config()
-            if ps is None or ps.backend != "decision":
+            if ps is None:
                 return None
-            if "prescreen" not in resolved:
-                resolved["prescreen"] = decision_prescreen_enabled()
-            if not resolved["prescreen"]:
-                return None
-            threshold = settings.DECISION_PRESCREEN_THRESHOLD if ps.min_relevance is None else ps.min_relevance
-            return ps.max_keep, threshold
+            if ps.backend == "decision":
+                if "prescreen" not in resolved:
+                    resolved["prescreen"] = decision_prescreen_enabled()
+                if resolved["prescreen"]:
+                    threshold = settings.DECISION_PRESCREEN_THRESHOLD if ps.min_relevance is None else ps.min_relevance
+                    return "decision", ps.max_keep, threshold
+            return "llm", ps.max_keep, ps.batch_size, ps.model
 
         def new_group(key: str, mode: str) -> Dict[str, Any]:
             return {

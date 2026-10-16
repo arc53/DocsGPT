@@ -682,26 +682,28 @@ class TestRelevanceComposition:
         ):
             d, out = _search(sources)
         assert [(g["doc_ids"], g["relevance"]["mode"]) for g in d._groups] == [
-            (["plain", "llm"], "on"), (["screened"], "on"),
+            (["plain"], "on"), (["screened"], "on"), (["llm"], "on"),
         ]
         prescreen = next(c for c in fake.calls if c.feature == "rag_prescreen")
         assert {r.state["passage"].split("-")[0] for r in prescreen.requests} == {"screened"}
-        # The sources beside it are still screened by the LLM and reranked, and its 0.99 floor cuts none of theirs.
-        rerank = next(c for c in fake.calls if c.feature == "rag_rerank")
-        assert {r.state["passage"].split("-")[0] for r in rerank.requests} == {"llm", "plain"}
+        # The sources beside it keep their LLM prescreen and rerank, and its 0.99 floor cuts none of theirs.
+        reranked = [{r.state["passage"].split("-")[0] for r in c.requests} for c in fake.calls
+                    if c.feature == "rag_rerank"]
+        assert reranked == [{"plain"}, {"llm"}]
         assert screener.gen.called
         by_source = {d["source"] for d in out}
         assert {"llm", "plain"} <= by_source
         assert sum(d["source"] == "screened" for d in out) == 1  # min_keep, below the floor
 
-    def test_without_the_gate_decision_prescreens_share_their_group(self, rerank_mode, _patch_llm_creator):
+    def test_without_the_gate_a_decision_prescreen_is_scoped_as_an_llm_one(self, rerank_mode, _patch_llm_creator):
         rerank_mode("off")
         sources = [
             {"id": "a", "retrieval": RetrievalConfig(prescreen={"candidate_k": 10, "backend": "decision"})},
             {"id": "b", "retrieval": RetrievalConfig()},
         ]
         d = Dispatcher(source={"question": "q", "active_docs": ["a", "b"]}, sources=sources)
-        assert [g["doc_ids"] for g in d._groups] == [["a", "b"]]
+        assert [g["doc_ids"] for g in d._groups] == [["a"], ["b"]]
+        assert d._group_stages(d._groups[0])[0].__class__.__name__ == "PreScreenStage"
 
     def test_a_decision_prescreen_fails_open_to_its_cap(self, stores, rerank_mode, _patch_llm_creator):
         rerank_mode("off", DECISION_PRESCREEN_ENABLED=True)
@@ -930,3 +932,76 @@ class TestOperatorGates:
             _, out = _search(self._prescreen("decision"))
         assert screener.gen.call_count == 0 and fake.calls[0].feature == "rag_prescreen"
         assert out and all("relevance" in d for d in out)
+
+
+@pytest.mark.unit
+class TestPrescreenScope:
+    """A prescreen, LLM or decision, judges only the sources that set it."""
+
+    @staticmethod
+    def _llm(max_keep, **extra):
+        return RetrievalConfig(chunks=2, prescreen={"candidate_k": 4, "max_keep": max_keep, **extra})
+
+    @staticmethod
+    def _keep_all():
+        screener = Mock(model_id="m")
+        screener.gen = Mock(return_value='{"keep": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}')
+        return screener
+
+    def test_an_llm_prescreen_leaves_a_plain_source_alone(self, stores, _patch_llm_creator):
+        stores["screened"] = _ranked_store(_corpus("screened"))
+        stores["plain"] = _ranked_store(_corpus("plain"))
+        sources = [
+            {"id": "screened", "retrieval": self._llm(1)},
+            {"id": "plain", "retrieval": RetrievalConfig()},
+        ]
+        screener = self._keep_all()
+        with patch("docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener):
+            d, out = _search(sources)
+        assert [g["doc_ids"] for g in d._groups] == [["screened"], ["plain"]]
+        assert sum(doc["source"] == "screened" for doc in out) == 1
+        # The plain source's chunks survive the other source's max_keep of 1.
+        assert sum(doc["source"] == "plain" for doc in out) == 6
+        (call,) = screener.gen.call_args_list
+        assert "plain-" not in call.kwargs["messages"][-1]["content"]
+
+    def test_prescreens_with_different_settings_are_scoped_apart(self, stores, _patch_llm_creator):
+        for sid in ("one", "two", "same"):
+            stores[sid] = _ranked_store(_corpus(sid))
+        sources = [
+            {"id": "one", "retrieval": self._llm(1)},
+            {"id": "two", "retrieval": self._llm(3)},
+            # Same screening as "one" with another candidate_k: it shares that group and its one stage.
+            {"id": "same", "retrieval": RetrievalConfig(chunks=2, prescreen={"candidate_k": 6, "max_keep": 1})},
+        ]
+        screener = self._keep_all()
+        with patch("docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener):
+            d, out = _search(sources)
+        assert [g["doc_ids"] for g in d._groups] == [["one", "same"], ["two"]]
+        assert [len(d._group_stages(g)) for g in d._groups] == [1, 1]
+        assert sum(doc["source"] in ("one", "same") for doc in out) == 1
+        assert sum(doc["source"] == "two" for doc in out) == 3
+
+    def test_an_ungated_decision_prescreen_groups_with_the_matching_llm_one(self, _patch_llm_creator):
+        sources = [
+            {"id": "a", "retrieval": self._llm(2, backend="decision")},
+            {"id": "b", "retrieval": self._llm(2)},
+            {"id": "c", "retrieval": self._llm(2, batch_size=5)},
+            {"id": "d", "retrieval": self._llm(2, model="other")},
+        ]
+        d = Dispatcher(source={"question": "q", "active_docs": ["a", "b", "c", "d"]}, sources=sources)
+        assert [g["doc_ids"] for g in d._groups] == [["a", "b"], ["c"], ["d"]]
+
+    def test_grouping_is_unchanged_without_a_prescreen(self, rerank_mode, _patch_llm_creator):
+        sources = [
+            {"id": "a", "retrieval": RetrievalConfig()},
+            {"id": "b", "retrieval": RetrievalConfig(chunks=9, score_threshold=0.3, rephrase_query=False)},
+            {"id": "c", "retrieval": RetrievalConfig(reranker={"type": "decision", "candidate_k": 30})},
+            {"id": "h", "retrieval": RetrievalConfig(retriever="hybrid")},
+            {"id": "g", "retrieval": RetrievalConfig(retriever="graphrag")},
+        ]
+        d = Dispatcher(source={"question": "q", "active_docs": ["a", "b", "c", "h", "g", "stray"]}, sources=sources)
+        assert [(g["retriever"], g["doc_ids"]) for g in d._groups] == [
+            ("classic", ["a", "b", "c", "stray"]), ("hybrid", ["h"]), ("graphrag", ["g"]),
+        ]
+        assert list(d._groups[0]["retrievals"]) == ["b"]

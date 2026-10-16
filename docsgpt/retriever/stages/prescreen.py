@@ -209,7 +209,8 @@ def build_prescreen_stages(
     """Build LLM prescreen stages from a group's per-source retrieval configs.
 
     Returns one stage per distinct ``backend: llm`` prescreen config found
-    across the group's sources (deduplicated by config), or an empty list when
+    across the group's sources (deduplicated by what the screening does; the
+    Dispatcher gives each policy a group of its own), or an empty list when
     none opt in — so the Dispatcher seam stays a pure no-op by default.
 
     Args:
@@ -228,7 +229,8 @@ def build_prescreen_stages(
         ps = getter() if callable(getter) else None
         if ps is None or (ps.backend != "llm" and not decision_as_llm):
             continue
-        key = (ps.candidate_k, ps.model, ps.batch_size, ps.max_keep)
+        # ``candidate_k`` only sizes each source's fetch; the screening is the same.
+        key = (ps.model, ps.batch_size, ps.max_keep)
         if key in seen:
             continue
         seen.add(key)

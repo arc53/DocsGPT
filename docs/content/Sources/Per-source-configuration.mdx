@@ -168,6 +168,8 @@ Pre-screening adds an optional map-reduce step between retrieval and answering: 
 
 The screening judges the query retrieval searched with: on a follow-up turn, the standalone rephrase rather than the raw message.
 
+A prescreen screens only the sources that set it. Sources with the same prescreen settings (`backend`, `max_keep`, `batch_size`, `model`, and `min_relevance` on the decision model) are searched and screened together; the other sources are searched in groups of their own, each with its share of the document budget, so a prescreen's `max_keep` never cuts their chunks.
+
 ## Relevance reranking and the decision prescreen
 
 The [decision model](/Models/decision-model) can score each retrieved chunk with a calibrated relevance, `p(relevant)`: does the chunk contain information that answers the query or directly addresses it. Retrieval uses it in two ways:
