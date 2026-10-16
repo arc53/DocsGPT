@@ -224,7 +224,11 @@ class RelevanceStage:
         return kept[:keep]
 
     def __call__(self, docs: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Score ``docs`` against the context's ``search_query`` (else ``query``) and apply the policy."""
+        """Score ``docs`` against the context's ``search_query`` (else ``query``) and apply the policy.
+
+        The context's ``selection_size``, when set, is how many chunks the retrieval's own selection had before
+        any stage ran; a policy without ``keep`` keeps that many.
+        """
         if not docs:
             return docs
         policy = self.policy
@@ -232,7 +236,9 @@ class RelevanceStage:
         fallback = self._fallback(docs)
         # Scored at most DECISION_RELEVANCE_MAX_PASSAGES; later candidates are not considered.
         candidates = docs[: settings.DECISION_RELEVANCE_MAX_PASSAGES]
-        keep = len(fallback) if policy.keep is None else policy.keep
+        # A stage before this one (the search tool's path filter) may have narrowed the pool; the rerank still
+        # keeps as many chunks as the retrieval's own selection had, now from inside what is left.
+        keep = max(len(fallback), context.get("selection_size") or 0) if policy.keep is None else policy.keep
         attributes = {
             "gen_ai.operation.name": "rerank",
             "docsgpt.rerank.backend": "decision",

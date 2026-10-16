@@ -30,6 +30,7 @@ from docsgpt.retriever.stages import build_group_stages
 from docsgpt.retriever.stages.prescreen import max_candidate_k
 from docsgpt.retriever.stages.relevance import (
     RERANK,
+    base_selection,
     instance_mode,
     rollout_on,
     source_mode,
@@ -56,8 +57,9 @@ _DEFERRABLE_KEYS = _CLASSIC_KEYS | {"hybrid"}
 _DEFAULT_RETRIEVAL = RetrievalConfig()
 
 # A post-retrieval stage: takes the candidate docs a group produced (plus the
-# context: the raw ``query``, the ``search_query`` the retriever searched with
-# and the ``retriever`` key) and returns a possibly-filtered/reordered list.
+# context: the raw ``query``, the ``search_query`` the retriever searched with,
+# the ``retriever`` key and the ``selection_size`` of the retriever's usual
+# selection) and returns a possibly-filtered/reordered list.
 Stage = Callable[[List[Dict[str, Any]], Dict[str, Any]], List[Dict[str, Any]]]
 
 
@@ -99,7 +101,9 @@ class Dispatcher(BaseRetriever):
                 RetrievalConfig | dict | None}``. When empty the dispatcher
                 falls back to the single classic group over ``source``.
             stages: Optional post-retrieval stages applied to each group's
-                candidates before final budgeting. Default: none (pass-through).
+                candidates before its prescreens and rerank, so a filter here
+                (the search tool's path filter) narrows the pool they choose
+                from. Default: none (pass-through).
             include_scores: Ask each group's retriever to attach the raw store
                 score to every doc it returns. Off for the answer pipeline; on
                 for the retrieval-test endpoint.
@@ -430,6 +434,7 @@ class Dispatcher(BaseRetriever):
                      budget: int) -> List[Dict[str, Any]]:
         """Run a group's stages over what its retriever returned, then fit it back into the group's budget."""
         context = self._context(query, retriever, group)
+        context["selection_size"] = len(base_selection(docs))
         self.last_candidate_count += len(docs)
         docs = self._run_stages(docs, context, self._group_stages(group))
         top = context.get("top_relevance")

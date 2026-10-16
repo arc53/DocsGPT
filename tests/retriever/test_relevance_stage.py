@@ -98,6 +98,19 @@ class TestRerank:
             two = rerank(threshold=0.5, min_keep=2)(docs("a", "b", "c"), {"query": "q"})
             assert [d["text"] for d in two] == ["c", "b"]
 
+    def test_a_narrowed_pool_still_fills_the_usual_selection(self):
+        # A stage before this one (the search tool's path filter) dropped both usual chunks.
+        fake = FakeDecider(by_passage({"c": 0.2, "d": 0.8, "e": 0.5}))
+        with installed(fake):
+            out = rerank()(docs("c", "d", "e", base=[False, False, False]), {"query": "q", "selection_size": 2})
+        assert [d["text"] for d in out] == ["d", "e"]
+
+    def test_a_narrowed_pool_falls_back_to_what_is_left_of_the_selection(self):
+        fake = FakeDecider(reasons={"*": "unavailable"})
+        with installed(fake):
+            out = rerank()(docs("b", "c", "d", base=[True, False, False]), {"query": "q", "selection_size": 2})
+        assert [d["text"] for d in out] == ["b"]
+
     def test_keep_caps(self):
         fake = FakeDecider(by_passage({"a": 0.3, "b": 0.9, "c": 0.6}))
         with installed(fake):
@@ -415,3 +428,4 @@ class TestSettings:
 
         spec = next(s for s in features.specs() if s.name == "rag_rerank")
         assert (spec.mode_setting, spec.budget_setting) == ("DECISION_RERANK_MODE", "DECISION_RERANK_BUDGET")
+
