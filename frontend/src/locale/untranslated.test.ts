@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import de from './de.json';
 import en from './en.json';
 import fr from './fr.json';
 
@@ -22,7 +23,7 @@ const isProse = (value: string): boolean =>
 
 const english = new Map(strings(en));
 
-const LOCALES = { fr };
+const LOCALES = { de, fr };
 
 describe('locales are translated', () => {
   it.each(Object.entries(LOCALES))(
