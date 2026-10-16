@@ -669,3 +669,83 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         node_config = AgentNodeConfig(**cfg.config.get("config", cfg.config))
 
         assert engine._retrieve_node_sources(node_config) == []
+
+
+@pytest.mark.unit
+class TestWorkflowNodeRelevance:
+    """A node's documents are reordered by the instance rerank, never filtered, and only while it is on."""
+
+    DOCS = [
+        {"text": "low chunk", "title": "a.md"},
+        {"text": "top chunk", "title": "b.md"},
+        {"text": "mid chunk", "title": "c.md"},
+    ]
+
+    def _retrieve(self, monkeypatch, retriever="classic"):
+        engine = create_engine()
+        docs = [dict(d) for d in self.DOCS]
+
+        class _R:
+            def search(self, q):
+                return docs
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: _R(),
+        )
+        monkeypatch.setattr(type(engine), "_authorized_node_sources", lambda self, s: list(s or []))
+        engine.state["query"] = "what is the radius?"
+        cfg = create_agent_node(node_id="n", agent_type="classic", sources=["s1"])
+        node_config = AgentNodeConfig(**{**cfg.config.get("config", cfg.config), "retriever": retriever})
+        return engine._retrieve_node_sources(node_config)
+
+    @staticmethod
+    def _scores(state, question):
+        return {"low": 0.1, "top": 0.9, "mid": 0.5}[state["passage"].split()[0]]
+
+    def test_on_reorders_and_keeps_every_doc(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        monkeypatch.setattr(settings, "DECISION_RERANK_THRESHOLD", 0.6)
+        fake = FakeDecider({"relevant": self._scores})
+        with installed(fake):
+            out = self._retrieve(monkeypatch)
+        assert [d["title"] for d in out] == ["b.md", "c.md", "a.md"]
+        assert [d["relevance"] for d in out] == [0.9, 0.5, 0.1]
+        (call,) = fake.calls
+        assert call.feature == "rag_rerank" and len(call.requests) == 3
+
+    @pytest.mark.parametrize("mode", ["off", "auto"])
+    def test_off_asks_nothing(self, monkeypatch, mode):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        # ``auto`` is off until the model has been measured to fit the budget.
+        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", mode)
+        fake = FakeDecider({"relevant": self._scores})
+        with installed(fake):
+            out = self._retrieve(monkeypatch)
+        assert out == self.DOCS and fake.calls == []
+
+    def test_a_retriever_outside_the_rerank_is_left_alone(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        fake = FakeDecider({"relevant": self._scores})
+        with installed(fake):
+            assert self._retrieve(monkeypatch, retriever="graphrag") == self.DOCS
+        assert fake.calls == []
+
+    @pytest.mark.parametrize("mode, reasons", [("on", {"*": "timeout"}), ("monitor", {})])
+    def test_a_failure_or_monitor_keeps_the_retriever_order(self, monkeypatch, mode, reasons):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", mode)
+        fake = FakeDecider({"relevant": self._scores}, reasons=reasons)
+        with installed(fake):
+            out = self._retrieve(monkeypatch)
+        assert fake.calls and out == self.DOCS

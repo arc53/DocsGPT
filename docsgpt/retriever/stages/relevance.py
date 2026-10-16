@@ -304,3 +304,42 @@ class RelevanceStage:
                 ms=scores.ms,
             )
         return result
+
+
+#: Retriever keys that name the classic retriever (``Dispatcher`` groups them as ``classic``).
+_CLASSIC_ALIASES = frozenset({"classic", "default"})
+
+
+def apply_relevance(
+    docs: List[Dict[str, Any]], query: str, *, retriever: Optional[str] = None, rollout_key: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Order ``docs`` by relevance to ``query`` under the instance rerank, for a caller with no Dispatcher.
+
+    It reorders only: every doc is kept, with its ``relevance``. The rerank's own gates apply
+    (``instance_mode``, ``DECISION_RERANK_RETRIEVERS`` and the rollout), and while they leave it off, or when the
+    call fails, ``docs`` come back as they were. Workflow agent nodes use it; they build their retriever directly,
+    so no source config takes part.
+
+    Args:
+        docs: The retrieved docs, in retriever order.
+        query: The query the docs were retrieved with.
+        retriever: The retriever key that produced them (``classic`` when omitted).
+        rollout_key: Keys the rollout arm (the conversation id, else the request id).
+    """
+    if not docs or not query:
+        return docs
+    key = (retriever or "classic").lower()
+    key = "classic" if key in _CLASSIC_ALIASES else key
+    mode, arm = source_mode(
+        key, None, instance_mode(), rollout_on(rollout_key, settings.DECISION_RERANK_ROLLOUT_PERCENT)
+    )
+    if arm == "control":
+        record.add(RERANK, {"arm": "control"}, status="skipped", applied=False)
+    if mode == "off":
+        return docs
+    stage = RelevanceStage(RelevancePolicy(keep=len(docs), threshold=0.0, min_keep=len(docs), mode=mode, arm=arm))
+    try:
+        return stage(list(docs), {"query": query, "search_query": query})
+    except Exception as exc:  # noqa: BLE001 -- a rerank must never fail the caller's retrieval
+        logger.warning("Relevance ordering failed, keeping the retrieval's order: %s", type(exc).__name__)
+        return docs

@@ -16,6 +16,7 @@ from docsgpt.retriever.stages.relevance import (
     QUERY_CHARS,
     RelevancePolicy,
     RelevanceStage,
+    apply_relevance,
     base_selection,
     instance_mode,
     rollout_on,
@@ -429,3 +430,74 @@ class TestSettings:
         spec = next(s for s in features.specs() if s.name == "rag_rerank")
         assert (spec.mode_setting, spec.budget_setting) == ("DECISION_RERANK_MODE", "DECISION_RERANK_BUDGET")
 
+
+@pytest.mark.unit
+class TestApplyRelevance:
+    """The rerank for a caller with no Dispatcher (workflow agent nodes): reorder only, under the same gates."""
+
+    @pytest.fixture
+    def on(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        return monkeypatch
+
+    def test_reorders_and_keeps_every_doc(self, on, entries):
+        on.setattr(settings, "DECISION_RERANK_THRESHOLD", 0.5)
+        fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9, "c": 0.4}))
+        with installed(fake):
+            out = apply_relevance(docs("a", "b", "c"), "q")
+        assert [d["text"] for d in out] == ["b", "c", "a"]
+        (entry,) = entries
+        assert entry["feature"] == "rag_rerank" and entry["applied"] is True and entry["outcome"]["kept"] == 3
+
+    @pytest.mark.parametrize("reason", ["unavailable", "timeout"])
+    def test_fails_open_to_the_retriever_order(self, on, reason):
+        fake = FakeDecider(reasons={"*": reason})
+        with installed(fake):
+            out = apply_relevance(docs("a", "b"), "q")
+        assert fake.calls and [d["text"] for d in out] == ["a", "b"]
+        assert not any("relevance" in d for d in out)
+
+    def test_an_unexpected_error_fails_open(self, on, monkeypatch):
+        monkeypatch.setattr(RelevanceStage, "__call__", lambda self, d, c: 1 / 0)
+        original = docs("a", "b")
+        assert apply_relevance(original, "q") is original
+
+    def test_off_asks_nothing(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "off")
+        fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
+        original = docs("a", "b")
+        with installed(fake):
+            assert apply_relevance(original, "q") is original
+        assert fake.calls == []
+
+    def test_decisions_off_asks_nothing(self, on):
+        fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
+        fake.enabled = False
+        with installed(fake):
+            assert [d["text"] for d in apply_relevance(docs("a", "b"), "q")] == ["a", "b"]
+        assert fake.calls == []
+
+    @pytest.mark.parametrize("retriever, called", [("default", True), ("Classic", True), ("hybrid", True),
+                                                   ("graphrag", False)])
+    def test_follows_the_rerank_retrievers(self, on, retriever, called):
+        fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
+        with installed(fake):
+            apply_relevance(docs("a", "b"), "q", retriever=retriever)
+        assert bool(fake.calls) is called
+
+    def test_the_control_arm_is_recorded_and_left_alone(self, on, entries):
+        on.setattr(settings, "DECISION_RERANK_ROLLOUT_PERCENT", 50)
+        key = next(k for k in (f"c{i}" for i in range(100)) if not rollout_on(k, 50))
+        fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
+        with installed(fake):
+            out = apply_relevance(docs("a", "b"), "q", rollout_key=key)
+        assert fake.calls == [] and [d["text"] for d in out] == ["a", "b"]
+        (entry,) = entries
+        assert entry["outcome"] == {"arm": "control"} and entry["status"] == "skipped"
+
+    def test_nothing_to_order_asks_nothing(self, on):
+        fake = FakeDecider()
+        with installed(fake):
+            assert apply_relevance([], "q") == []
+            assert [d["text"] for d in apply_relevance(docs("a"), "")] == ["a"]
+        assert fake.calls == []

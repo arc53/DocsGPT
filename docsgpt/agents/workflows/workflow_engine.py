@@ -1451,6 +1451,7 @@ class WorkflowEngine:
             list: Retrieved documents, empty when there was nothing to fetch.
         """
         from docsgpt.retriever.retriever_creator import RetrieverCreator
+        from docsgpt.retriever.stages.relevance import apply_relevance
 
         query = self.state.get("query", "")
         if not query:
@@ -1465,7 +1466,15 @@ class WorkflowEngine:
                 chunks=int(node_config.chunks) if node_config.chunks else 6,
                 decoded_token=self.agent.decoded_token,
             )
-            docs = retriever.search(query)
+            # No Dispatcher here, so the rerank reorders what the node's own
+            # retriever returned (and does nothing while it is off).
+            docs = apply_relevance(
+                retriever.search(query),
+                query,
+                retriever=node_config.retriever,
+                rollout_key=getattr(self.agent, "conversation_id", None)
+                or getattr(self.agent, "request_id", None),
+            )
             if docs:
                 # The parent copy still backs ``{{ source.* }}`` template
                 # resolution; the return value is what reaches the node agent.

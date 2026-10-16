@@ -308,10 +308,11 @@ def _run_agent_headless(
             decoded_token=decoded_token,
         )
         # Routed per source like a chat's pre-fetch, so each source keeps its
-        # own retriever and retrieval settings.
+        # own retriever and retrieval settings (and its turns their rerank arm).
         retriever = build_dispatcher(
             lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
             sources=prefetch_sources,
+            conversation_id=conversation_id,
             **retriever_kwargs,
         )
         try:
