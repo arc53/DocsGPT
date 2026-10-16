@@ -249,6 +249,67 @@ describe('backgroundSlice', () => {
       expect(selectIsUnread('c1')(store.getState())).toBe(true);
     });
 
+    it('an older list landing after a newer one changes nothing', async () => {
+      // Lists fetched outside the serialized refresh (the first load, a
+      // stream's end) can land out of order.
+      const store = makeStore();
+      const listed = (unread: boolean, requestedAt: number) =>
+        receiveConversations({
+          data: [{ id: 'c1', name: 'a', agent_id: null, unread }],
+          loading: false,
+          requestedAt,
+        });
+      const now = Date.now();
+      await store.dispatch(markConversationRead('c1'));
+      store.dispatch(listed(false, now + 1000));
+      store.dispatch(listed(true, now - 1000));
+      expect(selectIsUnread('c1')(store.getState())).toBe(false);
+
+      store.dispatch(listed(true, now + 3000));
+      store.dispatch(listed(false, now + 2000));
+      expect(selectIsUnread('c1')(store.getState())).toBe(true);
+    });
+
+    it('an older page read before the mark changed here leaves the mark alone', async () => {
+      const store = makeStore();
+      await store.dispatch(markConversationRead('c1'));
+      store.dispatch(
+        appendConversations(
+          [{ id: 'c1', name: 'a', agent_id: null, unread: true }],
+          Date.now() - 1000,
+        ),
+      );
+      expect(selectIsUnread('c1')(store.getState())).toBe(false);
+    });
+
+    it('a list read before a delete does not bring the mark back', () => {
+      const store = makeStore();
+      const stale = (id: string) =>
+        receiveConversations({
+          data: [{ id, name: 'a', agent_id: null, unread: true }],
+          loading: false,
+          requestedAt: Date.now() - 1000,
+        });
+      store.dispatch(removeConversation('c1'));
+      store.dispatch(stale('c1'));
+      expect(selectIsUnread('c1')(store.getState())).toBe(false);
+
+      store.dispatch(removeAllConversations());
+      store.dispatch(stale('c2'));
+      expect(selectIsUnread('c2')(store.getState())).toBe(false);
+      // A list asked for after the clear, and a mark made here, still count.
+      store.dispatch(
+        receiveConversations({
+          data: [{ id: 'c2', name: 'a', agent_id: null, unread: true }],
+          loading: false,
+          requestedAt: Date.now() + 1000,
+        }),
+      );
+      store.dispatch(markConversationUnread('c3'));
+      expect(selectIsUnread('c2')(store.getState())).toBe(true);
+      expect(selectIsUnread('c3')(store.getState())).toBe(true);
+    });
+
     it('go with a deleted conversation', () => {
       const store = makeStore();
       store.dispatch(markConversationUnread('c1'));

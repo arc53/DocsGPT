@@ -172,19 +172,32 @@ export const prefSlice = createSlice({
         payload: action.payload.data,
       });
     },
-    /** An older page, loaded as the sidebar's end scrolls into view. */
-    appendConversations: (
-      state,
-      action: PayloadAction<ConversationSummary[]>,
-    ) => {
-      const existing = state.conversations.data ?? [];
-      const seen = new Set(existing.map((c) => c.id));
-      state.conversations.data = [
-        ...existing,
-        ...action.payload.filter((c) => !seen.has(c.id)),
-      ];
-      state.conversations.hasMore =
-        action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+    /**
+     * An older page, loaded as the sidebar's end scrolls into view.
+     * `requestedAt`, when its request went out, orders its unread marks.
+     */
+    appendConversations: {
+      reducer: (
+        state,
+        action: PayloadAction<
+          ConversationSummary[],
+          string,
+          { requestedAt?: number }
+        >,
+      ) => {
+        const existing = state.conversations.data ?? [];
+        const seen = new Set(existing.map((c) => c.id));
+        state.conversations.data = [
+          ...existing,
+          ...action.payload.filter((c) => !seen.has(c.id)),
+        ];
+        state.conversations.hasMore =
+          action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+      },
+      prepare: (list: ConversationSummary[], requestedAt?: number) => ({
+        payload: list,
+        meta: { requestedAt },
+      }),
     },
     removeConversation: (state, action: PayloadAction<string>) => {
       if (!state.conversations.data) return;

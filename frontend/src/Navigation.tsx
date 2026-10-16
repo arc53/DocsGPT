@@ -269,7 +269,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setOlderError(false);
     getConversations(token, { date: last.date, id: last.id })
       .then((result) => {
-        if (result.data) dispatch(appendConversations(result.data));
+        if (result.data)
+          dispatch(appendConversations(result.data, result.requestedAt));
         else setOlderError(true);
       })
       .finally(() => setOlderLoading(false));
