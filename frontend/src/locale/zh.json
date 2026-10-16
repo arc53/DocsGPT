@@ -1587,7 +1587,7 @@
         "endpoint_url": "自定义端点 URL",
         "client_id": "客户端 ID",
         "client_secret": "客户端密钥",
-        "user_agent": "用户智能体（User-Agent）",
+        "user_agent": "用户代理（User-Agent）",
         "bucket": "存储桶",
         "prefix": "路径前缀",
         "search_queries": "搜索词",

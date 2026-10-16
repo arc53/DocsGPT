@@ -2549,7 +2549,7 @@
         "blockHosts": "封鎖的主機（每行一個）",
         "policyText": "政策",
         "minOverlap": "與來源的最低重疊度",
-        "minWords": "最短回答長度（字數）",
+        "minWords": "最短回答長度（詞數）",
         "confidence": "信心門檻",
         "confidenceHint": "評審模型必須標記該內容，且信心至少達到此值（預設：0.7）",
         "activeCount": "{{count}} 項啟用中",
