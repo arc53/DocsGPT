@@ -81,6 +81,11 @@ import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 import TestRetrievalModal from './TestRetrievalModal';
+import {
+  type DecisionFeatures,
+  NO_DECISION_FEATURES,
+  decisionFeatures,
+} from './components/RetrievalOptions';
 import WikiSettingsModal from './WikiSettingsModal';
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
@@ -211,6 +216,8 @@ export default function Sources({
     useState<ActiveState>('INACTIVE');
   const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
   const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
+  const [decision, setDecision] =
+    useState<DecisionFeatures>(NO_DECISION_FEATURES);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
@@ -601,6 +608,7 @@ export default function Sources({
         if (!cancelled) {
           setGraphRAGAvailable(!!config?.graphrag_available);
           setHybridAvailable(!!config?.hybrid_available);
+          setDecision(decisionFeatures(config));
         }
       })
       .catch(() => undefined);
@@ -711,6 +719,7 @@ export default function Sources({
         hybridAvailable={hybridAvailable}
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
+        decision={decision}
       />
     </div>
   ) : (
@@ -1026,6 +1035,7 @@ export default function Sources({
         hybridAvailable={hybridAvailable}
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
+        decision={decision}
         onEnableGraphRAG={(doc) => {
           setDocumentToGraphRAG(doc);
           setGraphRAGModalState('ACTIVE');
@@ -1044,6 +1054,7 @@ export default function Sources({
         hybridAvailable={hybridAvailable}
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
+        decision={decision}
       />
 
       {documentForWikiSettings && (

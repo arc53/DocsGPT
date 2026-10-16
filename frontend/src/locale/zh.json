@@ -365,6 +365,28 @@
         },
         "errors": {
           "failed": "检索测试失败，请重试。"
+        },
+        "relevance": "相关度",
+        "compare": "与检索器顺序比较",
+        "compareHint": "同时按检索器顺序列出所有候选，显示其相关度，以及相关度模型是保留、提升还是丢弃了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 内按相关度排序",
+          "monitor": "已为相关度打分但未应用（监控模式）",
+          "fallback": "未使用相关度模型（{{reason}}），保留检索器顺序"
+        },
+        "compareTitle": "检索器顺序",
+        "compareDescription": "相关度阶段收到的所有候选，按检索器的排名顺序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "文本块",
+          "relevance": "相关度",
+          "outcome": "结果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留为 #{{rank}}",
+          "dropped": "已丢弃",
+          "notKept": "未保留"
         }
       },
       "editConfig": "来源设置",
@@ -437,7 +459,15 @@
           "maxKeep": "最多保留的文本块数",
           "batchSize": "批处理大小",
           "model": "模型（可选）",
-          "modelPlaceholder": "默认使用请求所用的模型"
+          "modelPlaceholder": "默认使用请求所用的模型",
+          "enableAny": "启用预筛选",
+          "warningAny": "获取更多候选文本块，并用 LLM 或相关度模型进行筛选。这会增加查询延迟，使用 LLM 筛选还会产生费用。",
+          "backend": "后端",
+          "backendHint": "相关度模型一次调用即可为所有候选打分；LLM 则分批筛选。",
+          "backends": {
+            "llm": "LLM",
+            "decision": "相关度模型"
+          }
         },
         "graph": {
           "title": "图谱提取",
@@ -465,6 +495,18 @@
           "maxTokensHint": "最多 4,096 个令牌。",
           "minTokens": "每块最小令牌数",
           "duplicateHeaders": "跨块重复标题"
+        },
+        "relevance": {
+          "reranker": "按相关度重新排序",
+          "rerankerHint": "相关度模型会把最能回答查询的文本块排在前面。实例默认值由管理员设置。",
+          "rerankerChoices": {
+            "default": "实例默认值",
+            "on": "开启",
+            "off": "关闭"
+          },
+          "minRelevance": "最低相关度",
+          "minRelevancePlaceholder": "默认",
+          "rerankMinRelevanceHint": "丢弃得分低于此值（0–1）的文本块。留空则只重新排序。"
         }
       },
       "configModal": {
@@ -2119,6 +2161,12 @@
         "loadFailed": "无法加载这段内容。",
         "openLink": "打开链接",
         "openInKnowledge": "在知识库中打开"
+      },
+      "relevance": {
+        "strong": "高度相关",
+        "possible": "可能相关",
+        "weak": "相关性低",
+        "tooltip": "相关度 {{percent}}%"
       }
     },
     "attachments": {

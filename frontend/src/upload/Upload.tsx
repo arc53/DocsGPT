@@ -117,7 +117,7 @@ function Upload({
   const [activeTab, setActiveTab] = useState<boolean>(true);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const { graphRAGAvailable, hybridAvailable, availableModels } =
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
 
   const renderFormFields = () => {
@@ -1010,6 +1010,7 @@ function Upload({
                     hybridAvailable={hybridAvailable}
                     graphRAGAvailable={graphRAGAvailable}
                     availableModels={availableModels}
+                    decision={decision}
                   />
                 )}
               </div>

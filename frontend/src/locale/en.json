@@ -366,6 +366,28 @@
         },
         "errors": {
           "failed": "Retrieval test failed. Please try again."
+        },
+        "relevance": "relevance",
+        "compare": "Compare with retriever order",
+        "compareHint": "Also list every candidate in retriever order, with its relevance and whether the relevance model kept, promoted or dropped it.",
+        "relevanceRun": {
+          "applied": "ordered by relevance in {{ms}} ms",
+          "monitor": "relevance scored but not applied (monitor mode)",
+          "fallback": "relevance model not used ({{reason}}), retriever order kept"
+        },
+        "compareTitle": "Retriever order",
+        "compareDescription": "Every candidate the relevance stages received, in the order the retriever ranked them.",
+        "compareColumns": {
+          "before": "Rank",
+          "chunk": "Chunk",
+          "relevance": "Relevance",
+          "outcome": "Result"
+        },
+        "compareStatus": {
+          "promoted": "Promoted to #{{rank}}",
+          "kept": "Kept as #{{rank}}",
+          "dropped": "Dropped",
+          "notKept": "Not kept"
         }
       },
       "editConfig": "Source settings",
@@ -438,7 +460,15 @@
           "maxKeep": "Max chunks to keep",
           "batchSize": "Batch size",
           "model": "Model (optional)",
-          "modelPlaceholder": "Defaults to the request model"
+          "modelPlaceholder": "Defaults to the request model",
+          "enableAny": "Enable prescreen",
+          "warningAny": "Fetches a larger candidate set and filters it with an LLM or the relevance model. This adds query-time latency, and LLM screening adds cost.",
+          "backend": "Backend",
+          "backendHint": "The relevance model scores every candidate in one call; an LLM screens them in batches.",
+          "backends": {
+            "llm": "LLM",
+            "decision": "Relevance model"
+          }
         },
         "graph": {
           "title": "Graph extraction",
@@ -466,6 +496,18 @@
           "maxTokensHint": "Maximum 4,096 tokens.",
           "minTokens": "Min tokens per chunk",
           "duplicateHeaders": "Duplicate headers across chunks"
+        },
+        "relevance": {
+          "reranker": "Rerank by relevance",
+          "rerankerHint": "The relevance model puts the chunks that best answer the query first. The instance default is what your administrator set.",
+          "rerankerChoices": {
+            "default": "Instance default",
+            "on": "On",
+            "off": "Off"
+          },
+          "minRelevance": "Minimum relevance",
+          "minRelevancePlaceholder": "Default",
+          "rerankMinRelevanceHint": "Drop chunks that score below this (0–1). Leave it empty to only reorder them."
         }
       },
       "configModal": {
@@ -2129,6 +2171,12 @@
         "loadFailed": "Couldn't load this passage.",
         "openLink": "Open link",
         "openInKnowledge": "Open in Knowledge"
+      },
+      "relevance": {
+        "strong": "Strong match",
+        "possible": "Possible match",
+        "weak": "Weak match",
+        "tooltip": "Relevance {{percent}}%"
       }
     },
     "attachments": {

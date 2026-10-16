@@ -379,6 +379,28 @@
         },
         "errors": {
           "failed": "La prueba de recuperación falló. Inténtalo de nuevo."
+        },
+        "relevance": "relevancia",
+        "compare": "Comparar con el orden del recuperador",
+        "compareHint": "Muestra también todos los candidatos en el orden del recuperador, con su relevancia y si el modelo de relevancia los mantuvo, subió o descartó.",
+        "relevanceRun": {
+          "applied": "ordenados por relevancia en {{ms}} ms",
+          "monitor": "relevancia puntuada pero no aplicada (modo de observación)",
+          "fallback": "modelo de relevancia no usado ({{reason}}), se mantiene el orden del recuperador"
+        },
+        "compareTitle": "Orden del recuperador",
+        "compareDescription": "Todos los candidatos que recibieron las etapas de relevancia, en el orden en que los clasificó el recuperador.",
+        "compareColumns": {
+          "before": "Posición",
+          "chunk": "Fragmento",
+          "relevance": "Relevancia",
+          "outcome": "Resultado"
+        },
+        "compareStatus": {
+          "promoted": "Subido a #{{rank}}",
+          "kept": "Mantenido como #{{rank}}",
+          "dropped": "Descartado",
+          "notKept": "No mantenido"
         }
       },
       "editConfig": "Configuración de la fuente",
@@ -451,7 +473,15 @@
           "maxKeep": "Máximo de fragmentos a conservar",
           "batchSize": "Tamaño de lote",
           "model": "Modelo (opcional)",
-          "modelPlaceholder": "Por defecto, el modelo de la solicitud"
+          "modelPlaceholder": "Por defecto, el modelo de la solicitud",
+          "enableAny": "Activar preselección",
+          "warningAny": "Obtiene un conjunto mayor de candidatos y lo filtra con un LLM o con el modelo de relevancia. Esto añade latencia a la consulta, y el filtrado con un LLM añade coste.",
+          "backend": "Motor",
+          "backendHint": "El modelo de relevancia puntúa todos los candidatos en una sola llamada; un LLM los revisa por lotes.",
+          "backends": {
+            "llm": "LLM",
+            "decision": "Modelo de relevancia"
+          }
         },
         "graph": {
           "title": "Extracción de grafo",
@@ -479,6 +509,18 @@
           "maxTokensHint": "Máximo de 4096 tokens.",
           "minTokens": "Mínimo de tokens por fragmento",
           "duplicateHeaders": "Duplicar encabezados entre fragmentos"
+        },
+        "relevance": {
+          "reranker": "Reordenar por relevancia",
+          "rerankerHint": "El modelo de relevancia coloca primero los fragmentos que mejor responden a la consulta. El valor predeterminado de la instancia es el que fijó tu administrador.",
+          "rerankerChoices": {
+            "default": "Predeterminado de la instancia",
+            "on": "Activado",
+            "off": "Desactivado"
+          },
+          "minRelevance": "Relevancia mínima",
+          "minRelevancePlaceholder": "Predeterminada",
+          "rerankMinRelevanceHint": "Descarta los fragmentos con una puntuación inferior (0–1). Déjalo vacío para solo reordenarlos."
         }
       },
       "configModal": {
@@ -2185,6 +2227,12 @@
         "loadFailed": "No se pudo cargar el pasaje.",
         "openLink": "Abrir enlace",
         "openInKnowledge": "Abrir en Conocimiento"
+      },
+      "relevance": {
+        "strong": "Coincidencia alta",
+        "possible": "Coincidencia posible",
+        "weak": "Coincidencia baja",
+        "tooltip": "Relevancia {{percent}} %"
       }
     },
     "attachments": {

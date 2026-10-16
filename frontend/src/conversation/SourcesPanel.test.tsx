@@ -121,4 +121,39 @@ describe('SourcesPanel', () => {
     expect(container.querySelector('[data-testid="reader"]')).toBeNull();
     expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(2);
   });
+
+  it('labels a scored source by its relevance band, and others not at all', async () => {
+    await act(async () => {
+      root.render(
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <SourcesPanel
+            sources={[
+              { ...sources[0], relevance: 0.82 },
+              { ...sources[1], relevance: 0.12 },
+              { title: 'Plain', text: 'No score' },
+            ]}
+            onOpenIndexChange={vi.fn()}
+          />
+        </SidePanel>,
+      );
+    });
+    const tiles = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="card"]'),
+    );
+    expect(tiles[0].textContent).toContain(
+      'conversation.sources.relevance.strong',
+    );
+    expect(tiles[1].textContent).toContain(
+      'conversation.sources.relevance.weak',
+    );
+    expect(tiles[2].textContent).not.toContain(
+      'conversation.sources.relevance',
+    );
+    const label = [...tiles[0].querySelectorAll('span')].find(
+      (span) => span.textContent === 'conversation.sources.relevance.strong',
+    );
+    expect(label?.getAttribute('title')).toBe(
+      'conversation.sources.relevance.tooltip',
+    );
+  });
 });

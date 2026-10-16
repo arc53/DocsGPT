@@ -379,6 +379,28 @@
         },
         "errors": {
           "failed": "Échec du test de récupération. Veuillez réessayer."
+        },
+        "relevance": "pertinence",
+        "compare": "Comparer avec l’ordre du moteur de récupération",
+        "compareHint": "Liste aussi chaque candidat dans l’ordre du moteur de récupération, avec sa pertinence et si le modèle de pertinence l’a gardé, remonté ou écarté.",
+        "relevanceRun": {
+          "applied": "ordonnés par pertinence en {{ms}} ms",
+          "monitor": "pertinence notée mais non appliquée (mode observation)",
+          "fallback": "modèle de pertinence non utilisé ({{reason}}), ordre du moteur de récupération conservé"
+        },
+        "compareTitle": "Ordre du moteur de récupération",
+        "compareDescription": "Tous les candidats reçus par les étapes de pertinence, dans l’ordre où le moteur de récupération les a classés.",
+        "compareColumns": {
+          "before": "Rang",
+          "chunk": "Fragment",
+          "relevance": "Pertinence",
+          "outcome": "Résultat"
+        },
+        "compareStatus": {
+          "promoted": "Remonté en #{{rank}}",
+          "kept": "Gardé en #{{rank}}",
+          "dropped": "Écarté",
+          "notKept": "Non gardé"
         }
       },
       "editConfig": "Paramètres de la source",
@@ -451,7 +473,15 @@
           "maxKeep": "Fragments max. à conserver",
           "batchSize": "Taille de lot",
           "model": "Modèle (facultatif)",
-          "modelPlaceholder": "Par défaut, le modèle de la requête"
+          "modelPlaceholder": "Par défaut, le modèle de la requête",
+          "enableAny": "Activer la présélection",
+          "warningAny": "Récupère un plus grand ensemble de candidats et le filtre avec un LLM ou le modèle de pertinence. Cela ajoute de la latence à la requête, et le filtrage par un LLM ajoute un coût.",
+          "backend": "Moteur",
+          "backendHint": "Le modèle de pertinence note tous les candidats en un seul appel ; un LLM les examine par lots.",
+          "backends": {
+            "llm": "LLM",
+            "decision": "Modèle de pertinence"
+          }
         },
         "graph": {
           "title": "Extraction de graphe",
@@ -479,6 +509,18 @@
           "maxTokensHint": "4 096 jetons maximum.",
           "minTokens": "Jetons min. par fragment",
           "duplicateHeaders": "Dupliquer les en-têtes entre les fragments"
+        },
+        "relevance": {
+          "reranker": "Réordonner par pertinence",
+          "rerankerHint": "Le modèle de pertinence place en premier les fragments qui répondent le mieux à la requête. La valeur par défaut de l’instance est celle fixée par votre administrateur.",
+          "rerankerChoices": {
+            "default": "Valeur par défaut de l’instance",
+            "on": "Activé",
+            "off": "Désactivé"
+          },
+          "minRelevance": "Pertinence minimale",
+          "minRelevancePlaceholder": "Par défaut",
+          "rerankMinRelevanceHint": "Écarte les fragments dont le score est inférieur (0–1). Laissez vide pour seulement les réordonner."
         }
       },
       "configModal": {
@@ -2185,6 +2227,12 @@
         "loadFailed": "Impossible de charger ce passage.",
         "openLink": "Ouvrir le lien",
         "openInKnowledge": "Ouvrir dans Connaissances"
+      },
+      "relevance": {
+        "strong": "Forte correspondance",
+        "possible": "Correspondance possible",
+        "weak": "Faible correspondance",
+        "tooltip": "Pertinence {{percent}} %"
       }
     },
     "attachments": {

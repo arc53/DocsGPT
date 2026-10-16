@@ -201,4 +201,90 @@ describe('TestRetrievalModal notices', () => {
     expect(card.dataset.variant).toBe('outline');
     expect(card.className).not.toContain('bg-muted');
   });
+
+  it('offers the comparison only where the operator turned the model on, and sends it', async () => {
+    render(doc(undefined));
+    expect(document.body.querySelector('#test-retrieval-compare')).toBeNull();
+
+    testSourceRetrieval.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        chunks: [
+          {
+            rank: 1,
+            text: 'Insurance terms.',
+            title: 'Nordhaven',
+            filename: 'nordhaven.pdf',
+            source: 'nordhaven.pdf',
+            tokens: 12,
+            score: 0.71,
+            score_kind: 'cosine_similarity',
+            relevance: 0.88,
+          },
+        ],
+        candidates: [
+          {
+            rank: null,
+            rank_before: 1,
+            text: 'Fleet list.',
+            title: 'Nordhaven',
+            filename: 'nordhaven.pdf',
+            source: 'nordhaven.pdf',
+            tokens: 9,
+            score: 0.84,
+            score_kind: 'cosine_similarity',
+            relevance: 0.03,
+            kept: false,
+            baseline: true,
+          },
+        ],
+        relevance: { applied: true, fallback: null, latency_ms: 240 },
+        total: 1,
+        retriever: 'classic',
+        latency_ms: 300,
+      }),
+    });
+    act(() => {
+      root.render(
+        <TestRetrievalModal
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+          document={doc(undefined)}
+          decision={{ rerank: true, prescreen: false }}
+        />,
+      );
+    });
+    const toggle = document.body.querySelector<HTMLButtonElement>(
+      '#test-retrieval-compare',
+    );
+    expect(toggle).not.toBeNull();
+    act(() => toggle!.click());
+
+    const input =
+      document.body.querySelector<HTMLInputElement>('input[type="text"]');
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    act(() => {
+      setValue?.call(input, 'insurance');
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      input?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(testSourceRetrieval.mock.calls[0][1].compare).toBe(true);
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(
+      'settings.sources.testRetrieval.relevanceRun.applied',
+    );
+    expect(text).toContain('settings.sources.testRetrieval.compareTitle');
+    expect(text).toContain(
+      'settings.sources.testRetrieval.compareStatus.dropped',
+    );
+    expect(text).toContain('88%');
+  });
 });

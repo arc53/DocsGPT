@@ -26,6 +26,18 @@ export type SourcePrescreenConfig = {
   model?: string | null; // null → reuse the request model
   batch_size?: number; // default 10
   max_keep?: number; // default 8, <= candidate_k
+  // 'decision' scores candidates with the decision model in one call (while
+  // the operator enabled it; otherwise it runs as 'llm'). Absent = 'llm'.
+  backend?: 'llm' | 'decision';
+  min_relevance?: number | null; // decision only; null → instance default
+};
+
+// The decision model's rerank of one source, within the instance's rerank
+// mode: 'decision' opts the source in with these overrides, 'off' opts it out.
+export type SourceRerankerConfig = {
+  type?: 'decision' | 'off'; // default 'decision'
+  min_relevance?: number | null; // null → instance default (reorder only)
+  candidate_k?: number | null; // 1..100; null → instance default
 };
 
 // Where the graph walk starts: matching entities, or matching relationships
@@ -47,6 +59,7 @@ export type SourceRetrievalConfig = {
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
   prescreen?: SourcePrescreenConfig | null; // null = off
+  reranker?: SourceRerankerConfig | null; // null = follow the instance
   graph?: SourceGraphRetrievalConfig; // graphrag retriever only
 };
 

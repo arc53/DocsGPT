@@ -199,7 +199,7 @@ export default function ConnectWizard({
   const syncing = canSync && (mode === 'sync' || syncOn);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const { graphRAGAvailable, hybridAvailable, availableModels } =
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token, step === 'setup' && syncing);
   // Tools the user opts into while choosing what to sync, not on sign-in.
   const offerTools =
@@ -896,6 +896,7 @@ export default function ConnectWizard({
             hybridAvailable={hybridAvailable}
             graphRAGAvailable={graphRAGAvailable}
             availableModels={availableModels}
+            decision={decision}
           />
         </>
       )}

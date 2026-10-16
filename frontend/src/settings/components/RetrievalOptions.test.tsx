@@ -9,8 +9,11 @@ import {
   chunkingChanged,
   scoreThresholdHidden,
   DEFAULT_RETRIEVAL_OPTIONS,
+  DECISION_MAX_CANDIDATES,
   MAX_CHUNK_TOKENS,
+  NO_DECISION_FEATURES,
   RetrievalOptionsValue,
+  decisionFeatures,
 } from './RetrievalOptions';
 
 const clone = (v: RetrievalOptionsValue): RetrievalOptionsValue =>
@@ -127,6 +130,8 @@ describe('optionsToConfig (write path)', () => {
       model: '  ', // whitespace -> null
       batch_size: 7,
       max_keep: 6,
+      backend: 'llm',
+      min_relevance: null,
     };
     const ps = optionsToConfig(v).retrieval?.prescreen;
     expect(ps).not.toBe(null);
@@ -166,7 +171,10 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
           model: 'gpt-x',
           batch_size: 5,
           max_keep: 10,
+          backend: 'decision',
+          min_relevance: 0.3,
         },
+        reranker: { choice: 'on', min_relevance: 0.2, candidate_k: 30 },
         graph: {
           seed_strategy: 'relationships',
           passage_nodes: false,
@@ -235,6 +243,8 @@ describe('isPrescreenConfigValid', () => {
       model: null,
       batch_size: 10,
       max_keep,
+      backend: 'llm',
+      min_relevance: null,
     };
     return v;
   };
@@ -253,6 +263,88 @@ describe('isPrescreenConfigValid', () => {
 
   it('accepts a consistent config', () => {
     expect(isPrescreenConfigValid(withPrescreen(2, 40, 8))).toBe(true);
+  });
+
+  it('caps the decision backend at one call of DECISION_MAX_CANDIDATES', () => {
+    const v = withPrescreen(2, DECISION_MAX_CANDIDATES + 1, 8);
+    expect(isPrescreenConfigValid(v)).toBe(true); // the LLM batches it
+    v.retrieval.prescreen.backend = 'decision';
+    expect(isPrescreenConfigValid(v)).toBe(false);
+    v.retrieval.prescreen.candidate_k = DECISION_MAX_CANDIDATES;
+    expect(isPrescreenConfigValid(v)).toBe(true);
+  });
+});
+
+describe('relevance settings', () => {
+  it('reads a stored prescreen without a backend as the LLM', () => {
+    const opts = configToOptions({
+      retrieval: { prescreen: { candidate_k: 40, max_keep: 8 } },
+    });
+    expect(opts.retrieval.prescreen.backend).toBe('llm');
+    expect(opts.retrieval.prescreen.min_relevance).toBe(null);
+  });
+
+  it.each([
+    [null, 'default'],
+    [{ type: 'off' as const }, 'off'],
+    [{ type: 'decision' as const, min_relevance: 0.1 }, 'on'],
+  ])('reads reranker %j as %s', (reranker, choice) => {
+    const opts = configToOptions({ retrieval: { reranker } });
+    expect(opts.retrieval.reranker.choice).toBe(choice);
+  });
+
+  it('writes the reranker choice back as the backend stores it', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    expect(optionsToConfig(v).retrieval?.reranker).toBe(null);
+    v.retrieval.reranker = {
+      choice: 'off',
+      min_relevance: 0.4,
+      candidate_k: 9,
+    };
+    expect(optionsToConfig(v).retrieval?.reranker).toEqual({ type: 'off' });
+    v.retrieval.reranker.choice = 'on';
+    expect(optionsToConfig(v).retrieval?.reranker).toEqual({
+      type: 'decision',
+      min_relevance: 0.4,
+      candidate_k: 9,
+    });
+  });
+
+  it('keeps a stored reranker and backend through a save while their controls are hidden', () => {
+    const stored: SourceConfig = {
+      retrieval: {
+        reranker: { type: 'decision', min_relevance: 0.2, candidate_k: 30 },
+        prescreen: {
+          candidate_k: 40,
+          model: null,
+          batch_size: 10,
+          max_keep: 8,
+          backend: 'decision',
+          min_relevance: 0.25,
+        },
+      },
+    };
+    const retrieval = optionsToConfig(configToOptions(stored)).retrieval;
+    expect(retrieval?.reranker).toEqual(stored.retrieval?.reranker);
+    expect(retrieval?.prescreen).toEqual(stored.retrieval?.prescreen);
+  });
+
+  it('offers the decision controls only where the operator turned the model on', () => {
+    expect(decisionFeatures(undefined)).toEqual(NO_DECISION_FEATURES);
+    expect(
+      decisionFeatures({
+        decision_available: false,
+        decision_rerank_enabled: true,
+        decision_prescreen_enabled: true,
+      }),
+    ).toEqual(NO_DECISION_FEATURES);
+    expect(
+      decisionFeatures({
+        decision_available: true,
+        decision_rerank_enabled: true,
+        decision_prescreen_enabled: false,
+      }),
+    ).toEqual({ rerank: true, prescreen: false });
   });
 });
 

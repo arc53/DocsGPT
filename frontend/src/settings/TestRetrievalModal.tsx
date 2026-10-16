@@ -10,13 +10,28 @@ import { Card } from '../components/ui/card';
 import { EmptyState } from '../components/ui/empty-state';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import { Switch } from '../components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 import { cn } from '../lib/utils';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
+import { EMPTY_VALUE } from '../utils/dateTimeUtils';
 
 import RetrievalOptions, {
   configToOptions,
+  type DecisionFeatures,
+  NO_DECISION_FEATURES,
   isPrescreenConfigValid,
   optionsToConfig,
   type RetrievalOptionsValue,
@@ -34,6 +49,26 @@ export type RetrievedChunk = {
   // ranking, stores without a score seam).
   score: number | null;
   score_kind: 'cosine_similarity' | 'l2_distance' | 'rrf' | null;
+  // The decision model's p(relevant), when a relevance stage ordered the
+  // result by it.
+  relevance?: number | null;
+};
+
+/** A chunk the stages received, as `compare` lists them in retriever order. */
+export type RetrievalCandidate = Omit<RetrievedChunk, 'rank'> & {
+  // Its place in the result, or null when it was not kept.
+  rank: number | null;
+  rank_before: number;
+  kept: boolean;
+  // In the selection the retrieval makes without the model.
+  baseline: boolean;
+};
+
+/** What the decision model did in the run; null when it did not run. */
+export type RelevanceRun = {
+  applied: boolean;
+  fallback: string | null;
+  latency_ms: number;
 };
 
 type RetrievalResult = {
@@ -44,6 +79,8 @@ type RetrievalResult = {
   total: number;
   latency_ms: number;
   chunks: RetrievedChunk[];
+  relevance?: RelevanceRun | null;
+  candidates?: RetrievalCandidate[];
 };
 
 interface TestRetrievalModalProps {
@@ -53,6 +90,8 @@ interface TestRetrievalModalProps {
   hybridAvailable?: boolean;
   graphRAGAvailable?: boolean;
   availableModels?: Model[];
+  // The decision-model controls the operator turned on (/api/config).
+  decision?: DecisionFeatures;
 }
 
 /**
@@ -89,6 +128,124 @@ export function ScoreBadge({ chunk }: { chunk: RetrievedChunk }) {
   );
 }
 
+/** A chunk's relevance from the decision model, as a percentage. */
+export function RelevanceScore({ relevance }: { relevance?: number | null }) {
+  const { t } = useTranslation();
+  if (typeof relevance !== 'number') return null;
+  return (
+    <span className="text-muted-foreground font-mono text-xs">
+      <span className="mr-1 font-sans">
+        {t('settings.sources.testRetrieval.relevance')}
+      </span>
+      {formatPercent(relevance)}
+    </span>
+  );
+}
+
+function formatPercent(relevance: number): string {
+  return `${Math.round(relevance * 100)}%`;
+}
+
+/** One line on what the decision model did in a run. */
+export function relevanceRunText(
+  run: RelevanceRun,
+  tr: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (run.fallback)
+    return tr('relevanceRun.fallback', { reason: run.fallback });
+  if (!run.applied) return tr('relevanceRun.monitor');
+  return tr('relevanceRun.applied', { ms: run.latency_ms });
+}
+
+/**
+ * The candidates the stages received, in retriever order, beside what became
+ * of each: kept (and where), promoted from past the retriever's own
+ * selection, or dropped from it.
+ */
+export function CandidateComparison({
+  candidates,
+}: {
+  candidates: RetrievalCandidate[];
+}) {
+  const { t } = useTranslation();
+  const tr = (key: string, opts?: Record<string, unknown>) =>
+    t(`settings.sources.testRetrieval.${key}`, opts ?? {});
+
+  const outcome = (c: RetrievalCandidate) => {
+    if (c.kept && !c.baseline)
+      return (
+        <Badge variant="success">
+          {tr('compareStatus.promoted', { rank: c.rank })}
+        </Badge>
+      );
+    if (c.kept)
+      return (
+        <Badge variant="neutral">
+          {tr('compareStatus.kept', { rank: c.rank })}
+        </Badge>
+      );
+    if (c.baseline)
+      return <Badge variant="warning">{tr('compareStatus.dropped')}</Badge>;
+    return (
+      <span className="text-muted-foreground">
+        {tr('compareStatus.notKept')}
+      </span>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <SectionHeader
+        as="h4"
+        size="xs"
+        title={tr('compareTitle')}
+        description={tr('compareDescription')}
+      />
+      <TableContainer>
+        <Table minWidth="min-w-0">
+          <TableHead>
+            <TableRow>
+              <TableHeader width="5rem" align="right">
+                {tr('compareColumns.before')}
+              </TableHeader>
+              <TableHeader>{tr('compareColumns.chunk')}</TableHeader>
+              <TableHeader width="6rem" align="right">
+                {tr('compareColumns.relevance')}
+              </TableHeader>
+              <TableHeader width="9rem">
+                {tr('compareColumns.outcome')}
+              </TableHeader>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {candidates.map((c) => (
+              <TableRow key={c.rank_before}>
+                <TableCell align="right" className="tabular-nums">
+                  {c.rank_before}
+                </TableCell>
+                <TableCell className="text-sm">
+                  <span
+                    className="line-clamp-2 wrap-anywhere"
+                    title={c.filename || c.title || c.source || undefined}
+                  >
+                    {c.text.trim()}
+                  </span>
+                </TableCell>
+                <TableCell align="right" className="tabular-nums">
+                  {typeof c.relevance === 'number'
+                    ? formatPercent(c.relevance)
+                    : EMPTY_VALUE}
+                </TableCell>
+                <TableCell>{outcome(c)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </div>
+  );
+}
+
 export default function TestRetrievalModal({
   modalState,
   setModalState,
@@ -96,6 +253,7 @@ export default function TestRetrievalModal({
   hybridAvailable = false,
   graphRAGAvailable = false,
   availableModels = [],
+  decision = NO_DECISION_FEATURES,
 }: TestRetrievalModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -110,6 +268,10 @@ export default function TestRetrievalModal({
   const [result, setResult] = useState<RetrievalResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [compare, setCompare] = useState(false);
+  // Comparing with retriever order shows what the decision model changed, so
+  // it is offered only where the operator turned the model on.
+  const canCompare = decision.rerank || decision.prescreen;
 
   useEffect(() => {
     if (modalState === 'ACTIVE') {
@@ -119,6 +281,7 @@ export default function TestRetrievalModal({
       setError(null);
       setRunning(false);
       setExpanded(new Set());
+      setCompare(false);
     }
   }, [modalState, document]);
 
@@ -139,6 +302,7 @@ export default function TestRetrievalModal({
           // Send the form's retrieval block as an ad-hoc override — the backend
           // never persists it, so the source's saved config is untouched.
           retrieval: optionsToConfig(options).retrieval,
+          ...(canCompare && compare ? { compare: true } : {}),
         },
         token,
       );
@@ -225,7 +389,25 @@ export default function TestRetrievalModal({
             hybridAvailable={hybridAvailable}
             graphRAGAvailable={graphRAGAvailable}
             availableModels={availableModels}
+            decision={decision}
           />
+
+          {canCompare && (
+            <SettingRows>
+              <SettingRow
+                label={tr('compare')}
+                htmlFor="test-retrieval-compare"
+                description={tr('compareHint')}
+                alignStart
+              >
+                <Switch
+                  id="test-retrieval-compare"
+                  checked={compare}
+                  onCheckedChange={setCompare}
+                />
+              </SettingRow>
+            </SettingRows>
+          )}
 
           <p className="text-muted-foreground text-xs">{tr('notSavedHint')}</p>
 
@@ -251,6 +433,9 @@ export default function TestRetrievalModal({
                     count: result.total,
                     retriever: result.retriever,
                   })}
+                  {result.relevance
+                    ? ` · ${relevanceRunText(result.relevance, tr)}`
+                    : null}
                 </span>
                 <span>{tr('latency', { ms: result.latency_ms })}</span>
               </div>
@@ -280,6 +465,7 @@ export default function TestRetrievalModal({
                         </div>
                         <div className="flex shrink-0 flex-row items-center gap-3">
                           <ScoreBadge chunk={chunk} />
+                          <RelevanceScore relevance={chunk.relevance} />
                           <span className="text-muted-foreground text-xs">
                             {chunk.tokens} {t('settings.sources.tokensUnit')}
                           </span>
@@ -308,6 +494,10 @@ export default function TestRetrievalModal({
                     </Card>
                   );
                 })
+              )}
+
+              {result.candidates && result.candidates.length > 0 && (
+                <CandidateComparison candidates={result.candidates} />
               )}
             </div>
           )}

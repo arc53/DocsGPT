@@ -366,6 +366,28 @@
         },
         "errors": {
           "failed": "Retrieval-Test fehlgeschlagen. Bitte versuche es erneut."
+        },
+        "relevance": "Relevanz",
+        "compare": "Mit der Reihenfolge des Retrievers vergleichen",
+        "compareHint": "Zusätzlich alle Kandidaten in der Reihenfolge des Retrievers auflisten, mit ihrer Relevanz und ob das Relevanzmodell sie behalten, hochgestuft oder verworfen hat.",
+        "relevanceRun": {
+          "applied": "in {{ms}} ms nach Relevanz geordnet",
+          "monitor": "Relevanz bewertet, aber nicht angewendet (Beobachtungsmodus)",
+          "fallback": "Relevanzmodell nicht verwendet ({{reason}}), Reihenfolge des Retrievers beibehalten"
+        },
+        "compareTitle": "Reihenfolge des Retrievers",
+        "compareDescription": "Alle Kandidaten, die die Relevanzstufen erhalten haben, in der Reihenfolge des Retrievers.",
+        "compareColumns": {
+          "before": "Rang",
+          "chunk": "Chunk",
+          "relevance": "Relevanz",
+          "outcome": "Ergebnis"
+        },
+        "compareStatus": {
+          "promoted": "Hochgestuft auf #{{rank}}",
+          "kept": "Behalten als #{{rank}}",
+          "dropped": "Verworfen",
+          "notKept": "Nicht behalten"
         }
       },
       "editConfig": "Quelleneinstellungen",
@@ -438,7 +460,15 @@
           "maxKeep": "Max. zu behaltende Chunks",
           "batchSize": "Batch-Größe",
           "model": "Modell (optional)",
-          "modelPlaceholder": "Standardmäßig das Modell der Anfrage"
+          "modelPlaceholder": "Standardmäßig das Modell der Anfrage",
+          "enableAny": "Vorfilterung aktivieren",
+          "warningAny": "Ruft eine größere Kandidatenmenge ab und filtert sie mit einem LLM oder dem Relevanzmodell. Das erhöht die Antwortzeit, und die Prüfung durch ein LLM verursacht Kosten.",
+          "backend": "Backend",
+          "backendHint": "Das Relevanzmodell bewertet alle Kandidaten in einem Aufruf; ein LLM prüft sie stapelweise.",
+          "backends": {
+            "llm": "LLM",
+            "decision": "Relevanzmodell"
+          }
         },
         "graph": {
           "title": "Graph-Extraktion",
@@ -466,6 +496,18 @@
           "maxTokensHint": "Maximal 4.096 Tokens.",
           "minTokens": "Min. Tokens pro Chunk",
           "duplicateHeaders": "Überschriften über Chunks hinweg duplizieren"
+        },
+        "relevance": {
+          "reranker": "Nach Relevanz neu ordnen",
+          "rerankerHint": "Das Relevanzmodell stellt die Chunks nach vorn, die die Anfrage am besten beantworten. Der Instanz-Standard ist, was Ihr Administrator festgelegt hat.",
+          "rerankerChoices": {
+            "default": "Instanz-Standard",
+            "on": "Ein",
+            "off": "Aus"
+          },
+          "minRelevance": "Mindestrelevanz",
+          "minRelevancePlaceholder": "Standard",
+          "rerankMinRelevanceHint": "Chunks mit einer niedrigeren Bewertung (0–1) verwerfen. Leer lassen, um sie nur neu zu ordnen."
         }
       },
       "configModal": {
@@ -2129,6 +2171,12 @@
         "loadFailed": "Die Passage konnte nicht geladen werden.",
         "openLink": "Link öffnen",
         "openInKnowledge": "In Wissen öffnen"
+      },
+      "relevance": {
+        "strong": "Starke Übereinstimmung",
+        "possible": "Mögliche Übereinstimmung",
+        "weak": "Schwache Übereinstimmung",
+        "tooltip": "Relevanz {{percent}} %"
       }
     },
     "attachments": {

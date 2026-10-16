@@ -7,6 +7,7 @@ import {
   Collapsible,
   CollapsibleTrigger,
 } from '../../components/ui/collapsible';
+import { FormField } from '../../components/ui/form-field';
 import { Input } from '../../components/ui/input';
 import {
   Select,
@@ -35,7 +36,40 @@ export const DEFAULT_PRESCREEN = {
   model: null as string | null,
   batch_size: 10,
   max_keep: 8,
+  backend: 'llm' as PrescreenBackend,
+  min_relevance: null as number | null,
 };
+
+// The decision model scores at most this many candidates in its one call
+// (backend DECISION_MAX_CANDIDATES), for a prescreen or a source's rerank.
+export const DECISION_MAX_CANDIDATES = 100;
+
+export type PrescreenBackend = 'llm' | 'decision';
+
+// A source's rerank: follow the instance, opt in with overrides, or opt out.
+export type RerankerChoice = 'default' | 'on' | 'off';
+
+/**
+ * The decision-model controls the operator turned on, from /api/config. The
+ * operator turns the model on, never a source: while one is false its
+ * controls are hidden, and the source's stored values are kept as they are.
+ */
+export type DecisionFeatures = { rerank: boolean; prescreen: boolean };
+
+export const NO_DECISION_FEATURES: DecisionFeatures = {
+  rerank: false,
+  prescreen: false,
+};
+
+/** Read `DecisionFeatures` off an /api/config response; all off without the model. */
+export function decisionFeatures(config: unknown): DecisionFeatures {
+  const c = (config ?? {}) as Record<string, unknown>;
+  const available = c.decision_available === true;
+  return {
+    rerank: available && c.decision_rerank_enabled === true,
+    prescreen: available && c.decision_prescreen_enabled === true,
+  };
+}
 
 export const MAX_CHUNK_TOKENS = 4096;
 
@@ -67,6 +101,14 @@ export type RetrievalOptionsValue = {
       model: string | null;
       batch_size: number;
       max_keep: number;
+      backend: PrescreenBackend;
+      min_relevance: number | null;
+    };
+    reranker: {
+      choice: RerankerChoice;
+      min_relevance: number | null;
+      // Not edited here; kept so a save round-trips a stored value.
+      candidate_k: number | null;
     };
     graph: {
       seed_strategy: GraphSeedStrategy;
@@ -99,6 +141,7 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
       enabled: false,
       ...DEFAULT_PRESCREEN,
     },
+    reranker: { choice: 'default', min_relevance: null, candidate_k: null },
     // The configuration that measured best across the corpora tested.
     graph: {
       seed_strategy: 'entities',
@@ -188,6 +231,7 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
   const chunking = config?.chunking ?? {};
   const retrieval = config?.retrieval ?? {};
   const prescreen = retrieval.prescreen ?? null;
+  const reranker = retrieval.reranker ?? null;
   const retrievalGraph = retrieval.graph ?? {};
   const graph = config?.graph ?? {};
   const d = DEFAULT_RETRIEVAL_OPTIONS;
@@ -214,6 +258,19 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
         model: prescreen?.model ?? DEFAULT_PRESCREEN.model,
         batch_size: prescreen?.batch_size ?? DEFAULT_PRESCREEN.batch_size,
         max_keep: prescreen?.max_keep ?? DEFAULT_PRESCREEN.max_keep,
+        backend: prescreen?.backend ?? DEFAULT_PRESCREEN.backend,
+        min_relevance:
+          prescreen?.min_relevance ?? DEFAULT_PRESCREEN.min_relevance,
+      },
+      reranker: {
+        choice:
+          reranker === null
+            ? 'default'
+            : reranker.type === 'off'
+              ? 'off'
+              : 'on',
+        min_relevance: reranker?.min_relevance ?? null,
+        candidate_k: reranker?.candidate_k ?? null,
       },
       graph: {
         seed_strategy:
@@ -242,6 +299,7 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
  */
 export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
   const ps = value.retrieval.prescreen;
+  const rr = value.retrieval.reranker;
   const kind =
     value.retrieval.retriever === GRAPHRAG_RETRIEVER ? 'graphrag' : value.kind;
   return {
@@ -264,8 +322,20 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
             model: ps.model?.trim() ? ps.model.trim() : null,
             batch_size: ps.batch_size,
             max_keep: ps.max_keep,
+            backend: ps.backend,
+            min_relevance: ps.min_relevance,
           }
         : null,
+      reranker:
+        rr.choice === 'default'
+          ? null
+          : rr.choice === 'off'
+            ? { type: 'off' }
+            : {
+                type: 'decision',
+                min_relevance: rr.min_relevance,
+                candidate_k: rr.candidate_k,
+              },
       graph: {
         seed_strategy: value.retrieval.graph.seed_strategy,
         passage_nodes: value.retrieval.graph.passage_nodes,
@@ -285,14 +355,22 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
 /**
  * True when the prescreen config is consistent with the backend's rules.
  * Disabled prescreen is always valid; enabled requires `candidate_k >= chunks`
- * and `max_keep <= candidate_k` (mirrors SourceConfig/PreScreenConfig).
+ * and `max_keep <= candidate_k`, and at most `DECISION_MAX_CANDIDATES`
+ * candidates for the decision backend (mirrors SourceConfig/PreScreenConfig).
  */
 export function isPrescreenConfigValid(value: RetrievalOptionsValue): boolean {
   const ps = value.retrieval.prescreen;
   if (!ps.enabled) return true;
   return (
-    ps.candidate_k >= value.retrieval.chunks && ps.max_keep <= ps.candidate_k
+    ps.candidate_k >= value.retrieval.chunks &&
+    ps.max_keep <= ps.candidate_k &&
+    (ps.backend !== 'decision' || ps.candidate_k <= DECISION_MAX_CANDIDATES)
   );
+}
+
+/** A 0–1 relevance field's value: empty means the instance default. */
+function relevanceInput(raw: string): number | null {
+  return raw === '' ? null : Math.min(1, Math.max(0, Number(raw) || 0));
 }
 
 /** True when the form differs from the stored config's chunking group only. */
@@ -332,6 +410,9 @@ type RetrievalOptionsProps = {
   // The collapsible toggle's label, where "Advanced settings" alone would be
   // unclear (the connect wizard). Defaults to the shared title.
   title?: string;
+  // The decision-model controls the operator turned on (/api/config); the
+  // reranker and the prescreen backend are hidden while theirs is off.
+  decision?: DecisionFeatures;
 };
 
 /**
@@ -349,6 +430,7 @@ export default function RetrievalOptions({
   availableModels = [],
   queryOnly = false,
   title,
+  decision = NO_DECISION_FEATURES,
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -397,6 +479,36 @@ export default function RetrievalOptions({
     });
   };
 
+  const setReranker = (
+    patch: Partial<RetrievalOptionsValue['retrieval']['reranker']>,
+  ) => {
+    setRetrieval({
+      reranker: { ...value.retrieval.reranker, ...patch },
+    });
+  };
+
+  // A newly enabled prescreen runs on the decision model where the operator
+  // turned it on, else on the LLM. The model takes at most
+  // DECISION_MAX_CANDIDATES candidates.
+  const enablePrescreen = (checked: boolean) => {
+    if (!checked) {
+      setPrescreen({ enabled: false });
+      return;
+    }
+    const backend: PrescreenBackend = decision.prescreen ? 'decision' : 'llm';
+    setPrescreen({
+      enabled: true,
+      backend,
+      candidate_k:
+        backend === 'decision'
+          ? Math.min(
+              value.retrieval.prescreen.candidate_k,
+              DECISION_MAX_CANDIDATES,
+            )
+          : value.retrieval.prescreen.candidate_k,
+    });
+  };
+
   const setGraph = (patch: Partial<RetrievalOptionsValue['graph']>) => {
     onChange({
       ...value,
@@ -420,6 +532,14 @@ export default function RetrievalOptions({
   }, [availableModels]);
 
   const tr = (key: string) => t(`settings.sources.retrievalOptions.${key}`);
+
+  const prescreen = value.retrieval.prescreen;
+  // A `decision` prescreen runs on the LLM while the operator has not turned
+  // the model on for it, so it then shows the LLM's knobs.
+  const prescreenOnModel =
+    decision.prescreen && prescreen.backend === 'decision';
+  const prescreenMaxCandidates =
+    prescreen.backend === 'decision' ? DECISION_MAX_CANDIDATES : undefined;
 
   const body = (
     <div className="flex flex-col gap-6">
@@ -555,35 +675,143 @@ export default function RetrievalOptions({
             </SettingRow>
           )}
 
+          {decision.rerank && (
+            <SettingRow
+              label={tr('relevance.reranker')}
+              htmlFor="retrieval-reranker"
+              description={tr('relevance.rerankerHint')}
+              alignStart
+            >
+              <Select
+                value={value.retrieval.reranker.choice}
+                disabled={disabled}
+                onValueChange={(v) =>
+                  setReranker({ choice: v as RerankerChoice })
+                }
+              >
+                <SelectTrigger
+                  id="retrieval-reranker"
+                  className="w-52"
+                  size="field"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">
+                    {tr('relevance.rerankerChoices.default')}
+                  </SelectItem>
+                  <SelectItem value="on">
+                    {tr('relevance.rerankerChoices.on')}
+                  </SelectItem>
+                  <SelectItem value="off">
+                    {tr('relevance.rerankerChoices.off')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingRow>
+          )}
+
+          {decision.rerank && value.retrieval.reranker.choice === 'on' && (
+            <SettingRow
+              label={tr('relevance.minRelevance')}
+              htmlFor="retrieval-reranker-min-relevance"
+              description={tr('relevance.rerankMinRelevanceHint')}
+              alignStart
+            >
+              <Input
+                id="retrieval-reranker-min-relevance"
+                type="number"
+                min={0}
+                max={1}
+                step="0.05"
+                className="w-24 text-right"
+                value={
+                  value.retrieval.reranker.min_relevance === null
+                    ? ''
+                    : String(value.retrieval.reranker.min_relevance)
+                }
+                disabled={disabled}
+                placeholder={tr('relevance.minRelevancePlaceholder')}
+                onChange={(e) =>
+                  setReranker({ min_relevance: relevanceInput(e.target.value) })
+                }
+              />
+            </SettingRow>
+          )}
+
           <SettingRow
-            label={tr('prescreen.enable')}
+            label={tr(
+              decision.prescreen ? 'prescreen.enableAny' : 'prescreen.enable',
+            )}
             htmlFor="retrieval-prescreen"
-            description={tr('prescreen.warning')}
+            description={tr(
+              decision.prescreen ? 'prescreen.warningAny' : 'prescreen.warning',
+            )}
             alignStart
           >
             <Switch
               id="retrieval-prescreen"
-              checked={value.retrieval.prescreen.enabled}
+              checked={prescreen.enabled}
               disabled={disabled}
-              onCheckedChange={(checked) => setPrescreen({ enabled: checked })}
+              onCheckedChange={enablePrescreen}
             />
           </SettingRow>
         </SettingRows>
 
         {/* Prescreen expanded inputs (kept as floating-label cards) */}
-        {value.retrieval.prescreen.enabled && (
+        {prescreen.enabled && (
           <div className="border-border ml-4 flex flex-col gap-4 rounded-lg border p-4">
+            {decision.prescreen && (
+              <FormField
+                label={tr('prescreen.backend')}
+                hint={tr('prescreen.backendHint')}
+              >
+                <Select
+                  value={prescreen.backend}
+                  disabled={disabled}
+                  onValueChange={(v) => {
+                    const backend = v as PrescreenBackend;
+                    setPrescreen({
+                      backend,
+                      candidate_k:
+                        backend === 'decision'
+                          ? Math.min(
+                              prescreen.candidate_k,
+                              DECISION_MAX_CANDIDATES,
+                            )
+                          : prescreen.candidate_k,
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full" size="field">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="llm">
+                      {tr('prescreen.backends.llm')}
+                    </SelectItem>
+                    <SelectItem value="decision">
+                      {tr('prescreen.backends.decision')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+            )}
             <Input
               type="number"
               min={value.retrieval.chunks}
+              max={prescreenMaxCandidates}
               label={tr('prescreen.candidateK')}
-              value={String(value.retrieval.prescreen.candidate_k)}
+              value={String(prescreen.candidate_k)}
               disabled={disabled}
               onChange={(e) =>
                 setPrescreen({
-                  candidate_k: Math.max(
-                    value.retrieval.chunks,
-                    Number(e.target.value) || value.retrieval.chunks,
+                  candidate_k: Math.min(
+                    prescreenMaxCandidates ?? Infinity,
+                    Math.max(
+                      value.retrieval.chunks,
+                      Number(e.target.value) || value.retrieval.chunks,
+                    ),
                   ),
                 })
               }
@@ -603,18 +831,40 @@ export default function RetrievalOptions({
                 })
               }
             />
-            <Input
-              type="number"
-              min={1}
-              label={tr('prescreen.batchSize')}
-              value={String(value.retrieval.prescreen.batch_size)}
-              disabled={disabled}
-              onChange={(e) =>
-                setPrescreen({
-                  batch_size: Math.max(1, Number(e.target.value) || 1),
-                })
-              }
-            />
+            {prescreenOnModel ? (
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step="0.05"
+                label={tr('relevance.minRelevance')}
+                placeholder={tr('relevance.minRelevancePlaceholder')}
+                value={
+                  prescreen.min_relevance === null
+                    ? ''
+                    : String(prescreen.min_relevance)
+                }
+                disabled={disabled}
+                onChange={(e) =>
+                  setPrescreen({
+                    min_relevance: relevanceInput(e.target.value),
+                  })
+                }
+              />
+            ) : (
+              <Input
+                type="number"
+                min={1}
+                label={tr('prescreen.batchSize')}
+                value={String(prescreen.batch_size)}
+                disabled={disabled}
+                onChange={(e) =>
+                  setPrescreen({
+                    batch_size: Math.max(1, Number(e.target.value) || 1),
+                  })
+                }
+              />
+            )}
           </div>
         )}
       </div>

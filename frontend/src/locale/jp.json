@@ -365,6 +365,28 @@
         },
         "errors": {
           "failed": "検索テストに失敗しました。もう一度お試しください。"
+        },
+        "relevance": "関連度",
+        "compare": "リトリーバーの順序と比較",
+        "compareHint": "すべての候補をリトリーバーの順序で一覧表示し、関連度と、関連度モデルが残した・繰り上げた・除外したかを示します。",
+        "relevanceRun": {
+          "applied": "{{ms}} ms で関連度順に並べ替え",
+          "monitor": "関連度を採点済み、未適用（監視モード）",
+          "fallback": "関連度モデルは未使用（{{reason}}）、リトリーバーの順序のまま"
+        },
+        "compareTitle": "リトリーバーの順序",
+        "compareDescription": "関連度ステージが受け取ったすべての候補を、リトリーバーが順位付けした順に示します。",
+        "compareColumns": {
+          "before": "順位",
+          "chunk": "チャンク",
+          "relevance": "関連度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "#{{rank}} に繰り上げ",
+          "kept": "#{{rank}} として残す",
+          "dropped": "除外",
+          "notKept": "残さない"
         }
       },
       "editConfig": "ソース設定",
@@ -437,7 +459,15 @@
           "maxKeep": "保持する最大チャンク数",
           "batchSize": "バッチサイズ",
           "model": "モデル（任意）",
-          "modelPlaceholder": "デフォルトではリクエストのモデルを使用"
+          "modelPlaceholder": "デフォルトではリクエストのモデルを使用",
+          "enableAny": "プリスクリーニングを有効にする",
+          "warningAny": "より多くの候補を取得し、LLM または関連度モデルで絞り込みます。クエリの待ち時間が増え、LLM による選別には費用がかかります。",
+          "backend": "バックエンド",
+          "backendHint": "関連度モデルはすべての候補を 1 回の呼び出しで採点し、LLM はバッチごとに選別します。",
+          "backends": {
+            "llm": "LLM",
+            "decision": "関連度モデル"
+          }
         },
         "graph": {
           "title": "グラフ抽出",
@@ -465,6 +495,18 @@
           "maxTokensHint": "最大4,096トークンです。",
           "minTokens": "チャンクあたりの最小トークン数",
           "duplicateHeaders": "チャンク間でヘッダーを複製"
+        },
+        "relevance": {
+          "reranker": "関連度で並べ替え",
+          "rerankerHint": "関連度モデルが、クエリに最もよく答えるチャンクを先頭にします。インスタンスの既定値は管理者が設定したものです。",
+          "rerankerChoices": {
+            "default": "インスタンスの既定値",
+            "on": "オン",
+            "off": "オフ"
+          },
+          "minRelevance": "最小関連度",
+          "minRelevancePlaceholder": "既定値",
+          "rerankMinRelevanceHint": "この値（0〜1）未満のチャンクを除外します。空欄にすると並べ替えのみ行います。"
         }
       },
       "configModal": {
@@ -2120,6 +2162,12 @@
         "loadFailed": "この箇所を読み込めませんでした。",
         "openLink": "リンクを開く",
         "openInKnowledge": "ナレッジで開く"
+      },
+      "relevance": {
+        "strong": "関連性が高い",
+        "possible": "関連の可能性あり",
+        "weak": "関連性が低い",
+        "tooltip": "関連度 {{percent}}%"
       }
     },
     "attachments": {

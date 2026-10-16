@@ -365,6 +365,28 @@
         },
         "errors": {
           "failed": "檢索測試失敗。請再試一次。"
+        },
+        "relevance": "相關度",
+        "compare": "與檢索器順序比較",
+        "compareHint": "同時依檢索器順序列出所有候選，顯示其相關度，以及相關度模型是保留、提升還是捨棄了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 內依相關度排序",
+          "monitor": "已為相關度評分但未套用（監控模式）",
+          "fallback": "未使用相關度模型（{{reason}}），保留檢索器順序"
+        },
+        "compareTitle": "檢索器順序",
+        "compareDescription": "相關度階段收到的所有候選，依檢索器的排名順序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "區塊",
+          "relevance": "相關度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留為 #{{rank}}",
+          "dropped": "已捨棄",
+          "notKept": "未保留"
         }
       },
       "editConfig": "來源設定",
@@ -437,7 +459,15 @@
           "maxKeep": "保留區塊上限",
           "batchSize": "批次大小",
           "model": "模型（選填）",
-          "modelPlaceholder": "預設使用請求模型"
+          "modelPlaceholder": "預設使用請求模型",
+          "enableAny": "啟用預先篩選",
+          "warningAny": "取得更多候選區塊，並以 LLM 或相關度模型篩選。這會增加查詢延遲，使用 LLM 篩選還會產生費用。",
+          "backend": "後端",
+          "backendHint": "相關度模型一次呼叫即可為所有候選評分；LLM 則分批篩選。",
+          "backends": {
+            "llm": "LLM",
+            "decision": "相關度模型"
+          }
         },
         "graph": {
           "title": "圖譜擷取",
@@ -465,6 +495,18 @@
           "maxTokensHint": "最多 4,096 個 Token。",
           "minTokens": "每區塊最小 Token 數",
           "duplicateHeaders": "在各區塊間重複標頭"
+        },
+        "relevance": {
+          "reranker": "依相關度重新排序",
+          "rerankerHint": "相關度模型會把最能回答查詢的區塊排在前面。執行個體預設值由管理員設定。",
+          "rerankerChoices": {
+            "default": "執行個體預設值",
+            "on": "開啟",
+            "off": "關閉"
+          },
+          "minRelevance": "最低相關度",
+          "minRelevancePlaceholder": "預設",
+          "rerankMinRelevanceHint": "捨棄分數低於此值（0–1）的區塊。留空則只重新排序。"
         }
       },
       "configModal": {
@@ -2120,6 +2162,12 @@
         "loadFailed": "無法載入這段內容。",
         "openLink": "開啟連結",
         "openInKnowledge": "在知識庫中開啟"
+      },
+      "relevance": {
+        "strong": "高度相關",
+        "possible": "可能相關",
+        "weak": "相關性低",
+        "tooltip": "相關度 {{percent}}%"
       }
     },
     "attachments": {
