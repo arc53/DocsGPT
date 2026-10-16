@@ -61,6 +61,7 @@ export async function getConversations(
   token: string | null,
   before?: { date: string; id: string },
 ): Promise<GetConversationsResult> {
+  const requestedAt = Date.now();
   try {
     const response = await conversationService.getConversations(token, before);
 
@@ -87,7 +88,7 @@ export async function getConversations(
       // that landed while the user was away. syncUnread reads it.
       ...(typeof item.unread === 'boolean' ? { unread: item.unread } : {}),
     }));
-    return { data: conversations, loading: false };
+    return { data: conversations, loading: false, requestedAt };
   } catch (error) {
     console.error(
       'An unexpected error occurred while fetching conversations:',

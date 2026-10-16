@@ -25,4 +25,12 @@ describe('getConversations', () => {
     const { data } = await getConversations('tok');
     expect(data?.[0]).not.toHaveProperty('unread');
   });
+
+  it('stamps when the request went out, for marks changed while it ran', async () => {
+    listing([]);
+    const before = Date.now();
+    const result = await getConversations('tok');
+    expect(result.requestedAt).toBeGreaterThanOrEqual(before);
+    expect(result.requestedAt).toBeLessThanOrEqual(Date.now());
+  });
 });

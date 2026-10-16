@@ -160,6 +160,7 @@ export const prefSlice = createSlice({
       action: PayloadAction<{
         data: ConversationSummary[] | null;
         loading: boolean;
+        requestedAt?: number;
       }>,
     ) => {
       if (!action.payload.data) {

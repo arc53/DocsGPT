@@ -227,6 +227,28 @@ describe('backgroundSlice', () => {
       expect(selectIsUnread('c1')(store.getState())).toBe(false);
     });
 
+    it('a list read before the mark changed here leaves the mark alone', async () => {
+      // `notification.created` marked it, or the user opened it, after the
+      // list request went out; that response still holds the old flag.
+      const store = makeStore();
+      const stale = (unread: boolean, requestedAt: number) =>
+        receiveConversations({
+          data: [{ id: 'c1', name: 'a', agent_id: null, unread }],
+          loading: false,
+          requestedAt,
+        });
+      store.dispatch(markConversationUnread('c1'));
+      store.dispatch(stale(false, 0));
+      expect(selectIsUnread('c1')(store.getState())).toBe(true);
+
+      await store.dispatch(markConversationRead('c1'));
+      store.dispatch(stale(true, 0));
+      expect(selectIsUnread('c1')(store.getState())).toBe(false);
+
+      store.dispatch(stale(true, Date.now() + 1000));
+      expect(selectIsUnread('c1')(store.getState())).toBe(true);
+    });
+
     it('go with a deleted conversation', () => {
       const store = makeStore();
       store.dispatch(markConversationUnread('c1'));

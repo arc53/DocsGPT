@@ -52,6 +52,11 @@ export type BackgroundState = {
   jobListRequestedAt: Record<string, number>;
   /** Conversations with a message the user has not seen. */
   unread: Record<string, true>;
+  /**
+   * When a conversation was last marked unread or read here, so a list
+   * fetched before that (its flags older) does not undo it.
+   */
+  unreadChangedAt: Record<string, number>;
   /** Server Web Push configuration; null until fetched. */
   pushConfig: PushConfig | null;
   /** The in-context "Get notified when it's done?" prompt is showing. */
@@ -69,6 +74,7 @@ const initialState = (): BackgroundState => ({
   unavailableJobs: {},
   jobListRequestedAt: {},
   unread: {},
+  unreadChangedAt: {},
   pushConfig: null,
   pushPromptOpen: false,
   dismissedNotifications: loadDismissed(
@@ -131,8 +137,23 @@ function mergeJob(
   };
 }
 
-function syncUnread(state: BackgroundState, list: ConversationSummary[]) {
+/**
+ * Take the server's unread flags from a listing. A chat marked unread or read
+ * here after the listing's request went out keeps its mark: the listing read
+ * the database before that. A listing without `requestedAt` (an older page)
+ * applies as it is.
+ */
+function syncUnread(
+  state: BackgroundState,
+  list: ConversationSummary[],
+  requestedAt?: number,
+) {
   for (const chat of list) {
+    const changedAt = state.unreadChangedAt[chat.id];
+    if (changedAt !== undefined && requestedAt !== undefined) {
+      if (changedAt >= requestedAt) continue;
+      delete state.unreadChangedAt[chat.id];
+    }
     if (chat.unread) state.unread[chat.id] = true;
     else if (chat.unread === false) delete state.unread[chat.id];
   }
@@ -199,20 +220,33 @@ export const fetchPushConfig = createAsyncThunk<
 export const markConversationRead = createAsyncThunk<
   void,
   string,
-  { state: { preference: { token: string | null } } }
->('background/markRead', async (conversationId, { getState }) =>
-  backgroundService.markConversationRead(
-    conversationId,
-    getState().preference.token,
-  ),
+  {
+    state: { preference: { token: string | null } };
+    pendingMeta: { at: number };
+  }
+>(
+  'background/markRead',
+  async (conversationId, { getState }) =>
+    backgroundService.markConversationRead(
+      conversationId,
+      getState().preference.token,
+    ),
+  { getPendingMeta: () => ({ at: Date.now() }) },
 );
 
 export const backgroundSlice = createSlice({
   name: 'background',
   initialState,
   reducers: {
-    markConversationUnread(state, action: PayloadAction<string>) {
-      state.unread[action.payload] = true;
+    markConversationUnread: {
+      reducer(state, action: PayloadAction<string, string, { at: number }>) {
+        state.unread[action.payload] = true;
+        state.unreadChangedAt[action.payload] = action.meta.at;
+      },
+      prepare: (conversationId: string) => ({
+        payload: conversationId,
+        meta: { at: Date.now() },
+      }),
     },
     /** Show the Web Push prompt; a feature that started background work dispatches it. */
     requestPushPrompt(state) {
@@ -277,9 +311,11 @@ export const backgroundSlice = createSlice({
       })
       .addCase(markConversationRead.pending, (state, action) => {
         delete state.unread[action.meta.arg];
+        state.unreadChangedAt[action.meta.arg] = action.meta.at;
       })
       .addCase(receiveConversations, (state, action) => {
-        if (action.payload.data) syncUnread(state, action.payload.data);
+        if (action.payload.data)
+          syncUnread(state, action.payload.data, action.payload.requestedAt);
       })
       .addCase(appendConversations, (state, action) => {
         syncUnread(state, action.payload);
@@ -287,9 +323,11 @@ export const backgroundSlice = createSlice({
       // A deleted chat no longer counts in the tab title.
       .addCase(removeConversation, (state, action) => {
         delete state.unread[action.payload];
+        delete state.unreadChangedAt[action.payload];
       })
       .addCase(removeAllConversations, (state) => {
         state.unread = {};
+        state.unreadChangedAt = {};
       });
   },
 });
