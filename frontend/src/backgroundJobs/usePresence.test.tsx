@@ -67,6 +67,7 @@ describe('usePresence', () => {
     await act(async () => root.unmount());
     container.remove();
     vi.useRealTimers();
+    vi.restoreAllMocks();
     setVisibility('visible');
   });
 
@@ -108,6 +109,28 @@ describe('usePresence', () => {
       conversation_id: 'c1',
       visible: false,
     });
+  });
+
+  it('counts a visible tab whose window lost focus as not looking', async () => {
+    await render();
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    expect(last()?.[0]).toMatchObject({
+      conversation_id: 'c1',
+      visible: false,
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(PRESENCE_HEARTBEAT_MS + 10);
+    });
+    expect(last()?.[0]).toMatchObject({ visible: false });
+
+    focused.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(last()?.[0]).toMatchObject({ visible: true });
   });
 
   it('heartbeats while visible, not while hidden', async () => {
