@@ -532,14 +532,20 @@ class ConversationService:
         try:
             with db_session() as conn:
                 renamed = self._maybe_generate_title(conn, message_id, title_inputs)
+                listed = (
+                    ConversationUnreadRepository(conn).listed_chat_of_message(message_id)
+                    if renamed is not None
+                    else None
+                )
         except Exception as e:
             logger.error(
                 f"finalize_message title generation failed: {e}",
                 exc_info=True,
             )
             return
-        if renamed is not None:
-            conversation_id, user_id, name, previous = renamed
+        if renamed is not None and listed is not None:
+            name, previous = renamed
+            conversation_id, user_id = listed
             publish_user_event(
                 user_id,
                 "conversation.renamed",
@@ -552,7 +558,7 @@ class ConversationService:
         conn,
         message_id: str,
         title_inputs: Dict[str, Any],
-    ) -> Optional[tuple[str, str, str, str]]:
+    ) -> Optional[tuple[str, str]]:
         """Generate an LLM-summarised conversation name if one isn't set yet.
 
         Args:
@@ -562,9 +568,8 @@ class ConversationService:
                 ``fallback_name``.
 
         Returns:
-            ``(conversation_id, user_id, name, previous)`` when a sidebar-listed
-            chat was renamed from ``previous``, else None (nothing to do, or a
-            chat with no sidebar row).
+            ``(name, previous)`` when the chat was renamed from ``previous``,
+            else None.
         """
         llm = title_inputs.get("llm")
         question = title_inputs.get("question") or ""
@@ -575,7 +580,7 @@ class ConversationService:
 
         row = conn.execute(
             sql_text(
-                "SELECT c.id, c.name, c.user_id, c.visibility FROM conversation_messages m "
+                "SELECT c.id, c.name FROM conversation_messages m "
                 "JOIN conversations c ON c.id = m.conversation_id "
                 "WHERE m.id = CAST(:mid AS uuid)"
             ),
@@ -583,7 +588,7 @@ class ConversationService:
         ).fetchone()
         if row is None:
             return None
-        conv_id, current_name, user_id, visibility = str(row[0]), row[1], row[2], row[3]
+        conv_id, current_name = str(row[0]), row[1]
         if current_name and current_name != fallback_name:
             return None
 
@@ -619,9 +624,7 @@ class ConversationService:
             ),
             {"id": conv_id, "name": name},
         )
-        if visibility != "listed" or not user_id:
-            return None
-        return conv_id, str(user_id), name, current_name or fallback_name
+        return name, current_name or fallback_name
 
     def update_compression_metadata(
         self, conversation_id: str, compression_metadata: Dict[str, Any]
