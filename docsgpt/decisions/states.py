@@ -99,7 +99,8 @@ def _best_window(ids: list[int], query: str, max_tokens: int) -> str:
     starts = range(0, max(1, len(rest) - size + 1), max(1, size // 2))
 
     def score(i: int) -> int:
-        return sum(t in tokens.decode(rest[i:i + size]).lower() for t in terms)
+        window = tokens.decode(rest[i:i + size]).lower()
+        return sum(t in window for t in terms)
 
     best = max(starts, key=lambda i: (score(i), -i))
     gap = " ...\n" if best else ""
