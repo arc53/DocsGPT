@@ -31,7 +31,11 @@
     "dismiss": "Ignorer",
     "toolApprovalTitle": "Approbation d’outil requise",
     "toolApprovalReview": "Examiner",
-    "toolApprovalFallbackName": "Conversation"
+    "toolApprovalFallbackName": "Conversation",
+    "moreToasts_one": "{{count}} autre",
+    "moreToasts_many": "{{count}} autres",
+    "moreToasts_other": "{{count}} autres",
+    "fewerToasts": "Afficher moins"
   },
   "backgroundJobs": {
     "card": {

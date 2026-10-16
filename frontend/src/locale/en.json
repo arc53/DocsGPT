@@ -31,7 +31,10 @@
     "dismiss": "Dismiss",
     "toolApprovalTitle": "Tool approval needed",
     "toolApprovalReview": "Review",
-    "toolApprovalFallbackName": "Conversation"
+    "toolApprovalFallbackName": "Conversation",
+    "moreToasts_one": "{{count}} more",
+    "moreToasts_other": "{{count}} more",
+    "fewerToasts": "Show less"
   },
   "backgroundJobs": {
     "card": {

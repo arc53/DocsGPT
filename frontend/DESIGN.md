@@ -978,7 +978,15 @@ to bottom it holds `TeamNotificationToast`, `PushPermissionToast` (the
 from `BackgroundNotifications`, `ConnectionHealthToast` (a
 connection that needs reconnecting, with a Reconnect action),
 `ToolApprovalToast`, `UploadToast` and `ActionToast`, and it moves to the
-bottom-left while any agent preview drawer is open (workflow or classic). A new toast component returns only its
+bottom-left while any agent preview drawer is open (workflow or classic).
+The stack never covers a composer: `MessageInput` registers its box with
+`useAvoidToasts` (`ui/toast-layout.ts`), and when a composer reaches under
+the stack's column the stack sits just above it; with room beside the
+composer it stays in the corner. It stops short of the header, scrolling
+only once its cards would overflow (so their shadow is not clipped
+otherwise), and its own box lets clicks through to the page. Below `sm` it
+spans the screen and shows only its newest card, the others behind an
+"N more" button. A new toast component returns only its
 `Toast` cards and is added to that viewport. A result the screen can't show
 dispatches `showActionToast({ variant: 'success' | 'destructive', message })`
 from `notifications/actionToastSlice.ts`: a chunk saved from the graph

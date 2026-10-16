@@ -1,4 +1,5 @@
 import { envVar } from '@/env';
+import { useAvoidToasts } from '@/components/ui/toast-layout';
 import { cn } from '@/lib/utils';
 import { CloudUpload, Database } from 'lucide-react';
 import {
@@ -364,6 +365,9 @@ export default function MessageInput({
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // The toast stack sits above the composer rather than over its controls.
+  const composerRef = useRef<HTMLDivElement>(null);
+  useAvoidToasts(composerRef);
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
@@ -1613,6 +1617,7 @@ export default function MessageInput({
           it rewrites text nodes into <font> wrappers and React loses the
           controls (dead Attach button, see AttachFileButton). */}
       <div
+        ref={composerRef}
         translate="no"
         className="border-border bg-card relative flex w-full flex-col rounded-3xl border"
       >
