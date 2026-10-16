@@ -768,7 +768,6 @@
       "save": "保存",
       "createTeamError": "无法创建团队。",
       "noTeams": "暂无团队。",
-      "noDescription": "无描述",
       "loadError": "加载团队失败。",
       "roleAdmin": "管理员",
       "roleMember": "成员",
@@ -1209,6 +1208,8 @@
       "savedSecretPlaceholder": "已保存 · 输入新值以替换",
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个工具",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个工具",
+      "triggerLabel_one": "工具，已选 {{formatted}} 个",
+      "triggerLabel_other": "工具，已选 {{formatted}} 个",
       "manageInConnectors": "在连接器中管理",
       "defaultBadge": "默认",
       "noToolsYet": "还没有工具",
@@ -1293,7 +1294,7 @@
       "deleteWarning": "删除“{{modelName}}”？",
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
-        "builtin": "DocsGPT 模型",
+        "builtin": "内置",
         "user": "我的模型"
       },
       "actions": {
@@ -1890,8 +1891,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "搜索对话",
-      "noResults": "未找到结果",
-      "loading": "加载中..."
+      "noResults": "未找到结果"
     },
     "configTool": {
       "title": "工具配置",
@@ -2093,6 +2093,8 @@
       "view_more": "还有{{count}}个来源",
       "noSourcesAvailable": "还没有知识",
       "selectedCount": "已选 {{count}} 个",
+      "triggerLabel_one": "知识库，已选 {{formatted}} 个",
+      "triggerLabel_other": "知识库，已选 {{formatted}} 个",
       "groupOwn": "你的",
       "groupTeam": "团队共享",
       "fromConnector": "来自 {{name}}",
@@ -2278,7 +2280,6 @@
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
     },
     "send": "发送",
-    "viewArtifact": "查看工件",
     "stopSpeaking": "停止朗读",
     "loadingAudio": "正在加载音频",
     "voice": {
@@ -2349,6 +2350,31 @@
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 个失败"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML 页面",
+        "pdf": "PDF",
+        "slides": "幻灯片",
+        "document": "文档",
+        "spreadsheet": "电子表格",
+        "data": "数据文件",
+        "image": "图片",
+        "file": "文件"
+      },
+      "version": "v{{version}}",
+      "download": "下载 {{title}}",
+      "more": "还有{{count}}个文件",
+      "fileCount": "{{count}} 个文件",
+      "showAll": "显示全部 {{count}} 个",
+      "listTitle": "此回答的文件",
+      "backToList": "返回文件列表",
+      "group": {
+        "documents": "文档",
+        "images": "图片",
+        "data": "数据",
+        "other": "其他文件"
+      }
     }
   },
   "agents": {
@@ -2919,15 +2945,8 @@
       "redo": "重做",
       "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "此产物无法预览",
         "loadListFailed": "无法加载产物",
-        "loadFailed": "无法加载产物",
-        "loading": "正在加载产物...",
-        "inProgress": "运行中——节点生成的产物会显示在这里。",
-        "empty": "此次运行未生成产物。",
-        "back": "返回产物列表",
-        "untitled": "产物 {{id}}",
-        "fileKind": "文件"
+        "untitled": "产物 {{id}}"
       },
       "builder": {
         "deleteFailed": "无法删除工作流智能体",
@@ -3060,8 +3079,8 @@
         "extract": "提取"
       },
       "mobileBlocker": {
-        "title": "需要桌面设备",
-        "body": "工作流构建器需要更大的屏幕才能获得最佳体验。请在台式机或笔记本电脑上打开此页面。"
+        "title": "请在更大的屏幕上打开",
+        "body": "工作流构建器需要更宽的屏幕。请使用电脑，或将平板电脑横屏。"
       },
       "nodes": {
         "start": "开始",
@@ -3092,11 +3111,11 @@
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "输出：",
         "errorLabel": "错误：",
-        "artifacts": "产物",
         "minimapHeading": "工作流",
         "emptyTitle": "测试工作流",
         "unsavedDraftAttachments": "在预览中附加文档前，请先保存工作流。",
-        "stepCount_one": "（{{count}} 步）"
+        "stepCount_one": "（{{count}} 步）",
+        "backToRun": "返回运行"
       },
       "documents": {
         "modeAll": "所有输入文档",
@@ -3183,9 +3202,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "页面未找到",
+    "message": "你要查找的页面不存在。",
+    "goHome": "返回首页"
   },
   "filePicker": {
     "searchPlaceholder": "搜索文件和文件夹",

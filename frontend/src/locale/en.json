@@ -769,7 +769,6 @@
       "save": "Save",
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
-      "noDescription": "No description",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",
@@ -1210,6 +1209,8 @@
       "savedSecretPlaceholder": "Saved · enter a new value to replace",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} tool",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} tools",
+      "triggerLabel_one": "Tools, {{formatted}} selected",
+      "triggerLabel_other": "Tools, {{formatted}} selected",
       "manageInConnectors": "Manage in Connectors",
       "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
@@ -1294,7 +1295,7 @@
       "deleteWarning": "Delete \"{{modelName}}\"?",
       "actionsMenuAria": "Actions for {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT Models",
+        "builtin": "Built-in",
         "user": "My Models"
       },
       "actions": {
@@ -1896,8 +1897,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Search conversations",
-      "noResults": "No results found",
-      "loading": "Loading..."
+      "noResults": "No results found"
     },
     "configTool": {
       "title": "Tool Config",
@@ -2102,6 +2102,8 @@
       "view_more_other": "{{count}} more sources",
       "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
+      "triggerLabel_one": "Knowledge, {{formatted}} selected",
+      "triggerLabel_other": "Knowledge, {{formatted}} selected",
       "groupOwn": "Yours",
       "groupTeam": "Shared with team",
       "fromConnector": "From {{name}}",
@@ -2289,7 +2291,6 @@
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
     },
     "send": "Send",
-    "viewArtifact": "View artifact",
     "stopSpeaking": "Stop speaking",
     "loadingAudio": "Loading audio",
     "voice": {
@@ -2361,6 +2362,33 @@
     "stepGroup": {
       "title": "Tools",
       "failed": "{{count}} failed"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML page",
+        "pdf": "PDF",
+        "slides": "Slides",
+        "document": "Document",
+        "spreadsheet": "Spreadsheet",
+        "data": "Data file",
+        "image": "Image",
+        "file": "File"
+      },
+      "version": "v{{version}}",
+      "download": "Download {{title}}",
+      "more_one": "{{count}} more file",
+      "more_other": "{{count}} more files",
+      "fileCount_one": "{{count}} file",
+      "fileCount_other": "{{count}} files",
+      "showAll": "Show all {{count}}",
+      "listTitle": "Files from this answer",
+      "backToList": "Back to files",
+      "group": {
+        "documents": "Documents",
+        "images": "Images",
+        "data": "Data",
+        "other": "Other files"
+      }
     }
   },
   "agents": {
@@ -2937,15 +2965,8 @@
       "removeAssignment": "Remove assignment {{index}}",
       "removeCondition": "Remove condition {{index}}",
       "artifacts": {
-        "previewUnsupported": "This artifact cannot be previewed",
         "loadListFailed": "Failed to load artifacts",
-        "loadFailed": "Failed to load artifact",
-        "loading": "Loading artifacts...",
-        "inProgress": "Run in progress — artifacts appear here as nodes produce them.",
-        "empty": "No artifacts produced by this run.",
-        "back": "Back to artifacts",
-        "untitled": "Artifact {{id}}",
-        "fileKind": "file"
+        "untitled": "Artifact {{id}}"
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
@@ -3078,8 +3099,8 @@
         "extract": "Extract"
       },
       "mobileBlocker": {
-        "title": "Desktop Required",
-        "body": "The Workflow Builder requires a larger screen for the best experience. Please open this page on a desktop or laptop computer."
+        "title": "Open on a larger screen",
+        "body": "The workflow builder needs a wider screen. Use a computer, or turn your tablet sideways."
       },
       "nodes": {
         "start": "Start",
@@ -3111,10 +3132,10 @@
         "stepCount_other": "({{count}} steps)",
         "outputLabel": "Output:",
         "errorLabel": "Error:",
-        "artifacts": "Artifacts",
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",
-        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview."
+        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
+        "backToRun": "Back to the run"
       },
       "documents": {
         "modeAll": "All input docs",
@@ -3196,9 +3217,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Page not found",
+    "message": "The page you're looking for doesn't exist.",
+    "goHome": "Go home"
   },
   "filePicker": {
     "searchPlaceholder": "Search files and folders",

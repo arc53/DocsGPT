@@ -2,11 +2,13 @@ import { Wrench } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { formatCount } from '../../utils/dateTimeUtils';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../MultiSelectPopover';
 import PickerFooter from '../PickerFooter';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 
 type ToolsTriggerProps = {
@@ -33,6 +35,7 @@ export default function ToolsTrigger({
   onAddTool,
 }: ToolsTriggerProps) {
   const { t } = useTranslation();
+  const count = selectedIds.length;
 
   return (
     <MultiSelectPopover
@@ -67,11 +70,26 @@ export default function ToolsTrigger({
           size="sm"
           shape="pill"
           className="max-w-[130px] justify-start"
+          aria-label={
+            count > 0
+              ? t('settings.tools.triggerLabel', {
+                  count,
+                  formatted: formatCount(count),
+                })
+              : undefined
+          }
         >
           <Wrench className="size-3.5 sm:size-4" />
           <span className="text-foreground truncate overflow-hidden text-xs sm:text-sm">
             {t('settings.tools.label')}
           </span>
+          {/* The tools on in this chat, so the pill shows it without opening
+              the picker. The aria-label says it for screen readers. */}
+          {count > 0 && (
+            <Badge className="tabular-nums" aria-hidden="true">
+              {formatCount(count)}
+            </Badge>
+          )}
         </Button>
       }
     />

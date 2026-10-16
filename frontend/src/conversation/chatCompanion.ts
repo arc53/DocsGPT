@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
 
+import type { ArtifactCardItem } from './artifactCards';
+
 /**
  * One retrieved source of an answer, as the backend labels a chunk.
  *
@@ -31,7 +33,19 @@ export type AnswerSource = {
  * SidePanel instead.
  */
 export const ChatCompanionContext = createContext<{
-  openSources: (sources: AnswerSource[], index?: number) => void;
+  /** Unset where sources keep their modal panel (the builder preview). */
+  openSources?: (sources: AnswerSource[], index?: number) => void;
+  /** The artifact (and version) the docked panel shows, so its card is marked open. */
+  openArtifact?: { id: string; version?: number } | null;
+  /**
+   * Shows an answer's full artifact list (its “N more files” card). `key`
+   * names the answer, so its card is marked open and its list kept current.
+   */
+  openArtifactList?: (items: ArtifactCardItem[], key: string) => void;
+  /** The key of the answer whose list the panel shows. */
+  openArtifactListKey?: string | null;
+  /** An answer's current files; updates the panel's list when it is that answer's. */
+  syncArtifactList?: (key: string, items: ArtifactCardItem[]) => void;
 } | null>(null);
 
 export const useChatCompanion = () => useContext(ChatCompanionContext);

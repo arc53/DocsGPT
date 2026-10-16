@@ -1,4 +1,10 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 
 import AgentLogs from './AgentLogs';
 import AgentRouteGuard from './AgentRouteGuard';
@@ -20,6 +26,16 @@ function LegacyManageRedirect() {
   return (
     <Navigate to={`${AGENTS_MANAGE_ROOT}${suffix}${location.search}`} replace />
   );
+}
+
+/**
+ * The builder for the workflow in the URL. Keyed by the agent, so moving to
+ * another workflow's edit page starts a fresh builder instead of carrying
+ * the last one's canvas, ids and loaded agent over.
+ */
+function WorkflowBuilderForAgent() {
+  const { agentId } = useParams();
+  return <WorkflowBuilder key={agentId} />;
 }
 
 export default function Agents() {
@@ -63,7 +79,7 @@ export default function Agents() {
         path="manage/workflow/edit/:agentId"
         element={
           <AgentRouteGuard action="view">
-            <WorkflowBuilder />
+            <WorkflowBuilderForAgent />
           </AgentRouteGuard>
         }
       />

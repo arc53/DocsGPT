@@ -286,14 +286,16 @@ export default function GuardrailEvents({ agentId }: Props) {
               onRetry={() => setReloadKey((key) => key + 1)}
             />
           ) : events.length === 0 ? (
-            <p
-              className="text-muted-foreground p-4 text-sm"
+            <EmptyState
+              size="sm"
+              illustration="none"
               data-testid="guardrail-events-empty"
-            >
-              {filtered
-                ? t('agents.guardrailEvents.emptyForFilter')
-                : t('agents.guardrailEvents.empty')}
-            </p>
+              title={
+                filtered
+                  ? t('agents.guardrailEvents.emptyForFilter')
+                  : t('agents.guardrailEvents.empty')
+              }
+            />
           ) : (
             <Table aria-labelledby={tableHeadingId}>
               <TableHead>
