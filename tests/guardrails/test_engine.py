@@ -78,6 +78,21 @@ class LateSettlingCheck(GuardrailCheck):
         LateSettlingCheck.settled_with.append((action, verdict.action))
 
 
+class BrokenRemoteCheck(GuardrailCheck):
+    """A remote check that cannot be built, so it runs under the stage deadline and fails before scanning."""
+
+    name = "_test_broken_remote"
+    label = "Broken remote"
+    supported_stages = {Stage.INPUT}
+    remote = True
+
+    def __init__(self, settings=None):
+        raise RuntimeError("no credentials")
+
+    def scan(self, text, stage, context):
+        return CheckOutcome.clean()
+
+
 class SlowCheck(GuardrailCheck):
     name = "_test_slow"
     label = "Slow"
@@ -92,10 +107,10 @@ class SlowCheck(GuardrailCheck):
 @pytest.fixture(autouse=True)
 def _register_test_checks():
     GuardrailCreator._ensure_builtin()
-    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck, LateSettlingCheck):
+    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck, LateSettlingCheck, BrokenRemoteCheck):
         GuardrailCreator.register(cls.name, cls)
     yield
-    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck, LateSettlingCheck):
+    for cls in (AlwaysHitCheck, NeverHitCheck, ExplodingCheck, SlowCheck, SettlingCheck, LateSettlingCheck, BrokenRemoteCheck):
         GuardrailCreator.checks.pop(cls.name, None)
 
 
@@ -248,6 +263,15 @@ class TestFailureSemantics:
         assert LateSettlingCheck.scanned.wait(2.0), "the late scan never finished"
         time.sleep(0.1)  # the late verdict, if it were settled, is settled right after the scan returns
         assert LateSettlingCheck.settled_with == []
+
+    def test_a_remote_check_that_cannot_be_built_reports_why_at_once(self):
+        engine = GuardrailEngine(
+            _config(timeout_ms=1000, controls=[{"check": "_test_broken_remote", "stage": "input", "action": "block"}])
+        )
+        started = time.monotonic()
+        decision = engine.evaluate("some text", Stage.INPUT)
+        assert decision.unevaluated[0].outcome.error == "unavailable: no credentials"
+        assert time.monotonic() - started < 0.5, "the stage waited for its deadline"
 
     def test_stage_deadline_is_shared_not_per_check(self):
         """Three slow checks must not cost 3x the timeout."""

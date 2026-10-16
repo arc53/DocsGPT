@@ -129,7 +129,10 @@ class GuardrailEngine:
             check = GuardrailCreator.create(control.check, control.settings)
         except Exception as exc:
             logger.warning("Guardrail check %s unavailable: %s", control.check, exc)
-            return self._verdict(control, stage, CheckOutcome.not_evaluated(f"unavailable: {exc}"))
+            verdict = self._verdict(control, stage, CheckOutcome.not_evaluated(f"unavailable: {exc}"))
+            if publish is not None:
+                publish(verdict)
+            return verdict
         try:
             outcome = check.scan(text, stage, self.context)
         except Exception as exc:
