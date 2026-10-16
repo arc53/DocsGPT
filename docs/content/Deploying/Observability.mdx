@@ -225,9 +225,13 @@ only:
 without the model, `top` is the highest relevance scored, and `applied` is
 `false` in `monitor` mode and after a failure. A request in the rollout's
 control arm (`DECISION_RERANK_ROLLOUT_PERCENT` below 100) asks the model
-nothing and records `{"feature": "rag_rerank", "status": "skipped", "outcome":
-{"arm": "control"}}`, so the two arms can be counted. Per-day call counts are in
-`decision_usage` under the same feature labels.
+nothing and records this entry, so the two arms can be counted:
+
+```json
+{"feature": "rag_rerank", "status": "skipped", "outcome": {"arm": "control"}}
+```
+
+Per-day call counts are in `decision_usage` under the same feature labels.
 
 Backends that understand the GenAI conventions — Langfuse
 (`/api/public/otel`), Arize Phoenix, Datadog LLM Observability, Grafana —
