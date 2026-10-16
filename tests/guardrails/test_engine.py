@@ -87,6 +87,7 @@ class BrokenRemoteCheck(GuardrailCheck):
     remote = True
 
     def __init__(self, settings=None):
+        super().__init__(settings)
         raise RuntimeError("no credentials")
 
     def scan(self, text, stage, context):
