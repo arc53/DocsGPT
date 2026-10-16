@@ -40,8 +40,10 @@ export default function ActionToast() {
 
   if (!toast) return null;
 
+  // A card per result: a new one comes in as the newest card, so a phone's
+  // folded stack shows it rather than keeping it where the last one was.
   return (
-    <Toast ref={cardRef}>
+    <Toast key={toast.id} ref={cardRef}>
       <ToastHeader variant={toast.variant}>
         <ToastTitle wrap>{toast.message}</ToastTitle>
         <ToastActions>
