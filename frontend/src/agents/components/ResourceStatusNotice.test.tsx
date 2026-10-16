@@ -127,9 +127,9 @@ describe('ResourceStatusNotice', () => {
   it('names people by email or a short id, the reader as you', async () => {
     const LONG_SUB = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
     await i18n.use(initReactI18next).init({
-      lng: 'jp',
+      lng: 'ja',
       resources: {
-        jp: {
+        ja: {
           translation: {
             agents: {
               form: {

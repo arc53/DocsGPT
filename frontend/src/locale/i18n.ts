@@ -7,11 +7,15 @@ import { intlLocale } from '../utils/dateTimeUtils';
 import en from './en.json'; //English
 import es from './es.json'; //Spanish
 import fr from './fr.json'; //French
-import jp from './jp.json'; //Japanese
+import ja from './jp.json'; //Japanese
 import zh from './zh.json'; //Mandarin
 import zhTW from './zh-TW.json'; //Traditional Chinese
 import ru from './ru.json'; //Russian
 import de from './de.json'; //German
+
+// Codes older builds stored for the UI language. They aren't BCP 47 tags, so
+// browsers never matched them and Intl gave them English plural rules.
+const LEGACY_CODES: Record<string, string> = { jp: 'ja' };
 
 i18n
   .use(LanguageDetector)
@@ -27,8 +31,8 @@ i18n
       fr: {
         translation: fr,
       },
-      jp: {
-        translation: jp,
+      ja: {
+        translation: ja,
       },
       zh: {
         translation: zh,
@@ -48,11 +52,13 @@ i18n
     // builds) and maps a region to its language (ru-RU -> ru); the detector
     // then caches the result over the stored value. A new language goes here
     // as well as in `resources`.
-    supportedLngs: ['en', 'es', 'fr', 'jp', 'zh', 'zhTW', 'ru', 'de'],
+    supportedLngs: ['en', 'es', 'fr', 'ja', 'zh', 'zhTW', 'ru', 'de'],
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
       lookupLocalStorage: 'docsgpt-locale',
+      // A stored legacy code is read as its tag, then cached over it.
+      convertDetectedLanguage: (lng: string) => LEGACY_CODES[lng] ?? lng,
     },
   });
 

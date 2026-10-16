@@ -73,13 +73,13 @@ describe('abbreviateCount', () => {
     expect(abbreviateCount(1234, 'en')).toBe('1.2K');
     expect(abbreviateCount(1500000, 'en')).toBe('1.5M');
     expect(abbreviateCount(1234, 'ru')).toBe('1,2\u00a0тыс.');
-    expect(abbreviateCount(1500000, 'jp')).toBe('150万');
+    expect(abbreviateCount(1500000, 'ja')).toBe('150万');
   });
 
   // de and ja have no compact thousands: the digits still group.
   it('groups the digits where it has none', () => {
     expect(abbreviateCount(1234, 'de')).toBe('1.234');
-    expect(abbreviateCount(1234, 'jp')).toBe('1,234');
+    expect(abbreviateCount(1234, 'ja')).toBe('1,234');
     expect(abbreviateCount(1500000, 'de')).toBe('1,5\u00a0Mio.');
   });
 

@@ -110,7 +110,7 @@ export function formatTimestamp(value?: string | null): string {
 }
 
 // The app's language codes (locale/i18n.ts) that aren't BCP 47 tags.
-const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
+const INTL_LOCALES: Record<string, string> = { zhTW: 'zh-TW' };
 
 /**
  * The current UI language as a tag `Intl` understands. A value that is not a

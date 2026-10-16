@@ -96,7 +96,7 @@ describe('formatRelative', () => {
 
   it("maps the app's language codes to BCP 47", async () => {
     const { formatRelative } = await import('./dateTimeUtils');
-    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'jp' })).toBe(
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'ja' })).toBe(
       '3 分前',
     );
   });
@@ -118,7 +118,7 @@ describe('formatCount', () => {
   });
 
   it('maps the app codes Intl does not know', () => {
-    expect(formatCount(1234, 'jp')).toBe('1,234');
+    expect(formatCount(1234, 'ja')).toBe('1,234');
     expect(formatCount(1234, 'zhTW')).toBe('1,234');
   });
 
@@ -160,7 +160,7 @@ describe('formatDeadline', () => {
 describe('intlLocale', () => {
   it('maps app codes to BCP 47 tags', () => {
     expect(intlLocale('ru-RU')).toBe('ru-RU');
-    expect(intlLocale('jp')).toBe('ja');
+    expect(intlLocale('ja')).toBe('ja');
     expect(intlLocale('zhTW')).toBe('zh-TW');
   });
 
@@ -199,7 +199,7 @@ describe('headingLocale', () => {
 
   it("names days and months in the reader's language otherwise", () => {
     expect(headingLocale('de')).toBe('de');
-    expect(headingLocale('jp')).toBe('ja');
+    expect(headingLocale('ja')).toBe('ja');
     expect(headingLocale('zhTW')).toBe('zh-TW');
     expect(heading('de')).toBe('Montag, 12. Oktober');
     expect(heading('fr')).toBe('lundi 12 octobre');

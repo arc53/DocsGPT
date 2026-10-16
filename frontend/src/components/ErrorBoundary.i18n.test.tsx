@@ -41,7 +41,7 @@ describe('ErrorBoundary fallback in each locale', () => {
       'Une erreur s’est produite lors de l’affichage de ce contenu.',
       'Réessayer',
     ],
-    ['jp', 'このコンテンツの表示中に問題が発生しました。', '再試行'],
+    ['ja', 'このコンテンツの表示中に問題が発生しました。', '再試行'],
     ['ru', 'Не удалось отобразить этот контент.', 'Повторить'],
     ['zh', '显示此内容时出错。', '重试'],
     ['zhTW', '顯示此內容時發生錯誤。', '重試'],

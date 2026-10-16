@@ -24,8 +24,29 @@ describe('i18n language detection', () => {
   it('keeps the app codes that are not BCP 47 tags', async () => {
     await i18n.changeLanguage('zhTW');
     expect(i18n.language).toBe('zhTW');
-    await i18n.changeLanguage('jp');
-    expect(i18n.language).toBe('jp');
+  });
+
+  it('picks Japanese for a Japanese browser', async () => {
+    await i18n.changeLanguage('ja-JP');
+    expect(i18n.language).toBe('ja');
+  });
+
+  it('reads the jp code older builds stored as ja', () => {
+    localStorage.setItem('docsgpt-locale', 'jp');
+    const detector = i18n.services.languageDetector as {
+      detect: () => string[];
+    };
+    expect(detector.detect()[0]).toBe('ja');
+  });
+
+  it('counts with the Japanese plural rule, which has no _one', async () => {
+    await i18n.changeLanguage('ja');
+    expect(
+      i18n.t('settings.connectors.parameters.fixedCount', {
+        count: 1,
+        formatted: '1',
+      }),
+    ).toBe('1 件固定');
   });
 
   it('accepts French and reduces a French region to it', async () => {
@@ -44,7 +65,7 @@ describe('html lang', () => {
     expect(document.documentElement.lang).toBe('fr');
     await i18n.changeLanguage('zhTW');
     expect(document.documentElement.lang).toBe('zh-TW');
-    await i18n.changeLanguage('jp');
+    await i18n.changeLanguage('ja');
     expect(document.documentElement.lang).toBe('ja');
   });
 });

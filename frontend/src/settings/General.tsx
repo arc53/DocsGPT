@@ -39,7 +39,7 @@ export default function General() {
     { label: 'Deutsch', value: 'de' },
     { label: 'Español', value: 'es' },
     { label: 'Français', value: 'fr' },
-    { label: '日本語', value: 'jp' },
+    { label: '日本語', value: 'ja' },
     { label: '普通话', value: 'zh' },
     { label: '繁體中文（臺灣）', value: 'zhTW' },
     { label: 'Русский', value: 'ru' },
