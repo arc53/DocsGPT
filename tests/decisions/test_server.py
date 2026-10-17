@@ -118,8 +118,7 @@ class TestServe:
 
     @pytest.mark.parametrize("setting, value", [("DECISION_PRELOAD", True),
                                                 ("GUARDRAILS_INJECTION_INPUT_MODE", "monitor"),
-                                                ("DECISION_RERANK_MODE", "auto"),
-                                                ("DECISION_PRESCREEN_ENABLED", True)])
+                                                ("DECISION_RELEVANCE_ENABLED", True)])
     def test_loads_at_start_when_asked(self, started, monkeypatch, setting, value):
         _, backend = started
         monkeypatch.setattr(settings, setting, value)

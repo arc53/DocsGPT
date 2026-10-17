@@ -11,8 +11,8 @@ Every shipped stack runs it as the ``decider`` sidecar, which the API and the Ce
   place; a full lane answers 429 with ``Retry-After``.
 - **Lanes and deadlines.** ``X-Decision-Priority`` (``hot``, the default, or ``background``) picks the lane of the
   backend's gate, and states not started within ``X-Decision-Deadline-Ms`` come back ``timeout``.
-- **Nothing loads until asked**: a call, ``POST /v1/load``, ``DECISION_PRELOAD``, ``DECISION_PRESCREEN_ENABLED``,
-  or a feature in this process's settings set to anything but ``off``.
+- **Nothing loads until asked**: a call, ``POST /v1/load``, ``DECISION_PRELOAD``, or a feature in this process's
+  settings set to anything but ``off`` (``DECISION_RELEVANCE_ENABLED`` included).
 - **The key.** With ``DECISION_KEY`` set, every route but ``/health`` needs it as a bearer key, compared in constant
   time. Without one the server binds only to a loopback address.
 - **Logs** hold counts and latencies, never what is decided.

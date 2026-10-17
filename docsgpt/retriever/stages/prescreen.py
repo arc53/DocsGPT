@@ -204,30 +204,25 @@ def build_prescreen_stages(
     model_user_id: Optional[str] = None,
     request_id: Optional[str] = None,
     usage_source: str = "rag_prescreen",
-    decision_as_llm: bool = True,
 ) -> List[Stage]:
     """Build LLM prescreen stages from a group's per-source retrieval configs.
 
-    Returns one stage per distinct ``backend: llm`` prescreen config found
-    across the group's sources (deduplicated by what the screening does; the
-    Dispatcher gives each policy a group of its own), or an empty list when
-    none opt in — so the Dispatcher seam stays a pure no-op by default.
+    Returns one stage per distinct prescreen config found across the group's
+    sources (deduplicated by what the screening does; the Dispatcher gives
+    each policy a group of its own), or an empty list when none opt in — so
+    the Dispatcher seam stays a pure no-op by default.
 
     Args:
         retrievals: ``{doc_id: RetrievalConfig}`` for sources with overrides.
         llm_name / api_key / model_id / ...: LLM-resolution context, forwarded
             to each ``PreScreenStage``.
-        decision_as_llm: Screen ``backend: decision`` configs with the LLM too,
-            as while ``DECISION_PRESCREEN_ENABLED`` is off; when False they are
-            left to ``stages.build_group_stages``.
-
     """
     stages: List[Stage] = []
     seen: set = set()
     for retrieval in (retrievals or {}).values():
         getter = getattr(retrieval, "prescreen_config", None)
         ps = getter() if callable(getter) else None
-        if ps is None or (ps.backend != "llm" and not decision_as_llm):
+        if ps is None:
             continue
         # ``candidate_k`` only sizes each source's fetch; the screening is the same.
         key = (ps.model, ps.batch_size, ps.max_keep)
@@ -252,7 +247,7 @@ def build_prescreen_stages(
 
 
 def max_candidate_k(retrievals: Dict[str, Any]) -> Optional[int]:
-    """Largest prescreen ``candidate_k`` across the group (either backend), or None.
+    """Largest prescreen ``candidate_k`` across the group, or None.
 
     The Dispatcher uses this to raise the group's effective top-k so the base
     retriever actually fetches enough candidates for the stage to trim.

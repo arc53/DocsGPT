@@ -1,6 +1,7 @@
 """`docsgpt doctor`, `restart`, following native logs, and settings that apply themselves."""
 
 import argparse
+import re
 import socket
 
 import pytest
@@ -717,12 +718,12 @@ class TestDoctorDecisions:
         check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=False)
         assert str(folder) in check.detail
 
-    def test_the_decision_prescreen_is_listed_and_counts_as_a_feature_on(self, monkeypatch, tmp_path):
+    def test_relevance_is_listed_as_rag_rerank_and_counts_as_a_feature_on(self, monkeypatch, tmp_path):
         monkeypatch.setattr(commands.sys, "platform", "darwin")
         check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=True)
-        assert check.level == "ok" and "rag_prescreen off" in check.detail
-        check = commands._check_decisions({"DECISION_PRESCREEN_ENABLED": "true"}, docker=True)
-        assert "rag_prescreen on" in check.detail
+        assert check.level == "ok" and "rag_rerank off" in check.detail
+        check = commands._check_decisions({"DECISION_RELEVANCE_ENABLED": "true"}, docker=True)
+        assert "rag_rerank on" in check.detail
         assert check.level == "warn" and "--device mps" in check.detail
 
     def test_mode_none(self):
@@ -775,9 +776,34 @@ class TestDoctorDecisions:
         assert check.level == "ok"
         assert "torch-mps-fp16" in check.detail and "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907" in check.detail
         assert "injection_input auto, on at" in check.detail
+        assert "rag_rerank off" in check.detail
         (request,) = seen
         assert str(request.url) == "http://127.0.0.1:7095/v1/models"
         assert request.headers["authorization"] == "Bearer k"
+
+    @pytest.mark.parametrize("plan, tokens", [("onnx", 320), ("torch", 1220)])
+    def test_relevance_on_shows_its_call_against_the_timeout(self, server, monkeypatch, plan, tokens):
+        from docsgpt.decisions.latency import SpeedProfile
+
+        _, reply = server
+        speed = SpeedProfile(0.05, 0.0005, 0.0, overhead=60, threads=0, plan=plan).wire()
+        reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2", "prompt_hash": "78cfb276f93a",
+                                     "calibration": "c3bc72ff6907", "runtime": "onnx-int8", "status": "ready",
+                                     "speed": speed}]}
+        shapes = []
+        real = SpeedProfile.predict_s
+
+        def predict(self, shape):
+            shapes.append(shape)
+            return real(self, shape)
+
+        monkeypatch.setattr(SpeedProfile, "predict_s", predict)
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_KEY": "k", "DECISION_RELEVANCE_ENABLED": "true"}
+        check = commands._check_decisions(env, docker=False)
+        assert re.search(r"rag_rerank on at \d+\.\d\ds of 2s", check.detail)
+        # A CPU (ONNX) server scores best-window passages; a GPU one whole chunks.
+        (shape,) = shapes
+        assert shape.states == 20 and shape.state_tokens == tokens
 
     @pytest.mark.parametrize("models", [{"name": "x"}, "arc53/arc-decide-0.4b-v0.2", [], ["x"]])
     def test_a_wrong_shaped_model_list_is_reported_not_raised(self, server, models):

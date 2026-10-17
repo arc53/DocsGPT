@@ -9,10 +9,11 @@ every existing source) all sources flow into ONE ``ClassicRAG`` instance built
 exactly as today, so the output — including token-budget behaviour — is
 byte-identical to the pre-dispatch path.
 
-The decision model's rerank (``DECISION_RERANK_MODE``) keeps that guarantee
-whenever it cannot answer: the group's fetch is widened to a candidate pool,
-the retriever tags the docs it would have returned anyway (``_base``), and a
-stage that falls back returns exactly those. With
+Relevance scored by the decision model (a source's ``reranker``, while the
+operator has set ``DECISION_RELEVANCE_ENABLED``) keeps that guarantee whenever
+it cannot answer: the group's fetch is widened to a candidate pool, the
+retriever tags the docs it would have returned anyway (``_base``), and a stage
+that falls back returns exactly those. With
 ``PER_SOURCE_RETRIEVAL_ENABLED=False`` there is no Dispatcher, so no stage runs
 and the model is never called.
 """
@@ -31,8 +32,7 @@ from docsgpt.retriever.stages.prescreen import max_candidate_k
 from docsgpt.retriever.stages.relevance import (
     RERANK,
     base_selection,
-    decision_prescreen_enabled,
-    instance_mode,
+    relevance_enabled,
     rollout_on,
     source_mode,
 )
@@ -104,22 +104,22 @@ class Dispatcher(BaseRetriever):
                 RetrievalConfig | dict | None}``. When empty the dispatcher
                 falls back to the single classic group over ``source``.
             stages: Optional post-retrieval stages applied to each group's
-                candidates before its prescreens and rerank, so a filter here
-                (the search tool's path filter) narrows the pool they choose
-                from. Default: none (pass-through).
+                candidates before its prescreen or relevance stage, so a filter
+                here (the search tool's path filter) narrows the pool they
+                choose from. Default: none (pass-through).
             include_scores: Ask each group's retriever to attach the raw store
                 score to every doc it returns. Off for the answer pipeline; on
                 for the retrieval-test endpoint.
             usage_source: Cost-attribution tag for the prescreen stage's LLM
                 calls.
-            conversation_id: Keys the rerank's rollout arm
-                (``DECISION_RERANK_ROLLOUT_PERCENT``); the request id stands in
-                for a conversation not created yet.
+            conversation_id: Keys the relevance rollout arm
+                (``DECISION_RELEVANCE_ROLLOUT_PERCENT``); the request id stands
+                in for a conversation not created yet.
             relevance_feature: Decision feature label of every relevance stage,
-                instead of ``rag_rerank`` / ``rag_prescreen``.
+                instead of ``rag_rerank``.
             apply_rollout: False puts the request in the rollout whatever
-                ``DECISION_RERANK_ROLLOUT_PERCENT`` says (the retrieval test,
-                which has no conversation to hash).
+                ``DECISION_RELEVANCE_ROLLOUT_PERCENT`` says (the retrieval
+                test, which has no conversation to hash).
             record_candidates: Keep every group's candidates as its stages
                 received them in ``last_candidates``, for the retrieval test's
                 comparison with retriever order.
@@ -133,7 +133,7 @@ class Dispatcher(BaseRetriever):
         # none did), how many candidates the groups handed their stages and,
         # with ``record_candidates``, those candidates: ``{"doc", "base",
         # "relevance"}`` in retriever order, ``base`` when the retrieval would
-        # have returned the doc without the rerank's wider pool.
+        # have returned the doc without the relevance stage's wider pool.
         self.last_top_relevance: Optional[float] = None
         self.last_candidate_count = 0
         self.last_candidates: List[Dict[str, Any]] = []
@@ -160,25 +160,23 @@ class Dispatcher(BaseRetriever):
         self._groups = self._build_groups()
 
     def _build_groups(self) -> List[Dict[str, Any]]:
-        """Group the per-source list by retriever key, rerank mode and decision prescreen.
+        """Group the per-source list by retriever key, relevance and prescreen policy.
 
         All classic/default sources collapse into one group (exact parity);
-        each non-classic retriever key gets its own group. A source whose
-        rerank mode differs from the rest of its retriever's sources (one that
-        opted out, say) gets a group of its own, so it is never judged by a
-        policy it turned off. Likewise each prescreen policy (LLM or decision
-        model, with the settings that change what it keeps) groups only the
-        sources that set it, so its ``max_keep`` and threshold never cut
-        another source's chunks and the sources beside it keep their own
-        prescreen or rerank. Without any prescreen the grouping is what it has
-        always been. With no per-source list, a single classic group over
-        ``self.source`` is produced.
+        each non-classic retriever key gets its own group. Sources whose
+        chunks the decision model scores (their ``reranker``, while the
+        operator has the model enabled) get a group apart from those it does
+        not, and each LLM prescreen policy (the settings that change what it
+        keeps) groups only the sources that set it, so neither policy ever
+        judges or cuts another source's chunks. Without either the grouping is
+        what it has always been. With no per-source list, a single classic
+        group over ``self.source`` is produced, which no stage judges.
 
-        Each group's ``relevance`` holds its resolved rerank: ``mode``
-        (``off``, ``monitor`` or ``on``), the rollout ``arm``, the pool size
-        ``candidate_k`` and per-source ``thresholds``. It is read from every
-        source's config, not through ``_is_override``: a source that sets only
-        a reranker keeps the shared chunk budget.
+        Each group's ``relevance`` holds its resolved policy: ``mode`` (``off``
+        or ``on``), the rollout ``arm``, the pool size ``candidate_k`` and
+        per-source ``thresholds``. It is read from every source's config, not
+        through ``_is_override``: a source that sets only a reranker keeps the
+        shared chunk budget.
         """
         active_docs = self.source.get("active_docs")
         if isinstance(active_docs, str):
@@ -186,32 +184,27 @@ class Dispatcher(BaseRetriever):
         active_docs = active_docs or []
         resolved: Dict[str, Any] = {}
 
-        def rerank(key: str, retrieval: Optional[RetrievalConfig]) -> tuple:
-            if "instance" not in resolved:
-                resolved["instance"] = instance_mode()
-                resolved["rollout"] = not self._apply_rollout or rollout_on(
-                    self._rollout_key, settings.DECISION_RERANK_ROLLOUT_PERCENT
-                )
+        def relevance(retrieval: Optional[RetrievalConfig]) -> tuple:
             reranker = retrieval.reranker_config() if retrieval is not None else None
-            mode, arm = source_mode(key, reranker, resolved["instance"], resolved["rollout"])
+            if reranker is None:
+                return "off", None, None
+            if "enabled" not in resolved:
+                resolved["enabled"] = relevance_enabled()
+                resolved["rollout"] = not self._apply_rollout or rollout_on(
+                    self._rollout_key, settings.DECISION_RELEVANCE_ROLLOUT_PERCENT
+                )
+            mode, arm = source_mode(reranker, resolved["enabled"], resolved["rollout"])
             return mode, arm, reranker
 
         def screened(retrieval: RetrievalConfig) -> Optional[tuple]:
-            """The source's prescreen policy: what it runs on and the settings that change what it keeps.
+            """The source's LLM prescreen policy: the settings that change what it keeps.
 
-            ``None`` without a prescreen, so sources that set none group exactly as they always have. A
-            ``backend: decision`` prescreen that does not run on the model is an LLM one, and groups with them.
+            ``None`` without a prescreen, so sources that set none group exactly as they always have.
             """
             ps = retrieval.prescreen_config()
             if ps is None:
                 return None
-            if ps.backend == "decision":
-                if "prescreen" not in resolved:
-                    resolved["prescreen"] = decision_prescreen_enabled()
-                if resolved["prescreen"]:
-                    threshold = settings.DECISION_PRESCREEN_THRESHOLD if ps.min_relevance is None else ps.min_relevance
-                    return "decision", ps.max_keep, threshold
-            return "llm", ps.max_keep, ps.batch_size, ps.model
+            return ps.max_keep, ps.batch_size, ps.model
 
         def new_group(key: str, mode: str) -> Dict[str, Any]:
             return {
@@ -222,22 +215,23 @@ class Dispatcher(BaseRetriever):
             }
 
         def add(group: Dict[str, Any], doc_id: str, arm: Optional[str], reranker: Any) -> None:
-            relevance = group["relevance"]
-            if arm and relevance["arm"] in (None, "source"):
-                relevance["arm"] = arm
-            if relevance["mode"] == "off":
+            policy = group["relevance"]
+            if arm:
+                policy["arm"] = arm
+            if policy["mode"] == "off" or reranker is None:
                 return
-            k = reranker.candidate_k if reranker is not None and reranker.candidate_k else None
-            relevance["candidate_k"] = max(relevance["candidate_k"], k or settings.DECISION_RERANK_CANDIDATE_K)
-            if reranker is not None and reranker.min_relevance is not None:
-                relevance["thresholds"][doc_id] = reranker.min_relevance
+            pool = min(reranker.pool, settings.DECISION_RELEVANCE_MAX_PASSAGES)
+            policy["candidate_k"] = max(policy["candidate_k"], pool)
+            if reranker.threshold:
+                policy["thresholds"][doc_id] = reranker.threshold
+
+        def fallback_group() -> List[Dict[str, Any]]:
+            group = new_group("classic", "off")
+            group["doc_ids"] = list(active_docs)
+            return [group]
 
         if not self._sources:
-            mode, arm, _ = rerank("classic", None)
-            group = new_group("classic", mode)
-            group["doc_ids"] = list(active_docs)
-            add(group, "", arm, None)
-            return [group]
+            return fallback_group()
 
         grouped: Dict[tuple, Dict[str, Any]] = {}
         for entry in self._sources:
@@ -248,7 +242,7 @@ class Dispatcher(BaseRetriever):
             key = (retrieval.retriever or "classic").lower()
             if key in _CLASSIC_KEYS:
                 key = "classic"
-            mode, arm, reranker = rerank(key, retrieval)
+            mode, arm, reranker = relevance(retrieval)
             group = grouped.setdefault((key, mode, screened(retrieval)), new_group(key, mode))
             if doc_id not in group["doc_ids"]:
                 group["doc_ids"].append(doc_id)
@@ -260,11 +254,7 @@ class Dispatcher(BaseRetriever):
                 group["retrievals"][doc_id] = retrieval
 
         if not grouped:
-            mode, arm, _ = rerank("classic", None)
-            group = new_group("classic", mode)
-            group["doc_ids"] = list(active_docs)
-            add(group, "", arm, None)
-            return [group]
+            return fallback_group()
 
         # Defend the parity guarantee: any active_doc the per-source list omitted
         # would otherwise be dropped from every group. Route the strays through
@@ -275,12 +265,10 @@ class Dispatcher(BaseRetriever):
         }
         missing = [doc_id for doc_id in active_docs if doc_id not in grouped_ids]
         if missing:
-            mode, arm, _ = rerank("classic", None)
-            classic_group = grouped.setdefault(("classic", mode, None), new_group("classic", mode))
+            classic_group = grouped.setdefault(("classic", "off", None), new_group("classic", "off"))
             for doc_id in missing:
                 if doc_id not in classic_group["doc_ids"]:
                     classic_group["doc_ids"].append(doc_id)
-                    add(classic_group, doc_id, arm, None)
         return list(grouped.values())
 
     @staticmethod
@@ -361,26 +349,25 @@ class Dispatcher(BaseRetriever):
         if group["retrievals"]:
             setattr(retriever, "per_source_retrieval", group["retrievals"])
         setattr(retriever, "base_chunks", self.chunks)
-        # The rerank chooses from a wider pool. A prescreen already fetched its
-        # own (the rerank then reorders what it kept), and a retriever that
-        # cannot tag its usual selection is reranked within that selection.
+        # Relevance chooses from a wider pool; a retriever that cannot tag its
+        # usual selection is judged within that selection.
         if self._pooled(group) and hasattr(retriever, "candidate_k"):
             setattr(retriever, "candidate_k", group["relevance"]["candidate_k"])
-            setattr(retriever, "candidate_tokens", settings.DECISION_RERANK_CANDIDATE_TOKENS)
+            setattr(retriever, "candidate_tokens", settings.DECISION_RELEVANCE_CANDIDATE_TOKENS)
         return retriever
 
     @staticmethod
     def _pooled(group: Dict[str, Any]) -> bool:
-        """Whether the group's rerank widens its fetch: on or monitor, with no prescreen."""
+        """Whether the group's fetch is widened for relevance: on, with no prescreen."""
         relevance = group.get("relevance") or {}
-        return relevance.get("mode") in ("on", "monitor") and max_candidate_k(group["retrievals"]) is None
+        return relevance.get("mode") == "on" and max_candidate_k(group["retrievals"]) is None
 
     def _group_stages(self, group: Dict[str, Any]) -> List[Stage]:
-        """Stages for a group: caller-supplied stages, then its prescreens and rerank.
+        """Stages for a group: caller-supplied stages, then its prescreens or relevance.
 
-        Prescreen and rerank stages come from ``stages.build_group_stages``, so a
-        group with no opted-in source and the rerank off adds nothing — the
-        default path stays a pure no-op with zero extra LLM or model calls.
+        Those come from ``stages.build_group_stages``, so a group with no
+        opted-in source adds nothing — the default path stays a pure no-op with
+        zero extra LLM or model calls.
         """
         keys = ("llm_name", "api_key", "model_id", "user_api_key", "decoded_token", "agent_id", "model_user_id",
                 "request_id")
@@ -426,7 +413,7 @@ class Dispatcher(BaseRetriever):
     def _fit(docs: List[Dict[str, Any]], budget: int) -> List[Dict[str, Any]]:
         """``docs`` in order under 90% of ``budget`` tokens, as the multi-group merge counts them.
 
-        Applied after a rerank that drew on a pool beyond the usual selection,
+        Applied after a relevance stage that drew on a pool beyond the usual selection,
         whose candidate fetch had a larger budget; the usual selection already
         fits, so a list of only its docs is returned unchanged.
         """

@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-16
+lastUpdated: 2026-10-17
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -646,59 +646,23 @@ Type `int`, default `90`, must be `>= 1`.
 
 Days the per-day counts of decision-model calls (`decision_usage`) are kept before the cleanup task removes them.
 
-### `DECISION_RERANK_MODE`
-
-Type `"off" | "monitor" | "on" | "auto"`, default `off`.
-
-Rerank retrieved chunks by the decision model's relevance score: classic and hybrid sources fetch DECISION_RERANK_CANDIDATE_K candidates and keep as many chunks as they would without it, most relevant first. `monitor` scores and records without changing the result; `auto` is `on` while the predicted call on this machine fits DECISION_RERANK_BUDGET (a GPU or API-mode server, rarely a CPU). While it is not off, a source's `reranker` can opt that source in, in this same mode (any retriever, outside the rollout), or out; while it is off, no source is reranked and the model is never loaded for it. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false.
-
-### `DECISION_RERANK_BUDGET`
-
-Type `float`, default `3.0`, must be `> 0`.
-
-Under DECISION_RERANK_MODE=auto, the longest predicted time, in seconds, of one rerank call (DECISION_RERANK_CANDIDATE_K chunks; best-window passages on a CPU, whole chunks elsewhere).
-
-### `DECISION_RERANK_ROLLOUT_PERCENT`
-
-Type `int`, default `100`, must be `>= 0` and `<= 100`.
-
-Share of conversations, by a hash of the conversation id, that the instance rerank mode applies to; the rest are the `control` arm. The decision record and the trace carry the arm.
-
-### `DECISION_RERANK_RETRIEVERS`
-
-Type `list[str]`, default `["classic", "hybrid"]`.
-
-Retrievers the instance rerank mode applies to, as a JSON list or comma-separated keys. A source of another retriever (graphrag) can still turn it on with its own `reranker` setting.
-
-### `DECISION_RERANK_CANDIDATE_K`
-
-Type `int`, default `20`, must be `>= 1` and `<= 100`.
-
-Candidates a reranked retrieval fetches and scores; a source's `reranker.candidate_k` overrides it.
-
-### `DECISION_RERANK_THRESHOLD`
-
-Type `float`, default `0.0`, must be `>= 0.0` and `<= 1.0`.
-
-Reranked chunks scoring below this relevance are dropped (keeping DECISION_RELEVANCE_MIN_KEEP); 0 reorders only. A source's `reranker.min_relevance` overrides it.
-
-### `DECISION_RERANK_CANDIDATE_TOKENS`
-
-Type `int`, default `60000`, must be `>= 1`.
-
-Token budget of the rerank's candidate fetch, so a small model context does not cut the candidates in retriever order; the request's own document budget applies after the rerank.
-
-### `DECISION_PRESCREEN_ENABLED`
+### `DECISION_RELEVANCE_ENABLED`
 
 Type `bool`, default `false`.
 
-Run prescreens set to `backend: decision` on the decision model: one call that keeps chunks at or above DECISION_PRESCREEN_THRESHOLD, most relevant first. When true, the API process (or the decide server) loads the model at start, so the first prescreen does not fail open while it loads. While false, those prescreens run on the LLM as `backend: llm` does, and no source can make the model load.
+Let the decision model score retrieved chunks for the sources whose relevance setting is on (their `reranker`). While false, no source's setting calls or loads the model, retrieval returns what it would without it, and the source settings hide the relevance controls. While true, the API process (or the decide server) loads the model at start, so the first answer does not fall back while it loads. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false.
 
-### `DECISION_PRESCREEN_THRESHOLD`
+### `DECISION_RELEVANCE_ROLLOUT_PERCENT`
 
-Type `float`, default `0.2`, must be `>= 0.0` and `<= 1.0`.
+Type `int`, default `100`, must be `>= 0` and `<= 100`.
 
-Default `min_relevance` of a prescreen with `backend: decision`: chunks scoring below it are dropped, keeping DECISION_RELEVANCE_MIN_KEEP.
+Share of conversations, by a hash of the conversation id, in which sources with relevance on are scored; the rest are the `control` arm and keep the retriever's output. The decision record and the trace carry the arm. The retrieval test ignores it.
+
+### `DECISION_RELEVANCE_CANDIDATE_TOKENS`
+
+Type `int`, default `60000`, must be `>= 1`.
+
+Token budget of the candidate fetch for relevance, so a small model context does not cut the candidates in retriever order; the request's own document budget applies after the scoring.
 
 ### `DECISION_RELEVANCE_MIN_KEEP`
 

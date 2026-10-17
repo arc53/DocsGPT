@@ -1,9 +1,10 @@
 """The registry of features that call the decision model, and what ``auto`` resolves each one to.
 
-Every feature has a mode setting, ``off|monitor|on|auto``, and ships ``off``. ``auto`` is an opt-in that turns the
-feature on (or to ``monitor``, for a shadow-first feature) only while the latency predicted on this machine fits
-the feature's budget. Once on, it turns off only above 1.25x the budget, so a verdict near the line does not flap;
-each change is logged with its numbers. Explicit ``off``, ``monitor`` and ``on`` always win.
+Every feature has a mode setting, ``off|monitor|on|auto`` (or a plain switch, which is ``on`` or ``off``), and ships
+``off``. ``auto`` is an opt-in that turns the feature on (or to ``monitor``, for a shadow-first feature) only while
+the latency predicted on this machine fits the feature's budget. Once on, it turns off only above 1.25x the budget,
+so a verdict near the line does not flap; each change is logged with its numbers. Explicit ``off``, ``monitor`` and
+``on`` always win.
 """
 
 from __future__ import annotations
@@ -29,11 +30,20 @@ def register(spec: FeatureSpec) -> FeatureSpec:
     return spec
 
 
-def configured(spec: FeatureSpec) -> str:
-    """The feature's mode setting, ``off`` when the setting is unset."""
-    from docsgpt.core.settings import settings
+def configured(spec: FeatureSpec, settings: Any = None) -> str:
+    """The feature's mode setting, ``off`` when the setting is unset; a boolean switch reads as ``on`` or ``off``.
 
-    return getattr(settings, spec.mode_setting, None) or "off"
+    Args:
+        spec: The feature.
+        settings: The settings to read; the process's when omitted.
+    """
+    if settings is None:
+        from docsgpt.core.settings import settings
+
+    value = getattr(settings, spec.mode_setting, None)
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    return value or "off"
 
 
 def shape_of(spec: FeatureSpec, settings: Any = None, runtime: Optional[str] = None) -> Shape:
@@ -98,29 +108,23 @@ def effective(spec: FeatureSpec, enabled: bool, profile: Optional[SpeedProfile])
 def wanted_at_start() -> bool:
     """Whether a setting asks for the model as soon as a process that serves it starts.
 
-    That is ``DECISION_PRELOAD``, any registered feature set to something other than ``off`` (``auto`` has to
-    measure first), or ``DECISION_PRESCREEN_ENABLED``: the decision prescreen has no mode of its own, the operator
-    turning it on is what lets sources use it, and its first call would otherwise fail open while the model loads.
+    That is ``DECISION_PRELOAD`` or any registered feature set to something other than ``off``: ``auto`` has to
+    measure first, and a feature that is on (``DECISION_RELEVANCE_ENABLED``, say) would otherwise fail open while
+    the model loads.
     """
     from docsgpt.core.settings import settings
 
-    return (
-        settings.DECISION_PRELOAD
-        or settings.DECISION_PRESCREEN_ENABLED
-        or any(configured(spec) != "off" for spec in specs())
-    )
+    return settings.DECISION_PRELOAD or any(configured(spec) != "off" for spec in specs())
 
 
 def nothing_fits(profile: SpeedProfile) -> bool:
     """Whether the model was loaded only to judge ``auto`` and no feature will call it.
 
-    True when some feature is set to ``auto``, every ``auto`` verdict on ``profile`` is off, no feature is set to
-    ``on`` or ``monitor``, and ``DECISION_PRESCREEN_ENABLED`` is off.
+    True when some feature is set to ``auto``, every ``auto`` verdict on ``profile`` is off, and no feature is set
+    to ``on`` or ``monitor``.
     """
-    from docsgpt.core.settings import settings
-
     registered = specs()
-    if settings.DECISION_PRESCREEN_ENABLED or not any(configured(spec) == "auto" for spec in registered):
+    if not any(configured(spec) == "auto" for spec in registered):
         return False
     return all(effective(spec, True, profile)[0] == "off" for spec in registered)
 
@@ -153,22 +157,23 @@ INJECTION_INPUT = register(
 
 
 def _rerank_shape(settings: Any, runtime: Optional[str]) -> Shape:
-    """A rerank call: ``DECISION_RERANK_CANDIDATE_K`` chunks, as best-window passages where the model runs on a CPU
-    and whole (DocsGPT's default chunk size) elsewhere."""
+    """A relevance call over the default candidate pool (``reranker.candidate_k`` unset): best-window passages where
+    the model runs on a CPU, whole chunks (DocsGPT's default chunk size) elsewhere."""
     from docsgpt.decisions.states import MARGIN, cpu_runtime
+    from docsgpt.storage.db.source_config import DEFAULT_CANDIDATE_K
 
     tokens = settings.DECISION_RELEVANCE_CPU_PASSAGE_TOKENS + MARGIN if cpu_runtime(runtime) else RELEVANCE.state_tokens
-    return Shape(state_tokens=tokens, question_tokens=RELEVANCE.question_tokens,
-                 states=settings.DECISION_RERANK_CANDIDATE_K)
+    return Shape(state_tokens=tokens, question_tokens=RELEVANCE.question_tokens, states=DEFAULT_CANDIDATE_K)
 
 
-#: The rerank stage of retrieval (``DECISION_RERANK_MODE``; ``docsgpt.retriever.stages.relevance``), predicted on
-#: one call over the candidate pool. The decision prescreen backend has no mode of its own: a source opts into it.
+#: Relevance in retrieval (``docsgpt.retriever.stages.relevance``) for the sources whose ``reranker`` is set. It has
+#: a switch, not a mode: ``DECISION_RELEVANCE_ENABLED`` is ``on``, so the model warms at start. Its budget is the
+#: call's deadline, which the admin Defaults panel compares the prediction against.
 RAG_RERANK = register(
     FeatureSpec(
         name="rag_rerank",
-        mode_setting="DECISION_RERANK_MODE",
-        budget_setting="DECISION_RERANK_BUDGET",
+        mode_setting="DECISION_RELEVANCE_ENABLED",
+        budget_setting="DECISION_RELEVANCE_TIMEOUT",
         shape=Shape(state_tokens=RELEVANCE.state_tokens, question_tokens=RELEVANCE.question_tokens, states=20),
         shape_for=_rerank_shape,
     )

@@ -1093,7 +1093,7 @@ def _redis_to_check(args, env: Mapping[str, str]) -> dict:
 
 
 def _decision_settings(env: Mapping[str, str]):
-    """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, shape)``."""
+    """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, spec)``."""
     with _service_environment(env):
         from docsgpt.core.settings import Settings
         from docsgpt.decisions import features
@@ -1101,8 +1101,7 @@ def _decision_settings(env: Mapping[str, str]):
         _forget_shell_settings(env)
         settings = Settings(_env_file=None)
         registered = {
-            spec.name: (getattr(settings, spec.mode_setting, None) or "off",
-                        float(getattr(settings, spec.budget_setting)), features.shape_of(spec, settings))
+            spec.name: (features.configured(spec, settings), float(getattr(settings, spec.budget_setting)), spec)
             for spec in features.specs()
         }
     return settings, registered
@@ -1158,7 +1157,8 @@ def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, st
 def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     """The decision model: where it runs, what that reports, and every feature's mode and ``auto`` verdict.
 
-    The decision prescreen (``DECISION_PRESCREEN_ENABLED``) is listed with the features as ``rag_prescreen``.
+    Relevance in retrieval (``DECISION_RELEVANCE_ENABLED``) is the ``rag_rerank`` feature; a server's measured
+    speed adds each feature's predicted call against its budget (for ``rag_rerank``, DECISION_RELEVANCE_TIMEOUT).
 
     Decisions fail open, so this is never a failure: a feature that is on with no model behind it is a warning.
 
@@ -1167,6 +1167,8 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
         docker: Whether the services run in this stack's containers: the model is then in the backend
             container, or in the decider sidecar when ``docsgpt up --decider`` started one.
     """
+    from docsgpt.decisions import features
+
     try:
         settings, registered = _decision_settings(env)
     except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
@@ -1174,9 +1176,6 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     if settings.DECISION_MODE == "none":
         return Check("decisions", "ok", "off (DECISION_MODE=none)")
     on = [name for name, (mode, _, _) in registered.items() if mode != "off"]
-    if settings.DECISION_PRESCREEN_ENABLED:
-        # No mode of its own: the switch lets sources run it, and the API loads the model at start.
-        on.append("rag_prescreen")
     url = settings.DECISION_BASE_URL if settings.DECISION_MODE != "local" else None
     profile, level = None, "ok"
     if settings.DECISION_MODE == "api" and not url:
@@ -1197,12 +1196,15 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     else:
         where = _local_decisions(settings)
     verdicts = []
-    for name, (mode, budget, shape) in registered.items():
-        if mode == "auto" and profile is not None:
-            predicted = profile.predict_s(shape)
-            mode = f"auto, {'on' if predicted <= budget else 'off'} at {predicted:.2f}s of {budget:g}s"
+    # A server timed on the ONNX plan runs on a CPU, where relevance scores best-window passages.
+    runtime = "onnx" if profile is not None and profile.plan == "onnx" else None
+    for name, (mode, budget, spec) in registered.items():
+        if mode != "off" and profile is not None:
+            predicted = profile.predict_s(features.shape_of(spec, settings, runtime))
+            if mode == "auto":
+                mode = f"auto, {'on' if predicted <= budget else 'off'}"
+            mode = f"{mode} at {predicted:.2f}s of {budget:g}s"
         verdicts.append(f"{name} {mode}")
-    verdicts.append(f"rag_prescreen {'on' if settings.DECISION_PRESCREEN_ENABLED else 'off'}")
     if not on:
         level = "ok"
     sidecar = stack.runs_decider(env) or settings.DECISION_BASE_URL == stack.DECIDER_URL

@@ -186,7 +186,8 @@ class FeatureSpec:
 
     Attributes:
         name: The feature label callers pass as ``feature``.
-        mode_setting: The setting holding ``off``, ``monitor``, ``on`` or ``auto``.
+        mode_setting: The setting holding ``off``, ``monitor``, ``on`` or ``auto``, or a boolean switch (``on``
+            when true).
         budget_setting: The setting holding the latency budget, in seconds, that ``auto`` compares against.
         shape: The call the prediction is for.
         auto_mode: What ``auto`` turns into when the prediction fits: ``on``, or ``monitor`` for a feature that

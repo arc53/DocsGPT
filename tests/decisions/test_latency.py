@@ -97,7 +97,7 @@ class TestPredict:
 @pytest.fixture
 def feature(monkeypatch):
     """A registered feature reading its mode and budget from a stand-in settings object."""
-    fake = SimpleNamespace(TEST_FEATURE_MODE="auto", TEST_FEATURE_BUDGET=1.0, DECISION_PRESCREEN_ENABLED=False)
+    fake = SimpleNamespace(TEST_FEATURE_MODE="auto", TEST_FEATURE_BUDGET=1.0)
     monkeypatch.setattr("docsgpt.core.settings.settings", fake)
     spec = FeatureSpec("test_feature", "TEST_FEATURE_MODE", "TEST_FEATURE_BUDGET", Shape(0, (0,)))
     monkeypatch.setattr(features, "_specs", {})
@@ -152,9 +152,14 @@ class TestVerdict:
         features.register(other)
         assert not features.nothing_fits(costing(5.0))
 
-    def test_the_decision_prescreen_still_uses_the_model(self, feature):
-        # It has no mode of its own; the operator turning it on is what lets sources call it.
-        feature.settings.DECISION_PRESCREEN_ENABLED = True
+    def test_a_boolean_switch_reads_as_on_or_off(self, feature):
+        switch = FeatureSpec("test_switch", "TEST_SWITCH", "TEST_FEATURE_BUDGET", Shape(0, (0,)))
+        features.register(switch)
+        feature.settings.TEST_SWITCH = False
+        assert features.configured(switch) == "off" and features.nothing_fits(costing(5.0))
+        feature.settings.TEST_SWITCH = True
+        assert features.configured(switch) == "on"
+        # A switch that is on uses the model, so the model was not loaded for nothing.
         assert not features.nothing_fits(costing(5.0))
 
     def test_without_an_auto_feature_nothing_is_judged(self, feature):

@@ -1,4 +1,4 @@
-"""Tests for the decision-model relevance stage: the rerank, the decision prescreen and their fallbacks."""
+"""Tests for the decision-model relevance stage, its fallbacks, its gate and its use without a Dispatcher."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import pytest
 from docsgpt import tracing
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Q, record
-from docsgpt.decisions.latency import SpeedProfile
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.retriever.stages.relevance import (
@@ -18,12 +17,12 @@ from docsgpt.retriever.stages.relevance import (
     RelevanceStage,
     apply_relevance,
     base_selection,
-    instance_mode,
+    relevance_enabled,
     rollout_on,
     score_relevance,
     source_mode,
 )
-from docsgpt.storage.db.source_config import RerankerConfig
+from docsgpt.storage.db.source_config import DEFAULT_CANDIDATE_K, RerankerConfig
 
 
 def by_passage(scores):
@@ -207,30 +206,14 @@ class TestFallback:
         assert [d["text"] for d in out] == ["p1", "p3"]
         assert entries[0]["status"] == "error"
 
-    def test_the_prescreen_falls_back_to_its_cap(self):
+    def test_a_capped_policy_falls_back_to_its_cap(self):
         with installed(FakeDecider(reasons={"*": "off"})):
-            out = rerank(keep=2, feature="rag_prescreen")(docs("a", "b", "c"), {"query": "q"})
+            out = rerank(keep=2)(docs("a", "b", "c"), {"query": "q"})
         assert [d["text"] for d in out] == ["a", "b"]
 
     def test_an_untagged_list_is_all_selection(self):
         assert base_selection(docs("a", "b")) == docs("a", "b")
         assert [d["text"] for d in base_selection(docs("a", "b", base=[False, True]))] == ["b"]
-
-
-@pytest.mark.unit
-class TestMonitor:
-    def test_scores_records_and_returns_the_usual_selection(self, entries):
-        fake = FakeDecider(by_passage({"p0": 0.9, "p1": 0.1, "p2": 0.8}))
-        context = {"query": "q"}
-        with installed(fake):
-            out = rerank(mode="monitor", arm="on")(docs("p0", "p1", "p2", base=[False, True, True]), context)
-        assert [d["text"] for d in out] == ["p1", "p2"]
-        assert all("relevance" not in d for d in out)
-        assert context["top_relevance"] == 0.9
-        (entry,) = entries
-        assert entry["applied"] is False and entry["status"] == "ok"
-        # Would have kept p0 and p2: one doc the usual selection lacks.
-        assert entry["outcome"]["kept"] == 2 and entry["outcome"]["replaced"] == 1
 
 
 @pytest.mark.unit
@@ -305,12 +288,12 @@ class TestTracing:
 
         fake.decide_batch = traced
         with installed(fake):
-            rerank(mode="on", arm="on")(docs("a", "b"), {"query": "q"})
+            rerank(arm="on")(docs("a", "b"), {"query": "q"})
         rerank_span = next(s for s in trace.spans if s.kind == tracing.KIND_RERANK)
         leaf = next(s for s in trace.spans if s.kind == tracing.KIND_DECISION)
         assert rerank_span.name == "rerank relevance" and leaf.parent_id == rerank_span.id
         assert rerank_span.attributes == {
-            "gen_ai.operation.name": "rerank", "docsgpt.rerank.backend": "decision", "docsgpt.rerank.mode": "on",
+            "gen_ai.operation.name": "rerank", "docsgpt.rerank.backend": "decision",
             "docsgpt.rerank.feature": "rag_rerank", "docsgpt.rerank.arm": "on", "docsgpt.candidate_count": 2,
             "docsgpt.relevance_threshold": 0.0, "docsgpt.query_source": "raw", "docsgpt.kept_count": 2,
             "docsgpt.top_relevance": 0.8, "docsgpt.relevance.passage_select": "full",
@@ -333,35 +316,14 @@ class TestModes:
         assert 150 < sum(arms) < 250
         assert all(rollout_on(f"conversation-{i}", 80) for i, on in enumerate(arms) if on)
 
-    @pytest.mark.parametrize("mode", ["off", "monitor", "on"])
-    def test_explicit_modes(self, monkeypatch, mode):
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", mode)
+    def test_the_operator_switch(self, monkeypatch):
         with installed(FakeDecider()):
-            assert instance_mode() == mode
+            assert relevance_enabled() is False
+            monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+            assert relevance_enabled() is True
+        assert relevance_enabled() is False  # the tests run with DECISION_MODE=none
 
-    def test_mode_none_is_off(self, monkeypatch):
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
-        assert instance_mode() == "off"  # the tests run with DECISION_MODE=none
-
-    def test_auto_follows_the_measured_verdict(self, monkeypatch):
-        from docsgpt.decisions import features
-
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "auto")
-        fast = SpeedProfile(c=0.001, a=0.00001, b=0.0, overhead=50, threads=4, measured_at=0.0)
-        slow = SpeedProfile(c=0.05, a=0.005, b=0.0, overhead=50, threads=4, measured_at=0.0)
-        features.reset()
-        with installed(FakeDecider(profile=fast)):
-            assert instance_mode() == "on"
-        features.reset()
-        with installed(FakeDecider(profile=slow)):
-            assert instance_mode() == "off"
-        features.reset()
-        unmeasured = FakeDecider()
-        with installed(unmeasured):
-            assert instance_mode() == "off" and unmeasured.warmed == 1
-        features.reset()
-
-    def test_auto_predicts_best_windows_on_a_cpu(self, monkeypatch):
+    def test_the_prediction_is_of_best_windows_on_a_cpu(self):
         from docsgpt.decisions import features
         from docsgpt.decisions.features import RAG_RERANK
 
@@ -370,35 +332,17 @@ class TestModes:
             whole = features.shape_of(RAG_RERANK)
             fake.info = dataclasses.replace(fake.info, runtime="onnx-int8")
             windows = features.shape_of(RAG_RERANK)
-        assert whole.states == windows.states == settings.DECISION_RERANK_CANDIDATE_K
+        assert whole.states == windows.states == DEFAULT_CANDIDATE_K
         assert windows.state_tokens == settings.DECISION_RELEVANCE_CPU_PASSAGE_TOKENS + 64 < whole.state_tokens
 
     def test_source_modes(self):
-        assert source_mode("classic", None, "on", True) == ("on", "on")
-        assert source_mode("hybrid", None, "monitor", True) == ("monitor", "on")
-        assert source_mode("classic", None, "on", False) == ("off", "control")
-        assert source_mode("classic", None, "off", True) == ("off", None)
-        assert source_mode("graphrag", None, "on", True) == ("off", None)
-        assert source_mode("classic", RerankerConfig(type="off"), "on", True) == ("off", None)
-
-    def test_a_source_opts_in_only_while_the_operator_has_the_rerank_on(self):
-        # On: beyond the instance's retrievers and outside the rollout.
-        assert source_mode("graphrag", RerankerConfig(), "on", True) == ("on", "source")
-        # A source never raises the operator's mode: under monitor it is only recorded.
-        assert source_mode("classic", RerankerConfig(), "monitor", False) == ("monitor", "source")
-        assert source_mode("graphrag", RerankerConfig(), "monitor", True) == ("monitor", "source")
-        # Off: a stored opt-in is the same as opting out.
-        assert source_mode("graphrag", RerankerConfig(), "off", True) == ("off", None)
-        assert source_mode("classic", RerankerConfig(min_relevance=0.3), "off", True) == ("off", None)
-
-    def test_the_prescreen_gate(self, monkeypatch):
-        from docsgpt.retriever.stages.relevance import decision_prescreen_enabled
-
-        with installed(FakeDecider()):
-            assert decision_prescreen_enabled() is False
-            monkeypatch.setattr(settings, "DECISION_PRESCREEN_ENABLED", True)
-            assert decision_prescreen_enabled() is True
-        assert decision_prescreen_enabled() is False  # the tests run with DECISION_MODE=none
+        # A source without a reranker is off; one with it is on only while the operator lets the model score.
+        assert source_mode(None, True, True) == ("off", None)
+        assert source_mode(RerankerConfig(), True, True) == ("on", "on")
+        assert source_mode(RerankerConfig(min_relevance=0.3), False, True) == ("off", None)
+        # Outside the rollout it is the control arm and keeps the retriever's output.
+        assert source_mode(RerankerConfig(), True, False) == ("off", "control")
+        assert source_mode(None, True, False) == ("off", None)
 
 
 @pytest.mark.unit
@@ -407,92 +351,97 @@ class TestSettings:
         from docsgpt.core.settings import Settings
 
         fresh = Settings(_env_file=None)
-        assert (fresh.DECISION_RERANK_MODE, fresh.DECISION_RERANK_BUDGET, fresh.DECISION_RERANK_ROLLOUT_PERCENT) == (
-            "off", 3.0, 100
-        )
-        assert fresh.DECISION_RERANK_RETRIEVERS == ["classic", "hybrid"]
-        assert (fresh.DECISION_RERANK_CANDIDATE_K, fresh.DECISION_RERANK_THRESHOLD) == (20, 0.0)
-        assert fresh.DECISION_RERANK_CANDIDATE_TOKENS == 60000
-        assert (fresh.DECISION_PRESCREEN_THRESHOLD, fresh.DECISION_RELEVANCE_MIN_KEEP) == (0.2, 1)
+        assert fresh.DECISION_RELEVANCE_ENABLED is False
+        assert (fresh.DECISION_RELEVANCE_ROLLOUT_PERCENT, fresh.DECISION_RELEVANCE_CANDIDATE_TOKENS) == (100, 60000)
+        assert fresh.DECISION_RELEVANCE_MIN_KEEP == 1
         assert (fresh.DECISION_RELEVANCE_MAX_PASSAGES, fresh.DECISION_RELEVANCE_TIMEOUT) == (100, 2.0)
         assert fresh.DECISION_RELEVANCE_CPU_PASSAGE_TOKENS == 256
-        assert fresh.DECISION_PRESCREEN_ENABLED is False
 
-    def test_retrievers_read_a_comma_list(self, monkeypatch):
-        from docsgpt.core.settings import Settings
-
-        monkeypatch.setenv("DECISION_RERANK_RETRIEVERS", "classic, graphrag")
-        monkeypatch.setenv("DECISION_RERANK_MODE", "AUTO")
-        fresh = Settings(_env_file=None)
-        assert fresh.DECISION_RERANK_RETRIEVERS == ["classic", "graphrag"] and fresh.DECISION_RERANK_MODE == "auto"
-
-    def test_rag_rerank_is_a_registered_feature(self):
+    def test_rag_rerank_is_the_switch(self, monkeypatch):
         from docsgpt.decisions import features
 
         spec = next(s for s in features.specs() if s.name == "rag_rerank")
-        assert (spec.mode_setting, spec.budget_setting) == ("DECISION_RERANK_MODE", "DECISION_RERANK_BUDGET")
+        assert (spec.mode_setting, spec.budget_setting) == ("DECISION_RELEVANCE_ENABLED", "DECISION_RELEVANCE_TIMEOUT")
+        assert features.configured(spec) == "off" and not features.wanted_at_start()
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        assert features.configured(spec) == "on" and features.wanted_at_start()
+        assert features.effective(spec, True, None)[0] == "on"
+        assert features.effective(spec, False, None)[0] == "off"
 
 
 @pytest.mark.unit
 class TestApplyRelevance:
-    """The rerank for a caller with no Dispatcher (workflow agent nodes): reorder only, under the same gates."""
+    """Relevance for a caller with no Dispatcher (workflow agent nodes): each source by its own reranker."""
 
     @pytest.fixture
     def on(self, monkeypatch):
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
         return monkeypatch
 
-    def test_reorders_and_keeps_every_doc(self, on, entries):
-        on.setattr(settings, "DECISION_RERANK_THRESHOLD", 0.5)
+    @staticmethod
+    def mixed():
+        return [
+            {"text": "a", "source_id": "s1"}, {"text": "x", "source_id": "s2"},
+            {"text": "b", "source_id": "s1"}, {"text": "c", "source_id": "s1"},
+        ]
+
+    def test_reorders_a_source_in_its_own_places(self, on, entries):
         fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9, "c": 0.4}))
         with installed(fake):
-            out = apply_relevance(docs("a", "b", "c"), "q")
-        assert [d["text"] for d in out] == ["b", "c", "a"]
+            out = apply_relevance(self.mixed(), "q", {"s1": RerankerConfig()})
+        # s2 sets no reranker: its chunk keeps its place and is never sent.
+        assert [d["text"] for d in out] == ["b", "x", "c", "a"]
+        assert [r.state["passage"] for r in fake.calls[0].requests] == ["a", "b", "c"]
         (entry,) = entries
         assert entry["feature"] == "rag_rerank" and entry["applied"] is True and entry["outcome"]["kept"] == 3
+
+    def test_a_threshold_filters_that_source_only(self, on):
+        fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9, "c": 0.4}))
+        with installed(fake):
+            out = apply_relevance(self.mixed(), "q", {"s1": RerankerConfig(min_relevance=0.3)})
+        assert [d["text"] for d in out] == ["b", "x", "c"]
 
     @pytest.mark.parametrize("reason", ["unavailable", "timeout"])
     def test_fails_open_to_the_retriever_order(self, on, reason):
         fake = FakeDecider(reasons={"*": reason})
         with installed(fake):
-            out = apply_relevance(docs("a", "b"), "q")
+            out = apply_relevance(docs("a", "b"), "q", {"s1": RerankerConfig()})
         assert fake.calls and [d["text"] for d in out] == ["a", "b"]
         assert not any("relevance" in d for d in out)
 
     def test_an_unexpected_error_fails_open(self, on, monkeypatch):
         monkeypatch.setattr(RelevanceStage, "__call__", lambda self, d, c: 1 / 0)
         original = docs("a", "b")
-        assert apply_relevance(original, "q") is original
+        with installed(FakeDecider()):
+            assert apply_relevance(original, "q", {"s1": RerankerConfig()}) is original
 
-    def test_off_asks_nothing(self, monkeypatch):
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "off")
+    def test_the_switch_off_never_calls_the_model(self, monkeypatch, entries):
         fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
         original = docs("a", "b")
         with installed(fake):
-            assert apply_relevance(original, "q") is original
-        assert fake.calls == []
+            assert apply_relevance(original, "q", {"s1": RerankerConfig()}) is original
+        assert fake.calls == [] and fake.warmed == 0 and entries == []
 
     def test_decisions_off_asks_nothing(self, on):
         fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
         fake.enabled = False
         with installed(fake):
-            assert [d["text"] for d in apply_relevance(docs("a", "b"), "q")] == ["a", "b"]
+            assert [d["text"] for d in apply_relevance(docs("a", "b"), "q", {"s1": RerankerConfig()})] == ["a", "b"]
         assert fake.calls == []
 
-    @pytest.mark.parametrize("retriever, called", [("default", True), ("Classic", True), ("hybrid", True),
-                                                   ("graphrag", False)])
-    def test_follows_the_rerank_retrievers(self, on, retriever, called):
+    def test_sources_without_a_reranker_ask_nothing(self, on):
         fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
         with installed(fake):
-            apply_relevance(docs("a", "b"), "q", retriever=retriever)
-        assert bool(fake.calls) is called
+            assert [d["text"] for d in apply_relevance(docs("a", "b"), "q", {})] == ["a", "b"]
+            assert [d["text"] for d in apply_relevance(docs("a", "b"), "q", {"s9": RerankerConfig()})] == ["a", "b"]
+        assert fake.calls == []
 
     def test_the_control_arm_is_recorded_and_left_alone(self, on, entries):
-        on.setattr(settings, "DECISION_RERANK_ROLLOUT_PERCENT", 50)
+        on.setattr(settings, "DECISION_RELEVANCE_ROLLOUT_PERCENT", 50)
         key = next(k for k in (f"c{i}" for i in range(100)) if not rollout_on(k, 50))
         fake = FakeDecider(by_passage({"a": 0.1, "b": 0.9}))
         with installed(fake):
-            out = apply_relevance(docs("a", "b"), "q", rollout_key=key)
+            out = apply_relevance(docs("a", "b"), "q", {"s1": RerankerConfig()}, rollout_key=key)
         assert fake.calls == [] and [d["text"] for d in out] == ["a", "b"]
         (entry,) = entries
         assert entry["outcome"] == {"arm": "control"} and entry["status"] == "skipped"
@@ -500,6 +449,6 @@ class TestApplyRelevance:
     def test_nothing_to_order_asks_nothing(self, on):
         fake = FakeDecider()
         with installed(fake):
-            assert apply_relevance([], "q") == []
-            assert [d["text"] for d in apply_relevance(docs("a"), "")] == ["a"]
+            assert apply_relevance([], "q", {"s1": RerankerConfig()}) == []
+            assert [d["text"] for d in apply_relevance(docs("a"), "", {"s1": RerankerConfig()})] == ["a"]
         assert fake.calls == []

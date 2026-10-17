@@ -176,30 +176,22 @@ class TestConfigRoute:
         data = json.loads(client.get("/api/config").data)
         assert {key: value for key, value in data.items() if key.startswith("decision_")} == {
             "decision_available": True,
-            "decision_rerank_enabled": False,
-            "decision_prescreen_enabled": False,
+            "decision_relevance_enabled": False,
         }
         assert decisions.get_decider()._backend is None
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
-        "rerank, prescreen, mode, expected",
-        [
-            ("on", False, None, (True, False)),
-            ("monitor", False, None, (True, False)),
-            ("auto", True, None, (True, True)),
-            ("off", True, None, (False, True)),
-            ("on", True, "none", (False, False)),
-        ],
+        "enabled, mode, expected",
+        [(True, None, True), (False, None, False), (True, "none", False)],
     )
-    def test_the_operator_switches_for_relevance(self, client, monkeypatch, rerank, prescreen, mode, expected):
+    def test_the_operator_switch_for_relevance(self, client, monkeypatch, enabled, mode, expected):
         from docsgpt import decisions
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DECISION_MODE", mode)
         monkeypatch.setattr(settings, "DECISION_MODEL", None)
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", rerank)
-        monkeypatch.setattr(settings, "DECISION_PRESCREEN_ENABLED", prescreen)
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", enabled)
 
         def refuse(*args, **kwargs):
             raise AssertionError("/api/config must not measure the model")
@@ -207,8 +199,8 @@ class TestConfigRoute:
         monkeypatch.setattr(decisions, "auto_on", refuse)
         monkeypatch.setattr(decisions, "warm", refuse)
         data = json.loads(client.get("/api/config").data)
-        assert (data["decision_rerank_enabled"], data["decision_prescreen_enabled"]) == expected
-        # Under auto too: nothing is created, warmed or timed for the call.
+        assert data["decision_relevance_enabled"] is expected
+        # Nothing is created, warmed or timed for the call.
         assert decisions.get_decider()._backend is None
 
     @pytest.mark.unit

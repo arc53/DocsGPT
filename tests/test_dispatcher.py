@@ -6,7 +6,6 @@ import pytest
 
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record
-from docsgpt.decisions.latency import SpeedProfile
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
@@ -372,7 +371,7 @@ class TestKillSwitch:
         assert isinstance(result, Dispatcher)
 
 
-# ── Relevance: the rerank stage and the decision prescreen ────────────────────
+# ── Relevance: each source's reranker, under the operator's switch ────────────
 
 
 def _ranked_store(texts, keyword_texts=None):
@@ -409,13 +408,20 @@ def stores():
 
 
 @pytest.fixture
-def rerank_mode(monkeypatch):
-    def set_mode(mode, **values):
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", mode)
+def relevance(monkeypatch):
+    """Set ``DECISION_RELEVANCE_ENABLED`` (and any other settings) for the test."""
+
+    def set_enabled(enabled, **values):
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", enabled)
         for name, value in values.items():
             monkeypatch.setattr(settings, name, value)
 
-    return set_mode
+    return set_enabled
+
+
+def _on(**reranker):
+    """A source config with relevance on."""
+    return RetrievalConfig(reranker={"type": "decision", **reranker})
 
 
 def _search(sources, *, chunks=6, doc_token_limit=50000, query="query", **kwargs):
@@ -450,20 +456,20 @@ class TestRelevanceParity:
 
     @pytest.mark.parametrize("retrievers, chunks, limit", SCENARIOS)
     @pytest.mark.parametrize("failure", ["unavailable", "timeout", "decisions_off"])
-    def test_fallback_equals_stage_off(self, stores, rerank_mode, _patch_llm_creator, retrievers, chunks, limit,
+    def test_fallback_equals_stage_off(self, stores, relevance, _patch_llm_creator, retrievers, chunks, limit,
                                        failure):
         sources = []
         for i, key in enumerate(retrievers):
             sid = f"src{i}"
             corpus = _corpus(sid)
             stores[sid] = _ranked_store(corpus, keyword_texts=list(reversed(corpus))[:25])
-            sources.append({"id": sid, "retrieval": RetrievalConfig(retriever=key)})
+            sources.append({"id": sid, "retrieval": RetrievalConfig(retriever=key, reranker={"candidate_k": 30})})
 
-        rerank_mode("off")
+        relevance(False)
         _, baseline = _search(sources, chunks=chunks, doc_token_limit=limit)
         assert baseline
 
-        rerank_mode("on", DECISION_RERANK_CANDIDATE_K=30)
+        relevance(True)
         if failure == "decisions_off":
             _, out = _search(sources, chunks=chunks, doc_token_limit=limit)
         else:
@@ -476,7 +482,7 @@ class TestRelevanceParity:
         assert out == baseline
 
     @pytest.mark.parametrize("sources_n", [1, 2])
-    def test_graph_fallback_equals_stage_off(self, rerank_mode, _patch_llm_creator, monkeypatch, sources_n):
+    def test_graph_fallback_equals_stage_off(self, relevance, _patch_llm_creator, monkeypatch, sources_n):
         from docsgpt.retriever.graph_rag import GraphRAGRetriever
 
         nodes = [{"id": f"n{i}", "doc_freq": 1} for i in range(8)]
@@ -495,7 +501,7 @@ class TestRelevanceParity:
         monkeypatch.setattr("docsgpt.retriever.graph_rag.graphrag_available", lambda: True)
         monkeypatch.setattr("docsgpt.retriever.graph_rag.GraphStore", lambda: store)
         monkeypatch.setattr("docsgpt.retriever.graph_rag.num_tokens_from_string", lambda text: 10)
-        rerank_mode("on")
+        relevance(True)
 
         def graph_sources(reranker):
             return [
@@ -503,7 +509,7 @@ class TestRelevanceParity:
                 for i in range(sources_n)
             ]
 
-        _, baseline = _search(graph_sources({"type": "off"}), chunks=2)
+        _, baseline = _search(graph_sources(None), chunks=2)
         assert baseline
         fake = FakeDecider(reasons={"*": "circuit_open"})
         with installed(fake):
@@ -511,63 +517,69 @@ class TestRelevanceParity:
         assert fake.calls and d.last_candidate_count > len(baseline)
         assert out == baseline
 
-    def test_monitor_returns_the_stage_off_result(self, stores, rerank_mode, _patch_llm_creator):
-        stores["a"] = _ranked_store(_corpus("a"))
-        sources = [{"id": "a", "retrieval": RetrievalConfig()}]
-        rerank_mode("off")
-        _, baseline = _search(sources)
-        rerank_mode("monitor")
-        rec = record.DecisionRecord()
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake), record.activate(rec):
-            d, out = _search(sources)
-        assert out == baseline and fake.calls
-        assert d.last_top_relevance is not None
-        (entry,) = rec._doc["entries"]
-        assert entry["applied"] is False and entry["outcome"]["candidates"] == 20
-
 
 @pytest.mark.unit
 class TestRelevanceRerank:
-    def test_pool_is_fetched_and_tags_are_stripped(self, stores, rerank_mode, _patch_llm_creator):
+    def test_pool_is_fetched_and_tags_are_stripped(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on", DECISION_RERANK_CANDIDATE_K=30)
+        relevance(True)
         fake = FakeDecider({"relevant": _scores_from_text})
         with installed(fake):
-            d, out = _search([{"id": "a", "retrieval": RetrievalConfig()}])
+            d, out = _search([{"id": "a", "retrieval": _on(candidate_k=30)}])
         assert stores["a"].search.call_args.kwargs["k"] == 30
         assert len(fake.calls[0].requests) == 30
         assert len(out) == 6
         assert all("_base" not in doc for doc in out)
-        relevance = [doc["relevance"] for doc in out]
-        assert relevance == sorted(relevance, reverse=True) and d.last_top_relevance == relevance[0]
+        relevance_values = [doc["relevance"] for doc in out]
+        assert relevance_values == sorted(relevance_values, reverse=True)
+        assert d.last_top_relevance == relevance_values[0]
 
-    def test_base_chunks_is_set_for_a_default_group(self, rerank_mode, _patch_llm_creator):
-        d = Dispatcher(source={"question": "q", "active_docs": ["a"]}, chunks=4)
-        retriever = d._build_group_retriever(d._groups[0], 1000)
-        assert retriever.base_chunks == 4 and retriever.candidate_k is None
-        rerank_mode("on")
+    def test_an_unset_pool_is_twenty_within_the_passage_cap(self, relevance, _patch_llm_creator):
+        relevance(True)
+        sources = [{"id": "a", "retrieval": _on()}]
+        with installed(FakeDecider()):
+            d = Dispatcher(source={"question": "q", "active_docs": ["a"]}, chunks=4, sources=sources)
+            retriever = d._build_group_retriever(d._groups[0], 1000)
+        assert retriever.base_chunks == 4 and retriever.candidate_k == 20
+        assert retriever.candidate_tokens == settings.DECISION_RELEVANCE_CANDIDATE_TOKENS
+        assert retriever.chunks == 4
+        relevance(True, DECISION_RELEVANCE_MAX_PASSAGES=12)
+        sources = [{"id": "a", "retrieval": _on(candidate_k=80)}]
+        with installed(FakeDecider()):
+            d = Dispatcher(source={"question": "q", "active_docs": ["a"]}, sources=sources)
+        assert d._groups[0]["relevance"]["candidate_k"] == 12
+
+    def test_a_request_without_source_configs_is_never_judged(self, relevance, _patch_llm_creator):
+        relevance(True)
         with installed(FakeDecider()):
             d = Dispatcher(source={"question": "q", "active_docs": ["a"]}, chunks=4)
             retriever = d._build_group_retriever(d._groups[0], 1000)
-        assert retriever.base_chunks == 4 and retriever.candidate_k == settings.DECISION_RERANK_CANDIDATE_K
-        assert retriever.candidate_tokens == settings.DECISION_RERANK_CANDIDATE_TOKENS
-        assert retriever.chunks == 4
+        assert d._groups[0]["relevance"]["mode"] == "off" and retriever.candidate_k is None
 
-    def test_the_document_budget_applies_after_the_rerank(self, stores, rerank_mode, _patch_llm_creator):
+    def test_the_document_budget_applies_after_the_rerank(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on")
+        relevance(True)
         with installed(FakeDecider({"relevant": _scores_from_text})):
-            _, out = _search([{"id": "a", "retrieval": RetrievalConfig()}], doc_token_limit=120)
+            _, out = _search([{"id": "a", "retrieval": _on()}], doc_token_limit=120)
         # 90% of 120 tokens, counted with the filename header as the retriever counts them.
         assert sum(len(f"{d['filename']}\n{d['text']}") for d in out) < 108
         assert out and all("relevance" in d for d in out)
 
-    def test_a_reranker_alone_is_not_a_chunk_override(self, rerank_mode, _patch_llm_creator):
-        rerank_mode("on")
+    def test_a_threshold_filters_and_keeps_min_keep(self, stores, relevance, _patch_llm_creator):
+        stores["a"] = _ranked_store(_corpus("a"))
+        relevance(True)
+        with installed(FakeDecider({"relevant": 0.1})):
+            _, out = _search([{"id": "a", "retrieval": _on(min_relevance=0.3)}])
+        assert len(out) == settings.DECISION_RELEVANCE_MIN_KEEP
+        with installed(FakeDecider({"relevant": 0.1})):
+            _, out = _search([{"id": "a", "retrieval": _on(min_relevance=0)}])
+        assert len(out) == 6, "0 reorders only"
+
+    def test_a_reranker_alone_is_not_a_chunk_override(self, relevance, _patch_llm_creator):
+        relevance(True)
         sources = [
-            {"id": "a", "retrieval": RetrievalConfig(reranker={"type": "decision", "min_relevance": 0.2})},
-            {"id": "b", "retrieval": RetrievalConfig()},
+            {"id": "a", "retrieval": _on(min_relevance=0.2)},
+            {"id": "b", "retrieval": _on()},
         ]
         with installed(FakeDecider()):
             d = Dispatcher(source={"question": "q", "active_docs": ["a", "b"]}, sources=sources)
@@ -575,149 +587,65 @@ class TestRelevanceRerank:
         assert group["retrievals"] == {} and group["relevance"]["mode"] == "on"
         assert group["relevance"]["thresholds"] == {"a": 0.2}
 
-    def test_an_opted_out_source_gets_its_own_group(self, rerank_mode, _patch_llm_creator):
-        rerank_mode("on")
+    def test_sources_without_relevance_get_their_own_group(self, relevance, _patch_llm_creator):
+        relevance(True)
         sources = [
-            {"id": "a", "retrieval": RetrievalConfig()},
-            {"id": "rows", "retrieval": RetrievalConfig(reranker={"type": "off"})},
-            {"id": "c", "retrieval": RetrievalConfig()},
+            {"id": "a", "retrieval": _on()},
+            {"id": "rows", "retrieval": RetrievalConfig()},
+            {"id": "c", "retrieval": _on()},
         ]
         with installed(FakeDecider()):
-            d = Dispatcher(source={"question": "q", "active_docs": ["a", "rows", "c"]}, sources=sources)
+            d = Dispatcher(source={"question": "q", "active_docs": ["a", "rows", "c", "stray"]}, sources=sources)
         assert [(g["retriever"], g["doc_ids"], g["relevance"]["mode"]) for g in d._groups] == [
-            ("classic", ["a", "c"], "on"), ("classic", ["rows"], "off"),
+            ("classic", ["a", "c"], "on"), ("classic", ["rows", "stray"], "off"),
         ]
 
-    def test_graph_is_left_out_of_the_instance_default(self, rerank_mode, _patch_llm_creator):
-        rerank_mode("on")
-        sources = [{"id": "g", "retrieval": RetrievalConfig(retriever="graphrag")}]
+    @pytest.mark.parametrize("retriever", ["classic", "hybrid", "graphrag"])
+    def test_any_retriever_runs_its_sources_reranker(self, relevance, _patch_llm_creator, retriever):
+        relevance(True)
+        sources = [{"id": "g", "retrieval": RetrievalConfig(retriever=retriever, reranker={})}]
         with installed(FakeDecider()):
             d = Dispatcher(source={"question": "q", "active_docs": ["g"]}, sources=sources)
-        assert d._groups[0]["relevance"]["mode"] == "off"
+        assert d._groups[0]["relevance"]["mode"] == "on"
 
-    def test_a_multi_group_merge_runs_best_first(self, stores, rerank_mode, _patch_llm_creator):
+    def test_a_multi_group_merge_runs_best_first(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
         stores["b"] = _ranked_store(_corpus("b"))
-        rerank_mode("on")
+        relevance(True)
         sources = [
-            {"id": "a", "retrieval": RetrievalConfig()},
-            {"id": "b", "retrieval": RetrievalConfig(retriever="hybrid")},
+            {"id": "a", "retrieval": _on()},
+            {"id": "b", "retrieval": RetrievalConfig(retriever="hybrid", reranker={})},
         ]
         with installed(FakeDecider({"relevant": _scores_from_text})):
             _, out = _search(sources, doc_token_limit=100)
-        relevance = [doc["relevance"] for doc in out]
-        assert relevance == sorted(relevance, reverse=True)
+        values = [doc["relevance"] for doc in out]
+        assert values == sorted(values, reverse=True)
         assert {doc["source"] for doc in out} == {"a", "b"}
 
-    def test_a_partly_scored_merge_keeps_group_order(self, stores, rerank_mode, _patch_llm_creator):
+    def test_a_partly_scored_merge_keeps_group_order(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
         stores["rows"] = _ranked_store(_corpus("rows"))
-        rerank_mode("on")
+        relevance(True)
         sources = [
-            {"id": "a", "retrieval": RetrievalConfig()},
-            {"id": "rows", "retrieval": RetrievalConfig(reranker={"type": "off"})},
+            {"id": "a", "retrieval": _on()},
+            {"id": "rows", "retrieval": RetrievalConfig()},
         ]
-        with installed(FakeDecider({"relevant": _scores_from_text})):
+        fake = FakeDecider({"relevant": _scores_from_text})
+        with installed(fake):
             _, out = _search(sources)
         firsts = [doc["source"] for doc in out]
         assert firsts == sorted(firsts)  # every "a" doc, then every "rows" doc
         assert all("relevance" in d for d in out if d["source"] == "a")
         assert not any("relevance" in d for d in out if d["source"] == "rows")
+        # Only the source that asked for it is sent to the model.
+        assert {r.state["passage"].split("-")[0] for c in fake.calls for r in c.requests} == {"a"}
 
-
-@pytest.mark.unit
-class TestRelevanceComposition:
-    def _prescreen_source(self, backend, **extra):
-        return {
-            "id": "a",
-            "retrieval": RetrievalConfig(
-                chunks=2, prescreen={"candidate_k": 20, "max_keep": 3, "backend": backend, **extra}
-            ),
-        }
-
-    def test_a_decision_prescreen_does_not_stack_with_the_rerank(self, stores, rerank_mode, _patch_llm_creator):
+    def test_the_relevance_feature_label_can_be_set(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on", DECISION_PRESCREEN_ENABLED=True)
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake):
-            _, out = _search([self._prescreen_source("decision", min_relevance=0.5)])
-        (call,) = fake.calls
-        assert call.feature == "rag_prescreen" and len(call.requests) == 20
-        assert 1 <= len(out) <= 3
-        assert all(d["relevance"] >= 0.5 for d in out[1:])
-
-    def test_an_llm_prescreen_and_the_rerank_stack(self, stores, rerank_mode, _patch_llm_creator):
-        stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on")
-        screener = Mock(model_id="m")
-        screener.gen = Mock(return_value='{"keep": [0, 1, 2, 3]}')
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake), patch(
-            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener
-        ):
-            _, out = _search([self._prescreen_source("llm")])
-        assert screener.gen.call_count == 2
-        (call,) = fake.calls
-        assert call.feature == "rag_rerank"
-        # The rerank reorders the prescreen's three survivors; no extra fetch.
-        assert len(call.requests) == 3 and len(out) == 3
-        assert [d["relevance"] for d in out] == sorted((d["relevance"] for d in out), reverse=True)
-
-    def test_a_decision_prescreen_judges_only_its_own_sources(self, stores, rerank_mode, _patch_llm_creator):
-        for sid in ("llm", "screened", "plain"):
-            stores[sid] = _ranked_store(_corpus(sid))
-        rerank_mode("on", DECISION_PRESCREEN_ENABLED=True)
-        sources = [
-            {"id": "plain", "retrieval": RetrievalConfig()},
-            {"id": "screened", "retrieval": RetrievalConfig(
-                chunks=2, prescreen={"candidate_k": 10, "max_keep": 2, "backend": "decision", "min_relevance": 0.99},
-            )},
-            {"id": "llm", "retrieval": RetrievalConfig(chunks=2, prescreen={"candidate_k": 4, "max_keep": 4})},
-        ]
-        screener = Mock(model_id="m")
-        screener.gen = Mock(return_value='{"keep": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}')
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake), patch(
-            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener
-        ):
-            d, out = _search(sources)
-        assert [(g["doc_ids"], g["relevance"]["mode"]) for g in d._groups] == [
-            (["plain"], "on"), (["screened"], "on"), (["llm"], "on"),
-        ]
-        prescreen = next(c for c in fake.calls if c.feature == "rag_prescreen")
-        assert {r.state["passage"].split("-")[0] for r in prescreen.requests} == {"screened"}
-        # The sources beside it keep their LLM prescreen and rerank, and its 0.99 floor cuts none of theirs.
-        reranked = [{r.state["passage"].split("-")[0] for r in c.requests} for c in fake.calls
-                    if c.feature == "rag_rerank"]
-        assert reranked == [{"plain"}, {"llm"}]
-        assert screener.gen.called
-        by_source = {d["source"] for d in out}
-        assert {"llm", "plain"} <= by_source
-        assert sum(d["source"] == "screened" for d in out) == 1  # min_keep, below the floor
-
-    def test_without_the_gate_a_decision_prescreen_is_scoped_as_an_llm_one(self, rerank_mode, _patch_llm_creator):
-        rerank_mode("off")
-        sources = [
-            {"id": "a", "retrieval": RetrievalConfig(prescreen={"candidate_k": 10, "backend": "decision"})},
-            {"id": "b", "retrieval": RetrievalConfig()},
-        ]
-        d = Dispatcher(source={"question": "q", "active_docs": ["a", "b"]}, sources=sources)
-        assert [g["doc_ids"] for g in d._groups] == [["a"], ["b"]]
-        assert d._group_stages(d._groups[0])[0].__class__.__name__ == "PreScreenStage"
-
-    def test_a_decision_prescreen_fails_open_to_its_cap(self, stores, rerank_mode, _patch_llm_creator):
-        rerank_mode("off", DECISION_PRESCREEN_ENABLED=True)
-        stores["a"] = _ranked_store(_corpus("a"))
-        with installed(FakeDecider(reasons={"*": "loading"})):
-            _, out = _search([self._prescreen_source("decision")])
-        assert [d["text"] for d in out] == _corpus("a")[:3]
-
-    def test_the_relevance_feature_label_can_be_set(self, stores, rerank_mode, _patch_llm_creator):
-        stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on")
+        relevance(True)
         fake = FakeDecider({"relevant": 0.5})
         with installed(fake):
-            _search([{"id": "a", "retrieval": RetrievalConfig()}], relevance_feature="retrieval_test")
+            _search([{"id": "a", "retrieval": _on()}], relevance_feature="retrieval_test")
         assert fake.calls[0].feature == "retrieval_test"
 
 
@@ -788,50 +716,57 @@ class TestSearchQueryContext:
 
 @pytest.mark.unit
 class TestRelevanceGating:
-    def test_auto_resolves_by_the_measured_verdict(self, rerank_mode, _patch_llm_creator):
-        from docsgpt.decisions import features
-
-        rerank_mode("auto")
-        fast = SpeedProfile(c=0.001, a=0.00001, b=0.0, overhead=50, threads=4, measured_at=0.0)
-        slow = SpeedProfile(c=0.05, a=0.005, b=0.0, overhead=50, threads=4, measured_at=0.0)
-        for profile, mode in ((fast, "on"), (slow, "off")):
-            features.reset()
-            with installed(FakeDecider(profile=profile)):
-                d = Dispatcher(source={"question": "q", "active_docs": ["a"]})
-            assert d._groups[0]["relevance"]["mode"] == mode
-        features.reset()
-        # Mode none: off, and nothing is asked.
-        d = Dispatcher(source={"question": "q", "active_docs": ["a"]})
-        assert d._groups[0]["relevance"]["mode"] == "off"
-
-    def test_the_kill_switch_makes_no_calls(self, stores, rerank_mode, monkeypatch, _patch_llm_creator):
+    def test_the_kill_switch_makes_no_calls(self, stores, relevance, monkeypatch, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on")
+        relevance(True)
         monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
         common = dict(source={"question": "q", "active_docs": ["a"]}, chat_history=[], decoded_token={"sub": "u"})
         fake = FakeDecider({"relevant": 0.9})
         with installed(fake):
-            retriever = build_dispatcher(lambda: ClassicRAG(**common), sources=[{"id": "a", "retrieval": {}}],
-                                         **common)
+            retriever = build_dispatcher(
+                lambda: ClassicRAG(**common), sources=[{"id": "a", "retrieval": {"reranker": {}}}], **common
+            )
             out = retriever.search("query")
         assert fake.calls == [] and len(out) == 6 and "relevance" not in out[0]
 
-    def test_the_control_arm_asks_nothing_and_is_recorded(self, stores, rerank_mode, _patch_llm_creator):
+    def test_the_control_arm_asks_nothing_and_is_recorded(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("on", DECISION_RERANK_ROLLOUT_PERCENT=50)
+        relevance(True, DECISION_RELEVANCE_ROLLOUT_PERCENT=50)
+        sources = [{"id": "a", "retrieval": _on()}]
+        relevance(False)
+        _, baseline = _search(sources)
+        relevance(True)
         key = next(f"c{i}" for i in range(100) if not rollout_on(f"c{i}", 50))
         rec = record.DecisionRecord()
         fake = FakeDecider({"relevant": 0.9})
         with installed(fake), record.activate(rec):
-            d, out = _search([{"id": "a", "retrieval": RetrievalConfig()}], conversation_id=key)
-        assert fake.calls == [] and "relevance" not in out[0]
+            d, out = _search(sources, conversation_id=key)
+        assert fake.calls == [] and out == baseline and d._groups[0]["relevance"]["arm"] == "control"
         (entry,) = rec._doc["entries"]
         assert (entry["feature"], entry["status"], entry["outcome"]) == ("rag_rerank", "skipped", {"arm": "control"})
 
+    def test_the_rollout_arm_is_scored_and_recorded(self, stores, relevance, _patch_llm_creator):
+        stores["a"] = _ranked_store(_corpus("a"))
+        relevance(True, DECISION_RELEVANCE_ROLLOUT_PERCENT=50)
+        key = next(f"c{i}" for i in range(100) if rollout_on(f"c{i}", 50))
+        rec = record.DecisionRecord()
+        with installed(FakeDecider({"relevant": 0.9})), record.activate(rec):
+            _search([{"id": "a", "retrieval": _on()}], conversation_id=key)
+        (entry,) = rec._doc["entries"]
+        assert entry["outcome"]["arm"] == "on" and entry["applied"] is True
+
+    def test_sources_without_relevance_have_no_arm(self, stores, relevance, _patch_llm_creator):
+        stores["a"] = _ranked_store(_corpus("a"))
+        relevance(True, DECISION_RELEVANCE_ROLLOUT_PERCENT=0)
+        rec = record.DecisionRecord()
+        with installed(FakeDecider()), record.activate(rec):
+            _search([{"id": "a", "retrieval": RetrievalConfig()}], conversation_id="c1")
+        assert rec._doc["entries"] == []
+
 
 @pytest.mark.unit
-class TestOperatorGates:
-    """A source cannot make the process load the decision model: the operator turns each feature on in env."""
+class TestOperatorSwitch:
+    """A source cannot make the process load the decision model: ``DECISION_RELEVANCE_ENABLED`` is the operator's."""
 
     @pytest.fixture
     def local_client(self, monkeypatch):
@@ -848,11 +783,11 @@ class TestOperatorGates:
         yield client
         assert client._backend is None, "a source made the process build the decision model"
 
-    def test_a_source_reranker_does_nothing_while_the_rerank_is_off(self, stores, rerank_mode, local_client,
-                                                                    _patch_llm_creator):
+    def test_a_source_reranker_does_nothing_while_the_switch_is_off(self, stores, relevance, local_client,
+                                                                     _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
         stores["g"] = _ranked_store(_corpus("g"))
-        rerank_mode("off")
+        relevance(False)
 
         def sources(reranker):
             return [
@@ -860,83 +795,29 @@ class TestOperatorGates:
                 {"id": "g", "retrieval": RetrievalConfig(retriever="hybrid", reranker=reranker)},
             ]
 
-        d, opted_in = _search(sources({"type": "decision", "min_relevance": 0.5, "candidate_k": 40}))
-        _, opted_out = _search(sources({"type": "off"}))
-        assert opted_in == opted_out
-        assert all(g["relevance"]["mode"] == "off" for g in d._groups)
-        assert d.last_candidate_count == len(opted_out) and d.last_top_relevance is None
-
-    def test_a_source_reranker_runs_while_the_rerank_is_on(self, stores, rerank_mode, _patch_llm_creator):
-        stores["g"] = _ranked_store(_corpus("g"))
-        rerank_mode("on", DECISION_RERANK_RETRIEVERS=["classic"])
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake):
-            _, out = _search([{"id": "g", "retrieval": RetrievalConfig(retriever="hybrid", reranker={})}])
-        assert len(fake.calls) == 1 and all("relevance" in d for d in out)
-
-    def test_a_source_reranker_never_raises_monitor(self, stores, rerank_mode, _patch_llm_creator):
-        stores["g"] = _ranked_store(_corpus("g"))
-        sources = [{"id": "g", "retrieval": RetrievalConfig(retriever="hybrid", reranker={"type": "decision"})}]
-        rerank_mode("off")
-        _, baseline = _search(sources)
-        rerank_mode("monitor")
         rec = record.DecisionRecord()
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake), record.activate(rec):
-            d, out = _search(sources)
-        assert d._groups[0]["relevance"]["mode"] == "monitor" and fake.calls
-        assert out == baseline
-        (entry,) = rec._doc["entries"]
-        assert entry["applied"] is False and entry["outcome"]["arm"] == "source"
+        with record.activate(rec):
+            d, opted_in = _search(sources({"type": "decision", "min_relevance": 0.5, "candidate_k": 40}))
+        _, without = _search(sources(None))
+        assert opted_in == without
+        assert all(g["relevance"]["mode"] == "off" for g in d._groups)
+        assert d.last_candidate_count == len(without) and d.last_top_relevance is None
+        # Nothing is recorded, as a failure or otherwise.
+        assert rec._doc["entries"] == []
 
-    def _prescreen(self, backend):
-        return [{
-            "id": "a",
-            "retrieval": RetrievalConfig(chunks=2, prescreen={"candidate_k": 20, "max_keep": 3, "backend": backend}),
-        }]
-
-    def _screener(self):
-        screener = Mock(model_id="m")
-        screener.gen = Mock(return_value='{"keep": [1, 3]}')
-        return screener
-
-    def test_a_decision_prescreen_runs_on_the_llm_until_the_operator_enables_it(
-        self, stores, rerank_mode, local_client, _patch_llm_creator
-    ):
+    def test_mode_none_never_judges(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("off")
-        results = []
-        for backend in ("decision", "llm"):
-            screener = self._screener()
-            with patch("docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener):
-                results.append(_search(self._prescreen(backend))[1])
-            assert screener.gen.call_count == 2
-        assert results[0] == results[1] and len(results[0]) == 3
-
-    def test_mode_none_keeps_the_llm_prescreen_even_when_enabled(self, stores, rerank_mode, _patch_llm_creator):
-        stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("off", DECISION_PRESCREEN_ENABLED=True)
-        screener = self._screener()
-        with patch("docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener):
-            _, out = _search(self._prescreen("decision"))
-        assert screener.gen.call_count == 2 and all("relevance" not in d for d in out)
-
-    def test_an_enabled_decision_prescreen_runs_on_the_model(self, stores, rerank_mode, _patch_llm_creator):
-        stores["a"] = _ranked_store(_corpus("a"))
-        rerank_mode("off", DECISION_PRESCREEN_ENABLED=True)
-        screener = self._screener()
-        fake = FakeDecider({"relevant": _scores_from_text})
-        with installed(fake), patch(
-            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener
-        ):
-            _, out = _search(self._prescreen("decision"))
-        assert screener.gen.call_count == 0 and fake.calls[0].feature == "rag_prescreen"
-        assert out and all("relevance" in d for d in out)
+        relevance(True)
+        rec = record.DecisionRecord()
+        with record.activate(rec):
+            d, out = _search([{"id": "a", "retrieval": _on()}])  # the tests run with DECISION_MODE=none
+        assert d._groups[0]["relevance"]["mode"] == "off" and "relevance" not in out[0]
+        assert rec._doc["entries"] == []
 
 
 @pytest.mark.unit
 class TestPrescreenScope:
-    """A prescreen, LLM or decision, judges only the sources that set it."""
+    """An LLM prescreen judges only the sources that set it."""
 
     @staticmethod
     def _llm(max_keep, **extra):
@@ -982,9 +863,9 @@ class TestPrescreenScope:
         assert sum(doc["source"] in ("one", "same") for doc in out) == 1
         assert sum(doc["source"] == "two" for doc in out) == 3
 
-    def test_an_ungated_decision_prescreen_groups_with_the_matching_llm_one(self, _patch_llm_creator):
+    def test_a_stored_llm_backend_groups_with_the_matching_prescreen(self, _patch_llm_creator):
         sources = [
-            {"id": "a", "retrieval": self._llm(2, backend="decision")},
+            {"id": "a", "retrieval": self._llm(2, backend="llm")},
             {"id": "b", "retrieval": self._llm(2)},
             {"id": "c", "retrieval": self._llm(2, batch_size=5)},
             {"id": "d", "retrieval": self._llm(2, model="other")},
@@ -992,7 +873,31 @@ class TestPrescreenScope:
         d = Dispatcher(source={"question": "q", "active_docs": ["a", "b", "c", "d"]}, sources=sources)
         assert [g["doc_ids"] for g in d._groups] == [["a", "b"], ["c"], ["d"]]
 
-    def test_grouping_is_unchanged_without_a_prescreen(self, rerank_mode, _patch_llm_creator):
+    def test_a_prescreened_group_and_a_relevance_group_stay_apart(self, stores, relevance, _patch_llm_creator):
+        for sid in ("screened", "scored"):
+            stores[sid] = _ranked_store(_corpus(sid))
+        relevance(True)
+        sources = [
+            {"id": "screened", "retrieval": self._llm(2)},
+            {"id": "scored", "retrieval": _on()},
+        ]
+        screener = self._keep_all()
+        fake = FakeDecider({"relevant": _scores_from_text})
+        with installed(fake), patch(
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener
+        ):
+            d, out = _search(sources)
+        assert [(g["doc_ids"], g["relevance"]["mode"]) for g in d._groups] == [
+            (["screened"], "off"), (["scored"], "on"),
+        ]
+        assert [type(stage).__name__ for g in d._groups for stage in d._group_stages(g)] == [
+            "PreScreenStage", "RelevanceStage",
+        ]
+        # The model scores only the relevance source; the prescreen's max_keep cuts only its own.
+        assert {r.state["passage"].split("-")[0] for c in fake.calls for r in c.requests} == {"scored"}
+        assert sum(doc["source"] == "screened" for doc in out) == 2
+
+    def test_grouping_is_unchanged_without_a_prescreen_or_relevance(self, _patch_llm_creator):
         sources = [
             {"id": "a", "retrieval": RetrievalConfig()},
             {"id": "b", "retrieval": RetrievalConfig(chunks=9, score_threshold=0.3, rephrase_query=False)},
@@ -1000,6 +905,7 @@ class TestPrescreenScope:
             {"id": "h", "retrieval": RetrievalConfig(retriever="hybrid")},
             {"id": "g", "retrieval": RetrievalConfig(retriever="graphrag")},
         ]
+        # The switch is off, so a stored reranker groups as no relevance at all.
         d = Dispatcher(source={"question": "q", "active_docs": ["a", "b", "c", "h", "g", "stray"]}, sources=sources)
         assert [(g["retriever"], g["doc_ids"]) for g in d._groups] == [
             ("classic", ["a", "b", "c", "stray"]), ("hybrid", ["h"]), ("graphrag", ["g"]),

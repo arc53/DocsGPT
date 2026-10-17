@@ -11,9 +11,9 @@ uses — so retriever selection, per-source ``chunks`` / ``score_threshold``, th
 prescreen stage and the token budget all behave exactly as they do at answer
 time, rather than drifting from them.
 
-Where the operator has turned the decision model on (``DECISION_RERANK_MODE``,
-``DECISION_PRESCREEN_ENABLED``), its relevance stages run here as they do at
-answer time, under the feature label ``retrieval_test``. With ``compare`` the
+Where the operator lets the decision model score chunks
+(``DECISION_RELEVANCE_ENABLED``), a config's relevance runs here as it does at
+answer time, outside the rollout, under the feature label ``retrieval_test``. With ``compare`` the
 response also lists every candidate in retriever order, with its relevance and
 whether it was kept, so the model's choice can be read against the retriever's.
 """
@@ -35,9 +35,9 @@ from docsgpt.core.settings import settings
 from docsgpt.decisions import record
 from docsgpt.retriever.dispatcher import Dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
-from docsgpt.retriever.stages.relevance import decision_prescreen_enabled, rerank_enabled
+from docsgpt.retriever.stages.relevance import relevance_enabled
 from docsgpt.storage.db.session import db_readonly
-from docsgpt.storage.db.source_config import RetrievalConfig, SourceConfig
+from docsgpt.storage.db.source_config import RetrievalConfig, SourceConfig, validation_message
 from docsgpt.utils import num_tokens_from_string
 
 logger = logging.getLogger(__name__)
@@ -139,17 +139,11 @@ class SourceSearch(Resource):
         if body.get("retrieval") is not None:
             try:
                 retrieval = RetrievalConfig.model_validate(body["retrieval"])
-            except ValidationError:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Invalid retrieval config: one or more "
-                            "fields failed validation.",
-                        }
-                    ),
-                    400,
+            except ValidationError as err:
+                message = validation_message(
+                    err, "Invalid retrieval config: one or more fields failed validation."
                 )
+                return make_response(jsonify({"success": False, "message": message}), 400)
         else:
             retrieval = saved
 
@@ -181,13 +175,11 @@ class SourceSearch(Resource):
         # saved on the source runs at answer time anyway, so refusing to test it
         # would defeat the endpoint.
         #
-        # A `backend: decision` prescreen runs on the LLM too while the operator
-        # has not set DECISION_PRESCREEN_ENABLED. On the decision model a config
-        # is one call, capped at DECISION_RELEVANCE_MAX_PASSAGES chunks.
+        # Relevance is one decision-model call, capped at
+        # DECISION_RELEVANCE_MAX_PASSAGES chunks.
         if ad_hoc:
             ps = retrieval.prescreen_config()
-            on_model = ps is not None and ps.backend == "decision" and decision_prescreen_enabled()
-            if ps is not None and not on_model:
+            if ps is not None:
                 batches = math.ceil(ps.candidate_k / ps.batch_size)
                 if batches > MAX_PRESCREEN_BATCHES:
                     return make_response(
@@ -205,12 +197,7 @@ class SourceSearch(Resource):
                         400,
                     )
             reranker = retrieval.reranker_config()
-            if on_model:
-                scored = ps.candidate_k
-            elif reranker is not None and reranker.type == "decision" and rerank_enabled():
-                scored = reranker.candidate_k or 0
-            else:
-                scored = 0
+            scored = reranker.pool if reranker is not None and relevance_enabled() else 0
             limit = settings.DECISION_RELEVANCE_MAX_PASSAGES
             if scored > limit:
                 return make_response(
@@ -245,8 +232,8 @@ class SourceSearch(Resource):
             # Dispatcher directly, NOT build_dispatcher: the
             # PER_SOURCE_RETRIEVAL_ENABLED kill-switch would fall back to a
             # stock classic retriever and ignore the config under test. The
-            # operator's own switches for the decision model still apply; its
-            # rollout does not, since a test has no conversation to hash.
+            # operator's DECISION_RELEVANCE_ENABLED still applies; the rollout
+            # does not, since a test has no conversation to hash.
             retriever = Dispatcher(
                 source={"active_docs": [resolved_id], "question": query},
                 chat_history=[],  # no history ⇒ no rephrase side-call
@@ -324,8 +311,8 @@ def _chunk(doc: dict, *, rank: Optional[int]) -> dict:
 def _relevance_summary(rec: record.DecisionRecord) -> Optional[dict]:
     """What the decision model did in the test, or ``None`` when no relevance stage ran.
 
-    ``applied`` is whether a stage acted on its scores (not in ``monitor``),
-    ``fallback`` the status of a call that kept the retrieval's own selection,
+    ``applied`` is whether a stage acted on its scores, ``fallback`` the
+    status of a call that kept the retrieval's own selection,
     and ``latency_ms`` the time spent waiting for the model.
     """
     entries = [e for e in (rec.snapshot() or {}).get("entries", []) if e.get("feature") == USAGE_SOURCE]

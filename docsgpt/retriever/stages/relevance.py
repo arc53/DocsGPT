@@ -1,10 +1,11 @@
-"""Relevance scored by the decision model: the rerank stage and the prescreen's ``decision`` backend.
+"""Relevance scored by the decision model, for the sources whose ``reranker`` turns it on.
 
 Each candidate chunk gets a calibrated ``p(relevant)`` against the query the retrieval searched with
-(``search_query``), in one call per stage. The rerank orders the candidates by it and keeps as many chunks as the
-retrieval would have returned without it; the decision prescreen keeps those at or above a threshold, capped at
-``max_keep``. Both fail open: on any answer short of every candidate scored, the stage returns exactly what the
-retrieval would have returned without it.
+(``search_query``), in one call per stage. The stage orders the candidates by it and keeps as many chunks as the
+retrieval would have returned without it; a source's ``min_relevance`` above 0 also drops those scoring below it.
+It fails open: on any answer short of every candidate scored, the stage returns exactly what the retrieval would
+have returned without it. Nothing here runs, or loads the model, unless the operator has set
+``DECISION_RELEVANCE_ENABLED``.
 
 The Dispatcher marks that selection. When it widens a group's fetch for the rerank, the retriever tags every
 candidate with ``_base``: ``True`` for the chunks it would have returned at its normal size. A list without the tag
@@ -27,7 +28,6 @@ from docsgpt.retriever.labels import normalize_source_id
 logger = logging.getLogger(__name__)
 
 RERANK = "rag_rerank"
-PRESCREEN = "rag_prescreen"
 
 #: Characters of the query kept in a state, so a runaway rephrase cannot crowd out the passage.
 QUERY_CHARS = 1000
@@ -45,9 +45,8 @@ class RelevancePolicy:
         threshold: Chunks scoring below it are dropped; 0 reorders only.
         min_keep: Chunks a threshold always leaves, most relevant first, from a non-empty input.
         thresholds_by_source: Per-source thresholds, by source id (a doc's ``source_id``).
-        feature: The decision feature label: ``rag_rerank``, ``rag_prescreen`` or ``retrieval_test``.
-        mode: ``on`` acts on the scores; ``monitor`` only records them.
-        arm: The rollout arm the stage runs in (``on``, or ``source`` where a source turned it on itself).
+        feature: The decision feature label: ``rag_rerank`` or ``retrieval_test``.
+        arm: The rollout arm the stage runs in (``on``), or ``None`` outside a rollout (the retrieval test).
     """
 
     keep: Optional[int]
@@ -55,7 +54,6 @@ class RelevancePolicy:
     min_keep: int
     thresholds_by_source: Dict[str, float] = field(default_factory=dict)
     feature: str = RERANK
-    mode: str = "on"
     arm: Optional[str] = None
 
 
@@ -134,7 +132,7 @@ def score_relevance(
 
 
 def rollout_on(key: Optional[str], percent: int) -> bool:
-    """Whether a conversation is in the rollout of ``DECISION_RERANK_ROLLOUT_PERCENT``.
+    """Whether a conversation is in the rollout of ``DECISION_RELEVANCE_ROLLOUT_PERCENT``.
 
     Deterministic per key, so every turn of a conversation lands in the same arm. Without a key only a full
     rollout includes it.
@@ -151,68 +149,38 @@ def rollout_on(key: Optional[str], percent: int) -> bool:
     return bucket < percent
 
 
-def instance_mode() -> str:
-    """What ``DECISION_RERANK_MODE`` does now: ``off``, ``monitor`` or ``on`` (``auto`` resolved by measurement)."""
-    mode = settings.DECISION_RERANK_MODE
-    if mode == "off" or not decisions.get_decider().enabled:
-        return "off"
-    if mode == "auto":
-        from docsgpt.decisions.features import RAG_RERANK
+def relevance_enabled() -> bool:
+    """Whether the operator lets the model score chunks (``DECISION_RELEVANCE_ENABLED``) and the model is on.
 
-        return RAG_RERANK.auto_mode if decisions.auto_on(RAG_RERANK.name) else "off"
-    return mode
-
-
-def rerank_enabled() -> bool:
-    """Whether the operator turned the rerank on (``DECISION_RERANK_MODE`` not ``off``), from settings alone.
-
-    Unlike ``instance_mode`` it never measures, loads or times the model, so a public route can ask it; under
-    ``auto`` the rerank may still resolve off.
+    Read from settings alone: it never measures, loads or times the model, so a public route can ask it.
     """
-    return settings.DECISION_RERANK_MODE != "off" and decisions.get_decider().enabled
+    return settings.DECISION_RELEVANCE_ENABLED and decisions.get_decider().enabled
 
 
-def source_mode(retriever: str, reranker: Any, instance: str, in_rollout: bool) -> tuple[str, Optional[str]]:
-    """The rerank mode of one source and its rollout arm.
+def source_mode(reranker: Any, enabled: bool, in_rollout: bool) -> tuple[str, Optional[str]]:
+    """Whether one source's chunks are scored, and its rollout arm.
 
-    The operator turns the rerank on (``DECISION_RERANK_MODE``); a source cannot. While the instance mode is
-    ``off`` every source is off, a stored ``reranker: {type: decision}`` included, so no source can make the
-    process load the model. Otherwise such a source runs in the instance's mode, even where the instance default
-    does not reach (a retriever outside ``DECISION_RERANK_RETRIEVERS``, the control arm); a source never raises
-    the mode, so under ``monitor`` it is only recorded. ``type: off`` opts a source out.
+    A source without a ``reranker`` is off. With one, it is on while the operator has the model enabled
+    (``relevance_enabled``), so no source can make the process load the model on its own; a conversation outside
+    ``DECISION_RELEVANCE_ROLLOUT_PERCENT`` is the ``control`` arm and keeps the retriever's output.
 
     Args:
-        retriever: The source's retriever key (``classic`` for the classic aliases).
-        reranker: The source's ``RerankerConfig``, or ``None`` to follow the instance.
-        instance: ``instance_mode()``.
-        in_rollout: ``rollout_on`` for the request.
+        reranker: The source's ``RerankerConfig``, or ``None``.
+        enabled: ``relevance_enabled()``.
+        in_rollout: ``rollout_on`` for the request (True where the rollout does not apply).
 
     Returns:
-        ``(mode, arm)``: ``off``, ``monitor`` or ``on``, and ``on``, ``control``, ``source`` or ``None`` when the
-        rollout does not apply.
+        ``(mode, arm)``: ``on`` or ``off``, and ``on``, ``control`` or ``None`` when the source is not scored at all.
     """
-    if instance == "off" or (reranker is not None and reranker.type == "off"):
-        return "off", None
-    if reranker is not None:
-        return instance, "source"
-    if retriever not in {key.lower() for key in settings.DECISION_RERANK_RETRIEVERS}:
+    if reranker is None or not enabled:
         return "off", None
     if not in_rollout:
         return "off", "control"
-    return instance, "on"
-
-
-def decision_prescreen_enabled() -> bool:
-    """Whether a prescreen with ``backend: decision`` runs on the decision model (``DECISION_PRESCREEN_ENABLED``).
-
-    While it does not, such a prescreen runs as the LLM prescreen, so no source can make the process load the
-    model.
-    """
-    return settings.DECISION_PRESCREEN_ENABLED and decisions.get_decider().enabled
+    return "on", "on"
 
 
 class RelevanceStage:
-    """A Dispatcher stage that scores a group's candidates and orders, filters or only records them."""
+    """A Dispatcher stage that scores a group's candidates and orders or filters them."""
 
     def __init__(self, policy: RelevancePolicy):
         self.policy = policy
@@ -251,7 +219,6 @@ class RelevanceStage:
         attributes = {
             "gen_ai.operation.name": "rerank",
             "docsgpt.rerank.backend": "decision",
-            "docsgpt.rerank.mode": policy.mode,
             "docsgpt.rerank.feature": policy.feature,
             "docsgpt.rerank.arm": policy.arm,
             "docsgpt.candidate_count": len(candidates),
@@ -274,7 +241,7 @@ class RelevanceStage:
                                    type(exc).__name__)
                     scores = Scores(None, "error", "error")
             chosen = self._choose(candidates, scores.values, keep) if scores.values is not None else None
-            applied = chosen is not None and policy.mode == "on"
+            applied = chosen is not None
             if applied:
                 result = []
                 for doc, p in chosen:
@@ -319,40 +286,61 @@ class RelevanceStage:
         return result
 
 
-#: Retriever keys that name the classic retriever (``Dispatcher`` groups them as ``classic``).
-_CLASSIC_ALIASES = frozenset({"classic", "default"})
-
-
 def apply_relevance(
-    docs: List[Dict[str, Any]], query: str, *, retriever: Optional[str] = None, rollout_key: Optional[str] = None
+    docs: List[Dict[str, Any]],
+    query: str,
+    rerankers: Dict[str, Any],
+    *,
+    rollout_key: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Order ``docs`` by relevance to ``query`` under the instance rerank, for a caller with no Dispatcher.
+    """Order and filter ``docs`` by each source's own ``reranker``, for a caller with no Dispatcher.
 
-    It reorders only: every doc is kept, with its ``relevance``. The rerank's own gates apply
-    (``instance_mode``, ``DECISION_RERANK_RETRIEVERS`` and the rollout), and while they leave it off, or when the
-    call fails, ``docs`` come back as they were. Workflow agent nodes use it; they build their retriever directly,
-    so no source config takes part.
+    Workflow agent nodes use it: they build one retriever over their sources directly, so the chunks of every source
+    come back in one list. Only the chunks of sources whose ``reranker`` is set are judged, each by its own
+    threshold; they are reordered among the places they held, and the other sources' chunks keep theirs. The
+    stage's own gates apply (``relevance_enabled`` and the rollout); while they leave it off, or when the call
+    fails, ``docs`` come back as they were.
 
     Args:
         docs: The retrieved docs, in retriever order.
         query: The query the docs were retrieved with.
-        retriever: The retriever key that produced them (``classic`` when omitted).
+        rerankers: ``{source_id: RerankerConfig}`` of the sources that set one.
         rollout_key: Keys the rollout arm (the conversation id, else the request id).
     """
-    if not docs or not query:
+    if not docs or not query or not rerankers:
         return docs
-    key = (retriever or "classic").lower()
-    key = "classic" if key in _CLASSIC_ALIASES else key
-    mode, arm = source_mode(
-        key, None, instance_mode(), rollout_on(rollout_key, settings.DECISION_RERANK_ROLLOUT_PERCENT)
-    )
-    if arm == "control":
+    if not relevance_enabled():
+        return docs
+    if not rollout_on(rollout_key, settings.DECISION_RELEVANCE_ROLLOUT_PERCENT):
         record.add(RERANK, {"arm": "control"}, status="skipped", applied=False)
-    if mode == "off":
         return docs
-    stage = RelevanceStage(RelevancePolicy(keep=len(docs), threshold=0.0, min_keep=len(docs), mode=mode, arm=arm))
+    thresholds = {normalize_source_id(sid): reranker.threshold for sid, reranker in rerankers.items()}
+    slots = {i for i, doc in enumerate(docs) if normalize_source_id(doc.get("source_id")) in thresholds}
+    if not slots:
+        return docs
+    judged = [doc for i, doc in enumerate(docs) if i in slots]
+    stage = RelevanceStage(
+        RelevancePolicy(
+            keep=len(judged),
+            threshold=0.0,
+            min_keep=settings.DECISION_RELEVANCE_MIN_KEEP,
+            thresholds_by_source=thresholds,
+            arm="on",
+        )
+    )
     try:
-        return stage(list(docs), {"query": query, "search_query": query})
-    except Exception as exc:  # noqa: BLE001 -- a rerank must never fail the caller's retrieval
+        kept = stage(list(judged), {"query": query, "search_query": query})
+    except Exception as exc:  # noqa: BLE001 -- relevance must never fail the caller's retrieval
         logger.warning("Relevance ordering failed, keeping the retrieval's order: %s", type(exc).__name__)
         return docs
+    # The judged chunks fill their own places, best first; places left over (filtered chunks) close up.
+    ranked = iter(kept)
+    out = []
+    for i, doc in enumerate(docs):
+        if i not in slots:
+            out.append(doc)
+            continue
+        nxt = next(ranked, None)
+        if nxt is not None:
+            out.append(nxt)
+    return out

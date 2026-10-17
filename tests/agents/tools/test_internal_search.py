@@ -439,7 +439,7 @@ class TestSourcesHaveDirectoryStructure:
 
 
 # =====================================================================
-# Search through the Dispatcher: the path pre-stage and the rerank
+# Search through the Dispatcher: the path pre-stage and relevance
 # =====================================================================
 
 
@@ -462,7 +462,7 @@ def store(monkeypatch):
     vector.hits = []
     vector.search.side_effect = lambda question, k, **kwargs: vector.hits[:k]
     monkeypatch.setattr(settings, "PER_SOURCE_RETRIEVAL_ENABLED", True)
-    monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "off")
+    monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", False)
     with patch("docsgpt.retriever.classic_rag.VectorCreator") as vc, patch(
         "docsgpt.retriever.classic_rag.LLMCreator.create_llm", return_value=Mock()
     ), patch("docsgpt.retriever.classic_rag.num_tokens_from_string", side_effect=len), patch(
@@ -472,13 +472,14 @@ def store(monkeypatch):
         yield vector
 
 
-def _dispatched_tool(registry=None):
+def _dispatched_tool(registry=None, reranker=None):
+    """The tool over one source whose relevance is on (reorder, unless ``reranker`` says otherwise)."""
     return InternalSearchTool(
         {
             "source": {"active_docs": ["s1"]},
             "retriever_name": "classic",
             "chunks": 2,
-            "sources": [{"id": "s1", "retrieval": {}}],
+            "sources": [{"id": "s1", "retrieval": {"reranker": reranker or {}}}],
             "decoded_token": {"sub": "u"},
             "citation_registry": registry,
         }
@@ -504,9 +505,9 @@ class TestDispatchedSearch:
         fake = FakeDecider({"relevant": 0.5})
         with installed(fake):
             _dispatched_tool().execute_action("search", query="q")
-        assert fake.calls == [], "with the rerank off nothing asks the model"
+        assert fake.calls == [], "with the switch off nothing asks the model"
 
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
         with installed(fake):
             _dispatched_tool().execute_action("search", query="q")
         assert [call.feature for call in fake.calls] == ["rag_rerank"], "one call, the Dispatcher's rerank"
@@ -516,11 +517,11 @@ class TestDispatchedSearch:
         from docsgpt.decisions.testing import FakeDecider, installed
 
         store.hits = _hits(PATHS)
-        # Rerank off: the retrieval's two chunks are both outside the path, as today.
+        # Relevance off: the retrieval's two chunks are both outside the path, as today.
         out = _dispatched_tool().execute_action("search", query="q", path_filter="src/")
         assert out == "No documents found matching query 'q' in path 'src/'."
 
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
         fake = FakeDecider({"relevant": _by_text({"src/top.py": 0.9, "src/mid.py": 0.7, "src/low.py": 0.1})})
         tool = _dispatched_tool()
         with installed(fake):
@@ -537,7 +538,7 @@ class TestDispatchedSearch:
 
         store.hits = _hits(["src/a.py", "docs/b.md", "src/c.py"])
         baseline = _dispatched_tool().execute_action("search", query="q", path_filter="src/")
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
         fake = FakeDecider(reasons={"*": "unavailable"})
         with installed(fake):
             out = _dispatched_tool().execute_action("search", query="q", path_filter="src/")
@@ -548,14 +549,15 @@ class TestDispatchedSearch:
         from docsgpt.core.settings import settings
         from docsgpt.decisions.testing import FakeDecider, installed
 
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
-        monkeypatch.setattr(settings, "DECISION_RERANK_THRESHOLD", 0.5)
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
         monkeypatch.setattr(settings, "DECISION_RELEVANCE_MIN_KEEP", 0)
+        strict = {"min_relevance": 0.5}
         fake = FakeDecider({"relevant": 0.1})
         with installed(fake):
-            assert _dispatched_tool().execute_action("search", query="q") == "No documents found matching your query."
+            out = _dispatched_tool(reranker=strict).execute_action("search", query="q")
+            assert out == "No documents found matching your query."
             store.hits = _hits(PATHS)
-            tool = _dispatched_tool()
+            tool = _dispatched_tool(reranker=strict)
             assert tool.execute_action("search", query="q") == "No relevant documents found for 'q'."
             store.hits = _hits(["src/a.py", "docs/b.md", "src/c.py"])
             out = tool.execute_action("search", query="q", path_filter="src/")
@@ -567,7 +569,7 @@ class TestDispatchedSearch:
         from docsgpt.decisions.testing import FakeDecider, installed
 
         store.hits = _hits(PATHS)
-        monkeypatch.setattr(settings, "DECISION_RERANK_MODE", "on")
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
         registry = [{"title": "pre.md", "source": "pre.md", "text": "prefetched"}]
         fake = FakeDecider({"relevant": _by_text({"src/top.py": 0.9, "docs/c.md": 0.8})})
         with installed(fake):

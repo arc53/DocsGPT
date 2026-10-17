@@ -530,10 +530,8 @@ def corpus(monkeypatch):
     for name, value in {
         "DECISION_MODE": None,
         "DECISION_MODEL": None,
-        "DECISION_RERANK_MODE": "off",
-        "DECISION_PRESCREEN_ENABLED": False,
-        "DECISION_RERANK_ROLLOUT_PERCENT": 100,
-        "DECISION_RERANK_CANDIDATE_K": 20,
+        "DECISION_RELEVANCE_ENABLED": False,
+        "DECISION_RELEVANCE_ROLLOUT_PERCENT": 100,
         "DECISION_RELEVANCE_MAX_PASSAGES": 100,
     }.items():
         monkeypatch.setattr(settings, name, value)
@@ -543,6 +541,10 @@ def corpus(monkeypatch):
             monkeypatch.setattr(settings, key, value)
 
     return configure
+
+
+#: A source config with relevance on: reorder, over the default pool of 20.
+REORDER = {"chunks": 6, "reranker": {"type": "decision"}}
 
 
 class TestRelevance:
@@ -562,11 +564,11 @@ class TestRelevance:
         assert response.json["relevance"] is None
         assert "candidates" not in response.json
 
-    def test_the_rerank_orders_the_chunks_and_compare_lists_the_pool(self, app, pg_conn, corpus):
+    def test_relevance_orders_the_chunks_and_compare_lists_the_pool(self, app, pg_conn, corpus):
         from docsgpt.decisions.testing import FakeDecider, installed
 
-        corpus(DECISION_RERANK_MODE="on")
-        src = _seed_source(pg_conn, user="u-rel-on")
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-on", config={"retrieval": REORDER})
         fake = FakeDecider({"relevant": _relevance_by_number})
         with _patch_db(pg_conn), installed(fake):
             response = _post(
@@ -589,23 +591,42 @@ class TestRelevance:
         assert [c["kept"] for c in candidates] == [False] * 14 + [True] * 6
         assert candidates[19]["rank"] == 1 and candidates[0]["rank"] is None
 
-    def test_with_the_rerank_off_nothing_asks_the_model(self, app, pg_conn, corpus):
+    def test_a_tested_threshold_filters(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-filter")
+        retrieval = {"chunks": 6, "reranker": {"type": "decision", "min_relevance": 0.17}}
+        with _patch_db(pg_conn), installed(FakeDecider({"relevant": _relevance_by_number})):
+            data = _post(app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user="u-rel-filter").json
+        assert [c["text"] for c in data["chunks"]] == ["chunk-19", "chunk-18", "chunk-17"]
+
+    def test_a_source_without_relevance_asks_nothing(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-none")
+        fake = FakeDecider({"relevant": 0.9})
+        with _patch_db(pg_conn), installed(fake):
+            data = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-none").json
+        assert fake.calls == [] and data["relevance"] is None
+
+    def test_with_the_switch_off_nothing_asks_the_model(self, app, pg_conn, corpus):
         from docsgpt.decisions.testing import FakeDecider, installed
 
         src = _seed_source(pg_conn, user="u-rel-off")
         fake = FakeDecider({"relevant": 0.9})
         # A source's own reranker cannot turn on what the operator left off.
-        retrieval = {"chunks": 6, "reranker": {"type": "decision"}}
         with _patch_db(pg_conn), installed(fake):
             response = _post(
                 app,
                 str(src["id"]),
-                {"query": "q", "compare": True, "retrieval": retrieval},
+                {"query": "q", "compare": True, "retrieval": REORDER},
                 user="u-rel-off",
             )
         assert response.status_code == 200
         data = response.json
-        assert fake.calls == []
+        assert fake.calls == [] and fake.warmed == 0
         assert data["relevance"] is None
         assert [c["text"] for c in data["chunks"]] == [f"chunk-{i:02d}" for i in range(6)]
         assert all(c["relevance"] is None for c in data["chunks"])
@@ -613,25 +634,11 @@ class TestRelevance:
             (i, i, True, True) for i in range(1, 7)
         ]
 
-    def test_monitor_scores_without_changing_the_result(self, app, pg_conn, corpus):
-        from docsgpt.decisions.testing import FakeDecider, installed
-
-        corpus(DECISION_RERANK_MODE="monitor")
-        src = _seed_source(pg_conn, user="u-rel-mon")
-        with _patch_db(pg_conn), installed(FakeDecider({"relevant": _relevance_by_number})):
-            data = _post(
-                app, str(src["id"]), {"query": "q", "compare": True}, user="u-rel-mon"
-            ).json
-        assert [c["text"] for c in data["chunks"]] == [f"chunk-{i:02d}" for i in range(6)]
-        assert all(c["relevance"] is None for c in data["chunks"])
-        assert data["relevance"]["applied"] is False and data["relevance"]["fallback"] is None
-        assert all(c["relevance"] is not None for c in data["candidates"])
-
     def test_a_failed_call_reports_the_fallback(self, app, pg_conn, corpus):
         from docsgpt.decisions.testing import FakeDecider, installed
 
-        corpus(DECISION_RERANK_MODE="on")
-        src = _seed_source(pg_conn, user="u-rel-fail")
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-fail", config={"retrieval": REORDER})
         with _patch_db(pg_conn), installed(FakeDecider(reasons={"*": "timeout"})):
             data = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-fail").json
         assert [c["text"] for c in data["chunks"]] == [f"chunk-{i:02d}" for i in range(6)]
@@ -640,100 +647,49 @@ class TestRelevance:
     def test_the_rollout_does_not_apply_to_a_test(self, app, pg_conn, corpus):
         from docsgpt.decisions.testing import FakeDecider, installed
 
-        corpus(DECISION_RERANK_MODE="on", DECISION_RERANK_ROLLOUT_PERCENT=0)
-        src = _seed_source(pg_conn, user="u-rel-roll")
+        corpus(DECISION_RELEVANCE_ENABLED=True, DECISION_RELEVANCE_ROLLOUT_PERCENT=0)
+        src = _seed_source(pg_conn, user="u-rel-roll", config={"retrieval": REORDER})
         fake = FakeDecider({"relevant": _relevance_by_number})
         with _patch_db(pg_conn), installed(fake):
             data = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-roll").json
         assert fake.calls and data["relevance"]["applied"] is True
 
-    def test_a_decision_prescreen_runs_on_the_model_only_when_the_operator_enabled_it(
-        self, app, pg_conn, corpus
-    ):
-        from docsgpt.decisions.testing import FakeDecider, installed
+    def test_relevance_and_llm_screening_together_are_refused(self, app, pg_conn, corpus):
+        from docsgpt.storage.db.source_config import RELEVANCE_OR_PRESCREEN
 
-        prescreen = {"candidate_k": 20, "batch_size": 10, "max_keep": 3, "backend": "decision", "min_relevance": 0.17}
-        src = _seed_source(pg_conn, user="u-rel-ps")
-        screener = MagicMock(model_id="m")
-        screener.gen = MagicMock(return_value='{"keep": [0, 1]}')
-        fake = FakeDecider({"relevant": _relevance_by_number})
-        body = {"query": "q", "retrieval": {"chunks": 2, "prescreen": prescreen}}
-        with _patch_db(pg_conn), installed(fake), patch(
-            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm", return_value=screener
-        ):
-            off = _post(app, str(src["id"]), body, user="u-rel-ps").json
-            corpus(DECISION_PRESCREEN_ENABLED=True)
-            on = _post(app, str(src["id"]), body, user="u-rel-ps").json
-        # Off: the LLM screened it (two batches of ten), the model was not asked.
-        assert screener.gen.call_count == 2 and off["relevance"] is None
-        (call,) = fake.calls
-        assert call.feature == "retrieval_test" and len(call.requests) == 20
-        assert [c["text"] for c in on["chunks"]] == ["chunk-19", "chunk-18", "chunk-17"]
-        assert on["relevance"]["applied"] is True
+        src = _seed_source(pg_conn, user="u-rel-both")
+        retrieval = {**REORDER, "prescreen": {"candidate_k": 20}}
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.retrieval_test.Dispatcher") as dispatcher:
+            response = _post(app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user="u-rel-both")
+        assert response.status_code == 400 and response.json["message"] == RELEVANCE_OR_PRESCREEN
+        dispatcher.assert_not_called()
 
 
 class TestRelevanceCostCeiling:
-    def _decision_prescreen(self, candidate_k, batch_size):
-        return {
-            "chunks": 2,
-            "prescreen": {
-                "candidate_k": candidate_k,
-                "batch_size": batch_size,
-                "max_keep": 2,
-                "backend": "decision",
-            },
-        }
-
-    def test_a_decision_prescreen_on_the_llm_keeps_the_llm_cap(self, app, pg_conn, corpus):
+    def test_an_llm_prescreen_keeps_its_cap(self, app, pg_conn, corpus):
         src = _seed_source(pg_conn, user="u-cap-llm")
+        retrieval = {"chunks": 2, "prescreen": {"candidate_k": 100, "batch_size": 1, "max_keep": 2}}
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.retrieval_test.Dispatcher"
         ) as dispatcher:
-            response = _post(
-                app,
-                str(src["id"]),
-                {"query": "q", "retrieval": self._decision_prescreen(100, 1)},
-                user="u-cap-llm",
-            )
+            response = _post(app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user="u-cap-llm")
         assert response.status_code == 400 and "LLM calls" in response.json["message"]
         dispatcher.assert_not_called()
 
-    def test_on_the_model_the_llm_cap_gives_way_to_the_passage_cap(self, app, pg_conn, corpus):
-        corpus(DECISION_PRESCREEN_ENABLED=True, DECISION_RELEVANCE_MAX_PASSAGES=50)
-        src = _seed_source(pg_conn, user="u-cap-model")
-        fake = MagicMock()
-        fake.search.return_value = []
-        fake.last_candidates = []
-        with _patch_db(pg_conn), patch(
-            "docsgpt.api.user.sources.retrieval_test.Dispatcher", return_value=fake
-        ) as dispatcher:
-            within = _post(
-                app,
-                str(src["id"]),
-                {"query": "q", "retrieval": self._decision_prescreen(50, 1)},
-                user="u-cap-model",
-            )
-            over = _post(
-                app,
-                str(src["id"]),
-                {"query": "q", "retrieval": self._decision_prescreen(60, 10)},
-                user="u-cap-model",
-            )
-        assert within.status_code == 200
-        assert over.status_code == 400 and "decision model (limit 50)" in over.json["message"]
-        dispatcher.assert_called_once()
-
-    @pytest.mark.parametrize("mode, status", [("on", 400), ("off", 200)])
-    def test_a_source_reranker_pool_is_capped_while_the_rerank_is_on(self, app, pg_conn, corpus, mode, status):
-        corpus(DECISION_RERANK_MODE=mode, DECISION_RELEVANCE_MAX_PASSAGES=30)
-        src = _seed_source(pg_conn, user=f"u-cap-rr-{mode}")
+    @pytest.mark.parametrize("enabled, status", [(True, 400), (False, 200)])
+    def test_a_source_reranker_pool_is_capped_while_the_switch_is_on(self, app, pg_conn, corpus, enabled, status):
+        corpus(DECISION_RELEVANCE_ENABLED=enabled, DECISION_RELEVANCE_MAX_PASSAGES=30)
+        src = _seed_source(pg_conn, user=f"u-cap-rr-{enabled}")
         fake = MagicMock()
         fake.search.return_value = []
         retrieval = {"chunks": 2, "reranker": {"type": "decision", "candidate_k": 40}}
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.retrieval_test.Dispatcher", return_value=fake
-        ):
+        ), patch("docsgpt.retriever.stages.relevance.decisions.get_decider") as decider:
+            decider.return_value.enabled = True
             response = _post(
-                app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user=f"u-cap-rr-{mode}"
+                app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user=f"u-cap-rr-{enabled}"
             )
         assert response.status_code == status
+        if status == 400:
+            assert "decision model (limit 30)" in response.json["message"]

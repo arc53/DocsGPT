@@ -54,7 +54,7 @@ class TestAdminDecisions:
                     "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 0.5, "reason": "configured",
                 },
                 "rag_rerank": {
-                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 3.0, "reason": "configured",
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
                 },
             },
         }

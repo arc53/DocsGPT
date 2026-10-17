@@ -19,8 +19,28 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from docsgpt.parser.limits import MAX_CHUNK_TOKENS
 
 
-#: Most candidates one decision-model relevance call takes (``DECISION_RELEVANCE_MAX_PASSAGES`` caps it too).
+#: Most candidates one relevance call takes (``DECISION_RELEVANCE_MAX_PASSAGES`` caps it too, at run time).
 DECISION_MAX_CANDIDATES = 100
+#: Candidates a source's relevance fetches and scores when its ``reranker.candidate_k`` is unset.
+DEFAULT_CANDIDATE_K = 20
+
+#: Why a retrieval config with both ``reranker`` and ``prescreen`` is refused; routes show it as it is.
+RELEVANCE_OR_PRESCREEN = (
+    "Relevance and LLM screening cannot both be on: set reranker or prescreen, not both."
+)
+
+
+def validation_message(error: Exception, default: str) -> str:
+    """The message a route returns for a config that failed validation.
+
+    Validation internals stay hidden behind ``default``, except the one rule a
+    user has to act on: relevance and LLM screening are mutually exclusive.
+
+    Args:
+        error: The ``ValidationError`` (or ``ValueError``) validation raised.
+        default: The route's static message for every other failure.
+    """
+    return RELEVANCE_OR_PRESCREEN if RELEVANCE_OR_PRESCREEN in str(error) else default
 
 
 def _probability(value: Optional[float]) -> Optional[float]:
@@ -32,15 +52,11 @@ def _probability(value: Optional[float]) -> Optional[float]:
 class PreScreenConfig(BaseModel):
     """Map-reduce candidate-filter config (D12); off unless set.
 
-    A base retriever fetches ``candidate_k`` candidates and at most
-    ``max_keep`` survivors pass to the answer. With ``backend="llm"`` an LLM
-    screens them in batches of ``batch_size`` (``model`` is optional; when None
-    the stage reuses the request's resolved model), a query-time LLM cost, so
-    it stays opt-in. With ``backend="decision"``, while the operator has set
-    ``DECISION_PRESCREEN_ENABLED``, the decision model scores them in one call
-    and keeps those at or above ``min_relevance``, most relevant first, and
-    ``batch_size`` and ``model`` are ignored; otherwise it runs as ``llm``.
-    Stored rows without a backend are ``llm``.
+    A base retriever fetches ``candidate_k`` candidates, an LLM screens them in
+    batches of ``batch_size``, and at most ``max_keep`` survivors pass to the
+    answer. ``model`` is optional; when None the stage reuses the request's
+    resolved model. This is a query-time LLM cost, so it stays opt-in. A stored
+    ``backend: "llm"`` (the only screening there is) is accepted and dropped.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -49,8 +65,13 @@ class PreScreenConfig(BaseModel):
     model: Optional[str] = None  # None → reuse the resolved request model
     batch_size: int = 10  # candidates per LLM screening call
     max_keep: int = 8  # survivors kept after screening
-    backend: Literal["llm", "decision"] = "llm"
-    min_relevance: Optional[float] = None  # decision only; None → DECISION_PRESCREEN_THRESHOLD
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_llm_backend(cls, data):
+        if isinstance(data, dict) and data.get("backend") == "llm":
+            data = {key: value for key, value in data.items() if key != "backend"}
+        return data
 
     @field_validator("candidate_k", "batch_size", "max_keep")
     @classmethod
@@ -61,37 +82,30 @@ class PreScreenConfig(BaseModel):
             raise ValueError("must be <= 500")
         return value
 
-    @field_validator("min_relevance")
-    @classmethod
-    def _min_relevance(cls, value: Optional[float]) -> Optional[float]:
-        return _probability(value)
-
     @model_validator(mode="after")
     def _coherent(self) -> "PreScreenConfig":
         if self.max_keep > self.candidate_k:
             raise ValueError("max_keep must be <= candidate_k")
-        if self.backend == "decision" and self.candidate_k > DECISION_MAX_CANDIDATES:
-            raise ValueError(f"candidate_k must be <= {DECISION_MAX_CANDIDATES} with the decision backend")
         return self
 
 
 class RerankerConfig(BaseModel):
-    """A source's rerank by the decision model, under the instance's ``DECISION_RERANK_MODE``.
+    """A source's relevance: its chunks scored by the decision model.
 
-    The operator turns the rerank on; while that mode is ``off`` this config
-    does nothing. Otherwise ``type="decision"`` reranks the source in that mode
-    (only recording under ``monitor``) with these overrides, even where the
-    instance default does not reach (another retriever, the rollout's control
-    arm), and ``type="off"`` opts the source
-    out, for example a source of one-line rows, which score low against any
-    query. No ``reranker`` at all follows the instance mode.
+    A source without one is off. With one, while the operator has set
+    ``DECISION_RELEVANCE_ENABLED``, the source fetches ``candidate_k``
+    candidates (``DEFAULT_CANDIDATE_K`` when unset), scores them in one call
+    and keeps as many chunks as it would without it, most relevant first
+    (``min_relevance`` unset or 0: reorder). A ``min_relevance`` above 0 also
+    drops chunks scoring below it, keeping ``DECISION_RELEVANCE_MIN_KEEP``
+    (reorder and filter). Any retriever can use it.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["decision", "off"] = "decision"
-    min_relevance: Optional[float] = None  # None → DECISION_RERANK_THRESHOLD
-    candidate_k: Optional[int] = None  # None → DECISION_RERANK_CANDIDATE_K
+    type: Literal["decision"] = "decision"
+    min_relevance: Optional[float] = None  # None or 0 → reorder only
+    candidate_k: Optional[int] = None  # None → DEFAULT_CANDIDATE_K
 
     @field_validator("min_relevance")
     @classmethod
@@ -104,6 +118,16 @@ class RerankerConfig(BaseModel):
         if value is not None and not 1 <= value <= DECISION_MAX_CANDIDATES:
             raise ValueError(f"must be between 1 and {DECISION_MAX_CANDIDATES}")
         return value
+
+    @property
+    def threshold(self) -> float:
+        """The relevance a kept chunk needs; 0 reorders only."""
+        return self.min_relevance or 0.0
+
+    @property
+    def pool(self) -> int:
+        """Candidates to fetch and score."""
+        return self.candidate_k or DEFAULT_CANDIDATE_K
 
 
 class GraphConfig(BaseModel):
@@ -188,7 +212,7 @@ class RetrievalConfig(BaseModel):
     chunks: int = 6  # final top-k
     score_threshold: Optional[float] = None  # pgvector/mongo/qdrant/milvus honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
-    reranker: Optional[dict] = None  # None = the instance mode; else RerankerConfig dict
+    reranker: Optional[dict] = None  # None = relevance off; else RerankerConfig dict
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
     graph: GraphRetrievalConfig = GraphRetrievalConfig()  # graphrag retriever only
 
@@ -219,8 +243,13 @@ class RetrievalConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_reranker(self) -> "RetrievalConfig":
-        """Validate ``reranker`` through ``RerankerConfig`` when present (strict, as ``prescreen``)."""
+        """Validate ``reranker`` through ``RerankerConfig`` when present (strict, as ``prescreen``).
+
+        A source is judged by relevance or by the LLM prescreen, never both.
+        """
         if self.reranker is not None:
+            if self.prescreen is not None:
+                raise ValueError(RELEVANCE_OR_PRESCREEN)
             self.reranker = RerankerConfig.model_validate(self.reranker).model_dump()
         return self
 
@@ -315,12 +344,16 @@ class SourceConfig(BaseModel):
                     },
                 }
         # ``reranker`` was a reserved slot that took any dict; a row holding one
-        # this version cannot read follows the instance mode, keeping the rest.
+        # this version cannot read has relevance off, keeping the rest. So has a
+        # row that also sets a prescreen, which keeps that.
         retrieval = raw.get("retrieval")
         if isinstance(retrieval, dict) and retrieval.get("reranker") is not None:
             try:
                 RerankerConfig.model_validate(retrieval["reranker"])
+                readable = retrieval.get("prescreen") is None
             except Exception:
+                readable = False
+            if not readable:
                 raw = {**raw, "retrieval": {**retrieval, "reranker": None}}
         try:
             return cls.model_validate(raw)

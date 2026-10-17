@@ -79,8 +79,9 @@ def warm() -> None:
 def start() -> None:
     """Called once when an API process starts: warm the model if a setting asks for it then.
 
-    That is ``DECISION_PRELOAD``, ``DECISION_PRESCREEN_ENABLED``, or any registered feature set to something other
-    than ``off`` (``features.wanted_at_start``). A Celery worker never loads the model.
+    That is ``DECISION_PRELOAD``, or any registered feature set to something other than ``off``
+    (``features.wanted_at_start``; ``DECISION_RELEVANCE_ENABLED`` turns ``rag_rerank`` on). A Celery worker never
+    loads the model.
     """
     from docsgpt.decisions import features
 

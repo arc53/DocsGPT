@@ -1444,6 +1444,10 @@ class WorkflowEngine:
     def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
         """Retrieve this node's source documents.
 
+        The node's own retriever searches every source at once; each source's
+        ``reranker`` then orders (and, with a threshold, filters) that source's
+        chunks, as it would in a chat.
+
         Args:
             node_config: The node's resolved configuration.
 
@@ -1458,23 +1462,24 @@ class WorkflowEngine:
             return []
 
         try:
+            sources = self._authorized_node_sources(node_config.sources)
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
-                source={"active_docs": self._authorized_node_sources(node_config.sources)},
+                source={"active_docs": sources},
                 chat_history=[],
                 prompt="",
                 chunks=int(node_config.chunks) if node_config.chunks else 6,
                 decoded_token=self.agent.decoded_token,
             )
-            # No Dispatcher here, so the rerank reorders what the node's own
-            # retriever returned (and does nothing while it is off).
-            docs = apply_relevance(
-                retriever.search(query),
-                query,
-                retriever=node_config.retriever,
-                rollout_key=getattr(self.agent, "conversation_id", None)
-                or getattr(self.agent, "request_id", None),
-            )
+            docs = retriever.search(query)
+            if docs:
+                docs = apply_relevance(
+                    docs,
+                    query,
+                    self._node_rerankers(sources),
+                    rollout_key=getattr(self.agent, "conversation_id", None)
+                    or getattr(self.agent, "request_id", None),
+                )
             if docs:
                 # The parent copy still backs ``{{ source.* }}`` template
                 # resolution; the return value is what reaches the node agent.
@@ -1483,6 +1488,32 @@ class WorkflowEngine:
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
             return []
+
+    @staticmethod
+    def _node_rerankers(sources: list) -> dict:
+        """``{source_id: RerankerConfig}`` of the node's sources that turn relevance on.
+
+        Read only while the operator lets the model score chunks
+        (``DECISION_RELEVANCE_ENABLED``), so a node never queries the source
+        rows for a setting that cannot take effect.
+
+        Args:
+            sources: The node's authorized source ids.
+        """
+        from docsgpt.retriever.stages.relevance import relevance_enabled
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.session import db_readonly
+        from docsgpt.storage.db.source_config import SourceConfig
+
+        if not sources or not relevance_enabled():
+            return {}
+        rerankers = {}
+        with db_readonly() as conn:
+            for row in SourcesRepository(conn).list_by_ids([str(sid) for sid in sources]):
+                reranker = SourceConfig.parse(row.get("config")).retrieval.reranker_config()
+                if reranker is not None:
+                    rerankers[str(row["id"])] = reranker
+        return rerankers
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
         return [

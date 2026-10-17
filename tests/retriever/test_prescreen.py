@@ -199,36 +199,20 @@ class TestStageBuilders:
         assert max_candidate_k({"c": c}) is None
         assert max_candidate_k({}) is None
 
-    def test_decision_backend_screens_with_the_llm_unless_told_otherwise(self):
-        rc = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "decision"})
-        (stage,) = build_prescreen_stages({"a": rc}, llm_name="openai", api_key="k", model_id="m")
-        assert isinstance(stage, PreScreenStage)
-        assert build_prescreen_stages(
-            {"a": rc}, llm_name="openai", api_key="k", model_id="m", decision_as_llm=False
-        ) == []
-        # It widens the fetch either way.
-        assert max_candidate_k({"a": rc}) == 30
-
-    def test_the_group_factory_composes_both_backends(self, monkeypatch):
-        from docsgpt.core.settings import settings
-        from docsgpt.decisions.testing import FakeDecider, installed
+    def test_the_group_factory_composes_the_prescreen_and_relevance(self):
         from docsgpt.retriever.stages import build_group_stages
         from docsgpt.retriever.stages.relevance import RelevanceStage
 
-        llm = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30})
-        decision = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "decision", "max_keep": 5})
-        group = {"retrievals": {"a": llm, "b": decision}, "relevance": {"mode": "on", "candidate_k": 20}}
+        screened = RetrievalConfig(chunks=2, prescreen={"candidate_k": 30, "backend": "llm"})
         context = {"llm_name": "openai", "api_key": "k", "model_id": "m"}
-        with installed(FakeDecider()):
-            # The operator has not turned the decision prescreen on: both screen with the LLM, then the rerank.
-            assert [type(s) for s in build_group_stages(group, llm=context)] == [
-                PreScreenStage, PreScreenStage, RelevanceStage
-            ]
-            monkeypatch.setattr(settings, "DECISION_PRESCREEN_ENABLED", True)
-            stages = build_group_stages(group, llm=context)
-        assert [type(s) for s in stages] == [PreScreenStage, RelevanceStage]
-        assert stages[1].policy.feature == "rag_prescreen" and stages[1].policy.keep == 5
-        assert stages[1].policy.threshold == 0.2
+        group = {"retrievals": {"a": screened}, "relevance": {"mode": "off"}}
+        assert [type(s) for s in build_group_stages(group, llm=context)] == [PreScreenStage]
+        group = {"retrievals": {}, "relevance": {"mode": "on", "candidate_k": 20, "thresholds": {"b": 0.3}}}
+        (stage,) = build_group_stages(group, llm=context)
+        assert isinstance(stage, RelevanceStage)
+        assert (stage.policy.feature, stage.policy.keep, stage.policy.threshold) == ("rag_rerank", None, 0.0)
+        assert stage.policy.thresholds_by_source == {"b": 0.3}
+        assert build_group_stages({"retrievals": {}, "relevance": {"mode": "off"}}, llm=context) == []
 
     def test_prescreen_module_stands_alone(self):
         import docsgpt.retriever.stages.prescreen as prescreen
