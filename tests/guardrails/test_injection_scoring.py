@@ -48,9 +48,9 @@ class Cache:
                 k: row[k] for k in ("p", "windows_scored", "windows_total")
             }
 
-    def put(self, text, p, scored=1, total=1):
+    def put(self, text, p, scored=1, total=1, stale=False):
         self.rows[(scoring.content_hash(text), scoring.scorer_id())] = {
-            "p": p, "windows_scored": scored, "windows_total": total
+            "p": p, "windows_scored": scored, "windows_total": total, "stale": stale
         }
 
 
@@ -89,6 +89,22 @@ class TestCache:
         assert len(fake.calls) == 1 and result.live == 1 and result[0].p == pytest.approx(0.97)
         assert not result[0].cached
         assert score(fake, ["new chunk"]).cache_hits == 1 and len(fake.calls) == 1
+
+    def test_a_hit_on_a_row_not_seen_today_is_marked_seen_off_the_request_path(self, cache, monkeypatch):
+        touched, queued = [], []
+        monkeypatch.setattr(scoring, "_touch", lambda hashes, scorer: touched.append(sorted(hashes)))
+        monkeypatch.setattr(scoring, "_touch_later", lambda hashes, scorer: queued.append(sorted(hashes)))
+        fake = FakeDecider({"injection": 0.5})
+        with installed(fake):
+            cache.put("old chunk", 0.1, stale=True)
+            cache.put("fresh chunk", 0.1)
+        score(fake, ["old chunk", "fresh chunk"])
+        # A chat turn only queues it, and only for rows not seen today.
+        assert queued == [[scoring.content_hash("old chunk")]] and touched == []
+        score(fake, ["old chunk", "fresh chunk"], budget=Budget.BACKGROUND)
+        assert touched == [[scoring.content_hash("old chunk")]]
+        score(fake, ["fresh chunk"])
+        assert len(queued) == 1 and fake.calls == []
 
     def test_keyed_by_sha256_never_by_the_chunk_key(self, cache):
         score(FakeDecider({"injection": 0.2}), ["some chunk"])

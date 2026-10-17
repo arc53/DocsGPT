@@ -390,7 +390,7 @@ def _manifest_line(planned: PlannedFile, *, sandbox: bool = False, read_action: 
     cut = _upload_cut(planned, read_action)
     if cut and planned.status not in (FileStatus.UNREADABLE, FileStatus.WITHHELD):
         fields.append(cut)
-    if sandbox and not planned.sandbox_eligible:
+    if sandbox and not planned.sandbox_eligible and planned.status is not FileStatus.WITHHELD:
         fields.append("too large for the sandbox")
     return "- " + " | ".join(fields)
 
@@ -460,7 +460,8 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
                 f'A file can be loaded into {caps.sandbox_action} by passing its ref in "inputs" '
                 f'(for example "{eligible[0].ref}")'
             )
-            if len(eligible) < len(plan.files):
+            # A withheld file is never eligible, and its own line says why.
+            if any(not f.sandbox_eligible and f.status is not FileStatus.WITHHELD for f in plan.files):
                 line += "; files marked too large for the sandbox cannot be"
             line += "."
             if sandbox:

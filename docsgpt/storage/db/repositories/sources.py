@@ -237,33 +237,35 @@ class SourcesRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
-    def injection_allowed(self, source_ids) -> set[str]:
-        """The text hashes the sources' owners marked safe from prompt-injection screening.
+    def injection_allowed(self, source_ids) -> dict[str, set[str]]:
+        """The text hashes each source's owner marked safe from prompt-injection screening.
 
         Read from ``metadata.injection_review.allowed`` (sha256 hex digests of
         chunk texts) with no ownership scoping: the caller already resolved
-        these sources for the request.
+        these sources for the request. Kept per source: an allowance covers
+        that source's chunk, never the same text from another source.
 
         Args:
             source_ids: Source UUIDs; anything else is ignored.
 
         Returns:
-            Every allowed hash across the sources.
+            Source id to its allowed hashes; sources that allowed none are absent.
         """
         ids = sorted({str(s) for s in source_ids if looks_like_uuid(str(s))})
         if not ids:
-            return set()
+            return {}
         result = self._conn.execute(
             text(
-                "SELECT metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
+                "SELECT id, metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
                 "WHERE id = ANY(CAST(:ids AS uuid[]))"
             ),
             {"ids": ids},
         )
-        allowed: set[str] = set()
+        allowed: dict[str, set[str]] = {}
         for row in result.fetchall():
-            if isinstance(row.allowed, list):
-                allowed.update(h for h in row.allowed if isinstance(h, str))
+            hashes = {h for h in row.allowed if isinstance(h, str)} if isinstance(row.allowed, list) else set()
+            if hashes:
+                allowed[str(row.id)] = hashes
         return allowed
 
     def set_injection_scan(self, source_id: str, summary: dict) -> bool:

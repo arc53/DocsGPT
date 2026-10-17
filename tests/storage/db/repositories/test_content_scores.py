@@ -24,8 +24,8 @@ class TestContentScores:
         repo = ContentScoresRepository(pg_conn)
         repo.upsert_many([row("h1", 0.25), row("h2", 0.75), row("h1", 0.9, scorer="injection:other")])
         assert repo.get_many(["h1", "h2", "h3"], SCORER) == {
-            "h1": {"p": 0.25, "windows_scored": 1, "windows_total": 1},
-            "h2": {"p": 0.75, "windows_scored": 1, "windows_total": 1},
+            "h1": {"p": 0.25, "windows_scored": 1, "windows_total": 1, "stale": False},
+            "h2": {"p": 0.75, "windows_scored": 1, "windows_total": 1, "stale": False},
         }
         assert repo.get_many([], SCORER) == {}
 
@@ -35,7 +35,17 @@ class TestContentScores:
         repo.upsert_many([row(p=0.2, scored=5, total=5)])
         repo.upsert_many([row(p=0.3, scored=2, total=5)])
         assert repo.get_many(["h1"], SCORER)["h1"] == {"p": pytest.approx(0.2), "windows_scored": 5,
-                                                       "windows_total": 5}
+                                                       "windows_total": 5, "stale": False}
+
+    def test_writing_a_score_again_marks_the_row_seen_even_when_it_is_kept(self, pg_conn):
+        repo = ContentScoresRepository(pg_conn)
+        repo.upsert_many([row(p=0.1, scored=2, total=2)])
+        pg_conn.execute(text("UPDATE content_scores SET last_seen_at = now() - interval '3 days'"))
+        assert repo.get_many(["h1"], SCORER)["h1"]["stale"] is True
+        repo.upsert_many([row(p=0.3, scored=1, total=2)])
+        assert repo.get_many(["h1"], SCORER)["h1"] == {"p": pytest.approx(0.1), "windows_scored": 2,
+                                                       "windows_total": 2, "stale": False}
+        assert repo.purge_unseen_for(2) == 0
 
     def test_touch_bumps_rows_at_most_daily(self, pg_conn):
         repo = ContentScoresRepository(pg_conn)
@@ -60,12 +70,12 @@ class TestItemRef:
 
 
 class TestAllowlist:
-    def test_reads_every_allowed_hash_across_the_sources(self, pg_conn):
+    def test_reads_each_sources_allowed_hashes_apart(self, pg_conn):
         repo = SourcesRepository(pg_conn)
         first = repo.create("one", user_id="u", metadata={"injection_review": {"allowed": ["a", "b"]}})
         second = repo.create("two", user_id="u", metadata={"injection_review": {"allowed": ["c"]}})
         plain = repo.create("three", user_id="u")
         ids = [str(first["id"]), str(second["id"]), str(plain["id"]), "not-a-uuid"]
-        assert repo.injection_allowed(ids) == {"a", "b", "c"}
-        assert repo.injection_allowed([]) == set()
-        assert repo.injection_allowed(ids[2:]) == set()
+        assert repo.injection_allowed(ids) == {ids[0]: {"a", "b"}, ids[1]: {"c"}}
+        assert repo.injection_allowed([]) == {}
+        assert repo.injection_allowed(ids[2:]) == {}

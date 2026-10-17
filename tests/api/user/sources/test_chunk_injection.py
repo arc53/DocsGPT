@@ -111,13 +111,13 @@ class TestReview:
         response = _review(app, str(src["id"]), "u", {"content_hash": digest, "decision": "allow"})
         assert response.status_code == 200
         assert response.json == {"success": True, "content_hash": digest, "allowed": True, "count": 1}
-        assert repo.injection_allowed([src["id"]]) == {digest}
+        assert repo.injection_allowed([src["id"]]) == {str(src["id"]): {digest}}
         assert _get(app, src["id"], "u").json["chunks"][0]["injection"]["allowed"] is True
         # Allowing twice keeps one entry.
         assert _review(app, str(src["id"]), "u", {"content_hash": digest, "decision": "allow"}).json["count"] == 1
         response = _review(app, str(src["id"]), "u", {"content_hash": digest, "decision": "clear"})
         assert response.json["allowed"] is False and response.json["count"] == 0
-        assert repo.injection_allowed([src["id"]]) == set()
+        assert repo.injection_allowed([src["id"]]) == {}
 
     def test_the_list_is_capped(self, app, db, monkeypatch):
         monkeypatch.setattr("docsgpt.api.user.sources.chunks.INJECTION_REVIEW_MAX", 1)
