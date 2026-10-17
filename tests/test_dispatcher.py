@@ -568,9 +568,11 @@ class TestRelevanceRerank:
     def test_a_threshold_filters_and_keeps_min_keep(self, stores, relevance, _patch_llm_creator):
         stores["a"] = _ranked_store(_corpus("a"))
         relevance(True)
-        with installed(FakeDecider({"relevant": 0.1})):
+        rec = record.DecisionRecord()
+        with installed(FakeDecider({"relevant": 0.1})), record.activate(rec):
             _, out = _search([{"id": "a", "retrieval": _on(min_relevance=0.3)}])
         assert len(out) == settings.DECISION_RELEVANCE_MIN_KEEP
+        assert rec._doc["entries"][0]["outcome"]["threshold"] == 0.3
         with installed(FakeDecider({"relevant": 0.1})):
             _, out = _search([{"id": "a", "retrieval": _on(min_relevance=0)}])
         assert len(out) == 6, "0 reorders only"

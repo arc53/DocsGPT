@@ -216,13 +216,15 @@ class RelevanceStage:
         # A stage before this one (the search tool's path filter) may have narrowed the pool; the rerank still
         # keeps as many chunks as the retrieval's own selection had, now from inside what is left.
         keep = max(len(fallback), context.get("selection_size") or 0) if policy.keep is None else policy.keep
+        # The strictest threshold any of its sources set; one source's own in the usual one-source group.
+        threshold = max([policy.threshold, *policy.thresholds_by_source.values()])
         attributes = {
             "gen_ai.operation.name": "rerank",
             "docsgpt.rerank.backend": "decision",
             "docsgpt.rerank.feature": policy.feature,
             "docsgpt.rerank.arm": policy.arm,
             "docsgpt.candidate_count": len(candidates),
-            "docsgpt.relevance_threshold": policy.threshold,
+            "docsgpt.relevance_threshold": threshold,
             "docsgpt.query_source": "rephrased" if query != (context.get("query") or "") else "raw",
         }
         with tracing.span(
@@ -273,7 +275,7 @@ class RelevanceStage:
                     "kept": len(kept),
                     "replaced": sum(id(doc) not in fallback_ids for doc in kept),
                     "top": top,
-                    "threshold": policy.threshold,
+                    "threshold": threshold,
                     "query_source": attributes["docsgpt.query_source"],
                     "arm": policy.arm,
                     "passage_select": scores.passage_select,
