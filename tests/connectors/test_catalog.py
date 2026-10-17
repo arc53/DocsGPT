@@ -126,6 +126,25 @@ class TestPresets:
         assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
         assert definition.configured
 
+    def test_excalidraw_needs_no_credentials_or_server_settings(self):
+        definition = catalog.get_definition("mcp:excalidraw")
+
+        assert definition is not None
+        assert definition.name == "Excalidraw"
+        assert definition.icon == "excalidraw"
+        assert definition.category == "projects"
+        assert definition.publisher == "preset"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.excalidraw.com/mcp"
+        assert definition.docs_url == "https://github.com/excalidraw/excalidraw-mcp"
+        assert set(definition.capabilities) == {"read", "write"}
+        assert definition.tool_templates == ("mcp_tool",)
+        assert definition.configured
+        assert not definition.required_settings
+        assert not definition.credential_fields
+        assert not definition.oauth_scopes
+        assert definition.sync_ingestor is None
+
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 
