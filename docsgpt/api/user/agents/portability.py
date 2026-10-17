@@ -1699,8 +1699,10 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
             }
         # Row vanished between resolve and write — fall through to create.
 
-    # A new agent starts from the admin's default guardrails, under the file's own.
-    created_config = _import_config({"config": agent_defaults.seed(conn, spec.get("config"))})
+    # A new agent starts from the admin's default guardrails, under the file's
+    # own; a file config that failed validation contributes nothing.
+    file_config = spec.get("config") if authoritative["config"] else None
+    created_config = _import_config({"config": agent_defaults.seed(conn, file_config)})
     row = agents_repo.create(
         user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
     )
