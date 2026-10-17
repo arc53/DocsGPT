@@ -1093,7 +1093,7 @@ def _redis_to_check(args, env: Mapping[str, str]) -> dict:
 
 
 def _decision_settings(env: Mapping[str, str]):
-    """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, shape)``."""
+    """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, spec)``."""
     with _service_environment(env):
         from docsgpt.core.settings import Settings
         from docsgpt.decisions import features
@@ -1101,8 +1101,7 @@ def _decision_settings(env: Mapping[str, str]):
         _forget_shell_settings(env)
         settings = Settings(_env_file=None)
         registered = {
-            spec.name: (getattr(settings, spec.mode_setting, None) or "off",
-                        float(getattr(settings, spec.budget_setting)), spec.shape)
+            spec.name: (features.configured(spec, settings), float(getattr(settings, spec.budget_setting)), spec)
             for spec in features.specs()
         }
     return settings, registered
@@ -1158,6 +1157,9 @@ def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, st
 def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     """The decision model: where it runs, what that reports, and every feature's mode and ``auto`` verdict.
 
+    Relevance in retrieval (``DECISION_RELEVANCE_ENABLED``) is the ``rag_rerank`` feature; a server's measured
+    speed adds each feature's predicted call against its budget (for ``rag_rerank``, DECISION_RELEVANCE_TIMEOUT).
+
     Decisions fail open, so this is never a failure: a feature that is on with no model behind it is a warning.
 
     Args:
@@ -1165,6 +1167,8 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
         docker: Whether the services run in this stack's containers: the model is then in the backend
             container, or in the decider sidecar when ``docsgpt up --decider`` started one.
     """
+    from docsgpt.decisions import features
+
     try:
         settings, registered = _decision_settings(env)
     except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
@@ -1192,10 +1196,14 @@ def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     else:
         where = _local_decisions(settings)
     verdicts = []
-    for name, (mode, budget, shape) in registered.items():
-        if mode == "auto" and profile is not None:
-            predicted = profile.predict_s(shape)
-            mode = f"auto, {'on' if predicted <= budget else 'off'} at {predicted:.2f}s of {budget:g}s"
+    # A server timed on the ONNX plan runs on a CPU, where relevance scores best-window passages.
+    runtime = "onnx" if profile is not None and profile.plan == "onnx" else None
+    for name, (mode, budget, spec) in registered.items():
+        if mode != "off" and profile is not None:
+            predicted = profile.predict_s(features.shape_of(spec, settings, runtime))
+            if mode == "auto":
+                mode = f"auto, {'on' if predicted <= budget else 'off'}"
+            mode = f"{mode} at {predicted:.2f}s of {budget:g}s"
         verdicts.append(f"{name} {mode}")
     if not on:
         level = "ok"

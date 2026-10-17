@@ -352,10 +352,11 @@
         "queryPlaceholder": "このソースが回答できそうな質問を入力...",
         "run": "実行",
         "notSavedHint": "これらの設定はこのテストにのみ使用され、ソースには保存されません。恒久的に変更するにはソース設定で変更してください。",
+        "notSavedHintEditor": "これらの設定は、ソースに保存するまでこのテストにのみ使用されます。",
         "resultSummary": "{{count}}件のチャンクを取得 · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "このクエリで取得されたチャンクはありません。",
-        "emptyWithThreshold": "スコアしきい値（{{threshold}}）以上のチャンクがありません。しきい値を下げると、惜しい候補を確認できます。",
+        "emptyWithThreshold": "類似度しきい値（{{threshold}}）以上のチャンクがありません。しきい値を下げると、惜しい候補を確認できます。",
         "showMore": "チャンク全体を表示",
         "showLess": "折りたたむ",
         "noScore": "スコアなし",
@@ -367,7 +368,31 @@
         },
         "errors": {
           "failed": "検索テストに失敗しました。もう一度お試しください。"
-        }
+        },
+        "relevance": "関連度",
+        "compare": "リトリーバーの順序と比較",
+        "compareHint": "すべての候補をリトリーバーの順序で一覧表示し、関連度と、関連度モデルが残した・繰り上げた・除外したかを示します。",
+        "relevanceRun": {
+          "applied": "{{ms}} ms で関連度順に並べ替え",
+          "fallback": "関連度モデルは未使用（{{reason}}）、リトリーバーの順序のまま"
+        },
+        "compareTitle": "リトリーバーの順序",
+        "compareDescription": "関連度ステージが受け取ったすべての候補を、リトリーバーが順位付けした順に示します。",
+        "compareColumns": {
+          "before": "順位",
+          "chunk": "チャンク",
+          "relevance": "関連度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "#{{rank}} に繰り上げ",
+          "kept": "#{{rank}} として残す",
+          "dropped": "除外",
+          "notKept": "残さない"
+        },
+        "strictness": "このテストの関連度",
+        "saveToSource": "ソースに保存",
+        "savedToSource": "保存しました。ソースはテストした設定を使用します。"
       },
       "editConfig": "ソース設定",
       "shareWithTeam": "チームと共有",
@@ -396,14 +421,15 @@
       "searchAlt": "検索",
       "retrievalOptions": {
         "title": "詳細設定",
+        "advanced": "詳細",
         "retrieval": {
           "title": "検索",
           "note": "これらの変更は即時に反映されます。再インデックスは不要です。",
           "tag": "再インデックス不要",
           "chunks": "取得するチャンク数（top-k）",
-          "scoreThreshold": "スコアしきい値",
-          "scoreThresholdPlaceholder": "なし",
-          "scoreThresholdHint": "この関連度スコア（0–1）を超えるチャンクのみを返します。高いほど厳格になります。",
+          "similarityThreshold": "類似度しきい値",
+          "similarityThresholdPlaceholder": "なし",
+          "similarityThresholdHint": "リトリーバーの類似度スコアがこの値（0〜1）未満のチャンクを除外します。関連度モデルではなく、リトリーバーのスコアで絞り込みます。",
           "rephraseQuery": "検索前にクエリを言い換える",
           "retriever": "リトリーバー",
           "retrievers": {
@@ -433,13 +459,14 @@
           "agentToolHint": "このソースの公開方法が「オンデマンド検索ツール」の場合、またはエージェント型エージェントが使用する場合、エージェントはこれらのリレーションを自ら辿ることもできます。"
         },
         "prescreen": {
-          "enable": "LLMプリスクリーニングを有効にする",
-          "warning": "より多くの候補を取得し、LLMでフィルタリングします。クエリ時のレイテンシとコストが増加します。",
+          "enable": "LLM による選別",
+          "warning": "LLM がより多くの候補を確認し、クエリに答えるものだけを残します。クエリごとのレイテンシとコストが増加します。",
           "candidateK": "取得する候補数",
           "maxKeep": "保持する最大チャンク数",
           "batchSize": "バッチサイズ",
           "model": "モデル（任意）",
-          "modelPlaceholder": "デフォルトではリクエストのモデルを使用"
+          "modelPlaceholder": "デフォルトではリクエストのモデルを使用",
+          "exclusiveHint": "関連度の代わりに使う機能です。一方をオンにすると、もう一方はオフになります。"
         },
         "graph": {
           "title": "グラフ抽出",
@@ -467,6 +494,29 @@
           "maxTokensHint": "最大4,096トークンです。",
           "minTokens": "チャンクあたりの最小トークン数",
           "duplicateHeaders": "チャンク間でヘッダーを複製"
+        },
+        "relevance": {
+          "title": "関連度",
+          "tag": "再インデックス不要",
+          "mode": "関連度モデル",
+          "modeHint": "取得した各チャンクをクエリに照らして採点します。「並べ替え」は関連度の高いものを先頭にし、「並べ替えと絞り込み」は関連度の低いものも除外します。",
+          "modes": {
+            "off": "オフ",
+            "reorder": "並べ替え",
+            "filter": "並べ替えと絞り込み"
+          },
+          "strictness": "絞り込みの厳しさ",
+          "strictnessHint": "厳しくするほど残るチャンクが減ります。回答あたりのトークンは減りますが、重要なチャンクを落とす可能性が高まります。",
+          "presets": {
+            "loose": "緩め",
+            "balanced": "標準",
+            "strict": "厳しめ",
+            "custom": "カスタム（{{value}}）"
+          },
+          "minRelevance": "最小関連度",
+          "minRelevanceHint": "チャンクを残すのに必要な正確な関連度（0〜1）です。緩めは 0.1、標準は 0.3、厳しめは 0.5 です。",
+          "candidates": "採点する候補数",
+          "candidatesHint": "関連度モデルが採点するためにリトリーバーが取得するチャンク数です（最大 {{max}}）。既定値は {{default}} です。"
         }
       },
       "configModal": {
@@ -475,7 +525,7 @@
         "subtitleGeneric": "このソースのチャンク分割と検索の方法を設定します。",
         "save": "保存",
         "chunkingChangeHint": "チャンク分割の設定を変更しました。保存後、反映にはこのソースの再インデックスが必要です。",
-        "prescreenInvalidHint": "プリスクリーニングの値を確認してください。取得する候補数はチャンク数以上、保持するチャンク数は取得する候補数以下である必要があります。",
+        "prescreenInvalidHint": "LLM による選別の値を確認してください。取得する候補数はチャンク数以上、保持するチャンク数は取得する候補数以下である必要があります。",
         "reingestRequired": "変更を保存しました。変更したチャンク分割の設定は再インデックス後にのみ反映されます。今すぐ再インデックスしますか？",
         "reingestLater": "後で",
         "errors": {
@@ -2123,6 +2173,12 @@
         "loadFailed": "この箇所を読み込めませんでした。",
         "openLink": "リンクを開く",
         "openInKnowledge": "ナレッジで開く"
+      },
+      "relevance": {
+        "strong": "関連性が高い",
+        "possible": "関連の可能性あり",
+        "weak": "関連性が低い",
+        "tooltip": "関連度 {{percent}}%"
       }
     },
     "attachments": {

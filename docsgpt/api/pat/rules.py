@@ -222,6 +222,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources", "GET"): _rule("sources:read", listing=True),
     # Counted and paged in SQL, so it cannot be narrowed here; restricted tokens use /api/sources.
     ("/api/sources/paginated", "GET"): _rule("sources:read"),
+    # The admin's defaults for new sources: no source's data, so open to restricted tokens.
+    ("/api/sources/defaults", "GET"): _rule("sources:read", open=True),
     ("/api/directory_structure", "GET"): _rule("sources:read", (QUERY, "id")),
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
     # The chunk behind a citation; scoped to its source like get_chunks.

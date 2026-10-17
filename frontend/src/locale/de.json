@@ -353,11 +353,12 @@
         "queryPlaceholder": "Frage etwas, das diese Quelle beantworten sollte...",
         "run": "Ausführen",
         "notSavedHint": "Diese Einstellungen gelten nur für diesen Test – sie werden nicht in der Quelle gespeichert. Ändere sie in den Quelleneinstellungen, um sie dauerhaft zu übernehmen.",
+        "notSavedHintEditor": "Diese Einstellungen gelten nur für diesen Test, bis du sie in der Quelle speicherst.",
         "resultSummary_one": "{{count}} Chunk abgerufen · {{retriever}}",
         "resultSummary_other": "{{count}} Chunks abgerufen · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "Keine Chunks für diese Anfrage abgerufen.",
-        "emptyWithThreshold": "Keine Chunks haben den Score-Schwellenwert ({{threshold}}) erreicht. Senke ihn, um knappe Treffer zu sehen.",
+        "emptyWithThreshold": "Keine Chunks haben die Ähnlichkeitsschwelle ({{threshold}}) erreicht. Senke sie, um knappe Treffer zu sehen.",
         "showMore": "Ganzen Chunk anzeigen",
         "showLess": "Weniger anzeigen",
         "noScore": "kein Score",
@@ -369,7 +370,31 @@
         },
         "errors": {
           "failed": "Retrieval-Test fehlgeschlagen. Bitte versuche es erneut."
-        }
+        },
+        "relevance": "Relevanz",
+        "compare": "Mit der Reihenfolge des Retrievers vergleichen",
+        "compareHint": "Zusätzlich alle Kandidaten in der Reihenfolge des Retrievers auflisten, mit ihrer Relevanz und ob das Relevanzmodell sie behalten, hochgestuft oder verworfen hat.",
+        "relevanceRun": {
+          "applied": "in {{ms}} ms nach Relevanz geordnet",
+          "fallback": "Relevanzmodell nicht verwendet ({{reason}}), Reihenfolge des Retrievers beibehalten"
+        },
+        "compareTitle": "Reihenfolge des Retrievers",
+        "compareDescription": "Alle Kandidaten, die die Relevanzstufen erhalten haben, in der Reihenfolge des Retrievers.",
+        "compareColumns": {
+          "before": "Rang",
+          "chunk": "Chunk",
+          "relevance": "Relevanz",
+          "outcome": "Ergebnis"
+        },
+        "compareStatus": {
+          "promoted": "Hochgestuft auf #{{rank}}",
+          "kept": "Behalten als #{{rank}}",
+          "dropped": "Verworfen",
+          "notKept": "Nicht behalten"
+        },
+        "strictness": "Relevanz für diesen Test",
+        "saveToSource": "In Quelle speichern",
+        "savedToSource": "Gespeichert. Die Quelle verwendet jetzt die getesteten Einstellungen."
       },
       "editConfig": "Quelleneinstellungen",
       "shareWithTeam": "Mit Team teilen",
@@ -398,14 +423,15 @@
       "searchAlt": "Suchen",
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
+        "advanced": "Erweitert",
         "retrieval": {
           "title": "Abruf",
           "note": "Diese Änderungen wirken sofort, kein erneutes Indexieren nötig.",
           "tag": "kein erneutes Indexieren",
           "chunks": "Abzurufende Chunks (Top-k)",
-          "scoreThreshold": "Score-Schwellenwert",
-          "scoreThresholdPlaceholder": "Keiner",
-          "scoreThresholdHint": "Nur Chunks über diesem Relevanz-Score (0–1) zurückgeben; höher ist strenger.",
+          "similarityThreshold": "Ähnlichkeitsschwelle",
+          "similarityThresholdPlaceholder": "Keiner",
+          "similarityThresholdHint": "Verwirft Chunks, deren Ähnlichkeitswert vom Retriever unter diesem Wert (0–1) liegt. Gefiltert wird nach dem Wert des Retrievers, nicht nach dem Relevanzmodell.",
           "rephraseQuery": "Anfrage vor der Suche umformulieren",
           "retriever": "Retriever",
           "retrievers": {
@@ -435,13 +461,14 @@
           "agentToolHint": "Agenten können diesen Beziehungen auch selbst folgen, wenn die Bereitstellung dieser Quelle „Suchwerkzeug auf Abruf“ ist oder ein agentischer Agent sie nutzt."
         },
         "prescreen": {
-          "enable": "LLM-Vorfilterung aktivieren",
-          "warning": "Ruft eine größere Kandidatenmenge ab und filtert sie mit einem LLM. Das erhöht Latenz und Kosten pro Anfrage.",
+          "enable": "LLM-Vorfilterung",
+          "warning": "Ein LLM prüft eine größere Kandidatenmenge und behält die Chunks, die die Anfrage beantworten. Das erhöht Latenz und Kosten pro Anfrage.",
           "candidateK": "Abzurufende Kandidaten",
           "maxKeep": "Max. zu behaltende Chunks",
           "batchSize": "Batch-Größe",
           "model": "Modell (optional)",
-          "modelPlaceholder": "Standardmäßig das Modell der Anfrage"
+          "modelPlaceholder": "Standardmäßig das Modell der Anfrage",
+          "exclusiveHint": "Sie ersetzt die Relevanz: Wird eines eingeschaltet, schaltet sich das andere aus."
         },
         "graph": {
           "title": "Graph-Extraktion",
@@ -469,6 +496,29 @@
           "maxTokensHint": "Maximal 4.096 Tokens.",
           "minTokens": "Min. Tokens pro Chunk",
           "duplicateHeaders": "Überschriften über Chunks hinweg duplizieren"
+        },
+        "relevance": {
+          "title": "Relevanz",
+          "tag": "kein erneutes Indexieren",
+          "mode": "Relevanzmodell",
+          "modeHint": "Bewertet jeden abgerufenen Chunk anhand der Anfrage. „Neu ordnen“ stellt die relevantesten nach vorn; „Neu ordnen und filtern“ verwirft zusätzlich die schwachen.",
+          "modes": {
+            "off": "Aus",
+            "reorder": "Neu ordnen",
+            "filter": "Neu ordnen und filtern"
+          },
+          "strictness": "Filterstrenge",
+          "strictnessHint": "Strenger behält weniger Chunks: weniger Tokens pro Antwort, aber ein höheres Risiko, einen wichtigen zu verwerfen.",
+          "presets": {
+            "loose": "Locker",
+            "balanced": "Ausgewogen",
+            "strict": "Streng",
+            "custom": "Benutzerdefiniert ({{value}})"
+          },
+          "minRelevance": "Mindestrelevanz",
+          "minRelevanceHint": "Die genaue Relevanz (0–1), die ein Chunk braucht, um behalten zu werden. Locker ist 0,1, Ausgewogen 0,3, Streng 0,5.",
+          "candidates": "Zu bewertende Kandidaten",
+          "candidatesHint": "Wie viele Chunks der Retriever für das Relevanzmodell abruft, höchstens {{max}}. Standard: {{default}}."
         }
       },
       "configModal": {
@@ -477,7 +527,7 @@
         "subtitleGeneric": "Konfiguriere, wie diese Quelle in Chunks aufgeteilt und abgerufen wird.",
         "save": "Speichern",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
-        "prescreenInvalidHint": "Prüfe die Vorfilter-Werte: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
+        "prescreenInvalidHint": "Prüfe die Werte der LLM-Vorfilterung: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
         "reingestRequired": "Deine Änderungen wurden gespeichert. Die geänderten Chunking-Einstellungen wirken erst nach einem erneuten Indexieren. Jetzt erneut indexieren?",
         "reingestLater": "Später",
         "errors": {
@@ -2133,6 +2183,12 @@
         "loadFailed": "Die Passage konnte nicht geladen werden.",
         "openLink": "Link öffnen",
         "openInKnowledge": "In Wissen öffnen"
+      },
+      "relevance": {
+        "strong": "Starke Übereinstimmung",
+        "possible": "Mögliche Übereinstimmung",
+        "weak": "Schwache Übereinstimmung",
+        "tooltip": "Relevanz {{percent}} %"
       }
     },
     "attachments": {

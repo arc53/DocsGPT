@@ -193,6 +193,65 @@ class DecisionSettings(SettingsGroup):
         ),
     )
 
+    # Model-scored relevance in retrieval: the operator's switch, then the tuning knobs (never shown in the UI).
+    DECISION_RELEVANCE_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Let the decision model score retrieved chunks for the sources whose relevance setting is on (their "
+            "`reranker`). While false, no source's setting calls or loads the model, retrieval returns what it "
+            "would without it, and the source settings hide the relevance controls. While true, the API process (or "
+            "the decide server) loads the model at start, so the first answer does not fall back while it loads. "
+            "No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false."
+        ),
+    )
+    DECISION_RELEVANCE_ROLLOUT_PERCENT: int = Field(
+        default=100,
+        ge=0,
+        le=100,
+        description=(
+            "Share of conversations, by a hash of the conversation id, in which sources with relevance on are "
+            "scored; the rest are the `control` arm and keep the retriever's output. The decision record and the "
+            "trace carry the arm. The retrieval test ignores it."
+        ),
+    )
+    DECISION_RELEVANCE_CANDIDATE_TOKENS: int = Field(
+        default=60000,
+        ge=1,
+        description=(
+            "Token budget of the candidate fetch for relevance, so a small model context does not cut the candidates "
+            "in retriever order; the request's own document budget applies after the scoring."
+        ),
+    )
+    DECISION_RELEVANCE_MIN_KEEP: int = Field(
+        default=1,
+        ge=0,
+        description="Chunks a relevance threshold always keeps from a non-empty retrieval, most relevant first.",
+    )
+    DECISION_RELEVANCE_MAX_PASSAGES: int = Field(
+        default=100,
+        ge=1,
+        le=128,
+        description="Most chunks one relevance call scores; later candidates are not considered.",
+    )
+    DECISION_RELEVANCE_TIMEOUT: float = Field(
+        default=2.0,
+        gt=0,
+        description=(
+            "Deadline, in seconds, of one relevance call; past it the retrieval returns what it would without the "
+            "model."
+        ),
+    )
+    DECISION_RELEVANCE_CPU_PASSAGE_TOKENS: int = Field(
+        default=256,
+        ge=128,
+        le=2048,
+        description=(
+            "Where the decision model runs on a CPU, each chunk is scored on its first 64 tokens plus the window "
+            "sharing the most words with the query, this many tokens in all; GPU and API-mode servers score whole "
+            "chunks."
+        ),
+    )
+
     @field_validator("DECISION_MODE", "DECISION_PROTOCOL", "DECISION_DEVICE", mode="before")
     @classmethod
     def _normalize_mode(cls, v):

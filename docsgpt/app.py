@@ -245,6 +245,7 @@ def get_config():
     from docsgpt.stt.stt_creator import STTCreator
     from docsgpt.tts.tts_creator import TTSCreator
 
+    decision_available = decisions.available()
     response = {
         "auth_type": settings.AUTH_TYPE,
         "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"],
@@ -261,7 +262,12 @@ def get_config():
         # Whether the decision model can answer here; never loads it. The
         # details (status, speed, feature verdicts) are admin-only:
         # /api/admin/decisions.
-        "decision_available": decisions.available(),
+        "decision_available": decision_available,
+        # Whether sources may turn relevance on (DECISION_RELEVANCE_ENABLED,
+        # with the model available); the source settings show its controls
+        # only then. Read from settings and the client's own state, so this
+        # route never loads, warms or times the model.
+        "decision_relevance_enabled": bool(settings.DECISION_RELEVANCE_ENABLED and decision_available),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

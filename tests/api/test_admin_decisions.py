@@ -53,6 +53,9 @@ class TestAdminDecisions:
                 "injection_input": {
                     "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 0.5, "reason": "configured",
                 },
+                "rag_rerank": {
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
+                },
             },
         }
         assert decisions.get_decider()._backend is None
