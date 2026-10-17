@@ -208,6 +208,24 @@ def _decisions_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_active_decision_record():
+    """Start every test with no decision record active.
+
+    A stream generator a test leaves half-consumed keeps the record it
+    activated set in this thread until it is collected, which a later test on
+    the same worker would otherwise see.
+    """
+    from docsgpt.decisions import record
+
+    token = record._current.set(None)
+    yield
+    try:
+        record._current.reset(token)
+    except ValueError:
+        record._current.set(None)
+
+
+@pytest.fixture(autouse=True)
 def _no_stored_floor(monkeypatch):
     """Run with no guardrails floor, and without reading one from a database.
 
