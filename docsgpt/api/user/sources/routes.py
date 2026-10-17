@@ -257,6 +257,7 @@ class PaginatedSources(Resource):
                         None if owned else team_shared.get(str(doc["id"]))
                     ),
                     "connectionId": _connection_id(doc),
+                    "injectionScan": (doc.get("metadata") or {}).get("injection_scan"),
                 }
                 paginated_docs.append(
                     _with_access(
