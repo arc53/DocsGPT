@@ -54,6 +54,16 @@ class GuardrailSettings(SettingsGroup):
             "last ones are read, and a text that scored clean is not evaluated."
         ),
     )
+    GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS: int = Field(
+        default=64,
+        ge=1,
+        le=256,
+        description=(
+            "Windows (512 model tokens each) read of a chat attachment's text when it is scored for prompt "
+            "injection in the background after upload, about 30,000 tokens at the default. Past it the first "
+            "window and the last ones are read."
+        ),
+    )
     GUARDRAILS_INJECTION_LIVE_ITEMS: Union[int, Literal["auto"]] = Field(
         default="auto",
         description=(

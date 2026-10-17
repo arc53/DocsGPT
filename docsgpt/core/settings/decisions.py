@@ -199,8 +199,8 @@ class DecisionSettings(SettingsGroup):
         default=False,
         description=(
             "Let the decision model score text for prompt injection: the `injection_model` guardrail check of "
-            "agents and of the floor (Admin > Guardrails), the sources set to scan their chunks, and MCP tool "
-            "descriptions when Admin > Guardrails warns on them. While false nothing loads or calls the model for "
+            "agents and of the floor (Admin > Guardrails), the sources set to scan their chunks, chat attachments "
+            "once uploaded, and MCP tool descriptions when Admin > Guardrails warns on them. While false nothing loads or calls the model for "
             "guardrails, those controls are not evaluated, and the UI marks the check unavailable. While true, the "
             "API process (or the decide server) loads the model at start."
         ),
