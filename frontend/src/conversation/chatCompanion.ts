@@ -26,6 +26,10 @@ export type AnswerSource = {
   // The decision model's p(relevant) against the searched query, when a
   // relevance stage ordered the answer's sources; absent otherwise.
   relevance?: number | null;
+  // Left out of the answer by the agent's guardrails (a retrieval control
+  // that blocks, such as the prompt-injection model): `text` is then a
+  // placeholder, never the passage.
+  withheld?: 'policy' | null;
 };
 
 /**

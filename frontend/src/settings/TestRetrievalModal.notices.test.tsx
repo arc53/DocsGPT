@@ -254,7 +254,7 @@ describe('TestRetrievalModal notices', () => {
           modalState="ACTIVE"
           setModalState={() => undefined}
           document={doc(undefined)}
-          decision={{ relevance: true }}
+          decision={{ relevance: true, injection: false }}
         />,
       );
     });
@@ -310,7 +310,7 @@ describe('TestRetrievalModal notices', () => {
           modalState="ACTIVE"
           setModalState={() => undefined}
           document={document}
-          decision={{ relevance: true }}
+          decision={{ relevance: true, injection: false }}
           onSaved={onSaved}
         />,
       );
