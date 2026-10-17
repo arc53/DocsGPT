@@ -668,3 +668,95 @@ class TestPoisonHook:
 
         assert result["success"] is False
         assert "poison-loop" in result["error"]
+
+    def test_reingest_source_task_keyless_runs_without_lockout(self, pg_conn):
+        """Keyless reingest dispatches synthesize a per-operation guard key from
+        the Celery task id instead of a static source_id key, preventing a 24-hour
+        lockout between distinct operations while deduplicating retries of the same operation.
+        """
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="reingest_source_task")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            return {"runs": runs["count"]}
+
+        with _patch_decorator_db(pg_conn):
+            first = task(_fake_celery_self("tid-op-1"), source_id="src-reingest")
+            second = task(_fake_celery_self("tid-op-2"), source_id="src-reingest")
+            # Same operation retried/redelivered reuses its task id and deduplicates:
+            retry_first = task(_fake_celery_self("tid-op-1"), source_id="src-reingest")
+
+        assert first == {"runs": 1}
+        assert second == {"runs": 2}
+        assert retry_first == {"runs": 1}
+        assert runs["count"] == 2
+        assert _row_for(pg_conn, "auto:reingest_source_task:src-reingest") is None
+        assert _row_for(pg_conn, "auto:reingest_source_task:tid-op-1") is not None
+        assert _row_for(pg_conn, "auto:reingest_source_task:tid-op-2") is not None
+
+    def test_reingest_source_task_keyless_trips_poison_loop(self, pg_conn):
+        """Repeated failures of a keyless reingest operation trip the poison-loop guard."""
+        from docsgpt.api.user.idempotency import (
+            MAX_TASK_ATTEMPTS, with_idempotency,
+        )
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="reingest_source_task")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            raise RuntimeError("OOM-style failure")
+
+        celery_self = _fake_celery_self("tid-poison")
+
+        with _patch_decorator_db(pg_conn):
+            for _ in range(MAX_TASK_ATTEMPTS):
+                with pytest.raises(RuntimeError):
+                    task(celery_self, source_id="src-reingest")
+            result = task(celery_self, source_id="src-reingest")
+
+        assert runs["count"] == MAX_TASK_ATTEMPTS
+        assert result["success"] is False
+        assert "poison-loop" in result["error"]
+        assert _row_for(pg_conn, "auto:reingest_source_task:tid-poison")[2] == "failed"
+
+    def test_reingest_source_task_explicit_key_deduplicates(self, pg_conn):
+        """When an explicit idempotency key is passed, same-key retries deduplicate
+        while distinct keys execute.
+        """
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="reingest_source_task")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            return {"runs": runs["count"]}
+
+        with _patch_decorator_db(pg_conn):
+            first = task(
+                _fake_celery_self(),
+                source_id="src-reingest",
+                idempotency_key="key-1",
+            )
+            second = task(
+                _fake_celery_self(),
+                source_id="src-reingest",
+                idempotency_key="key-1",
+            )
+            third = task(
+                _fake_celery_self(),
+                source_id="src-reingest",
+                idempotency_key="key-2",
+            )
+
+        assert first == {"runs": 1}
+        assert second == {"runs": 1}
+        assert third == {"runs": 2}
+        assert runs["count"] == 2
+        assert _row_for(pg_conn, "key-1") is not None
+        assert _row_for(pg_conn, "key-2") is not None
+

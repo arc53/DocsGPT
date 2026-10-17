@@ -311,8 +311,17 @@ const userService = {
     apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
   getDirectoryStructure: (docId: string, token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
-  manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
-    apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
+  manageSourceFiles: (
+    data: FormData,
+    token: string | null,
+    idempotencyKey?: string,
+  ): Promise<any> =>
+    apiClient.postFormData(
+      endpoints.USER.MANAGE_SOURCE_FILES,
+      data,
+      token,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    ),
   testMCPConnection: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>

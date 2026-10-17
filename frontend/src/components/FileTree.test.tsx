@@ -179,4 +179,16 @@ describe('FileTree delete', () => {
     await deleteRow('rates.pdf');
     expect(toasts()).toEqual([]);
   });
+
+  it('sends an idempotency key when managing source files', async () => {
+    manageSourceFiles.mockReturnValue(
+      respond({ success: true, reingest_task_id: 'r1', source_id: 's1' }),
+    );
+    waitForTerminal.mockResolvedValue('completed');
+    await deleteRow('rates.pdf');
+    expect(manageSourceFiles).toHaveBeenCalledTimes(1);
+    const key = manageSourceFiles.mock.calls[0][2];
+    expect(typeof key).toBe('string');
+    expect(key.length).toBeGreaterThan(0);
+  });
 });

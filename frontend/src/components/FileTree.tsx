@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
+import { newIdempotencyKey } from '../utils/idempotency';
 import { Trash2 } from 'lucide-react';
 import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -129,7 +130,12 @@ const FileTree: React.FC<FileTreeProps> = ({
         formData.append('directory_path', directoryPath);
       }
 
-      const response = await userService.manageSourceFiles(formData, token);
+      const idempotencyKey = newIdempotencyKey();
+      const response = await userService.manageSourceFiles(
+        formData,
+        token,
+        idempotencyKey,
+      );
       const result = await response.json();
 
       if (result.success && result.reingest_task_id) {
