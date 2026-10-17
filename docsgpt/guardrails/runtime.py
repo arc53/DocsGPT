@@ -155,6 +155,11 @@ class GuardrailRecorder:
             if not verdict.outcome.triggered and verdict.outcome.evaluated:
                 continue
             categories = verdict.outcome.categories or [None]
+            # A triggered item verdict is a row per item, so three withheld
+            # documents write three rows; items that could not be scored are
+            # one row per stage, or a cold cache would write one per document
+            # on every turn.
+            item_ref = verdict.item_ref if verdict.outcome.triggered else None
             for category in categories:
                 dedup_key = (
                     verdict.stage.value,
@@ -162,6 +167,7 @@ class GuardrailRecorder:
                     verdict.action.value,
                     category,
                     verdict.outcome.triggered,
+                    item_ref,
                 )
                 if dedup_key in self._seen:
                     continue
@@ -190,6 +196,7 @@ class GuardrailRecorder:
                             else None
                         ),
                         "detail": verdict.outcome.detail or verdict.outcome.error,
+                        "item_ref": item_ref,
                     }
                 )
         if self.log_context is not None:

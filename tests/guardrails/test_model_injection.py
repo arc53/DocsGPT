@@ -23,8 +23,9 @@ from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.decisions.vendor.arc_decide import Decider as Release
 from docsgpt.guardrails.base import ScanContext, stage_deadline
-from docsgpt.guardrails.checks import model_injection
-from docsgpt.guardrails.checks.model_injection import ModelInjectionCheck, chunk_shape, windows
+from docsgpt.guardrails import injection_scoring
+from docsgpt.guardrails.checks.model_injection import ModelInjectionCheck, chunk_shape
+from docsgpt.guardrails.injection_scoring import windows
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.guardrails.engine import GuardrailEngine
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
@@ -74,10 +75,11 @@ def engine_config(action: Action, *, mode: str = "scan_all", fail_open: bool = T
 
 @pytest.mark.unit
 class TestCheck:
-    def test_registered_for_the_input_stage_only(self):
+    def test_registered_for_four_stages_and_scores_items(self):
         assert GuardrailCreator.get("injection_model") is ModelInjectionCheck
         entry = ModelInjectionCheck.describe()
-        assert entry["stages"] == ["input"] and entry["remote"] is True and entry["supports_redaction"] is False
+        assert entry["stages"] == ["attachment", "input", "retrieval", "tool_result"]
+        assert entry["remote"] is True and entry["supports_redaction"] is False and entry["item_level"] is True
 
     def test_unavailable_with_the_decision_model_off(self):
         assert ModelInjectionCheck.describe()["available"] is False
@@ -85,6 +87,8 @@ class TestCheck:
             assert ModelInjectionCheck.describe()["available"] is True
 
     def test_settings_default_to_the_module_thresholds(self):
+        from docsgpt.guardrails.checks import model_injection
+
         assert ModelInjectionCheck.validate_settings({}) == DEFAULTS
         assert (model_injection.THRESHOLD, model_injection.FLAG_THRESHOLD) == (0.9, 0.5)
 
@@ -166,9 +170,9 @@ class TestCheck:
 class TestWindows:
     @pytest.fixture(autouse=True)
     def small(self, monkeypatch):
-        monkeypatch.setattr(model_injection, "WINDOW_TOKENS", 10)
-        monkeypatch.setattr(model_injection, "WINDOW_OVERLAP", 2)
-        monkeypatch.setattr(model_injection, "MAX_WINDOWS", 3)
+        monkeypatch.setattr(injection_scoring, "WINDOW_TOKENS", 10)
+        monkeypatch.setattr(injection_scoring, "WINDOW_OVERLAP", 2)
+        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_MAX_WINDOWS", 3)
 
     def test_counted_in_tokens_with_an_overlap(self):
         with installed(FakeDecider(tokenizer=CharTokenizer())):
@@ -444,7 +448,7 @@ class TestFeature:
 
     def test_a_chunk_is_three_windows_in_the_background_lane(self):
         shape = chunk_shape()
-        assert (shape.states, shape.state_tokens, shape.lane) == (3, model_injection.WINDOW_TOKENS, "background")
+        assert (shape.states, shape.state_tokens, shape.lane) == (3, injection_scoring.WINDOW_TOKENS, "background")
 
 
 class PayloadEngine(FakeEngine):

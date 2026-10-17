@@ -825,6 +825,11 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_content_scores.s(),
+        name="cleanup-content-scores",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_traces.s(),
         name="cleanup-traces",
     )
@@ -1076,6 +1081,42 @@ def cleanup_decision_usage(self):
     with engine.begin() as conn:
         deleted = DecisionUsageRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_content_scores(self):
+    """Delete cached prompt-injection scores unseen for ``GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS``.
+
+    A row is written for every text scored and kept while it is seen again,
+    so text that left every index and conversation is eventually forgotten.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.content_scores import (
+        ContentScoresRepository,
+    )
+
+    ttl_days = settings.GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = ContentScoresRepository(conn).purge_unseen_for(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def score_injection_texts(self, texts):
+    """Score for prompt injection the texts a turn could not score in time, so the next one finds them cached.
+
+    The model is called over HTTP (the decider, or the API's internal route),
+    never loaded here. Nothing is retried: a text left unscored is queued
+    again by the next turn that uses it.
+    """
+    from docsgpt.guardrails import injection_scoring
+
+    return injection_scoring.score_lazy(list(texts or []))
 
 
 @celery.task(bind=True, acks_late=False)

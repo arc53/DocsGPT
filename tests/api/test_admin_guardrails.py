@@ -170,7 +170,8 @@ class TestRoutes:
             ({"floor": {"controls": [{"check": "nope", "stage": "input"}]}},
              "floor.controls.0.check: unknown check 'nope'"),
             ({"floor": {"controls": [{"check": "injection_model", "stage": "output"}]}},
-             "floor.controls.0: check 'injection_model' does not support stage 'output' (supported: input)"),
+             "floor.controls.0: check 'injection_model' does not support stage 'output' "
+             "(supported: attachment, input, retrieval, tool_result)"),
             ({"mcp_description_warnings": "yes"}, "mcp_description_warnings must be true or false"),
         ],
     )
