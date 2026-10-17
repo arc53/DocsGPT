@@ -362,12 +362,13 @@
         "queryPlaceholder": "Pregunta algo que esta fuente debería responder...",
         "run": "Ejecutar",
         "notSavedHint": "Estos ajustes solo se usan para esta prueba — no se guardan en la fuente. Cámbialos en Configuración de la fuente para hacerlos permanentes.",
+        "notSavedHintEditor": "Estos ajustes solo se usan para esta prueba hasta que los guardes en la fuente.",
         "resultSummary_one": "{{count}} fragmento recuperado · {{retriever}}",
         "resultSummary_other": "{{count}} fragmentos recuperados · {{retriever}}",
         "resultSummary_many": "{{count}} fragmentos recuperados · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No se recuperaron fragmentos para esta consulta.",
-        "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de puntuación ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
+        "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de similitud ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
         "showMore": "Mostrar fragmento completo",
         "showLess": "Mostrar menos",
         "noScore": "sin puntuación",
@@ -385,7 +386,6 @@
         "compareHint": "Muestra también todos los candidatos en el orden del recuperador, con su relevancia y si el modelo de relevancia los mantuvo, subió o descartó.",
         "relevanceRun": {
           "applied": "ordenados por relevancia en {{ms}} ms",
-          "monitor": "relevancia puntuada pero no aplicada (modo de observación)",
           "fallback": "modelo de relevancia no usado ({{reason}}), se mantiene el orden del recuperador"
         },
         "compareTitle": "Orden del recuperador",
@@ -401,7 +401,10 @@
           "kept": "Mantenido como #{{rank}}",
           "dropped": "Descartado",
           "notKept": "No mantenido"
-        }
+        },
+        "strictness": "Relevancia para esta prueba",
+        "saveToSource": "Guardar en la fuente",
+        "savedToSource": "Guardado. La fuente usa ahora los ajustes que probaste."
       },
       "editConfig": "Configuración de la fuente",
       "shareWithTeam": "Compartir con el equipo",
@@ -430,14 +433,15 @@
       "searchAlt": "Buscar",
       "retrievalOptions": {
         "title": "Configuración avanzada",
+        "advanced": "Avanzado",
         "retrieval": {
           "title": "Recuperación",
           "note": "Estos cambios surten efecto de inmediato, sin necesidad de reindexar.",
           "tag": "sin reindexar",
           "chunks": "Fragmentos a recuperar (top-k)",
-          "scoreThreshold": "Umbral de puntuación",
-          "scoreThresholdPlaceholder": "Ninguno",
-          "scoreThresholdHint": "Solo devuelve fragmentos por encima de esta puntuación de relevancia (0–1); cuanto más alta, más estricta.",
+          "similarityThreshold": "Umbral de similitud",
+          "similarityThresholdPlaceholder": "Ninguno",
+          "similarityThresholdHint": "Descarta los fragmentos cuya puntuación de similitud del recuperador sea inferior a este valor (0–1). Filtra por la puntuación del recuperador, no por el modelo de relevancia.",
           "rephraseQuery": "Reformular la consulta antes de buscar",
           "retriever": "Recuperador",
           "retrievers": {
@@ -467,22 +471,14 @@
           "agentToolHint": "Los agentes también pueden seguir estas relaciones por sí mismos cuando la exposición de esta fuente es «Herramienta de búsqueda bajo demanda» o cuando la usa un agente agéntico."
         },
         "prescreen": {
-          "enable": "Habilitar preselección con LLM",
-          "warning": "Obtiene un conjunto de candidatos más grande y usa un LLM para filtrarlo. Esto añade latencia y costo por consulta.",
+          "enable": "Preselección con LLM",
+          "warning": "Un LLM revisa un conjunto mayor de candidatos y conserva los que responden a la consulta. Esto añade latencia y costo a cada consulta.",
           "candidateK": "Candidatos a obtener",
-          "candidateKAboveDecisionMax": "El modelo de relevancia puntúa como máximo {{max}} candidatos, menos que los {{chunks}} fragmentos a recuperar. Reduce los fragmentos a {{max}} o usa el backend LLM.",
           "maxKeep": "Máximo de fragmentos a conservar",
           "batchSize": "Tamaño de lote",
           "model": "Modelo (opcional)",
           "modelPlaceholder": "Por defecto, el modelo de la solicitud",
-          "enableAny": "Activar preselección",
-          "warningAny": "Obtiene un conjunto mayor de candidatos y lo filtra con un LLM o con el modelo de relevancia. Esto añade latencia a la consulta, y el filtrado con un LLM añade coste.",
-          "backend": "Motor",
-          "backendHint": "El modelo de relevancia puntúa todos los candidatos en una sola llamada; un LLM los revisa por lotes.",
-          "backends": {
-            "llm": "LLM",
-            "decision": "Modelo de relevancia"
-          }
+          "exclusiveHint": "Sustituye a la relevancia: al activar una, se desactiva la otra."
         },
         "graph": {
           "title": "Extracción de grafo",
@@ -512,16 +508,27 @@
           "duplicateHeaders": "Duplicar encabezados entre fragmentos"
         },
         "relevance": {
-          "reranker": "Reordenar por relevancia",
-          "rerankerHint": "El modelo de relevancia coloca primero los fragmentos que mejor responden a la consulta. El valor predeterminado de la instancia es el que fijó tu administrador.",
-          "rerankerChoices": {
-            "default": "Predeterminado de la instancia",
-            "on": "Activado",
-            "off": "Desactivado"
+          "title": "Relevancia",
+          "tag": "sin reindexar",
+          "mode": "Modelo de relevancia",
+          "modeHint": "Puntúa cada fragmento recuperado frente a la consulta. Reordenar coloca primero los más relevantes; Reordenar y filtrar además descarta los débiles.",
+          "modes": {
+            "off": "Desactivado",
+            "reorder": "Reordenar",
+            "filter": "Reordenar y filtrar"
+          },
+          "strictness": "Rigor del filtro",
+          "strictnessHint": "Cuanto más estricto, menos fragmentos conserva: menos tokens por respuesta, pero más riesgo de descartar uno importante.",
+          "presets": {
+            "loose": "Flexible",
+            "balanced": "Equilibrado",
+            "strict": "Estricto",
+            "custom": "Personalizado ({{value}})"
           },
           "minRelevance": "Relevancia mínima",
-          "minRelevancePlaceholder": "Predeterminada",
-          "rerankMinRelevanceHint": "Descarta los fragmentos con una puntuación inferior (0–1). Déjalo vacío para solo reordenarlos."
+          "minRelevanceHint": "La relevancia exacta (0–1) que necesita un fragmento para conservarse. Flexible es 0,1, Equilibrado 0,3 y Estricto 0,5.",
+          "candidates": "Candidatos a puntuar",
+          "candidatesHint": "Cuántos fragmentos obtiene el recuperador para que el modelo de relevancia los puntúe, hasta {{max}}. Predeterminado: {{default}}."
         }
       },
       "configModal": {
@@ -530,7 +537,7 @@
         "subtitleGeneric": "Configura cómo se fragmenta y recupera esta fuente.",
         "save": "Guardar",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
-        "prescreenInvalidHint": "Revisa los valores de preselección: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
+        "prescreenInvalidHint": "Revisa los valores de la preselección con LLM: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
         "reingestLater": "Más tarde",
         "errors": {

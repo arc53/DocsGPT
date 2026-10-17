@@ -13,6 +13,7 @@ import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import {
   Table,
   TableBody,
@@ -23,18 +24,23 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { cn } from '../lib/utils';
-import { ActiveState, Doc } from '../models/misc';
+import { ActiveState, Doc, type SourceRetrievalConfig } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
+import { can } from '../utils/accessUtils';
 import { EMPTY_VALUE } from '../utils/dateTimeUtils';
 
 import RetrievalOptions, {
   configToOptions,
   type DecisionFeatures,
   NO_DECISION_FEATURES,
+  RELEVANCE_PRESETS,
+  type RelevanceStrictness,
   isPrescreenConfigValid,
   optionsToConfig,
   type RetrievalOptionsValue,
+  strictnessOf,
+  withStrictness,
 } from './components/RetrievalOptions';
 
 /** One retrieved chunk as returned by POST /api/sources/<id>/search. */
@@ -92,7 +98,15 @@ interface TestRetrievalModalProps {
   availableModels?: Model[];
   // The decision-model controls the operator turned on (/api/config).
   decision?: DecisionFeatures;
+  // After "Save to source" stored the tested retrieval block on the source.
+  onSaved?: (retrieval: SourceRetrievalConfig) => void;
 }
+
+const STRICTNESS: RelevanceStrictness[] = [
+  'off',
+  'reorder',
+  ...(Object.keys(RELEVANCE_PRESETS) as RelevanceStrictness[]),
+];
 
 /**
  * Renders a chunk's score with the label its kind earns. The kinds are NOT
@@ -151,9 +165,8 @@ export function relevanceRunText(
   run: RelevanceRun,
   tr: (key: string, opts?: Record<string, unknown>) => string,
 ): string {
-  if (run.fallback)
-    return tr('relevanceRun.fallback', { reason: run.fallback });
-  if (!run.applied) return tr('relevanceRun.monitor');
+  if (run.fallback || !run.applied)
+    return tr('relevanceRun.fallback', { reason: run.fallback ?? 'skipped' });
   return tr('relevanceRun.applied', { ms: run.latency_ms });
 }
 
@@ -254,6 +267,7 @@ export default function TestRetrievalModal({
   graphRAGAvailable = false,
   availableModels = [],
   decision = NO_DECISION_FEATURES,
+  onSaved,
 }: TestRetrievalModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -269,9 +283,15 @@ export default function TestRetrievalModal({
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [compare, setCompare] = useState(false);
-  // Comparing with retriever order shows what the decision model changed, so
-  // it is offered only where the operator turned the model on.
-  const canCompare = decision.rerank || decision.prescreen;
+  // The retrieval block the shown result ran with: what "Save to source" saves.
+  const [tested, setTested] = useState<SourceRetrievalConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Comparing with retriever order and picking a strictness show what the
+  // relevance model changes, so they are offered only where it is on.
+  const relevanceAvailable = decision.relevance;
+  const canSave = !!document && can(document, 'edit');
 
   useEffect(() => {
     if (modalState === 'ACTIVE') {
@@ -282,6 +302,10 @@ export default function TestRetrievalModal({
       setRunning(false);
       setExpanded(new Set());
       setCompare(false);
+      setTested(null);
+      setSaving(false);
+      setSaved(false);
+      setSaveError(null);
     }
   }, [modalState, document]);
 
@@ -289,11 +313,22 @@ export default function TestRetrievalModal({
 
   const prescreenValid = isPrescreenConfigValid(options);
   const canRun = !!document?.id && !!query.trim() && !running && prescreenValid;
+  const retrieval = optionsToConfig(options).retrieval;
+  // Saves only what the shown result ran with, so a form edited since does
+  // not land on the source untested.
+  const testedShown =
+    !!result &&
+    tested !== null &&
+    JSON.stringify(tested) === JSON.stringify(retrieval);
 
-  const handleRun = async () => {
-    if (!canRun || !document?.id) return;
+  const handleRun = async (next: RetrievalOptionsValue = options) => {
+    if (!document?.id || !query.trim() || running) return;
+    if (!isPrescreenConfigValid(next)) return;
+    const ran = optionsToConfig(next).retrieval ?? null;
     setRunning(true);
     setError(null);
+    setSaved(false);
+    setSaveError(null);
     try {
       const response = await userService.testSourceRetrieval(
         document.id,
@@ -301,8 +336,8 @@ export default function TestRetrievalModal({
           query: query.trim(),
           // Send the form's retrieval block as an ad-hoc override — the backend
           // never persists it, so the source's saved config is untouched.
-          retrieval: optionsToConfig(options).retrieval,
-          ...(canCompare && compare ? { compare: true } : {}),
+          retrieval: ran,
+          ...(relevanceAvailable && compare ? { compare: true } : {}),
         },
         token,
       );
@@ -310,17 +345,61 @@ export default function TestRetrievalModal({
       if (!response.ok || !data?.success) {
         setError(data?.message || tr('errors.failed'));
         setResult(null);
+        setTested(null);
         return;
       }
       setResult(data as RetrievalResult);
+      setTested(ran);
       setExpanded(new Set());
     } catch {
       setError(tr('errors.failed'));
       setResult(null);
+      setTested(null);
     } finally {
       setRunning(false);
     }
   };
+
+  // A strictness pick re-runs the test with it, once there is a query.
+  const pickStrictness = (strictness: RelevanceStrictness) => {
+    const next = withStrictness(options, strictness);
+    setOptions(next);
+    handleRun(next);
+  };
+
+  // The PATCH keeps the sections it is not sent, so the tested retrieval
+  // block goes alone and chunking and graph stay as saved.
+  const handleSave = async () => {
+    if (!document?.id || !testedShown || !canSave) return;
+    setSaving(true);
+    setSaved(false);
+    setSaveError(null);
+    try {
+      const response = await userService.updateSourceConfig(
+        document.id,
+        { retrieval: tested },
+        token,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        setSaveError(
+          response.status === 403
+            ? t('settings.sources.configModal.errors.forbidden')
+            : data?.message ||
+                t('settings.sources.configModal.errors.saveFailed'),
+        );
+        return;
+      }
+      setSaved(true);
+      onSaved?.(tested);
+    } catch {
+      setSaveError(t('settings.sources.configModal.errors.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const strictness = strictnessOf(options);
 
   const toggleExpanded = (rank: number) => {
     setExpanded((prev) => {
@@ -373,7 +452,7 @@ export default function TestRetrievalModal({
             <Button
               type="button"
               disabled={!canRun}
-              onClick={handleRun}
+              onClick={() => handleRun()}
               size="field"
               loading={running}
               className="shrink-0"
@@ -381,6 +460,39 @@ export default function TestRetrievalModal({
               {tr('run')}
             </Button>
           </div>
+
+          {relevanceAvailable && (
+            <ToggleGroup
+              type="single"
+              value={strictness}
+              aria-label={tr('strictness')}
+              onValueChange={(v) =>
+                v && v !== 'custom' && pickStrictness(v as RelevanceStrictness)
+              }
+            >
+              {STRICTNESS.map((s) => (
+                <ToggleGroupItem key={s} value={s}>
+                  {s === 'off' || s === 'reorder'
+                    ? t(
+                        `settings.sources.retrievalOptions.relevance.modes.${s}`,
+                      )
+                    : t(
+                        `settings.sources.retrievalOptions.relevance.presets.${s}`,
+                      )}
+                </ToggleGroupItem>
+              ))}
+              {strictness === 'custom' && (
+                <ToggleGroupItem value="custom">
+                  {t(
+                    'settings.sources.retrievalOptions.relevance.presets.custom',
+                    {
+                      value: options.retrieval.reranker.min_relevance,
+                    },
+                  )}
+                </ToggleGroupItem>
+              )}
+            </ToggleGroup>
+          )}
 
           <RetrievalOptions
             value={options}
@@ -392,7 +504,7 @@ export default function TestRetrievalModal({
             decision={decision}
           />
 
-          {canCompare && (
+          {relevanceAvailable && (
             <SettingRows>
               <SettingRow
                 label={tr('compare')}
@@ -409,7 +521,35 @@ export default function TestRetrievalModal({
             </SettingRows>
           )}
 
-          <p className="text-muted-foreground text-xs">{tr('notSavedHint')}</p>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p className="text-muted-foreground text-xs">
+              {tr(canSave ? 'notSavedHintEditor' : 'notSavedHint')}
+            </p>
+            {canSave && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!testedShown || saved}
+                loading={saving}
+                onClick={handleSave}
+              >
+                {tr('saveToSource')}
+              </Button>
+            )}
+          </div>
+
+          {saved && (
+            <Alert variant="success">
+              <AlertDescription>{tr('savedToSource')}</AlertDescription>
+            </Alert>
+          )}
+
+          {saveError && (
+            <Alert variant="destructive">
+              <AlertDescription>{saveError}</AlertDescription>
+            </Alert>
+          )}
 
           {!prescreenValid && (
             <Alert variant="warning">

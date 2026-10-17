@@ -720,6 +720,13 @@ export default function Sources({
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
         decision={decision}
+        // The open source and the list both show the saved config.
+        onSaved={(retrieval) => {
+          setDocumentToView((doc) =>
+            doc ? { ...doc, config: { ...doc.config, retrieval } } : doc,
+          );
+          refreshDocs(undefined, currentPage, rowsPerPage);
+        }}
       />
     </div>
   ) : (
@@ -1055,6 +1062,7 @@ export default function Sources({
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
         decision={decision}
+        onSaved={() => refreshDocs(undefined, currentPage, rowsPerPage)}
       />
 
       {documentForWikiSettings && (

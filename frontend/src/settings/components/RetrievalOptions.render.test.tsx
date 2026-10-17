@@ -102,19 +102,19 @@ describe('RetrievalOptions relevance controls', () => {
     container.remove();
   });
 
-  const withPrescreen = (
-    backend: 'llm' | 'decision',
+  const ON: DecisionFeatures = { relevance: true };
+
+  const withRetrieval = (
+    patch: Partial<RetrievalOptionsValue['retrieval']>,
   ): RetrievalOptionsValue => ({
     ...DEFAULT_RETRIEVAL_OPTIONS,
-    retrieval: {
-      ...DEFAULT_RETRIEVAL_OPTIONS.retrieval,
-      prescreen: {
-        ...DEFAULT_RETRIEVAL_OPTIONS.retrieval.prescreen,
-        enabled: true,
-        backend,
-      },
-    },
+    retrieval: { ...DEFAULT_RETRIEVAL_OPTIONS.retrieval, ...patch },
   });
+
+  const filtering = (min_relevance: number) =>
+    withRetrieval({
+      reranker: { mode: 'filter', min_relevance, candidate_k: null },
+    });
 
   const render = (
     value: RetrievalOptionsValue,
@@ -135,96 +135,140 @@ describe('RetrievalOptions relevance controls', () => {
   };
 
   const text = () => container.textContent ?? '';
-
-  it('hides every decision-model control while the operator has not turned it on', () => {
-    render(withPrescreen('decision'));
-    expect(container.querySelector('#retrieval-reranker')).toBeNull();
-    expect(text()).not.toContain('prescreen.backend');
-    expect(text()).not.toContain('relevance.minRelevance');
-    // A stored decision prescreen runs on the LLM then, so it shows the LLM's knobs.
-    expect(text()).toContain('prescreen.batchSize');
-    expect(text()).toContain('prescreen.enable');
-    expect(text()).not.toContain('prescreen.enableAny');
-  });
-
-  it('offers the reranker, and its minimum relevance only when it is on', () => {
-    render(DEFAULT_RETRIEVAL_OPTIONS, { rerank: true, prescreen: false });
-    expect(container.querySelector('#retrieval-reranker')).not.toBeNull();
-    expect(
-      container.querySelector('#retrieval-reranker-min-relevance'),
-    ).toBeNull();
-    render(
-      {
-        ...DEFAULT_RETRIEVAL_OPTIONS,
-        retrieval: {
-          ...DEFAULT_RETRIEVAL_OPTIONS.retrieval,
-          reranker: { choice: 'on', min_relevance: 0.3, candidate_k: null },
-        },
-      },
-      { rerank: true, prescreen: false },
+  const last = (onChange: ReturnType<typeof vi.fn>) =>
+    onChange.mock.calls.at(-1)![0] as RetrievalOptionsValue;
+  const advanced = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find(
+      (b) => b.textContent === 'settings.sources.retrievalOptions.advanced',
+    )!;
+  const strictnessItems = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '#retrieval-relevance-strictness [data-slot="toggle-group-item"]',
+      ),
     );
-    const input = container.querySelector(
-      '#retrieval-reranker-min-relevance',
+
+  it('hides the Relevance section while the operator has not turned the model on', () => {
+    render(filtering(0.3));
+    expect(container.querySelector('#retrieval-relevance-mode')).toBeNull();
+    expect(text()).not.toContain('relevance.title');
+    expect(container.querySelector('#retrieval-relevance-min')).toBeNull();
+    // LLM screening is still offered, under Advanced.
+    expect(container.querySelector('#retrieval-prescreen')).not.toBeNull();
+    expect(text()).not.toContain('prescreen.exclusiveHint');
+  });
+
+  it('offers Off, Reorder and Reorder and filter, and no instance default', () => {
+    render(DEFAULT_RETRIEVAL_OPTIONS, ON);
+    expect(container.querySelector('#retrieval-relevance-mode')).not.toBeNull();
+    expect(text()).not.toContain('rerankerChoices');
+    // No strictness until the mode filters.
+    expect(strictnessItems()).toHaveLength(0);
+  });
+
+  it('shows the presets as a segmented control, the stored one on', () => {
+    render(filtering(0.5), ON);
+    const items = strictnessItems();
+    expect(items.map((b) => b.textContent)).toEqual([
+      'settings.sources.retrievalOptions.relevance.presets.loose',
+      'settings.sources.retrievalOptions.relevance.presets.balanced',
+      'settings.sources.retrievalOptions.relevance.presets.strict',
+    ]);
+    expect(items[2].getAttribute('data-state')).toBe('on');
+  });
+
+  it('sets the preset value on a click', () => {
+    const onChange = render(filtering(0.3), ON);
+    act(() => strictnessItems()[0].click());
+    expect(last(onChange).retrieval.reranker.min_relevance).toBe(0.1);
+  });
+
+  it('shows a value no preset matches as Custom, and the exact field under Advanced', () => {
+    render(filtering(0.25), ON);
+    const items = strictnessItems();
+    expect(items).toHaveLength(4);
+    expect(items[3].getAttribute('data-state')).toBe('on');
+    expect(items[3].textContent).toBe(
+      'settings.sources.retrievalOptions.relevance.presets.custom',
+    );
+    // A custom value opens Advanced so the number is in view.
+    expect(advanced().getAttribute('aria-expanded')).toBe('true');
+    const exact = container.querySelector(
+      '#retrieval-relevance-min',
     ) as HTMLInputElement;
-    expect(input.value).toBe('0.3');
-    expect(input.max).toBe('1');
+    expect(exact.value).toBe('0.25');
+    expect(exact.max).toBe('1');
   });
 
-  it('shows the backend and minimum relevance for a prescreen on the model', () => {
-    render(withPrescreen('decision'), { rerank: false, prescreen: true });
-    expect(text()).toContain('prescreen.backend');
-    expect(text()).toContain('relevance.minRelevance');
-    expect(text()).not.toContain('prescreen.batchSize');
-    expect(text()).toContain('prescreen.enableAny');
-    expect(container.querySelector('#retrieval-reranker')).toBeNull();
+  it('keeps Advanced closed for preset values until opened', () => {
+    render(filtering(0.3), ON);
+    expect(advanced().getAttribute('aria-expanded')).toBe('false');
+    act(() => advanced().click());
+    expect(advanced().getAttribute('aria-expanded')).toBe('true');
+    const candidates = container.querySelector(
+      '#retrieval-relevance-candidates',
+    ) as HTMLInputElement;
+    expect(candidates.value).toBe('20');
+    expect(candidates.max).toBe('100');
   });
 
-  it.each(['decision', 'llm'] as const)(
-    'explains when the decision cap leaves no candidate count above the chunks (%s)',
-    (backend) => {
-      const value = withPrescreen(backend);
-      render({
-        ...value,
-        retrieval: {
-          ...value.retrieval,
-          chunks: 120,
-          prescreen: { ...value.retrieval.prescreen, candidate_k: 120 },
+  it('renames the score threshold to the similarity threshold, under Advanced', () => {
+    render(DEFAULT_RETRIEVAL_OPTIONS, ON);
+    expect(text()).toContain('retrieval.similarityThreshold');
+    expect(text()).not.toContain('scoreThreshold');
+    const field = container.querySelector('#retrieval-score-threshold')!;
+    expect(field.closest('[data-slot="collapsible"]')).not.toBeNull();
+  });
+
+  it('turns relevance off when LLM screening is turned on', () => {
+    const onChange = render(filtering(0.3), ON);
+    act(() => advanced().click());
+    act(() =>
+      (
+        container.querySelector('#retrieval-prescreen') as HTMLButtonElement
+      ).click(),
+    );
+    const next = last(onChange);
+    expect(next.retrieval.prescreen.enabled).toBe(true);
+    expect(next.retrieval.reranker.mode).toBe('off');
+    expect(text()).toContain('prescreen.exclusiveHint');
+  });
+
+  it('shows LLM screening without a backend picker or minimum relevance', () => {
+    render(
+      withRetrieval({
+        prescreen: {
+          ...DEFAULT_RETRIEVAL_OPTIONS.retrieval.prescreen,
+          enabled: true,
         },
-      });
-      const alert = container.querySelector('[role="alert"]');
-      if (backend === 'decision') {
-        expect(alert?.textContent).toBe(
-          'settings.sources.retrievalOptions.prescreen.candidateKAboveDecisionMax',
-        );
-        const field = container.querySelector(
-          'input[aria-invalid="true"]',
-        ) as HTMLInputElement;
-        expect(field.value).toBe('120');
-      } else {
-        expect(alert).toBeNull();
-      }
-    },
-  );
-
-  it('shows no candidate error while the chunks fit the decision cap', () => {
-    render(withPrescreen('decision'), { rerank: false, prescreen: true });
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+      }),
+      ON,
+    );
+    // An enabled screening opens Advanced.
+    expect(advanced().getAttribute('aria-expanded')).toBe('true');
+    expect(text()).toContain('prescreen.batchSize');
+    expect(text()).not.toContain('prescreen.backend');
+    expect(container.querySelector('#retrieval-relevance-min')).toBeNull();
   });
 
-  it.each([
-    [{ rerank: false, prescreen: true }, 'decision'],
-    [{ rerank: true, prescreen: false }, 'llm'],
-  ])(
-    'preselects the backend of a newly enabled prescreen (%j → %s)',
-    (decision, backend) => {
-      const onChange = render(DEFAULT_RETRIEVAL_OPTIONS, decision);
-      const toggle = container.querySelector(
-        '#retrieval-prescreen',
-      ) as HTMLButtonElement;
-      act(() => toggle.click());
-      const next = onChange.mock.calls[0][0] as RetrievalOptionsValue;
-      expect(next.retrieval.prescreen.enabled).toBe(true);
-      expect(next.retrieval.prescreen.backend).toBe(backend);
-    },
-  );
+  it('hides the ingest-time groups for the defaults page', () => {
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={vi.fn()}
+          alwaysOpen
+          retrievalOnly
+        />,
+      );
+    });
+    expect(
+      container.querySelector('#chunking-strategy')!.closest('.hidden'),
+    ).not.toBeNull();
+    // Unlike the retrieval test, both answer-time knobs stay.
+    expect(container.querySelector('#retrieval-rephrase')).not.toBeNull();
+    expect(container.querySelector('#retrieval-exposure')).not.toBeNull();
+  });
 });

@@ -14,9 +14,11 @@ vi.mock('react-i18next', () => ({
 }));
 
 const testSourceRetrieval = vi.fn();
+const updateSourceConfig = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     testSourceRetrieval: (...args: unknown[]) => testSourceRetrieval(...args),
+    updateSourceConfig: (...args: unknown[]) => updateSourceConfig(...args),
   },
 }));
 
@@ -25,8 +27,8 @@ import TestRetrievalModal from './TestRetrievalModal';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const doc = (config: Doc['config']): Doc =>
-  ({ id: 'src-1', name: 'Handbook', config }) as Doc;
+const doc = (config: Doc['config'], fields: Partial<Doc> = {}): Doc =>
+  ({ id: 'src-1', name: 'Handbook', config, ...fields }) as Doc;
 
 const alerts = () =>
   Array.from(document.body.querySelectorAll<HTMLElement>('[role="alert"]'));
@@ -37,6 +39,7 @@ describe('TestRetrievalModal notices', () => {
 
   beforeEach(() => {
     testSourceRetrieval.mockReset();
+    updateSourceConfig.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -251,7 +254,7 @@ describe('TestRetrievalModal notices', () => {
           modalState="ACTIVE"
           setModalState={() => undefined}
           document={doc(undefined)}
-          decision={{ rerank: true, prescreen: false }}
+          decision={{ relevance: true }}
         />,
       );
     });
@@ -286,5 +289,135 @@ describe('TestRetrievalModal notices', () => {
       'settings.sources.testRetrieval.compareStatus.dropped',
     );
     expect(text).toContain('88%');
+  });
+
+  const okRun = () =>
+    testSourceRetrieval.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        chunks: [],
+        total: 0,
+        retriever: 'classic',
+        latency_ms: 50,
+      }),
+    });
+
+  const renderWith = (document: Doc, onSaved = vi.fn()) => {
+    act(() => {
+      root.render(
+        <TestRetrievalModal
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+          document={document}
+          decision={{ relevance: true }}
+          onSaved={onSaved}
+        />,
+      );
+    });
+    return onSaved;
+  };
+
+  const typeQuery = (value: string) => {
+    const input =
+      document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    act(() => {
+      setValue?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    return input;
+  };
+
+  const pick = (label: string) =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    ).find(
+      (b) =>
+        b.textContent ===
+        `settings.sources.retrievalOptions.relevance.${label}`,
+    )!;
+
+  const saveButton = () =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find(
+      (b) => b.textContent === 'settings.sources.testRetrieval.saveToSource',
+    );
+
+  it('re-runs the test with the strictness picked next to the query', async () => {
+    okRun();
+    renderWith(doc(undefined));
+    typeQuery('insurance');
+    expect(pick('modes.off').getAttribute('data-state')).toBe('on');
+    await act(async () => pick('presets.strict').click());
+    expect(testSourceRetrieval).toHaveBeenCalledTimes(1);
+    expect(testSourceRetrieval.mock.calls[0][1].retrieval.reranker).toEqual({
+      type: 'decision',
+      min_relevance: 0.5,
+      candidate_k: null,
+    });
+    await act(async () => pick('modes.reorder').click());
+    expect(testSourceRetrieval.mock.calls[1][1].retrieval.reranker).toEqual({
+      type: 'decision',
+      min_relevance: null,
+      candidate_k: null,
+    });
+  });
+
+  it('offers no strictness picker while the model is off', () => {
+    render(doc(undefined));
+    expect(
+      document.body.querySelector('[data-slot="toggle-group-item"]'),
+    ).toBeNull();
+  });
+
+  it('saves the tested retrieval block to the source for an editor', async () => {
+    okRun();
+    updateSourceConfig.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+    const onSaved = renderWith(
+      doc({ retrieval: { chunks: 4 }, chunking: { max_tokens: 900 } }),
+    );
+    // Nothing tested yet, so nothing to save.
+    expect(saveButton()?.disabled).toBe(true);
+    typeQuery('insurance');
+    await act(async () => pick('presets.balanced').click());
+    expect(saveButton()?.disabled).toBe(false);
+    await act(async () => saveButton()!.click());
+
+    const [id, body] = updateSourceConfig.mock.calls[0];
+    expect(id).toBe('src-1');
+    // The whole tested retrieval block, and only it: the PATCH keeps the rest.
+    expect(Object.keys(body)).toEqual(['retrieval']);
+    expect(body.retrieval).toEqual(
+      testSourceRetrieval.mock.calls[0][1].retrieval,
+    );
+    expect(body.retrieval.chunks).toBe(4);
+    expect(body.retrieval.reranker.min_relevance).toBe(0.3);
+    expect(onSaved).toHaveBeenCalledWith(body.retrieval);
+    expect(document.body.textContent).toContain(
+      'settings.sources.testRetrieval.savedToSource',
+    );
+  });
+
+  it('offers no Save to source to a viewer', () => {
+    renderWith(
+      doc(undefined, {
+        access: 'viewer',
+        allowed_actions: ['use', 'view_config'],
+      }),
+    );
+    expect(saveButton()).toBeUndefined();
+    expect(document.body.textContent).toContain(
+      'settings.sources.testRetrieval.notSavedHint',
+    );
   });
 });

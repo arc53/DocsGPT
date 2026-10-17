@@ -98,7 +98,7 @@ describe('relevance in the retrieval test', () => {
     ).toBe('ordered by relevance in 312 ms');
     expect(
       relevanceRunText({ applied: false, fallback: null, latency_ms: 300 }, tr),
-    ).toContain('monitor');
+    ).toContain('retriever order kept');
     expect(
       relevanceRunText(
         { applied: false, fallback: 'timeout', latency_ms: 0 },
