@@ -2,6 +2,14 @@
 # on DOCSGPT_BIND (default 127.0.0.1, this machine only; 0.0.0.0 for every
 # interface, after setting AUTH_TYPE), Postgres and Redis on 127.0.0.1 only. Run it
 # with --env-file .env from the repository root so DOCSGPT_BIND is read.
+# The decision model runs in the backend, which the worker calls, and loads
+# nothing until a decision feature is turned on. To serve it from the decider
+# container instead, add three lines to .env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# The decider refuses to start without DECISION_KEY, and the backend does not
+# wait for it (decisions fail open).
 name: docsgpt-oss
 services:
   frontend:
@@ -66,6 +74,7 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
@@ -104,11 +113,31 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # The decision model (docsgpt decide-server), on the CPU, idle until a
+  # decision feature is turned on. Only with the decider profile (see the top).
+  decider:
+    profiles: [decider]
+    user: root
+    build:
+      context: ..
+      dockerfile: docsgpt/Dockerfile
+      args:
+        EXTRAS: ${EXTRAS:-}
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - ../.env
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
 
   redis:
     image: redis:6-alpine
@@ -133,3 +162,4 @@ services:
 
 volumes:
   postgres_data:
+  decision_models:

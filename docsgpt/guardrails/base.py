@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextvars import ContextVar
+from time import monotonic
 from typing import Any, ClassVar, Dict, Optional, Set
 
-from docsgpt.guardrails.types import CheckOutcome, Stage
+from docsgpt.guardrails.types import Action, CheckOutcome, ControlVerdict, Stage
+
+# Monotonic deadline of the stage a remote check is running for, set by the
+# engine in the check's own thread.
+stage_deadline: ContextVar[Optional[float]] = ContextVar("guardrail_stage_deadline", default=None)
+
+
+def stage_time_left() -> Optional[float]:
+    """Seconds until the stage deadline, in a remote check the engine runs; ``None`` outside one."""
+    deadline = stage_deadline.get()
+    return None if deadline is None else deadline - monotonic()
 
 
 class ScanContext:
@@ -71,7 +83,8 @@ class GuardrailCheck(ABC):
     #: Human-facing label and blurb for the agent builder.
     label: ClassVar[str] = ""
     description: ClassVar[str] = ""
-    #: True when the check needs a network round trip (LLM or vendor API).
+    #: True when the check may block on a network call or model inference;
+    #: it then runs under the stage deadline.
     remote: ClassVar[bool] = False
     #: Longest match this check can report, in characters. The streaming guard
     #: sizes its withhold window from this, so a check that under-declares it
@@ -103,9 +116,27 @@ class GuardrailCheck(ABC):
         """False when the check cannot run here (missing credentials, deps)."""
         return True
 
+    @classmethod
+    def unevaluated_at_most(cls, settings: Dict[str, Any]) -> Optional[Action]:
+        """The most a control of this check may do when it could not run.
+
+        ``None`` leaves it to the agent's ``fail_open``; ``Action.FLAG`` makes
+        an unscanned text pass even on a fail-closed agent.
+        """
+        return None
+
     @abstractmethod
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         """Inspect ``text`` and report an outcome. Must not raise."""
+
+    def settled(self, action: Action, verdict: ControlVerdict) -> None:
+        """Called after ``scan`` with the verdict the engine reached; a no-op unless a check needs it.
+
+        Args:
+            action: The control's action at this stage, after the agent's mode
+                (``monitor_only`` makes every action a flag).
+            verdict: The control's verdict, its action capped by the outcome.
+        """
 
     @classmethod
     def describe(cls) -> Dict[str, Any]:

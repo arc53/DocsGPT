@@ -9,6 +9,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '../../components/ui/badge';
@@ -36,7 +37,7 @@ const STATUS_DOT: Record<Schedule['status'], string> = {
 
 export type ScheduleRowProps = {
   schedule: Schedule;
-  /** Whether the run log is open under the row (recurring schedules). */
+  /** Whether the run log is open under the row. */
   expanded: boolean;
   onToggleRuns: (scheduleId: string) => void;
   onEdit: (schedule: Schedule) => void;
@@ -44,13 +45,15 @@ export type ScheduleRowProps = {
   onRunNow: (schedule: Schedule) => void;
   onDelete: (schedule: Schedule) => void;
   onSelectRun: (run: ScheduleRun) => void;
+  /** A last item on the meta line (the chat an agentless schedule came from). */
+  extraMeta?: ReactNode;
 };
 
 /**
  * One schedule on an agent's Schedules page: a subtle panel with a status dot,
  * the name and status, the instruction, one meta line, the common action as
- * a button (Run now, or Resume while paused) and the rest in a menu. A
- * recurring schedule opens its run log flush under the row.
+ * a button (Run now, or Resume while paused) and the rest in a menu. The
+ * chevron opens the run log flush under the row.
  *
  * Args:
  *   schedule: The schedule to show.
@@ -61,6 +64,7 @@ export type ScheduleRowProps = {
  *   onRunNow: Runs the schedule once now.
  *   onDelete: Asks to delete the schedule (or cancel a one-time task).
  *   onSelectRun: Opens a run's details.
+ *   extraMeta: Appended to the meta line.
  */
 export default function ScheduleRow({
   schedule,
@@ -71,6 +75,7 @@ export default function ScheduleRow({
   onRunNow,
   onDelete,
   onSelectRun,
+  extraMeta,
 }: ScheduleRowProps) {
   const { t } = useTranslation();
   const recurring = schedule.trigger_type === 'recurring';
@@ -194,7 +199,7 @@ export default function ScheduleRow({
                 {schedule.instruction}
               </p>
             )}
-            {meta.length > 0 && (
+            {(meta.length > 0 || extraMeta) && (
               <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 {meta.map(({ icon: Icon, text }) => (
                   <span key={text} className="inline-flex items-center gap-1">
@@ -202,6 +207,7 @@ export default function ScheduleRow({
                     {text}
                   </span>
                 ))}
+                {extraMeta}
               </p>
             )}
           </div>
@@ -227,30 +233,28 @@ export default function ScheduleRow({
             triggerLabel={t('agents.schedules.actions')}
             options={menu}
           />
-          {recurring && (
-            <IconButton
-              label={
-                expanded
-                  ? t('agents.schedules.hideRuns')
-                  : t('agents.schedules.showRuns')
-              }
-              variant="ghost-muted"
-              size="icon-xs"
-              aria-expanded={expanded}
-              onClick={() => onToggleRuns(schedule.id)}
-            >
-              <ChevronDown
-                aria-hidden
-                className={cn(
-                  'transition-transform duration-200',
-                  expanded && 'rotate-180',
-                )}
-              />
-            </IconButton>
-          )}
+          <IconButton
+            label={
+              expanded
+                ? t('agents.schedules.hideRuns')
+                : t('agents.schedules.showRuns')
+            }
+            variant="ghost-muted"
+            size="icon-xs"
+            aria-expanded={expanded}
+            onClick={() => onToggleRuns(schedule.id)}
+          >
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                'transition-transform duration-200',
+                expanded && 'rotate-180',
+              )}
+            />
+          </IconButton>
         </div>
       </div>
-      {recurring && expanded && (
+      {expanded && (
         <div className="border-border border-t">
           <RunLog scheduleId={schedule.id} onSelect={onSelectRun} />
         </div>

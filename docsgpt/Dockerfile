@@ -110,9 +110,10 @@ WORKDIR /app
 # The process user owns /app so the model prefetch below can run as it: an
 # unprivileged prefetch writes the model files with the right owner up front,
 # instead of a trailing chown -R that rewrites every model file into a second
-# layer.
-RUN groupadd -r appuser && \
-    useradd -r -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser && \
+# layer. The ids are fixed (999, what `-r` picked before) so a Kubernetes
+# volume can be made writable with fsGroup (the decider's model cache).
+RUN groupadd -r -g 999 appuser && \
+    useradd -r -u 999 -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser && \
     chown appuser:appuser /app && \
     install -d -o appuser -g appuser /app/models /app/docsgpt
 

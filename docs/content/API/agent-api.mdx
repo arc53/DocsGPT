@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-15
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -198,7 +198,7 @@ Each `data:` frame is JSON with `type`:
 | `workflow_step` | `node_id`, `node_type`, `node_title`, `status`, and `output`/`state_delta` or `error` | A workflow node is `running`, `completed` or `failed`. |
 | `notice` | `notice` | A non-fatal message for the user (for example, some input documents were skipped). |
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
-| `error` | `error` | Error message. |
+| `error` | `error`, `code` | Error message. `code`, when present, names the cause; `stopped` means the answer was stopped (from **Activity → Now** or with `POST /api/messages/<message_id>/cancel`) before it wrote anything. |
 | `id` | `id` | The conversation ID. |
 | `end` | `artifacts`, `attachments` | The stream is complete. `artifacts` lists every artifact the turn created or changed; `attachments` lists the conversation's files with their `F` refs and attachment ids. Each is present only when there is something to list. |
 

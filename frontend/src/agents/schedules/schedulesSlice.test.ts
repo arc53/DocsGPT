@@ -9,8 +9,13 @@ import {
 } from '../../notifications/notificationsSlice';
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
+  resetSchedules,
+  createSchedule,
   applyEvent,
   deleteSchedule,
+  loadAllSchedules,
+  selectAllSchedules,
+  setSchedulePaused,
   loadRunsForSchedule,
   RUNS_PAGE_SIZE,
   selectRunsEnd,
@@ -341,5 +346,165 @@ describe('deleteSchedule', () => {
   it('rejects when the server refuses the delete', async () => {
     const action = await run({ success: false, error: 'Not allowed' });
     expect(action.type).toBe(deleteSchedule.rejected.type);
+  });
+});
+
+describe('schedulesSlice cross-agent list', () => {
+  const seedAll = (): SchedulesState => {
+    const state = seedWithSchedule();
+    return reducer(
+      state,
+      loadAllSchedules.fulfilled(
+        [
+          { ...sampleSchedule(), agent_name: 'Deal Desk' },
+          {
+            ...sampleSchedule({ id: 'sched-2', agent_id: null }),
+            origin_conversation_name: 'QBR prep',
+          },
+        ],
+        'req',
+        { token: null },
+      ),
+    );
+  };
+
+  it('stores the loaded list', () => {
+    const state = seedAll();
+    expect(selectAllSchedules({ schedules: state })?.map((s) => s.id)).toEqual([
+      'sched-1',
+      'sched-2',
+    ]);
+  });
+
+  it('keeps the names when a mutation answers with a bare schedule', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(sampleSchedule({ status: 'paused' }), 'req', {
+        id: 'sched-1',
+        action: 'pause',
+        token: null,
+      }),
+    );
+    const row = state.all?.find((s) => s.id === 'sched-1');
+    expect(row?.status).toBe('paused');
+    expect(row?.agent_name).toBe('Deal Desk');
+    expect(state.byAgent['agent-1'][0].status).toBe('paused');
+  });
+
+  it('updates an agentless schedule, which has no per-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(
+        sampleSchedule({ id: 'sched-2', agent_id: null, status: 'paused' }),
+        'req',
+        { id: 'sched-2', action: 'pause', token: null },
+      ),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  it('applies SSE status changes to the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      sseEventReceived({
+        id: 'evt-9',
+        type: 'schedule.autopaused',
+        payload: { schedule_id: 'sched-2' },
+      } as SSEEvent),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  describe('while the list is loading', () => {
+    const loading = () =>
+      reducer(
+        seedWithSchedule(),
+        loadAllSchedules.pending('load', { token: null }),
+      );
+    const answer = (requestId = 'load') =>
+      loadAllSchedules.fulfilled(
+        [{ ...sampleSchedule(), agent_name: 'Deal Desk' }],
+        requestId,
+        { token: null },
+      );
+
+    it('keeps a schedule created meanwhile, which its answer predates', () => {
+      let state = reducer(
+        loading(),
+        createSchedule.fulfilled(sampleSchedule({ id: 'sched-new' }), 'c', {
+          agentId: 'agent-1',
+          token: null,
+        } as never),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
+    });
+
+    it('keeps a schedule deleted meanwhile deleted', () => {
+      let state = reducer(
+        loading(),
+        deleteSchedule.fulfilled('sched-1', 'd', {
+          id: 'sched-1',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all).toEqual([]);
+    });
+
+    it("hides the last account's list while another token loads", () => {
+      let state = reducer(loading(), answer());
+      expect(state.all).toHaveLength(1);
+      // The same token reloading keeps the list on screen meanwhile.
+      state = reducer(
+        state,
+        loadAllSchedules.pending('again', { token: null }),
+      );
+      expect(state.all).toHaveLength(1);
+      state = reducer(
+        state,
+        loadAllSchedules.pending('other', { token: 'other-account' }),
+      );
+      expect(state.all).toBeNull();
+      // A failed load leaves nothing of the last account to show.
+      state = reducer(
+        state,
+        loadAllSchedules.rejected(new Error('down'), 'other', {
+          token: 'other-account',
+        }),
+      );
+      expect(state.all).toBeNull();
+      expect(state.allError).toBe(true);
+    });
+
+    it('drops a load sent before a reset', () => {
+      let state = reducer(loading(), resetSchedules());
+      state = reducer(state, answer());
+      expect(state.all).toBeNull();
+    });
+
+    it('applies only the latest load', () => {
+      let state = reducer(
+        loading(),
+        loadAllSchedules.pending('newer', { token: null }),
+      );
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled([], 'newer', { token: null }),
+      );
+      state = reducer(state, answer('load'));
+      expect(state.all).toEqual([]);
+    });
+  });
+
+  it('drops a deleted schedule from the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      deleteSchedule.fulfilled('sched-2', 'req', {
+        id: 'sched-2',
+        token: null,
+      }),
+    );
+    expect(state.all?.map((s) => s.id)).toEqual(['sched-1']);
   });
 });

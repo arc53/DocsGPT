@@ -1,7 +1,10 @@
 """Presence: which conversation each of a user's tabs shows, and whether anyone is looking.
 
-Each tab reports ``{tab_id, conversation_id, visible}`` when its visibility or
-route changes and every ~20 s while visible (``POST /api/presence``). The
+Each tab reports ``{tab_id, conversation_id, visible}`` when its visibility,
+window focus or route changes and every ~20 s while visible
+(``POST /api/presence``). ``visible`` means the user can be looking: the tab
+is visible and its window has focus, so a window behind another app reports
+false. The
 reports live in one Redis hash per user, ``presence:{user_id}``, one field per
 tab, stamped with the report time. An entry older than
 :data:`PRESENCE_TTL_SECONDS` no longer counts, and the hash expires that long

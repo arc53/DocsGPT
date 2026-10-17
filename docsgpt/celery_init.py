@@ -55,6 +55,18 @@ def _dispose_db_engine_on_fork(*args, **kwargs):
     dispose_engine()
 
 
+@worker_process_init.connect
+def _reset_decisions_on_fork(*args, **kwargs):
+    """Start each forked worker child with fresh decision-model state.
+
+    Workers never load the model, but the client, its answer cache and the
+    tokenizer are per process and must not be inherited across a fork.
+    """
+    from docsgpt import decisions
+
+    decisions.reset()
+
+
 # Most tasks in this repo accept ``user`` where the log context wants
 # ``user_id``; map task parameter names to context keys explicitly.
 _TASK_PARAM_TO_CTX_KEY: dict[str, str] = {

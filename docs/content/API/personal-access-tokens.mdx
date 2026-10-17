@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-15
 ---
 
 # Personal Access Tokens
@@ -123,6 +123,7 @@ Some parts of the API are never available to a token, whatever its scopes:
 - artifacts, speech-to-text and text-to-speech;
 - conversation sharing and shared links, and file download;
 - the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
+- [Activity](/Using/activity#over-the-api) (`/api/activity/now`, `/api/activity/planned`, `/api/activity/history`) and stopping a running answer (`POST /api/messages/<message_id>/cancel`), because they span every chat and agent of the account;
 - the agent webhook trigger, whose URL is its own credential.
 
 The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.

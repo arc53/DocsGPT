@@ -31,10 +31,12 @@
     "dismiss": "Schließen",
     "toolApprovalTitle": "Tool-Freigabe erforderlich",
     "toolApprovalReview": "Prüfen",
-    "toolApprovalFallbackName": "Unterhaltung"
+    "toolApprovalFallbackName": "Unterhaltung",
+    "moreToasts_one": "{{count}} weitere",
+    "moreToasts_other": "{{count}} weitere",
+    "fewerToasts": "Weniger anzeigen"
   },
   "backgroundJobs": {
-    "unread": "Ungelesen",
     "card": {
       "status": {
         "working": "Im Hintergrund",
@@ -162,7 +164,7 @@
         "delete": "Prompt löschen",
         "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
         "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
-        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um dessen Version zu sehen."
+        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen."
       }
     },
     "sources": {
@@ -397,7 +399,7 @@
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
         "retrieval": {
-          "title": "Retrieval",
+          "title": "Abruf",
           "note": "Diese Änderungen wirken sofort, kein erneutes Indexieren nötig.",
           "tag": "kein erneutes Indexieren",
           "chunks": "Abzurufende Chunks (Top-k)",
@@ -464,6 +466,7 @@
             "semantic": "Semantisch"
           },
           "maxTokens": "Max. Tokens pro Chunk",
+          "maxTokensHint": "Maximal 4.096 Tokens.",
           "minTokens": "Min. Tokens pro Chunk",
           "duplicateHeaders": "Überschriften über Chunks hinweg duplizieren"
         }
@@ -533,7 +536,7 @@
       "viaConnection": "über {{name}}",
       "loadError": "Dein Wissen konnte nicht geladen werden.",
       "delete": "Löschen",
-      "deleteConsequence": "Seine Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteConsequence": "Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteFileConsequence": "Ihre Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteDirectoryConsequence": "Alles darin wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "syncConsequence": "Der Inhalt wird aus deinem Cloud-Speicher aktualisiert. Dabei können Änderungen an einzelnen Abschnitten überschrieben werden.",
@@ -670,7 +673,8 @@
           "chunks_other": "{{count}} Abschnitte",
           "hits_one": "{{count}} Treffer",
           "hits_other": "{{count}} Treffer",
-          "cached": "aus Cache"
+          "cached": "aus Cache",
+          "answered": "{{answered}}/{{total}} beantwortet"
         },
         "status": {
           "ok": "OK",
@@ -684,6 +688,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "LLM-Aufruf",
+          "decision": "Entscheidungsmodell-Aufruf",
           "tool": "Tool-Aufruf",
           "retrieval": "Abruf",
           "search": "Vektorsuche",
@@ -745,7 +750,15 @@
           "allAttributes": "Alle Attribute"
         }
       },
-      "loadError": "Die Protokolle konnten nicht geladen werden."
+      "loadError": "Die Protokolle konnten nicht geladen werden.",
+      "running": "läuft",
+      "failedAtStep": "fehlgeschlagen bei Schritt {{step}}",
+      "failedAtStepOf": "fehlgeschlagen bei Schritt {{step}} von {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Geteilt",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -761,7 +774,6 @@
       "save": "Speichern",
       "createTeamError": "Team konnte nicht erstellt werden.",
       "noTeams": "Noch keine Teams.",
-      "noDescription": "Keine Beschreibung",
       "loadError": "Teams konnten nicht geladen werden.",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
@@ -847,7 +859,7 @@
           "stopped": "Gestoppt",
           "writesOff": "Nicht über API",
           "writesNote": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus.",
-          "writesNoteEditor": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus. Frag den Eigentümer, ob er sie unter Zugangsdaten erlaubt.",
+          "writesNoteEditor": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus. Bitte den Eigentümer, sie unter Zugriffsdetails zu erlauben.",
           "access": {
             "member": "Das eigene {{service}}-Konto jeder Person",
             "memberNoService": "Das eigene Konto jeder Person",
@@ -857,8 +869,8 @@
           },
           "writesSomeOff": "Nicht alles über API",
           "adminOff": "Änderungen von einem Admin deaktiviert",
-          "openAccessDetails": "Zugangsdaten öffnen",
-          "accessDetailsNeedsKey": "Die Zugangsdaten listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat.",
+          "openAccessDetails": "Zugriffsdetails öffnen",
+          "accessDetailsNeedsKey": "Die Zugriffsdetails listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat.",
           "reasonShort": {
             "deleted": "Gelöscht",
             "ownerLostAccessYou": "Du kannst es nicht mehr verwenden",
@@ -899,7 +911,7 @@
             "description": "Den Agenten für alle löschen."
           },
           "editors_can_manage_access_details": {
-            "label": "Bearbeiter dürfen Zugangsdaten verwalten",
+            "label": "Bearbeiter dürfen Zugriffsdetails verwalten",
             "description": "API-Schlüssel, Webhook und öffentlicher Link."
           },
           "viewers_can_see_logs": {
@@ -924,7 +936,7 @@
         "tool": {
           "editors_can_change_credentials": {
             "label": "Bearbeiter dürfen Anmeldedaten und Verbindung ändern",
-            "description": "Sie ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
+            "description": "Bearbeiter ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
           },
           "editors_can_share": {
             "label": "Bearbeiter dürfen teilen",
@@ -948,8 +960,8 @@
         }
       },
       "editorHint": {
-        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugangsdaten.",
-        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugangsdaten.",
+        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugriffsdetails.",
+        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugriffsdetails.",
         "source": "Bearbeiter können Chunks und Dateien bearbeiten, synchronisieren und Einstellungen ändern.",
         "tool": "Bearbeiter können Aktionen ändern und Anmeldedaten ersetzen, aber keine Geheimnisse lesen.",
         "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten.",
@@ -1202,6 +1214,8 @@
       "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Werkzeug",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Werkzeugen",
+      "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Werkzeuge, {{formatted}} ausgewählt",
       "manageInConnectors": "In Konnektoren verwalten",
       "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",
@@ -1286,7 +1300,7 @@
       "deleteWarning": "\"{{modelName}}\" löschen?",
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT-Modelle",
+        "builtin": "Integriert",
         "user": "Meine Modelle"
       },
       "actions": {
@@ -1462,7 +1476,7 @@
         "custom_openapi": "OpenAPI / REST"
       },
       "capability": {
-        "sync": "Sync",
+        "sync": "Synchronisieren",
         "read": "Lesen",
         "write": "Schreiben"
       },
@@ -1551,7 +1565,7 @@
         "noTools": "Noch keine Werkzeuge aus dieser Verbindung.",
         "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
         "rename": "Umbenennen",
-        "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugangsdaten.",
+        "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugriffsdetails.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut."
       },
       "permission": {
@@ -1598,7 +1612,7 @@
         "connectTitle": "{{name}} verbinden",
         "reconnectTitle": "{{name}} neu verbinden",
         "signIn": "Bei {{name}} anmelden",
-        "syncFrequency": "Sync",
+        "syncFrequency": "Synchronisierung",
         "doneTitle": "{{name}} ist verbunden",
         "doneSummaryNone": "Verbunden als {{account}}.",
         "sourcesCount_one": "{{formatted}} Element",
@@ -1889,8 +1903,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Konversationen durchsuchen",
-      "noResults": "Keine Ergebnisse gefunden",
-      "loading": "Laden..."
+      "noResults": "Keine Ergebnisse gefunden"
     },
     "configTool": {
       "title": "Werkzeug-Konfiguration",
@@ -1967,7 +1980,7 @@
       "addButton": "Hinzufügen"
     },
     "agentDetails": {
-      "title": "Zugangsdaten",
+      "title": "Zugriffsdetails",
       "publicLink": "Öffentlicher Link",
       "apiKey": "API-Schlüssel",
       "webhookUrl": "Webhook-URL",
@@ -2010,36 +2023,36 @@
       "import": "Importieren ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "Agent aus YAML importieren",
+      "description": "Lade eine YAML-Datei eines Agenten hoch. Quellen und Werkzeuge werden deinem Konto zugeordnet; Fehlendes kannst du im nächsten Schritt zuordnen oder neu anlegen. Ein neuer Agent wird als Entwurf importiert; ein erneuter Import aktualisiert den passenden Agenten und behält seinen aktuellen Status bei.",
+      "dropzoneText": "Zum Hochladen klicken oder eine .yaml-Datei per Drag & Drop ablegen",
+      "invalidFileType": "Nur .yaml- oder .yml-Dateien werden unterstützt",
+      "readError": "Diese Agentendatei konnte nicht gelesen werden",
+      "importError": "Import fehlgeschlagen",
+      "willCreate": "Erstellt einen neuen Agenten.",
+      "willUpdate": "Aktualisiert einen vorhandenen Agenten (zugeordnet über {{matchedBy}}).",
+      "workflowCreate": "Enthält einen Workflow mit {{nodes}} Knoten – er wird für dich erstellt.",
+      "workflowUpdate": "Enthält einen Workflow mit {{nodes}} Knoten – dein vorhandener Workflow wird aktualisiert.",
+      "workflowDelete": "Enthält keinen Workflow – der vorhandene Workflow des Agenten ({{nodes}} Knoten), sein Ausführungsverlauf und seine Artefakte werden endgültig gelöscht.",
+      "sources": "Quellen",
+      "tools": "Werkzeuge",
+      "models": "Modelle",
+      "sourceMatched": "{{name}}: deine vorhandene Quelle wird verwendet",
+      "sourceMissing": "{{name}}: nicht gefunden",
+      "leaveUnattached": "Nicht verknüpfen",
+      "toolBuiltin": "{{type}}: integriert",
+      "toolReuse": "{{name}}: dein vorhandenes Werkzeug wird wiederverwendet",
+      "toolUnavailable": "{{type}}: auf dieser Instanz nicht verfügbar, wird übersprungen",
+      "toolCreate": "{{name}}: wird erstellt",
+      "secretPlaceholder": "{{field}} (leer lassen, um dieses Werkzeug zu überspringen)",
+      "modelCustom": "{{name}}: eigenes Modell",
+      "apiKeyPlaceholder": "API-Schlüssel (leer lassen, um dieses Modell zu überspringen)",
+      "warningsTitle": "Agent als Entwurf importiert. Einige Punkte brauchen deine Aufmerksamkeit:",
+      "warningsTitlePublished": "Dein veröffentlichter Agent wurde aktualisiert. Einige Punkte brauchen deine Aufmerksamkeit:",
+      "cancel": "Abbrechen",
+      "review": "Prüfen",
+      "import": "Importieren",
+      "continueToAgent": "Weiter zum Agenten"
     },
     "jwt": {
       "title": "JWT-Token hinzufügen",
@@ -2095,6 +2108,8 @@
       "view_more_other": "{{count}} weitere Quellen",
       "noSourcesAvailable": "Noch kein Wissen",
       "selectedCount": "{{count}} ausgewählt",
+      "triggerLabel_one": "Wissen, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Wissen, {{formatted}} ausgewählt",
       "groupOwn": "Deine",
       "groupTeam": "Mit dem Team geteilt",
       "fromConnector": "Aus {{name}}",
@@ -2146,13 +2161,15 @@
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",
+    "stoppedTitle": "Gestoppt",
     "errors": {
       "contextLength": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien.",
       "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "contextLengthSized": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien.",
       "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
-      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut."
+      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut.",
+      "stopped": "Du hast diese Antwort gestoppt, bevor etwas geschrieben wurde. Versuche es erneut, um eine zu erhalten."
     },
     "reasoning": "Begründung",
     "wikiWrite": {
@@ -2280,7 +2297,6 @@
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
     "send": "Senden",
-    "viewArtifact": "Artefakt anzeigen",
     "stopSpeaking": "Vorlesen beenden",
     "loadingAudio": "Audio wird geladen",
     "voice": {
@@ -2352,6 +2368,33 @@
     "stepGroup": {
       "title": "Werkzeuge",
       "failed": "{{count}} fehlgeschlagen"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML-Seite",
+        "pdf": "PDF",
+        "slides": "Folien",
+        "document": "Dokument",
+        "spreadsheet": "Tabelle",
+        "data": "Datendatei",
+        "image": "Bild",
+        "file": "Datei"
+      },
+      "version": "v{{version}}",
+      "download": "{{title}} herunterladen",
+      "more_one": "{{count}} weitere Datei",
+      "more_other": "{{count}} weitere Dateien",
+      "fileCount_one": "{{count}} Datei",
+      "fileCount_other": "{{count}} Dateien",
+      "showAll": "Alle {{count}} anzeigen",
+      "listTitle": "Dateien aus dieser Antwort",
+      "backToList": "Zurück zu den Dateien",
+      "group": {
+        "documents": "Dokumente",
+        "images": "Bilder",
+        "data": "Daten",
+        "other": "Weitere Dateien"
+      }
     }
   },
   "agents": {
@@ -2367,9 +2410,9 @@
     },
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "importAgent": "Importieren",
+    "exportAgent": "Als YAML exportieren",
+    "exportAgentFailed": "Agent konnte nicht exportiert werden",
     "close": "Schließen",
     "shareWithTeam": "Mit Team teilen",
     "backToAll": "Zurück zu allen Agenten",
@@ -2431,7 +2474,7 @@
         "delete": "Löschen",
         "logs": "Protokolle",
         "schedules": "Zeitpläne",
-        "accessDetails": "Zugangsdaten",
+        "accessDetails": "Zugriffsdetails",
         "add": "Hinzufügen",
         "moreActions": "Weitere Aktionen"
       },
@@ -2530,54 +2573,54 @@
         "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
+        "enable": "Guardrails aktivieren",
+        "enableDescription": "Die ausgewählten Prüfungen bei den Ausführungen dieses Agenten durchführen",
+        "mode": "Durchsetzungsmodus",
+        "monitorHint": "Im Beobachtungsmodus wird aufgezeichnet, was passiert wäre, ohne eine Antwort zu ändern. Beginne hier, sieh dir das Protokoll an und wechsle dann zur Durchsetzung.",
+        "checks": "Prüfungen",
+        "latencyHint": "Ungefähre zusätzliche Latenz, wenn diese Prüfung läuft",
+        "notConfigured": "Nicht konfiguriert",
+        "lockedByFloor": "Von der Richtlinie der Instanz vorgeschrieben und nicht entfernbar",
+        "configure": "Konfigurieren",
+        "blockMessage": "Nachricht bei blockierter Antwort",
+        "blockMessageDescription": "Wird dem Nutzer angezeigt, wenn eine Prüfung eine Anfrage oder Antwort blockiert",
+        "failOpen": "Fortfahren, wenn eine Prüfung fehlschlägt",
+        "failOpenDescription": "Wenn eine Prüfung eine Zeitüberschreitung oder einen Fehler hat, wird die Nachricht trotzdem verarbeitet. Schalte dies aus, um die Verarbeitung stattdessen abzubrechen.",
+        "timeout": "Zeitlimit der Prüfung (ms)",
+        "loadError": "Der Guardrail-Katalog konnte nicht geladen werden",
+        "terms": "Verbotene Begriffe (einer pro Zeile)",
+        "termsPlaceholder": "Name eines Wettbewerbers\ninterner Codename",
+        "allowHosts": "Erlaubte Hosts (einer pro Zeile)",
+        "blockHosts": "Blockierte Hosts (einer pro Zeile)",
+        "policyText": "Richtlinie",
+        "minOverlap": "Minimale Übereinstimmung mit den Quellen",
+        "minWords": "Minimale Antwortlänge (Wörter)",
+        "confidence": "Konfidenzschwelle",
+        "confidenceHint": "Das Bewertungsmodell muss den Inhalt beanstanden und sich dabei mindestens so sicher sein (Standard: 0,7)",
+        "activeCount": "{{count}} aktiv",
         "needsSetup_one": "{{count}} benötigt Einrichtung",
         "needsSetup_other": "{{count}} benötigen Einrichtung",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "setupRequired": "Fülle vor dem Speichern die Einstellungen dieser Prüfung aus.",
+        "pickAtLeastOne": "Wähle mindestens einen Eintrag – ohne Auswahl kann die Prüfung nicht laufen.",
+        "remove": "Entfernen",
+        "instanceDisabled": "Guardrails sind für diese Instanz ausgeschaltet, daher wird nichts von dem ausgeführt, was hier konfiguriert ist. Bitte deinen Administrator, GUARDRAILS_ENABLED zu setzen.",
+        "floorNotice": "Diese Instanz schreibt {{count}} Kontrolle(n) vor, die immer gelten.",
+        "floorControl": "{{stage}}: {{action}} – von der Richtlinie der Instanz vorgeschrieben",
+        "unknownCheck": "Dieser Agent nutzt eine Prüfung, die hier nicht verfügbar ist ({{check}}). Sie wird wieder ausgeführt, sobald die Prüfung wieder verfügbar ist.",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "Benutzereingabe",
+          "retrieval": "Abgerufene Quellen",
+          "toolResult": "Werkzeugergebnis",
+          "output": "Antwort"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "Nur markieren",
+          "redact": "Schwärzen",
+          "block": "Blockieren"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
+          "monitorOnly": "Nur beobachten",
+          "scanAll": "Überall durchsetzen"
         }
       },
       "byline": {
@@ -2740,6 +2783,7 @@
           "dec": "Dez"
         },
         "frequencyLabel": "Häufigkeit",
+        "customTiming": "Dieser Zeitplan läuft nach einem eigenen Takt: {{pattern}}. Ändere die Zeit unten, um ihn zu ersetzen.",
         "dayOfWeek": "Wochentag"
       },
       "status": {
@@ -2770,7 +2814,8 @@
         "error": "Fehler",
         "errorWithType": "Fehler ({{type}})",
         "output": "Ausgabe",
-        "truncated": "(gekürzt)"
+        "truncated": "(gekürzt)",
+        "openConversation": "Gespräch öffnen"
       },
       "toolCard": {
         "cancelFailed": "Abbrechen fehlgeschlagen",
@@ -2809,7 +2854,18 @@
           "oct": "Oktober",
           "nov": "November",
           "dec": "Dezember"
-        }
+        },
+        "weekdays": "Jeden Werktag um {{time}}",
+        "weekends": "Jeden Wochenendtag um {{time}}",
+        "days": "Jeden {{days}} um {{time}}",
+        "hourly": "Jede Stunde",
+        "hourlyAt": "Jede Stunde um :{{minute}}",
+        "hourlyRange": "Jede Stunde von {{from}} bis {{to}}",
+        "hourlyRangeWeekdays": "Werktags jede Stunde von {{from}} bis {{to}}",
+        "everyMinutes_one": "Jede {{formatted}} Minute",
+        "everyMinutes_other": "Alle {{formatted}} Minuten",
+        "everyHours_one": "Jede {{formatted}} Stunde",
+        "everyHours_other": "Alle {{formatted}} Stunden"
       },
       "runLog": {
         "when": "Wann",
@@ -2839,7 +2895,8 @@
         "overdue": "Überfällig"
       },
       "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden.",
-      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "allSchedules": "Alle Zeitpläne"
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",
@@ -2877,26 +2934,26 @@
       "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "Guardrail-Aktivität",
+      "description": "Jede Kontrolle, die bei diesem Agenten angeschlagen hat, und jede, die nicht ausgeführt werden konnte.",
+      "lastDays": "Letzte {{count}} Tage",
+      "blocked": "Blockiert",
+      "redacted": "Geschwärzt",
+      "flagged": "Markiert",
+      "notEvaluated": "Nicht geprüft",
+      "notEvaluatedHint": "Die Prüfung hatte eine Zeitüberschreitung oder einen Fehler, daher wurde dieser Inhalt nie tatsächlich untersucht. Das ist nicht dasselbe wie unbedenklich.",
+      "byCheck": "Nach Prüfung",
+      "allChecks": "Alle Prüfungen",
+      "allOutcomes": "Alle Ergebnisse",
+      "tableHeader": "Guardrail-Entscheidungen",
+      "when": "Zeitpunkt",
+      "check": "Prüfung",
+      "stage": "Phase",
+      "outcome": "Ergebnis",
+      "detail": "Details",
+      "empty": "Für diesen Agenten gibt es noch keine Guardrail-Ereignisse.",
+      "emptyForFilter": "Keine Entscheidungen entsprechen diesem Filter.",
+      "loadError": "Die Guardrail-Aktivität konnte nicht geladen werden"
     },
     "workflow": {
       "expressionRow": "Ausdruck {{index}}",
@@ -2909,15 +2966,8 @@
       "redo": "Wiederholen",
       "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
-        "previewUnsupported": "Dieses Artefakt kann nicht in der Vorschau angezeigt werden",
         "loadListFailed": "Artefakte konnten nicht geladen werden",
-        "loadFailed": "Artefakt konnte nicht geladen werden",
-        "loading": "Artefakte werden geladen...",
-        "inProgress": "Lauf aktiv – Artefakte erscheinen hier, sobald Knoten sie erzeugen.",
-        "empty": "Dieser Lauf hat keine Artefakte erzeugt.",
-        "back": "Zurück zu den Artefakten",
-        "untitled": "Artefakt {{id}}",
-        "fileKind": "Datei"
+        "untitled": "Artefakt {{id}}"
       },
       "builder": {
         "deleteFailed": "Workflow-Agent konnte nicht gelöscht werden",
@@ -3045,13 +3095,13 @@
         "invalidJson": "muss gültiges JSON sein"
       },
       "filePassing": {
-        "auto": "Auto",
+        "auto": "Automatisch",
         "native": "Nativ",
         "extract": "Extrahieren"
       },
       "mobileBlocker": {
-        "title": "Desktop erforderlich",
-        "body": "Der Workflow-Builder braucht für eine gute Bedienung einen größeren Bildschirm. Bitte öffne diese Seite auf einem Desktop- oder Laptop-Computer."
+        "title": "Auf einem größeren Bildschirm öffnen",
+        "body": "Der Workflow-Builder braucht einen breiteren Bildschirm. Nutze einen Computer oder dreh dein Tablet ins Querformat."
       },
       "nodes": {
         "start": "Start",
@@ -3083,10 +3133,10 @@
         "stepCount_other": "({{count}} Schritte)",
         "outputLabel": "Ausgabe:",
         "errorLabel": "Fehler:",
-        "artifacts": "Artefakte",
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",
-        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst."
+        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst.",
+        "backToRun": "Zurück zum Lauf"
       },
       "documents": {
         "modeAll": "Alle Eingabedokumente",
@@ -3173,7 +3223,7 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
+    "title": "Seite nicht gefunden",
     "message": "Die gesuchte Seite existiert nicht.",
     "goHome": "Zur Startseite"
   },
@@ -3222,7 +3272,8 @@
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich",
         "insights": "Auswertungen",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automatisierungen"
       }
     },
     "openSidebar": "Seitenleiste öffnen",
@@ -3302,7 +3353,6 @@
     "loadError": "Deine Monitore konnten nicht geladen werden",
     "actionError": "Das hat nicht geklappt. Versuche es erneut.",
     "untitled": "Monitor",
-    "watching": "Wird beobachtet",
     "every": "Alle {{interval}}",
     "onEvent": "Wenn es passiert",
     "openConversation": "Gespräch öffnen",
@@ -3379,5 +3429,282 @@
       "conversationGone": "Beendet: Die Unterhaltung kann nicht mehr fortgesetzt werden"
     },
     "endedBecause": "Beendet: {{reason}}"
+  },
+  "activity": {
+    "label": "Aktivität",
+    "schedules": {
+      "label": "Zeitpläne",
+      "subtitle": "Alle wiederkehrenden Ausführungen und einmaligen Aufgaben deiner Agenten, dazu die, die der Assistent in einem Chat angelegt hat.",
+      "search": "Zeitpläne durchsuchen",
+      "createdInChat": "Im Chat erstellt",
+      "createdInChatHint": "Ohne Agent. Jeder gehört zu dem Chat, in dem er entstanden ist.",
+      "agentSchedules": "Zeitpläne des Agenten",
+      "openChat": "Chat öffnen",
+      "noMatches": "Keine Zeitpläne passen zu deiner Suche.",
+      "loadError": "Deine Zeitpläne konnten nicht geladen werden",
+      "empty": "Noch keine Zeitpläne",
+      "emptyHint": "Lege hier einen an oder bitte den Assistenten im Chat, etwas nach Zeitplan zu erledigen.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Agenten wählen",
+      "agentSearch": "Agenten suchen",
+      "agentEmpty": "Keine Agenten, die du planen kannst",
+      "teamAgent": "Agent eines Teammitglieds, den du über ein Team verwaltest"
+    },
+    "marks": {
+      "failed": "Etwas ist fehlgeschlagen",
+      "needsYou": "Wartet auf deine Freigabe",
+      "working": "Läuft",
+      "unread": "Ungelesen",
+      "watching": "Beobachtet Änderungen"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Hintergrundauftrag",
+      "code": "Codeausführung",
+      "schedule": "Geplante Ausführung",
+      "workflow": "Workflow",
+      "webhook": "Webhook-Ausführung",
+      "ingest": "Wissen",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} läuft",
+      "running_other": "{{formatted}} laufen",
+      "needsYou_one": "{{formatted}} braucht dich",
+      "needsYou_other": "{{formatted}} brauchen dich"
+    },
+    "now": {
+      "label": "Jetzt",
+      "subtitle": "Was läuft, was auf dich wartet und was als Nächstes läuft. Aktualisiert sich live.",
+      "loadError": "Deine Aktivität konnte nicht geladen werden",
+      "stopFailed": "Die Antwort konnte nicht gestoppt werden. Versuche es erneut oder stoppe sie im Chat.",
+      "thinking": "denkt nach",
+      "writing": "schreibt die Antwort",
+      "ranByHand": "manuell gestartet",
+      "due": "fällig {{time}}",
+      "chunks": "{{done}} von {{total}} Abschnitten eingebettet",
+      "background": "Hintergrund",
+      "running": "Läuft",
+      "stop": "Stoppen",
+      "cancel": "Abbrechen",
+      "open": "Öffnen",
+      "approve": "{{tools}} freigeben",
+      "approveAction": "Werkzeugaktion freigeben",
+      "expires": "läuft ab {{time}}",
+      "approval": "Freigabe",
+      "review": "Prüfen",
+      "pausedAfter_one": "{{name}} nach {{formatted}} Fehler pausiert",
+      "pausedAfter_other": "{{name}} nach {{formatted}} Fehlern pausiert",
+      "errorType": {
+        "auth_expired": "eine Anmeldung ist abgelaufen",
+        "tool_not_allowed": "ein Werkzeug war nicht erlaubt",
+        "budget_exceeded": "Token-Budget überschritten",
+        "timeout": "Zeitüberschreitung",
+        "agent_error": "der Agent ist fehlgeschlagen",
+        "internal": "ein interner Fehler",
+        "missed": "Zeitpunkt verpasst",
+        "overlap": "die vorherige Ausführung lief noch",
+        "stream_error": "der Antwortstrom brach ab",
+        "empty_output": "es kam nichts heraus"
+      },
+      "viewRuns": "Ausführungen ansehen",
+      "fromChat": "Aus {{name}}",
+      "timesToday_one": "{{formatted}} Ausführung in den nächsten 24 Stunden",
+      "timesToday_other": "{{formatted}} Ausführungen in den nächsten 24 Stunden",
+      "oneTime": "einmalig",
+      "stats": {
+        "running": "Läuft",
+        "background_one": "{{formatted}} im Hintergrund",
+        "background_other": "{{formatted}} im Hintergrund",
+        "needsYou": "Braucht dich",
+        "approvalExpires": "Eine Freigabe läuft {{time}} ab",
+        "next24h": "Nächste 24 Stunden",
+        "nextAt": "Als Nächstes um {{time}}, {{name}}",
+        "failed": "Fehlgeschlagen, letzte 24 Stunden",
+        "viewInHistory": "Im Verlauf ansehen"
+      },
+      "needsYou": "Braucht dich",
+      "reconnect": "{{name}} muss neu verbunden werden",
+      "reconnectAction": "Neu verbinden",
+      "runningTitle": "Läuft",
+      "filter": "Anzeigen",
+      "filters": {
+        "all": "Alle",
+        "chats": "Chats",
+        "automations": "Automatisierungen",
+        "knowledge": "Wissen"
+      },
+      "nothingRunning": "Gerade läuft nichts",
+      "upNext": "Als Nächstes",
+      "nothingPlanned": "In den nächsten 24 Stunden läuft nichts",
+      "watching": "Beobachtet",
+      "allMonitors": "Alle Monitore",
+      "nothingWatched": "Nichts wird beobachtet",
+      "checked": "geprüft {{time}}",
+      "openCalendar": "Kalender öffnen",
+      "step": "Schritt {{step}}",
+      "stepOf": "Schritt {{step}} von {{total}}",
+      "apiRequests_one": "{{formatted}} Anfrage",
+      "apiRequests_other": "{{formatted}} Anfragen",
+      "reading": "liest den Inhalt",
+      "operation": {
+        "upload": "Hochladen",
+        "sync": "Synchronisierung",
+        "reingest": "Neu indexieren"
+      },
+      "syncBatch": {
+        "daily": "Tägliche Synchronisierung",
+        "weekly": "Wöchentliche Synchronisierung",
+        "monthly": "Monatliche Synchronisierung"
+      },
+      "syncSources_one": "{{formatted}} Quelle",
+      "syncSources_other": "{{formatted}} Quellen",
+      "syncBlocked_one": "{{formatted}} muss neu verbunden werden",
+      "syncBlocked_other": "{{formatted}} müssen neu verbunden werden"
+    },
+    "calendar": {
+      "label": "Kalender",
+      "subtitle": "Geplante Ausführungen, vergangene nach Ergebnis und was beobachtet wird.",
+      "loadError": "Der Kalender konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
+      "runNowError": "Der Lauf konnte nicht gestartet werden. Versuche es erneut.",
+      "todayButton": "Heute",
+      "previous": "Zurück",
+      "next": "Weiter",
+      "agentFilter": "Agent",
+      "allAgents": "Alle Agenten",
+      "viewLabel": "Ansicht",
+      "views": {
+        "day": "Tag",
+        "week": "Woche",
+        "month": "Monat",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitore",
+      "knowledgeSyncs": "Wissenssynchronisierung",
+      "hidePast": "Vergangene ausblenden",
+      "legend": {
+        "planned": "Geplant",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "paused": "Pausiert oder übersprungen",
+        "missed": "Verpasst",
+        "sync": "Wissenssynchronisierung"
+      },
+      "truncated": "Einige sehr häufige Zeitpläne zeigen in diesem Zeitraum nur ihre ersten Ausführungen.",
+      "watching": "Beobachtet",
+      "state": {
+        "planned": "Geplant",
+        "paused": "Pausiert",
+        "pending": "Startet",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "skipped": "Übersprungen",
+        "timeout": "Zeitüberschreitung",
+        "missed": "Verpasst"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} weitere",
+      "more_other": "+{{formatted}} weitere",
+      "today": "Heute",
+      "tomorrow": "Morgen",
+      "empty": "In diesen Tagen ist nichts geplant",
+      "blockDone_one": "{{done}} von {{formatted}} Ausführung erledigt",
+      "blockDone_other": "{{done}} von {{formatted}} Ausführungen erledigt",
+      "slotCount_one": "{{formatted}} Lauf",
+      "slotCount_other": "{{formatted}} Läufe",
+      "oneTime": "Einmalig",
+      "recurring": "Wiederkehrend",
+      "when": "Wann",
+      "repeats": "Wiederholt",
+      "fromChat": "Aus Chat",
+      "pausedNote": "Dieser Zeitplan ist pausiert, diese Ausführung findet also nicht statt. Setze ihn auf seiner Seite fort.",
+      "dayRuns": "Ausführungen an diesem Tag",
+      "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
+      "openSchedule": "Zeitplan öffnen",
+      "timezone": "Zeitzone des Zeitplans",
+      "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft.",
+      "syncRepeats": {
+        "daily": "Täglich, gezählt ab dem Start des Schedulers",
+        "weekly": "Wöchentlich, gezählt ab dem Start des Schedulers",
+        "monthly": "Alle 30 Tage, gezählt ab dem Start des Schedulers"
+      },
+      "sources": "Quellen",
+      "needsReconnecting": "Muss neu verbunden werden",
+      "lastSynced": "Synchronisiert {{time}}",
+      "notSyncedYet": "Noch nicht synchronisiert",
+      "openKnowledge": "Wissen öffnen"
+    },
+    "history": {
+      "label": "Verlauf",
+      "subtitle": "Abgeschlossene Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore. Einstellungen › Protokolle enthält das vollständige technische Protokoll.",
+      "search": "Ausführungen durchsuchen",
+      "statusFilter": "Status",
+      "kindFilter": "Art",
+      "statusFilters": {
+        "all": "Alle Status",
+        "failed": "Fehlgeschlagen",
+        "success": "Erfolgreich",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "kindFilters": {
+        "all": "Alle",
+        "schedule": "Zeitpläne",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Hintergrund",
+        "monitor": "Monitor-Weckrufe"
+      },
+      "kind": {
+        "schedule": "Zeitplan",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Hintergrund",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Erfolg",
+        "failed": "Fehlgeschlagen",
+        "timeout": "Zeitüberschreitung",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "trigger": {
+        "cron": "Zeitplan",
+        "manual": "Manuell",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Änderung erkannt",
+        "trigger": "Webhook-Link",
+        "approval": "Freigabe-Link",
+        "monitor_paused": "Monitor pausiert",
+        "monitor_expired": "Monitor abgelaufen"
+      },
+      "columns": {
+        "when": "Wann",
+        "run": "Ausführung",
+        "owner": "Agent / Chat",
+        "kind": "Art",
+        "trigger": "Auslöser",
+        "status": "Status",
+        "duration": "Dauer",
+        "tokens": "Token"
+      },
+      "yesterday": "Gestern",
+      "loadError": "Der Verlauf konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
+      "noMatches": "Keine Ausführungen passen zu diesen Filtern",
+      "empty": "Noch keine abgeschlossenen Ausführungen",
+      "emptyHint": "Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore erscheinen hier, sobald sie fertig sind.",
+      "loadMore": "Mehr laden",
+      "retention": "Standardmäßig werden geplante Ausführungen 90 Tage aufbewahrt, Webhook-Ausführungen 30 und Hintergrundaufträge und Monitor-Weckrufe 7. Workflow-Ausführungen bleiben in der Liste, ihr Trace wird 30 Tage aufbewahrt.",
+      "period_one": "Letzter {{formatted}} Tag",
+      "period_other": "Letzte {{formatted}} Tage",
+      "periodFilter": "Zeitraum"
+    }
   }
 }
