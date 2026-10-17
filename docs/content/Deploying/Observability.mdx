@@ -234,6 +234,23 @@ counted:
 
 Per-day call counts are in `decision_usage` under the same feature labels.
 
+### Prompt-injection scanning
+
+The [`injection_model` guardrail](/Agents/guardrails#injection_model--prompt-injection-model) asks the decision model under the stage's `guardrail` step, whose `decision` steps carry the feature label of the stage. At `retrieval` and `attachment`, where it scores each document or file on its own, the `guardrail` step also carries `docsgpt.guardrail.items` (documents or files checked), `docsgpt.guardrail.withheld`, `docsgpt.guardrail.cache_hits` (scores read from the cache or stored with a file), `docsgpt.guardrail.live` (scored during the turn) and `docsgpt.guardrail.lazy` (queued for background scoring), next to `docsgpt.guardrail.stage` and `docsgpt.guardrail.checks`.
+
+| Feature label | What is scored |
+| --- | --- |
+| `injection_input` | The user's message |
+| `injection_retrieval` | Retrieved documents and search hits, during the turn |
+| `injection_tool_result` | A tool result |
+| `injection_attachment` | Attached files, during the turn |
+| `injection_attachment_parse` | A chat attachment, in the background once uploaded |
+| `injection_ingest` | A source's chunks as they are indexed, and its existing chunks when scanning is turned on |
+| `injection_lazy` | What a turn could not score in time, in the background |
+| `injection_tool_description` | MCP tool descriptions, when a server is saved or refreshed |
+
+Background scans run outside any request and leave no trace; they are counted in `decision_usage` like every call. Texts answered from the score cache are counted there too, under status `cached`, so the texts checked per feature are the model-scored states plus the `cached` ones. Each chat-time evaluation also adds an entry to the answer's [decision record](/Models/decision-model#what-is-recorded). A flagged or withheld document or file writes a [guardrail event](/Agents/guardrails#the-audit-journal) whose `item_ref` names it: `chunk:<source_id>:<chunk_key>` or `attachment:<id>`.
+
 Backends that understand the GenAI conventions — Langfuse
 (`/api/public/otel`), Arize Phoenix, Datadog LLM Observability, Grafana —
 render these as LLM traces with token and cost views.
