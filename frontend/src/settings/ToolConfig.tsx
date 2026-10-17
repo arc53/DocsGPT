@@ -35,6 +35,10 @@ import {
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { actionTitle } from '../connectors/i18n';
+import {
+  InjectionFlagBadge,
+  injectionFlagged,
+} from '../connectors/injectionWarning';
 import PermissionGroup, {
   PermissionSelect,
 } from '../connectors/PermissionGroup';
@@ -722,6 +726,9 @@ export default function ToolConfig({
                                     >
                                       {actionTitle(action.name)}
                                     </span>
+                                    {injectionFlagged(action) && (
+                                      <InjectionFlagBadge />
+                                    )}
                                     {action.description && (
                                       <span
                                         className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md"

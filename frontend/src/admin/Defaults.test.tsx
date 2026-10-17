@@ -1,9 +1,10 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
+vi.mock('react-i18next', () => {
+  const t = (key: string) => key;
+  return { useTranslation: () => ({ t }) };
+});
 vi.mock('react-redux', () => ({
   useSelector: () => 'tok',
 }));
@@ -11,11 +12,40 @@ vi.mock('react-redux', () => ({
 const admin = vi.hoisted(() => ({
   getSourceDefaults: vi.fn(),
   setSourceDefaults: vi.fn(),
+  getAgentDefaults: vi.fn(),
+  setAgentDefaults: vi.fn(),
 }));
 vi.mock('../api/services/adminService', () => ({ default: admin }));
 vi.mock('../api/services/userService', () => ({
   default: {
     getConfig: () => Promise.resolve({ json: async () => ({}) }),
+    getGuardrailCatalog: () =>
+      Promise.resolve({
+        json: async () => ({
+          success: true,
+          enabled: true,
+          checks: [
+            {
+              name: 'injection_model',
+              label: 'Prompt injection (model)',
+              description: 'Scores text',
+              stages: ['input', 'retrieval'],
+              supports_redaction: false,
+              latency_hint_ms: 300,
+              remote: true,
+              item_level: true,
+              available: true,
+            },
+          ],
+          stages: ['input', 'retrieval'],
+          modes: ['monitor_only', 'scan_all'],
+          actions_by_stage: { input: ['flag', 'block'] },
+          default_block_message: 'No',
+          pii_entities: [],
+          default_pii_entities: [],
+          floor: null,
+        }),
+      }),
   },
 }));
 
@@ -32,11 +62,44 @@ const model = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const body = (over: Record<string, unknown> = {}, retrieval = {}) => ({
+const injectionModel = (over: Record<string, unknown> = {}) => ({
+  enabled: true,
+  runtime: 'onnx-int8',
+  predicted_input_s: 0.3,
+  predicted_chunk_s: 0.42,
+  timeout_s: 2,
+  ...over,
+});
+
+const body = (
+  over: Record<string, unknown> = {},
+  retrieval = {},
+  rest: Record<string, unknown> = {},
+) => ({
   json: async () => ({
     success: true,
     retrieval: { retriever: 'classic', chunks: 6, ...retrieval },
+    guardrails: { injection_scan: false },
     relevance_model: model(over),
+    injection_model: injectionModel(),
+    ...rest,
+  }),
+});
+
+const agentGuardrails = {
+  enabled: false,
+  mode: 'monitor_only',
+  fail_open: true,
+  timeout_ms: 2000,
+  block_message: "Sorry, I can't help with that request.",
+  controls: [],
+};
+
+const agentsBody = (guardrails = agentGuardrails, over = {}) => ({
+  json: async () => ({
+    success: true,
+    guardrails,
+    injection_model: injectionModel(over),
   }),
 });
 
@@ -47,6 +110,9 @@ describe('Admin Defaults', () => {
   beforeEach(() => {
     admin.getSourceDefaults.mockReset();
     admin.setSourceDefaults.mockReset();
+    admin.getAgentDefaults.mockReset();
+    admin.setAgentDefaults.mockReset();
+    admin.getAgentDefaults.mockResolvedValue(agentsBody());
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -81,9 +147,14 @@ describe('Admin Defaults', () => {
   it('says what it applies to and what relevance costs on this server', async () => {
     admin.getSourceDefaults.mockResolvedValue(body());
     await render();
-    expect(text()).toContain('Default retrieval settings for new sources');
+    expect(text()).toContain(
+      'The settings new sources and new agents start with.',
+    );
     expect(text()).toContain(
       'Applies to sources created from now on. Existing sources keep their own settings.',
+    );
+    expect(text()).toContain(
+      'Applies to agents created from now on. Existing agents keep their own guardrails.',
     );
     expect(text()).toContain(
       'Adds about 2.7 s per answer on this server (20 candidates, onnx-int8).',
@@ -130,8 +201,11 @@ describe('Admin Defaults', () => {
     );
     expect(save().disabled).toBe(false);
     await act(async () => save().click());
-    const [retrieval, token] = admin.setSourceDefaults.mock.calls[0];
+    const [sent, token] = admin.setSourceDefaults.mock.calls[0];
     expect(token).toBe('tok');
+    expect(sent).not.toHaveProperty('guardrails');
+    expect(admin.setAgentDefaults).not.toHaveBeenCalled();
+    const { retrieval } = sent;
     expect(retrieval.chunks).toBe(9);
     expect(retrieval.reranker).toBe(null);
     expect(retrieval).not.toHaveProperty('chunking');
@@ -157,6 +231,65 @@ describe('Admin Defaults', () => {
       '[data-slot="alert"][role="alert"].text-destructive',
     );
     expect(error?.textContent).toContain('cannot both be on');
+  });
+
+  it('offers the prompt-injection scan for new sources with its cost here', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    admin.setSourceDefaults.mockResolvedValue(
+      body({}, {}, { guardrails: { injection_scan: true } }),
+    );
+    await render();
+    expect(text()).toContain('Scan chunks for prompt injection when indexing');
+    expect(text()).toContain('Costs about 7.0 min per 1,000 chunks here.');
+    const scan = container.querySelector<HTMLButtonElement>(
+      '[data-testid="default-injection-scan"]',
+    )!;
+    expect(scan.disabled).toBe(false);
+    await act(async () => scan.click());
+    await act(async () => save().click());
+    expect(admin.setSourceDefaults).toHaveBeenCalledWith(
+      { guardrails: { injection_scan: true } },
+      'tok',
+    );
+    expect(save().disabled).toBe(true);
+  });
+
+  it('keeps the scan off and says how to turn the model on while it is off', async () => {
+    admin.getSourceDefaults.mockResolvedValue(
+      body({}, {}, { injection_model: injectionModel({ enabled: false }) }),
+    );
+    admin.getAgentDefaults.mockResolvedValue(
+      agentsBody(agentGuardrails, { enabled: false }),
+    );
+    await render();
+    expect(text()).toContain('DECISION_INJECTION_ENABLED=true');
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="default-injection-scan"]',
+      )!.disabled,
+    ).toBe(true);
+    // The model check is not offered for new agents either.
+    expect(
+      container.querySelector(
+        '[data-testid="guardrail-check-injection_model"]',
+      ),
+    ).toBeNull();
+  });
+
+  it('saves the guardrails new agents start with', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    const enabled = { ...agentGuardrails, enabled: true };
+    admin.setAgentDefaults.mockResolvedValue(agentsBody(enabled));
+    await render();
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="guardrails-enabled"]')!
+        .click(),
+    );
+    await act(async () => save().click());
+    expect(admin.setSourceDefaults).not.toHaveBeenCalled();
+    expect(admin.setAgentDefaults).toHaveBeenCalledWith(enabled, 'tok');
+    expect(save().disabled).toBe(true);
   });
 
   it('offers a retry when the defaults fail to load', async () => {

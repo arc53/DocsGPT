@@ -531,7 +531,11 @@
         "errors": {
           "forbidden": "您没有权限编辑此来源的配置。",
           "saveFailed": "保存配置失败，请重试。"
-        }
+        },
+        "injectionScan": "扫描文本块中的提示词注入",
+        "injectionScanDescription": "在建立索引时用决策模型为每个文本块打分，智能体无需等待扫描即可标记或略去可疑内容。",
+        "backfillQueued": "正在后台扫描此来源已有的文本块。",
+        "backfillLazy": "此来源已有的文本块会在对话检索到它们时进行扫描。"
       },
       "chunkErrors": {
         "add": "无法添加文本块",
@@ -588,7 +592,20 @@
       "deleteFileConsequence": "其分块也会一并删除。此操作无法撤销。",
       "deleteDirectoryConsequence": "其中的所有内容也会一并删除。此操作无法撤销。",
       "syncConsequence": "其内容会从您的云存储更新，可能会覆盖您对单个分块所做的编辑。",
-      "deleteItemFailed": "无法删除“{{name}}”。"
+      "deleteItemFailed": "无法删除“{{name}}”。",
+      "injection": {
+        "flaggedOnly": "仅显示已标记",
+        "high": "很可能是提示词注入",
+        "suspected": "疑似提示词注入",
+        "markedSafe": "已标为安全",
+        "markSafe": "标为安全",
+        "undo": "撤销",
+        "flaggedNotice": "此文本块看起来像提示词注入（分数 {{percent}}%）。检查检索来源的智能体会标记它，或在回答中略去它。",
+        "safeNotice": "已标为安全：使用此来源的智能体会将此文本块视为正常内容。编辑其文本会移除该标记。",
+        "reviewFailed": "无法更新此文本块，请重试。",
+        "noFlagged": "此来源中没有被标记的文本块。",
+        "flaggedCount_other": "{{formatted}} 个已标记文本块"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -1812,6 +1829,10 @@
       "capabilityChip": {
         "sync": "同步到知识库",
         "tools": "为智能体提供工具"
+      },
+      "injection": {
+        "flagged": "疑似提示词注入",
+        "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
       }
     }
   },
@@ -2170,14 +2191,17 @@
         "forbidden": "此来源已被删除，或你已无权访问。下面显示的是随回答保存的摘录。",
         "loadFailed": "无法加载这段内容。",
         "openLink": "打开链接",
-        "openInKnowledge": "在知识库中打开"
+        "openInKnowledge": "在知识库中打开",
+        "withheld": "此来源可能含有提示词注入，因此此智能体的防护规则将其排除在回答之外。AI 没有读取这段内容。"
       },
       "relevance": {
         "strong": "高度相关",
         "possible": "可能相关",
         "weak": "相关性低",
         "tooltip": "相关度 {{percent}}%"
-      }
+      },
+      "withheld": "已扣下",
+      "withheldNote": "此智能体的防护规则将其排除在回答之外：其中可能含有提示词注入。"
     },
     "attachments": {
       "attach": "附件",
@@ -2650,7 +2674,8 @@
           "input": "用户输入",
           "retrieval": "检索到的来源",
           "toolResult": "工具结果",
-          "output": "回答"
+          "output": "回答",
+          "attachment": "附件"
         },
         "actions": {
           "flag": "仅标记",
@@ -2660,7 +2685,13 @@
         "modes": {
           "monitorOnly": "仅监控",
           "scanAll": "全面强制执行"
-        }
+        },
+        "itemLevelHint": "拦截只会扣下被标记的来源或文件。",
+        "advanced": "高级",
+        "threshold": "执行阈值",
+        "thresholdHint": "分数达到此值时执行该规则的操作（0 到 1，默认 0.9）。",
+        "flagThreshold": "标记阈值",
+        "flagThresholdHint": "分数达到此值时标记并记录该文本，但不拦截任何内容（默认 0.5）。"
       },
       "byline": {
         "new": "设置好智能体后发布，即可与它对话。"
@@ -2992,7 +3023,11 @@
       "detail": "详情",
       "empty": "此智能体尚未触发任何防护栏。",
       "emptyForFilter": "没有符合此筛选条件的决策。",
-      "loadError": "无法加载防护栏活动"
+      "loadError": "无法加载防护栏活动",
+      "score": "分数",
+      "openChunk": "打开文本块",
+      "attachedFile": "附件",
+      "chunkUnavailable": "此文本块已不在其来源中，或您无法打开该来源。"
     },
     "workflow": {
       "expressionRow": "表达式 {{index}}",

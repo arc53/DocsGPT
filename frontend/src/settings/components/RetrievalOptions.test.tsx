@@ -381,7 +381,7 @@ describe('relevance settings', () => {
     expect(retrieval?.reranker).toEqual(stored.retrieval?.reranker);
   });
 
-  it('offers relevance only where the operator turned the model on', () => {
+  it('offers relevance and the injection scan only where the operator turned them on', () => {
     expect(decisionFeatures(undefined)).toEqual(NO_DECISION_FEATURES);
     expect(
       decisionFeatures({
@@ -394,7 +394,13 @@ describe('relevance settings', () => {
         decision_available: true,
         decision_relevance_enabled: true,
       }),
-    ).toEqual({ relevance: true });
+    ).toEqual({ relevance: true, injection: false });
+    expect(
+      decisionFeatures({
+        decision_available: true,
+        decision_injection_enabled: true,
+      }),
+    ).toEqual({ relevance: false, injection: true });
   });
 });
 
