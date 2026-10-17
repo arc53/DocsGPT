@@ -184,7 +184,7 @@ The [instance floor](/Agents/guardrails#the-instance-floor), the guardrails ever
 
 #### Webhook payloads are no longer ASCII-escaped
 
-An agent [webhook](/API/webhooks)'s JSON payload now reaches the agent with its non-ASCII text as written (`"Résumé"`) instead of as `é` escapes, and so does the source search a webhook run makes when the payload has no text fields. An agent prompt or tool that relied on the escaped form sees the characters themselves.
+An agent [webhook](/API/webhooks)'s JSON payload now reaches the agent with its non-ASCII text as written (`"Résumé"`) instead of as `\u00e9` escapes, and so does the source search a webhook run makes when the payload has no text fields. An agent prompt or tool that relied on the escaped form sees the characters themselves.
 
 #### New table
 
