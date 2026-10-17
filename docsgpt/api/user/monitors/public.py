@@ -14,6 +14,7 @@ from flask import Response, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
 from docsgpt.api import api
+from docsgpt.api.agent_origins import reads_raw_body
 from docsgpt.core.settings import settings
 from docsgpt.monitors import triggers
 
@@ -36,6 +37,7 @@ def _reply(status: int, body: dict):
 
 
 @triggers_ns.route("/triggers/<string:token>")
+@reads_raw_body
 class TriggerLink(Resource):
     @api.doc(
         description=(

@@ -12,6 +12,7 @@ import logging
 
 from flask import Response, jsonify, make_response, request
 
+from docsgpt.api.agent_origins import reads_raw_body
 from docsgpt.api.devices.auth import verify_device_session
 from docsgpt.devices.broker import get_broker
 from docsgpt.storage.db.repositories.device_audit_log import (
@@ -122,6 +123,7 @@ def ack_invocation(session_id: str, invocation_id: str) -> Response:
     return make_response(jsonify({"success": True}), 200)
 
 
+@reads_raw_body
 def submit_output(session_id: str, invocation_id: str) -> Response:
     """CLI streams stdout/stderr/control chunks (NDJSON, gzip-aware; one or more lines per POST).
 

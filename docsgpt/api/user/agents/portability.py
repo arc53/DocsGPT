@@ -22,6 +22,7 @@ graph through the same validation gate as the workflow API.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any, Optional
 
@@ -676,22 +677,49 @@ def _serialize_workflow(conn, agent: dict, user: str):
     return block, tools, sources, model
 
 
-def _import_config(spec: dict) -> dict:
+def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     """Validate a spec's ``config`` through the same gate as the API.
 
     A YAML is hand-editable, so it must not be a way to install a control the
-    write path would have rejected. An invalid block is dropped rather than
-    failing the whole import, and the caller surfaces it as a warning.
+    write path would have rejected. An invalid block does not fail the whole
+    import. A config that is a mapping keeps what still validates, through the
+    lenient reader the runtime uses, which drops a bad guardrail control or
+    allowlist but keeps an origin restriction on. An origin setting an invalid
+    config does not state (or any, when it is not a mapping) is kept from the
+    agent's current config, so a bad file can't open its key to any origin.
+
+    Args:
+        spec: The file's ``spec``.
+        current: The matched agent's stored config on an update, None on create.
+        warnings: Gets a note when the config is not imported as written.
     """
     from docsgpt.api.user.agents.routes import normalize_agent_config
+    from docsgpt.guardrails.config import AgentConfig
 
+    raw = spec.get("config")
     try:
-        return normalize_agent_config(spec.get("config")) or {}
-    except ValueError:
-        current_app.logger.warning(
-            "Dropping invalid guardrails config during agent import"
-        )
-        return {}
+        return normalize_agent_config(raw) or {}
+    except ValueError as err:
+        reason = str(err)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    if isinstance(raw, dict):
+        current_app.logger.warning("Dropping the invalid parts of an imported agent config")
+        warnings.append(f"Invalid config ({reason}); imported only the parts that are valid")
+        config = AgentConfig.parse(raw).model_dump(mode="json")
+    else:
+        current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
+        warnings.append("Config is not a mapping; it was not imported")
+        raw, config = {}, {}
+    if current is not None:
+        kept = AgentConfig.parse(current)
+        for field in ("restrict_origins", "allowed_origins"):
+            if field not in raw:
+                config[field] = copy.deepcopy(getattr(kept, field))
+    return config
 
 
 def serialize_agent(conn, agent: dict, user: str) -> dict:
@@ -1601,7 +1629,9 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "limited_token_mode": bool(_limit(spec, "limited_token_mode")),
         "limited_request_mode": bool(_limit(spec, "limited_request_mode")),
         "allow_system_prompt_override": bool(spec.get("allow_system_prompt_override")),
-        "config": _import_config(spec),
+        "config": _import_config(
+            spec, (agents_repo.get(exclude_id, user) or {}).get("config") if is_update else None, warnings,
+        ),
         "slug": slug,
     }
     orphaned_workflow_id: Optional[str] = None

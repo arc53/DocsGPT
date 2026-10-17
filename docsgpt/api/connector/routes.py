@@ -23,6 +23,7 @@ from docsgpt.api.user.tasks import (
 from docsgpt.connectors import oauth_flows, service
 from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
+from docsgpt.security.origins import DEV_FRONTEND_PORT, LOOPBACK_HOSTS, normalize_origin
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
     owns_connector_session,
@@ -53,29 +54,6 @@ def build_callback_redirect(params: dict) -> str:
     return f"{CALLBACK_STATUS_PATH}?{urlencode(params)}"
 
 
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-_DEV_FRONTEND_PORT = 5173
-
-
-def _origin_of(url: Optional[str]) -> Optional[str]:
-    """Normalized ``scheme://host[:port]`` origin of an http(s) URL, or None."""
-    if not url:
-        return None
-    try:
-        parts = urlsplit(url.strip())
-        port = parts.port
-    except ValueError:
-        return None
-    host = parts.hostname
-    if parts.scheme not in ("http", "https") or not host:
-        return None
-    if ":" in host:
-        host = f"[{host}]"
-    if port is None or port == {"http": 80, "https": 443}[parts.scheme]:
-        return f"{parts.scheme}://{host}"
-    return f"{parts.scheme}://{host}:{port}"
-
-
 def connector_allowed_origins() -> list[str]:
     """Frontend origins a connector sign-in may start from and return to.
 
@@ -87,16 +65,16 @@ def connector_allowed_origins() -> list[str]:
         settings.OIDC_FRONTEND_URL,
         *(settings.CONNECTOR_ALLOWED_ORIGINS or "").split(","),
     ]
-    callback_origin = _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+    callback_origin = normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
     if callback_origin:
         callback = urlsplit(callback_origin)
-        if callback.hostname in _LOOPBACK_HOSTS:
+        if callback.hostname in LOOPBACK_HOSTS:
             callback_port = f":{callback.port}" if callback.port else ""
             for host in ("localhost", "127.0.0.1"):
-                candidates += [f"http://{host}:{_DEV_FRONTEND_PORT}", f"{callback.scheme}://{host}{callback_port}"]
+                candidates += [f"http://{host}:{DEV_FRONTEND_PORT}", f"{callback.scheme}://{host}{callback_port}"]
     origins: list[str] = []
     for candidate in candidates:
-        origin = _origin_of(candidate)
+        origin = normalize_origin(candidate)
         if origin and origin not in origins:
             origins.append(origin)
     return origins
@@ -202,9 +180,9 @@ def requesting_app_origin() -> str:
         OriginNotAllowed: The origin is not one of ``connector_allowed_origins``.
     """
     origin = (
-        _origin_of(request.headers.get("Origin"))
-        or _origin_of(request.headers.get("Referer"))
-        or _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+        normalize_origin(request.headers.get("Origin"))
+        or normalize_origin(request.headers.get("Referer"))
+        or normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
     )
     if origin not in connector_allowed_origins():
         raise OriginNotAllowed(origin or "an unknown origin")
@@ -221,7 +199,7 @@ def app_callback_origin(return_origin: str) -> str:
     configured = settings.CONNECTOR_REDIRECT_BASE_URI
     if urlsplit(configured).path.rstrip("/") == API_CALLBACK_PATH:
         return return_origin
-    return _origin_of(configured) or return_origin
+    return normalize_origin(configured) or return_origin
 
 
 def build_authorization(

@@ -88,6 +88,9 @@ import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AgentPreview from './AgentPreview';
+import AllowedOriginsSetting, {
+  originsIncomplete,
+} from './components/AllowedOriginsSetting';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
@@ -291,7 +294,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const guardrailsOk = !guardrailsIncomplete(agent.config?.guardrails);
     // Sources are optional: an agent without one answers from the model and
     // its tools only.
-    return hasRequiredFields && isJsonSchemaValidOrEmpty && guardrailsOk;
+    return (
+      hasRequiredFields &&
+      isJsonSchemaValidOrEmpty &&
+      guardrailsOk &&
+      !originsIncomplete(agent.config)
+    );
   };
 
   const isJsonSchemaInvalid = () => {
@@ -302,7 +310,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // validation as publish, so they need the same gate — otherwise an
   // incomplete control 400s the draft behind a message that names no field.
   const isDraftBlocked = () =>
-    isJsonSchemaInvalid() || guardrailsIncomplete(agent.config?.guardrails);
+    isJsonSchemaInvalid() ||
+    guardrailsIncomplete(agent.config?.guardrails) ||
+    originsIncomplete(agent.config);
 
   // Resolve a selected source id to its display name. Prefer the caller's own
   // source list; fall back to the owner-resolved name embedded in the agent
@@ -1818,6 +1828,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }}
                     />
                   </SettingRow>
+                  <AllowedOriginsSetting
+                    config={agent.config}
+                    disabled={!canEditPolicy}
+                    onChange={(origins) =>
+                      setAgent({
+                        ...agent,
+                        config: { ...(agent.config ?? {}), ...origins },
+                      })
+                    }
+                  />
                   <SettingRow
                     label={t('agents.form.advanced.systemPromptOverride')}
                     description={t(
