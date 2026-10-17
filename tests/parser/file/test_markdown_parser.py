@@ -194,3 +194,40 @@ def test_tups_chunk_append_windowed_count_still_chunks_over_budget(encoding, mon
     tups = MarkdownParser(max_tokens=300).tups_chunk_append([], None, "x" * 1000)
     assert [len(chunk) for _, chunk in tups] == [300, 300, 300, 100]
     assert max(encoding.encode_lengths) <= 2 * _WINDOW
+
+
+def test_markdown_to_tups_keeps_later_header_after_consecutive_headers():
+    # Two headers back-to-back with no body between them: every header
+    # must survive, and the body that follows belongs to the LAST one.
+    # The pre-fix code's ``continue`` short-circuited both the append
+    # and the current_header update, so ``# H2`` was silently dropped
+    # and the body was attributed to ``# H1``.
+    raw = "# H1\n# H2\nbody\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(raw)
+    assert tups == [("H2", "body\n\n")]
+
+
+def test_markdown_to_tups_keeps_only_last_header_when_several_chain():
+    # Three headers in a row collapse to the last one; nothing before it
+    # should re-appear in the output.
+    raw = "# H1\n## H2\n### H3\nbody\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(raw)
+    assert tups == [("H3", "body\n\n")]
+
+
+def test_markdown_parse_file_preserves_consecutive_headers_via_end_to_end():
+    # End-to-end through parse_file: a markdown file with two
+    # consecutive headers followed by a paragraph must produce output
+    # that mentions the LAST header (H2), not body — the regression
+    # symptom was that ``# H1''\" survived and ``body''\" joined it,
+    # because the bug lived inside markdown_to_tups.
+    content = "# H1\n# H2\nbody\n"
+    parser = MarkdownParser()
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+    joined = "\n".join(result)
+    assert "H2" in joined
+    assert "body" in joined
+    assert "H1" not in joined
