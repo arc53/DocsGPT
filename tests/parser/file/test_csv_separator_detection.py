@@ -80,6 +80,12 @@ def test_plain_parser_leaves_a_comma_file_alone(tmp_path: Path) -> None:
         ("a|b|c\n1|2|3\n", "|"),
         # A separator inside a quoted field is not a separator.
         ('Name,Note\nWidget,"a; b"\nGadget,"c; d"\n', ","),
+        # A comma file whose fields hold semicolons stays a comma file, even though
+        # the semicolon would give more columns.
+        ("id,first;middle;last\n1,A;B;C\n2,D;E;F\n", ","),
+        # A semicolon file with decimal commas: the comma does not line up with the
+        # header, so the semicolon is chosen.
+        ("name;price\nWidget;1,50\nGadget;2,75\n", ";"),
         # Rows that do not line up leave the default in place.
         ("Note\na; b\nc; d\n", ","),
         ("name,value\nAlice,1\nBob,2,extra\n", ","),

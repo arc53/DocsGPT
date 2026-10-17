@@ -64,6 +64,8 @@ def detect_separator(sample: str, truncated: bool = False) -> str:
     (``sep=None, engine="python"``) is not a safe substitute: on a single column
     file it happily splits ``Note`` into ``No`` and ``e``. Choosing among a fixed
     set of separators, and only when the column counts line up, cannot do that.
+    The first candidate whose counts line up wins, so a comma file that also holds
+    semicolons stays a comma file, as it was read before detection existed.
 
     Args:
         sample: The first rows of the file, as text.
@@ -73,12 +75,10 @@ def detect_separator(sample: str, truncated: bool = False) -> str:
     Returns:
         str: One of :data:`CANDIDATE_SEPARATORS`; ``","`` when none of them fits.
     """
-    best_separator, best_columns = ",", 0
     for separator in CANDIDATE_SEPARATORS:
-        columns = _consistent_column_count(sample, separator, truncated)
-        if columns > best_columns:
-            best_separator, best_columns = separator, columns
-    return best_separator
+        if _consistent_column_count(sample, separator, truncated):
+            return separator
+    return ","
 
 
 def detect_file_separator(file: Path, encoding: str | None = None) -> str:
