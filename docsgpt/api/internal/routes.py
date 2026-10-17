@@ -11,6 +11,7 @@ from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import settings
 from docsgpt.decisions.backends.http import INTERNAL_ROUTES
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db import source_defaults
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.storage.storage_creator import StorageCreator
@@ -158,7 +159,9 @@ def upload_index_files():
                 source_id=source_id if looks_like_uuid(source_id) else None,
                 user_id=user,
                 type=type,
-                config=config,
+                # Every ingest creates its source here: it starts from the
+                # admin's default retrieval settings, under any the request set.
+                config=source_defaults.seed(conn, config),
                 tokens=tokens,
                 retriever=retriever,
                 remote_data=remote_data,

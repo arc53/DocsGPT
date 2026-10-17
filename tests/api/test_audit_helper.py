@@ -93,6 +93,7 @@ class TestCategories:
             ("team.member_add", "access"),
             ("quota_policy_set", "config"),
             ("connector_policy_set", "config"),
+            ("source_defaults_set", "config"),
             ("source.deleted", "data"),
             ("agent.created", "data"),
             ("conversation.deleted", "data"),
