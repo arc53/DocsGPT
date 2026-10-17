@@ -14,6 +14,7 @@ from docsgpt.storage.db.source_config import (
     RerankerConfig,
     RetrievalConfig,
     SourceConfig,
+    SourceGuardrailsConfig,
     validation_message,
 )
 
@@ -324,3 +325,21 @@ class TestGraphConfig:
         assert out["retrieval"]["chunks"] == 7
         assert out["retrieval"]["exposure"] == "agentic_tool"
         assert out["retrieval"]["retriever"] == "graphrag"
+
+
+@pytest.mark.unit
+class TestSourceGuardrailsConfig:
+    def test_scanning_is_off_by_default_and_for_rows_written_before_it(self):
+        assert SourceGuardrailsConfig().injection_scan is False
+        assert SourceConfig.parse({"retrieval": {"chunks": 3}}).guardrails.injection_scan is False
+        assert SourceConfig().model_dump()["guardrails"] == {"injection_scan": False}
+
+    def test_round_trips(self):
+        cfg = SourceConfig.model_validate({"guardrails": {"injection_scan": True}})
+        assert cfg.guardrails.injection_scan is True
+        assert SourceConfig.parse(cfg.model_dump()) == cfg
+
+    @pytest.mark.parametrize("raw", [{"injection_scan": "sometimes"}, {"quarantine": 0.9}])
+    def test_strict_on_write(self, raw):
+        with pytest.raises(ValidationError):
+            SourceConfig.model_validate({"guardrails": raw})

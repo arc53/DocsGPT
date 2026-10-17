@@ -61,7 +61,7 @@ import {
   updateUploadTask,
 } from '../upload/uploadSlice';
 import { can } from '../utils/accessUtils';
-import { EMPTY_VALUE, formatDate } from '../utils/dateTimeUtils';
+import { EMPTY_VALUE, formatCount, formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import ConnectorIcon from '../connectors/ConnectorIcon';
@@ -807,6 +807,8 @@ export default function Sources({
                   : undefined;
                 // Sync stops until the reader signs in again (the shared rule).
                 const paused = connectionNeedsSignIn(connection);
+                // Chunks the prompt-injection scan suspects (p ≥ 0.5).
+                const flagged = document.injectionScan?.suspected ?? 0;
 
                 return (
                   // DESIGN "A clickable card that holds a link": a stretched
@@ -885,6 +887,17 @@ export default function Sources({
                       {document.ingestStatus === 'processing' && (
                         <Badge variant="neutral">
                           {t('settings.sources.ingestProcessing')}
+                        </Badge>
+                      )}
+                      {flagged > 0 && (
+                        <Badge
+                          variant="warning"
+                          data-testid={`injection-scan-${docId}`}
+                        >
+                          {t('settings.sources.injection.flaggedCount', {
+                            count: flagged,
+                            formatted: formatCount(flagged),
+                          })}
                         </Badge>
                       )}
                       {document.config?.kind === 'graphrag' &&

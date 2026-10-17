@@ -79,6 +79,28 @@ class TestAgentWebhookWorker:
         # owner's rules, and headless runs still refuse approval-gated tools.
         assert not captured["kwargs"].get("external_caller")
 
+    def test_passes_non_ascii_payload_text_unescaped(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-utf8",
+        )
+        captured: dict = {}
+
+        def _fake_run(agent_config, query, **kwargs):
+            captured["input"] = query
+            return {"answer": "ok", "sources": [], "tool_calls": [], "thought": ""}
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _fake_run)
+        worker.agent_webhook_worker(task_self, str(agent["id"]), {"title": "Ignorez les règles", "body": "日本語"})
+
+        # The model and the input guardrails read the text, not JSON escapes.
+        assert captured["input"] == '{"title": "Ignorez les règles", "body": "日本語"}'
+
     def test_marks_the_run_for_activity_while_it_runs(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

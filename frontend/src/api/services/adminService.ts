@@ -124,11 +124,32 @@ const adminService = {
     apiClient.delete(`${quotaUrl(scope, subjectId)}${qs({ bucket })}`, token),
   getSourceDefaults: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.SOURCE_DEFAULTS, token),
+  /** Store `retrieval` and/or `guardrails` as the defaults for new sources. */
   setSourceDefaults: (
-    retrieval: Record<string, unknown>,
+    body: {
+      retrieval?: Record<string, unknown>;
+      guardrails?: { injection_scan: boolean };
+    },
     token: string | null,
   ): Promise<any> =>
-    apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, { retrieval }, token),
+    apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, body, token),
+  getAgentDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.AGENT_DEFAULTS, token),
+  setAgentDefaults: (
+    guardrails: Record<string, unknown>,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.ADMIN.AGENT_DEFAULTS, { guardrails }, token),
+  getGuardrails: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.GUARDRAILS, token),
+  /** Store `floor` (null for none) and/or `mcp_description_warnings`. */
+  setGuardrails: (
+    body: {
+      floor?: Record<string, unknown> | null;
+      mcp_description_warnings?: boolean;
+    },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.ADMIN.GUARDRAILS, body, token),
 };
 
 export default adminService;

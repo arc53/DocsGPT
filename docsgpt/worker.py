@@ -23,7 +23,10 @@ from docsgpt import tracing
 from docsgpt.activity.flags import mark_ingest_running
 from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
+from docsgpt.decisions import Budget
+from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.guardrails import injection_ingest, injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
@@ -842,6 +845,7 @@ def ingest_worker(
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
 
+            scanner = injection_ingest.scanner_for(source_uuid, config)
             heartbeat_thread, heartbeat_stop = _start_ingest_heartbeat(source_uuid)
             try:
                 embed_and_store_documents(
@@ -849,6 +853,7 @@ def ingest_worker(
                     attempt_id=getattr(self.request, "id", None),
                     user_id=user,
                     progress_start=50, progress_end=100,
+                    scan=scanner,
                 )
             finally:
                 _stop_ingest_heartbeat(heartbeat_thread, heartbeat_stop)
@@ -881,6 +886,8 @@ def ingest_worker(
                 file_data["config"] = json.dumps(config)
 
             upload_index(vector_store_path, file_data)
+            if scanner is not None:
+                injection_ingest.write_summary(source_id_for_events, [d.page_content for d in docs])
             publish_user_event(
                 user,
                 "source.ingest.completed",
@@ -1098,6 +1105,7 @@ def reingest_source_worker(self, source_id, user):
                     source_id,
                     settings.EMBEDDINGS_KEY,
                 )
+                scanner = injection_ingest.scanner_for(source_id)
 
                 self.update_state(
                     state="PROGRESS",
@@ -1202,6 +1210,8 @@ def reingest_source_worker(self, source_id, user):
                                         f"Could not update token count for {file_path}: {e}"
                                     )
 
+                            if scanner is not None:
+                                scanner.all([d.text for d in chunked_new])
                             for d in chunked_new:
                                 meta = dict(d.extra_info or {})
                                 try:
@@ -1257,6 +1267,8 @@ def reingest_source_worker(self, source_id, user):
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True
                     )
+                if scanner is not None:
+                    injection_ingest.refresh_summary(source_id, vector_store)
 
                 self.update_state(
                     state="PROGRESS",
@@ -1480,11 +1492,14 @@ def remote_worker(
             f"{list(directory_structure.keys())}"
         )
 
+        # A sync carries no config: the source's own setting decides.
+        scanner = injection_ingest.scanner_for(source_uuid, config)
         if operation_mode == "upload":
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                scan=scanner,
             )
             assert_index_complete(source_uuid)
         elif operation_mode == "sync":
@@ -1495,6 +1510,7 @@ def remote_worker(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                scan=scanner,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -1532,6 +1548,8 @@ def remote_worker(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
         upload_index(full_path, file_data)
+        if scanner is not None:
+            injection_ingest.write_summary(source_id_for_events, [d.page_content for d in docs])
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
         publish_user_event(
@@ -2176,7 +2194,8 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns:
         Its extraction record, page count, transcript/OCR details and parse
-        warnings, plus ``reused_from`` naming the row.
+        warnings, its prompt-injection score when the current scorer made it,
+        plus ``reused_from`` naming the row.
     """
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     copied = {
@@ -2184,8 +2203,52 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
         for key, value in metadata.items()
         if key in ("extraction", "page_count", "parse_warnings") or key.startswith(("transcript_", "ocr_"))
     }
+    if injection_scoring.from_metadata(metadata.get("injection")) is not None:
+        copied["injection"] = metadata["injection"]
     copied["reused_from"] = str(row.get("id"))
     return copied
+
+
+def _score_attachment_injection(user: str, attachment_id: Any, content: str, metadata: Dict[str, Any]):
+    """Score a stored attachment's text for prompt injection and keep it as ``metadata.injection``.
+
+    Runs once the upload is complete, so the user never waits on it; a turn
+    that sends the file first scores it then, or queues it. Gated by
+    ``DECISION_INJECTION_ENABLED`` alone: an attachment belongs to no source,
+    so no source setting applies. A reuse that copied a score of the current
+    scorer is not scored again. A text not wholly scored within the
+    background budget gets no key, and the score cache answers instead.
+    Never raises.
+
+    Args:
+        user: The uploader.
+        attachment_id: The upload's handle.
+        content: The text stored for the prompt.
+        metadata: The metadata just stored.
+
+    Returns:
+        ``{p, scorer, windows_scored, windows_total}`` as stored, or None.
+    """
+    if not settings.DECISION_INJECTION_ENABLED or not (content or "").strip():
+        return None
+    if injection_scoring.from_metadata(metadata.get("injection")) is not None:
+        return None
+    try:
+        result = injection_scoring.score(
+            [content],
+            feature=INJECTION_ATTACHMENT_PARSE,
+            budget=Budget.BACKGROUND,
+            max_windows=settings.GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS,
+        )
+        if result[0] is None or result.reasons[0] is not None:
+            return None
+        stored = injection_scoring.as_metadata(result[0])
+        with db_session() as conn:
+            AttachmentsRepository(conn).set_metadata_key(str(attachment_id), user, "injection", stored)
+        return stored
+    except Exception:  # noqa: BLE001 - the upload is already complete
+        logging.warning(f"Could not score attachment {attachment_id} for prompt injection", exc_info=True)
+        return None
 
 
 def _write_attachment_failure_row(
@@ -2515,6 +2578,9 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             },
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
+        injection = _score_attachment_injection(user, attachment_id, content, metadata)
+        if injection is not None:
+            metadata = {**metadata, "injection": injection}
 
         return {
             "filename": filename,
@@ -3506,7 +3572,8 @@ def agent_webhook_worker(self, agent_id, payload):
                 agent_config = repo.get_by_legacy_id(str(agent_id))
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
-        input_data = json.dumps(payload)
+        # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
+        input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         raise
@@ -3662,7 +3729,7 @@ def _webhook_retrieval_query(payload: Any) -> str:
                 walk(item, depth + 1)
 
     walk(payload, 0)
-    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload)
+    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload, ensure_ascii=False)
     return query[:_WEBHOOK_QUERY_MAX_CHARS]
 
 
@@ -4104,11 +4171,13 @@ def ingest_connector(
             self.update_state(
                 state="PROGRESS", meta={"current": 60, "status": "Storing documents"}
             )
+            scanner = injection_ingest.scanner_for(source_uuid, config)
             embed_and_store_documents(
                 docs, vector_store_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
                 progress_start=60, progress_end=100,
+                scan=scanner,
             )
             assert_index_complete(source_uuid)
 
@@ -4158,6 +4227,8 @@ def ingest_connector(
                     )
 
             upload_index(vector_store_path, file_data)
+            if scanner is not None:
+                injection_ingest.write_summary(source_id_for_events, [d.page_content for d in docs])
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
 
@@ -4335,12 +4406,15 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     store = VectorCreator.create_vectorstore(
         settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
     )
+    scanner = injection_ingest.scanner_for(source_id)
     deleted = store.delete_chunks_by_source_path(path)
 
     with db_readonly() as conn:
         page = WikiPagesRepository(conn).get_by_path(source_id, path)
 
     if page is None:
+        if scanner is not None:
+            injection_ingest.refresh_summary(source_id, store)
         return {"status": "deleted", "deleted": deleted}
 
     try:
@@ -4365,6 +4439,8 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
             ]
         )
 
+        if scanner is not None:
+            scanner.all([chunk.text for chunk in chunks])
         added = 0
         for chunk in chunks:
             # Start from what the chunker produced -- ``token_count`` above
@@ -4389,6 +4465,8 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
         with db_session() as conn:
             WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
         raise
+    if scanner is not None:
+        injection_ingest.refresh_summary(source_id, store)
 
     return {"status": "embedded", "added": added, "deleted": deleted}
 

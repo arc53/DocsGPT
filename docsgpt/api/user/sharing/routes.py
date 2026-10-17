@@ -9,6 +9,7 @@ from flask_restx import fields, inputs, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
@@ -240,6 +241,8 @@ class ShareConversation(Resource):
                             chunks=chunks_int,
                             prompt_id=prompt_pg_id,
                             source_id=source_pg_id,
+                            # The share's agent starts from the admin's default guardrails.
+                            config=agent_defaults.seed(conn, None),
                         )
 
                     share = shared_repo.get_or_create(

@@ -646,6 +646,12 @@ Type `int`, default `90`, must be `>= 1`.
 
 Days the per-day counts of decision-model calls (`decision_usage`) are kept before the cleanup task removes them.
 
+### `DECISION_INJECTION_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model score text for prompt injection: the `injection_model` guardrail check of agents and of the floor (Admin > Guardrails), the sources set to scan their chunks, chat attachments once uploaded, and MCP tool descriptions when Admin > Guardrails warns on them. While false nothing loads or calls the model for guardrails, those controls are not evaluated, and the UI marks the check unavailable. While true, the API process (or the decide server) loads the model at start.
+
 ### `DECISION_RELEVANCE_ENABLED`
 
 Type `bool`, default `false`.
@@ -1801,7 +1807,7 @@ Cap on a user's total stored artifact bytes (0 disables).
 
 ## Guardrails
 
-Input/output checks every agent runs, and the floor no agent may weaken.
+Input/output checks every agent runs; the floor no agent may weaken is edited in Admin > Guardrails.
 
 ### `GUARDRAILS_ENABLED`
 
@@ -1819,7 +1825,7 @@ Allowlist of GuardrailCreator.checks keys, as a JSON list or comma-separated nam
 
 Type `dict[str, Any]`, default `{}`.
 
-A GuardrailsConfig fragment every agent inherits and cannot weaken; agents may add controls or make an action stricter, never looser. "enabled" is required; without it the floor parses but applies to nothing. Example: \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
+Deprecated: the rules every agent follows are edited in Admin > Guardrails and stored in the database. On the first start with this set and no stored floor, its value is imported once, with a warning; after that it is ignored. It is the same GuardrailsConfig fragment the page edits, e.g. \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
 
 ### `GUARDRAILS_JUDGE_MODEL`
 
@@ -1839,29 +1845,41 @@ Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
 
-### `GUARDRAILS_INJECTION_INPUT_MODE`
+### `GUARDRAILS_INJECTION_MAX_WINDOWS`
 
-Type `"off" | "monitor" | "on" | "auto"`, default `off`.
+Type `int`, default `24`, must be `>= 1` and `<= 64`.
 
-Give every agent an `injection_model` check on user input, scored by the decision model. `monitor` flags; `on` also blocks at GUARDRAILS_INJECTION_THRESHOLD, on agents that enforce (`scan_all`); `auto` flags while the check's predicted time on this machine fits GUARDRAILS_INJECTION_INPUT_BUDGET. An agent's own `injection_model` input control replaces it. The first mode other than `off` downloads the decision model (~0.5 GB).
+Windows (512 model tokens each) the `injection_model` check reads of one text at chat time: the user's message, a tool result, a retrieved document or an attached file. Past it the first window and the last ones are read, and a text that scored clean is not evaluated.
 
-### `GUARDRAILS_INJECTION_INPUT_BUDGET`
+### `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS`
 
-Type `float`, default `0.5`, must be `> 0`.
+Type `int`, default `64`, must be `>= 1` and `<= 256`.
 
-Under GUARDRAILS_INJECTION_INPUT_MODE=auto, the longest predicted time, in seconds, the input check may add before an answer starts.
+Windows (512 model tokens each) read of a chat attachment's text when it is scored for prompt injection in the background after upload, about 30,000 tokens at the default. Past it the first window and the last ones are read.
 
-### `GUARDRAILS_INJECTION_THRESHOLD`
+### `GUARDRAILS_INJECTION_LIVE_ITEMS`
 
-Type `float`, default `0.9`, must be `>= 0.0` and `<= 1.0`.
+Type `int | "auto"`, default `auto`.
 
-Default `threshold` of an `injection_model` control: the probability from which the control's own action (such as block) applies.
+Retrieved documents or attached files the `injection_model` check scores with the model during a turn when no score is cached; the rest are scored in the background for the next turn that uses them. `auto` is 4 where the decision model is measured to score four full chunks within the stage deadline (a GPU), else 0; or a number from 0 to 40.
 
-### `GUARDRAILS_INJECTION_FLAG_THRESHOLD`
+### `GUARDRAILS_INJECTION_BATCH_STATES`
 
-Type `float`, default `0.5`, must be `>= 0.0` and `<= 1.0`.
+Type `int`, default `8`, must be `>= 1` and `<= 64`.
 
-Default `flag_threshold` of an `injection_model` control: from this probability up to the threshold a text is flagged as suspected, never blocked.
+Windows sent to the decision model per call when texts are scored in the background.
+
+### `GUARDRAILS_INJECTION_LAZY`
+
+Type `bool`, default `true`.
+
+Score in the background the retrieved documents and attached files a turn could not score in time, so the next turn finds their scores cached.
+
+### `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS`
+
+Type `int`, default `180`, must be `>= 1`.
+
+Days a cached prompt-injection score is kept after its text was last scored or seen.
 
 
 ## Execution traces

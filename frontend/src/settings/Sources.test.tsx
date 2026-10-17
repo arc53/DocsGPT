@@ -408,6 +408,42 @@ describe('Sources access', () => {
     ).toBe(false);
   });
 
+  it('badges a source with chunks its prompt-injection scan flagged', async () => {
+    await render(
+      doc({
+        injectionScan: {
+          scanned: 120,
+          unscored: 0,
+          suspected: 3,
+          high: 1,
+          max_p: 0.97,
+        },
+      }),
+    );
+    const badge = container.querySelector<HTMLElement>(
+      '[data-testid="injection-scan-src-1"]',
+    )!;
+    expect(badge.dataset.variant).toBe('warning');
+    expect(badge.textContent).toBe('settings.sources.injection.flaggedCount');
+  });
+
+  it('shows no scan badge for a clean or unscanned source', async () => {
+    await render(
+      doc({
+        injectionScan: {
+          scanned: 40,
+          unscored: 2,
+          suspected: 0,
+          high: 0,
+          max_p: 0.1,
+        },
+      }),
+    );
+    expect(
+      container.querySelector('[data-testid="injection-scan-src-1"]'),
+    ).toBeNull();
+  });
+
   // Leaving Knowledge loses nothing, so its Add knowledge may browse the
   // whole Connectors page; the other openers keep the list in the dialog.
   it('lets Add knowledge browse the syncing connectors from Knowledge', async () => {

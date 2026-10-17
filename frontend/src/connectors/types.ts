@@ -116,12 +116,20 @@ export type ActionParameter = {
   set_by?: 'tool' | 'account' | null;
 };
 
+/**
+ * An MCP action's prompt-injection score, stored when its server's actions
+ * were read while Admin › Guardrails warns on tool descriptions.
+ */
+export type ActionInjection = { p: number; scorer: string } | null;
+
 export type ConnectionToolAction = {
   name: string;
   description: string;
   access: ActionAccess;
   permission: ActionPermission;
   parameters?: ActionParameter[];
+  /** Its description's prompt-injection score, while Admin › Guardrails warns on them. */
+  injection?: ActionInjection;
 };
 
 export type ConnectionTool = {
