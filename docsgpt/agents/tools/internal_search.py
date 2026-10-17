@@ -193,6 +193,12 @@ class InternalSearchTool(Tool):
             # The retrieval's own chunks were there; the relevance stages kept none.
             return f"No relevant documents found for '{query}'."
 
+        # Inside an agent each hit is screened as a retrieved document first,
+        # so a hit a retrieval control withholds is replaced on its own.
+        screen = self.config.get("retrieval_screen")
+        if callable(screen):
+            docs = screen(docs)
+
         # Accumulate for source tracking
         for doc in docs:
             if doc not in self.retrieved_docs:
