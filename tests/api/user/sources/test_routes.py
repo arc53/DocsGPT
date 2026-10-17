@@ -157,6 +157,20 @@ class TestPaginatedSources:
         assert data["currentPage"] == 1
         assert len(data["paginated"]) == 2
 
+    def test_entries_carry_the_injection_scan_summary(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        user = "u-pag-scan"
+        summary = {"scanned": 3, "unscored": 0, "suspected": 1, "high": 0, "max_p": 0.6}
+        _seed_source(pg_conn, user, name="scanned", metadata={"injection_scan": summary})
+        _seed_source(pg_conn, user, name="plain")
+        with _patch_db(pg_conn), app.test_request_context("/api/sources/paginated"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        scans = {d["name"]: d["injectionScan"] for d in response.json["paginated"]}
+        assert scans == {"scanned": summary, "plain": None}
+
     def test_search_filter(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import PaginatedSources
 
