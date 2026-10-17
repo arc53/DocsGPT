@@ -293,6 +293,17 @@ class TestSeeding:
         guardrails = AgentsRepository(db).get(result["agent_id"], "u-importer")["config"]["guardrails"]
         assert guardrails["mode"] == "scan_all" and guardrails["controls"][0]["check"] == "injection_model"
 
+    def test_importing_a_new_agent_with_an_invalid_config_keeps_the_defaults(self, app, db):
+        from docsgpt.api.user.agents.portability import API_VERSION, apply_import
+
+        _store(db, **DEFAULTS)
+        doc = {"apiVersion": API_VERSION, "kind": "Agent", "metadata": {"slug": "imp-bad"},
+               "spec": {"name": "Imported", "config": {"guardrails": {"controls": "not a list"}}}}
+        with app.app_context():
+            result = apply_import(db, "u-importer3", doc)
+        guardrails = AgentsRepository(db).get(result["agent_id"], "u-importer3")["config"]["guardrails"]
+        assert guardrails["controls"][0]["check"] == "injection_model"
+
     def test_reimporting_over_an_agent_never_reseeds_it(self, app, db):
         from docsgpt.api.user.agents.portability import API_VERSION, apply_import
 
