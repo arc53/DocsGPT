@@ -761,12 +761,58 @@ class TestWorkflowNodeRelevance:
 
     def test_with_the_switch_off_no_source_row_is_read(self, monkeypatch):
         from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.core.settings import settings
 
         def refuse():
             raise AssertionError("read the source rows while relevance is off")
 
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", False)
         monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", refuse)
         assert WorkflowEngine._node_rerankers(["s1"]) == {}
+
+    def test_without_per_source_retrieval_no_source_row_is_read(self, monkeypatch):
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        def refuse():
+            raise AssertionError("read the source rows with per-source retrieval off")
+
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        monkeypatch.setattr(settings, "PER_SOURCE_RETRIEVAL_ENABLED", False)
+        monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", refuse)
+        with installed(FakeDecider()):
+            assert WorkflowEngine._node_rerankers(["s1"]) == {}
+
+    def test_a_failed_settings_lookup_keeps_the_retrieved_docs(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        engine = create_engine()
+        docs = [dict(d) for d in self.DOCS]
+
+        class _R:
+            def search(self, q):
+                return docs
+
+        def broken(sources):
+            raise RuntimeError("database unavailable")
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: _R(),
+        )
+        monkeypatch.setattr(type(engine), "_authorized_node_sources", lambda self, s: list(s or []))
+        monkeypatch.setattr(type(engine), "_node_rerankers", staticmethod(broken))
+        engine.state["query"] = "what is the radius?"
+        cfg = create_agent_node(node_id="n", agent_type="classic", sources=["s1"])
+        node_config = AgentNodeConfig(**cfg.config.get("config", cfg.config))
+        fake = FakeDecider({"relevant": self._scores})
+        with installed(fake):
+            out = engine._retrieve_node_sources(node_config)
+        assert out == self.DOCS and engine.agent.retrieved_docs == self.DOCS
+        assert fake.calls == []
 
     def test_the_node_reads_each_source_reranker(self, monkeypatch, pg_conn):
         from contextlib import contextmanager

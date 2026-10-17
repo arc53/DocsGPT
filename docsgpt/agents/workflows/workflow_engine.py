@@ -1473,10 +1473,16 @@ class WorkflowEngine:
             )
             docs = retriever.search(query)
             if docs:
+                try:
+                    rerankers = self._node_rerankers(sources)
+                except Exception:
+                    # Relevance fails open: keep what the retriever returned.
+                    logger.warning("Could not read the workflow node's relevance settings", exc_info=True)
+                    rerankers = {}
                 docs = apply_relevance(
                     docs,
                     query,
-                    self._node_rerankers(sources),
+                    rerankers,
                     rollout_key=getattr(self.agent, "conversation_id", None)
                     or getattr(self.agent, "request_id", None),
                 )
@@ -1494,18 +1500,20 @@ class WorkflowEngine:
         """``{source_id: RerankerConfig}`` of the node's sources that turn relevance on.
 
         Read only while the operator lets the model score chunks
-        (``DECISION_RELEVANCE_ENABLED``), so a node never queries the source
+        (``DECISION_RELEVANCE_ENABLED``) and per-source retrieval is on
+        (``PER_SOURCE_RETRIEVAL_ENABLED``), so a node never queries the source
         rows for a setting that cannot take effect.
 
         Args:
             sources: The node's authorized source ids.
         """
+        from docsgpt.core.settings import settings
         from docsgpt.retriever.stages.relevance import relevance_enabled
         from docsgpt.storage.db.repositories.sources import SourcesRepository
         from docsgpt.storage.db.session import db_readonly
         from docsgpt.storage.db.source_config import SourceConfig
 
-        if not sources or not relevance_enabled():
+        if not sources or not settings.PER_SOURCE_RETRIEVAL_ENABLED or not relevance_enabled():
             return {}
         rerankers = {}
         with db_readonly() as conn:

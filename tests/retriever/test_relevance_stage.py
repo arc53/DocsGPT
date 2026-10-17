@@ -360,6 +360,7 @@ class TestSettings:
     def test_rag_rerank_is_the_switch(self, monkeypatch):
         from docsgpt.decisions import features
 
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", False)
         spec = next(s for s in features.specs() if s.name == "rag_rerank")
         assert (spec.mode_setting, spec.budget_setting) == ("DECISION_RELEVANCE_ENABLED", "DECISION_RELEVANCE_TIMEOUT")
         assert features.configured(spec) == "off" and not features.wanted_at_start()
