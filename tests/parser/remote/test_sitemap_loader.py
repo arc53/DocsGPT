@@ -150,6 +150,22 @@ class TestParseSitemap:
         urls = loader._parse_sitemap(sitemap_xml)
         assert urls == ["https://example.com/p"]
 
+    def test_parse_sitemap_single_quoted_and_prefixed_namespaces(self):
+        """Valid single-quoted declarations, prefixes, and whitespace must be parsed (#3076)."""
+        loader = SitemapLoader()
+
+        # Single quoted namespace
+        xml_single = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://example.com/single</loc></url></urlset>"
+        assert loader._parse_sitemap(xml_single) == ["https://example.com/single"]
+
+        # Prefixed XML tags
+        xml_prefixed = b"<sm:urlset xmlns:sm='http://www.sitemaps.org/schemas/sitemap/0.9'><sm:url><sm:loc>https://example.com/prefixed</sm:loc></sm:url></sm:urlset>"
+        assert loader._parse_sitemap(xml_prefixed) == ["https://example.com/prefixed"]
+
+        # Whitespace around =
+        xml_spaces = b'<urlset xmlns  =  "http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/spaces</loc></url></urlset>'
+        assert loader._parse_sitemap(xml_spaces) == ["https://example.com/spaces"]
+
 
 # =====================================================================
 # _extract_urls
