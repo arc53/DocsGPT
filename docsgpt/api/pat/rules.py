@@ -251,6 +251,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources/reingest", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/manage_source_files", "POST"): _rule("sources:write", (FORM, "source_id")),
     ("/api/sources/<string:source_id>/config", "PATCH"): _rule("sources:write", (VIEW, "source_id")),
+    ("/api/sources/<string:source_id>/injection_review", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "PUT"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/convert", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/graphrag/enable", "POST"): _rule(

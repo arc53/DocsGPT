@@ -1119,6 +1119,19 @@ def score_injection_texts(self, texts):
     return injection_scoring.score_lazy(list(texts or []))
 
 
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def scan_source_injection(self, source_id):
+    """Scan a source's chunks already indexed for prompt injection, after its owner turned scanning on.
+
+    The model is called over HTTP, never loaded here. Nothing is retried: the
+    chunks a stopped scan left are scored as turns retrieve them, and the
+    next ingest or sync of the source scans again.
+    """
+    from docsgpt.guardrails import injection_ingest
+
+    return injection_ingest.scan_source(source_id)
+
+
 @celery.task(bind=True, acks_late=False)
 def cleanup_traces(self):
     """Delete ``request_traces`` rows older than ``TRACES_RETENTION_DAYS``.
