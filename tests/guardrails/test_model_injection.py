@@ -1,4 +1,4 @@
-"""The ``injection_model`` check on user input and the control ``GUARDRAILS_INJECTION_INPUT_MODE`` adds.
+"""The ``injection_model`` check on user input, behind the operator's switch ``DECISION_INJECTION_ENABLED``.
 
 The decision model is replaced by ``FakeDecider``: no model, no network.
 """
@@ -14,7 +14,6 @@ import pytest
 
 from docsgpt import decisions
 from docsgpt.core.settings import settings
-from docsgpt.core.settings.guardrails import GuardrailSettings
 from docsgpt.decisions import Q, features, record
 from docsgpt.decisions.features import INJECTION_INPUT
 from docsgpt.decisions.backends.onnx import OnnxBackend
@@ -25,11 +24,11 @@ from docsgpt.decisions.types import BatchResult
 from docsgpt.decisions.vendor.arc_decide import Decider as Release
 from docsgpt.guardrails.base import ScanContext, stage_deadline
 from docsgpt.guardrails.checks import model_injection
-from docsgpt.guardrails.checks.model_injection import INSTANCE_DEFAULT, ModelInjectionCheck, windows
+from docsgpt.guardrails.checks.model_injection import ModelInjectionCheck, chunk_shape, windows
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.guardrails.engine import GuardrailEngine
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
-from docsgpt.guardrails.runtime import resolve_config
+from docsgpt.guardrails.runtime import merge_floor
 from docsgpt.guardrails.types import Action, Stage
 from tests.decisions.fakes import FakeClock, FakeEngine
 
@@ -49,13 +48,14 @@ class CharTokenizer:
 
 
 def fast() -> SpeedProfile:
-    """A machine where the input check takes well under its 0.5 s budget."""
+    """A machine where the input check takes well under a second."""
     return SpeedProfile(c=0.01, a=0.0001, b=0.0, overhead=50, threads=4, measured_at=0.0)
 
 
-def slow() -> SpeedProfile:
-    """A machine where it takes seconds (Docker on a Mac)."""
-    return SpeedProfile(c=0.05, a=0.005, b=0.0, overhead=50, threads=4, measured_at=0.0)
+@pytest.fixture(autouse=True)
+def injection_enabled(monkeypatch):
+    """The operator lets the model scan; the switch's own tests turn it off again."""
+    monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", True)
 
 
 def scan(fake: FakeDecider, text: str = "hello", **settings_):
@@ -64,24 +64,12 @@ def scan(fake: FakeDecider, text: str = "hello", **settings_):
         return check.scan(text, Stage.INPUT, ScanContext())
 
 
-def engine_config(action: Action, *, mode: str = "scan_all", fail_open: bool = True, implicit: bool = False,
+def engine_config(action: Action, *, mode: str = "scan_all", fail_open: bool = True,
                   timeout_ms: int = 2000) -> GuardrailsConfig:
-    settings_ = {INSTANCE_DEFAULT: True} if implicit else {}
     return GuardrailsConfig.model_validate({
         "enabled": True, "mode": mode, "fail_open": fail_open, "timeout_ms": timeout_ms,
-        "controls": [{"check": "injection_model", "stage": "input", "action": action.value, "settings": settings_}],
+        "controls": [{"check": "injection_model", "stage": "input", "action": action.value}],
     })
-
-
-@pytest.fixture
-def input_mode(monkeypatch):
-    """Set ``GUARDRAILS_INJECTION_INPUT_MODE`` with fresh ``auto`` verdicts."""
-    monkeypatch.setattr(features, "_on", {})
-
-    def set_mode(mode: str) -> None:
-        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_INPUT_MODE", mode)
-
-    return set_mode
 
 
 @pytest.mark.unit
@@ -96,11 +84,12 @@ class TestCheck:
         with installed(FakeDecider()):
             assert ModelInjectionCheck.describe()["available"] is True
 
-    def test_settings_default_to_the_instance_thresholds(self, monkeypatch):
+    def test_settings_default_to_the_module_thresholds(self):
         assert ModelInjectionCheck.validate_settings({}) == DEFAULTS
-        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_THRESHOLD", 0.8)
-        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_FLAG_THRESHOLD", 0.3)
-        assert ModelInjectionCheck.validate_settings({}) == {"threshold": 0.8, "flag_threshold": 0.3}
+        assert (model_injection.THRESHOLD, model_injection.FLAG_THRESHOLD) == (0.9, 0.5)
+
+    def test_unknown_settings_are_dropped(self):
+        assert ModelInjectionCheck.validate_settings({"instance_default": True}) == DEFAULTS
 
     def test_a_threshold_below_the_flag_default_lowers_it(self):
         assert ModelInjectionCheck.validate_settings({"threshold": 0.4}) == {"threshold": 0.4, "flag_threshold": 0.4}
@@ -112,10 +101,6 @@ class TestCheck:
     def test_settings_out_of_range_are_rejected(self, bad):
         with pytest.raises(ValueError):
             ModelInjectionCheck.validate_settings(bad)
-
-    def test_the_instance_marker_is_kept_only_when_true(self):
-        assert ModelInjectionCheck.validate_settings({INSTANCE_DEFAULT: True})[INSTANCE_DEFAULT] is True
-        assert INSTANCE_DEFAULT not in ModelInjectionCheck.validate_settings({INSTANCE_DEFAULT: "yes"})
 
     def test_asks_the_trained_injection_question_about_the_text(self):
         fake = FakeDecider({"injection": 0.1})
@@ -258,19 +243,19 @@ class TestEngine:
         fake = FakeDecider(reasons={"injection_input": "loading"})
         assert self.evaluate(engine_config(Action.BLOCK, fail_open=False), fake).blocked
 
-    def test_the_instance_control_fails_open_even_on_a_fail_closed_agent(self):
+    def test_a_flag_control_never_stops_a_turn_it_could_not_score(self):
         fake = FakeDecider(reasons={"injection_input": "loading"})
-        decision = self.evaluate(engine_config(Action.BLOCK, fail_open=False, implicit=True), fake)
+        decision = self.evaluate(engine_config(Action.FLAG, fail_open=False), fake)
         assert not decision.blocked
         (verdict,) = decision.unevaluated
         assert verdict.action is Action.FLAG and verdict.outcome.error == "unscored: loading"
 
-    def test_the_instance_control_fails_open_when_the_engine_gives_up_on_it(self):
+    def test_a_flag_control_passes_when_the_engine_gives_up_on_it(self):
         def late(state, question):
             time.sleep(0.6)
             return 0.99
 
-        config = engine_config(Action.BLOCK, fail_open=False, implicit=True, timeout_ms=300)
+        config = engine_config(Action.FLAG, fail_open=False, timeout_ms=300)
         decision = self.evaluate(config, FakeDecider({"injection": late}))
         assert not decision.blocked and decision.unevaluated[0].outcome.error == "timeout"
 
@@ -278,7 +263,7 @@ class TestEngine:
         rows = []
         fake = FakeDecider(reasons={"injection_input": "loading"})
         with installed(fake):
-            GuardrailEngine(engine_config(Action.FLAG, implicit=True), recorder=rows.append).evaluate(
+            GuardrailEngine(engine_config(Action.FLAG), recorder=rows.append).evaluate(
                 "hi", Stage.INPUT
             )
         assert len(rows) == 1 and rows[0].unevaluated
@@ -296,8 +281,8 @@ class TestDecisionRecord:
             GuardrailEngine(config).evaluate(text, Stage.INPUT)
         return rec.snapshot()
 
-    def test_the_instance_control_records_a_shadow_entry(self):
-        snap = self.evaluate(engine_config(Action.FLAG, implicit=True), FakeDecider({"injection": 0.03}))
+    def test_a_flag_control_records_a_shadow_entry(self):
+        snap = self.evaluate(engine_config(Action.FLAG), FakeDecider({"injection": 0.03}))
         (entry,) = snap["entries"]
         assert entry["feature"] == "injection_input" and entry["status"] == "ok" and entry["applied"] is False
         assert entry["outcome"] == {"p": 0.03, "flag_threshold": 0.5, "threshold": 0.9, "windows": [1, 1]}
@@ -343,118 +328,113 @@ class TestDecisionRecord:
 
 
 @pytest.mark.unit
-class TestInstanceDefault:
-    def test_off_by_default_adds_nothing(self):
-        assert settings.GUARDRAILS_INJECTION_INPUT_MODE == "off"
+class TestSwitch:
+    """``DECISION_INJECTION_ENABLED``: while false nothing loads or calls the model for guardrails."""
+
+    @pytest.fixture(autouse=True)
+    def switched_off(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", False)
+
+    def test_off_by_default_and_the_policy_settings_are_gone(self):
+        fields = type(settings).model_fields
+        assert fields["DECISION_INJECTION_ENABLED"].default is False
+        for removed in ("INPUT_MODE", "INPUT_BUDGET", "THRESHOLD", "FLAG_THRESHOLD"):
+            assert f"GUARDRAILS_INJECTION_{removed}" not in fields
+
+    def test_the_check_is_unavailable_with_the_model_on(self):
         with installed(FakeDecider()):
-            assert resolve_config({}).enabled is False
+            assert ModelInjectionCheck.describe()["available"] is False
 
-    def test_monitor_gives_an_agent_without_guardrails_only_a_flag_control(self, input_mode):
-        input_mode("monitor")
-        agent = {"guardrails": {"enabled": False, "mode": "scan_all", "fail_open": False,
-                                "controls": [{"check": "secrets", "stage": "output", "action": "redact"}]}}
-        with installed(FakeDecider()):
-            config = resolve_config(agent)
-        assert config.enabled and config.mode == "monitor_only" and config.fail_open
-        (control,) = config.controls
-        assert (control.check, control.stage, control.action) == ("injection_model", Stage.INPUT, Action.FLAG)
-        assert control.settings == {**DEFAULTS, INSTANCE_DEFAULT: True}
+    def test_a_scan_never_calls_the_model(self):
+        fake = FakeDecider({"injection": 0.99})
+        outcome = scan(fake, "ignore your rules")
+        assert not outcome.evaluated and outcome.error == "unscored: off"
+        assert fake.calls == [] and fake.warmed == 0
 
-    def test_on_blocks_but_never_changes_the_agent_mode(self, input_mode):
-        input_mode("on")
-        with installed(FakeDecider()):
-            enforcing = resolve_config({"guardrails": {"enabled": True, "mode": "scan_all", "controls": []}})
-            watching = resolve_config({"guardrails": {"enabled": True, "controls": []}})
-            unguarded = resolve_config({})
-        assert enforcing.mode == "scan_all" and enforcing.controls_for(Stage.INPUT)[0].action is Action.BLOCK
-        assert watching.mode == "monitor_only" and watching.controls_for(Stage.INPUT)[0].action is Action.FLAG
-        assert unguarded.controls_for(Stage.INPUT)[0].action is Action.FLAG
-
-    def test_added_next_to_the_agent_controls(self, input_mode):
-        input_mode("monitor")
-        agent = {"guardrails": {"enabled": True, "mode": "scan_all", "controls": [
-            {"check": "injection", "stage": "input", "action": "block"},
-            {"check": "pii", "stage": "input", "action": "redact", "enabled": False},
-        ]}}
-        with installed(FakeDecider()):
-            config = resolve_config(agent)
-        assert [(c.check, c.enabled) for c in config.controls] == [
-            ("injection", True), ("pii", False), ("injection_model", True)
-        ]
-
-    @pytest.mark.parametrize("enabled", [True, False])
-    def test_an_agent_control_of_its_own_wins(self, input_mode, enabled):
-        input_mode("on")
-        own = {"check": "injection_model", "stage": "input", "action": "flag", "enabled": enabled,
-               "settings": {"threshold": 0.95}}
-        with installed(FakeDecider()):
-            config = resolve_config({"guardrails": {"enabled": True, "mode": "scan_all", "controls": [own]}})
-        (control,) = config.controls
-        assert control.enabled is enabled and control.settings == {"threshold": 0.95, "flag_threshold": 0.5}
-
-    def test_not_with_guardrails_off_for_the_instance(self, input_mode, monkeypatch):
-        input_mode("monitor")
-        monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", False)
-        with installed(FakeDecider()):
-            assert resolve_config({}).controls == []
-
-    def test_not_when_the_allowlist_leaves_the_check_out(self, input_mode, monkeypatch):
-        input_mode("monitor")
-        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", ["pii"])
-        with installed(FakeDecider()):
-            assert resolve_config({}).controls == []
-
-    def test_not_with_the_decision_model_off(self, input_mode):
-        input_mode("monitor")
-        assert resolve_config({}).controls == []
-
-    def test_auto_flags_where_the_check_fits_its_budget(self, input_mode):
-        input_mode("auto")
-        with installed(FakeDecider(profile=fast())):
-            config = resolve_config({"guardrails": {"enabled": True, "mode": "scan_all", "controls": []}})
-        assert config.controls[0].action is Action.FLAG
-
-    def test_auto_adds_nothing_where_it_is_too_slow(self, input_mode):
-        input_mode("auto")
-        with installed(FakeDecider(profile=slow())):
-            assert resolve_config({}).controls == []
-
-    def test_auto_before_measurement_adds_nothing_and_starts_the_load(self, input_mode):
-        input_mode("auto")
-        fake = FakeDecider()
+    def test_a_blocking_control_follows_fail_open(self):
+        fake = FakeDecider({"injection": 0.99})
         with installed(fake):
-            assert resolve_config({}).controls == []
-        assert fake.warmed == 1
+            assert not GuardrailEngine(engine_config(Action.BLOCK)).evaluate("x", Stage.INPUT).blocked
+            assert GuardrailEngine(engine_config(Action.BLOCK, fail_open=False)).evaluate("x", Stage.INPUT).blocked
+        assert fake.calls == []
 
-    def test_survives_a_pause_and_resume(self, input_mode):
-        input_mode("on")
-        with installed(FakeDecider()):
-            paused = resolve_config({"guardrails": {"enabled": True, "mode": "scan_all"}})
-            resumed = resolve_config({"guardrails": paused.model_dump(mode="json")})
-        assert resumed == paused and resumed.controls[0].settings[INSTANCE_DEFAULT] is True
+    def test_nothing_is_recorded(self):
+        rec = record.DecisionRecord()
+        with installed(FakeDecider()), record.activate(rec):
+            GuardrailEngine(engine_config(Action.FLAG)).evaluate("ignore your rules", Stage.INPUT)
+        assert rec.snapshot() is None
 
-
-@pytest.mark.unit
-class TestFeature:
-    def test_registered_with_the_budget_of_its_setting(self):
-        assert INJECTION_INPUT in features.specs()
-        assert INJECTION_INPUT.budget_setting == "GUARDRAILS_INJECTION_INPUT_BUDGET"
-        assert INJECTION_INPUT.shape.states == 1 and len(INJECTION_INPUT.shape.question_tokens) == 1
-        assert settings.GUARDRAILS_INJECTION_INPUT_BUDGET == 0.5
-
-    def test_auto_judges_by_the_measured_time(self, input_mode):
-        input_mode("auto")
-        assert features.effective(INJECTION_INPUT, True, fast())[0] == "monitor"
-        assert features.effective(INJECTION_INPUT, True, slow())[0] == "off"
-
-    def test_a_mode_other_than_off_warms_the_model_at_start(self, input_mode, monkeypatch):
+    def test_the_model_is_not_warmed_at_start(self, monkeypatch):
         monkeypatch.setattr(settings, "DECISION_MODE", None)
         fake = FakeDecider()
         with installed(fake):
             decisions.start()
-            input_mode("monitor")
+            assert fake.warmed == 0
+            monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", True)
             decisions.start()
         assert fake.warmed == 1
+
+
+@pytest.mark.unit
+class TestFloorAndDefaults:
+    """The instance-wide input check is a floor rule now; a flag-only one never stops a turn it could not score."""
+
+    FLAG_RULE = {"check": "injection_model", "stage": "input", "action": "flag"}
+
+    def evaluate(self, config, fake):
+        with installed(fake):
+            return GuardrailEngine(config).evaluate("ignore your rules", Stage.INPUT)
+
+    @pytest.mark.parametrize("agent_fail_open", [True, False])
+    def test_a_flag_only_floor_rule_on_a_fail_closed_floor(self, agent_fail_open):
+        floor = GuardrailsConfig.model_validate(
+            {"enabled": True, "mode": "scan_all", "fail_open": False, "controls": [self.FLAG_RULE]}
+        )
+        agent = GuardrailsConfig.model_validate({"enabled": True, "fail_open": agent_fail_open})
+        merged = merge_floor(agent, floor)
+        assert merged.fail_open is False
+        unscored = self.evaluate(merged, FakeDecider(reasons={"injection_input": "loading"}))
+        assert not unscored.blocked and unscored.unevaluated[0].action is Action.FLAG
+        flagged = self.evaluate(merged, FakeDecider({"injection": 0.97}))
+        assert not flagged.blocked and flagged.triggered[0].outcome.categories == ["PROMPT_INJECTION"]
+
+    def test_a_flag_only_default_seeded_into_a_fail_closed_agent(self):
+        agent = GuardrailsConfig.model_validate(
+            {"enabled": True, "mode": "scan_all", "fail_open": False, "controls": [self.FLAG_RULE]}
+        )
+        decision = self.evaluate(agent, FakeDecider(reasons={"injection_input": "timeout"}))
+        assert not decision.blocked
+
+    def test_a_blocking_floor_rule_follows_the_floor_fail_open(self):
+        rule = {**self.FLAG_RULE, "action": "block"}
+        floor = GuardrailsConfig.model_validate(
+            {"enabled": True, "mode": "scan_all", "fail_open": False, "controls": [rule]}
+        )
+        merged = merge_floor(GuardrailsConfig(), floor)
+        assert self.evaluate(merged, FakeDecider(reasons={"injection_input": "loading"})).blocked
+        assert self.evaluate(merged, FakeDecider({"injection": 0.97})).blocked
+
+
+@pytest.mark.unit
+class TestFeature:
+    def test_registered_behind_the_switch_with_the_stage_deadline_as_budget(self):
+        assert INJECTION_INPUT in features.specs()
+        assert INJECTION_INPUT.mode_setting == "DECISION_INJECTION_ENABLED" and INJECTION_INPUT.budget_setting is None
+        assert features.budget(INJECTION_INPUT) == features.STAGE_TIMEOUT_S == GuardrailsConfig().timeout_ms / 1000
+        assert INJECTION_INPUT.shape.states == 1 and len(INJECTION_INPUT.shape.question_tokens) == 1
+
+    def test_the_switch_is_the_feature_mode(self, monkeypatch):
+        assert features.effective(INJECTION_INPUT, True, fast())[0] == "on"
+        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", False)
+        assert features.effective(INJECTION_INPUT, True, fast())[0] == "off"
+        assert features.effective(INJECTION_INPUT, False, fast())[0] == "off"
+
+    def test_the_labels_of_the_other_scans(self):
+        labels = [features.INJECTION_RETRIEVAL, features.INJECTION_TOOL_RESULT, features.INJECTION_ATTACHMENT,
+                  features.INJECTION_TOOL_DESCRIPTION, features.INJECTION_INGEST,
+                  features.INJECTION_ATTACHMENT_PARSE, features.INJECTION_LAZY]
+        assert all(label.startswith("injection_") for label in labels) and len(set(labels)) == 7
+        assert {spec.name for spec in features.specs()}.isdisjoint(labels)
 
     def test_the_catalog_shows_the_measured_time(self):
         assert ModelInjectionCheck.describe()["latency_hint_ms"] == 300
@@ -462,9 +442,9 @@ class TestFeature:
             hint = ModelInjectionCheck.describe()["latency_hint_ms"]
         assert hint == round(fast().predict_s(INJECTION_INPUT.shape) * 1000)
 
-    def test_the_flag_threshold_may_not_exceed_the_threshold(self):
-        with pytest.raises(ValueError, match="GUARDRAILS_INJECTION_FLAG_THRESHOLD"):
-            GuardrailSettings(_env_file=None, GUARDRAILS_INJECTION_FLAG_THRESHOLD=0.95)
+    def test_a_chunk_is_three_windows_in_the_background_lane(self):
+        shape = chunk_shape()
+        assert (shape.states, shape.state_tokens, shape.lane) == (3, model_injection.WINDOW_TOKENS, "background")
 
 
 class PayloadEngine(FakeEngine):

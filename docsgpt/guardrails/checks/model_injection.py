@@ -4,9 +4,11 @@ The check asks the decision model (``docsgpt.decisions``) its trained ``injectio
 gets a probability back. One control carries two thresholds: from ``flag_threshold`` the text is flagged as
 suspected, which is recorded and never enforced; from ``threshold`` the control's own action applies.
 
-A text the model could not score (it is off, still loading, or out of time) is not a pass: the outcome is *not
-evaluated* and the agent's ``fail_open`` decides. The control the instance default adds
-(``GUARDRAILS_INJECTION_INPUT_MODE``) is the exception: it never stops a turn it could not score.
+The operator decides only whether the model may run at all (``DECISION_INJECTION_ENABLED``); while it may not, the
+check is unavailable and asks nothing. A text the model could not score (the switch is off, the model is off, still
+loading, or out of time) is not a pass: the outcome is *not evaluated* and the agent's ``fail_open`` decides for a
+control that blocks. A control that only flags, such as the floor's or the defaults' flag-only rule, never stops a
+turn it could not score.
 
 A long text is split into short windows, scored in one call in the order most likely to matter: the last window
 (where an appended payload sits), the first, then the rest from the end backwards. The decision model answers a
@@ -16,7 +18,7 @@ every window must be scored, or the outcome is *not evaluated* and says how many
 
 Every scan that asks the model is also an entry in the request's decision record (``docsgpt.decisions.record``):
 the probability, the thresholds and how many windows were scored, never the text. ``applied`` is false when the
-control only flags (the instance default under ``monitor``, or an agent in ``monitor_only``).
+control only flags (its action is ``flag``, or the agent runs ``monitor_only``).
 
 Only the ``input`` stage is offered for now. Retrieved documents and tool results are long, and on CPU they need
 scores computed before the turn rather than during it.
@@ -24,6 +26,7 @@ scores computed before the turn rather than during it.
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any, Dict, Optional, Sequence
 
@@ -31,7 +34,8 @@ from docsgpt import decisions
 from docsgpt.core.settings import settings as instance
 from docsgpt.decisions import Budget, Q, Request, record, states, tokens
 from docsgpt.decisions.features import INJECTION_INPUT
-from docsgpt.decisions.types import BACKEND_REASONS, Decision
+from docsgpt.decisions.latency import GUARD
+from docsgpt.decisions.types import BACKEND_REASONS, Decision, Shape
 from docsgpt.guardrails.base import GuardrailCheck, ScanContext, stage_time_left
 from docsgpt.guardrails.types import Action, CheckOutcome, ControlVerdict, Stage
 
@@ -48,8 +52,11 @@ MAX_WINDOWS = 24
 #: window that runs past its prediction must still finish before the engine gives up on the check, or every window
 #: already scored is lost with it.
 DEADLINE_MARGIN_S = 0.25
-#: Settings key marking the control ``GUARDRAILS_INJECTION_INPUT_MODE`` adds to an agent.
-INSTANCE_DEFAULT = "instance_default"
+#: A control's default ``threshold``, from which its action applies, and ``flag_threshold``, from which a text is
+#: flagged as suspected. Precision first: enforcing is the owner's opt-in at 0.9, while the band from 0.5 records the
+#: indirect injections the model under-scores.
+THRESHOLD = 0.9
+FLAG_THRESHOLD = 0.5
 
 
 def windows(text: str) -> tuple[list[str], int]:
@@ -76,6 +83,18 @@ def windows(text: str) -> tuple[list[str], int]:
     if ids is not None:
         pieces = [tokens.decode(piece) for piece in pieces]
     return pieces, total
+
+
+def chunk_shape() -> Shape:
+    """A full-size DocsGPT chunk (the chunker's default ``max_tokens``) scored as windows in the background lane.
+
+    What scanning one chunk for prompt injection costs; the admin pages show its prediction.
+    """
+    from docsgpt.storage.db.source_config import ChunkingConfig
+
+    step = WINDOW_TOKENS - WINDOW_OVERLAP
+    count = 1 + math.ceil(max(0, ChunkingConfig().max_tokens - WINDOW_TOKENS) / step)
+    return Shape(state_tokens=WINDOW_TOKENS, question_tokens=GUARD.question_tokens, states=count, lane="background")
 
 
 def _probability(settings: Dict[str, Any], key: str, default: float) -> float:
@@ -106,31 +125,20 @@ class ModelInjectionCheck(GuardrailCheck):
 
     @classmethod
     def validate_settings(cls, settings: Dict[str, Any]) -> Dict[str, Any]:
-        threshold = _probability(settings, "threshold", instance.GUARDRAILS_INJECTION_THRESHOLD)
-        flag_threshold = _probability(
-            settings, "flag_threshold", min(instance.GUARDRAILS_INJECTION_FLAG_THRESHOLD, threshold)
-        )
+        threshold = _probability(settings, "threshold", THRESHOLD)
+        flag_threshold = _probability(settings, "flag_threshold", min(FLAG_THRESHOLD, threshold))
         if flag_threshold > threshold:
             raise ValueError("flag_threshold must not exceed threshold")
-        normalised: Dict[str, Any] = {"threshold": threshold, "flag_threshold": flag_threshold}
-        if settings.get(INSTANCE_DEFAULT) is True:
-            normalised[INSTANCE_DEFAULT] = True
-        return normalised
+        return {"threshold": threshold, "flag_threshold": flag_threshold}
 
     @classmethod
     def is_available(cls) -> bool:
-        """True unless the decision model is off (``DECISION_MODE=none``) or misconfigured.
+        """True while the operator lets the model scan (``DECISION_INJECTION_ENABLED``) and it is configured.
 
         A model that is not loaded yet still counts: the first scan starts the load, and until it is ready the
-        check reports *not evaluated*.
+        check reports *not evaluated*. ``DECISION_MODE=none`` or a misconfigured model makes it unavailable.
         """
-        return decisions.model_version() is not None
-
-    @classmethod
-    def unevaluated_at_most(cls, settings: Dict[str, Any]) -> Optional[Action]:
-        # The operator turned the instance default on to watch or to block
-        # injections, not to end turns while the model downloads or runs late.
-        return Action.FLAG if settings.get(INSTANCE_DEFAULT) else None
+        return bool(instance.DECISION_INJECTION_ENABLED) and decisions.model_version() is not None
 
     @classmethod
     def describe(cls) -> Dict[str, Any]:
@@ -143,8 +151,10 @@ class ModelInjectionCheck(GuardrailCheck):
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         if not text.strip():
             return CheckOutcome.clean()
-        flag_threshold = float(self.settings.get("flag_threshold", instance.GUARDRAILS_INJECTION_FLAG_THRESHOLD))
-        threshold = float(self.settings.get("threshold", instance.GUARDRAILS_INJECTION_THRESHOLD))
+        if not instance.DECISION_INJECTION_ENABLED:
+            return CheckOutcome.not_evaluated("unscored: off")
+        flag_threshold = float(self.settings.get("flag_threshold", FLAG_THRESHOLD))
+        threshold = float(self.settings.get("threshold", THRESHOLD))
         left = stage_time_left()
         if left is not None and left <= DEADLINE_MARGIN_S:
             self._entry = _record_entry("timeout", None, flag_threshold, threshold)

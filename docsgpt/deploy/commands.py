@@ -1101,7 +1101,7 @@ def _decision_settings(env: Mapping[str, str]):
         _forget_shell_settings(env)
         settings = Settings(_env_file=None)
         registered = {
-            spec.name: (features.configured(spec, settings), float(getattr(settings, spec.budget_setting)), spec)
+            spec.name: (features.configured(spec, settings), features.budget(spec, settings), spec)
             for spec in features.specs()
         }
     return settings, registered
@@ -1157,8 +1157,10 @@ def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, st
 def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
     """The decision model: where it runs, what that reports, and every feature's mode and ``auto`` verdict.
 
-    Relevance in retrieval (``DECISION_RELEVANCE_ENABLED``) is the ``rag_rerank`` feature; a server's measured
-    speed adds each feature's predicted call against its budget (for ``rag_rerank``, DECISION_RELEVANCE_TIMEOUT).
+    Relevance in retrieval (``DECISION_RELEVANCE_ENABLED``) is the ``rag_rerank`` feature and injection scanning
+    (``DECISION_INJECTION_ENABLED``) is ``injection_input``; a server's measured speed adds each feature's predicted
+    call against its budget (for ``rag_rerank``, DECISION_RELEVANCE_TIMEOUT; for ``injection_input``, the default
+    guardrail stage deadline).
 
     Decisions fail open, so this is never a failure: a feature that is on with no model behind it is a warning.
 
