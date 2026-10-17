@@ -235,7 +235,7 @@ def get_vector_store(source_id):
     store = VectorCreator.create_vectorstore(
         settings.VECTOR_STORE,
         source_id=source_id,
-        embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+        embeddings_key=settings.EMBEDDINGS_KEY,
     )
     return store
 

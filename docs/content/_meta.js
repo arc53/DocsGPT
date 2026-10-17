@@ -1,17 +1,19 @@
 export default {
   "index": "Home",
   "quickstart": "Quickstart",
-  "upgrading": "Upgrading",
-  "Deploying": "Deploying",
-  "Models": "Models",
-  "Sources": "Sources",
-  "Tools": "Tools",
+  "Concepts": "Concepts",
+  "Using": "Using DocsGPT",
   "Agents": "Agents",
-  "Extensions": "Extensions",
-  "https://gptcloud.arc53.com/": {
-    "title": "API",
-    "href": "https://gptcloud.arc53.com/"
+  "Sources": "Knowledge",
+  "Tools": "Tools",
+  "Models": "Models",
+  "API": "API",
+  "Extensions": "Widgets & Integrations",
+  "Deploying": "Deploy & Operate",
+  "-- releases": {
+    "type": "separator",
+    "title": "Releases"
   },
-  "Guides": "Guides",
+  "upgrading": "Upgrading",
   "changelog": "Changelog"
 }

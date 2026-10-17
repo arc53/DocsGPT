@@ -12,7 +12,17 @@ from typing import Any
 from markdownify import MarkdownConverter
 
 # The crawler's conventions, so file and web ingestion produce the same Markdown shape.
-MARKDOWNIFY_OPTIONS = {"heading_style": "ATX", "newline_style": "BACKSLASH"}
+#
+# ``table_infer_header``: a GFM table cannot start with a body row, so without
+# it markdownify puts an empty header above any table that carries no ``<th>``
+# and the column names end up in the first body row. Plenty of pages -- and
+# every Word table converted to HTML -- are written that way, and the header is
+# what gives each value in the table its meaning.
+MARKDOWNIFY_OPTIONS = {
+    "heading_style": "ATX",
+    "newline_style": "BACKSLASH",
+    "table_infer_header": True,
+}
 
 # Inline tags whose markdownify conversion runs the text through ``chomp()``, which
 # lifts the surrounding whitespace out of the text and then returns an empty string

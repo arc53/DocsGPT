@@ -220,6 +220,44 @@ def test_response_usage_reports_cumulative_turn_totals():
 
 
 @pytest.mark.unit
+def test_response_usage_reports_the_turns_cached_prompt_tokens():
+    from types import SimpleNamespace
+
+    from docsgpt.api.v1.routes import _response_usage
+
+    # The cache bins are the sum over the turn's calls, in the
+    # Chat Completions ``prompt_tokens_details`` shape.
+    agent = SimpleNamespace(
+        llm=SimpleNamespace(
+            token_usage={
+                "prompt_tokens": 9000,
+                "generated_tokens": 40,
+                "cached_tokens": 7400,
+                "cache_write_tokens": 1500,
+            }
+        )
+    )
+    assert _response_usage(agent) == {
+        "prompt_tokens": 9000,
+        "completion_tokens": 40,
+        "total_tokens": 9040,
+        "prompt_tokens_details": {"cached_tokens": 7400, "cache_write_tokens": 1500},
+    }
+
+
+@pytest.mark.unit
+def test_response_usage_reports_a_cache_miss_as_zero_cached_tokens():
+    from types import SimpleNamespace
+
+    from docsgpt.api.v1.routes import _response_usage
+
+    agent = SimpleNamespace(
+        llm=SimpleNamespace(token_usage={"prompt_tokens": 10, "generated_tokens": 2, "cached_tokens": 0})
+    )
+    assert _response_usage(agent)["prompt_tokens_details"] == {"cached_tokens": 0}
+
+
+@pytest.mark.unit
 class TestLookupAgentHappy:
     def test_returns_agent_for_valid_key(self, pg_conn):
         from docsgpt.api.v1.routes import _lookup_agent
@@ -506,6 +544,45 @@ class TestChatCompletionsHappyPath:
                 )
         assert resp.status_code == 409
         assert resp.get_json()["error"]["code"] == "resume_in_progress"
+
+    def test_results_for_a_pause_no_longer_waiting_are_a_conflict(self, pg_conn):
+        """A client answering an abandoned pause while a later one waits is refused, not resumed."""
+        from docsgpt.api.answer.services.continuation_service import (
+            NOT_PENDING_MESSAGE,
+            ContinuationNotPendingError,
+        )
+
+        app = _build_app()
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u-test"}
+        fake_processor.resume_from_tool_actions.side_effect = ContinuationNotPendingError(NOT_PENDING_MESSAGE)
+        with _patch_v1_db(pg_conn), patch(
+            "docsgpt.api.v1.routes.translate_request",
+            return_value={
+                "conversation_id": "conv-1",
+                "tool_actions": [{"call_id": "call-old", "result": "ok"}],
+                "messages": [],
+            },
+        ), patch(
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
+            return_value=True,
+        ), patch(
+            "docsgpt.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
+            return_value={"pending_tool_calls": [{"call_id": "call-new"}]},
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "tool", "content": "ok"}]},
+                )
+        assert resp.status_code == 409
+        error = resp.get_json()["error"]
+        assert error["code"] == "tool_call_not_pending"
+        assert error["message"] == NOT_PENDING_MESSAGE
 
     def test_unsupported_n_and_logprobs_are_explicit(self, pg_conn):
         app = _build_app()

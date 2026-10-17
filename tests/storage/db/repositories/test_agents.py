@@ -49,6 +49,12 @@ class TestCreate:
         )
         assert doc["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
 
+    def test_create_with_resource_sponsors(self, pg_conn):
+        repo = _repo(pg_conn)
+        sponsors = {"tool:t1": "editor-1"}
+        doc = repo.create("u", "a", "draft", resource_sponsors=sponsors)
+        assert doc["resource_sponsors"] == sponsors
+
     def test_create_normalizes_blank_key_to_null(self, pg_conn):
         repo = _repo(pg_conn)
         doc = repo.create("u", "a", "draft", key="")
@@ -258,6 +264,12 @@ class TestListForUser:
         results = repo.list_for_user("alice")
         assert len(results) == 2
         assert all(r["user_id"] == "alice" for r in results)
+
+
+class TestAgentTypeDefault:
+    def test_create_without_type_is_classic(self, pg_conn):
+        created = _repo(pg_conn).create("alice", "a", "draft")
+        assert created["agent_type"] == "classic"
 
 
 class TestUpdate:

@@ -1,0 +1,97 @@
+# Keeps the README translations in .github/readme/ in step with README.md. The DocsGPT
+# translation agent (.github/readme/translation-agent.yaml) updates them and the result opens
+# as a pull request for review. Needs the DOCSGPT_README_AGENT_KEY secret (the agent's API key)
+# and "Allow GitHub Actions to create and approve pull requests" in Settings > Actions > General.
+name: README translations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - .github/readme/translate.py
+  workflow_dispatch:
+    inputs:
+      languages:
+        description: Comma-separated language codes, such as de,ja (empty for all)
+        type: string
+        default: ""
+      full:
+        description: Translate from scratch instead of updating
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: readme-translations
+  cancel-in-progress: true
+
+jobs:
+  translate:
+    if: github.repository == 'arc53/DocsGPT'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: readme-translations
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Exit status 1 means some languages failed: the others still go into the pull request.
+      - name: Translate
+        id: translate
+        env:
+          DOCSGPT_README_AGENT_KEY: ${{ secrets.DOCSGPT_README_AGENT_KEY }}
+          LANGUAGES: ${{ inputs.languages }}
+          FULL: ${{ inputs.full }}
+        run: |
+          args=(--summary "$RUNNER_TEMP/summary.md")
+          if [ -n "$LANGUAGES" ]; then args+=(--languages "$LANGUAGES"); fi
+          if [ "$FULL" = true ]; then args+=(--full); fi
+          status=0
+          python3 .github/readme/translate.py "${args[@]}" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ -f "$RUNNER_TEMP/summary.md" ]; then cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Open or update the pull request
+        if: steps.translate.outputs.status == '0' || steps.translate.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- README.md .github/readme)" ]; then
+            echo "The translations are current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add README.md .github/readme
+          git commit -q -m "Update the README translations"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH"
+          {
+            echo "The translation agent brought the README translations in \`.github/readme/\` up to date with"
+            echo "\`README.md\` at ${GITHUB_SHA::7}."
+            echo
+            cat "$RUNNER_TEMP/summary.md"
+            echo
+            echo "Check the notes above. Fix wording on this branch only right before merging: the next"
+            echo "change to \`README.md\` rebuilds the branch from \`main\`. After merging, wording fixes go"
+            echo "straight into the files, and later updates keep them."
+          } > "$RUNNER_TEMP/body.md"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" --title "Update the README translations" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+      - name: Fail if a language failed
+        if: steps.translate.outputs.status != '0'
+        run: exit 1

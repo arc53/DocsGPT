@@ -319,9 +319,9 @@ class TestGetSinglePromptHappyPath:
         from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
         # Presets are composed in-process now, so the failure this covers is a
-        # repository error on the custom-prompt path.
+        # database error on the custom-prompt path (the access check runs first).
         with patch(
-            "docsgpt.api.user.prompts.routes.PromptsRepository",
+            "docsgpt.api.user.prompts.routes.require",
             side_effect=OSError("boom"),
         ), app.test_request_context("/api/get_single_prompt?id=some-custom-id"):
             from flask import request

@@ -12,7 +12,9 @@ from sqlalchemy import Connection, Engine
 
 from docsgpt.api.user.idempotency import MAX_TASK_ATTEMPTS
 from docsgpt.core.settings import settings
+from docsgpt.notifications.notify import mark_unread_unless_watching
 from docsgpt.storage.db.engine import get_engine
+from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
 from docsgpt.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
 )
@@ -42,11 +44,12 @@ def zero_summary() -> Dict[str, int]:
         "ingests_stalled": 0,
         "idempotency_pending_failed": 0,
         "schedule_runs_failed": 0,
+        "archive_members_failed": 0,
     }
 
 
 def run_reconciliation() -> Dict[str, Any]:
-    """Single tick of the reconciler. Five sweeps, FOR UPDATE SKIP LOCKED.
+    """Single tick of the reconciler. Every sweep uses FOR UPDATE SKIP LOCKED.
 
     Stuck ``executed`` tool calls always flip to ``failed`` — operators
     handle cleanup manually via the structured alert. The side effect is
@@ -113,9 +116,14 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
     sweep raises. Each sweep stages into its own list via :func:`_sweep`; see
     the comment in :func:`run_reconciliation` for why staging matters.
     """
+    # Chats of the answers failed below, marked unread once the sweep has
+    # committed: whether their owner is watching is a Redis read, which must
+    # not hold the sweep's row locks.
+    failed_chats: list[tuple[str, str]] = []
     with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         pt_repo = PendingToolStateRepository(conn)
+        unread_repo = ConversationUnreadRepository(conn)
         for msg in repo.find_and_lock_stuck_messages():
             new_count = repo.increment_message_reconcile_attempts(msg["id"])
             if new_count >= MAX_MESSAGE_RECONCILE_ATTEMPTS:
@@ -127,17 +135,24 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     ),
                 )
                 summary["messages_failed"] += 1
+                failed_chat = unread_repo.listed_chat_of_message(str(msg["id"]))
+                if failed_chat is not None:
+                    failed_chats.append(failed_chat)
                 # Revoke any awaiting-approval prompt: the resumable state
                 # dies with the message, so the durable
                 # ``tool.approval.required`` envelope must be cleared or the
                 # UI toast lingers on reconnect. Only emit when a row was
-                # actually deleted so non-approval failures stay quiet.
+                # actually deleted so non-approval failures stay quiet. Only
+                # this message's pause: the row is per conversation, and a
+                # later turn's live pause must survive an earlier turn's sweep.
                 user_id = msg.get("user_id")
                 conversation_id = msg.get("conversation_id")
                 if (
                     user_id
                     and conversation_id
-                    and pt_repo.delete_state(str(conversation_id), str(user_id))
+                    and pt_repo.delete_state(
+                        str(conversation_id), str(user_id), message_id=str(msg["id"])
+                    )
                 ):
                     # Mark the row as having had its approval revoked. A late
                     # finalize is allowed to reclaim a reconciler-failed row
@@ -167,6 +182,9 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                         "attempts": new_count,
                     },
                 )
+
+    for conversation_id, user_id in failed_chats:
+        mark_unread_unless_watching(conversation_id, user_id, begin=engine.begin)
 
     with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
@@ -387,6 +405,40 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     "schedule_id": str(run["schedule_id"]),
                 },
             )
+
+    # Q8: zip attachment members queued past ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT
+    # with no outcome — their task was lost, so the zip would stay
+    # "processing" (and the composer chip spinning) forever. Each is failed
+    # with a reason; that frees its slot for the next member or completes
+    # the zip, whose ``attachment.completed`` goes out after the commit.
+    # Freed members are dispatched after the commit too, like the worker does.
+    from docsgpt import worker as _worker
+
+    member_dispatches: list = []
+    with _sweep(engine, events) as (conn, staged):
+        failed, member_dispatches, archive_events = _worker.sweep_stuck_archive_members(
+            conn, timeout_seconds=int(_settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT),
+        )
+        staged.extend(archive_events)
+        if failed:
+            summary["archive_members_failed"] += failed
+            _emit_alert(
+                conn,
+                name="reconciler_archive_members_failed",
+                user_id=None,
+                detail={
+                    "members": failed,
+                    "timeout_seconds": int(_settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT),
+                },
+            )
+    for member_info, user_id in member_dispatches:
+        try:
+            # A member that cannot be queued is failed with the reason there.
+            _worker._dispatch_archive_members([member_info], user_id)
+        except Exception:
+            # Stamped as dispatched: a member left without a task times out
+            # on a later tick instead of stalling the zip.
+            logger.exception("reconciler: failed to dispatch zip member %s", member_info.get("attachment_id"))
 
     return summary
 

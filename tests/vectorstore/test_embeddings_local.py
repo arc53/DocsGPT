@@ -1,5 +1,7 @@
 """Local embeddings run through FastEmbed, configured from the model registry."""
 
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -8,6 +10,9 @@ import pytest
 from docsgpt.vectorstore import embeddings_local
 from docsgpt.vectorstore.embeddings_local import EmbeddingsWrapper
 from docsgpt.vectorstore.model_registry import GRANITE_97M, MPNET
+
+# The autouse fixture below replaces this for every test; keep the real one.
+_READ_REPO_JSON = embeddings_local._read_repo_json
 
 
 @pytest.fixture(autouse=True)
@@ -142,6 +147,23 @@ class TestSettingsPassthrough:
             EmbeddingsWrapper(MPNET.name)
         assert text_embedding.call_args.kwargs["cache_dir"] == "/models"
 
+    def test_repo_metadata_reads_the_embedding_model_cache(self, monkeypatch, tmp_path):
+        """Pooling metadata lives beside the model, not in a second hub cache."""
+        config = tmp_path / "config.json"
+        config.write_text('{"pooling_mode_cls_token": true}')
+        calls = []
+
+        def fake_download(repo_id, filename, local_files_only=False, cache_dir=None):
+            calls.append((local_files_only, cache_dir))
+            return str(config)
+
+        fake_hub = types.ModuleType("huggingface_hub")
+        fake_hub.hf_hub_download = fake_download
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+        monkeypatch.setattr(embeddings_local.settings, "EMBEDDINGS_CACHE_DIR", "/models")
+        assert _READ_REPO_JSON("org/model", "1_Pooling/config.json") == {"pooling_mode_cls_token": True}
+        assert calls == [(True, "/models")]
+
 
 class TestEmbedding:
     def test_embed_documents_returns_plain_lists(self, fake_fastembed):
@@ -162,6 +184,40 @@ class TestEmbedding:
         instance.embed.return_value = iter([np.array([0.5, 0.6])])
         wrapper = EmbeddingsWrapper(MPNET.name)
         assert wrapper.embed_query("hello") == [0.5, 0.6]
+
+    def test_embed_query_clips_long_query(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.tokenization import TiktokenCounter
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        monkeypatch.setattr(
+            "docsgpt.parser.tokenization.get_token_counter", lambda *_a, **_k: TiktokenCounter()
+        )
+        wrapper = EmbeddingsWrapper(MPNET.name)
+        instance.embed.reset_mock()
+        instance.embed.return_value = iter([np.array([0.5])])
+
+        long_query = " ".join(["word"] * 1000)
+        wrapper.embed_query(long_query)
+
+        (sent,) = instance.embed.call_args.args[0]
+        assert TiktokenCounter().count(sent) <= 10
+        assert long_query.startswith(sent)
+
+    def test_embed_documents_are_not_clipped_by_the_query_limit(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        wrapper = EmbeddingsWrapper(MPNET.name)
+        instance.embed.reset_mock()
+        instance.embed.return_value = iter([np.array([0.5])])
+
+        long_text = " ".join(["word"] * 1000)
+        wrapper.embed_documents([long_text])
+
+        assert instance.embed.call_args.args[0] == [long_text]
 
     def test_call_dispatches_on_input_type(self, fake_fastembed):
         _, instance = fake_fastembed
@@ -274,6 +330,67 @@ class TestTokenizerPadding:
 
     def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed):
         _, instance = fake_fastembed
+        instance.model = None
+        EmbeddingsWrapper(GRANITE_97M.name)
+
+
+class TestLocalInputCeiling:
+    """``EMBEDDINGS_LOCAL_MAX_TOKENS`` lowers the tokenizer's truncation length.
+
+    FastEmbed truncates only at the model's own maximum -- 32,768 tokens for
+    granite -- and attention memory grows with the square of the input, so a
+    single long input can take far more memory than the host has.
+    """
+
+    def _load(self, fake_fastembed, monkeypatch, limit, truncation):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_LOCAL_MAX_TOKENS", limit)
+        tokenizer = MagicMock()
+        tokenizer.padding = None
+        tokenizer.truncation = truncation
+        instance.model.tokenizer = tokenizer
+        EmbeddingsWrapper(GRANITE_97M.name)
+        return tokenizer
+
+    def test_unset_leaves_the_tokenizer_alone(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, None, {"max_length": 32768})
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_lowers_the_models_own_ceiling(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(
+            fake_fastembed,
+            monkeypatch,
+            4096,
+            {"max_length": 32768, "stride": 0, "strategy": "longest_first", "direction": "right"},
+        )
+
+        tokenizer.enable_truncation.assert_called_once_with(
+            max_length=4096, stride=0, strategy="longest_first", direction="right"
+        )
+
+    def test_never_raises_a_lower_ceiling(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, {"max_length": 512})
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_a_tokenizer_without_truncation_gets_one(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, None)
+
+        tokenizer.enable_truncation.assert_called_once_with(max_length=4096)
+
+    def test_an_unreadable_truncation_config_is_left_alone(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, "not-a-dict")
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_LOCAL_MAX_TOKENS", 4096)
         instance.model = None
         EmbeddingsWrapper(GRANITE_97M.name)
 
@@ -391,3 +508,74 @@ class TestPoolingOverrides:
         with patch.object(embeddings_local.settings, "EMBEDDINGS_POOLING", "banana"):
             spec = embeddings_local._spec_for("some-org/plain-onnx-export")
         assert spec.pooling == embeddings_local._FALLBACK_POOLING
+
+
+class TestIncompleteModelCache:
+    """The chunker caches only a model's ``tokenizer.json`` in the same
+    directory. FastEmbed treats any cached snapshot as the model and then
+    fails to open its ONNX graph, so the loader completes the snapshot first."""
+
+    @staticmethod
+    def _description():
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            model="sentence-transformers/all-mpnet-base-v2",
+            model_file="onnx/model.onnx",
+            additional_files=[],
+            sources=SimpleNamespace(hf="sentence-transformers/all-mpnet-base-v2"),
+        )
+
+    def _complete(self, monkeypatch, tmp_path, cached: set, offline: str = ""):
+        from docsgpt.vectorstore import embeddings_local
+
+        downloads = []
+
+        def hf_hub_download(repo_id, filename, cache_dir=None, local_files_only=False):
+            if filename not in cached:
+                raise FileNotFoundError(filename)
+            return f"{cache_dir}/{filename}"
+
+        def snapshot_download(**kwargs):
+            downloads.append(kwargs)
+            return "/snapshot"
+
+        monkeypatch.setenv("HF_HUB_OFFLINE", offline)
+        with patch("fastembed.TextEmbedding._list_supported_models", return_value=[self._description()]), \
+                patch("huggingface_hub.hf_hub_download", side_effect=hf_hub_download), \
+                patch("huggingface_hub.snapshot_download", side_effect=snapshot_download):
+            embeddings_local._complete_model_cache("sentence-transformers/all-mpnet-base-v2", str(tmp_path))
+        return downloads
+
+    def test_a_snapshot_with_only_the_tokenizer_gets_its_model(self, monkeypatch, tmp_path):
+        downloads = self._complete(monkeypatch, tmp_path, cached={"tokenizer.json"})
+        assert len(downloads) == 1
+        assert downloads[0]["repo_id"] == "sentence-transformers/all-mpnet-base-v2"
+        assert downloads[0]["cache_dir"] == str(tmp_path)
+        assert "onnx/model.onnx" in downloads[0]["allow_patterns"]
+        assert "tokenizer_config.json" in downloads[0]["allow_patterns"]
+
+    def test_a_failed_repair_leaves_loading_to_fastembed(self, monkeypatch, tmp_path):
+        """The repair is best effort: a network error or rate limit here must
+        not stop FastEmbed from trying its own download."""
+        from docsgpt.vectorstore import embeddings_local
+
+        monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+        with patch("fastembed.TextEmbedding._list_supported_models", return_value=[self._description()]), \
+                patch("huggingface_hub.hf_hub_download", side_effect=FileNotFoundError("missing")), \
+                patch("huggingface_hub.snapshot_download", side_effect=OSError("rate limited")):
+            embeddings_local._complete_model_cache("sentence-transformers/all-mpnet-base-v2", str(tmp_path))
+
+    def test_a_complete_snapshot_downloads_nothing(self, monkeypatch, tmp_path):
+        assert self._complete(monkeypatch, tmp_path, cached={"tokenizer.json", "onnx/model.onnx"}) == []
+
+    def test_offline_never_downloads(self, monkeypatch, tmp_path):
+        assert self._complete(monkeypatch, tmp_path, cached={"tokenizer.json"}, offline="1") == []
+
+    def test_loading_completes_the_cache_first(self, fake_fastembed, monkeypatch):
+        from docsgpt.vectorstore import embeddings_local
+
+        calls = []
+        monkeypatch.setattr(embeddings_local, "_complete_model_cache", lambda repo, cache: calls.append(repo))
+        embeddings_local.EmbeddingsWrapper("huggingface_sentence-transformers/all-mpnet-base-v2")
+        assert calls == ["sentence-transformers/all-mpnet-base-v2"]

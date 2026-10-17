@@ -5,7 +5,15 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
-from docsgpt.api.user.team_sharing import team_access_for, visible_with_access
+from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    delete_settings,
+    payload_for,
+    require,
+    settings_many,
+)
+from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -14,6 +22,16 @@ from docsgpt.utils import check_required_fields
 prompts_ns = Namespace(
     "prompts", description="Prompt management operations", path="/api"
 )
+
+
+def _denied(err: AccessDenied):
+    """JSON response for an :class:`AccessDenied` (403 or 404)."""
+    return make_response(jsonify({"success": False, "message": err.message}), err.status)
+
+
+def _iso(value):
+    """ISO-8601 string for a timestamp (``expected_updated_at`` round-trips it)."""
+    return value.isoformat() if hasattr(value, "isoformat") else value
 
 
 @prompts_ns.route("/create_prompt")
@@ -66,32 +84,42 @@ class GetPrompts(Resource):
                 team_shared = visible_with_access(conn, user, "prompt")
                 shared_ids = [pid for pid in team_shared if pid not in owned_ids]
                 shared_prompts = repo.list_by_ids(shared_ids)
+                switches = settings_many(
+                    conn, "prompt", [*owned_ids, *(str(p["id"]) for p in shared_prompts)]
+                )
             list_prompts = [
                 {"id": "default", "name": "default", "type": "public"},
                 {"id": "creative", "name": "creative", "type": "public"},
                 {"id": "strict", "name": "strict", "type": "public"},
             ]
             for prompt in prompts:
+                pid = str(prompt["id"])
                 list_prompts.append(
                     {
-                        "id": str(prompt["id"]),
+                        "id": pid,
                         "name": prompt["name"],
                         "type": "private",
+                        "updated_at": _iso(prompt.get("updated_at")),
+                        **payload_for("prompt", "owner", switches.get(pid)),
                     }
                 )
             for prompt in shared_prompts:
+                pid = str(prompt["id"])
                 list_prompts.append(
                     {
-                        "id": str(prompt["id"]),
+                        "id": pid,
                         "name": prompt["name"],
                         "type": "team",
-                        "team_access": team_shared.get(str(prompt["id"])),
+                        "team_access": team_shared.get(pid),
+                        "updated_at": _iso(prompt.get("updated_at")),
+                        **payload_for("prompt", team_shared.get(pid), switches.get(pid)),
                     }
                 )
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(list_prompts), 200)
+        # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
+        return make_response(jsonify(filter_listing(request, "prompts", list_prompts)), 200)
 
 
 @prompts_ns.route("/get_single_prompt")
@@ -113,19 +141,28 @@ class GetSinglePrompt(Resource):
                     jsonify({"content": compose_preset(prompt_id)}), 200
                 )
             with db_readonly() as conn:
-                repo = PromptsRepository(conn)
-                prompt = repo.get_any(prompt_id, user)
-                if not prompt and team_access_for(conn, user, "prompt", prompt_id):
-                    # Team fallback: ownerless fetch only after a grant check.
-                    prompt = repo.get_for_rendering(prompt_id)
+                ra = require(conn, "prompt", prompt_id, user, "use")
+                prompt = PromptsRepository(conn).get_any(ra.resource_id, ra.owner_id)
             if not prompt:
                 return make_response(
                     jsonify({"success": False, "message": "Prompt not found"}), 404
                 )
+        except AccessDenied as err:
+            return _denied(err)
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"content": prompt["content"]}), 200)
+        return make_response(
+            jsonify(
+                {
+                    "content": prompt["content"],
+                    "name": prompt.get("name"),
+                    "updated_at": _iso(prompt.get("updated_at")),
+                    **ra.payload(),
+                }
+            ),
+            200,
+        )
 
 
 @prompts_ns.route("/delete_prompt")
@@ -149,14 +186,12 @@ class DeletePrompt(Resource):
             return missing_fields
         try:
             with db_session() as conn:
-                repo = PromptsRepository(conn)
-                prompt = repo.get_any(data["id"], user)
-                if not prompt:
-                    return make_response(
-                        jsonify({"success": False, "message": "Prompt not found"}),
-                        404,
-                    )
-                repo.delete(str(prompt["id"]), user)
+                ra = require(conn, "prompt", data["id"], user, "delete")
+                # Grants go with the row (delete trigger); switches have no FK.
+                PromptsRepository(conn).delete(ra.resource_id, ra.owner_id)
+                delete_settings(conn, "prompt", ra.resource_id)
+        except AccessDenied as err:
+            return _denied(err)
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -190,43 +225,26 @@ class UpdatePrompt(Resource):
             return missing_fields
         try:
             with db_session() as conn:
-                repo = PromptsRepository(conn)
-                prompt = repo.get_any(data["id"], user)
-                if prompt:
-                    repo.update(str(prompt["id"]), user, data["name"], data["content"])
-                else:
-                    # Team editor write path (viewer is read-only).
-                    access = team_access_for(conn, user, "prompt", data["id"])
-                    if access == "editor":
-                        result = repo.update_by_id(
-                            data["id"],
-                            data["name"],
-                            data["content"],
-                            expected_updated_at=data.get("expected_updated_at"),
-                        )
-                        if result is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Prompt was modified by someone else",
-                                        "code": "stale_write",
-                                    }
-                                ),
-                                409,
-                            )
-                    elif access == "viewer":
-                        return make_response(
-                            jsonify(
-                                {"success": False, "message": "Read-only: editor access required"}
-                            ),
-                            403,
-                        )
-                    else:
-                        return make_response(
-                            jsonify({"success": False, "message": "Prompt not found"}),
-                            404,
-                        )
+                ra = require(conn, "prompt", data["id"], user, "edit")
+                result = PromptsRepository(conn).update_by_id(
+                    ra.resource_id,
+                    data["name"],
+                    data["content"],
+                    expected_updated_at=data.get("expected_updated_at"),
+                )
+                if result is None:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Prompt was modified by someone else",
+                                "code": "stale_write",
+                            }
+                        ),
+                        409,
+                    )
+        except AccessDenied as err:
+            return _denied(err)
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

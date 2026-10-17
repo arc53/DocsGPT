@@ -1,21 +1,30 @@
+import { MapPinOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+
+/**
+ * Any unknown URL. It renders outside the app shell, so it fills the
+ * screen itself (min-h-dvh) and draws the page-level EmptyState.
+ */
 export default function PageNotFound() {
   const { t } = useTranslation();
 
   return (
-    <div className="bg-background grid min-h-screen">
-      <p className="text-foreground dark:bg-card mx-auto my-auto mt-20 flex w-full max-w-6xl flex-col place-items-center gap-6 rounded-3xl bg-gray-100 p-6 lg:p-10 xl:p-16">
-        <h1>{t('pageNotFound.title')}</h1>
-        <p>{t('pageNotFound.message')}</p>
-        <Link
-          to="/"
-          className="bg-primary hover:bg-primary/90 mr-4 inline-flex cursor-pointer items-center justify-center rounded-full px-4 py-2 text-white transition-colors duration-100"
-        >
-          {t('pageNotFound.goHome')}
-        </Link>
-      </p>
-    </div>
+    <main className="bg-background flex min-h-dvh flex-col justify-center p-4">
+      <EmptyState
+        icon={MapPinOff}
+        titleAs="h1"
+        title={t('pageNotFound.title')}
+        description={t('pageNotFound.message')}
+        action={
+          <Button asChild shape="pill">
+            <Link to="/">{t('pageNotFound.goHome')}</Link>
+          </Button>
+        }
+      />
+    </main>
   );
 }

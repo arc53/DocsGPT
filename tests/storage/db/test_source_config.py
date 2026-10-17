@@ -40,7 +40,7 @@ class TestParseLenient:
         r = RetrievalConfig()
         assert r.retriever == "classic"
         assert r.exposure == "prefetch"
-        assert r.chunks == 2
+        assert r.chunks == 6
         assert r.score_threshold is None
         assert r.rephrase_query is True
         assert r.reranker is None
@@ -52,6 +52,20 @@ class TestParseLenient:
         # Untouched fields keep their defaults.
         assert cfg.retrieval.retriever == "classic"
         assert cfg.chunking.max_tokens == 1250
+
+    def test_parse_clamps_legacy_chunk_size_without_discarding_config(self):
+        cfg = SourceConfig.parse(
+            {
+                "kind": "wiki",
+                "chunking": {"strategy": "recursive", "max_tokens": 100_000},
+                "retrieval": {"chunks": 5},
+            }
+        )
+
+        assert cfg.kind == "wiki"
+        assert cfg.chunking.strategy == "recursive"
+        assert cfg.chunking.max_tokens == 4096
+        assert cfg.retrieval.chunks == 5
 
     def test_parse_bad_type_falls_back_to_defaults(self):
         # Lenient read: a non-dict / invalid blob never crashes the caller.
@@ -81,6 +95,17 @@ class TestStrictWrite:
     def test_chunks_accepts_small_and_ceiling_values(self):
         assert RetrievalConfig(chunks=2).chunks == 2
         assert RetrievalConfig(chunks=500).chunks == 500
+
+    def test_chunk_max_tokens_rejects_values_above_ceiling(self):
+        with pytest.raises(ValidationError, match="must be <= 4096"):
+            ChunkingConfig(max_tokens=100_000)
+
+    def test_chunk_max_tokens_rejects_values_below_one(self):
+        with pytest.raises(ValidationError, match="must be >= 1"):
+            ChunkingConfig(max_tokens=0)
+
+    def test_chunk_max_tokens_accepts_ceiling(self):
+        assert ChunkingConfig(max_tokens=4096).max_tokens == 4096
 
     def test_model_validate_accepts_full_valid_config(self):
         cfg = SourceConfig.model_validate(

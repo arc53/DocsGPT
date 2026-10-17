@@ -18,14 +18,22 @@ Redis-side version counter; other processes notice the bump on their
 next access (after the local TTL window) and reload from Postgres. If
 Redis is unreachable the per-process TTL still bounds staleness — pure
 TTL semantics, no regression.
+
+Thread safety: the catalog is loaded once per process, under a lock, and the
+singleton is published only once it is fully loaded. Concurrent first requests
+after a restart therefore all wait for the same load and all see the whole
+catalog; none can observe an empty registry, which would leave it without a
+default model and send it down the provider-fallback path with the wrong key.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from docsgpt.core.model_settings import AvailableModel
 from docsgpt.core.model_yaml import (
@@ -34,6 +42,9 @@ from docsgpt.core.model_yaml import (
     load_model_yamls,
 )
 
+if TYPE_CHECKING:
+    from docsgpt.core.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 _USER_CACHE_TTL_SECONDS = 60.0
@@ -41,34 +52,52 @@ _USER_VERSION_KEY_PREFIX = "byom:registry_version:"
 
 
 class ModelRegistry:
-    """Singleton registry of available models."""
+    """Singleton registry of available models.
+
+    The first call builds the instance and loads the catalog while holding
+    ``_lock``; concurrent callers wait for it. ``_instance`` is assigned only
+    after the load succeeded, so a caller never gets a half-loaded registry,
+    and a load that raises publishes nothing and is retried by the next call.
+    """
 
     _instance: Optional["ModelRegistry"] = None
     _initialized: bool = False
+    _lock = threading.Lock()
 
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        instance = cls._instance
+        if instance is not None and cls._initialized:
+            return instance
+        with cls._lock:
+            if cls._instance is None or not cls._initialized:
+                instance = super().__new__(cls)
+                instance._setup()
+                cls._instance = instance
+                cls._initialized = True
+            return cls._instance
 
     def __init__(self):
-        if not ModelRegistry._initialized:
-            self.models: Dict[str, AvailableModel] = {}
-            self.default_model_id: Optional[str] = None
-            # Per-user BYOM cache. Each entry is
-            # ``(layer, version_at_load, loaded_at_monotonic)``:
-            #   * ``layer`` — {model_id: AvailableModel}
-            #   * ``version_at_load`` — Redis-side counter snapshot at
-            #     reload time, or ``None`` if Redis was unreachable
-            #   * ``loaded_at_monotonic`` — for TTL bookkeeping
-            # Populated lazily, evicted by TTL + cross-process
-            # invalidation (see ``invalidate_user``).
-            self._user_models: Dict[
-                str,
-                Tuple[Dict[str, AvailableModel], Optional[int], float],
-            ] = {}
-            self._load_models()
-            ModelRegistry._initialized = True
+        # Everything happens in ``__new__`` under the lock; ``__init__`` runs
+        # on every ``ModelRegistry()`` call and must not touch shared state.
+        pass
+
+    def _setup(self) -> None:
+        """Initialise the per-instance state and load the catalog."""
+        self.models: Dict[str, AvailableModel] = {}
+        self.default_model_id: Optional[str] = None
+        # Per-user BYOM cache. Each entry is
+        # ``(layer, version_at_load, loaded_at_monotonic)``:
+        #   * ``layer`` — {model_id: AvailableModel}
+        #   * ``version_at_load`` — Redis-side counter snapshot at
+        #     reload time, or ``None`` if Redis was unreachable
+        #   * ``loaded_at_monotonic`` — for TTL bookkeeping
+        # Populated lazily, evicted by TTL + cross-process
+        # invalidation (see ``invalidate_user``).
+        self._user_models: Dict[
+            str,
+            Tuple[Dict[str, AvailableModel], Optional[int], float],
+        ] = {}
+        self._load_models()
 
     @classmethod
     def get_instance(cls) -> "ModelRegistry":
@@ -77,8 +106,9 @@ class ModelRegistry:
     @classmethod
     def reset(cls) -> None:
         """Clear the singleton. Intended for test fixtures."""
-        cls._instance = None
-        cls._initialized = False
+        with cls._lock:
+            cls._instance = None
+            cls._initialized = False
 
     @classmethod
     def invalidate_user(cls, user_id: str) -> None:
@@ -134,58 +164,13 @@ class ModelRegistry:
             return None
 
     def _load_models(self) -> None:
-        from pathlib import Path
-
         from docsgpt.core.settings import settings
-        from docsgpt.llm.providers import ALL_PROVIDERS
 
-        directories = [BUILTIN_MODELS_DIR]
-        operator_dir = getattr(settings, "MODELS_CONFIG_DIR", None)
-        if operator_dir:
-            op_path = Path(operator_dir)
-            if not op_path.exists():
-                logger.warning(
-                    "MODELS_CONFIG_DIR=%s does not exist; no operator "
-                    "model YAMLs will be loaded.",
-                    operator_dir,
-                )
-            elif not op_path.is_dir():
-                logger.warning(
-                    "MODELS_CONFIG_DIR=%s is not a directory; no operator "
-                    "model YAMLs will be loaded.",
-                    operator_dir,
-                )
-            else:
-                directories.append(op_path)
-
-        catalogs = load_model_yamls(directories)
-
-        # Validate every catalog targets a known plugin before doing any
-        # registry work, so an unknown provider name in YAML aborts boot
-        # with a clear error.
-        plugin_names = {p.name for p in ALL_PROVIDERS}
-        for c in catalogs:
-            if c.provider not in plugin_names:
-                raise ValueError(
-                    f"{c.source_path}: YAML declares unknown provider "
-                    f"{c.provider!r}; no Provider plugin is registered "
-                    f"under that name. Known: {sorted(plugin_names)}"
-                )
-
-        catalogs_by_provider: Dict[str, List[ProviderCatalog]] = defaultdict(list)
-        for c in catalogs:
-            catalogs_by_provider[c.provider].append(c)
-
-        self.models.clear()
-        for provider in ALL_PROVIDERS:
-            if not provider.is_enabled(settings):
-                continue
-            for model in provider.get_models(
-                settings, catalogs_by_provider.get(provider.name, [])
-            ):
-                self.models[model.id] = model
-
-        self.default_model_id = self._resolve_default(settings)
+        # Build first, then publish: the catalog and its default always
+        # describe the same load.
+        models = load_catalog_models(settings)
+        self.default_model_id = resolve_default_model_id(settings, models)
+        self.models = models
 
         logger.info(
             "ModelRegistry loaded %d models, default: %s",
@@ -193,28 +178,9 @@ class ModelRegistry:
             self.default_model_id,
         )
 
-    def _resolve_default(self, settings) -> Optional[str]:
-        if settings.LLM_NAME:
-            for name in self._parse_model_names(settings.LLM_NAME):
-                if name in self.models:
-                    return name
-            if settings.LLM_NAME in self.models:
-                return settings.LLM_NAME
-
-        if settings.LLM_PROVIDER and settings.API_KEY:
-            for model_id, model in self.models.items():
-                if model.provider.value == settings.LLM_PROVIDER:
-                    return model_id
-
-        if self.models:
-            return next(iter(self.models.keys()))
-        return None
-
     @staticmethod
     def _parse_model_names(llm_name: str) -> List[str]:
-        if not llm_name:
-            return []
-        return [name.strip() for name in llm_name.split(",") if name.strip()]
+        return _parse_model_names(llm_name)
 
     # Per-user (BYOM) layer
 
@@ -326,6 +292,7 @@ class ModelRegistry:
                         api_flavor=caps_raw.get(
                             "api_flavor", "chat_completions"
                         ),
+                        tool_result_images=caps_raw.get("tool_result_images"),
                     )
                     model_id = str(row["id"])
                     layer[model_id] = AvailableModel(
@@ -387,3 +354,272 @@ class ModelRegistry:
         if user_id and model_id in self._user_models_for(user_id):
             return True
         return model_id in self.models
+
+
+def _parse_model_names(llm_name: Optional[str]) -> List[str]:
+    """Split a comma-separated ``LLM_NAME`` into model ids."""
+    if not llm_name:
+        return []
+    return [name.strip() for name in llm_name.split(",") if name.strip()]
+
+
+def load_catalog_models(settings: "Settings") -> Dict[str, AvailableModel]:
+    """Build the deployment-wide model catalog for ``settings``.
+
+    Loads the built-in YAMLs plus ``MODELS_CONFIG_DIR``, then asks each enabled
+    provider plugin which models it contributes. Per-user (BYOM) models are not
+    included.
+
+    Args:
+        settings: The settings to build the catalog from.
+
+    Returns:
+        Registered models keyed by id, in provider order (``docsgpt-local``
+        first whenever the DocsGPT provider is enabled).
+
+    Raises:
+        ValueError: A YAML names a provider no plugin is registered under.
+    """
+    from pathlib import Path
+
+    from docsgpt.llm.providers import ALL_PROVIDERS
+
+    directories = [BUILTIN_MODELS_DIR]
+    operator_dir = settings.MODELS_CONFIG_DIR
+    if operator_dir:
+        op_path = Path(operator_dir)
+        if not op_path.exists():
+            logger.warning(
+                "MODELS_CONFIG_DIR=%s does not exist; no operator "
+                "model YAMLs will be loaded.",
+                operator_dir,
+            )
+        elif not op_path.is_dir():
+            logger.warning(
+                "MODELS_CONFIG_DIR=%s is not a directory; no operator "
+                "model YAMLs will be loaded.",
+                operator_dir,
+            )
+        else:
+            directories.append(op_path)
+
+    catalogs = load_model_yamls(directories)
+
+    # Validate every catalog targets a known plugin before doing any
+    # registry work, so an unknown provider name in YAML aborts boot
+    # with a clear error.
+    plugin_names = {p.name for p in ALL_PROVIDERS}
+    for c in catalogs:
+        if c.provider not in plugin_names:
+            raise ValueError(
+                f"{c.source_path}: YAML declares unknown provider "
+                f"{c.provider!r}; no Provider plugin is registered "
+                f"under that name. Known: {sorted(plugin_names)}"
+            )
+
+    catalogs_by_provider: Dict[str, List[ProviderCatalog]] = defaultdict(list)
+    for c in catalogs:
+        catalogs_by_provider[c.provider].append(c)
+
+    models: Dict[str, AvailableModel] = {}
+    for provider in ALL_PROVIDERS:
+        if not provider.is_enabled(settings):
+            continue
+        for model in provider.get_models(
+            settings, catalogs_by_provider.get(provider.name, [])
+        ):
+            models[model.id] = model
+    return models
+
+
+def resolve_default_model_id(
+    settings: "Settings", models: Dict[str, AvailableModel]
+) -> Optional[str]:
+    """Pick the model that answers when a request names none.
+
+    In order: the first ``LLM_NAME`` entry that is a registered id; the first
+    model ``LLM_PROVIDER`` registered; the first registered model.
+
+    ``LLM_PROVIDER`` alone decides step 2. It used to require the generic
+    ``API_KEY`` as well, so a deployment that set only a provider-specific key
+    (``OPENAI_API_KEY``, ``DEEPSEEK_API_KEY`` ...) defaulted to the first
+    registered model, ``docsgpt-local``, which answers through the hosted
+    DocsGPT API.
+
+    Args:
+        settings: Supplies ``LLM_NAME`` and ``LLM_PROVIDER``.
+        models: The catalog from :func:`load_catalog_models`.
+
+    Returns:
+        The default model id, or ``None`` when no model is registered.
+    """
+    if settings.LLM_NAME:
+        for name in _parse_model_names(settings.LLM_NAME):
+            if name in models:
+                return name
+        if settings.LLM_NAME in models:
+            return settings.LLM_NAME
+
+    if settings.LLM_PROVIDER:
+        for model_id, model in models.items():
+            if model.provider.value == settings.LLM_PROVIDER:
+                return model_id
+
+    if models:
+        return next(iter(models.keys()))
+    return None
+
+
+@dataclass(frozen=True)
+class ModelSetupProblem:
+    """One finding about how the deployment's models are configured.
+
+    Attributes:
+        level: ``logging.ERROR`` or ``logging.WARNING``.
+        message: What is wrong and how to fix it, for operators.
+        hosted_fallback: True when chats will go to the hosted DocsGPT API
+            although ``LLM_PROVIDER`` names another provider.
+    """
+
+    level: int
+    message: str
+    hosted_fallback: bool = False
+
+
+def _hosted_fallback_cause(settings: "Settings", models: Dict[str, AvailableModel]) -> str:
+    """Explain why ``LLM_PROVIDER`` registered no model, so the default fell through."""
+    from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+    provider_name = settings.LLM_PROVIDER
+    plugin = PROVIDERS_BY_NAME.get(provider_name)
+    if plugin is None or plugin.llm_class is None:
+        known = sorted(name for name in PROVIDERS_BY_NAME if name != "openai_compatible")
+        return (
+            f"{provider_name!r} is not a known provider (known: {', '.join(known)}). For a local or "
+            "self-hosted server (Ollama, vLLM, llama.cpp server ...) set LLM_PROVIDER=openai, "
+            "OPENAI_BASE_URL and LLM_NAME."
+        )
+    if provider_name == "openai_compatible":
+        return (
+            "openai_compatible registered no model. For your own OpenAI-compatible server set "
+            "LLM_PROVIDER=openai, OPENAI_BASE_URL and LLM_NAME; for a catalog provider set the key its model "
+            "YAML names in api_key_env (for example DEEPSEEK_API_KEY)."
+        )
+    if not any(m.provider.value == provider_name for m in models.values()):
+        keys = "API_KEY" + (f" or {plugin.api_key_setting}" if plugin.api_key_setting else "")
+        return f"{provider_name} registered no model because it has no API key: set {keys}."
+    return f"{provider_name} registered models, but none of them is the default."
+
+
+def diagnose_model_setup(
+    settings: "Settings",
+    models: Dict[str, AvailableModel],
+    default_model_id: Optional[str],
+) -> List[ModelSetupProblem]:
+    """Find model settings that do not do what the operator most likely meant.
+
+    Reports, in order of severity:
+
+    * ``LLM_PROVIDER`` names a provider other than ``docsgpt`` but the default
+      model is served by the hosted DocsGPT API (an ERROR; prompts, retrieved
+      chunks and chat history leave the deployment). Naming ``docsgpt-local``
+      in ``LLM_NAME`` is taken as intentional and not reported.
+    * No model is registered at all, typically ``OPENAI_BASE_URL`` without
+      ``LLM_NAME`` (an ERROR; every chat fails).
+    * ``LLM_NAME`` is set but none of its entries is a registered id, so it is
+      ignored (a WARNING). The legacy ``.env-template`` value ``docsgpt`` is
+      not reported while the default is the hosted model it stands for.
+
+    Args:
+        settings: The settings the catalog was built from.
+        models: The catalog from :func:`load_catalog_models`.
+        default_model_id: The id from :func:`resolve_default_model_id`.
+
+    Returns:
+        The problems found; empty when the setup is consistent.
+    """
+    problems: List[ModelSetupProblem] = []
+    names = _parse_model_names(settings.LLM_NAME)
+    provider_name = settings.LLM_PROVIDER or "docsgpt"
+    default = models.get(default_model_id) if default_model_id else None
+
+    if (
+        default is not None
+        and default.provider.value == "docsgpt"
+        and provider_name != "docsgpt"
+        and default_model_id not in names
+    ):
+        problems.append(
+            ModelSetupProblem(
+                level=logging.ERROR,
+                message=(
+                    f"LLM_PROVIDER={provider_name}, but the default model is {default_model_id}, which sends "
+                    "prompts, retrieved document text and chat history to the hosted DocsGPT API "
+                    f"(https://oai.arc53.com). {_hosted_fallback_cause(settings, models)}"
+                ),
+                hosted_fallback=True,
+            )
+        )
+
+    if not models:
+        if settings.OPENAI_BASE_URL and not names:
+            detail = (
+                "OPENAI_BASE_URL is set, which hides the built-in catalogs, but LLM_NAME is empty. Set LLM_NAME "
+                "to the model your server serves (comma-separate several)."
+            )
+        else:
+            detail = "Set an API key for a provider, or OPENAI_BASE_URL and LLM_NAME for your own server."
+        problems.append(
+            ModelSetupProblem(
+                level=logging.ERROR,
+                message=f"No model is registered, so there is no default model and chats will fail. {detail}",
+            )
+        )
+    elif (
+        names
+        and not any(name in models for name in names)
+        # ``LLM_NAME=docsgpt`` is what .env-template has long shipped; it
+        # means the hosted model, which is the default it gets.
+        and not (names == ["docsgpt"] and default is not None and default.provider.value == "docsgpt")
+    ):
+        provider_ids = [m.id for m in models.values() if m.provider.value == provider_name]
+        registered = ", ".join((provider_ids or list(models))[:8])
+        problems.append(
+            ModelSetupProblem(
+                level=logging.WARNING,
+                message=(
+                    f"LLM_NAME={settings.LLM_NAME} is not a registered model id, so it is ignored and the default "
+                    f"model is {default_model_id}. Use an id from docsgpt/core/models/*.yaml or a "
+                    f"MODELS_CONFIG_DIR YAML; registered ids include: {registered}."
+                ),
+            )
+        )
+    return problems
+
+
+def check_model_setup(settings: Optional["Settings"] = None) -> List[ModelSetupProblem]:
+    """Log the problems :func:`diagnose_model_setup` finds; called at API and worker startup.
+
+    Builds its own catalog rather than the :class:`ModelRegistry` singleton, so
+    it has no effect on later lookups. It never raises: a catalog that fails to
+    load is logged and the registry reports it again on first use.
+
+    Args:
+        settings: The settings to check; defaults to the process settings.
+
+    Returns:
+        The problems found, each already logged at its level.
+    """
+    if settings is None:
+        from docsgpt.core.settings import settings as process_settings
+
+        settings = process_settings
+    try:
+        models = load_catalog_models(settings)
+        problems = diagnose_model_setup(settings, models, resolve_default_model_id(settings, models))
+    except Exception as exc:  # noqa: BLE001 - a startup check must not stop the app from booting
+        logger.error("Could not check the model setup: %s", exc)
+        return []
+    for problem in problems:
+        logger.log(problem.level, problem.message)
+    return problems

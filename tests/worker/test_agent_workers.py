@@ -75,6 +75,49 @@ class TestAgentWebhookWorker:
         assert captured["input"] == '{"event": "ping"}'
         # Webhook caller should pass endpoint='webhook'.
         assert captured["kwargs"].get("endpoint") == "webhook"
+        # The owner set the webhook up (its URL is a secret): the run keeps the
+        # owner's rules, and headless runs still refuse approval-gated tools.
+        assert not captured["kwargs"].get("external_caller")
+
+    def test_marks_the_run_for_activity_while_it_runs(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from docsgpt import worker
+        from docsgpt.activity import flags
+        from docsgpt.agents import headless_runner
+        from docsgpt.events import publisher
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-456",
+        )
+        task_self.request.id = "task-7"
+        seen: dict = {}
+        events: list = []
+        monkeypatch.setattr(
+            flags, "mark_run_started",
+            lambda user, run, info, ttl_seconds: seen.update(
+                start=(user, run, info["agent_name"]), summary=info.get("summary"),
+            ),
+        )
+        monkeypatch.setattr(flags, "mark_run_finished", lambda user, run: seen.update(end=(user, run)))
+        monkeypatch.setattr(
+            publisher, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload)),
+        )
+
+        def _fake_run(agent_config, query, **kwargs):
+            seen["running"] = "end" not in seen
+            return {"answer": "ok", "sources": [], "tool_calls": [], "thought": ""}
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _fake_run)
+        worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping", "title": "New ticket #88"})
+
+        assert seen["start"] == ("alice", "task-7", "hook-agent")
+        # Logs list the running run by what it is about.
+        assert seen["summary"] == "New ticket #88"
+        assert seen["running"] is True
+        assert seen["end"] == ("alice", "task-7")
+        assert [payload["running"] for kind, payload in events if kind == "activity.updated"] == [True, False]
 
     def test_missing_agent_raises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -109,6 +152,60 @@ class TestAgentWebhookWorker:
 
         with pytest.raises(RuntimeError, match="LLM exploded"):
             worker.agent_webhook_worker(task_self, agent_id, {"event": "ping"})
+
+    def test_quota_refusal_is_returned_not_retried(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A spent quota cannot succeed on retry, so the task must not raise."""
+        from datetime import datetime, timezone
+
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-q",
+        )
+        exceeded = QuotaExceeded(
+            user_id="alice", bucket="all", budget="cost", usage=5.0, limit=5.0,
+            source="user", source_id=None,
+            resets_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+
+        def _refuse(*a, **k):
+            raise QuotaExceededError(exceeded)
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _refuse)
+
+        result = worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping"})
+
+        assert result["status"] == "quota_exceeded"
+        assert "$5.00 of $5.00" in result["error"]
+
+    def test_soft_time_limit_is_returned_as_timeout(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A run past WEBHOOK_RUN_TIMEOUT ends with a timeout result, not a crash."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-t",
+        )
+
+        def _too_slow(*a, **k):
+            raise SoftTimeLimitExceeded()
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _too_slow)
+
+        result = worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping"})
+
+        assert result["status"] == "timeout"
+        assert "WEBHOOK_RUN_TIMEOUT" in result["error"]
 
     def test_webhook_journals_headless_denial_for_approval_gated_tool(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -345,4 +442,115 @@ class TestRunAgentHeadlessFromWebhook:
         outcome = headless_runner.run_agent_headless(agent_config, "hello")
 
         assert outcome["answer"] == "done"
-        assert captured_source.get("active_docs") == source_id
+        assert captured_source.get("active_docs") == [source_id]
+
+
+def _pr_payload(diff_chars=30000):
+    return {
+        "event": "pr_opened",
+        "pr": {
+            "number": 42,
+            "url": "https://example.test/pr/42",
+            "title": "Fix login redirect",
+            "body": "Users were sent to /home after signing in from a deep link.",
+            "diff_excerpt": "+" * diff_chars,
+        },
+        "repository": {"full_name": "acme/app", "id": 12345},
+    }
+
+
+@pytest.mark.unit
+class TestWebhookRetrievalQuery:
+    """A webhook run searches with the payload's human-written text, bounded.
+
+    The whole JSON used to be the retrieval query: keys, ids, URLs and a diff
+    of tens of thousands of characters, which drowned what the event was
+    about and OOM-killed a long-context embedder.
+    """
+
+    def test_prefers_title_and_body_over_the_diff(self):
+        from docsgpt.worker import _webhook_retrieval_query
+
+        query = _webhook_retrieval_query(_pr_payload())
+
+        assert query == (
+            "Fix login redirect\nUsers were sent to /home after signing in from a deep link."
+        )
+
+    def test_is_bounded(self):
+        from docsgpt.worker import _WEBHOOK_QUERY_MAX_CHARS, _webhook_retrieval_query
+
+        payload = _pr_payload()
+        payload["pr"]["body"] = "x" * 50000
+
+        assert len(_webhook_retrieval_query(payload)) <= _WEBHOOK_QUERY_MAX_CHARS
+
+    def test_without_text_fields_falls_back_to_the_json_bounded(self):
+        import json
+
+        from docsgpt.worker import _WEBHOOK_QUERY_MAX_CHARS, _webhook_retrieval_query
+
+        payload = {"id": 7, "values": list(range(5000))}
+        query = _webhook_retrieval_query(payload)
+
+        assert query == json.dumps(payload)[:_WEBHOOK_QUERY_MAX_CHARS]
+
+    def test_the_documented_question_field_is_searched(self):
+        """The webhook docs' own examples send ``question``."""
+        from docsgpt.worker import _webhook_retrieval_query
+
+        payload = {"metadata": {"trace": "x" * 5000}, "question": "Summarize order 4567"}
+
+        assert _webhook_retrieval_query(payload) == "Summarize order 4567"
+
+    def test_query_and_prompt_fields_are_searched(self):
+        from docsgpt.worker import _webhook_retrieval_query
+
+        assert _webhook_retrieval_query({"query": "refund policy"}) == "refund policy"
+        assert _webhook_retrieval_query({"prompt": "draft a reply"}) == "draft a reply"
+
+    def test_repeated_text_is_kept_once(self):
+        from docsgpt.worker import _webhook_retrieval_query
+
+        payload = {"title": "Outage", "issue": {"title": "Outage", "summary": "DB down"}}
+
+        assert _webhook_retrieval_query(payload) == "Outage\nDB down"
+
+    def test_lists_are_searched(self):
+        from docsgpt.worker import _webhook_retrieval_query
+
+        payload = {"commits": [{"message": "Bump deps"}, {"message": "Fix typo"}]}
+
+        assert _webhook_retrieval_query(payload) == "Bump deps\nFix typo"
+
+    def test_a_non_dict_payload_still_yields_a_query(self):
+        from docsgpt.worker import _webhook_retrieval_query
+
+        assert _webhook_retrieval_query([{"text": "hello"}]) == "hello"
+        assert _webhook_retrieval_query("plain") == '"plain"'
+
+    def test_worker_passes_the_query_and_keeps_the_full_json_for_the_llm(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        import json
+
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active", agent_type="classic",
+        )
+        captured: dict = {}
+
+        def _fake_run_agent_headless(agent_config, query, **kwargs):
+            captured["input"] = query
+            captured["kwargs"] = kwargs
+            return {"answer": "ok"}
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _fake_run_agent_headless)
+        payload = _pr_payload()
+
+        worker.agent_webhook_worker(task_self, str(agent["id"]), payload)
+
+        assert captured["input"] == json.dumps(payload)
+        assert captured["kwargs"]["retrieval_query"] == worker._webhook_retrieval_query(payload)

@@ -8,7 +8,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from docsgpt.core.settings import settings
-from docsgpt.parser.connectors._auth_utils import session_token_fingerprint
 from docsgpt.parser.connectors.base import BaseConnectorAuth
 
 
@@ -213,39 +212,6 @@ class GoogleDriveAuth(BaseConnectorAuth):
 
         return True
     
-    def get_token_info_from_session(self, session_token: str) -> Dict[str, Any]:
-        try:
-            from docsgpt.storage.db.repositories.connector_sessions import (
-                ConnectorSessionsRepository,
-            )
-            from docsgpt.storage.db.session import db_readonly
-
-            with db_readonly() as conn:
-                session = ConnectorSessionsRepository(conn).get_by_session_token(
-                    session_token
-                )
-            if not session:
-                raise ValueError(
-                    f"Invalid session token ({session_token_fingerprint(session_token)})"
-                )
-
-            token_info = session.get("token_info")
-            if not token_info:
-                raise ValueError("Session missing token information")
-
-            required_fields = ["access_token", "refresh_token"]
-            missing_fields = [field for field in required_fields if field not in token_info or not token_info.get(field)]
-            if missing_fields:
-                raise ValueError(f"Missing required token fields: {missing_fields}")
-
-            if 'token_uri' not in token_info:
-                token_info['token_uri'] = 'https://oauth2.googleapis.com/token'
-
-            return token_info
-
-        except Exception as e:
-            raise ValueError(f"Failed to retrieve Google Drive token information: {str(e)}")
-
     def validate_credentials(self, credentials: Credentials) -> bool:
         """
         Validate Google Drive credentials by making a test API call.

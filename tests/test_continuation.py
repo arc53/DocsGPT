@@ -905,7 +905,7 @@ class TestResumeMarkResuming:
         )
 
         cont_service.claim_state.assert_called_once_with(
-            "00000000-0000-0000-0000-000000000001", "alice"
+            "00000000-0000-0000-0000-000000000001", "alice", call_ids=[]
         )
         cont_service.delete_state.assert_not_called()
 
@@ -1010,7 +1010,7 @@ class TestResumeMarkResuming:
                 "llm_name": "openai",
                 "api_key": "k",
                 "user_api_key": None,
-                "agent_id": None,
+                "agent_id": "agent-1",
                 "agent_type": "ClassicAgent",
                 "prompt": "",
                 "json_schema": None,
@@ -1038,7 +1038,7 @@ class TestResumeMarkResuming:
 
         # The body api_key resolves to its owning user.
         fake_repo = MagicMock()
-        fake_repo.find_by_key.return_value = {"user_id": "owner-1"}
+        fake_repo.find_by_key.return_value = {"id": "agent-1", "user_id": "owner-1"}
 
         @contextmanager
         def _fake_db_readonly():
@@ -1060,7 +1060,7 @@ class TestResumeMarkResuming:
 
         fake_repo.find_by_key.assert_called_once_with("agent-key-1")
         # The lookup + claim now key on the owner id, not None.
-        cont_service.claim_state.assert_called_once_with(conv_id, "owner-1")
+        cont_service.claim_state.assert_called_once_with(conv_id, "owner-1", call_ids=[])
         assert sp.initial_user_id == "owner-1"
         assert sp.decoded_token == {"sub": "owner-1"}
 

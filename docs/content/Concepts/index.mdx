@@ -1,0 +1,121 @@
+---
+title: Concepts
+description: The words the DocsGPT docs and web app use - agents, knowledge and sources, chunks, connectors and connections, tools, workflows, prompts, teams, and the credentials that call the API.
+lastUpdated: 2026-09-30
+---
+
+# Concepts
+
+This page defines the terms the rest of the docs use. Each entry links to the page that covers it in full. For how the processes and storage fit together, see [Architecture](/Concepts/Architecture).
+
+## Building blocks
+
+### Agent
+
+A saved assistant: a [prompt](#prompt), the [sources](#knowledge-and-sources) it answers from, the [tools](#tools-and-actions) it may call, a model and an agent type. The types are **Classic** (retrieve, then answer), **Agentic** (the model decides when to search), **Research** (plan, research, then write) and **Workflow** (a graph of nodes). The web app offers Classic, Research and Workflow; Agentic is available only through the API or an imported agent YAML file. An agent starts as a draft; publishing it gives it an [agent API key](#credentials). See [Agent basics](/Agents/basics).
+
+### Conversation
+
+A chat with DocsGPT, with or without an agent. Without an agent, a chat uses your [active prompt](#prompt) and the sources and tools you pick in the composer. See [Using the web app](/Using/web-app).
+
+### Prompt
+
+The system instructions sent to the model. Prompts are Jinja2 templates that can pull in retrieved documents, tool data and values the caller passes. Each agent has its own prompt; chats without an agent use the **Active prompt** from **Settings > General**. See [Prompts](/Agents/prompts).
+
+### Workflow
+
+An agent type built on a canvas from nodes (AI Agent, Set State, If / Else, Code and others) that read and write a shared state as the run moves through the graph. See [Workflow nodes](/Agents/nodes).
+
+### Schedule
+
+A timer that runs an agent on its own, either on a recurring schedule or once at a set time. Schedules need the Celery beat scheduler. See [Schedules](/Agents/schedules).
+
+### Guardrails
+
+Checks an agent runs on input, retrieved text, tool results and answers (PII, secrets, prompt injection and more), each set to flag, redact or block. See [Guardrails](/Agents/guardrails).
+
+## Knowledge and retrieval
+
+### Knowledge and sources
+
+**Knowledge** is the web app's name for everything an agent can search; each item in it is a **source**. A source can be uploaded files, a web page or crawl, a GitHub repository, a [wiki](/Sources/Wiki-sources) the agent can edit, or content synced from a [connection](#connectors-and-connections). See [Add knowledge](/Sources/adding-knowledge).
+
+### Ingestion
+
+The background job that turns a source into something searchable: a worker parses the files (with [OCR](/Sources/ocr) when it's on), splits the text into chunks, embeds them and writes them to the vector store.
+
+### Chunk
+
+A piece of a document, stored with its embedding. At question time the retriever returns the most relevant chunks and DocsGPT sends them to the model with the prompt. How a source is split and how many chunks come back are set per source; see [Per-source configuration](/Sources/Per-source-configuration).
+
+### Embedding
+
+A list of numbers that represents the meaning of a chunk or a question, so similar text can be found by comparing numbers. The embedding model is configured separately from the chat model; see [Embeddings](/Models/embeddings).
+
+### Vector store
+
+Where chunks and their embeddings are kept: FAISS by default, or pgvector, Qdrant, Elasticsearch, Milvus or MongoDB Atlas. See [App configuration](/Deploying/DocsGPT-Settings).
+
+### Retriever
+
+How a source is searched: `classic` (vector similarity), `hybrid` (vector and keyword) or `graphrag` (a knowledge graph built at ingest time; see [GraphRAG](/Sources/GraphRAG)).
+
+### Attachment
+
+A file added to one chat message. The model reads it for that conversation, but it doesn't become a source in Knowledge.
+
+## Connections and tools
+
+### Connectors and connections
+
+A **connector** is a service DocsGPT can connect to, such as Google Drive, Confluence, GitHub or an MCP server. A **connection** is one signed-in account or one saved key for a connector. A synced source and an agent's tools both use the same connection, so you sign in once. See [Connectors](/Sources/Connectors).
+
+### Tools and actions
+
+A **tool** lets an agent do something beyond answering from its sources: search the web, send a message, query a database, call an API. Each tool has **actions**; you choose which ones an agent may use and which need your approval before they run. See [Tools basics](/Tools/basics).
+
+### MCP
+
+The Model Context Protocol works in both directions in DocsGPT. As a client, an agent can call tools on external MCP servers ([MCP tools](/Tools/mcp-tools)). As a server, DocsGPT exposes an agent's search to MCP clients at `/mcp` ([MCP server](/API/mcp-server)).
+
+### Artifact
+
+A file an agent produces in a chat, such as a slide deck, Word document, spreadsheet, PDF or HTML page. You can preview it, download it and ask for changes, and each change makes a new version. Artifacts need a sandbox; see [Artifacts and code execution](/Tools/artifacts-and-code-execution).
+
+## Models
+
+### Provider and model
+
+A provider is the service or server that runs a model, such as OpenAI, Anthropic, Google, Groq, OpenRouter, or a local Ollama or vLLM server. `LLM_PROVIDER` and `LLM_NAME` set the instance default; agents and chats can pick another model from the list. See [Cloud providers](/Models/cloud-providers) and [Local inference](/Models/local-inference).
+
+### Custom model
+
+An OpenAI-compatible model a user adds in **Settings > Custom Models**, with their own endpoint and key. See [Custom models](/Models/custom-models).
+
+### Fallback model
+
+A model DocsGPT switches to when the primary one fails. See [Fallback models](/Models/fallback).
+
+## People and access
+
+### User and role
+
+Each person who signs in is a user. A user's global role is **admin** or **user**; admins manage users, teams, quotas and connectors for the whole instance. Who counts as a separate user depends on `AUTH_TYPE`. See [Access control](/Deploying/Access-Control).
+
+### Team
+
+A group of users who share agents, sources, prompts and tools. Sharing gives **Viewer** or **Editor** access and never changes the owner. See [Teams and sharing](/Using/teams-and-sharing).
+
+### Credentials
+
+Three kinds of credential call the API. An **agent API key** acts as one published agent and is what widgets and integrations use. A **personal access token** acts as you, limited by its scopes, for scripts and CI. A **session token** is what the web app sends for the signed-in user. See [API overview](/API).
+
+## Running DocsGPT
+
+### API and worker
+
+The API process serves the web app and the HTTP API and runs chats. The Celery worker runs background jobs: ingestion, parsing, query embeddings, webhooks and scheduled runs. Both are needed; see [Choose a deployment](/Deploying).
+
+### Beat
+
+The Celery scheduler that starts periodic jobs such as source syncs, schedules and cleanups. See [Background jobs](/Deploying/Background-Jobs).

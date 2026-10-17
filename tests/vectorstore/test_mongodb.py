@@ -229,6 +229,14 @@ class TestMongoDBVectorStoreGetChunks:
 
         assert store.get_chunks() == []
 
+    def test_chunk_lookup_raises_on_error(self):
+        # A citation that is only unreachable must not read as "gone".
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.find.side_effect = Exception("connection error")
+
+        with pytest.raises(Exception, match="connection error"):
+            store.get_chunk_by_key("0" * 32)
+
 
 @pytest.mark.unit
 class TestMongoDBVectorStoreAddChunk:
@@ -324,3 +332,125 @@ class TestMongoDBSearchWithScores:
         pipeline = mock_collection.aggregate.call_args[0][0]
         assert any("$addFields" in stage for stage in pipeline)
         assert not any("$match" in stage for stage in pipeline)
+
+
+def _fake_bson():
+    """``bson.objectid`` stand-in: pymongo is an optional extra."""
+    objectid = MagicMock()
+    objectid.ObjectId = lambda value: ("oid", value)
+    return {"bson": MagicMock(objectid=objectid), "bson.objectid": objectid}
+
+
+@pytest.mark.unit
+class TestMongoDBVectorStoreUpdateChunk:
+    def _existing(self, **extra):
+        return {
+            "_id": ("oid", "abc"),
+            "text": "old",
+            "embedding": [0.0],
+            "source_id": "src1",
+            **extra,
+        }
+
+    def test_updates_in_place_with_set(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4, 0.5]]
+        mock_collection.find_one.return_value = self._existing(title="T")
+        mock_collection.update_one.return_value = Mock(matched_count=1)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            returned = store.update_chunk("abc", "new text", {"title": "T2", "extra": 1})
+
+        assert returned == "abc"
+        query, update = mock_collection.update_one.call_args[0]
+        assert query == {"_id": ("oid", "abc"), "source_id": "src1"}
+        assert update == {
+            "$set": {
+                "text": "new text",
+                "embedding": [0.4, 0.5],
+                "source_id": "src1",
+                "title": "T2",
+                "extra": 1,
+            }
+        }
+        mock_collection.insert_one.assert_not_called()
+        mock_collection.delete_one.assert_not_called()
+
+    def test_unsets_keys_missing_from_the_new_metadata(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_collection.find_one.return_value = self._existing(title="T", stale="x")
+        mock_collection.update_one.return_value = Mock(matched_count=1)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            store.update_chunk("abc", "new text", {"title": "T"})
+
+        _, update = mock_collection.update_one.call_args[0]
+        assert update["$unset"] == {"stale": ""}
+        assert "source_id" not in update["$unset"]
+
+    def test_reserved_keys_in_metadata_cannot_clobber_the_record(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_collection.find_one.return_value = self._existing()
+        mock_collection.update_one.return_value = Mock(matched_count=1)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            store.update_chunk(
+                "abc", "new text",
+                {"_id": "x", "text": "x", "embedding": [9], "source_id": "other"},
+            )
+
+        _, update = mock_collection.update_one.call_args[0]
+        assert update["$set"] == {
+            "text": "new text", "embedding": [0.4], "source_id": "src1"
+        }
+
+    def test_embedding_failure_writes_nothing(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.side_effect = RuntimeError("embed down")
+        mock_collection.find_one.return_value = self._existing()
+
+        with patch.dict("sys.modules", _fake_bson()):
+            with pytest.raises(RuntimeError):
+                store.update_chunk("abc", "new text", {})
+
+        mock_collection.update_one.assert_not_called()
+
+    @pytest.mark.parametrize("key", ["a.b", "$where", "", "meta.$x"])
+    def test_keys_mongo_cannot_store_are_rejected_before_any_write(self, key):
+        from docsgpt.vectorstore.base import InvalidChunkMetadataError
+
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_collection.find_one.return_value = self._existing()
+
+        with patch.dict("sys.modules", _fake_bson()):
+            with pytest.raises(InvalidChunkMetadataError) as excinfo:
+                store.update_chunk("abc", "new text", {"title": "T", key: 1})
+
+        assert isinstance(excinfo.value, ValueError)
+        mock_emb.embed_documents.assert_not_called()
+        mock_collection.update_one.assert_not_called()
+
+    def test_dollar_inside_a_key_is_allowed(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_collection.find_one.return_value = self._existing()
+        mock_collection.update_one.return_value = Mock(matched_count=1)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            store.update_chunk("abc", "new text", {"price$": 1})
+
+        _, update = mock_collection.update_one.call_args[0]
+        assert update["$set"]["price$"] == 1
+
+    def test_unknown_id_raises(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_collection.find_one.return_value = None
+
+        with patch.dict("sys.modules", _fake_bson()):
+            with pytest.raises(KeyError):
+                store.update_chunk("abc", "new text", {})
+
+        mock_emb.embed_documents.assert_not_called()
+        mock_collection.update_one.assert_not_called()

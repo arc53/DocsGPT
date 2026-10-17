@@ -4,16 +4,24 @@ import traceback
 from flask import request, Response
 from flask_restx import fields, Resource
 
+from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
 from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
 
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
+    ContinuationNotPendingError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
-from docsgpt.api.answer.services.stream_processor import StreamProcessor
+from docsgpt.api.answer.services.stream_processor import (
+    StreamProcessor,
+    flush_trace_after_request,
+)
+from docsgpt.error import bounded_error_text
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
 logger = logging.getLogger(__name__)
@@ -44,7 +52,7 @@ class StreamResource(Resource, BaseAnswerResource):
                 required=False, default="default", description="Prompt ID"
             ),
             "chunks": fields.Integer(
-                required=False, default=2, description="Number of chunks"
+                required=False, default=6, description="Number of chunks"
             ),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),
@@ -94,7 +102,8 @@ class StreamResource(Resource, BaseAnswerResource):
         if error := self.validate_request(data, "index" in data):
             return error
         decoded_token = getattr(request, "decoded_token", None)
-        processor = StreamProcessor(data, decoded_token)
+        processor = StreamProcessor(data, decoded_token, trace_source="stream")
+        flush_trace_after_request(processor)
 
         try:
             # ---- Continuation mode ----
@@ -115,7 +124,9 @@ class StreamResource(Resource, BaseAnswerResource):
                         status=401,
                         mimetype="text/event-stream",
                     )
-                if error := self.check_usage(processor.agent_config):
+                if error := self.check_usage_on_resume(
+                    processor, data["conversation_id"]
+                ):
                     return error
                 return Response(
                     with_sse_keepalive(
@@ -128,6 +139,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             agent_id=processor.agent_id,
                             model_id=processor.model_id,
                             model_user_id=processor.model_user_id,
+                            trace=processor.handoff_trace(),
                             _continuation={
                                 "messages": messages,
                                 "tools_dict": tools_dict,
@@ -136,6 +148,7 @@ class StreamResource(Resource, BaseAnswerResource):
                                 "reserved_message_id": processor.reserved_message_id,
                                 "request_id": processor.request_id,
                                 "reasoning_content": reasoning_content,
+                                "prior_tool_calls": processor.prior_tool_calls,
                             },
                         ),
                     ),
@@ -151,7 +164,11 @@ class StreamResource(Resource, BaseAnswerResource):
                     mimetype="text/event-stream",
                 )
 
-            if error := self.check_usage(processor.agent_config):
+            if error := self.check_usage(
+                processor.agent_config,
+                processor.decoded_token,
+                agent_id=processor.agent_id,
+            ):
                 return error
             should_persist, visibility = resolve_persistence(
                 visibility_flag=data.get("visibility"),
@@ -175,8 +192,32 @@ class StreamResource(Resource, BaseAnswerResource):
                         shared_token=processor.shared_token,
                         model_id=processor.model_id,
                         model_user_id=processor.model_user_id,
+                        request_id=processor.request_id,
+                        trace=processor.handoff_trace(),
                     ),
                 ),
+                mimetype="text/event-stream",
+            )
+        except ContextOverflowError as e:
+            # Caught ahead of ``ValueError`` (its base class): a turn too big
+            # for the window is not a malformed body.
+            logger.info("/stream - turn does not fit the context window: %s", bounded_error_text(e))
+            return Response(
+                self.curated_error_stream_generate(e),
+                status=400,
+                mimetype="text/event-stream",
+            )
+        except ContinuationNotPendingError:
+            # A decision for a pause that is over: decided already, moved past
+            # by a new turn, or expired (a stale tab). Nothing ran; the code
+            # lets the chat reload the turn instead of showing a failure.
+            logger.info(
+                "/stream - tool actions for a pause no longer pending in conversation %s",
+                data.get("conversation_id"),
+            )
+            return Response(
+                self.error_stream_generate(NOT_PENDING_MESSAGE, code=NOT_PENDING_CODE),
+                status=409,
                 mimetype="text/event-stream",
             )
         except ResumeInProgressError as e:

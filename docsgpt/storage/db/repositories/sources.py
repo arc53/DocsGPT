@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from sqlalchemy import case, Connection, func, or_, select, text
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import ingest_chunk_progress_table, sources_table
 from docsgpt.storage.db.source_config import SourceConfig
 
@@ -56,19 +56,6 @@ def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
         scope = or_(scope, sources_table.c.id.in_(ids))
     return scope
 
-
-def _escape_like(pattern: str) -> str:
-    """Escape wildcards so a user-supplied substring is matched literally.
-
-    We use ``LIKE ESCAPE '\\'`` on the query side so backslash, percent, and
-    underscore in the input don't accidentally turn into regex-like wildcards.
-    """
-    return (
-        pattern
-        .replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
 
 
 def _coerce_jsonb(value: Any) -> Any:
@@ -325,7 +312,7 @@ class SourcesRepository:
         if search_term:
             stmt = stmt.where(
                 sources_table.c.name.ilike(
-                    f"%{_escape_like(search_term)}%",
+                    f"%{like_escape(search_term)}%",
                     escape="\\",
                 )
             )
@@ -372,7 +359,7 @@ class SourcesRepository:
         if search_term:
             stmt = stmt.where(
                 sources_table.c.name.ilike(
-                    f"%{_escape_like(search_term)}%",
+                    f"%{like_escape(search_term)}%",
                     escape="\\",
                 )
             )
@@ -398,6 +385,30 @@ class SourcesRepository:
             .values(**values)
         )
         self._conn.execute(stmt)
+
+    def set_wiki_outside_edits(self, source_id: str, user_id: str, allowed: bool) -> bool:
+        """Record whether API-key and widget runs may edit this wiki.
+
+        Kept out of :meth:`update`'s columns so no route that forwards a
+        request body can change it; only the owner-checked wiki settings
+        route calls this.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner's id; the row is scoped to it.
+            allowed: The new value.
+
+        Returns:
+            bool: Whether a row was updated.
+        """
+        t = sources_table
+        result = self._conn.execute(
+            t.update()
+            .where(t.c.id == source_id)
+            .where(t.c.user_id == user_id)
+            .values(wiki_outside_edits=bool(allowed), updated_at=func.now())
+        )
+        return result.rowcount > 0
 
     def get_by_legacy_id(
         self, legacy_mongo_id: str, user_id: Optional[str] = None,

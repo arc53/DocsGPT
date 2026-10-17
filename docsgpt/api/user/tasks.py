@@ -10,6 +10,7 @@ from docsgpt.parser.file.base_parser import DocumentParseError
 from docsgpt.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
+    archive_member_worker,
     attachment_worker,
     ingest_worker,
     mcp_oauth,
@@ -79,6 +80,12 @@ DURABLE_TASK = dict(
 )
 
 
+def _connection_unavailable():
+    from docsgpt.connectors.service import ConnectionUnavailable
+
+    return ConnectionUnavailable
+
+
 def durable_task(**overrides) -> Dict:
     """Return ``DURABLE_TASK`` with per-task overrides applied.
 
@@ -114,7 +121,9 @@ def _emit_ingest_poison_event(task_name, bound):
     if not user or not source_id:
         return
     from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import close_failed_ingest_progress
 
+    close_failed_ingest_progress(source_id)
     publish_user_event(
         user,
         "source.ingest.failed",
@@ -146,6 +155,7 @@ def ingest(
     config=None,
     idempotency_key=None,
     source_id=None,
+    copy_files=None,
 ):
     resp = ingest_worker(
         self,
@@ -159,6 +169,8 @@ def ingest(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        # Only when given, so the worker's call shape is unchanged otherwise.
+        **({"copy_files": copy_files} if copy_files else {}),
     )
     return resp
 
@@ -167,13 +179,16 @@ def ingest(
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
-    config=None, idempotency_key=None, source_id=None,
+    config=None, idempotency_key=None, source_id=None, connection_id=None,
+    sync_frequency="never",
 ):
     resp = remote_worker(
         self, source_data, job_name, user, loader,
+        sync_frequency=sync_frequency,
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        connection_id=connection_id,
     )
     return resp
 
@@ -249,6 +264,15 @@ def schedule_syncs(self, frequency):
     return resp
 
 
+@celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
+             dont_autoretry_for=(_connection_unavailable(),))
+def sync_connector_source(self, source_id):
+    """Re-sync one connector source from its connection, with no browser involved."""
+    from docsgpt.worker import sync_connector_source as run
+
+    return run(self, source_id)
+
+
 @celery.task(bind=True)
 def sync_source(
     self,
@@ -259,6 +283,7 @@ def sync_source(
     sync_frequency,
     retriever,
     doc_id,
+    connection_id=None,
 ):
     resp = sync(
         self,
@@ -269,6 +294,7 @@ def sync_source(
         sync_frequency,
         retriever,
         doc_id,
+        connection_id=connection_id,
     )
     return resp
 
@@ -288,18 +314,28 @@ def _emit_attachment_poison_event(task_name, bound):
     if not user or not attachment_id:
         return
     from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import record_attachment_failure
-
-    record_attachment_failure(
-        user, file_info, "Attachment processing stopped after repeated failures."
+    from docsgpt.parser.file.constants import is_attachment_archive
+    from docsgpt.worker import (
+        ATTACHMENT_FAILURE_MESSAGES,
+        record_archive_task_failure,
+        record_attachment_failure,
     )
+
+    error = ATTACHMENT_FAILURE_MESSAGES["repeated_failures"]
+    if is_attachment_archive(file_info.get("filename")):
+        # Keeps the zip's member bookkeeping, which a plain failure row
+        # would overwrite.
+        record_archive_task_failure(user, file_info, error)
+    else:
+        record_attachment_failure(user, file_info, error)
     publish_user_event(
         user,
         "attachment.failed",
         {
             "attachment_id": str(attachment_id),
             "filename": file_info.get("filename") or "",
-            "error": "Attachment processing stopped after repeated failures.",
+            "code": "repeated_failures",
+            "error": error,
         },
         scope={"kind": "attachment", "id": str(attachment_id)},
     )
@@ -323,11 +359,56 @@ def store_attachment(self, file_info, user, idempotency_key=None):
     return resp
 
 
-@celery.task(**DURABLE_TASK)
+def _emit_archive_member_poison_event(task_name, bound):
+    """Fail a zip member whose task keeps dying, so the zip still completes.
+
+    The poison guard returns before the worker runs; without this the member
+    never gets an outcome and its zip never reports ``attachment.completed``.
+    The zip, not the member, reports to the browser.
+    """
+    user = bound.get("user")
+    member_info = bound.get("member_info") or {}
+    if not user or not member_info.get("attachment_id"):
+        return
+    from docsgpt.worker import record_archive_member_failure
+
+    record_archive_member_failure(user, member_info, "Processing stopped after repeated failures.")
+
+
+# One member of a zip attachment, dispatched by the zip's own task (at most
+# ATTACHMENT_ARCHIVE_PARALLELISM at a time per zip). Same deterministic
+# failures as store_attachment skip the retries; a member's final failure is
+# recorded on its zip rather than raised, so the zip still completes.
+@celery.task(
+    **durable_task(
+        dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    )
+)
+@with_idempotency(
+    task_name="store_archive_member", on_poison=_emit_archive_member_poison_event,
+)
+def store_archive_member(self, member_info, user, idempotency_key=None):
+    return archive_member_worker(self, member_info, user)
+
+
+@celery.task(
+    bind=True,
+    acks_late=True,
+    # Not DURABLE_TASK: agent runs have side effects; blind retry would double them.
+    autoretry_for=(),
+    max_retries=0,
+)
 @with_idempotency(task_name="process_agent_webhook")
 def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     resp = agent_webhook_worker(self, agent_id, payload)
     return resp
+
+
+# Soft limit ends the run with a "timeout" result; the hard limit is the backstop.
+from docsgpt.core.settings import settings as _webhook_settings  # noqa: E402
+
+process_agent_webhook.soft_time_limit = max(30, int(_webhook_settings.WEBHOOK_RUN_TIMEOUT))
+process_agent_webhook.time_limit = process_agent_webhook.soft_time_limit + 60
 
 
 # Seconds the hard (SIGKILL) limit trails the soft limit, giving the soft handler
@@ -346,9 +427,9 @@ def parse_timeout_for_size(size_bytes: Optional[int]) -> float:
     """
     from docsgpt.core.settings import settings
 
-    base = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120) or 120)
-    per_mib = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0) or 0)
-    ceiling = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", base) or base)
+    base = float(settings.DOCUMENT_PARSE_TIMEOUT or 120)
+    per_mib = float(settings.DOCUMENT_PARSE_TIMEOUT_PER_MB or 0)
+    ceiling = float(settings.DOCUMENT_PARSE_TIMEOUT_MAX or base)
     size = float(size_bytes) if isinstance(size_bytes, (int, float)) else 0.0
     scaled = base + per_mib * max(size, 0.0) / (1024 * 1024)
     return min(ceiling, max(base, scaled))
@@ -408,7 +489,9 @@ except Exception:
     pass
 
 
-@celery.task(**DURABLE_TASK)
+# A revoked or disconnected connection will not heal by retrying; the
+# service has already paused the source and told its owner to reconnect.
+@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, _connection_unavailable())))
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )
@@ -428,6 +511,7 @@ def ingest_connector_task(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ):
     from docsgpt.worker import ingest_connector
 
@@ -437,6 +521,7 @@ def ingest_connector_task(
         user,
         source_type,
         session_token=session_token,
+        connection_id=connection_id,
         file_ids=file_ids,
         folder_ids=folder_ids,
         recursive=recursive,
@@ -453,10 +538,12 @@ def ingest_connector_task(
 
 @celery.task(bind=True, acks_late=False)
 def dispatch_scheduled_runs(self):
-    """Beat-driven scheduler poller (body in scheduler_dispatcher)."""
+    """Beat-driven scheduler poller (body in scheduler_dispatcher); monitors tick on the same beat."""
     from docsgpt.api.user.scheduler_dispatcher import dispatch_due_runs
+    from docsgpt.monitors.tasks import dispatch_monitors_safely
 
-    return dispatch_due_runs()
+    counts = dispatch_due_runs()
+    return {**counts, "monitors": dispatch_monitors_safely()}
 
 
 @celery.task(
@@ -507,12 +594,13 @@ def cleanup_schedule_runs(self):
 
 @celery.task(bind=True, acks_late=False)
 def reap_sandbox_sessions(self):
-    """Close sandbox sessions idle past their TTL in this worker process.
+    """Let go of sandbox sessions idle past their TTL in this worker process.
 
     The SandboxManager registry is per-process, so this reaps only sessions
     bound in THIS worker; the API processes reap their own opportunistically on
-    ``open``. Artifacts are persisted eagerly, so reaping only closes idle
-    kernels and never loses a user-facing artifact.
+    ``open``. A Daytona sandbox another process may still use is only released
+    here, and deleted once no process has used it for ``SANDBOX_MAX_TTL``.
+    Artifacts are persisted eagerly, so reaping never loses a user-facing artifact.
     """
     try:
         from docsgpt.sandbox.sandbox_creator import SandboxCreator
@@ -549,6 +637,128 @@ def reap_stale_workflow_runs(self):
         logging.getLogger(__name__).exception("reap_stale_workflow_runs failed")
         return {"reaped": 0, "error": True}
     return {"reaped": reaped}
+
+
+@celery.task(bind=True, acks_late=False)
+def sweep_background_jobs(self):
+    """Mark background jobs whose process died ``lost`` and fail the ones past their deadline.
+
+    On a ``BACKGROUND_RECONCILE_INTERVAL_SECONDS`` beat; the next tick is the retry.
+    """
+    from docsgpt.background.reconciler import sweep
+
+    try:
+        return sweep()
+    except Exception:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        logger.exception("sweep_background_jobs failed; the next beat retries")
+        return {"error": True}
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def poll_background_sandbox_job(self, job_id):
+    """One poll of a background job's detached sandbox run; re-queues itself until the run ends.
+
+    Never retried by Celery: a failed poll re-queues itself with a backoff,
+    and the background sweep restarts a chain that broke.
+    """
+    from docsgpt.background.sandbox_runner import poll_job
+
+    return poll_job(job_id)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def poll_background_device_job(self, job_id):
+    """One poll of a background job's command on a paired device; re-queues itself until it reports.
+
+    Never retried by Celery: a failed poll re-queues itself with a backoff,
+    and the background sweep restarts a chain that broke.
+    """
+    from docsgpt.background.device_runner import poll_job
+
+    return poll_job(job_id)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def run_background_tool_call(self, job_id, payload):
+    """Run an explicit ``background=true`` tool call in this worker and finish its job.
+
+    At most once (``acks_late=False``, no retries): a tool call may have side
+    effects, so a worker that dies mid-call leaves the job to be reported
+    lost, never re-run.
+    """
+    from docsgpt.background.celery_runner import run_job
+
+    return run_job(job_id, payload)
+
+
+# The background call gets the job lifetime, plus a margin to record the timeout.
+from docsgpt.core.settings import settings as _background_settings  # noqa: E402
+
+run_background_tool_call.soft_time_limit = int(_background_settings.BACKGROUND_JOB_MAX_SECONDS) + 30
+run_background_tool_call.time_limit = run_background_tool_call.soft_time_limit + 60
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def continue_conversation(self, conversation_id, attempt=0):
+    """Run a continuation turn for a conversation's queued wake events.
+
+    Not retried by Celery: an agent turn has side effects. A turn that must
+    wait (a generation is running) re-queues itself with a backoff, and the
+    background sweep picks up events left queued.
+    """
+    from docsgpt.background.continuation import continue_conversation_body
+
+    return continue_conversation_body(conversation_id, attempt)
+
+
+# A continuation is an agent turn: the same time limit as a scheduled run.
+continue_conversation.soft_time_limit = max(30, int(_background_settings.SCHEDULE_RUN_TIMEOUT))
+continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def run_monitor_tick(self, monitor_id):
+    """Check one polled monitor (body in docsgpt.monitors.tick); at most once, the next slot is the retry."""
+    from docsgpt.monitors.tick import run_tick
+
+    return run_tick(monitor_id)
+
+
+# A tick may replay a remote command (up to 10 minutes) or wait on a slow page.
+run_monitor_tick.soft_time_limit = 720
+run_monitor_tick.time_limit = 780
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0, soft_time_limit=180, time_limit=240)
+def process_trigger_hit(self, hit_id, attempt=0):
+    """Run one accepted webhook delivery through its monitor's check, judge and wake."""
+    from docsgpt.monitors.tick import process_hit
+
+    return process_hit(hit_id, attempt)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0, soft_time_limit=180, time_limit=240)
+def process_monitor_event(self, monitor_id, event, attempt=0):
+    """Run an ingest event through the monitor watching that source."""
+    from docsgpt.monitors.tick import process_event
+
+    return process_event(monitor_id, event, attempt)
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_trigger_hits(self):
+    """Delete settled webhook deliveries past ``BACKGROUND_RESULT_RETENTION_DAYS``."""
+    from docsgpt.monitors.tasks import cleanup_hits
+
+    return cleanup_hits()
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_background_jobs(self):
+    """Delete finished background jobs and settled wakes past ``BACKGROUND_RESULT_RETENTION_DAYS``."""
+    from docsgpt.background.reconciler import cleanup
+
+    return cleanup()
 
 
 @celery.on_after_configure.connect
@@ -610,6 +820,16 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_decision_usage.s(),
+        name="cleanup-decision-usage",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_traces.s(),
+        name="cleanup-traces",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_orphan_memories.s(),
         name="cleanup-orphan-memories",
     )
@@ -639,6 +859,19 @@ def setup_periodic_tasks(sender, **kwargs):
         reap_stale_workflow_runs.s(),
         name="reap-stale-workflow-runs",
     )
+    # Background jobs: lost leases and blown deadlines every
+    # BACKGROUND_RECONCILE_INTERVAL_SECONDS, retention once a day.
+    sender.add_periodic_task(
+        timedelta(seconds=max(10, int(settings.BACKGROUND_RECONCILE_INTERVAL_SECONDS))),
+        sweep_background_jobs.s(),
+        name="sweep-background-jobs",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_background_jobs.s(),
+        name="cleanup-background-jobs",
+    )
+    sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the
@@ -671,11 +904,13 @@ def cleanup_pending_tool_state(self):
         reverted = repo.revert_stale_resuming(grace_seconds=600)
         cleared = repo.cleanup_expired()
 
-    # Reaping the resumable state retires any awaiting-approval prompt
-    # tied to it. Without a clearing event the durable
-    # ``tool.approval.required`` envelope replays on reconnect and the UI
-    # toast lingers for a conversation that can no longer be resumed.
-    from docsgpt.events.publisher import publish_user_event
+    # Reaping the resumable state retires the turn that waited on it: its
+    # message keeps what it did, with the calls it waited on as never run,
+    # and the awaiting-approval prompt is revoked. Without a clearing event
+    # the durable ``tool.approval.required`` envelope replays on reconnect
+    # and the UI toast lingers for a conversation that can no longer be
+    # resumed.
+    from docsgpt.api.answer.services import continuation_service
 
     for row in cleared:
         user_id = row.get("user_id")
@@ -690,27 +925,20 @@ def cleanup_pending_tool_state(self):
         )
         if reserved_message_id:
             try:
-                from docsgpt.api.answer.services.conversation_service import (
-                    ConversationService,
-                    TERMINATED_RESPONSE_PLACEHOLDER,
-                )
-
-                ConversationService().finalize_message(
-                    str(reserved_message_id),
-                    TERMINATED_RESPONSE_PLACEHOLDER,
-                    status="failed",
-                    error=TimeoutError("Tool continuation expired before resume"),
-                )
+                with engine.begin() as conn:
+                    continuation_service.retire_paused_message(
+                        conn, row, continuation_service.RETIRED_EXPIRED
+                    )
             except Exception:
                 logger.exception(
                     "Failed to retire expired continuation message %s",
                     reserved_message_id,
                 )
-        publish_user_event(
+        continuation_service.publish_pause_retired(
             str(user_id),
-            "tool.approval.cleared",
-            {"conversation_id": str(conversation_id), "reason": "expired"},
-            scope={"kind": "conversation", "id": str(conversation_id)},
+            str(conversation_id),
+            str(reserved_message_id) if reserved_message_id else None,
+            continuation_service.RETIRED_EXPIRED,
         )
     return {"deleted": len(cleared), "reverted": reverted}
 
@@ -824,6 +1052,53 @@ def cleanup_guardrail_events(self):
     engine = get_engine()
     with engine.begin() as conn:
         deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_decision_usage(self):
+    """Delete ``decision_usage`` days older than ``DECISION_USAGE_RETENTION_DAYS``.
+
+    The rows are small counters, one per day, feature, mode, model version
+    and status, but they are written for as long as a feature is on.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.decision_usage import (
+        DecisionUsageRepository,
+    )
+
+    ttl_days = settings.DECISION_USAGE_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = DecisionUsageRepository(conn).purge_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_traces(self):
+    """Delete ``request_traces`` rows older than ``TRACES_RETENTION_DAYS``.
+
+    Every chat turn, scheduled run and search writes a trace, and each one
+    carries content previews, so the table is bounded by a retention window
+    like the other per-request journals.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.request_traces import (
+        RequestTracesRepository,
+    )
+
+    ttl_days = settings.TRACES_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = RequestTracesRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 

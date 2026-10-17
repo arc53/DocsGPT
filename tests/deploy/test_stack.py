@@ -1,0 +1,352 @@
+"""What `docsgpt up` writes to the stack's .env, and where the stack lives."""
+
+from itertools import count
+from pathlib import Path
+
+import pytest
+import yaml
+
+from docsgpt.core import paths
+from docsgpt.deploy import stack
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _secrets():
+    numbers = count(1)
+    return lambda: f"secret{next(numbers)}"
+
+
+def _first_install(**overrides):
+    options = {"image_tag": "0.21.0", "fresh_database": True, "secret": _secrets()}
+    options.update(overrides)
+    return stack.plan({}, **options)
+
+
+class TestFirstInstall:
+    def test_defaults_are_local_with_the_public_api(self):
+        updates = _first_install()
+        assert updates["DOCSGPT_IMAGE_TAG"] == "0.21.0"
+        assert updates["DOCSGPT_BIND"] == "127.0.0.1"
+        assert updates["LLM_PROVIDER"] == "docsgpt"
+        assert updates["VITE_API_STREAMING"] == "true"
+        assert "AUTH_TYPE" not in updates
+
+    def test_secrets_are_generated_once_each(self):
+        updates = _first_install()
+        generated = {
+            updates["INTERNAL_KEY"],
+            updates["JWT_SECRET_KEY"],
+            updates["ENCRYPTION_SECRET_KEY"],
+            updates["POSTGRES_PASSWORD"],
+        }
+        assert len(generated) == 4
+
+    def test_an_existing_database_gets_no_new_encryption_key(self):
+        """Its stored credentials are sealed with whatever key it ran with, so a new one would lock them out."""
+        updates = _first_install(fresh_database=False)
+        assert "ENCRYPTION_SECRET_KEY" not in updates
+
+    def test_an_existing_database_keeps_its_password(self):
+        """Postgres reads the password only when its volume is created."""
+        updates = _first_install(fresh_database=False)
+        assert "POSTGRES_PASSWORD" not in updates
+
+
+class TestRerun:
+    def test_secrets_and_settings_are_left_alone(self):
+        existing = {
+            "DOCSGPT_IMAGE_TAG": "0.20.0",
+            "INTERNAL_KEY": "k",
+            "JWT_SECRET_KEY": "j",
+            "ENCRYPTION_SECRET_KEY": "e",
+            "POSTGRES_PASSWORD": "p",
+            "VITE_API_STREAMING": "true",
+            "LLM_PROVIDER": "anthropic",
+            "API_KEY": "sk",
+            "DOCSGPT_BIND": "0.0.0.0",
+            "AUTH_TYPE": "simple_jwt",
+        }
+        updates = stack.plan(existing, image_tag="0.21.0", fresh_database=False, secret=_secrets())
+        assert updates == {"DOCSGPT_IMAGE_TAG": "0.21.0"}
+
+    def test_an_existing_encryption_key_is_never_replaced(self):
+        existing = {"INTERNAL_KEY": "k", "JWT_SECRET_KEY": "j", "ENCRYPTION_SECRET_KEY": "e"}
+        updates = stack.plan(existing, image_tag="x", fresh_database=True, secret=_secrets())
+        assert "ENCRYPTION_SECRET_KEY" not in updates
+
+    def test_a_missing_password_is_not_invented_for_an_existing_database(self):
+        updates = stack.plan({"INTERNAL_KEY": "k", "JWT_SECRET_KEY": "j"}, image_tag="x", fresh_database=False)
+        assert "POSTGRES_PASSWORD" not in updates
+
+
+class TestExposure:
+    def test_network_publishes_everywhere_and_turns_on_auth(self):
+        updates = _first_install(expose="network")
+        assert updates["DOCSGPT_BIND"] == "0.0.0.0"
+        assert updates["AUTH_TYPE"] == "simple_jwt"
+        assert updates.get("COMPOSE_PROFILES") is None
+
+    def test_domain_adds_caddy_and_auth_and_keeps_the_port_local(self):
+        updates = _first_install(expose="domain", domain="docs.example.com")
+        assert updates["COMPOSE_PROFILES"] == "https"
+        assert updates["DOCSGPT_DOMAIN"] == "docs.example.com"
+        assert updates["DOCSGPT_BIND"] == "127.0.0.1"
+        assert updates["AUTH_TYPE"] == "simple_jwt"
+
+    def test_domain_needs_a_domain(self):
+        with pytest.raises(ValueError, match="domain"):
+            _first_install(expose="domain")
+
+    def test_an_existing_auth_mode_is_not_downgraded(self):
+        updates = stack.plan({"AUTH_TYPE": "oidc"}, image_tag="x", expose="network", fresh_database=False)
+        assert "AUTH_TYPE" not in updates
+
+    def test_back_to_local_removes_the_proxy(self):
+        existing = {"COMPOSE_PROFILES": "https", "DOCSGPT_DOMAIN": "docs.example.com", "DOCSGPT_BIND": "127.0.0.1"}
+        updates = stack.plan(existing, image_tag="x", expose="local", fresh_database=False)
+        assert updates["COMPOSE_PROFILES"] is None
+        assert updates["DOCSGPT_DOMAIN"] is None
+
+    def test_port_and_docling(self):
+        updates = _first_install(port=8080, docling=True)
+        assert updates["DOCSGPT_PORT"] == "8080"
+        assert updates["DOCSGPT_IMAGE_VARIANT"] == "-docling"
+        assert stack.plan({"DOCSGPT_IMAGE_VARIANT": "-docling"}, image_tag="x", docling=False, fresh_database=False)[
+            "DOCSGPT_IMAGE_VARIANT"
+        ] is None
+
+    def test_by_default_there_is_no_decider(self):
+        updates = _first_install()
+        assert "COMPOSE_PROFILES" not in updates and "DECISION_BASE_URL" not in updates
+        assert "DECISION_KEY" not in updates
+
+    def test_the_decider_turns_on_its_profile_and_points_the_services_at_it(self):
+        updates = _first_install(decider=True)
+        assert updates["COMPOSE_PROFILES"] == "decider"
+        assert updates["DECISION_BASE_URL"] == stack.DECIDER_URL
+        assert updates["DECISION_KEY"] not in (None, updates["INTERNAL_KEY"]), "its own key, never INTERNAL_KEY"
+        existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DECISION_KEY": "d",
+                    "DOCSGPT_BIND": "127.0.0.1"}
+        assert stack.runs_decider(existing)
+        kept = stack.plan(existing, image_tag="x", fresh_database=False)
+        assert not {"COMPOSE_PROFILES", "DECISION_BASE_URL", "DECISION_KEY"} & set(kept), "it persists"
+        off = stack.plan(existing, image_tag="x", decider=False, fresh_database=False)
+        assert off["COMPOSE_PROFILES"] is None and off["DECISION_BASE_URL"] is None
+        assert "DECISION_KEY" not in off, "a server on the host may still use it"
+
+    def test_the_decider_keeps_an_existing_key_and_gets_one_when_it_has_none(self):
+        existing = {"DECISION_KEY": "own", "DOCSGPT_BIND": "127.0.0.1"}
+        assert "DECISION_KEY" not in stack.plan(existing, image_tag="x", decider=True, fresh_database=False)
+        running = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DOCSGPT_BIND": "127.0.0.1"}
+        updates = stack.plan(running, image_tag="x", fresh_database=False, secret=_secrets())
+        assert updates["DECISION_KEY"] not in (None, updates["INTERNAL_KEY"]), "a decider started before keys existed"
+
+    def test_turning_the_decider_on_replaces_a_vllm_protocol(self):
+        existing = {"DECISION_BASE_URL": "http://gpu:8000", "DECISION_PROTOCOL": "vllm", "DOCSGPT_BIND": "127.0.0.1"}
+        updates = stack.plan(existing, image_tag="x", decider=True, fresh_database=False)
+        assert updates["DECISION_BASE_URL"] == stack.DECIDER_URL and updates["DECISION_PROTOCOL"] is None
+
+    def test_turning_the_decider_off_brings_the_model_back_into_the_api(self):
+        existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": stack.DECIDER_URL, "DECISION_MODE": "api"}
+        updates = stack.plan(existing, image_tag="x", decider=False, fresh_database=False)
+        assert updates["DECISION_BASE_URL"] is None and updates["DECISION_MODE"] is None
+        elsewhere = {**existing, "DECISION_BASE_URL": "http://gpu:8000"}
+        assert "DECISION_MODE" not in stack.plan(elsewhere, image_tag="x", decider=False, fresh_database=False)
+
+    def test_turning_the_decider_off_keeps_another_server(self):
+        existing = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://host.docker.internal:7095"}
+        updates = stack.plan(existing, image_tag="x", decider=False, fresh_database=False)
+        assert updates["COMPOSE_PROFILES"] is None and "DECISION_BASE_URL" not in updates
+
+    def test_the_decider_and_the_domain_share_the_profiles(self):
+        existing = {"COMPOSE_PROFILES": "https", "DOCSGPT_DOMAIN": "docs.example.com", "DOCSGPT_BIND": "127.0.0.1"}
+        updates = stack.plan(existing, image_tag="x", decider=True, fresh_database=False)
+        assert updates["COMPOSE_PROFILES"] == "https,decider"
+        both = {**existing, "COMPOSE_PROFILES": "https,decider", "DECISION_BASE_URL": stack.DECIDER_URL}
+        assert stack.exposure(both) == "domain"
+        assert stack.plan(both, image_tag="x", expose="local", fresh_database=False)["COMPOSE_PROFILES"] == "decider"
+
+    @pytest.mark.parametrize(
+        "env, mode",
+        [
+            ({}, "local"),
+            ({"DOCSGPT_BIND": "0.0.0.0"}, "network"),
+            ({"COMPOSE_PROFILES": "https", "DOCSGPT_DOMAIN": "d.example.com"}, "domain"),
+        ],
+    )
+    def test_the_mode_is_read_back_from_the_env(self, env, mode):
+        assert stack.exposure(env) == mode
+
+
+class TestPublicApiUrl:
+    """API_URL: the address the API builds agent image, webhook, pairing and MCP OAuth URLs from."""
+
+    def test_network_points_it_at_the_machine_address(self):
+        updates = _first_install(expose="network", lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "http://10.0.0.5:7091"
+
+    def test_domain_points_it_at_https(self):
+        updates = _first_install(domain="docs.example.com", lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "https://docs.example.com"
+
+    def test_local_on_the_default_port_needs_none(self):
+        assert "API_URL" not in _first_install(lan_ip="10.0.0.5")
+
+    def test_local_on_another_port_follows_it(self):
+        assert _first_install(port=8080, lan_ip="10.0.0.5")["API_URL"] == "http://localhost:8080"
+
+    @pytest.mark.parametrize("expose, domain", [("network", None), ("domain", "docs.example.com"), ("local", None)])
+    def test_an_operator_value_is_never_replaced(self, expose, domain):
+        existing = {"API_URL": "https://proxy.example.com", "INTERNAL_KEY": "k", "JWT_SECRET_KEY": "j"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, expose=expose, domain=domain, lan_ip="10.0.0.5"
+        )
+        assert "API_URL" not in updates
+
+    def test_a_value_it_wrote_follows_a_move_to_a_domain(self):
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, domain="docs.example.com", lan_ip="10.0.0.5"
+        )
+        assert updates["API_URL"] == "https://docs.example.com"
+
+    def test_a_value_it_wrote_is_removed_when_going_back_to_local(self):
+        existing = {
+            "COMPOSE_PROFILES": "https",
+            "DOCSGPT_DOMAIN": "docs.example.com",
+            "API_URL": "https://docs.example.com",
+        }
+        updates = stack.plan(existing, image_tag="x", fresh_database=False, expose="local", lan_ip="10.0.0.5")
+        assert updates["API_URL"] is None
+
+    def test_a_rerun_leaves_it_alone(self):
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        assert "API_URL" not in stack.plan(existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
+
+    def test_an_existing_network_install_without_it_gets_it(self):
+        updates = stack.plan({"DOCSGPT_BIND": "0.0.0.0"}, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "http://10.0.0.5:7091"
+
+    def test_the_default_value_is_replaced(self):
+        """A network install holding http://localhost:7091, the app's own default, is no operator choice."""
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://localhost:7091"}
+        updates = stack.plan(existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "http://10.0.0.5:7091"
+
+    def test_a_value_it_wrote_follows_a_new_lan_address(self):
+        """The machine moved from 10.0.0.5 to 10.0.0.9: the recorded value is still its own."""
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.9", written_api_url="http://10.0.0.5:7091"
+        )
+        assert updates["API_URL"] == "http://10.0.0.9:7091"
+
+    def test_without_a_record_a_stale_address_is_left_alone(self):
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        assert "API_URL" not in stack.plan(existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.9")
+
+    def test_owns_api_url(self):
+        env = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        assert stack.owns_api_url(env, None, "10.0.0.5")
+        assert stack.owns_api_url(env, "http://10.0.0.5:7091", "10.0.0.9")
+        assert not stack.owns_api_url(env, None, "10.0.0.9")
+        assert not stack.owns_api_url({"API_URL": "https://proxy.example.com"}, "http://10.0.0.5:7091", "10.0.0.5")
+        assert stack.owns_api_url({}, None, "10.0.0.5")
+
+    def test_the_worker_keeps_its_in_stack_url(self):
+        """Compose's `environment:` wins over env_file, so the worker still reaches the backend directly."""
+        compose = yaml.safe_load(stack.compose_source().read_text())
+        assert "API_URL=http://backend:7091" in compose["services"]["worker"]["environment"]
+        assert not any(item.startswith("API_URL=") for item in compose["services"]["backend"]["environment"])
+
+
+class TestProviders:
+    def test_switching_provider_drops_the_old_keys(self):
+        existing = {"LLM_PROVIDER": "openai", "API_KEY": "sk", "LLM_NAME": "m", "OPENAI_BASE_URL": "http://x/v1"}
+        provider = stack.provider_settings("anthropic", api_key="ak")
+        updates = stack.plan(existing, image_tag="x", provider=provider, fresh_database=False)
+        assert updates["LLM_PROVIDER"] == "anthropic"
+        assert updates["API_KEY"] == "ak"
+        assert updates["LLM_NAME"] is None
+        assert updates["OPENAI_BASE_URL"] is None
+
+    def test_the_public_api_needs_no_key(self):
+        assert stack.provider_settings("docsgpt") == {
+            "LLM_PROVIDER": "docsgpt",
+            "API_KEY": None,
+            "LLM_NAME": None,
+            "OPENAI_BASE_URL": None,
+        }
+
+    def test_a_hosted_provider_needs_a_key(self):
+        with pytest.raises(ValueError, match="API key"):
+            stack.provider_settings("openai")
+
+    def test_an_openai_compatible_server_needs_a_url_and_a_model(self):
+        with pytest.raises(ValueError, match="base URL"):
+            stack.provider_settings("openai-compatible", model="llama3")
+        settings = stack.provider_settings("openai-compatible", base_url="http://host.docker.internal:11434/v1", model="llama3")
+        assert settings == {
+            "LLM_PROVIDER": "openai",
+            "API_KEY": "not-needed",
+            "LLM_NAME": "llama3",
+            "OPENAI_BASE_URL": "http://host.docker.internal:11434/v1",
+        }
+
+    def test_an_unknown_provider(self):
+        with pytest.raises(ValueError, match="unknown provider"):
+            stack.provider_settings("nope")
+
+
+class TestUrls:
+    def test_local(self):
+        assert stack.url({"DOCSGPT_PORT": "8080"}, lan_ip="10.0.0.5") == "http://localhost:8080"
+
+    def test_network_uses_the_machine_address(self):
+        assert stack.url({"DOCSGPT_BIND": "0.0.0.0"}, lan_ip="10.0.0.5") == "http://10.0.0.5:7091"
+
+    def test_domain(self):
+        env = {"COMPOSE_PROFILES": "https", "DOCSGPT_DOMAIN": "docs.example.com"}
+        assert stack.url(env, lan_ip="10.0.0.5") == "https://docs.example.com"
+
+    def test_health_is_always_checked_on_this_machine(self):
+        assert stack.health_url({"DOCSGPT_BIND": "0.0.0.0", "DOCSGPT_PORT": "9000"}) == "http://127.0.0.1:9000/api/health"
+
+
+class TestToken:
+    def test_matches_what_the_api_prints(self):
+        """docsgpt/app.py signs {"sub": "local"} with JWT_SECRET_KEY for AUTH_TYPE=simple_jwt."""
+        import jwt
+
+        token = stack.simple_jwt_token("s3cret")
+        assert token == jwt.encode({"sub": "local"}, "s3cret", algorithm="HS256")
+        assert jwt.decode(token, "s3cret", algorithms=["HS256"]) == {"sub": "local"}
+
+
+class TestLocations:
+    def test_the_stack_dir_is_never_the_checkout(self, monkeypatch, tmp_path):
+        monkeypatch.delenv(paths.HOME_ENV, raising=False)
+        monkeypatch.setattr(paths, "default_home", lambda: tmp_path / "home")
+        assert stack.stack_dir(None) == tmp_path / "home"
+
+    def test_docsgpt_home_and_then_an_explicit_dir_win(self, monkeypatch, tmp_path):
+        monkeypatch.setenv(paths.HOME_ENV, str(tmp_path / "env-home"))
+        assert stack.stack_dir(None) == (tmp_path / "env-home").resolve()
+        assert stack.stack_dir(str(tmp_path / "flag")) == (tmp_path / "flag").resolve()
+
+    def test_a_checkout_uses_the_deployment_compose_file(self):
+        assert stack.compose_source() == REPO_ROOT / "deployment" / "docker-compose-standalone.yaml"
+
+    def test_the_packaged_compose_file_wins(self, monkeypatch, tmp_path):
+        packaged = tmp_path / "docsgpt" / "deploy" / "docker-compose.yaml"
+        packaged.parent.mkdir(parents=True)
+        packaged.write_text("name: docsgpt\n")
+        monkeypatch.setattr(paths, "package_dir", lambda: tmp_path / "docsgpt")
+        assert stack.compose_source() == packaged
+
+
+def test_the_default_encryption_key_matches_the_one_credentials_fall_back_to():
+    from docsgpt.security.encryption import DEFAULT_ENCRYPTION_KEY
+
+    assert stack.DEFAULT_ENCRYPTION_KEY == DEFAULT_ENCRYPTION_KEY

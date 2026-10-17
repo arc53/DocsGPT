@@ -5,7 +5,7 @@ import {
   selectIsAdmin,
   selectRolesResolved,
 } from '../preferences/preferenceSlice';
-import Spinner from './Spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 
 /**
  * Cosmetic route guard — NOT a security boundary. The server enforces admin
@@ -22,11 +22,7 @@ export default function AdminRoute({
   const rolesResolved = useSelector(selectRolesResolved);
 
   if (!rolesResolved) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner />
-      </div>
-    );
+    return <LoadingState fill="screen" />;
   }
   if (!isAdmin) {
     return <Navigate to="/" replace />;

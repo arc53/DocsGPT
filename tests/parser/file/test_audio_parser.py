@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from docsgpt.parser.file.audio_parser import AudioParser
+from docsgpt.parser.file.base_parser import DocumentParseError
 from docsgpt.parser.file.bulk import get_default_file_extractor
 from docsgpt.stt.upload_limits import AudioFileTooLargeError
 
@@ -42,6 +45,20 @@ def test_audio_parser_transcribes_file(
         timestamps=False,
         diarize=False,
     )
+
+
+@patch("docsgpt.parser.file.audio_parser.STTCreator.create_stt")
+@patch("docsgpt.parser.file.audio_parser.settings")
+def test_audio_parser_refuses_when_speech_to_text_is_disabled(
+    mock_settings, mock_create_stt, tmp_path
+):
+    mock_settings.STT_PROVIDER = "none"
+    audio_file = tmp_path / "meeting.wav"
+    audio_file.write_bytes(b"audio-bytes")
+
+    with pytest.raises(DocumentParseError, match="STT_PROVIDER"):
+        AudioParser().parse_file(audio_file)
+    mock_create_stt.assert_not_called()
 
 
 @patch("docsgpt.stt.upload_limits.settings")

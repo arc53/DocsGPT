@@ -1,11 +1,5 @@
 export type NodeType =
-  | 'start'
-  | 'end'
-  | 'agent'
-  | 'note'
-  | 'state'
-  | 'condition'
-  | 'code';
+  'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code';
 
 export interface CodeNodeConfig {
   code: string;

@@ -67,6 +67,7 @@ describe('stream reducers feeding the answer flow', () => {
     expect(query.segments).toEqual([
       { kind: 'thought', text: 'I should search.' },
       { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', text: 'DocsGPT rocks.' },
     ]);
     expect(query.response).toBe('DocsGPT rocks.');
     expect(query.tool_calls).toHaveLength(1);
@@ -85,7 +86,7 @@ describe('stream reducers feeding the answer flow', () => {
       </I18nextProvider>,
     );
 
-    expect(html.split('fade-in-bubble').length - 1).toBe(1);
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(1);
     expect(html.indexOf('I should search.')).toBeLessThan(
       html.indexOf('Searched the web'),
     );
@@ -143,6 +144,59 @@ describe('stream reducers feeding the answer flow', () => {
     );
 
     expect(html).toContain('I should search.');
-    expect(html.split('Searched the web').length - 1).toBe(2);
+    // Rendered labels, not the ``title`` that repeats each one.
+    expect(html.split('>Searched the web').length - 1).toBe(2);
+  });
+});
+
+describe('a saved order fetched back', () => {
+  it('renders like the live stream it was recorded from', async () => {
+    const { mapServerQueryToClient } = await import('./conversationSlice');
+    const at = { index: 0, conversationId: null };
+    let state = reducer(undefined, addQuery({ prompt: 'hi' }));
+    state = reducer(state, setStatus('loading'));
+    state = reducer(
+      state,
+      updateStreamingQuery({ ...at, query: { response: 'Looking:' } }),
+    );
+    state = reducer(
+      state,
+      updateToolCall({ ...at, tool_call: searchCall('completed') }),
+    );
+    state = reducer(
+      state,
+      updateStreamingQuery({ ...at, query: { response: 'Found 😀 it.' } }),
+    );
+    const live = state.queries[0];
+
+    const fetched = mapServerQueryToClient({
+      prompt: 'hi',
+      response: 'Looking:Found 😀 it.',
+      tool_calls: [searchCall('completed')],
+      status: 'complete',
+      segments: [
+        { kind: 'text', length: 8 },
+        { kind: 'tool', call_id: 'c1' },
+        { kind: 'text', length: 12 },
+      ],
+    });
+    expect(fetched.segments).toEqual(live.segments);
+
+    const draw = (q: typeof live) =>
+      renderToStaticMarkup(
+        <I18nextProvider i18n={testI18n}>
+          <AnswerFlow
+            message={q.response}
+            toolCalls={q.tool_calls}
+            segments={q.segments}
+            renderApproval={() => null}
+            renderWikiWrite={() => null}
+          />
+        </I18nextProvider>,
+      );
+    expect(draw(fetched)).toBe(draw(live));
+    expect(draw(fetched).indexOf('Looking:')).toBeLessThan(
+      draw(fetched).indexOf('Searched the web'),
+    );
   });
 });

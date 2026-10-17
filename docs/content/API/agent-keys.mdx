@@ -1,0 +1,33 @@
+---
+title: Agent API Keys
+description: Learn how to obtain, understand, and use DocsGPT API keys to integrate DocsGPT into your external applications and widgets.
+lastUpdated: 2026-09-30
+---
+
+# Agent API Keys
+
+DocsGPT API keys are essential for developers and users who wish to integrate the  DocsGPT models into external applications, such as [our widget](/Extensions/chat-widget). This guide will walk you through the steps of obtaining an API key, starting from uploading your document to understanding the key variables associated with API keys.
+
+## Obtaining Your API Key
+
+Every **published** agent has its own API key. A draft has none until you publish it.
+
+- **In the web app:** open **Agents** in the sidebar and choose **New Agent**, or open an existing agent. Configure it and press **Publish**. Then open **More actions > Access Details** to copy the **API Key**, or **Reset key** to replace it (the old key stops working at once). The same dialog holds the agent's public link and [webhook URL](/API/webhooks).
+- **With the API:** `POST /api/create_agent` returns a `key` only when the agent is created with `"status": "published"`; updating a draft to published creates one too. A [personal access token](/API/personal-access-tokens) without the `agents:keys` scope gets the key back masked. See the [REST API reference](/API/reference#post-api-create-agent) and the [API overview](/API) for the other credentials.
+
+## Understanding Key Variables
+
+Upon creating your agent, you will encounter several key variables. Each serves a specific purpose:
+
+- **Name:** Assign a name to your agent for easy identification.
+- **Source:** Indicates the source document(s) linked to your agent, which DocsGPT will use to generate responses.
+- **ID:** A unique identifier for your agent. You can view this by making a call to `/api/get_agents`.
+- **Key:** The API key for the agent, which will be used in your application to authenticate API requests.
+
+With your API key ready, you can now integrate DocsGPT into your application, such as the DocsGPT Widget or any other software, via `/api/answer` or `/stream` endpoints. The source document is preset with the agent, so you don't need to send fields like `active_docs` during implementation.
+
+## What an API-key caller can do
+
+A key lets anyone who holds it chat with the agent and search its sources; the widget key in a web page is public. A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts or saved credentials are refused unless the owner allows them under **Access Details > Changes others can make as you**. See [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes) and [Agents used through an API key](/Sources/Connectors#agents-used-through-an-api-key).
+
+Congratulations on taking the first step towards enhancing your applications with DocsGPT!

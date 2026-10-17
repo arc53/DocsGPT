@@ -222,7 +222,8 @@ test.describe('retrying a failed resume', () => {
       await pg.query(
         `UPDATE pending_tool_state
             SET messages = jsonb_set(
-                  messages, '{1,tool_calls,0,function,name}', '"noop"'::jsonb)
+                  messages::jsonb, '{1,tool_calls,0,function,name}', '"noop"'::jsonb
+                )::json
           WHERE conversation_id = CAST($1 AS uuid)`,
         [convId],
       );

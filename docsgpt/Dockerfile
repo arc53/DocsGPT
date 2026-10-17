@@ -1,4 +1,4 @@
-# DocsGPT backend image.
+# DocsGPT image: the API, the web UI it serves, and the Celery worker.
 #
 # Build args:
 #   EXTRAS              comma-separated optional extras to bake in, matching the
@@ -14,6 +14,19 @@
 # models, their tokenizers, tiktoken's encoding and, with the docling extra,
 # docling's layout/table/OCR models. `python -m docsgpt.scripts.verify_offline`
 # under `docker run --network none` proves it.
+
+# The web UI, built by the same script the Python package build runs. The API
+# serves it from docsgpt/static (docsgpt/ui.py). The output is static files, so
+# this stage runs on the build machine's platform whatever the target is.
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS ui
+
+WORKDIR /src
+COPY frontend/package.json frontend/package-lock.json frontend/
+RUN cd frontend && npm ci --include=dev --no-audit --no-fund
+COPY frontend/ frontend/
+COPY scripts/build_frontend.sh scripts/
+RUN mkdir docsgpt && bash scripts/build_frontend.sh
+
 
 FROM ubuntu:24.04 AS builder
 
@@ -32,8 +45,10 @@ COPY docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requireme
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
+# http-ece (pulled in by pywebpush for Web Push) is pure Python and has only ever shipped
+# an sdist, so it is the one package allowed to build from source.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --only-binary=:all: -r requirements.txt
+    pip install --no-cache-dir --only-binary=:all: --no-binary=http-ece -r requirements.txt
 
 # Optional extras. Each requirements-<extra>.txt is exported from the same
 # lock as requirements.txt, so installing it on top only adds the extra's
@@ -87,7 +102,7 @@ RUN if [ "$INSTALL_TESSERACT" = "true" ]; then \
 
 LABEL org.opencontainers.image.source="https://github.com/arc53/DocsGPT" \
       org.opencontainers.image.title="DocsGPT" \
-      org.opencontainers.image.description="DocsGPT backend: API and Celery worker" \
+      org.opencontainers.image.description="DocsGPT: API, web UI and Celery worker" \
       org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
@@ -95,9 +110,10 @@ WORKDIR /app
 # The process user owns /app so the model prefetch below can run as it: an
 # unprivileged prefetch writes the model files with the right owner up front,
 # instead of a trailing chown -R that rewrites every model file into a second
-# layer.
-RUN groupadd -r appuser && \
-    useradd -r -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser && \
+# layer. The ids are fixed (999, what `-r` picked before) so a Kubernetes
+# volume can be made writable with fsGroup (the decider's model cache).
+RUN groupadd -r -g 999 appuser && \
+    useradd -r -u 999 -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser && \
     chown appuser:appuser /app && \
     install -d -o appuser -g appuser /app/models /app/docsgpt
 
@@ -108,11 +124,10 @@ COPY --from=builder /venv /venv
 #   EMBEDDINGS_CACHE_DIR / HF_HUB_CACHE  FastEmbed models and their tokenizers
 #                                        (chunking reads tokenizer.json from
 #                                        the same hub-layout snapshot)
-#   TIKTOKEN_CACHE_DIR                   cl100k_base for token accounting
 #   DOCLING_ARTIFACTS_PATH               docling's models (docling extra only)
+# tiktoken's cl100k_base encoding ships inside the package.
 ENV EMBEDDINGS_CACHE_DIR=/app/models \
     HF_HUB_CACHE=/app/models \
-    TIKTOKEN_CACHE_DIR=/app/models/tiktoken \
     DOCLING_ARTIFACTS_PATH=/app/models/docling \
     HF_HUB_DISABLE_TELEMETRY=1 \
     PATH="/venv/bin:$PATH"
@@ -137,6 +152,7 @@ RUN if python -c "import docling" 2>/dev/null; then \
     fi
 
 COPY --chown=appuser:appuser docsgpt /app/docsgpt
+COPY --from=ui --chown=appuser:appuser /src/docsgpt/static /app/docsgpt/static
 # One-release alias so `-A application.app.celery` style entry points keep working.
 COPY --chown=appuser:appuser application/__init__.py /app/application/__init__.py
 

@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import en from '../../locale/en.json';
+import ru from '../../locale/ru.json';
+import zhTW from '../../locale/zh-TW.json';
+import zh from '../../locale/zh.json';
+import i18next from 'i18next';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Schedule } from '../types/schedule';
 import {
   browserTimezone,
   buildCron,
+  describeCustomCron,
   buildRunAtUtc,
   formatCron,
   parseCron,
@@ -185,6 +191,21 @@ describe('parseCron', () => {
     });
   });
 
+  it('reads Sunday written as 7 as day 0', () => {
+    // Cron allows both; the form's days run 0-6, and buildCron clamped 7
+    // to 6, so an edit saved a Sunday schedule as Saturday.
+    const parsed = parseCron('0 9 * * 7');
+    expect(parsed).toMatchObject({ frequency: 'weekly', dow: 0 });
+    expect(
+      buildCron('weekly', {
+        time: '09:00',
+        dayOfWeek: parsed!.dow!,
+        dayOfMonth: 1,
+        month: 1,
+      }),
+    ).toBe('0 9 * * 0');
+  });
+
   it('returns null for unsupported shapes (weekday range)', () => {
     expect(parseCron('0 9 * * 1-5')).toBeNull();
   });
@@ -281,6 +302,17 @@ describe('parseScheduleToFormValues', () => {
   });
 });
 
+describe('describeCustomCron', () => {
+  it('names a pattern it knows as formatCron does', () => {
+    expect(describeCustomCron('0 9 * * 1-5')).toBe(formatCron('0 9 * * 1-5'));
+  });
+
+  it('gives any other cron as written, with no "Custom:" before it', () => {
+    // The alert already says the timing is custom.
+    expect(describeCustomCron('0 9 1,15 * *')).toBe('0 9 1,15 * *');
+  });
+});
+
 describe('formatCron', () => {
   it('renders daily 9:00 AM', () => {
     expect(formatCron('0 9 * * *')).toBe('Daily at 9:00 AM');
@@ -315,11 +347,128 @@ describe('formatCron', () => {
   });
 
   it('falls back to custom for unsupported cron', () => {
-    expect(formatCron('0 9 * * 1-5')).toBe('Custom: 0 9 * * 1-5');
+    expect(formatCron('5 4 1-7 * 2')).toBe('Custom: 5 4 1-7 * 2');
   });
 
   it('returns empty string for null/undefined', () => {
     expect(formatCron(null)).toBe('');
     expect(formatCron(undefined)).toBe('');
+  });
+});
+
+describe('formatCron with a translate function', () => {
+  // The English locale strings (agents.schedules.cron, read from en.json) must
+  // read exactly like the untranslated fallback.
+  const t = i18next.createInstance();
+  void t.init({
+    lng: 'en',
+    initAsync: false,
+    resources: {
+      en: {
+        translation: {
+          agents: { schedules: { cron: en.agents.schedules.cron } },
+        },
+      },
+    },
+  });
+
+  it.each([
+    '0 9 * * *',
+    '0 9 * * 1',
+    '15 7 * * 0',
+    '0 10 15 * *',
+    '0 8 15 3 *',
+    '0 9 * * 1-5',
+    '30 10 * * 0,6',
+    '0 9 * * 1,3,5',
+    '0 * * * *',
+    '15 * * * *',
+    '0 8-18 * * *',
+    '0 8-18 * * 1-5',
+    '*/15 * * * *',
+    '0 */6 * * *',
+    '5 4 1-7 * 2',
+  ])('matches the English fallback for %s', (cron) => {
+    expect(formatCron(cron, t.t)).toBe(formatCron(cron));
+  });
+});
+
+describe('formatCron day lists in other languages', () => {
+  // The day list is joined in the UI language (Intl.ListFormat reads the
+  // global i18next language), then dropped into the locale's template.
+  const LOCALES = { ru, zh, 'zh-TW': zhTW };
+
+  beforeAll(async () => {
+    await i18next.init({
+      lng: 'en',
+      resources: Object.fromEntries(
+        Object.entries(LOCALES).map(([lng, locale]) => [
+          lng,
+          {
+            translation: {
+              agents: { schedules: { cron: locale.agents.schedules.cron } },
+            },
+          },
+        ]),
+      ),
+    });
+  });
+  afterAll(() => i18next.changeLanguage('en'));
+
+  it.each([
+    ['ru', '0 9 * * 1,3,5', 'По понедельникам, средам и пятницам в '],
+    ['ru', '0 9 * * 1', 'По понедельникам в '],
+    ['zh', '0 9 * * 1,3,5', '每周一、三和五 '],
+    ['zh', '0 9 * * 1', '每周一 '],
+    ['zh-TW', '0 9 * * 1,3,5', '每週一、三和五 '],
+    ['zh-TW', '0 9 * * 1', '每週一 '],
+  ])('%s reads %s as "%s…"', async (lng, expression, start) => {
+    await i18next.changeLanguage(lng);
+    expect(formatCron(expression, i18next.t)).toMatch(new RegExp(`^${start}`));
+  });
+});
+
+describe('formatCron common patterns', () => {
+  it.each([
+    ['0 15 * * 1-5', 'Every weekday at 3:00 PM'],
+    ['0 7 * * MON-FRI', 'Every weekday at 7:00 AM'],
+    ['30 10 * * 0,6', 'Every weekend day at 10:30 AM'],
+    ['0 9 * * 1,3,5', 'Every Monday, Wednesday and Friday at 9:00 AM'],
+    ['0 * * * *', 'Every hour'],
+    ['15 * * * *', 'Every hour at :15'],
+    ['0 8-18 * * *', 'Every hour from 8:00 AM to 6:00 PM'],
+    ['0 8-18 * * 1-5', 'Every hour from 8:00 AM to 6:00 PM on weekdays'],
+    ['*/15 * * * *', 'Every 15 minutes'],
+    ['0 */6 * * *', 'Every 6 hours'],
+  ])('reads %s as "%s"', (expression, label) => {
+    expect(formatCron(expression)).toBe(label);
+  });
+
+  it('calls a step that does not divide the hour or day what it is', () => {
+    // */5 in the hour field fires at 0, 5, 10, 15 and 20, then 4 hours
+    // later at midnight: not every 5 hours.
+    expect(formatCron('0 */5 * * *')).toBe('Custom: 0 */5 * * *');
+    expect(formatCron('*/7 * * * *')).toBe('Custom: */7 * * * *');
+  });
+
+  it('still falls back for shapes it cannot read', () => {
+    expect(formatCron('5 4 1-7 * 2')).toBe('Custom: 5 4 1-7 * 2');
+  });
+
+  it('keeps reading the form’s own shapes as before', () => {
+    expect(formatCron('0 9 * * 1')).toBe('Weekly on Monday at 9:00 AM');
+  });
+
+  it('translates the new patterns', () => {
+    const t = ((key: string, opts?: Record<string, unknown>) =>
+      `${key}${opts ? JSON.stringify(opts) : ''}`) as never;
+    expect(formatCron('0 15 * * 1-5', t)).toContain(
+      'agents.schedules.cron.weekdays',
+    );
+    expect(formatCron('*/15 * * * *', t)).toContain(
+      'agents.schedules.cron.everyMinutes',
+    );
+    expect(formatCron('*/15 * * * *', t)).toContain('"formatted":"15"');
+    expect(formatCron('0 */6 * * *', t)).toContain('"formatted":"6"');
   });
 });

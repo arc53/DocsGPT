@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  formatRelativeTime,
+  buildWikiNavigator,
+  findWikiPage,
   provenanceKey,
   saveWikiPage,
+  wikiLinkTarget,
+  wikiPageLabel,
 } from './wikiViewerUtils';
+import { filterNavigatorLeaves } from './tree/navigatorUtils';
 
 const jsonResponse = (status: number, body: unknown): Response =>
   ({
@@ -12,26 +16,6 @@ const jsonResponse = (status: number, body: unknown): Response =>
     status,
     json: () => Promise.resolve(body),
   }) as unknown as Response;
-
-describe('formatRelativeTime', () => {
-  const now = Date.parse('2026-06-22T12:00:00Z');
-
-  it('returns null for empty or invalid values', () => {
-    expect(formatRelativeTime(null, now)).toBeNull();
-    expect(formatRelativeTime(undefined, now)).toBeNull();
-    expect(formatRelativeTime('not-a-date', now)).toBeNull();
-  });
-
-  it('formats a recent edit in minutes', () => {
-    const fiveMinAgo = new Date(now - 5 * 60000).toISOString();
-    expect(formatRelativeTime(fiveMinAgo, now)).toBe('5 minutes ago');
-  });
-
-  it('formats an older edit in days', () => {
-    const threeDaysAgo = new Date(now - 3 * 86400000).toISOString();
-    expect(formatRelativeTime(threeDaysAgo, now)).toBe('3 days ago');
-  });
-});
 
 describe('provenanceKey', () => {
   it('maps the current user to "you"', () => {
@@ -138,5 +122,115 @@ describe('saveWikiPage', () => {
     );
 
     expect(outcome).toEqual({ status: 'error' });
+  });
+});
+
+describe('wikiPageLabel', () => {
+  it('prefers the stored title', () => {
+    expect(wikiPageLabel({ path: '/a/b.md', title: 'Hello' })).toBe('Hello');
+  });
+
+  it('turns a file name into sentence case', () => {
+    expect(
+      wikiPageLabel({ path: '/company/meeting-and-decision-norms.md' }),
+    ).toBe('Meeting and decision norms');
+    expect(wikiPageLabel({ path: '/people/leave_and_hours.md' })).toBe(
+      'Leave and hours',
+    );
+  });
+
+  it('calls the root index Home', () => {
+    expect(wikiPageLabel({ path: '/index.md' })).toBe('Home');
+    expect(wikiPageLabel({ path: '/sales/index.md' })).toBe('Index');
+  });
+});
+
+describe('buildWikiNavigator', () => {
+  it('puts root pages first (Home leading), then one group per top folder', () => {
+    const nodes = buildWikiNavigator([
+      { path: '/people/onboarding.md' },
+      { path: '/company/mission.md' },
+      { path: '/arc53.md' },
+      { path: '/index.md' },
+      { path: '/company/org/model.md' },
+    ]);
+    expect(nodes.map((n) => [n.kind, n.label])).toEqual([
+      ['leaf', 'Home'],
+      ['leaf', 'Arc53'],
+      ['folder', 'company'],
+      ['folder', 'people'],
+    ]);
+    expect(nodes[2].children!.map((n) => n.id)).toEqual([
+      '/company/mission.md',
+      '/company/org/model.md',
+    ]);
+    expect(nodes[2].count).toBe(2);
+  });
+
+  // A filter match's second line is the page's own folder, not only the top
+  // folder its group is named after.
+  it('gives each filter match its full parent path', () => {
+    const nodes = buildWikiNavigator([
+      { path: '/index.md' },
+      { path: '/contracts/europe/2026/hamburg-port-dues.md' },
+      { path: '/playbooks/hamburg-strike-plan.md' },
+    ]);
+    expect(
+      filterNavigatorLeaves(nodes, 'hamburg').map((m) => m.parentPath),
+    ).toEqual(['/contracts/europe/2026', '/playbooks']);
+    expect(filterNavigatorLeaves(nodes, 'index')[0].parentPath).toBe('');
+  });
+});
+
+describe('wikiLinkTarget', () => {
+  it.each([
+    [
+      '/engineering/incident-response.md',
+      '/index.md',
+      'engineering/incident-response.md',
+    ],
+    [
+      'data-classification.md',
+      '/security/overview.md',
+      'security/data-classification.md',
+    ],
+    [
+      './data-classification.md',
+      'security/overview.md',
+      'security/data-classification.md',
+    ],
+    ['../people/leave.md', '/engineering/runbook.md', 'people/leave.md'],
+    ['/a/b.md#section', '/index.md', 'a/b.md'],
+    ['/Leave%20policy.md', '/index.md', 'Leave policy.md'],
+  ])('resolves %s from %s', (href, from, expected) => {
+    expect(wikiLinkTarget(href, from)).toBe(expected);
+  });
+
+  it.each(['https://www.arc53.com/', 'mailto:a@b.c', '#top', '//cdn.x/y', ''])(
+    'leaves %s to the browser',
+    (href) => {
+      expect(wikiLinkTarget(href, '/index.md')).toBeNull();
+    },
+  );
+});
+
+describe('findWikiPage', () => {
+  const pages = [
+    { path: '/index.md', title: null, token_count: 1 },
+    { path: '/people/leave.md', title: null, token_count: 1 },
+  ];
+
+  it('matches with or without the leading slash, and without .md', () => {
+    expect(findWikiPage(pages, 'people/leave.md')?.path).toBe(
+      '/people/leave.md',
+    );
+    expect(findWikiPage(pages, '/people/leave.md')?.path).toBe(
+      '/people/leave.md',
+    );
+    expect(findWikiPage(pages, 'people/leave')?.path).toBe('/people/leave.md');
+  });
+
+  it('finds nothing for a page that does not exist', () => {
+    expect(findWikiPage(pages, 'people/gone.md')).toBeUndefined();
   });
 });

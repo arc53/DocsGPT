@@ -1,10 +1,34 @@
+# Postgres and Redis for a backend run on the host, published on 127.0.0.1 only.
+#
+# The decider (the decision model's server) is built from this checkout only
+# with its profile, so a plain `up` builds nothing:
+#   docker compose -f deployment/docker-compose-dev.yaml --profile decider up -d
+# It needs DECISION_KEY in ../.env, which the backend on the host reads too;
+# the backend calls it once ../.env also sets DECISION_BASE_URL=http://127.0.0.1:7095,
+# and otherwise loads the model itself when a decision feature is on.
 name: docsgpt-oss
 services:
+
+  decider:
+    profiles: [decider]
+    build:
+      context: ..
+      dockerfile: docsgpt/Dockerfile
+    user: root
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - path: ../.env
+        required: false
+    ports:
+      - "127.0.0.1:7095:7095"
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
 
   redis:
     image: redis:6-alpine
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -13,7 +37,7 @@ services:
       - POSTGRES_PASSWORD=docsgpt
       - POSTGRES_DB=docsgpt
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,3 +48,4 @@ services:
 
 volumes:
   postgres_data:
+  decision_models:

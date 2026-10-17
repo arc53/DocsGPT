@@ -257,3 +257,70 @@ def test_artifact_download_served_through_full_asgi_stack():
         r = client.get("/api/artifacts/not-a-uuid/download")
     assert r.status_code == 404
     assert r.json() == {"success": False, "message": "Artifact not found"}
+
+
+_MCP_INITIALIZE = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "pytest", "version": "0"},
+    },
+}
+_MCP_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("path", ["/mcp", "/mcp/"])
+def test_mcp_initialize_answers_with_and_without_trailing_slash(path):
+    """Clients configured with ``/mcp`` must reach FastMCP directly: a redirect
+    to ``/mcp/`` would turn their POST into a GET in many HTTP clients."""
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.post(path, headers=_MCP_HEADERS, json=_MCP_INITIALIZE, follow_redirects=False)
+    assert r.status_code == 200, f"{path} -> {r.status_code}"
+    assert "mcp-session-id" in {k.lower() for k in r.headers.keys()}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_bare_mcp_path_not_shadowed_by_ui_catch_all(method):
+    """``/mcp`` must resolve to the MCP server, never the Flask/web-UI mount."""
+    from starlette.routing import Match
+
+    from docsgpt.asgi import _backend, asgi_app
+
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": "/mcp",
+        "root_path": "",
+        "headers": [],
+        "query_string": b"",
+    }
+    for route in asgi_app.routes:
+        match, _ = route.matches(scope)
+        if match is Match.FULL:
+            assert getattr(route, "app", None) is not _backend, f"{method} /mcp fell through to the UI mount"
+            return
+    pytest.fail("no route matched /mcp")
+
+
+@pytest.mark.unit
+def test_get_bare_mcp_is_not_the_web_ui():
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.get("/mcp", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert "text/html" not in r.headers.get("content-type", "")
+    assert r.status_code not in (301, 302, 307, 308)

@@ -8,11 +8,7 @@ export type User = {
 // (application/storage/db/source_config.py). All fields are optional; absent
 // keys fall back to the backend defaults documented inline.
 export type ChunkingStrategy =
-  | 'classic_chunk'
-  | 'recursive'
-  | 'markdown'
-  | 'parent_child'
-  | 'semantic';
+  'classic_chunk' | 'recursive' | 'markdown' | 'parent_child' | 'semantic';
 
 export type RetrievalExposure = 'prefetch' | 'agentic_tool';
 
@@ -32,14 +28,26 @@ export type SourcePrescreenConfig = {
   max_keep?: number; // default 8, <= candidate_k
 };
 
+// Where the graph walk starts: matching entities, or matching relationships
+// ("A streams_to B"), which can reach an entity the question never names.
+export type GraphSeedStrategy = 'entities' | 'relationships';
+
+// Query-time graph retrieval knobs (graphrag only; live, no re-ingest).
+export type SourceGraphRetrievalConfig = {
+  seed_strategy?: GraphSeedStrategy; // default 'entities'
+  passage_nodes?: boolean; // default true
+  blend_vector?: boolean; // default true
+};
+
 // Query-time retrieval knobs (live; no re-ingest needed).
 export type SourceRetrievalConfig = {
   retriever?: string; // default 'classic' (only option for now)
   exposure?: RetrievalExposure; // default 'prefetch'
-  chunks?: number; // top-k, default 2
+  chunks?: number; // top-k, default 6
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
   prescreen?: SourcePrescreenConfig | null; // null = off
+  graph?: SourceGraphRetrievalConfig; // graphrag retriever only
 };
 
 // Ingest-time GraphRAG extraction knobs (only used when kind === 'graphrag').
@@ -77,12 +85,20 @@ export type Doc = {
   // Access level when shared via a team: 'viewer' (read-only) or 'editor'
   // (full write). Null/absent for sources the caller owns.
   team_access?: 'viewer' | 'editor' | null;
+  // The connection a synced source comes from (Google Drive account, S3 keys).
+  connectionId?: string | null;
+  // The caller's role and what it allows (sources API); gate UI with
+  // `can(doc, action)` from utils/accessUtils.
+  access?: 'owner' | 'editor' | 'viewer' | null;
+  allowed_actions?: string[];
 };
 
 export type GetDocsResponse = {
   docs: Doc[];
   totalDocuments: number;
   totalPages: number;
+  /** The page served: the one asked for, clamped to the last. */
+  currentPage: number;
   nextCursor: string;
 };
 
@@ -90,10 +106,16 @@ export type Prompt = {
   name: string;
   id: string;
   type: string;
+  // The caller's role and what it allows (prompts API); gate UI with
+  // `can(prompt, action)` from utils/accessUtils. Absent on presets.
+  access?: 'owner' | 'editor' | 'viewer' | null;
+  allowed_actions?: string[];
+  team_access?: 'viewer' | 'editor' | null;
+  updated_at?: string | null;
 };
 
 export type PromptProps = {
-  prompts: { name: string; id: string; type: string }[];
+  prompts: Prompt[];
   selectedPrompt: { name: string; id: string; type: string };
   onSelectPrompt: (name: string, id: string, type: string) => void;
   setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
@@ -101,5 +123,9 @@ export type PromptProps = {
 
 export type DocumentsProps = {
   paginatedDocuments: Doc[] | null;
-  handleDeleteDocument: (index: number, document: Doc) => void;
+  /** Return the request's promise: the confirm stays pending on it. */
+  handleDeleteDocument: (
+    index: number,
+    document: Doc,
+  ) => void | Promise<unknown>;
 };

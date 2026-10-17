@@ -8,6 +8,9 @@ export type Team = {
   slug: string;
   description?: string | null;
   owner_id: string;
+  // Whether the caller owns the team (only the owner may delete it). Newer
+  // servers send it; older ones only `owner_id`, compared to the caller's sub.
+  is_owner?: boolean;
   member_role?: TeamRole;
   // Annotations from the list endpoint for the teams grid cards.
   member_count?: number;
@@ -35,7 +38,11 @@ const initialState: TeamsState = {
 export const loadTeams = createAsyncThunk<Team[], { token: string | null }>(
   'teams/load',
   async ({ token }) => {
+    // teamsService rejects on a non-2xx, so a failed load lands in .rejected.
     const r = await teamsService.list(token);
+    if (r?.success === false) {
+      throw new Error(r?.message ?? 'Failed to load teams');
+    }
     return (r?.teams as Team[]) ?? [];
   },
 );
@@ -58,7 +65,12 @@ export const deleteTeam = createAsyncThunk<
   string,
   { id: string; token: string | null }
 >('teams/delete', async ({ id, token }) => {
-  await teamsService.remove(id, token);
+  // A non-2xx (e.g. 403 for a non-owner) rejects in teamsService, so the team
+  // stays in the list; a 2xx that still says success:false rejects too.
+  const r = await teamsService.remove(id, token);
+  if (r?.success === false) {
+    throw new Error(r?.message ?? 'Failed to delete team');
+  }
   return id;
 });
 

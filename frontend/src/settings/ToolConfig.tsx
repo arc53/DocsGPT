@@ -1,16 +1,13 @@
+import { ChevronRight, CircleCheck, CircleX, Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
-import ChevronRight from '../assets/chevron-right.svg';
-import CircleCheck from '../assets/circle-check.svg';
-import CircleX from '../assets/circle-x.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import Trash from '../assets/trash.svg';
 import ConfigFields from '../components/ConfigFields';
+import ViewOnlyNotice from '../components/ViewOnlyNotice';
+import SearchInput from '../components/SearchInput';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -18,24 +15,174 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Collapsible } from '../components/ui/collapsible';
+import { EmptyState } from '../components/ui/empty-state';
+import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
-import { Switch } from '../components/ui/switch';
-import { useDarkTheme } from '../hooks';
+import { SectionHeader } from '../components/ui/section-header';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import { actionTitle } from '../connectors/i18n';
+import PermissionGroup, {
+  PermissionSelect,
+} from '../connectors/PermissionGroup';
+import type { ActionPermission } from '../connectors/types';
+import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { getMethodColorClass } from '../utils/httpMethodColors';
+import { getMethodBadgeVariant } from '../utils/httpMethodColors';
+import { can, isOwner } from '../utils/accessUtils';
+import { isSharedOAuthMcp } from '../utils/toolUtils';
 import { areObjectsEqual } from '../utils/objectUtils';
+import { cn, focusRing } from '@/lib/utils';
 import { APIActionType, APIToolType, UserToolType } from './types';
 
-// The `!` suffix is required because the surrounding `@utility table-default`
-// rules in index.css (min-w 150px, max-w 320px, p-4 / px-4 py-2) out-specify
-// plain Tailwind utility classes. Inline style={{...}} used to win on
-// specificity; the `!` keeps that behaviour without resorting to inline styles.
-const NARROW_CELL = 'w-[50px]! min-w-[50px]! max-w-[50px]! p-0!';
+const BODY_TYPE_HINT_KEYS: Record<string, string> = {
+  'application/json': 'json',
+  'application/x-www-form-urlencoded': 'formUrlencoded',
+  'multipart/form-data': 'multipart',
+  'text/plain': 'text',
+  'application/xml': 'xml',
+  'application/octet-stream': 'octetStream',
+};
+
+/**
+ * What the caller may change on the open tool (`utils/accessUtils` `can`):
+ * `canEdit` covers the name and the actions, `canEditCredentials` the
+ * secrets, URLs and header / query values, and `canFixValues` whether a
+ * parameter is filled by the AI or fixed, and its fixed value (the owner's
+ * alone: the server refuses anyone else).
+ */
+const ToolAccessContext = React.createContext({
+  canEdit: true,
+  canEditCredentials: true,
+  canFixValues: true,
+});
+
+type Access = 'read' | 'write';
+type Permissioned = { active: boolean; require_approval?: boolean };
+
+/** An action's permission from its stored flags (as the server reads them). */
+const permissionOf = (action: Permissioned): ActionPermission =>
+  action.active === false ? 'off' : action.require_approval ? 'ask' : 'always';
+
+/** The action with `permission` written onto its `active` / `require_approval`. */
+function withPermission<T extends Permissioned>(
+  action: T,
+  permission: ActionPermission,
+): T {
+  return {
+    ...action,
+    active: permission !== 'off',
+    require_approval: permission === 'ask',
+  };
+}
+
+/**
+ * Whether an API tool action reads or writes: by its HTTP method, as
+ * `connectors/permissions.py` `action_access` decides.
+ */
+const apiActionAccess = (action: APIActionType): Access =>
+  ['GET', 'HEAD', 'OPTIONS'].includes((action.method || '').toUpperCase())
+    ? 'read'
+    : 'write';
+
+/**
+ * Splits `items` into the drawer's two groups, reads then writes, dropping
+ * an empty one. An action without a declared access counts as a write, the
+ * server's own default.
+ */
+function accessGroups<T>(
+  items: T[],
+  accessOf: (item: T) => Access | undefined,
+) {
+  return (['read', 'write'] as const)
+    .map((access) => ({
+      access,
+      items: items.filter((item) => (accessOf(item) ?? 'write') === access),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+/**
+ * The ToggleGroup header of one access group on the Tools page editor,
+ * the same skeleton as the connection drawer's permissions.
+ */
+function groupProps(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  access: Access,
+  count: number,
+) {
+  const name = t(`settings.connectors.capabilityPlain.${access}`);
+  return {
+    'data-access': access,
+    title: name,
+    count,
+    groupLabel: t('settings.connectors.permission.groupLabel', { group: name }),
+  };
+}
+
+/** Maps a body content type to its hint's locale key suffix (JSON by default). */
+function bodyTypeHintKey(contentType?: string): string {
+  return BODY_TYPE_HINT_KEYS[contentType || 'application/json'] ?? 'json';
+}
+
+/**
+ * Who fills a parameter in: the AI, or a value that is always used (the
+ * drawer's words); stored as `filled_by_llm`.
+ */
+function FilledBySelect({
+  parameter,
+  filledByLlm,
+  disabled,
+  onChange,
+}: {
+  parameter: string;
+  filledByLlm: boolean;
+  disabled: boolean;
+  onChange: (filledByLlm: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Select
+      value={filledByLlm ? 'ai' : 'fixed'}
+      disabled={disabled}
+      onValueChange={(value) => onChange(value === 'ai')}
+    >
+      <SelectTrigger
+        size="sm"
+        className="w-36"
+        aria-label={t('settings.connectors.parameters.choiceLabel', {
+          parameter,
+          interpolation: { escapeValue: false },
+        })}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="ai">
+          {t('settings.connectors.parameters.ai')}
+        </SelectItem>
+        <SelectItem value="fixed">
+          {t('settings.connectors.parameters.fixed')}
+        </SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
 
 export default function ToolConfig({
   tool,
@@ -88,8 +235,25 @@ export default function ToolConfig({
     Set<number>
   >(new Set());
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
+  const canEdit = can(tool, 'edit');
+  // A shared OAuth server's connection stays with its owner (the backend
+  // refuses it), so its fields lock like credentials the caller can't change.
+  const sharedOAuth = isSharedOAuthMcp(tool);
+  // A connected tool's secret lives on the owner's connection, which the
+  // server lets only its owner change, whatever the owner's switch says.
+  const ownerOnlyConnection =
+    'connection_id' in tool && !!tool.connection_id && !isOwner(tool);
+  const canEditCredentials =
+    can(tool, 'edit_credentials') && !sharedOAuth && !ownerOnlyConnection;
+  // Neither: the tool opens as a read-only view with no Save.
+  const readOnly = !canEdit && !canEditCredentials;
+  const canFixValues = isOwner(tool);
+  const access = React.useMemo(
+    () => ({ canEdit, canEditCredentials, canFixValues }),
+    [canEdit, canEditCredentials, canFixValues],
+  );
 
+  const actionIdBase = React.useId();
   const toggleUserActionExpand = (index: number) => {
     setExpandedUserActions((prev) => {
       const newSet = new Set(prev);
@@ -141,7 +305,9 @@ export default function ToolConfig({
       if (spec.required && !configValues[key]?.toString().trim()) {
         const hasEncCreds = !!(tool as any).config?.has_encrypted_credentials;
         if (!(spec.secret && hasEncCreds)) {
-          newErrors[key] = `${spec.label || key} is required`;
+          newErrors[key] = t('settings.tools.configErrors.required', {
+            field: spec.label || key,
+          });
         }
       }
       if (
@@ -151,10 +317,10 @@ export default function ToolConfig({
       ) {
         const num = Number(configValues[key]);
         if (isNaN(num) || num < 1) {
-          newErrors[key] = 'Must be a positive number';
+          newErrors[key] = t('settings.tools.configErrors.positiveNumber');
         }
         if (key === 'timeout' && num > 300) {
-          newErrors[key] = 'Maximum timeout is 300 seconds';
+          newErrors[key] = t('settings.tools.configErrors.maxTimeout');
         }
       }
     });
@@ -194,15 +360,17 @@ export default function ToolConfig({
     setHasUnsavedChanges(!areObjectsEqual(initialState, currentState));
   }, [customName, configValues, tool]);
 
-  const handleCheckboxChange = (actionIndex: number, property: string) => {
+  const handleFilledByChange = (
+    actionIndex: number,
+    property: string,
+    newFilledByLlm: boolean,
+  ) => {
     setTool({
       ...tool,
       actions:
         'actions' in tool
           ? tool.actions.map((action, index) => {
               if (index === actionIndex) {
-                const newFilledByLlm =
-                  !action.parameters.properties[property].filled_by_llm;
                 return {
                   ...action,
                   parameters: {
@@ -224,6 +392,49 @@ export default function ToolConfig({
     });
   };
 
+  /** Sets these actions (by index) to one permission, for Save to store. */
+  const setUserPermissions = (
+    indices: number[],
+    permission: ActionPermission,
+  ) => {
+    if (!('actions' in tool)) return;
+    setTool({
+      ...tool,
+      actions: tool.actions.map((action, index) =>
+        indices.includes(index) ? withPermission(action, permission) : action,
+      ),
+    });
+  };
+
+  const userGroups = accessGroups(
+    'actions' in tool && tool.actions
+      ? tool.actions.map((action, originalIndex) => ({ action, originalIndex }))
+      : [],
+    ({ action }) => action.access,
+  );
+
+  // Saves the tool; a draft without an id (a new OpenAPI tool) is created
+  // on its first save, so leaving without saving leaves nothing behind. A
+  // non-2xx response throws so the caller shows it.
+  const persistTool = async (configToSave: Record<string, unknown>) => {
+    const payload = {
+      name: tool.name,
+      displayName: tool.displayName,
+      customName: customName,
+      description: tool.description,
+      // Locked config isn't sent, so a rename or action edit still saves.
+      ...((canEditCredentials || tool.name === 'api_tool') && {
+        config: configToSave,
+      }),
+      actions: 'actions' in tool ? tool.actions : [],
+      status: tool.status,
+    };
+    const response = tool.id
+      ? await userService.updateTool({ id: tool.id, ...payload }, token)
+      : await userService.createTool(payload, token);
+    if (!response?.ok) throw new Error('Failed to save tool');
+  };
+
   const handleSaveChanges = async () => {
     if (!validateConfig()) return;
     const configToSave = buildConfigToSave();
@@ -232,19 +443,7 @@ export default function ToolConfig({
     setSaveError('');
 
     try {
-      await userService.updateTool(
-        {
-          id: tool.id,
-          name: tool.name,
-          displayName: tool.displayName,
-          customName: customName,
-          description: tool.description,
-          config: configToSave,
-          actions: 'actions' in tool ? tool.actions : [],
-          status: tool.status,
-        },
-        token,
-      );
+      await persistTool(configToSave);
       setInitialState({
         customName,
         configValues: { ...configValues },
@@ -258,12 +457,6 @@ export default function ToolConfig({
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDelete = () => {
-    userService.deleteTool({ id: tool.id }, token).then(() => {
-      handleGoBack();
-    });
   };
 
   const handleAddNewAction = (actionName: string) => {
@@ -329,57 +522,70 @@ export default function ToolConfig({
     });
   };
   return (
-    <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
+    <div className="scrollbar-overlay flex flex-col gap-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <DetailBreadcrumb
+          parentLabel={t('settings.tools.label')}
+          currentLabel={tool.customName || tool.displayName || tool.name}
+          onParentClick={handleBackClick}
+        />
+        {!readOnly && (
           <Button
             type="button"
-            variant="outline"
-            size="icon"
-            className="text-muted-foreground rounded-full p-3"
-            onClick={handleBackClick}
+            size="sm"
+            shape="pill"
+            onClick={handleSaveChanges}
+            // A draft (no id yet) is saved to create it.
+            disabled={!hasUnsavedChanges && !!tool.id}
+            loading={saving}
           >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+            {t('settings.tools.save')}
           </Button>
-          <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
-        </div>
-        <Button
-          type="button"
-          className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
-          onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || saving}
-        >
-          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
-        </Button>
+        )}
       </div>
-      {saveError && (
-        <div className="mb-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {saveError}
-        </div>
+      {readOnly && <ViewOnlyNotice />}
+      {!readOnly && !canEditCredentials && (
+        <ViewOnlyNotice
+          message={
+            sharedOAuth
+              ? t('settings.tools.mcp.sharedOAuthOwnerOnly')
+              : t('common.credentialsLockedNotice')
+          }
+        />
       )}
-      <div className="mt-1">
-        <p className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.tools.customName')}
-        </p>
-        <div className="relative mt-4 w-full max-w-96">
-          <Input
-            type="text"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            placeholder={t('settings.tools.customNamePlaceholder')}
-            className="rounded-xl"
-          />
-        </div>
-      </div>
+      {saveError && (
+        <Alert variant="destructive" className="mb-2">
+          <AlertDescription>{saveError}</AlertDescription>
+        </Alert>
+      )}
+      <FormField
+        label={t('settings.tools.customName')}
+        labelSurface="background"
+        className="mt-4 w-full max-w-96"
+      >
+        <Input
+          type="text"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          placeholder={t('settings.tools.customNamePlaceholder')}
+          disabled={!canEdit}
+        />
+      </FormField>
       <div className="mt-1">
         {tool.name !== 'api_tool' &&
           Object.keys(configRequirements).length > 0 && (
-            <div>
-              <p className="text-foreground dark:text-foreground mb-4 text-sm font-semibold">
-                {t('settings.tools.authentication')}
-              </p>
-              <div className="max-w-96">
+            <div className="flex flex-col gap-4">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={t('settings.tools.authentication')}
+              />
+              <fieldset
+                disabled={!canEditCredentials}
+                className="max-w-96 min-w-0"
+              >
                 <ConfigFields
+                  labelSurface="background"
                   configRequirements={configRequirements}
                   values={configValues}
                   onChange={handleFieldChange}
@@ -389,325 +595,374 @@ export default function ToolConfig({
                     !!(tool as any).config?.has_encrypted_credentials
                   }
                 />
-              </div>
+              </fieldset>
             </div>
           )}
       </div>
       <div className="flex flex-col gap-4">
-        <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
-        <div className="flex w-full flex-row items-center justify-between gap-2">
-          <p className="text-foreground dark:text-foreground text-base font-semibold">
-            {t('settings.tools.actions')}
-          </p>
-          {tool.name === 'api_tool' && (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setImportModalState('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground rounded-full px-5 py-1"
-              >
-                {t('settings.tools.importSpec')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setActionModalState('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground rounded-full px-5 py-1"
-              >
-                {t('settings.tools.addAction')}
-              </Button>
-            </div>
-          )}
-        </div>
+        <div className="bg-border mx-0 my-2 h-[0.8px] w-full rounded-full"></div>
+        <SectionHeader
+          title={t('settings.tools.actions')}
+          actions={
+            tool.name === 'api_tool' && canEdit ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setImportModalState('ACTIVE')}
+                >
+                  {t('settings.tools.importSpec')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setActionModalState('ACTIVE')}
+                >
+                  {t('settings.tools.addAction')}
+                </Button>
+              </>
+            ) : null
+          }
+        />
         {tool.name === 'api_tool' ? (
           <>
             {tool.config.actions &&
             Object.keys(tool.config.actions).length > 0 ? (
-              <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+              <ToolAccessContext.Provider value={access}>
+                <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+              </ToolAccessContext.Provider>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <img
-                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                  alt="No actions found"
-                  className="mx-auto mb-4 h-24 w-24"
-                />
-                <p className="text-center text-gray-500 dark:text-gray-400">
-                  {t('settings.tools.noActionsFound')}
-                </p>
-              </div>
+              <EmptyState
+                size="sm"
+                title={t('settings.tools.noActionsFound')}
+              />
             )}
           </>
         ) : (
           <div className="flex flex-col gap-4">
             {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
               <>
-                <div className="relative">
-                  <svg
-                    className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path strokeLinecap="round" d="m21 21-4.35-4.35" />
-                  </svg>
-                  <Input
-                    type="text"
-                    value={userActionsSearch}
-                    onChange={(e) => setUserActionsSearch(e.target.value)}
-                    placeholder={t('settings.tools.searchActions')}
-                    className="h-10 rounded-full pr-4 pl-10 text-sm md:text-sm"
-                  />
-                </div>
+                <SearchInput
+                  value={userActionsSearch}
+                  onChange={(e) => setUserActionsSearch(e.target.value)}
+                  label={t('settings.tools.searchActions')}
+                />
 
                 {filteredUserActions.length === 0 && userActionsSearch && (
-                  <p className="py-4 text-center text-gray-500 dark:text-gray-400">
-                    {t('settings.tools.noActionsMatch')}
-                  </p>
+                  <EmptyState
+                    size="xs"
+                    illustration="none"
+                    title={t('settings.tools.noActionsMatch')}
+                  />
                 )}
 
-                {filteredUserActions.map(({ action, originalIndex }) => {
-                  const isExpanded = expandedUserActions.has(originalIndex);
+                {userGroups.map((group) => {
+                  const inGroup = new Set(
+                    group.items.map((item) => item.originalIndex),
+                  );
+                  const shown = filteredUserActions.filter((item) =>
+                    inGroup.has(item.originalIndex),
+                  );
+                  if (shown.length === 0) return null;
                   return (
-                    <div
-                      key={originalIndex}
-                      className="border-border dark:border-border w-full rounded-xl border"
-                    >
-                      <div
-                        className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
-                        onClick={() => toggleUserActionExpand(originalIndex)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={ChevronRight}
-                            alt="expand"
-                            className={`h-4 w-4 opacity-60 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
-                          />
-                          <p className="text-foreground dark:text-foreground font-semibold">
-                            {action.name}
-                          </p>
-                          {action.description && (
-                            <p className="hidden truncate text-sm text-gray-500 md:block md:max-w-xs lg:max-w-md dark:text-gray-400">
-                              {action.description}
-                            </p>
-                          )}
-                        </div>
-                        <div
-                          className="flex items-center gap-3"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {t('settings.tools.requireApproval', 'Approval')}
-                            </span>
-                            <Switch
-                              checked={action.require_approval ?? false}
-                              onCheckedChange={(checked) => {
-                                setTool({
-                                  ...tool,
-                                  actions: tool.actions.map((act, index) => {
-                                    if (index === originalIndex) {
-                                      return {
-                                        ...act,
-                                        require_approval: checked,
-                                      };
-                                    }
-                                    return act;
-                                  }),
-                                });
-                              }}
-                              id={`approvalToggle-${originalIndex}`}
-                            />
-                          </div>
-                          <Switch
-                            checked={action.active}
-                            onCheckedChange={(checked) => {
-                              setTool({
-                                ...tool,
-                                actions: tool.actions.map((act, index) => {
-                                  if (index === originalIndex) {
-                                    return { ...act, active: checked };
-                                  }
-                                  return act;
-                                }),
-                              });
-                            }}
-                            id={`actionToggle-${originalIndex}`}
-                          />
-                        </div>
-                      </div>
-                      {isExpanded && (
-                        <>
-                          <div className="relative mt-5 w-full px-5">
-                            <Input
-                              type="text"
-                              className="w-full"
-                              label={t('settings.tools.descriptionPlaceholder')}
-                              value={action.description}
-                              onChange={(e) => {
-                                setTool({
-                                  ...tool,
-                                  actions: tool.actions.map((act, index) => {
-                                    if (index === originalIndex) {
-                                      return {
-                                        ...act,
-                                        description: e.target.value,
-                                      };
-                                    }
-                                    return act;
-                                  }),
-                                });
-                              }}
-                            />
-                          </div>
-                          <div className="px-5 py-4">
-                            <table className="table-default">
-                              <thead>
-                                <tr>
-                                  <th>{t('settings.tools.fieldName')}</th>
-                                  <th>{t('settings.tools.fieldType')}</th>
-                                  <th>{t('settings.tools.filledByLLM')}</th>
-                                  <th>
-                                    {t('settings.tools.fieldDescription')}
-                                  </th>
-                                  <th>{t('settings.tools.value')}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {Object.entries(
-                                  action.parameters?.properties,
-                                ).map((param, paramIndex) => {
-                                  const uniqueKey = `${originalIndex}-${param[0]}`;
-                                  return (
-                                    <tr
-                                      key={paramIndex}
-                                      className="font-normal text-nowrap"
-                                    >
-                                      <td>{param[0]}</td>
-                                      <td>{param[1].type}</td>
-                                      <td>
-                                        <label
-                                          htmlFor={uniqueKey}
-                                          className="ml-2.5 flex cursor-pointer items-start gap-4"
-                                        >
-                                          <div className="flex items-center">
-                                            &#8203;
-                                            <input
-                                              checked={param[1].filled_by_llm}
-                                              id={uniqueKey}
-                                              type="checkbox"
-                                              className="size-4 rounded-sm border-gray-300 bg-transparent"
-                                              onChange={() =>
-                                                handleCheckboxChange(
-                                                  originalIndex,
-                                                  param[0],
-                                                )
-                                              }
-                                            />
-                                          </div>
-                                        </label>
-                                      </td>
-                                      <td className="w-10">
-                                        <Input
-                                          key={uniqueKey}
-                                          value={param[1].description}
-                                          className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
-                                          onChange={(e) => {
-                                            setTool({
-                                              ...tool,
-                                              actions: tool.actions.map(
-                                                (act, index) => {
-                                                  if (index === originalIndex) {
-                                                    return {
-                                                      ...act,
-                                                      parameters: {
-                                                        ...act.parameters,
-                                                        properties: {
-                                                          ...act.parameters
-                                                            .properties,
-                                                          [param[0]]: {
-                                                            ...act.parameters
-                                                              .properties[
-                                                              param[0]
-                                                            ],
-                                                            description:
-                                                              e.target.value,
-                                                          },
-                                                        },
-                                                      },
-                                                    };
-                                                  }
-                                                  return act;
-                                                },
-                                              ),
-                                            });
-                                          }}
-                                        />
-                                      </td>
-                                      <td>
-                                        <Input
-                                          value={param[1].value}
-                                          key={uniqueKey}
-                                          disabled={param[1].filled_by_llm}
-                                          className={`h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
-                                          onChange={(e) => {
-                                            setTool({
-                                              ...tool,
-                                              actions: tool.actions.map(
-                                                (act, index) => {
-                                                  if (index === originalIndex) {
-                                                    return {
-                                                      ...act,
-                                                      parameters: {
-                                                        ...act.parameters,
-                                                        properties: {
-                                                          ...act.parameters
-                                                            .properties,
-                                                          [param[0]]: {
-                                                            ...act.parameters
-                                                              .properties[
-                                                              param[0]
-                                                            ],
-                                                            value:
-                                                              e.target.value,
-                                                          },
-                                                        },
-                                                      },
-                                                    };
-                                                  }
-                                                  return act;
-                                                },
-                                              ),
-                                            });
-                                          }}
-                                        />
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
+                    <PermissionGroup
+                      key={group.access}
+                      {...groupProps(t, group.access, group.items.length)}
+                      values={group.items.map((item) =>
+                        permissionOf(item.action),
                       )}
-                    </div>
+                      disabled={!canEdit}
+                      onChoose={(permission) =>
+                        setUserPermissions([...inGroup], permission)
+                      }
+                    >
+                      {(customizing) => (
+                        <div className="flex flex-col gap-4">
+                          {shown.map(({ action, originalIndex }) => {
+                            const isExpanded =
+                              expandedUserActions.has(originalIndex);
+                            const bodyId = `${actionIdBase}-${originalIndex}`;
+                            return (
+                              <div
+                                key={originalIndex}
+                                className="border-border w-full min-w-0 rounded-xl border"
+                              >
+                                <div
+                                  className={cn(
+                                    'border-border flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors',
+                                    isExpanded
+                                      ? 'bg-secondary rounded-t-xl border-b'
+                                      : 'hover:bg-accent rounded-xl',
+                                  )}
+                                >
+                                  <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    aria-controls={bodyId}
+                                    onClick={() =>
+                                      toggleUserActionExpand(originalIndex)
+                                    }
+                                    className={cn(
+                                      'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-sm text-left outline-none',
+                                      focusRing,
+                                    )}
+                                  >
+                                    <ChevronRight
+                                      aria-hidden
+                                      className={cn(
+                                        'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
+                                        isExpanded && 'rotate-90',
+                                      )}
+                                    />
+                                    <span
+                                      className="text-foreground font-semibold"
+                                      title={action.name}
+                                    >
+                                      {actionTitle(action.name)}
+                                    </span>
+                                    {action.description && (
+                                      <span
+                                        className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md"
+                                        title={action.description}
+                                      >
+                                        {action.description}
+                                      </span>
+                                    )}
+                                  </button>
+                                  <div className="flex items-center gap-3">
+                                    {customizing && (
+                                      <PermissionSelect
+                                        value={permissionOf(action)}
+                                        disabled={!canEdit}
+                                        label={t(
+                                          'settings.connectors.permission.label',
+                                          {
+                                            action: actionTitle(action.name),
+                                          },
+                                        )}
+                                        onChange={(permission) =>
+                                          setUserPermissions(
+                                            [originalIndex],
+                                            permission,
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                                <Collapsible open={isExpanded} id={bodyId}>
+                                  <fieldset
+                                    disabled={!canEdit}
+                                    className="min-w-0"
+                                  >
+                                    <div className="relative mt-5 w-full px-5">
+                                      <Input
+                                        type="text"
+                                        className="w-full"
+                                        label={t(
+                                          'settings.tools.descriptionPlaceholder',
+                                        )}
+                                        labelSurface="background"
+                                        value={action.description}
+                                        onChange={(e) => {
+                                          setTool({
+                                            ...tool,
+                                            actions: tool.actions.map(
+                                              (act, index) => {
+                                                if (index === originalIndex) {
+                                                  return {
+                                                    ...act,
+                                                    description: e.target.value,
+                                                  };
+                                                }
+                                                return act;
+                                              },
+                                            ),
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="px-5 py-4">
+                                      <TableContainer>
+                                        <Table>
+                                          <TableHead>
+                                            <TableRow>
+                                              <TableHeader>
+                                                {t('settings.tools.fieldName')}
+                                              </TableHeader>
+                                              <TableHeader>
+                                                {t('settings.tools.fieldType')}
+                                              </TableHeader>
+                                              <TableHeader>
+                                                {t('settings.tools.filledBy')}
+                                              </TableHeader>
+                                              <TableHeader>
+                                                {t(
+                                                  'settings.tools.fieldDescription',
+                                                )}
+                                              </TableHeader>
+                                              <TableHeader>
+                                                {t('settings.tools.value')}
+                                              </TableHeader>
+                                            </TableRow>
+                                          </TableHead>
+                                          <TableBody>
+                                            {Object.entries(
+                                              action.parameters?.properties,
+                                            ).map((param, paramIndex) => {
+                                              const uniqueKey = `${originalIndex}-${param[0]}`;
+                                              return (
+                                                <TableRow key={paramIndex}>
+                                                  <TableCell className="text-nowrap">
+                                                    {param[0]}
+                                                  </TableCell>
+                                                  <TableCell className="text-nowrap">
+                                                    {param[1].type}
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <FilledBySelect
+                                                      parameter={param[0]}
+                                                      filledByLlm={
+                                                        param[1].filled_by_llm
+                                                      }
+                                                      disabled={!canFixValues}
+                                                      onChange={(filled) =>
+                                                        handleFilledByChange(
+                                                          originalIndex,
+                                                          param[0],
+                                                          filled,
+                                                        )
+                                                      }
+                                                    />
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <Input
+                                                      key={uniqueKey}
+                                                      value={
+                                                        param[1].description
+                                                      }
+                                                      size="sm"
+                                                      onChange={(e) => {
+                                                        setTool({
+                                                          ...tool,
+                                                          actions:
+                                                            tool.actions.map(
+                                                              (act, index) => {
+                                                                if (
+                                                                  index ===
+                                                                  originalIndex
+                                                                ) {
+                                                                  return {
+                                                                    ...act,
+                                                                    parameters:
+                                                                      {
+                                                                        ...act.parameters,
+                                                                        properties:
+                                                                          {
+                                                                            ...act
+                                                                              .parameters
+                                                                              .properties,
+                                                                            [param[0]]:
+                                                                              {
+                                                                                ...act
+                                                                                  .parameters
+                                                                                  .properties[
+                                                                                  param[0]
+                                                                                ],
+                                                                                description:
+                                                                                  e
+                                                                                    .target
+                                                                                    .value,
+                                                                              },
+                                                                          },
+                                                                      },
+                                                                  };
+                                                                }
+                                                                return act;
+                                                              },
+                                                            ),
+                                                        });
+                                                      }}
+                                                    />
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <Input
+                                                      value={param[1].value}
+                                                      key={uniqueKey}
+                                                      disabled={
+                                                        param[1]
+                                                          .filled_by_llm ||
+                                                        !canFixValues
+                                                      }
+                                                      size="sm"
+                                                      onChange={(e) => {
+                                                        setTool({
+                                                          ...tool,
+                                                          actions:
+                                                            tool.actions.map(
+                                                              (act, index) => {
+                                                                if (
+                                                                  index ===
+                                                                  originalIndex
+                                                                ) {
+                                                                  return {
+                                                                    ...act,
+                                                                    parameters:
+                                                                      {
+                                                                        ...act.parameters,
+                                                                        properties:
+                                                                          {
+                                                                            ...act
+                                                                              .parameters
+                                                                              .properties,
+                                                                            [param[0]]:
+                                                                              {
+                                                                                ...act
+                                                                                  .parameters
+                                                                                  .properties[
+                                                                                  param[0]
+                                                                                ],
+                                                                                value:
+                                                                                  e
+                                                                                    .target
+                                                                                    .value,
+                                                                              },
+                                                                          },
+                                                                      },
+                                                                  };
+                                                                }
+                                                                return act;
+                                                              },
+                                                            ),
+                                                        });
+                                                      }}
+                                                    />
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })}
+                                          </TableBody>
+                                        </Table>
+                                      </TableContainer>
+                                    </div>
+                                  </fieldset>
+                                </Collapsible>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </PermissionGroup>
                   );
                 })}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <img
-                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                  alt="No actions found"
-                  className="mx-auto mb-4 h-24 w-24"
-                />
-                <p className="text-center text-gray-500 dark:text-gray-400">
-                  {t('settings.tools.noActionsFound')}
-                </p>
-              </div>
+              <EmptyState
+                size="sm"
+                title={t('settings.tools.noActionsFound')}
+              />
             )}
           </div>
         )}
@@ -727,6 +982,8 @@ export default function ToolConfig({
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
             submitLabel={t('settings.tools.saveAndLeave')}
+            // Pending while the save runs; a failed save rejects, so the
+            // error stays in this dialog and the page stays put.
             handleSubmit={async () => {
               if (!validateConfig()) {
                 setShowUnsavedModal(false);
@@ -737,28 +994,14 @@ export default function ToolConfig({
               setSaveError('');
 
               try {
-                await userService.updateTool(
-                  {
-                    id: tool.id,
-                    name: tool.name,
-                    displayName: tool.displayName,
-                    customName: customName,
-                    description: tool.description,
-                    config: configToSave,
-                    actions: 'actions' in tool ? tool.actions : [],
-                    status: tool.status,
-                  },
-                  token,
-                );
-                setShowUnsavedModal(false);
-                handleGoBack();
-              } catch {
-                setSaveError(t('settings.tools.saveFailed'));
-                setShowUnsavedModal(false);
+                await persistTool(configToSave);
               } finally {
                 setSaving(false);
               }
+              setShowUnsavedModal(false);
+              handleGoBack();
             }}
+            error={t('settings.tools.saveFailed')}
             cancelLabel={t('settings.tools.leaveWithoutSaving')}
             handleCancel={() => {
               setShowUnsavedModal(false);
@@ -780,6 +1023,7 @@ function APIToolConfig({
 }) {
   const [apiTool, setApiTool] = React.useState<APIToolType>(tool);
   const { t } = useTranslation();
+  const { canEdit, canEditCredentials } = React.useContext(ToolAccessContext);
   const [actionToDelete, setActionToDelete] = React.useState<string | null>(
     null,
   );
@@ -790,6 +1034,7 @@ function APIToolConfig({
     new Set(),
   );
 
+  const actionIdBase = React.useId();
   const toggleActionExpand = (actionName: string) => {
     setExpandedActions((prev) => {
       const newSet = new Set(prev);
@@ -853,18 +1098,23 @@ function APIToolConfig({
     });
   };
 
-  const handleActionToggle = (actionName: string) => {
+  /** Sets these actions (by name) to one permission, for Save to store. */
+  const setPermissions = (names: string[], permission: ActionPermission) => {
     setApiTool((prevApiTool) => {
       const updatedActions = { ...prevApiTool.config.actions };
-      const updatedAction = { ...updatedActions[actionName] };
-      updatedAction.active = !updatedAction.active;
-      updatedActions[actionName] = updatedAction;
+      for (const name of names)
+        updatedActions[name] = withPermission(updatedActions[name], permission);
       return {
         ...prevApiTool,
         config: { ...prevApiTool.config, actions: updatedActions },
       };
     });
   };
+
+  const groups = accessGroups(
+    Object.entries(apiTool.config.actions ?? {}),
+    ([, action]) => apiActionAccess(action),
+  );
 
   React.useEffect(() => {
     setApiTool(tool);
@@ -876,327 +1126,320 @@ function APIToolConfig({
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
-      <div className="relative">
-        <svg
-          className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          stroke="currentColor"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path strokeLinecap="round" d="m21 21-4.35-4.35" />
-        </svg>
-        <Input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t('settings.tools.searchActions')}
-          className="h-10 rounded-full pr-4 pl-10 text-sm md:text-sm"
-        />
-      </div>
+      <SearchInput
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        label={t('settings.tools.searchActions')}
+      />
 
       {filteredActions.length === 0 && searchQuery && (
-        <p className="py-4 text-center text-gray-500 dark:text-gray-400">
-          {t('settings.tools.noActionsMatch')}
-        </p>
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('settings.tools.noActionsMatch')}
+        />
       )}
 
-      <div className="flex flex-col gap-4">
-        {filteredActions.map(([actionName, action], actionIndex) => {
-          const isExpanded = expandedActions.has(actionName);
-          return (
-            <div
-              key={actionIndex}
-              className="border-border dark:border-border w-full rounded-xl border"
-            >
-              <div
-                className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
-                onClick={() => toggleActionExpand(actionName)}
-              >
-                <div className="flex items-center gap-3">
-                  <img
-                    src={ChevronRight}
-                    alt="expand"
-                    className={`h-4 w-4 opacity-60 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
-                  />
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}
-                  >
-                    {action.method}
-                  </span>
-                  <p className="text-foreground dark:text-foreground font-semibold">
-                    {action.name}
-                  </p>
-                  {action.description && (
-                    <p className="hidden truncate text-sm text-gray-500 md:block md:max-w-xs lg:max-w-md dark:text-gray-400">
-                      {action.description}
-                    </p>
-                  )}
-                </div>
-                <div
-                  className="flex items-center gap-2"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handleDeleteActionClick(actionName)}
-                    className="mr-2 h-6 w-6 rounded-full"
-                    title={t('convTile.delete')}
-                  >
-                    <img
-                      src={Trash}
-                      alt="delete"
-                      className="h-4 w-4 opacity-40 transition-opacity hover:opacity-100"
-                    />
-                  </Button>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {t('settings.tools.requireApproval', 'Approval')}
-                    </span>
-                    <Switch
-                      checked={action.require_approval ?? false}
-                      onCheckedChange={() => {
-                        setApiTool((prevApiTool) => {
-                          const updatedActions = {
-                            ...prevApiTool.config.actions,
-                          };
-                          updatedActions[actionName] = {
-                            ...updatedActions[actionName],
-                            require_approval:
-                              !updatedActions[actionName].require_approval,
-                          };
-                          return {
-                            ...prevApiTool,
-                            config: {
-                              ...prevApiTool.config,
-                              actions: updatedActions,
-                            },
-                          };
-                        });
-                      }}
-                      id={`approvalToggle-${actionIndex}`}
-                    />
-                  </div>
-                  <Switch
-                    checked={action.active}
-                    onCheckedChange={() => handleActionToggle(actionName)}
-                    id={`actionToggle-${actionIndex}`}
-                  />
-                </div>
-              </div>
-              {isExpanded && (
-                <>
-                  <div className="mt-8 px-5">
-                    <Input
-                      type="text"
-                      value={action.url}
-                      onChange={(e) => {
-                        setApiTool((prevApiTool) => {
-                          const updatedActions = {
-                            ...prevApiTool.config.actions,
-                          };
-                          const updatedAction = {
-                            ...updatedActions[actionName],
-                          };
-                          updatedAction.url = e.target.value;
-                          updatedActions[actionName] = updatedAction;
-                          return {
-                            ...prevApiTool,
-                            config: {
-                              ...prevApiTool.config,
-                              actions: updatedActions,
-                            },
-                          };
-                        });
-                      }}
-                      label={t('settings.tools.urlPlaceholder')}
-                    />
-                  </div>
-                  <div className="mt-4 px-5 py-2">
-                    <div className="relative w-full">
-                      <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
-                        {t('settings.tools.method')}
-                      </span>
-                      <Select
-                        value={action.method}
-                        onValueChange={(value) => {
-                          setApiTool((prevApiTool) => {
-                            const updatedActions = {
-                              ...prevApiTool.config.actions,
-                            };
-                            const updatedAction = {
-                              ...updatedActions[actionName],
-                            };
-                            updatedAction.method = value as
-                              | 'GET'
-                              | 'POST'
-                              | 'PUT'
-                              | 'DELETE'
-                              | 'PATCH'
-                              | 'HEAD'
-                              | 'OPTIONS';
-                            updatedActions[actionName] = updatedAction;
-                            return {
-                              ...prevApiTool,
-                              config: {
-                                ...prevApiTool.config,
-                                actions: updatedActions,
-                              },
-                            };
-                          });
-                        }}
+      {groups.map((group) => {
+        const names = group.items.map(([name]) => name);
+        const shown = filteredActions.filter(([name]) => names.includes(name));
+        if (shown.length === 0) return null;
+        return (
+          <PermissionGroup
+            key={group.access}
+            {...groupProps(t, group.access, group.items.length)}
+            values={group.items.map(([, action]) => permissionOf(action))}
+            disabled={!canEdit}
+            onChoose={(permission) => setPermissions(names, permission)}
+          >
+            {(customizing) => (
+              <div className="flex flex-col gap-4">
+                {shown.map(([actionName, action], index) => {
+                  const isExpanded = expandedActions.has(actionName);
+                  const bodyId = `${actionIdBase}-${index}`;
+                  return (
+                    <div
+                      key={actionName}
+                      className="border-border w-full min-w-0 rounded-xl border"
+                    >
+                      <div
+                        className={cn(
+                          'border-border flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors',
+                          isExpanded
+                            ? 'bg-secondary rounded-t-xl border-b'
+                            : 'hover:bg-accent rounded-xl',
+                        )}
                       >
-                        <SelectTrigger
-                          className="w-56 rounded-3xl px-5 py-3"
-                          size="lg"
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-controls={bodyId}
+                          onClick={() => toggleActionExpand(actionName)}
+                          className={cn(
+                            'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-sm text-left outline-none',
+                            focusRing,
+                          )}
                         >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {[
-                            'GET',
-                            'POST',
-                            'PUT',
-                            'DELETE',
-                            'PATCH',
-                            'HEAD',
-                            'OPTIONS',
-                          ].map((m) => (
-                            <SelectItem key={m} value={m}>
-                              {m}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="mt-4 px-5 py-2">
-                    <Input
-                      type="text"
-                      value={action.description}
-                      onChange={(e) => {
-                        setApiTool((prevApiTool) => {
-                          const updatedActions = {
-                            ...prevApiTool.config.actions,
-                          };
-                          const updatedAction = {
-                            ...updatedActions[actionName],
-                          };
-                          updatedAction.description = e.target.value;
-                          updatedActions[actionName] = updatedAction;
-                          return {
-                            ...prevApiTool,
-                            config: {
-                              ...prevApiTool.config,
-                              actions: updatedActions,
-                            },
-                          };
-                        });
-                      }}
-                      label={t('settings.tools.descriptionPlaceholder')}
-                    />
-                  </div>
-                  {(action.method === 'POST' ||
-                    action.method === 'PUT' ||
-                    action.method === 'PATCH' ||
-                    action.method === 'HEAD' ||
-                    action.method === 'OPTIONS') && (
-                    <div className="mt-4 px-5 py-2">
-                      <div className="relative w-full">
-                        <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
-                          {t('settings.tools.bodyContentType')}
-                        </span>
-                        <Select
-                          value={action.body_content_type || 'application/json'}
-                          onValueChange={(value) => {
-                            setApiTool((prevApiTool) => {
-                              const updatedActions = {
-                                ...prevApiTool.config.actions,
-                              };
-                              const updatedAction = {
-                                ...updatedActions[actionName],
-                              };
-                              updatedAction.body_content_type = value as
-                                | 'application/json'
-                                | 'application/x-www-form-urlencoded'
-                                | 'multipart/form-data'
-                                | 'text/plain'
-                                | 'application/xml'
-                                | 'application/octet-stream';
-                              updatedActions[actionName] = updatedAction;
-                              return {
-                                ...prevApiTool,
-                                config: {
-                                  ...prevApiTool.config,
-                                  actions: updatedActions,
-                                },
-                              };
-                            });
-                          }}
-                        >
-                          <SelectTrigger
-                            className="w-56 rounded-3xl px-5 py-3"
-                            size="lg"
+                          <ChevronRight
+                            aria-hidden
+                            className={cn(
+                              'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
+                              isExpanded && 'rotate-90',
+                            )}
+                          />
+                          <Badge variant={getMethodBadgeVariant(action.method)}>
+                            {action.method}
+                          </Badge>
+                          <span
+                            className="text-foreground font-semibold"
+                            title={action.name}
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {[
-                              'application/json',
-                              'application/x-www-form-urlencoded',
-                              'multipart/form-data',
-                              'text/plain',
-                              'application/xml',
-                              'application/octet-stream',
-                            ].map((ct) => (
-                              <SelectItem key={ct} value={ct}>
-                                {ct}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            {actionTitle(action.name)}
+                          </span>
+                          {action.description && (
+                            <span
+                              className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md"
+                              title={action.description}
+                            >
+                              {action.description}
+                            </span>
+                          )}
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <IconButton
+                            label={t('settings.tools.delete')}
+                            icon={Trash2}
+                            variant="ghost-destructive-on-accent"
+                            size="icon-xs"
+                            shape="pill"
+                            disabled={!canEdit}
+                            onClick={() => handleDeleteActionClick(actionName)}
+                            className="mr-2"
+                          />
+                          {customizing && (
+                            <PermissionSelect
+                              value={permissionOf(action)}
+                              disabled={!canEdit}
+                              label={t('settings.connectors.permission.label', {
+                                action: actionTitle(actionName),
+                              })}
+                              onChange={(permission) =>
+                                setPermissions([actionName], permission)
+                              }
+                            />
+                          )}
+                        </div>
                       </div>
-                      <p className="text-foreground dark:text-foreground mt-2 text-xs opacity-60">
-                        {action.body_content_type === 'multipart/form-data' &&
-                          'For APIs requiring multipart format. File uploads not supported through LLM.'}
-                        {action.body_content_type ===
-                          'application/octet-stream' &&
-                          'Raw binary data, base64-encoded for transmission.'}
-                        {action.body_content_type ===
-                          'application/x-www-form-urlencoded' &&
-                          'Standard form submission format. Best for legacy APIs and login forms.'}
-                        {action.body_content_type === 'application/xml' &&
-                          'Structured XML format. Use for SOAP and enterprise APIs.'}
-                        {action.body_content_type === 'text/plain' &&
-                          'Raw text data. Each field on a new line.'}
-                        {(!action.body_content_type ||
-                          action.body_content_type === 'application/json') &&
-                          'Most common format. Use for modern REST APIs.'}
-                      </p>
+                      <Collapsible open={isExpanded} id={bodyId}>
+                        <fieldset disabled={!canEdit} className="min-w-0">
+                          <div className="mt-8 px-5">
+                            <Input
+                              type="text"
+                              value={action.url}
+                              disabled={!canEditCredentials}
+                              onChange={(e) => {
+                                setApiTool((prevApiTool) => {
+                                  const updatedActions = {
+                                    ...prevApiTool.config.actions,
+                                  };
+                                  const updatedAction = {
+                                    ...updatedActions[actionName],
+                                  };
+                                  updatedAction.url = e.target.value;
+                                  updatedActions[actionName] = updatedAction;
+                                  return {
+                                    ...prevApiTool,
+                                    config: {
+                                      ...prevApiTool.config,
+                                      actions: updatedActions,
+                                    },
+                                  };
+                                });
+                              }}
+                              label={t('settings.tools.urlPlaceholder')}
+                              labelSurface="background"
+                            />
+                          </div>
+                          <div className="mt-4 px-5 py-2">
+                            <FormField
+                              label={t('settings.tools.method')}
+                              labelSurface="background"
+                              className="w-full max-w-80"
+                            >
+                              <Select
+                                value={action.method}
+                                onValueChange={(value) => {
+                                  setApiTool((prevApiTool) => {
+                                    const updatedActions = {
+                                      ...prevApiTool.config.actions,
+                                    };
+                                    const updatedAction = {
+                                      ...updatedActions[actionName],
+                                    };
+                                    updatedAction.method = value as
+                                      | 'GET'
+                                      | 'POST'
+                                      | 'PUT'
+                                      | 'DELETE'
+                                      | 'PATCH'
+                                      | 'HEAD'
+                                      | 'OPTIONS';
+                                    updatedActions[actionName] = updatedAction;
+                                    return {
+                                      ...prevApiTool,
+                                      config: {
+                                        ...prevApiTool.config,
+                                        actions: updatedActions,
+                                      },
+                                    };
+                                  });
+                                }}
+                              >
+                                <SelectTrigger className="w-full" size="field">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {[
+                                    'GET',
+                                    'POST',
+                                    'PUT',
+                                    'DELETE',
+                                    'PATCH',
+                                    'HEAD',
+                                    'OPTIONS',
+                                  ].map((m) => (
+                                    <SelectItem key={m} value={m}>
+                                      {m}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </FormField>
+                          </div>
+                          <div className="mt-4 px-5 py-2">
+                            <Input
+                              type="text"
+                              value={action.description}
+                              onChange={(e) => {
+                                setApiTool((prevApiTool) => {
+                                  const updatedActions = {
+                                    ...prevApiTool.config.actions,
+                                  };
+                                  const updatedAction = {
+                                    ...updatedActions[actionName],
+                                  };
+                                  updatedAction.description = e.target.value;
+                                  updatedActions[actionName] = updatedAction;
+                                  return {
+                                    ...prevApiTool,
+                                    config: {
+                                      ...prevApiTool.config,
+                                      actions: updatedActions,
+                                    },
+                                  };
+                                });
+                              }}
+                              label={t('settings.tools.descriptionPlaceholder')}
+                              labelSurface="background"
+                            />
+                          </div>
+                          {(action.method === 'POST' ||
+                            action.method === 'PUT' ||
+                            action.method === 'PATCH' ||
+                            action.method === 'HEAD' ||
+                            action.method === 'OPTIONS') && (
+                            <div className="mt-4 px-5 py-2">
+                              <FormField
+                                label={t('settings.tools.bodyContentType')}
+                                hint={t(
+                                  `settings.tools.bodyTypeHint.${bodyTypeHintKey(
+                                    action.body_content_type,
+                                  )}`,
+                                )}
+                                labelSurface="background"
+                                className="w-full max-w-80"
+                              >
+                                <Select
+                                  value={
+                                    action.body_content_type ||
+                                    'application/json'
+                                  }
+                                  onValueChange={(value) => {
+                                    setApiTool((prevApiTool) => {
+                                      const updatedActions = {
+                                        ...prevApiTool.config.actions,
+                                      };
+                                      const updatedAction = {
+                                        ...updatedActions[actionName],
+                                      };
+                                      updatedAction.body_content_type =
+                                        value as
+                                          | 'application/json'
+                                          | 'application/x-www-form-urlencoded'
+                                          | 'multipart/form-data'
+                                          | 'text/plain'
+                                          | 'application/xml'
+                                          | 'application/octet-stream';
+                                      updatedActions[actionName] =
+                                        updatedAction;
+                                      return {
+                                        ...prevApiTool,
+                                        config: {
+                                          ...prevApiTool.config,
+                                          actions: updatedActions,
+                                        },
+                                      };
+                                    });
+                                  }}
+                                >
+                                  <SelectTrigger
+                                    className="w-full"
+                                    size="field"
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {[
+                                      'application/json',
+                                      'application/x-www-form-urlencoded',
+                                      'multipart/form-data',
+                                      'text/plain',
+                                      'application/xml',
+                                      'application/octet-stream',
+                                    ].map((ct) => (
+                                      <SelectItem key={ct} value={ct}>
+                                        {ct}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FormField>
+                            </div>
+                          )}
+                          <div className="mt-4 px-5 py-2">
+                            <APIActionTable
+                              apiAction={action}
+                              handleActionChange={handleActionChange}
+                            />
+                          </div>
+                        </fieldset>
+                      </Collapsible>
                     </div>
-                  )}
-                  <div className="mt-4 px-5 py-2">
-                    <APIActionTable
-                      apiAction={action}
-                      handleActionChange={handleActionChange}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                  );
+                })}
+              </div>
+            )}
+          </PermissionGroup>
+        );
+      })}
 
       {deleteModalState === 'ACTIVE' && actionToDelete && (
         <ConfirmationModal
           message={t('settings.tools.deleteActionWarning', {
+            interpolation: { escapeValue: false },
             name: actionToDelete,
           })}
+          description={t('settings.tools.deleteActionConsequence')}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={handleConfirmedDelete}
@@ -1204,8 +1447,8 @@ function APIToolConfig({
             setDeleteModalState('INACTIVE');
             setActionToDelete(null);
           }}
-          submitLabel={t('convTile.delete')}
-          variant="danger"
+          submitLabel={t('settings.tools.delete')}
+          variant="destructive"
         />
       )}
     </div>
@@ -1223,6 +1466,8 @@ function APIActionTable({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const { canEditCredentials, canFixValues } =
+    React.useContext(ToolAccessContext);
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
@@ -1405,14 +1650,15 @@ function APIActionTable({
       <>
         {Object.entries(action[section].properties).map(
           ([key, param], index) => (
-            <tr key={index} className="font-normal text-nowrap">
-              <td className="relative">
+            <TableRow key={index}>
+              <TableCell className="relative">
                 {editingPropertyKey.section === section &&
                 editingPropertyKey.oldKey === key ? (
-                  <div className="flex flex-row items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <Input
                       value={newPropertyKey}
-                      className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                      size="sm"
+                      className="min-w-0 flex-1"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1420,79 +1666,71 @@ function APIActionTable({
                         }
                       }}
                     />
-                    <div className="mt-1">
-                      <Button
-                        type="button"
+                    <div className="flex shrink-0 gap-1">
+                      <IconButton
+                        label={t('settings.tools.save')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenameProperty}
-                        className="mr-1 h-5 w-5"
                       >
-                        <img
-                          src={CircleCheck}
-                          alt="check"
-                          className="h-5 w-5"
-                        />
-                      </Button>
-                      <Button
-                        type="button"
+                        <CircleCheck className="text-success" aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.tools.cancel')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenamePropertyCancel}
-                        className="h-5 w-5"
                       >
-                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
-                      </Button>
+                        <CircleX className="text-destructive" aria-hidden />
+                      </IconButton>
                     </div>
                   </div>
                 ) : (
                   <Input
                     value={key}
-                    className="h-auto min-w-[175.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                    size="sm"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
                 )}
-              </td>
-              <td>
-                <select
+              </TableCell>
+              <TableCell>
+                <Select
                   value={param.type}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     handlePropertyTypeChange(
                       section,
                       key,
-                      e.target.value as 'string' | 'integer',
+                      value as 'string' | 'integer',
                     )
                   }
-                  className="border-border dark:border-border focus-visible:ring-ring/50 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden focus-visible:ring-2"
                 >
-                  <option value="string">string</option>
-                  <option value="integer">integer</option>
-                </select>
-              </td>
-              <td>
-                <label className="ml-2.5 flex cursor-pointer items-start gap-4">
-                  <div className="flex items-center">
-                    <input
-                      checked={param.filled_by_llm}
-                      type="checkbox"
-                      className="size-4 rounded-sm border-gray-300 bg-transparent"
-                      onChange={(e) =>
-                        handlePropertyChange(
-                          section,
-                          key,
-                          'filled_by_llm',
-                          e.target.checked,
-                        )
-                      }
-                    />
-                  </div>
-                </label>
-              </td>
-              <td className="w-10">
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={t('settings.tools.type')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="string">string</SelectItem>
+                    <SelectItem value="integer">integer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </TableCell>
+              <TableCell>
+                <FilledBySelect
+                  parameter={key}
+                  filledByLlm={param.filled_by_llm}
+                  disabled={!canFixValues}
+                  onChange={(filled) =>
+                    handlePropertyChange(section, key, 'filled_by_llm', filled)
+                  }
+                />
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.description}
-                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                  size="sm"
                   onChange={(e) =>
                     handlePropertyChange(
                       section,
@@ -1502,36 +1740,41 @@ function APIActionTable({
                     )
                   }
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.value}
-                  disabled={param.filled_by_llm}
+                  disabled={
+                    param.filled_by_llm ||
+                    !canFixValues ||
+                    (section === 'query_params' && !canEditCredentials)
+                  }
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
-                  className={`h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm ${param.filled_by_llm ? 'opacity-50' : ''}`}
+                  {...(section === 'query_params' &&
+                    param.has_value && {
+                      type: 'password',
+                      placeholder: t('settings.tools.savedSecretPlaceholder'),
+                    })}
+                  size="sm"
                 />
-              </td>
-              <td
-                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
+              </TableCell>
+              <TableCell width="40px" align="center">
+                <IconButton
+                  label={t('settings.tools.delete')}
+                  icon={Trash2}
+                  variant="ghost-destructive"
+                  size="icon-xs"
                   onClick={() => handlePorpertyDelete(section, key)}
-                  className="h-4 w-4 opacity-60 hover:opacity-100"
-                >
-                  <img src={Trash} alt="delete" className="h-4 w-4"></img>
-                </Button>
-              </td>
-            </tr>
+                />
+              </TableCell>
+            </TableRow>
           ),
         )}
         {addingPropertySection === section ? (
-          <tr>
-            <td>
+          <TableRow>
+            <TableCell>
               <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
@@ -1541,58 +1784,63 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                size="sm"
               />
-            </td>
-            <td>
-              <select
+            </TableCell>
+            <TableCell>
+              <Select
                 value={newPropertyType}
-                onChange={(e) =>
-                  setNewPropertyType(e.target.value as 'string' | 'integer')
+                onValueChange={(value) =>
+                  setNewPropertyType(value as 'string' | 'integer')
                 }
-                className="border-border dark:border-border focus-visible:ring-ring/50 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden focus-visible:ring-2"
               >
-                <option value="string">string</option>
-                <option value="integer">integer</option>
-              </select>
-            </td>
-            <td colSpan={3} className="text-right">
+                <SelectTrigger size="sm" aria-label={t('settings.tools.type')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="string">string</SelectItem>
+                  <SelectItem value="integer">integer</SelectItem>
+                </SelectContent>
+              </Select>
+            </TableCell>
+            <TableCell colSpan={3} className="text-right">
               <Button
                 type="button"
                 variant="default"
                 size="sm"
+                shape="pill"
                 onClick={handleAddProperty}
-                className="mr-1 rounded-full px-5 text-white"
+                className="mr-1"
               >
                 {t('settings.tools.add')}
               </Button>
               <Button
                 type="button"
-                variant="destructive-outline"
+                variant="ghost"
                 size="sm"
+                shape="pill"
                 onClick={handleAddPropertyCancel}
-                className="rounded-full px-5"
               >
                 {t('settings.tools.cancel')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="40px" align="center"></TableCell>
+          </TableRow>
         ) : (
-          <tr>
-            <td colSpan={5}>
+          <TableRow>
+            <TableCell colSpan={5}>
               <Button
                 type="button"
-                variant="outline"
+                variant="outline-primary"
                 size="sm"
+                shape="pill"
                 onClick={() => handleAddPropertyStart(section)}
-                className="border-primary text-primary hover:bg-primary/90 rounded-full px-5 text-nowrap hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="40px" align="center"></TableCell>
+          </TableRow>
         )}
       </>
     );
@@ -1603,14 +1851,15 @@ function APIActionTable({
       <>
         {Object.entries(action.headers.properties).map(
           ([key, param], index) => (
-            <tr key={index} className="font-normal text-nowrap">
-              <td className="relative">
+            <TableRow key={index}>
+              <TableCell className="relative">
                 {editingPropertyKey.section === 'headers' &&
                 editingPropertyKey.oldKey === key ? (
-                  <div className="flex flex-row items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <Input
                       value={newPropertyKey}
-                      className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                      size="sm"
+                      className="min-w-0 flex-1"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1618,41 +1867,35 @@ function APIActionTable({
                         }
                       }}
                     />
-                    <div className="mt-1">
-                      <Button
-                        type="button"
+                    <div className="flex shrink-0 gap-1">
+                      <IconButton
+                        label={t('settings.tools.save')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenameProperty}
-                        className="mr-1 h-5 w-5"
                       >
-                        <img
-                          src={CircleCheck}
-                          alt="check"
-                          className="h-5 w-5"
-                        />
-                      </Button>
-                      <Button
-                        type="button"
+                        <CircleCheck className="text-success" aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.tools.cancel')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenamePropertyCancel}
-                        className="h-5 w-5"
                       >
-                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
-                      </Button>
+                        <CircleX className="text-destructive" aria-hidden />
+                      </IconButton>
                     </div>
                   </div>
                 ) : (
                   <Input
                     value={key}
-                    className="h-auto min-w-[175.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                    size="sm"
                     onFocus={() => handleRenamePropertyStart('headers', key)}
                     readOnly
                   />
                 )}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.value}
                   onChange={(e) =>
@@ -1663,14 +1906,21 @@ function APIActionTable({
                       e.target.value,
                     )
                   }
-                  placeholder="e.g., application/json"
-                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                  // A saved value never comes back: empty keeps it.
+                  type={param.has_value ? 'password' : 'text'}
+                  placeholder={
+                    param.has_value
+                      ? t('settings.tools.savedSecretPlaceholder')
+                      : t('settings.tools.headerValuePlaceholder')
+                  }
+                  disabled={!canEditCredentials}
+                  size="sm"
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.description}
-                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                  size="sm"
                   onChange={(e) =>
                     handlePropertyChange(
                       'headers',
@@ -1680,26 +1930,22 @@ function APIActionTable({
                     )
                   }
                 />
-              </td>
-              <td
-                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
+              </TableCell>
+              <TableCell width="40px" align="center">
+                <IconButton
+                  label={t('settings.tools.delete')}
+                  icon={Trash2}
+                  variant="ghost-destructive"
+                  size="icon-xs"
                   onClick={() => handlePorpertyDelete('headers', key)}
-                  className="h-4 w-4 opacity-60 hover:opacity-100"
-                >
-                  <img src={Trash} alt="delete" className="h-4 w-4"></img>
-                </Button>
-              </td>
-            </tr>
+                />
+              </TableCell>
+            </TableRow>
           ),
         )}
         {addingPropertySection === 'headers' ? (
-          <tr>
-            <td>
+          <TableRow>
+            <TableCell>
               <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
@@ -1709,46 +1955,47 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                size="sm"
               />
-            </td>
-            <td colSpan={2} className="text-right">
+            </TableCell>
+            <TableCell colSpan={2} className="text-right">
               <Button
                 type="button"
                 variant="default"
                 size="sm"
+                shape="pill"
                 onClick={handleAddProperty}
-                className="mr-1 rounded-full px-5 text-white"
+                className="mr-1"
               >
                 {t('settings.tools.add')}
               </Button>
               <Button
                 type="button"
-                variant="destructive-outline"
+                variant="ghost"
                 size="sm"
+                shape="pill"
                 onClick={handleAddPropertyCancel}
-                className="rounded-full px-5"
               >
                 {t('settings.tools.cancel')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="40px" align="center"></TableCell>
+          </TableRow>
         ) : (
-          <tr>
-            <td colSpan={3}>
+          <TableRow>
+            <TableCell colSpan={3}>
               <Button
                 type="button"
-                variant="outline"
+                variant="outline-primary"
                 size="sm"
+                shape="pill"
                 onClick={() => handleAddPropertyStart('headers')}
-                className="border-primary text-primary hover:bg-primary/90 rounded-full px-5 text-nowrap hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="40px" align="center"></TableCell>
+          </TableRow>
         )}
       </>
     );
@@ -1756,83 +2003,67 @@ function APIActionTable({
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
-      <div>
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.headers')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderHeadersTable()}</tbody>
-        </table>
+      <div className="flex flex-col gap-1">
+        <SectionHeader as="h3" size="xs" title={t('settings.tools.headers')} />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader width="14rem">
+                  {t('settings.tools.name')}
+                </TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader width="40px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderHeadersTable()}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
-      <div>
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.queryParameters')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderPropertiesTable('query_params')}</tbody>
-        </table>
+      <div className="flex flex-col gap-1">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.tools.queryParameters')}
+        />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader width="14rem">
+                  {t('settings.tools.name')}
+                </TableHeader>
+                <TableHeader>{t('settings.tools.type')}</TableHeader>
+                <TableHeader>{t('settings.tools.filledBy')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader width="40px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderPropertiesTable('query_params')}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
-      <div className="mb-6">
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.body')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderPropertiesTable('body')}</tbody>
-        </table>
+      <div className="mb-6 flex flex-col gap-1">
+        <SectionHeader as="h3" size="xs" title={t('settings.tools.body')} />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader width="14rem">
+                  {t('settings.tools.name')}
+                </TableHeader>
+                <TableHeader>{t('settings.tools.type')}</TableHeader>
+                <TableHeader>{t('settings.tools.filledBy')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader width="40px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderPropertiesTable('body')}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
     </div>
   );

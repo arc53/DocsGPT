@@ -54,7 +54,6 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
-    s.HUGGINGFACE_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -509,16 +508,14 @@ class TestSecurityDispatchSSRFGuard:
         with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
             uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0102"
-            reg._builtin_models = {
-                uuid: AvailableModel(
-                    id=uuid,
-                    provider=ModelProvider.OPENAI_COMPATIBLE,
-                    display_name="builtin",
-                    base_url=None,
-                    upstream_model_id="gpt-4",
-                    source="builtin",
-                )
-            }
+            reg.models[uuid] = AvailableModel(
+                id=uuid,
+                provider=ModelProvider.OPENAI_COMPATIBLE,
+                display_name="builtin",
+                base_url=None,
+                upstream_model_id="gpt-4",
+                source="builtin",
+            )
 
             from docsgpt.llm.llm_creator import LLMCreator
             from docsgpt.llm.providers import PROVIDERS_BY_NAME
@@ -865,22 +862,23 @@ class TestContinuationPreservesByomScope:
         assert sp.model_user_id == "owner"
 
     def test_save_path_persists_model_user_id_in_agent_config(self):
-        """The save site (``routes/base.py:complete_stream``) must
-        include ``model_user_id`` in the ``agent_config`` dict written
-        to the continuation store."""
+        """The save site (``routes/base.py:_save_pause_state``, called by
+        ``complete_stream``) must include ``model_user_id`` in the
+        ``agent_config`` dict written to the continuation store."""
         import inspect
 
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
-        # complete_stream is the only callsite that constructs the
-        # save dict. Confirm the parameter is in scope and the key is
-        # spelled correctly so a future rename doesn't silently drop it.
+        # _save_pause_state is the only place that constructs the save
+        # dict. Confirm the parameter reaches it and the key is spelled
+        # correctly so a future rename doesn't silently drop it.
         sig = inspect.signature(BaseAnswerResource.complete_stream)
         assert "model_user_id" in sig.parameters
+        assert "model_user_id" in inspect.signature(BaseAnswerResource._save_pause_state).parameters
+        assert "model_user_id=model_user_id" in inspect.getsource(BaseAnswerResource.complete_stream)
 
-        src = inspect.getsource(BaseAnswerResource.complete_stream)
-        # Both: (a) the model_user_id parameter is in scope and (b) the
-        # save dict includes it under the same key the resume side reads.
+        src = inspect.getsource(BaseAnswerResource._save_pause_state)
+        # The save dict includes it under the same key the resume side reads.
         assert '"model_user_id": model_user_id' in src
 
 

@@ -32,3 +32,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The docs and README embed dist/legacy/browser.js from unpkg; fail if the
+      # build stops producing the bundle under that name.
+      - name: Check the documented CDN bundles exist
+        run: test -f dist/legacy/browser.js && test -f dist/modern/browser.js

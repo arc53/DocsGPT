@@ -57,6 +57,9 @@ describe('dispatchSSEEvent', () => {
     'schedule.resumed',
     'schedule.cancelled',
     'schedule.completed',
+    'job.updated',
+    'conversation.continued',
+    'notification.created',
   ])('treats %s as a known envelope (no debug noise)', (type) => {
     const dispatch = vi.fn() as unknown as AppDispatch;
     dispatchSSEEvent({ id: `e-${type}`, type }, dispatch);

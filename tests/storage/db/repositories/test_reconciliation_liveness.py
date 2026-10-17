@@ -407,3 +407,67 @@ class TestApprovalClearedStamp:
 
         assert repo.mark_message_approval_cleared(msg["id"]) is True
         assert _meta(pg_conn, msg["id"])["reconciler_cleared_approval"] is True
+
+
+def _stamp_heartbeat(conn, message_id: str, *, minutes_ago: int) -> None:
+    conn.execute(
+        text(
+            """
+            UPDATE conversation_messages
+            SET message_metadata = jsonb_set(
+                COALESCE(message_metadata, '{}'::jsonb), '{last_heartbeat_at}',
+                to_jsonb(clock_timestamp() - make_interval(mins => :ago))
+            )
+            WHERE id = CAST(:id AS uuid)
+            """
+        ),
+        {"id": message_id, "ago": minutes_ago},
+    )
+
+
+def _proposed_ids(conn) -> set:
+    rows = ReconciliationRepository(conn).find_and_lock_proposed_tool_calls()
+    return {r["call_id"] for r in rows}
+
+
+class TestLongToolCallProposedSweep:
+    """A run_code call may now run up to SANDBOX_EXEC_MAX_TIMEOUT (1000 s by default).
+
+    Its ``proposed`` row is written just before the tool starts and only
+    becomes ``executed`` when it returns, so the 5-minute ``proposed`` sweep
+    flagged every long run as failed (and raised an alert) while it was still
+    going. The stream that owns the call heartbeats its message row every 30 s
+    from an in-process thread, so a fresh heartbeat on a non-terminal message
+    means the call is still in flight.
+    """
+
+    def test_a_proposed_call_whose_stream_still_heartbeats_is_left_alone(self, pg_conn):
+        msg = _seed_message(pg_conn, status="streaming", age_minutes=12)
+        _stamp_heartbeat(pg_conn, msg["id"], minutes_ago=0)
+        _seed_tool_call_for(pg_conn, msg["id"], status="proposed", age_minutes=9, call_id="long-run")
+
+        assert "long-run" not in _proposed_ids(pg_conn)
+
+    def test_a_proposed_call_whose_stream_went_silent_is_swept(self, pg_conn):
+        msg = _seed_message(pg_conn, status="streaming", age_minutes=20)
+        _stamp_heartbeat(pg_conn, msg["id"], minutes_ago=8)
+        _seed_tool_call_for(pg_conn, msg["id"], status="proposed", age_minutes=9, call_id="abandoned")
+
+        assert "abandoned" in _proposed_ids(pg_conn)
+
+    def test_a_proposed_call_of_a_finished_message_is_swept(self, pg_conn):
+        msg = _seed_message(pg_conn, status="pending", age_minutes=12)
+        _stamp_heartbeat(pg_conn, msg["id"], minutes_ago=0)
+        pg_conn.execute(
+            text("UPDATE conversation_messages SET status = 'complete' WHERE id = CAST(:id AS uuid)"),
+            {"id": msg["id"]},
+        )
+        _seed_tool_call_for(pg_conn, msg["id"], status="proposed", age_minutes=9, call_id="orphan")
+
+        assert "orphan" in _proposed_ids(pg_conn)
+
+    def test_a_proposed_call_without_a_heartbeat_is_swept(self, pg_conn):
+        msg = _seed_message(pg_conn, status="pending", age_minutes=12)
+        _seed_tool_call_for(pg_conn, msg["id"], status="proposed", age_minutes=9, call_id="no-beat")
+
+        assert "no-beat" in _proposed_ids(pg_conn)

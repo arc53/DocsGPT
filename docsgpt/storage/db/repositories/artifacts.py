@@ -174,29 +174,92 @@ class ArtifactsRepository:
         row = result.fetchone()
         return _artifact_to_dict(row) if row is not None else None
 
+    def find_by_current_filename(
+        self,
+        filename: str,
+        *,
+        user_id: str,
+        produced_by_tool: str,
+        conversation_id: Optional[str] = None,
+        workflow_run_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Return the newest artifact in a parent whose current version is ``filename`` from ``produced_by_tool``.
+
+        Sandbox capture uses this to save a re-written file as the next version of the
+        artifact it replaces, instead of a second artifact with the same name.
+
+        Args:
+            filename: The current version's filename, matched exactly.
+            user_id: The owner the artifact must belong to.
+            produced_by_tool: The ``produced_by.tool`` the current version must carry.
+            conversation_id: Conversation parent scope.
+            workflow_run_id: Workflow-run parent scope.
+
+        Returns:
+            The artifact dict, or None when no such artifact exists.
+
+        Raises:
+            ValueError: Neither parent was given.
+        """
+        if conversation_id is None and workflow_run_id is None:
+            raise ValueError("find_by_current_filename requires conversation_id or workflow_run_id")
+        clauses, params = self._parent_clauses(conversation_id, workflow_run_id, alias="a")
+        clauses += [
+            "a.user_id = :user_id",
+            "v.filename = :filename",
+            "v.produced_by ->> 'tool' = :tool",
+        ]
+        params.update({"user_id": user_id, "filename": filename, "tool": produced_by_tool})
+        result = self._conn.execute(
+            text(
+                "SELECT a.* FROM artifacts a "
+                "JOIN artifact_versions v ON v.artifact_id = a.id AND v.version = a.current_version "
+                f"WHERE {' AND '.join(clauses)} "
+                # Rows created in one transaction share now(), so the stable per-parent
+                # ref_seq breaks created_at ties (guarded cast, as in next_ref_seq).
+                "ORDER BY a.created_at DESC, "
+                "CASE WHEN a.metadata ->> 'ref_seq' ~ '^[0-9]+$' "
+                "THEN (a.metadata ->> 'ref_seq')::int END DESC NULLS LAST, a.id DESC "
+                "LIMIT 1"
+            ),
+            params,
+        )
+        row = result.fetchone()
+        return _artifact_to_dict(row) if row is not None else None
+
     def list_artifacts(
         self,
         conversation_id: Optional[str] = None,
         workflow_run_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> list[dict]:
-        """List artifacts filtered by parent / owner (newest first); at least one filter is required."""
+        """List artifacts filtered by parent / owner (newest first); at least one filter is required.
+
+        Each row also carries its current version's ``current_filename`` and
+        ``current_mime_type``, so a list can say what kind of file each is
+        without a request per artifact.
+        """
         if conversation_id is None and workflow_run_id is None and user_id is None:
             raise ValueError("list_artifacts requires at least one of conversation_id, workflow_run_id, user_id")
         clauses: list[str] = []
         params: dict[str, Any] = {}
         if conversation_id is not None:
-            clauses.append("conversation_id = CAST(:conversation_id AS uuid)")
+            clauses.append("a.conversation_id = CAST(:conversation_id AS uuid)")
             params["conversation_id"] = conversation_id
         if workflow_run_id is not None:
-            clauses.append("workflow_run_id = CAST(:workflow_run_id AS uuid)")
+            clauses.append("a.workflow_run_id = CAST(:workflow_run_id AS uuid)")
             params["workflow_run_id"] = workflow_run_id
         if user_id is not None:
-            clauses.append("user_id = :user_id")
+            clauses.append("a.user_id = :user_id")
             params["user_id"] = user_id
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         result = self._conn.execute(
-            text(f"SELECT * FROM artifacts {where} ORDER BY created_at DESC"),
+            text(
+                "SELECT a.*, v.filename AS current_filename, v.mime_type AS current_mime_type "
+                "FROM artifacts a LEFT JOIN artifact_versions v "
+                "ON v.artifact_id = a.id AND v.version = a.current_version "
+                f"{where} ORDER BY a.created_at DESC"
+            ),
             params,
         )
         return [_artifact_to_dict(r) for r in result.fetchall()]

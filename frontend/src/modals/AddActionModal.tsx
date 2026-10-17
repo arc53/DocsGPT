@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
 type AddActionModalProps = {
@@ -51,26 +51,22 @@ export default function AddActionModal({
       }}
       title={t('modals.addAction.title')}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleCancel}
-            className="rounded-3xl px-5"
-          >
-            {t('modals.configTool.closeButton')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleAddAction}
-            className="rounded-3xl px-5"
-          >
-            {t('modals.addAction.addButton')}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('modals.configTool.closeButton')}
+          onCancel={handleCancel}
+          submitLabel={t('modals.addAction.addButton')}
+          onSubmit={handleAddAction}
+        />
       }
     >
-      <div className="relative">
+      <FormField
+        label={t('modals.addAction.actionNamePlaceholder')}
+        required
+        hint={functionNameError ? undefined : t('modals.addAction.formatHelp')}
+        error={
+          functionNameError ? t('modals.addAction.invalidFormat') : undefined
+        }
+      >
         <Input
           type="text"
           value={actionName}
@@ -79,20 +75,8 @@ export default function AddActionModal({
             setActionName(value);
             setFunctionNameError(!isValidFunctionName(value));
           }}
-          labelBgClassName="bg-card"
-          label={t('modals.addAction.actionNamePlaceholder')}
-          required={true}
         />
-        <p
-          className={`mt-2 ml-1 text-xs italic ${
-            functionNameError ? 'text-red-500' : 'text-muted-foreground'
-          }`}
-        >
-          {functionNameError
-            ? t('modals.addAction.invalidFormat')
-            : t('modals.addAction.formatHelp')}
-        </p>
-      </div>
+      </FormField>
     </Modal>
   );
 }

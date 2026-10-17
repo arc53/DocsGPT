@@ -8,6 +8,7 @@ from flask_restx import Namespace, Resource, fields
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.user.resource_access import AccessDenied, payload_for, require, settings_many
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -143,11 +144,16 @@ class AgentFolder(Resource):
                     ),
                     {"user_id": user, "fid": pg_folder_id},
                 ).fetchall()
+                switches = settings_many(
+                    conn, "agent", [str(row._mapping["id"]) for row in agents_rows]
+                )
+                # Folder contents are the caller's own agents.
                 agents_list = [
                     {
                         "id": str(row._mapping["id"]),
                         "name": row._mapping["name"],
                         "description": row._mapping.get("description", "") or "",
+                        **payload_for("agent", "owner", switches[str(row._mapping["id"])]),
                     }
                     for row in agents_rows
                 ]
@@ -298,7 +304,14 @@ class MoveAgentToFolder(Resource):
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
-                agent = agents_repo.get_any(agent_id_input, user)
+                # Folders are the owner's own organisation of their agents.
+                try:
+                    ra = require(conn, "agent", agent_id_input, user, "move_folder")
+                except AccessDenied as denied:
+                    return make_response(
+                        jsonify({"success": False, "message": denied.message}), denied.status
+                    )
+                agent = agents_repo.get_by_id(ra.resource_id)
                 if not agent:
                     return make_response(
                         jsonify({"success": False, "message": "Agent not found"}),
@@ -357,10 +370,18 @@ class BulkMoveAgents(Resource):
                             404,
                         )
                     pg_folder_id = str(folder["id"])
+                # Only the caller's own agents move (``move_folder`` is
+                # owner-only); anything else is reported back, not dropped.
+                moved, skipped = [], []
                 for agent_id_input in agent_ids:
                     agent = agents_repo.get_any(agent_id_input, user)
                     if agent is not None:
                         agents_repo.set_folder(str(agent["id"]), user, pg_folder_id)
-            return make_response(jsonify({"success": True}), 200)
+                        moved.append(str(agent_id_input))
+                    else:
+                        skipped.append(str(agent_id_input))
+            return make_response(
+                jsonify({"success": True, "moved": moved, "skipped": skipped}), 200
+            )
         except Exception as err:
             return _folder_error_response("Failed to move agents", err)

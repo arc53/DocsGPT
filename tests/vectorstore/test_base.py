@@ -6,6 +6,7 @@ from docsgpt.vectorstore.base import (
     BaseVectorStore,
     EmbeddingsSingleton,
     RemoteEmbeddings,
+    _key_fingerprint,
     get_embeddings,
 )
 
@@ -63,6 +64,51 @@ class TestRemoteEmbeddings:
         emb = RemoteEmbeddings("http://host", "m")
         result = emb._embed(["a", "b"])
         assert result == [[0.1, 0.2], [0.3, 0.4]]
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @patch("docsgpt.vectorstore.base.requests.post")
+    def test_auth_error_logs_the_key_fingerprint_not_the_key(self, mock_post, status, caplog):
+        """An auth failure is a configuration error, reported once, naming no secret."""
+        import requests
+
+        response = requests.Response()
+        response.status_code = status
+        response.url = "http://host/v1/embeddings"
+        mock_post.return_value = response
+
+        emb = RemoteEmbeddings("http://host", "m", api_key="sk-secret-value")
+        with caplog.at_level("ERROR"), pytest.raises(requests.HTTPError):
+            emb._embed("test")
+
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert len(errors) == 1
+        message = errors[0].getMessage()
+        assert str(status) in message
+        assert _key_fingerprint("sk-secret-value") in message
+        assert "sk-secret-value" not in message
+        assert errors[0].event == "embeddings_auth_failed"
+
+    @patch("docsgpt.vectorstore.base.requests.post")
+    def test_server_error_is_not_reported_as_an_auth_error(self, mock_post, caplog):
+        import requests
+
+        response = requests.Response()
+        response.status_code = 503
+        response.url = "http://host/v1/embeddings"
+        mock_post.return_value = response
+
+        emb = RemoteEmbeddings("http://host", "m", api_key="sk-key")
+        with caplog.at_level("ERROR"), pytest.raises(requests.HTTPError):
+            emb._embed("test")
+
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+    def test_key_fingerprint_is_stable_and_not_the_key(self):
+        assert _key_fingerprint(None) == "nokey"
+        assert _key_fingerprint("") == "nokey"
+        assert _key_fingerprint("abc") == _key_fingerprint("abc")
+        assert _key_fingerprint("abc") != _key_fingerprint("abd")
+        assert "abc" not in _key_fingerprint("abc")
 
     @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_raises_on_error_response(self, mock_post):
@@ -246,6 +292,20 @@ class TestEmbeddingsSingleton:
         assert result.model_name == "embeddinggemma"
         assert result.headers["Authorization"] == "Bearer sk-remote"
 
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [(("sk-explicit",), {}), ((), {"openai_api_key": "sk-explicit"})],
+    )
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_get_instance_remote_forwards_an_explicit_key(self, mock_settings, args, kwargs):
+        """A direct caller's key wins over EMBEDDINGS_KEY, as it does via ``get_embeddings``."""
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "sk-from-settings"
+
+        result = EmbeddingsSingleton.get_instance("embeddinggemma", *args, **kwargs)
+
+        assert result.headers["Authorization"] == "Bearer sk-explicit"
+
     @patch("docsgpt.vectorstore.base.settings")
     def test_get_instance_remote_falls_back_to_settings_key(self, mock_settings):
         """When no key is passed, the remote dispatch uses EMBEDDINGS_KEY."""
@@ -293,6 +353,102 @@ class TestEmbeddingsSingleton:
         EmbeddingsSingleton.get_instance(HF_MPNET, openai_api_key="sk-nope")
 
         mock_wrapper_cls.assert_called_once_with(HF_MPNET)
+
+
+@pytest.mark.unit
+class TestEmbeddingsCacheIsKeyedByApiKey:
+    """A cached client must never serve a caller that holds a different key.
+
+    The cache used to be keyed without the key, so the first caller's key won
+    for the life of the process: a store built with the legacy ``"embeddings"``
+    placeholder (a source delete) left every later retrieval sending
+    ``Bearer embeddings`` and getting 401s.
+    """
+
+    def setup_method(self):
+        EmbeddingsSingleton._instances = {}
+
+    def teardown_method(self):
+        EmbeddingsSingleton._instances = {}
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_remote_client_not_shared_across_keys(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "real"
+
+        poisoned = get_embeddings("m", "embeddings")
+        real = get_embeddings("m", "real")
+
+        assert real is not poisoned
+        assert real.headers["Authorization"] == "Bearer real"
+        assert poisoned.headers["Authorization"] == "Bearer embeddings"
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_remote_client_shared_for_same_key(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "real"
+
+        first = get_embeddings("m", "real")
+        second = get_embeddings("m", "real")
+        from_settings = get_embeddings("m")
+
+        assert first is second
+        assert from_settings is first
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_remote_cache_key_does_not_contain_the_key(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "sk-secret-value"
+
+        get_embeddings("m")
+
+        assert not any("sk-secret-value" in key for key in EmbeddingsSingleton._instances)
+
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.OpenAIEmbeddings")
+    def test_openai_client_not_shared_across_keys(self, mock_openai_cls, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.OPENAI_API_VERSION = None
+        mock_settings.AZURE_DEPLOYMENT_NAME = None
+        mock_settings.EMBEDDINGS_DELEGATE_TO_WORKER = False
+        mock_settings.EMBEDDINGS_KEY = "sk-real"
+        mock_openai_cls.side_effect = lambda **kwargs: Mock(**kwargs)
+
+        poisoned = get_embeddings("openai_text-embedding-ada-002", "embeddings")
+        real = get_embeddings("openai_text-embedding-ada-002", "sk-real")
+        again = get_embeddings("openai_text-embedding-ada-002")
+
+        assert real is not poisoned
+        assert real.openai_api_key == "sk-real"
+        assert again is real
+        assert mock_openai_cls.call_count == 2
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_delegated_client_not_shared_across_keys(self, mock_settings):
+        """The worker-local fallback of a delegated client embeds with its key."""
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_DELEGATE_TO_WORKER = True
+        mock_settings.EMBEDDINGS_KEY = "sk-real"
+
+        poisoned = get_embeddings("m", "embeddings")
+        real = get_embeddings("m", "sk-real")
+
+        assert real is not poisoned
+        assert real.embeddings_key == "sk-real"
+        assert get_embeddings("m", "sk-real") is real
+
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
+    def test_local_model_cache_key_stays_the_model_name(self, mock_get_wrapper, mock_settings):
+        """The boot hook evicts the local model by its bare name."""
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_KEY = "sk-ignored"
+        mock_get_wrapper.return_value = Mock()
+
+        get_embeddings(HF_MPNET, "sk-ignored")
+
+        assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
 
 
 # --- BaseVectorStore ---
@@ -660,3 +816,161 @@ class TestGetEmbeddingsResolver:
 
         assert result is sentinel
         mock_resolver.assert_called_once_with("a-name", "a-key")
+
+
+class _RecordingStore(ConcreteVectorStore):
+    """Store whose add/delete calls are recorded, for the update fallback."""
+
+    def __init__(self, delete_result=True, delete_error=None):
+        super().__init__()
+        self.calls = []
+        self._delete_result = delete_result
+        self._delete_error = delete_error
+
+    def add_chunk(self, text, metadata=None, *args, **kwargs):
+        self.calls.append(("add", text, metadata))
+        return "new-id"
+
+    def delete_chunk(self, chunk_id, *args, **kwargs):
+        self.calls.append(("delete", chunk_id))
+        if chunk_id != "old-id":
+            return True
+        if self._delete_error is not None:
+            raise self._delete_error
+        return self._delete_result
+
+
+@pytest.mark.unit
+class TestBaseUpdateChunkFallback:
+    def test_adds_then_deletes_and_returns_the_new_id(self):
+        store = _RecordingStore()
+
+        new_id = store.update_chunk("old-id", "new text", {"k": "v"})
+
+        assert new_id == "new-id"
+        assert store.calls == [("add", "new text", {"k": "v"}), ("delete", "old-id")]
+
+    def test_false_delete_rolls_back_the_new_chunk_and_raises(self):
+        store = _RecordingStore(delete_result=False)
+
+        with pytest.raises(RuntimeError, match="old-id"):
+            store.update_chunk("old-id", "new text", {})
+
+        assert store.calls == [
+            ("add", "new text", {}),
+            ("delete", "old-id"),
+            ("delete", "new-id"),
+        ]
+
+    def test_raising_delete_rolls_back_the_new_chunk_and_raises(self):
+        store = _RecordingStore(delete_error=ConnectionError("milvus down"))
+
+        with pytest.raises(RuntimeError, match="old-id") as excinfo:
+            store.update_chunk("old-id", "new text", {})
+
+        assert isinstance(excinfo.value.__cause__, ConnectionError)
+        assert store.calls[-1] == ("delete", "new-id")
+
+    def test_failed_rollback_still_raises_the_update_error(self, caplog):
+        store = _RecordingStore(delete_result=False)
+        real_delete = store.delete_chunk
+
+        def delete(chunk_id, *args, **kwargs):
+            if chunk_id == "new-id":
+                store.calls.append(("delete", chunk_id))
+                raise ConnectionError("rollback failed")
+            return real_delete(chunk_id)
+
+        store.delete_chunk = delete
+
+        with caplog.at_level("ERROR"), pytest.raises(RuntimeError, match="old-id"):
+            store.update_chunk("old-id", "new text", {})
+
+        assert ("delete", "new-id") in store.calls
+        assert "new-id" in caplog.text
+
+    def test_failed_add_skips_the_delete(self):
+        store = _RecordingStore()
+        store.add_chunk = Mock(side_effect=RuntimeError("embed down"))
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("old-id", "new text", {})
+
+        assert ("delete", "old-id") not in store.calls
+
+    def test_milvus_keeps_the_default(self):
+        """Milvus has no in-place update here; it re-adds under a new id."""
+        from docsgpt.vectorstore.milvus import MilvusStore
+
+        assert MilvusStore.update_chunk is BaseVectorStore.update_chunk
+
+
+class _ChunkListStore(ConcreteVectorStore):
+    def __init__(self, chunks):
+        super().__init__()
+        self._chunks = chunks
+
+    def get_chunks(self, *args, **kwargs):
+        return self._chunks
+
+
+@pytest.mark.unit
+class TestBaseGetChunkByKey:
+    """The default lookup hashes the source's chunks until one matches."""
+
+    def test_returns_the_chunk_whose_text_hashes_to_the_key(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "first", "metadata": {}},
+            {"doc_id": "2", "text": "second", "metadata": {"title": "b"}},
+        ])
+        found = store.get_chunk_by_key(chunk_key("second"))
+        assert found == {"doc_id": "2", "text": "second", "metadata": {"title": "b"}}
+
+    def test_first_copy_wins_for_duplicate_text(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "boilerplate", "metadata": {}},
+            {"doc_id": "2", "text": "boilerplate", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("boilerplate"))["doc_id"] == "1"
+
+    def test_no_match_is_none(self):
+        assert _ChunkListStore([{"doc_id": "1", "text": "x"}]).get_chunk_by_key("0" * 32) is None
+
+    def test_a_store_without_get_chunks_cannot_look_up(self):
+        # Elasticsearch has no ``get_chunks``; the base one returns None,
+        # which must not read as "the chunk is gone".
+        with pytest.raises(NotImplementedError):
+            ConcreteVectorStore().get_chunk_by_key("0" * 32)
+
+    def test_a_scan_error_propagates(self):
+        class _Down(ConcreteVectorStore):
+            def _scan_chunks(self):
+                raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError):
+            _Down().get_chunk_by_key("0" * 32)
+
+    def test_a_key_miss_falls_back_to_the_excerpt_in_the_same_scan(self):
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "Other clause", "metadata": {}},
+            {"doc_id": "2", "text": "Late Pickup fees apply after 6pm", "metadata": {}},
+        ])
+        found = store.get_chunk_by_key("0" * 32, excerpt="late pickup fees")
+        assert found["doc_id"] == "2"
+
+    def test_the_key_wins_over_an_earlier_excerpt_match(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "Late pickup, older copy", "metadata": {}},
+            {"doc_id": "2", "text": "Late pickup", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("Late pickup"), excerpt="Late pickup")["doc_id"] == "2"
+
+    def test_a_blank_excerpt_matches_nothing(self):
+        store = _ChunkListStore([{"doc_id": "1", "text": "x", "metadata": {}}])
+        assert store.get_chunk_by_key("0" * 32, excerpt="   ") is None

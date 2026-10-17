@@ -1,3 +1,7 @@
+# Cluster-internal only. For a first look, use
+#   kubectl port-forward service/docsgpt-api-service 7091:80
+# and open http://localhost:7091. To publish DocsGPT, put it behind an Ingress
+# with TLS (see ingress-example.yaml) and set AUTH_TYPE in docsgpt-secrets.
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,17 +13,4 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 7091
-  type: LoadBalancer
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: docsgpt-frontend-service
-spec:
-  selector:
-    app: docsgpt-frontend
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 5173
-  type: LoadBalancer
+  type: ClusterIP

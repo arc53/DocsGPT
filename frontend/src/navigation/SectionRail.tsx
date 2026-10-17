@@ -1,0 +1,91 @@
+import { ArrowLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+
+import { IconButton } from '@/components/ui/icon-button';
+import { Separator } from '@/components/ui/separator';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn, focusRing } from '@/lib/utils';
+
+import { getSectionItems, type Section } from './sections';
+import { useSidebarLevel } from './SidebarLevelProvider';
+
+type SectionRailProps = {
+  section: Section;
+  activeItemKey?: string;
+  isAdmin: boolean;
+  onBack: () => void;
+  backLabel: string;
+};
+
+/**
+ * Collapsed-sidebar counterpart to ``SectionNav``: the same destinations as
+ * icons, so collapsing the sidebar inside a section still leaves the section
+ * navigable instead of stranding the user on one page.
+ */
+export default function SectionRail({
+  section,
+  activeItemKey,
+  isAdmin,
+  onBack,
+  backLabel,
+}: SectionRailProps) {
+  const { t } = useTranslation();
+  const { goToLevel } = useSidebarLevel();
+  const items = getSectionItems(section, { isAdmin });
+
+  return (
+    // Keyed on the section so switching level replays the fade: the rail is
+    // too narrow to slide panels through, but it should not swap in place
+    // with no acknowledgement either.
+    <div
+      key={section.key}
+      className="animate-in fade-in flex flex-col items-center gap-2 duration-200 motion-reduce:animate-none"
+    >
+      <IconButton
+        label={backLabel}
+        side="right"
+        variant="ghost-muted"
+        size="icon"
+        onClick={onBack}
+      >
+        <ArrowLeft aria-hidden />
+      </IconButton>
+      <Separator className="my-1 w-6" />
+      {items.map((item) => {
+        const label = t(item.labelKey);
+        const isActive = item.key === activeItemKey;
+        const Icon = item.icon;
+        return (
+          // The token ring and a tooltip, like the Back IconButton above.
+          <Tooltip key={item.key}>
+            <TooltipTrigger asChild>
+              <Link
+                to={item.path}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  goToLevel(item.path);
+                }}
+                aria-label={label}
+                aria-current={isActive ? 'page' : undefined}
+                className={cn(
+                  focusRing,
+                  'hover:bg-sidebar-accent text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-full outline-none',
+                  isActive && 'bg-sidebar-accent text-foreground',
+                )}
+              >
+                <Icon className="size-5" aria-hidden />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">{label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}

@@ -1,0 +1,507 @@
+# Many-attachments scenarios (synthetic, PII-free).
+#
+# Each scenario mirrors the SHAPE of an anonymized production case (file
+# counts, types, token sizes, languages, turn structure, client behaviour,
+# model window). No content comes from production: generate.py builds every
+# file from invented templates. See README.md.
+#
+# Schema
+# ------
+# models.<name>:       window (tokens), vision, native_pdf, max_images (provider cap per request).
+# capabilities.<name>: tool_calling, sandbox. A scenario runs under each name in
+#                      `variants` and, when `vision_variants` lists both values,
+#                      with the model's vision forced on and off.
+# files:               file groups. `count` files named by `name` ({i} is 0-based,
+#                      {n} is 1-based). `tokens` is the FULL-profile target: an int,
+#                      [min, max] (seeded uniform per file) or an explicit list. Rows
+#                      (`rows`) replace tokens for spreadsheets/CSV. `kind` picks the
+#                      writer in generate.py; other keys are writer parameters.
+#                      kind=duplicate copies the bytes of `of` (exact hash match).
+# conversations[].turns[]:
+#   attach:    selectors of files attached on this turn ("group", "group[a:b]",
+#              "group[i]"). Order = upload order (the planner walks it).
+#   uploading: N placeholder ids that never finished uploading (web chat).
+#   repeat:    run this turn N times; "{i}" in selectors is the repetition index.
+#   payload:   /v1 only. "text" = the client pastes its own extraction into the
+#              user message ([Priloga ...] blocks); "file_parts" = OpenAI `file` /
+#              `image_url` parts. v1_requests.py builds both.
+# expect[]:    assertions for the NEW design, one rule per (turn, condition).
+#   conversation / turn: 0-based indices ("*" = every turn, "last").
+#   when:      subset of {tool_calling, sandbox, vision, payload}; omitted = always.
+#   files:     selector -> disposition or list of acceptable dispositions.
+#              Extra selectors: "new" (attached this turn), "earlier" (attached
+#              on an earlier turn of the conversation), "group/*" (zip members),
+#              "group/<member path>".
+#   Other keys are turn-level properties (see below).
+#
+# Dispositions
+#   inline        whole content in context this turn (text, or a native PDF part).
+#                 An expected `inline` is also satisfied by `back_filled`.
+#   back_filled   inlined whole although an earlier file in upload order was not
+#                 (decision 8); expecting it requires the back-fill.
+#   partial       head inlined up to the budget, with the
+#                 "[F5 x.pdf: showing tokens 1-N of M ...]" marker. Never for native parts.
+#   image         sent as a native image part (vision models only).
+#   tool          manifest entry only; reachable through attachments_list/read/search.
+#   sandbox       manifest entry referenced by F# for code_executor.
+#   earlier       attached on an earlier turn: manifest stub, not re-inlined, no image re-sent.
+#   not_included  no route to it this turn; named in the honest "N files not included" note.
+#   unreadable    no text layer and no vision: named as unreadable.
+#   skipped       rejected type / unsupported zip member; named with a reason.
+#   duplicate     content hash matches an existing attachment; maps to its ref.
+#
+# Turn-level properties
+#   error: null | context_length_exceeded      (v1: HTTP 400 pre-stream)
+#   max_partial: N              at most N partial files this turn (design: 1)
+#   min_back_filled: N
+#   pending_reported: N         placeholder ids named as still uploading
+#   duplicates: N               hash-dedupe hits this turn
+#   new_rows: N                 new attachment rows this turn
+#   zip_members: N              members expanded from archives this turn
+#   manifest: bool              a manifest is prepended to the user message
+#   mentions_tools: bool        manifest/prompt mentions attachments_* tools
+#   mentions_code_executor: bool
+#   note_names_not_included: bool
+#   knowledge_hint: bool        the composer should offer "Add to Knowledge"
+#   max_native_images: N        image parts in the request (current + history)
+#   inline_share_max: f         inline attachment tokens <= f * window (+5% tolerance)
+#   compression_calls_before_error: N
+#   client_messages_unchanged: bool   (v1) server never rewrites/echoes client messages
+#   server_tools_in_client_tool_calls: bool (v1) attachments_* never leak to tool_calls
+#   tools_injected: bool        (v1) server added attachments_* tools to the request
+#   normalized_extension / normalized_mime   (v1) what an upper-case ".PDF" part becomes
+#   continuation_new_rows: N    (v1) rows created while replaying parts in tool rounds
+#   error_payload_has_base64: bool   (v1) base64 never echoed into stored/returned errors
+#   fallback_keeps_documents: bool   (v1) a provider fallback inlines the text or fails openly
+#
+# A turn whose `client.stateful` is false (V1-05) is a separate conversation per
+# repetition; its dedupe expectations assume the hash lookup reuses the stored row
+# across those conversations for the same user.
+
+version: 1
+budget_share: 0.5
+token_tolerance: 0.25      # generated files land within +-25% of their token target
+
+models:
+  frontier-400k: {window: 400000, vision: true, native_pdf: true, max_images: 50}
+  open-262k: {window: 262144, vision: true, native_pdf: false, max_images: 50}
+  sol-272k: {window: 272000, vision: true, native_pdf: true, max_images: 50}
+
+capabilities:
+  tools_sandbox: {tool_calling: true, sandbox: true}
+  tools_only: {tool_calling: true, sandbox: false}
+  no_tools: {tool_calling: false, sandbox: false}
+
+scenarios:
+
+  # -------------------------------------------------------------------------
+  - id: RC-01
+    title: Invoice batch extraction, Indonesian receipts in small batches
+    surface: web
+    model: frontier-400k
+    variants: [tools_sandbox, tools_only, no_tools]
+    vision_variants: [true, false]
+    files:
+      - {group: invoices, kind: invoice_pdf, count: 56, tokens: [240, 750], lang: id, name: "faktur_{n:02d}.pdf"}
+      - {group: invoice_scans, kind: scan_pdf, count: 4, pages: 1, content: invoice, name: "scan_struk_{n}.pdf"}
+      - {group: invoice_dupes, kind: duplicate, of: ["invoices[2]", "invoices[9]", "invoices[30]"], name: same}
+    conversations:
+      - turns:
+          - {attach: ["invoices[0:1]"], prompt: "Extract number, date, store, description and total from every invoice into one table, one row per file. Add a note for unclear values."}
+          - {attach: ["invoices[1:6]"], prompt: "Same for these."}
+          - {attach: ["invoices[6:20]", "invoice_scans[0:1]"], prompt: "Same for these."}
+          - {attach: ["invoices[20:37]", "invoice_scans[1:2]"], prompt: "Same for these."}
+          - {attach: ["invoices[37:42]"], uploading: 2, prompt: "Same for these 7."}
+          - {attach: ["invoices[42:44]"], prompt: "Here are the other 2."}
+          - {attach: ["invoices[44:49]", "invoice_dupes"], prompt: "Append these to the table."}
+          - {attach: ["invoices[49:56]", "invoice_scans[2:4]"], prompt: "Append these too."}
+          - {prompt: "Append rows for every invoice so far into one table and give the grand total."}
+    expect:
+      - {turn: "*", files: {invoices: inline}, max_partial: 0, error: null}
+      - {turn: "*", when: {vision: true, tool_calling: true}, files: {invoice_scans: [image, tool]}}
+      - {turn: "*", when: {vision: true, tool_calling: false}, files: {invoice_scans: image}}
+      - {turn: "*", when: {vision: false}, files: {invoice_scans: unreadable}}
+      - {turn: 4, pending_reported: 2}
+      - {turn: 6, duplicates: 3, new_rows: 5, files: {invoice_dupes: duplicate}}
+      - {turn: 8, when: {tool_calling: true}, files: {earlier: earlier}, manifest: true, mentions_tools: true}
+      - {turn: 8, when: {tool_calling: false}, files: {earlier: not_included}, note_names_not_included: true, mentions_tools: false}
+
+  # -------------------------------------------------------------------------
+  - id: RC-02
+    title: Screenshot quote extraction, 5-10 images per turn over several days
+    surface: web
+    model: frontier-400k
+    variants: [tools_only, no_tools]
+    vision_variants: [true, false]
+    files:
+      - {group: shots, kind: screenshot_image, count: 50, formats: [jpg, png, webp], size: [1080, 2400], quotes: [1, 3], name: "screenshot_{n:02d}"}
+      - {group: bad_heic, kind: bad_file, mode: unsupported_type, count: 1, name: "screenshot_bad_{n}.heic"}
+      - {group: bad_png, kind: bad_file, mode: corrupt_image, count: 1, name: "screenshot_broken_{n}.png"}
+    conversations:
+      - turns: [{attach: ["shots[0:5]"], prompt: "get the quoted text"}, {attach: ["shots[5:10]"], prompt: "get the quoted text"}]
+      - turns: [{attach: ["shots[10:18]"], prompt: "get the quoted text"}, {attach: ["shots[18:20]"], prompt: "get the quoted text"}]
+      - turns: [{attach: ["shots[20:28]"], prompt: "get the quoted text"}, {attach: ["shots[28:30]", "bad_heic"], prompt: "get the quoted text"}]
+      - turns: [{attach: ["shots[30:35]"], prompt: "get the quoted text"}, {attach: ["shots[35:40]"], prompt: "get the quoted text"}]
+      - turns: [{attach: ["shots[40:48]"], prompt: "get the quoted text"}, {attach: ["shots[48:50]", "bad_png"], prompt: "get the quoted text"}]
+    expect:
+      - {conversation: "*", turn: "*", when: {vision: true}, files: {shots: image}, max_native_images: 10}
+      - {conversation: "*", turn: "*", when: {vision: false}, files: {shots: unreadable}}
+      - {conversation: "*", turn: 1, files: {earlier: earlier}}
+      - {conversation: 2, turn: 1, files: {bad_heic: skipped}}
+      - {conversation: 4, turn: 1, files: {bad_png: skipped}}
+
+  # -------------------------------------------------------------------------
+  - id: RC-03
+    title: Coursework datasets to resume bullets (xlsx, csv, notebook html, docx)
+    surface: web
+    model: frontier-400k
+    variants: [tools_sandbox, tools_only, no_tools]
+    files:
+      - {group: briefs, kind: docx_writeup, count: 4, tokens: [3000, 1500, 6000, 1000], name: "project_{n}_brief.docx"}
+      - {group: workbooks, kind: xlsx_workbook, count: 6, rows: [20000, 5000, 8000, 50000, 5000, 12000], sheets: 3, formulas: true, name: "project_data_{n}.xlsx"}
+      - {group: tables, kind: csv_table, count: 4, rows: [50000, 1000, 200000, 8000], name: "raw_data_{n}.csv"}
+      - {group: notebooks, kind: notebook_html, count: 4, tokens: [120000, 40000, 180000, 30000], name: "analysis_notebook_{n}.html"}
+      - {group: slides, kind: pptx_slides, count: 1, slides: 8, name: "final_presentation.pptx"}
+    conversations:
+      - turns: [{attach: ["briefs[0]", "workbooks[0:2]", "tables[0]", "notebooks[0]"], prompt: "Turn this analytics project into ATS-optimised resume bullets for a data analyst role."}]
+      - turns: [{attach: ["briefs[1]", "workbooks[2]", "tables[1]", "notebooks[1]"], prompt: "Same for this project, target role: HR analyst."}]
+      - turns: [{attach: ["briefs[2]", "workbooks[3:5]", "tables[2]", "notebooks[2]", "slides"], prompt: "Same for this project, target role: marketing analyst."}]
+      - turns: [{attach: ["briefs[3]", "workbooks[5]", "tables[3]", "notebooks[3]"], prompt: "Same for this project, target role: healthcare analyst."}]
+      - turns: [{attach: ["briefs", "workbooks", "tables", "notebooks[0:3]"], uploading: 2, prompt: "Use all four projects and write one combined resume section."}]
+    expect:
+      - {conversation: "*", turn: "*", files: {briefs: inline}, max_partial: 1, error: null, inline_share_max: 0.5}
+      - {conversation: "*", turn: "*", when: {sandbox: true}, files: {workbooks: sandbox, tables: sandbox}, mentions_code_executor: true}
+      - {conversation: "*", turn: "*", when: {tool_calling: true, sandbox: false}, files: {workbooks: tool, tables: tool}, mentions_code_executor: false, mentions_tools: true}
+      - {conversation: "*", turn: "*", when: {tool_calling: false}, files: {workbooks: [not_included, partial], tables: [not_included, partial]}, mentions_tools: false, mentions_code_executor: false, note_names_not_included: true}
+      - {conversation: 4, turn: 0, files: {"notebooks[0:2]": inline, "notebooks[2]": [partial, tool, not_included]}, pending_reported: 2, knowledge_hint: true}
+
+  # -------------------------------------------------------------------------
+  - id: RC-04
+    title: 46 exam papers and examiners' reports into an agent with a vague prompt
+    surface: agent
+    model: frontier-400k
+    variants: [tools_sandbox, tools_only, no_tools]
+    files:
+      - {group: exams, kind: exam_pdf, count: 32, tokens: [1800, 4000], pages: [2, 6], figures: half, name: "biology_paper_{n:02d}.pdf"}
+      - {group: exam_dupes, kind: duplicate, of: ["exams[4]", "exams[17]"], name: "biology_paper_copy_{n}.pdf"}
+      - {group: reports, kind: report_pdf, count: 12, tokens: [128000, 454000], name: "examiners_report_{n:02d}.pdf"}
+    conversations:
+      - turns:
+          - {prompt: "I want to revise biology from past papers."}
+          - {attach: ["exams", "exam_dupes", "reports"], prompt: "just do it"}
+    expect:
+      - {turn: 1, files: {exams: inline, exam_dupes: duplicate, "reports[0]": [partial, tool, not_included]}, duplicates: 2, new_rows: 44, max_partial: 1, error: null, inline_share_max: 0.5, knowledge_hint: true}
+      - {turn: 1, when: {tool_calling: true}, files: {"reports[1:12]": tool}, mentions_tools: true}
+      - {turn: 1, when: {tool_calling: false}, files: {"reports[1:12]": not_included}, note_names_not_included: true, mentions_tools: false}
+
+  # -------------------------------------------------------------------------
+  - id: RC-05
+    title: 29-paper literature review, follow-up turns ask for a per-paper table
+    surface: web
+    model: frontier-400k
+    variants: [tools_only, no_tools]
+    files:
+      # Explicit sizes so back-fill is deterministic: papers[0:8] = 125k, the
+      # 120-page thesis (index 8, 91k) does not fit the 200k budget, smaller
+      # papers after it are back-filled.
+      - group: papers
+        kind: paper_pdf
+        count: 29
+        tokens: [18000, 12500, 21000, 15000, 13000, 17000, 14500, 14000, 91000, 6000, 4700, 7000, 5200, 8000,
+                 9500, 10900, 12500, 16000, 11500, 9800, 14500, 10000, 13500, 7500, 20000, 10200, 9900, 11800, 12300]
+        pages: [8, 20]
+        thesis_index: 8
+        thesis_pages: 120
+        name: "paper_{n:02d}.pdf"
+    conversations:
+      - turns:
+          - {prompt: "I am writing a literature review on compact heat exchangers."}
+          - {prompt: "What structure should the review have?"}
+          - {prompt: "Which comparison criteria matter most?"}
+          - {attach: ["papers"], uploading: 6, prompt: "Here are the papers. Read them all."}
+          - {prompt: "Build a table: question, method, data, conclusion, limitations, with title and page per cell."}
+          - {prompt: "Continue the table for the remaining papers."}
+          - {prompt: "Why does the table only show one paper?"}
+          - {prompt: "List every paper you have."}
+    expect:
+      - {turn: 3, files: {"papers[0:8]": inline, "papers[8]": [partial, tool, not_included], "papers[9:12]": back_filled}, max_partial: 1, min_back_filled: 3, pending_reported: 6, error: null, inline_share_max: 0.5}
+      - {turn: 3, when: {tool_calling: true}, files: {"papers[24:29]": tool}, mentions_tools: true}
+      - {turn: 3, when: {tool_calling: false}, files: {"papers[24:29]": not_included}, note_names_not_included: true}
+      - {turn: [4, 5, 6, 7], when: {tool_calling: true}, files: {earlier: earlier}, manifest: true, mentions_tools: true}
+      - {turn: [4, 5, 6, 7], when: {tool_calling: false}, files: {earlier: not_included}, manifest: true, mentions_tools: false}
+
+  # -------------------------------------------------------------------------
+  - id: RC-06
+    title: Long Hindi/English textbooks and rulebooks rewritten as study notes
+    surface: web
+    model: frontier-400k
+    variants: [tools_only, no_tools]
+    files:
+      - {group: rulebook_a, kind: long_pdf, count: 1, tokens: 215000, chapters: 14, lang: hi-en, name: "rulebook_part_1.pdf"}
+      - {group: chapters_b, kind: long_pdf, count: 3, tokens: [12000, 44000, 73000], chapters: 4, lang: hi, name: "textbook_b_{n}.pdf"}
+      - {group: rulebook_b, kind: long_pdf, count: 1, tokens: 181000, chapters: 12, lang: hi-en, name: "rulebook_part_2.pdf"}
+      - {group: textbooks, kind: long_pdf, count: 9, tokens: [27000, 32000, 36000, 39000, 41000, 43000, 45000, 46000, 58000], chapters: 5, lang: hi, name: "textbook_c_{n}.pdf"}
+    conversations:
+      - turns: [{attach: ["rulebook_a"], prompt: "Rewrite every chapter as complete Hindi notes with definitions, keywords and MCQs. Not a summary."}]
+      - turns: [{attach: ["chapters_b", "rulebook_b"], prompt: "Same complete Hindi notes for all of these."}]
+      - turns: [{attach: ["textbooks"], prompt: "Same complete Hindi notes for all nine books, as a document."}]
+    expect:
+      - {conversation: 0, turn: 0, files: {rulebook_a: partial}, max_partial: 1, error: null}
+      - {conversation: 1, turn: 0, files: {chapters_b: inline, rulebook_b: [partial, tool, not_included]}, max_partial: 1, error: null}
+      - {conversation: 2, turn: 0, files: {"textbooks[0:4]": inline, "textbooks[5:9]": [partial, tool, not_included, back_filled]}, max_partial: 1, error: null, inline_share_max: 0.5}
+      - {conversation: "*", turn: 0, when: {tool_calling: true}, mentions_tools: true}
+      - {conversation: "*", turn: 0, when: {tool_calling: false}, mentions_tools: false}
+
+  # -------------------------------------------------------------------------
+  - id: RC-07
+    title: 36 phone photos plus a long report template
+    surface: web
+    model: open-262k
+    variants: [tools_only, no_tools]
+    vision_variants: [true, false]
+    files:
+      - {group: photos, kind: photo_image, count: 36, size: [1600, 1200], name: "IMG_{n:04d}.jpg"}
+      - {group: late_photo, kind: photo_image, count: 1, size: [1600, 1200], name: "IMG_0037.jpg"}
+    conversations:
+      - turns:
+          - {attach: ["photos"], prompt_kind: long_template, prompt_tokens: 2500}
+          - {prompt_kind: long_template, prompt_tokens: 2500}
+          - {attach: ["late_photo"], prompt: "Add this one to section 3."}
+    expect:
+      - {turn: 0, when: {vision: true}, files: {photos: image}, max_native_images: 50, error: null}
+      - {turn: "*", when: {vision: false}, files: {new: unreadable}}
+      - {turn: 1, files: {earlier: earlier}, max_native_images: 0}
+      - {turn: 2, when: {vision: true}, files: {late_photo: image, earlier: earlier}, max_native_images: 1}
+
+  # -------------------------------------------------------------------------
+  - id: RC-08
+    title: One quiz screenshot per turn for 120 turns (image history cap)
+    surface: web
+    model: frontier-400k
+    variants: [tools_only]
+    vision_variants: [true]
+    files:
+      - {group: quiz, kind: quiz_image, count: 120, size: [1280, 720], name: "quiz_{n:03d}.png"}
+    conversations:
+      - turns:
+          - {repeat: 120, attach: ["quiz[{i}]"], prompt: "answer"}
+          - {repeat: 6, prompt: "next"}
+    expect:
+      - {turn: "*", files: {new: image, earlier: earlier}, max_native_images: 1, error: null}
+      - {turn: 124, error: null, max_native_images: 0}
+
+  # -------------------------------------------------------------------------
+  - id: RC-09
+    title: 28 fund-portfolio spreadsheets, 4 still uploading
+    surface: web
+    model: open-262k
+    variants: [tools_sandbox, tools_only, no_tools]
+    files:
+      - {group: portfolios, kind: portfolio_xlsx, count: 28, rows: [30, 400], name: "portfolio_disclosure_{n:02d}.xlsx"}
+    conversations:
+      - turns:
+          - {attach: ["portfolios[0:24]"], uploading: 4, prompt: "analyse these files"}
+          - {prompt: "Which holdings overlap the most across funds?"}
+    expect:
+      - {turn: 0, pending_reported: 4, error: null, inline_share_max: 0.5}
+      - {turn: 0, when: {sandbox: true}, files: {"portfolios[0:24]": sandbox}, mentions_code_executor: true}
+      - {turn: 0, when: {tool_calling: true, sandbox: false}, files: {"portfolios[0:24]": [tool, inline]}}
+      - {turn: 0, when: {tool_calling: false}, files: {"portfolios[0:24]": [inline, partial, not_included]}, max_partial: 1}
+      - {turn: 1, when: {tool_calling: true}, files: {earlier: earlier}, mentions_tools: true}
+
+  # -------------------------------------------------------------------------
+  - id: RC-10
+    title: Club finances, mixed types across weeks, two scanned statements
+    surface: web
+    model: frontier-400k
+    variants: [tools_sandbox, tools_only, no_tools]
+    vision_variants: [true, false]
+    files:
+      - {group: statements, kind: statement_pdf, count: 4, tokens: [1900, 3100], name: "bank_statement_2026_{n:02d}.pdf"}
+      - {group: statement_scans, kind: scan_pdf, count: 2, pages: 2, content: statement, name: "bank_statement_scan_{n}.pdf"}
+      - {group: reports, kind: docx_writeup, count: 12, tokens: [100, 2400], topic: club, name: "committee_report_{n:02d}.docx"}
+      - {group: dues, kind: dues_xlsx, count: 2, rows: [60, 120], name: "member_dues_{n}.xlsx"}
+      - {group: receipt, kind: photo_image, count: 1, size: [1200, 1600], subject: receipt, name: "receipt.jpg"}
+    conversations:
+      - turns:
+          - {attach: ["reports[0:6]", "statements[0:2]"], prompt: "Draft the treasurer report for the AGM."}
+          - {attach: ["reports[6:12]", "statements[2:4]", "statement_scans", "dues[0]"], uploading: 2, prompt: "Reconcile member dues against the statements."}
+          - {attach: ["dues[1]", "receipt"], prompt: "Add the new dues list and this receipt."}
+          - {prompt: "Two weeks later: update the last report with the latest figures."}
+    expect:
+      - {turn: "*", files: {reports: inline, statements: inline}, max_partial: 0, error: null}
+      - {turn: 1, pending_reported: 2}
+      - {turn: 1, when: {vision: true, tool_calling: true}, files: {statement_scans: [image, tool]}}
+      - {turn: 1, when: {vision: false}, files: {statement_scans: unreadable}}
+      - {turn: "*", when: {sandbox: true}, files: {dues: [sandbox, inline]}}
+      - {turn: 2, when: {vision: true}, files: {receipt: image}}
+      - {turn: 3, when: {tool_calling: true}, files: {earlier: earlier}, mentions_tools: true}
+      - {turn: 3, when: {tool_calling: false}, files: {earlier: not_included}, note_names_not_included: true}
+
+  # -------------------------------------------------------------------------
+  - id: RC-11
+    title: Archives (code project, markdown docs, mixed bundle) and huge logs
+    surface: web
+    model: open-262k
+    variants: [tools_sandbox, tools_only, no_tools]
+    files:
+      - {group: zip_app, kind: nextjs_zip, count: 1, members: 40, tokens: 120000, name: "storefront_app.zip"}
+      - {group: zip_docs, kind: markdown_zip, count: 1, members: 25, tokens: 60000, name: "product_docs.zip"}
+      - {group: zip_mixed, kind: mixed_zip, count: 1, name: "handover_bundle.zip"}
+      - {group: logs, kind: log_txt, count: 7, tokens: [300000, 500000], name: "service_{n}.log.txt"}
+      - {group: script, kind: python_script, count: 1, tokens: 1500, name: "parse_logs.py"}
+      - {group: shot, kind: screenshot_image, count: 1, formats: [png], size: [1280, 800], quotes: [1, 1], name: "error_dialog"}
+    conversations:
+      - turns: [{attach: ["zip_app"], prompt: "Review this project and list the bugs."}]
+      - turns: [{attach: ["zip_docs"], prompt: "Summarise these docs into one onboarding guide."}]
+      - turns: [{attach: ["logs", "script", "shot", "zip_mixed"], prompt: "Find why the parser fails; the logs, script and screenshot are attached."}]
+    expect:
+      - {conversation: 0, turn: 0, zip_members: 40, files: {"zip_app/*": [inline, back_filled, partial, tool, not_included]}, max_partial: 1, error: null}
+      - {conversation: 1, turn: 0, zip_members: 25, files: {"zip_docs/*": inline}, max_partial: 0, error: null}
+      - {conversation: 2, turn: 0, files: {"logs[0]": [partial, tool, not_included], script: [inline, back_filled], "zip_mixed/notes/blob.bin": skipped, "zip_mixed/inner.zip/inner_a.txt": [inline, back_filled]}, zip_members: 8, max_partial: 1, error: null, knowledge_hint: true}
+      - {conversation: 2, turn: 0, when: {tool_calling: true}, files: {"logs[1:7]": tool}}
+      - {conversation: 2, turn: 0, when: {tool_calling: false}, files: {"logs[1:7]": not_included}, note_names_not_included: true}
+
+  # -------------------------------------------------------------------------
+  - id: RC-12
+    title: Huge single files (scanned books, vendor XML + macro workbook, epubs, course PDFs)
+    surface: web
+    model: open-262k
+    variants: [tools_sandbox, tools_only, no_tools]
+    vision_variants: [true, false]
+    files:
+      - {group: scanned_books, kind: scan_pdf, count: 3, pages: 400, content: book, name: "scanned_book_{n}.pdf"}
+      - {group: vendor_xml, kind: xml_dump, count: 1, tokens: 130000, name: "node_config_dump.xml"}
+      - {group: macro_book, kind: xlsx_workbook, count: 1, rows: [60000], sheets: 4, formulas: true, ext: xlsm, name: "planning_macros.xlsm"}
+      - {group: config_book, kind: xlsx_workbook, count: 1, rows: [5000], sheets: 2, name: "site_parameters.xlsx"}
+      - {group: epubs, kind: epub_book, count: 2, tokens: [150000, 160000], name: "course_book_{n}.epub"}
+      - {group: course_pdfs, kind: long_pdf, count: 37, tokens: [500, 38000], chapters: 3, lang: en, name: "course_module_{n:02d}.pdf"}
+      - {group: transcripts, kind: log_txt, count: 2, tokens: [39000, 40000], style: transcript, name: "lecture_transcript_{n}.txt"}
+    conversations:
+      - turns: [{attach: ["scanned_books"], prompt: "Summarise these books."}]
+      - turns: [{attach: ["vendor_xml", "macro_book", "config_book"], prompt: "Find parameters that differ between the dump and the planning workbook."}]
+      - turns: [{attach: ["epubs"], prompt: "Make chapter-by-chapter notes."}]
+      - turns: [{attach: ["course_pdfs", "transcripts"], prompt: "Build an exam prep plan from all of these."}]
+    expect:
+      - {conversation: 0, turn: 0, when: {vision: true, tool_calling: true}, files: {scanned_books: tool}, error: null, knowledge_hint: true}
+      - {conversation: 0, turn: 0, when: {vision: false}, files: {scanned_books: unreadable}, knowledge_hint: true}
+      - {conversation: 1, turn: 0, when: {sandbox: true}, files: {vendor_xml: [sandbox, partial], macro_book: sandbox, config_book: sandbox}, mentions_code_executor: true}
+      - {conversation: 1, turn: 0, when: {tool_calling: false}, files: {vendor_xml: [partial, inline], macro_book: [not_included, partial]}, max_partial: 1}
+      - {conversation: 2, turn: 0, files: {"epubs[0]": partial, "epubs[1]": [tool, not_included]}, max_partial: 1, error: null}
+      - {conversation: 3, turn: 0, max_partial: 1, error: null, inline_share_max: 0.5, knowledge_hint: true}
+      - {conversation: 3, turn: 0, when: {tool_calling: true}, mentions_tools: true}
+
+  # -------------------------------------------------------------------------
+  - id: V1-01
+    title: Cumulative re-attachment drafting chat (stateful client, client tools)
+    surface: v1
+    model: sol-272k
+    variants: [tools_only]
+    client:
+      stateful: true            # resends only the new user message; DocsGPT keeps history
+      tools: [search, get_by_id, create_artefact, str_replace_editor]
+      stream: true
+      payloads: [text, file_parts]
+    files:
+      - {group: odlok, kind: sl_ordinance_pdf, count: 1, tokens: 110000, title: "Odlok o občinskem prostorskem načrtu Občine Primerjevo (fiktivni)", name: "Odlok_OPN_Primerjevo.pdf"}
+      - {group: contracts, kind: sl_contract, count: 3, tokens: [2500, 7000], contract_kinds: [prodajna, najemna, posredniska], formats: [pdf, docx, pdf], name: "pogodba_{n}"}
+      - {group: cert, kind: sl_certificate_pdf, count: 1, tokens: 1500, name: "lokacijska_informacija.pdf"}
+      - {group: scans, kind: sl_scan_pdf, count: 2, pages: 2, name: "izpisek_skeniran_{n}.pdf"}
+      - {group: zakon, kind: sl_ordinance_pdf, count: 1, tokens: 45000, title: "Zakon o vzorčnem urejanju prostora (ZVUP-0, fiktivni)", name: "Zakon_ZVUP.pdf"}
+    conversations:
+      - turns:
+          - {attach: ["odlok", "contracts[0]"], resend_all: true, prompt: "Pripravi osnutek ponudbe za nakup nepremičnine na podlagi priloženih dokumentov."}
+          - {attach: ["contracts[1]"], resend_all: true, prompt: "Upoštevaj še najemno pogodbo in skrajšaj osnutek."}
+          - {attach: ["cert", "scans"], resend_all: true, prompt: "Preveri namensko rabo po lokacijski informaciji in izpiskih."}
+          - {attach: ["zakon", "contracts[2]"], resend_all: true, prompt: "Dodaj pravno podlago iz zakona in posredniške pogodbe."}
+          - {attach: [], resend_all: true, resend_twice: true, prompt: "Popravi zadnji odstavek in pripravi končno verzijo."}
+    expect:
+      - {turn: "*", client_messages_unchanged: true, server_tools_in_client_tool_calls: false}
+      - {turn: "*", when: {payload: text}, new_rows: 0, manifest: false, tools_injected: false}
+      - {turn: [0, 1, 2, 3], when: {payload: text}, error: null}
+      - {turn: 4, when: {payload: text}, error: context_length_exceeded, compression_calls_before_error: 0}
+      - {turn: 0, when: {payload: file_parts}, new_rows: 2, duplicates: 0, files: {odlok: inline, "contracts[0]": inline}, error: null}
+      - {turn: 1, when: {payload: file_parts}, new_rows: 1, duplicates: 2, files: {"contracts[1]": inline, earlier: earlier}}
+      - {turn: 2, when: {payload: file_parts}, new_rows: 3, duplicates: 3, files: {cert: inline, scans: [inline, image, tool]}}
+      - {turn: 3, when: {payload: file_parts}, new_rows: 2, duplicates: 6, files: {zakon: inline, "contracts[2]": inline, earlier: earlier}}
+      - {turn: 4, when: {payload: file_parts}, new_rows: 0, duplicates: 16, files: {earlier: earlier}, error: null, mentions_tools: true}
+
+  # -------------------------------------------------------------------------
+  - id: V1-02
+    title: One oversized ordinance plus image-only zoning map sheets
+    surface: v1
+    model: sol-272k
+    variants: [tools_only, no_tools]
+    vision_variants: [true, false]
+    client: {stateful: true, tools: [search, get_by_id], stream: true, payloads: [file_parts]}
+    files:
+      - {group: odlok_big, kind: sl_ordinance_pdf, count: 1, tokens: 260000, title: "Odlok o prostorskem redu Občine Primerjevo (fiktivni)", name: "Odlok_PRO.pdf"}
+      - {group: spremembe, kind: sl_ordinance_pdf, count: 1, tokens: 150000, title: "Odlok o spremembah in dopolnitvah OPN Občine Primerjevo (fiktivni)", name: "Odlok_SD_OPN.pdf"}
+      - {group: maps, kind: map_image, count: 10, size: [1600, 1131], name: "graficni_prikaz_{n:02d}.png"}
+    conversations:
+      - turns:
+          - {attach: ["odlok_big", "spremembe", "maps"], prompt: "Ali je na parcelah A in B dopustna gradnja dvostanovanjske dvojčka?"}
+    expect:
+      - {turn: 0, files: {odlok_big: partial, spremembe: [tool, not_included]}, max_partial: 1, error: null, new_rows: 12}
+      - {turn: 0, when: {vision: true}, files: {maps: image}, max_native_images: 10}
+      - {turn: 0, when: {vision: false}, files: {maps: unreadable}}
+      - {turn: 0, when: {tool_calling: false}, mentions_tools: false, note_names_not_included: true}
+
+  # -------------------------------------------------------------------------
+  - id: V1-03
+    title: Native PDF parts with upper-case .PDF, replayed through client tool rounds
+    surface: v1
+    model: sol-272k
+    variants: [tools_only]
+    client: {stateful: true, tools: [search, get_by_id, str_replace_editor], stream: true, payloads: [file_parts], tool_rounds: 3}
+    files:
+      - {group: priloge, kind: sl_filing_pdf, count: 4, tokens: [1500, 10000], pages: [3, 20], name: "PRILOGA_{n}.PDF"}
+    conversations:
+      - turns:
+          - {attach: ["priloge"], prompt: "Naredi poglobljeno dokazno oceno vseh priloženih dokumentov in navedi, kateri dokazi so odločilni za presojo zahtevka."}
+    expect:
+      - {turn: 0, new_rows: 4, files: {priloge: inline}, error: null, normalized_extension: .pdf, normalized_mime: application/pdf}
+      - {turn: 0, continuation_new_rows: 0, error_payload_has_base64: false, fallback_keeps_documents: true, server_tools_in_client_tool_calls: false}
+
+  # -------------------------------------------------------------------------
+  - id: V1-04
+    title: Client tool loop with attachments replayed every round, forced-final re-attach
+    surface: v1
+    model: sol-272k
+    variants: [tools_only]
+    files_from: V1-01
+    client:
+      stateful: true
+      tools: [search, get_by_id, str_replace_editor]
+      stream: true
+      payloads: [text, file_parts]
+      tool_rounds: 4
+      tool_result_chars: [2000, 8000]
+      forced_final: true
+    conversations:
+      - turns:
+          - {attach: ["odlok", "contracts", "cert", "scans", "zakon"], prompt: "Pripravi investicijsko presojo izvedljivosti za parcele v prilogah."}
+          - {attach: [], resend_all: true, forced_final: true, prompt: "You have used all available research steps. Do NOT request any more tools. Write the final answer now."}
+    expect:
+      - {turn: "*", server_tools_in_client_tool_calls: false, client_messages_unchanged: true}
+      - {turn: 1, when: {payload: file_parts}, new_rows: 0, duplicates: 8, error: null}
+      - {turn: 1, when: {payload: text}, error: [null, context_length_exceeded], compression_calls_before_error: 0}
+
+  # -------------------------------------------------------------------------
+  - id: V1-05
+    title: Stateless fan-out relevance classifier (same contract, 20 calls)
+    surface: v1
+    model: sol-272k
+    variants: [no_tools]
+    client: {stateful: false, tools: [], stream: false, payloads: [text, file_parts], system: false}
+    files:
+      - {group: contract, kind: sl_contract, count: 1, tokens: 4000, contract_kinds: [prodajna], formats: [pdf], name: "kupoprodajna_pogodba"}
+      - {group: extracts, kind: sl_extract_text, count: 20, tokens: [700, 14000], name: "izvlecek_{n:02d}.txt"}
+    conversations:
+      - turns:
+          - {repeat: 20, attach: ["contract"], extract: "extracts[{i}]", prompt: "As a legal expert, determine whether this statute extract is relevant to the contract. Answer RELEVANT or IRRELEVANT and one sentence."}
+    expect:
+      - {turn: "*", manifest: false, tools_injected: false, error: null}
+      - {turn: "*", when: {payload: text}, new_rows: 0}
+      - {turn: 0, when: {payload: file_parts}, new_rows: 1, files: {contract: inline}}
+      - {turn: "1:", when: {payload: file_parts}, new_rows: 0, duplicates: 1}

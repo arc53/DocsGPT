@@ -1,37 +1,49 @@
-import { ChevronDown, Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
+import { Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '../components/ui/command';
 import { Button } from '../components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '../components/ui/popover';
+import { Combobox } from '../components/ui/combobox';
+import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
+import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow } from '../components/ui/setting-row';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import { ActiveState, PromptProps } from '../models/misc';
+import { ActiveState, Prompt, PromptProps } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import PromptsModal from '../preferences/PromptsModal';
+import { can } from '../utils/accessUtils';
 import { cn } from '@/lib/utils';
+
+// Presets (`public`) carry no access fields and are never edited in place.
+const canEditPrompt = (prompt: Prompt) =>
+  prompt.type !== 'public' && can(prompt, 'edit');
+const canDeletePrompt = (prompt: Prompt) =>
+  prompt.type !== 'public' && can(prompt, 'delete');
+const canSharePrompt = (prompt: Prompt) =>
+  prompt.type !== 'public' && can(prompt, 'share');
 
 type PromptsDropdownProps = {
   className?: string;
-  contentClassName?: string;
 };
 
 type ExtendedPromptProps = PromptProps & {
   title?: string;
-  titleClassName?: string;
+  /**
+   * `row` (Settings → General): a SettingRow whose label names the picker.
+   * `heading`: the title is a section heading above it.
+   * `field` (the agent form): the title is the picker's floating FormField
+   * label, like the fields around it.
+   */
+  titleAs?: 'row' | 'heading' | 'field';
+  /** The surface behind a `field` picker, for its label's notch. */
+  labelSurface?: 'card' | 'background' | 'muted';
+  /** The row's muted description, for `titleAs="row"`. */
+  description?: string;
   dropdownProps?: PromptsDropdownProps;
   showAddButton?: boolean;
 };
@@ -42,21 +54,34 @@ export default function Prompts({
   onSelectPrompt,
   setPrompts,
   title,
-  titleClassName = 'dark:text-foreground font-medium',
+  titleAs = 'row',
+  description,
   dropdownProps = {},
   showAddButton = true,
+  labelSurface = 'card',
 }: ExtendedPromptProps) {
   const token = useSelector(selectToken);
+  const dispatch = useDispatch();
   const { t } = useTranslation();
+  const showError = (message: string) =>
+    dispatch(showActionToast({ variant: 'destructive', message }));
+  const pickerId = React.useId();
+  const titleText = title ? title : t('settings.general.prompt');
   const [newPromptName, setNewPromptName] = React.useState('');
   const [newPromptContent, setNewPromptContent] = React.useState('');
   const [editPromptName, setEditPromptName] = React.useState('');
   const [editPromptContent, setEditPromptContent] = React.useState('');
-  const [currentPromptEdit, setCurrentPromptEdit] = React.useState({
+  const [currentPromptEdit, setCurrentPromptEdit] = React.useState<Prompt>({
     id: '',
     name: '',
     type: '',
   });
+  // The open prompt's version, sent back so a save over someone else's
+  // newer edit is refused (409) instead of overwriting it.
+  const [editPromptUpdatedAt, setEditPromptUpdatedAt] = React.useState<
+    string | null
+  >(null);
+  const [editReadOnly, setEditReadOnly] = React.useState(false);
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
   const [duplicateSource, setDuplicateSource] = React.useState<string | null>(
     null,
@@ -119,36 +144,29 @@ export default function Prompts({
     }
   };
 
+  // Returned to ConfirmationModal: it stays pending while this runs, closes
+  // on success and keeps a failure in the dialog.
   const confirmDeletePrompt = () => {
-    if (promptToDelete) {
-      setPrompts(prompts.filter((prompt) => prompt.id !== promptToDelete.id));
-      userService
-        .deletePrompt({ id: promptToDelete.id }, token)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to delete prompt');
+    if (!promptToDelete) return;
+    return userService
+      .deletePrompt({ id: promptToDelete.id }, token)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to delete prompt');
+        }
+        setPrompts(prompts.filter((prompt) => prompt.id !== promptToDelete.id));
+        // Only change selection if we're deleting the currently selected prompt
+        if (
+          prompts.length > 0 &&
+          selectedPrompt &&
+          selectedPrompt.id === promptToDelete.id
+        ) {
+          const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
+          if (firstPrompt) {
+            onSelectPrompt(firstPrompt.name, firstPrompt.id, firstPrompt.type);
           }
-          // Only change selection if we're deleting the currently selected prompt
-          if (
-            prompts.length > 0 &&
-            selectedPrompt &&
-            selectedPrompt.id === promptToDelete.id
-          ) {
-            const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
-            if (firstPrompt) {
-              onSelectPrompt(
-                firstPrompt.name,
-                firstPrompt.id,
-                firstPrompt.type,
-              );
-            }
-          }
-        })
-        .catch((error) => {
-          console.error(error);
-        });
-      setPromptToDelete(null);
-    }
+        }
+      });
   };
 
   const handleFetchPromptContent = async (id: string) => {
@@ -159,25 +177,20 @@ export default function Prompts({
       }
       const promptContent = await response.json();
       setEditPromptContent(promptContent.content);
+      setEditPromptUpdatedAt(promptContent.updated_at ?? null);
     } catch (error) {
       console.error(error);
     }
   };
 
-  const openEditModal = (prompt: {
-    id: string;
-    name: string;
-    type: string;
-  }) => {
+  const openEditModal = (prompt: Prompt) => {
     setModalType('EDIT');
+    setEditReadOnly(!canEditPrompt(prompt));
+    setEditPromptUpdatedAt(null);
     setEditPromptName(prompt.name);
     setEditPromptContent('');
     handleFetchPromptContent(prompt.id);
-    setCurrentPromptEdit({
-      id: prompt.id,
-      name: prompt.name,
-      type: prompt.type,
-    });
+    setCurrentPromptEdit(prompt);
     setModalState('ACTIVE');
     setOpen(false);
   };
@@ -220,19 +233,29 @@ export default function Prompts({
     setModalType('ADD');
   };
 
-  const handleSaveChanges = (id: string, type: string) => {
+  const handleSaveChanges = (id: string, type: string) =>
     userService
       .updatePrompt(
         {
           id: id,
           name: editPromptName,
           content: editPromptContent,
+          ...(editPromptUpdatedAt && {
+            expected_updated_at: editPromptUpdatedAt,
+          }),
         },
         token,
       )
       .then((response) => {
         if (!response.ok) {
-          throw new Error('Failed to update prompt');
+          showError(
+            t(
+              response.status === 409
+                ? 'settings.general.promptActions.editConflict'
+                : 'settings.general.promptActions.saveFailed',
+            ),
+          );
+          return;
         }
         if (setPrompts) {
           const existingPromptIndex = prompts.findIndex(
@@ -259,200 +282,193 @@ export default function Prompts({
       .catch((error) => {
         console.error(error);
       });
-  };
 
-  const pillClassName = cn(
-    'border-border bg-card text-foreground hover:bg-accent flex w-56 items-stretch rounded-3xl border text-sm transition-colors',
-    dropdownProps.className,
+  const picker = (
+    <Combobox
+      options={prompts.map((prompt) => ({
+        value: prompt.id,
+        label: prompt.name,
+      }))}
+      value={selectedPrompt?.id || null}
+      valueOption={
+        selectedPrompt?.name
+          ? { value: selectedPrompt.id, label: selectedPrompt.name }
+          : undefined
+      }
+      onValueChange={(id) => {
+        const prompt = prompts.find((p) => p.id === id);
+        if (prompt) handleSelectPrompt(prompt);
+      }}
+      open={open}
+      onOpenChange={setOpen}
+      placeholder={t('settings.general.promptActions.select')}
+      searchPlaceholder={t('settings.sources.searchPlaceholder')}
+      emptyText={t('settings.sources.noResults')}
+      // A form field in NewAgent (square); a settings-row control elsewhere.
+      shape={titleAs === 'field' ? 'default' : 'pill'}
+      id={pickerId}
+      aria-label={titleAs === 'heading' ? titleText : undefined}
+      className={cn(titleAs === 'row' && 'sm:w-56')}
+      renderItem={(option) => {
+        const prompt = prompts.find((p) => p.id === option.value)!;
+        const canEdit = canEditPrompt(prompt);
+        return (
+          <>
+            <span className="min-w-0 flex-1 truncate" title={prompt.name}>
+              {prompt.name}
+            </span>
+            <div className="flex shrink-0 items-center gap-1">
+              <IconButton
+                variant="ghost-on-accent"
+                size="icon-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openEditModal(prompt);
+                }}
+                label={
+                  canEdit
+                    ? t('settings.general.promptActions.edit')
+                    : t('settings.general.promptActions.view')
+                }
+              >
+                {canEdit ? (
+                  <Pencil className="text-current" aria-hidden="true" />
+                ) : (
+                  <Eye className="text-current" aria-hidden="true" />
+                )}
+              </IconButton>
+              {can(prompt, 'duplicate') && (
+                <IconButton
+                  variant="ghost-on-accent"
+                  size="icon-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDuplicatePrompt(prompt);
+                  }}
+                  label={t('settings.general.promptActions.duplicate')}
+                >
+                  <Copy className="text-current" aria-hidden="true" />
+                </IconButton>
+              )}
+              {canSharePrompt(prompt) && (
+                <IconButton
+                  variant="ghost-on-accent"
+                  size="icon-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen(false);
+                    setPromptToShare({
+                      id: prompt.id,
+                      name: prompt.name,
+                    });
+                  }}
+                  label={t('agents.shareWithTeam')}
+                >
+                  <Users className="text-current" aria-hidden="true" />
+                </IconButton>
+              )}
+              {canDeletePrompt(prompt) && (
+                <IconButton
+                  variant="ghost-destructive-on-accent"
+                  size="icon-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeletePrompt(prompt.id);
+                  }}
+                  label={t('settings.general.promptActions.delete')}
+                >
+                  <Trash2 className="text-current" aria-hidden="true" />
+                </IconButton>
+              )}
+            </div>
+          </>
+        );
+      }}
+    />
+  );
+
+  // The listed row carries the access fields; a stored selection may not.
+  const selectedListed =
+    prompts.find((prompt) => prompt.id === selectedPrompt?.id) ??
+    selectedPrompt;
+  const editButton = selectedPrompt?.id && canEditPrompt(selectedListed) && (
+    <IconButton
+      variant="ghost-muted"
+      size="icon-xs"
+      shape="pill"
+      onClick={() => openEditModal(selectedListed)}
+      label={t('settings.general.promptActions.edit')}
+      icon={Pencil}
+    />
+  );
+
+  // A prompt that belongs to this field, so a neutral pill rather than the
+  // primary one reserved for a page's own action.
+  const addButton = showAddButton && (
+    <Button
+      type="button"
+      variant="outline"
+      size="field"
+      shape="pill"
+      onClick={() => {
+        setModalType('ADD');
+        setDuplicateSource(null);
+        setModalState('ACTIVE');
+      }}
+    >
+      {t('settings.general.add')}
+    </Button>
   );
 
   return (
     <>
-      <div>
+      {titleAs === 'row' ? (
+        <SettingRow
+          label={titleText}
+          description={description}
+          htmlFor={pickerId}
+          stack
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
+              {picker}
+              {editButton}
+            </div>
+            {addButton}
+          </div>
+        </SettingRow>
+      ) : titleAs === 'field' ? (
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <FormField
+              id={pickerId}
+              label={titleText}
+              labelSurface={labelSurface}
+              className="min-w-0 flex-1"
+            >
+              {picker}
+            </FormField>
+            {editButton}
+          </div>
+          {addButton}
+        </div>
+      ) : (
         <div className="flex flex-col gap-3">
-          <p className={titleClassName}>
-            {title ? title : t('settings.general.prompt')}
-          </p>
+          <SectionHeader as="h2" title={titleText} />
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
-            <Popover open={open} onOpenChange={setOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Toggle prompt list"
-                  className={cn(
-                    pillClassName,
-                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex min-w-0 flex-1 items-center py-3 pl-5 text-left',
-                      !selectedPrompt?.name && 'text-muted-foreground',
-                    )}
-                  >
-                    <span className="truncate">
-                      {selectedPrompt?.name || 'Select a prompt'}
-                    </span>
-                  </span>
-                  {selectedPrompt?.id && selectedPrompt.type !== 'public' && (
-                    <>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditModal(selectedPrompt);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openEditModal(selectedPrompt);
-                          }
-                        }}
-                        className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
-                        aria-label="Edit prompt"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </span>
-                      <span
-                        className="bg-border my-2.5 w-px shrink-0"
-                        aria-hidden="true"
-                      />
-                    </>
-                  )}
-                  <span className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors">
-                    <ChevronDown
-                      className={cn(
-                        'h-4 w-4 transition-transform',
-                        open && 'rotate-180',
-                      )}
-                    />
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className={cn(
-                  'w-(--radix-popover-trigger-width) p-0',
-                  dropdownProps.contentClassName,
-                )}
-              >
-                <Command>
-                  <CommandInput placeholder="Search..." className="h-9" />
-                  <CommandList>
-                    <CommandEmpty>No results found</CommandEmpty>
-                    {prompts.map((prompt) => {
-                      const isActive = selectedPrompt?.id === prompt.id;
-                      const canModify = prompt.type !== 'public';
-                      // Sharing is an owner-only action: hide it for public
-                      // prompts and prompts shared into the workspace by a
-                      // team.
-                      const canShare =
-                        prompt.type !== 'public' && prompt.type !== 'team';
-                      return (
-                        <CommandItem
-                          key={prompt.id}
-                          value={prompt.name}
-                          onSelect={() => handleSelectPrompt(prompt)}
-                          className={cn(
-                            'flex items-center justify-between gap-2',
-                            isActive && 'bg-accent font-medium',
-                          )}
-                        >
-                          <span className="truncate">{prompt.name}</span>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(prompt);
-                              }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                              aria-label={
-                                canModify ? 'Edit prompt' : 'View prompt'
-                              }
-                            >
-                              {canModify ? (
-                                <Pencil className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              ) : (
-                                <Eye className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDuplicatePrompt(prompt);
-                              }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                              aria-label="Duplicate prompt"
-                            >
-                              <Copy className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                            </Button>
-                            {canShare && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpen(false);
-                                  setPromptToShare({
-                                    id: prompt.id,
-                                    name: prompt.name,
-                                  });
-                                }}
-                                className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                                aria-label={t('agents.shareWithTeam')}
-                                title={t('agents.shareWithTeam')}
-                              >
-                                <Users className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {canModify && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePrompt(prompt.id);
-                                }}
-                                className="group/btn hover:bg-destructive/15 dark:hover:bg-destructive/25 h-auto w-auto rounded p-1"
-                                aria-label="Delete prompt"
-                              >
-                                <Trash2 className="text-muted-foreground group-hover/btn:text-destructive h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-            {showAddButton && (
-              <Button
-                type="button"
-                className="h-auto w-20 rounded-3xl border border-transparent py-3"
-                onClick={() => {
-                  setModalType('ADD');
-                  setDuplicateSource(null);
-                  setModalState('ACTIVE');
-                }}
-              >
-                {t('settings.general.add')}
-              </Button>
-            )}
+            <div
+              className={cn(
+                'flex w-56 items-center gap-1',
+                dropdownProps.className,
+              )}
+            >
+              {picker}
+              {editButton}
+            </div>
+            {addButton}
           </div>
         </div>
-      </div>
+      )}
       <PromptsModal
         existingPrompts={prompts}
         type={modalType}
@@ -469,20 +485,32 @@ export default function Prompts({
         currentPromptEdit={currentPromptEdit}
         handleAddPrompt={handleAddPrompt}
         handleEditPrompt={handleSaveChanges}
-        onDuplicate={handleDuplicateFromModal}
+        readOnly={editReadOnly}
+        onDuplicate={
+          can(
+            prompts.find((prompt) => prompt.id === currentPromptEdit.id) ??
+              currentPromptEdit,
+            'duplicate',
+          )
+            ? handleDuplicateFromModal
+            : undefined
+        }
         duplicateSourceName={duplicateSource}
       />
       {promptToDelete && (
         <ConfirmationModal
           message={t('modals.prompts.deleteConfirmation', {
+            interpolation: { escapeValue: false },
             name: promptToDelete.name,
           })}
+          description={t('common.cantUndo')}
           modalState="ACTIVE"
           setModalState={() => setPromptToDelete(null)}
-          submitLabel={t('modals.deleteConv.delete')}
+          submitLabel={t('modals.prompts.delete')}
           handleSubmit={confirmDeletePrompt}
+          error={t('settings.general.promptActions.deleteFailed')}
           handleCancel={() => setPromptToDelete(null)}
-          variant="danger"
+          variant="destructive"
         />
       )}
       {promptToShare && (

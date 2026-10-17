@@ -180,6 +180,31 @@ class ToolCallAttemptsRepository:
         result_proxy = self._conn.execute(text(sql), params)
         return result_proxy.rowcount > 0
 
+    def attach_message(self, call_ids: list[str], message_id: str) -> int:
+        """Point journal rows written before their turn's message existed at that message.
+
+        A continuation turn journals its calls keyed by the id its message
+        will get, with ``message_id`` empty (the foreign key can't name a row
+        that doesn't exist yet); once the message is written, they are linked.
+
+        Args:
+            call_ids: The rows' journal keys (``<message_id>:<call_id>``).
+            message_id: The message, now written.
+
+        Returns:
+            Rows linked.
+        """
+        if not call_ids:
+            return 0
+        result = self._conn.execute(
+            text(
+                "UPDATE tool_call_attempts SET message_id = CAST(:mid AS uuid), updated_at = now() "
+                "WHERE call_id = ANY(:keys) AND message_id IS NULL"
+            ),
+            {"mid": message_id, "keys": list(call_ids)},
+        )
+        return result.rowcount or 0
+
     def mark_failed(
         self, call_id: str, error: str, *, user_id: Optional[str] = None
     ) -> bool:

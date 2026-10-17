@@ -1,5 +1,6 @@
 """Tests for ConnectorCreator factory class."""
 
+from tests.parser.connectors.token_patch import patch_tokens
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -74,7 +75,7 @@ class TestConnectorCreator:
     def test_create_connector_google_drive(self):
         with patch("docsgpt.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
             mock_auth_instance = MagicMock()
-            mock_auth_instance.get_token_info_from_session.return_value = {
+            token_info = {
                 "access_token": "at", "refresh_token": "rt"
             }
             mock_creds = MagicMock()
@@ -84,7 +85,8 @@ class TestConnectorCreator:
             mock_auth_instance.build_drive_service.return_value = MagicMock()
             MockAuth.return_value = mock_auth_instance
 
-            loader = self.ConnectorCreator.create_connector("google_drive", "session_tok")
+            with patch_tokens(token_info):
+                loader = self.ConnectorCreator.create_connector("google_drive", "session_tok")
             from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
             assert isinstance(loader, GoogleDriveLoader)
 
@@ -92,11 +94,12 @@ class TestConnectorCreator:
     def test_create_connector_share_point(self):
         with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
             mock_auth_instance = MagicMock()
-            mock_auth_instance.get_token_info_from_session.return_value = {
+            token_info = {
                 "access_token": "at", "refresh_token": "rt"
             }
             MockAuth.return_value = mock_auth_instance
 
-            loader = self.ConnectorCreator.create_connector("share_point", "session_tok")
+            with patch_tokens(token_info):
+                loader = self.ConnectorCreator.create_connector("share_point", "session_tok")
             from docsgpt.parser.connectors.share_point.loader import SharePointLoader
             assert isinstance(loader, SharePointLoader)

@@ -2,16 +2,17 @@ import json
 import logging
 import os
 import time
-from typing import Dict, Generator, List, Optional
+import uuid
+from typing import Any, Dict, Generator, List, Optional
 
+from docsgpt import tracing
 from docsgpt.agents.base import BaseAgent
-from docsgpt.agents.tool_executor import ToolExecutor
-from docsgpt.agents.tools.internal_search import (
-    INTERNAL_TOOL_ID,
-    add_internal_search_tool,
-)
+from docsgpt.agents.tool_executor import ToolExecutor, record_refused_call, refusal_texts
+from docsgpt.agents.tools.graph_search import add_graph_search_tool
+from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
+from docsgpt.llm.handlers.base import ToolCall, _bound_tool_response_for_llm, take_tool_images
 from docsgpt.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,15 @@ CLARIFICATION_PROMPT = _load_prompt("clarification.txt")
 PLANNING_PROMPT = _load_prompt("planning.txt")
 STEP_PROMPT = _load_prompt("step.txt")
 SYNTHESIS_PROMPT = _load_prompt("synthesis.txt")
+
+
+def _phase_span(phase: str, **attributes: Any) -> Any:
+    """Open a trace span for one research phase (clarify, plan, a step, synthesis)."""
+    return tracing.start_span(
+        tracing.KIND_STEP,
+        f"research {phase}",
+        attributes={"docsgpt.research.phase": phase.split(" ")[0], **attributes},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +147,14 @@ class ResearchAgent(BaseAgent):
     # Budget & timeout helpers
     # ------------------------------------------------------------------
 
+    def _attach_citation_registry(self) -> None:
+        """Keep the search tools' per-call labels.
+
+        Research numbers its sources itself (:class:`CitationManager`), per
+        step and in the final report, so a shared registry would only make
+        the tools' labels disagree with it.
+        """
+
     def _is_timed_out(self) -> bool:
         return (time.monotonic() - self._start_time) >= self.timeout_seconds
 
@@ -171,7 +189,8 @@ class ResearchAgent(BaseAgent):
 
         # Phase 0: Clarification (skip if user is responding to a prior clarification)
         if not self._is_follow_up():
-            clarification = self._clarification_phase(query)
+            with _phase_span("clarify"):
+                clarification = self._clarification_phase(query)
             if clarification:
                 yield {"metadata": {"is_clarification": True}}
                 yield {"answer": clarification}
@@ -184,7 +203,11 @@ class ResearchAgent(BaseAgent):
 
         # Phase 1: Planning (with adaptive depth)
         yield {"type": "research_progress", "data": {"status": "planning"}}
-        plan, complexity = self._planning_phase(query)
+        with _phase_span("plan") as plan_span:
+            plan, complexity = self._planning_phase(query)
+            plan_span.set(
+                **{"docsgpt.research.steps": len(plan or []), "docsgpt.research.complexity": complexity}
+            )
 
         if not plan:
             logger.warning("ResearchAgent: Planning produced no steps, falling back")
@@ -224,7 +247,9 @@ class ResearchAgent(BaseAgent):
                 },
             }
 
-            report = self._research_step(step_query, tools_dict)
+            with _phase_span(f"step {step_num}", **{"docsgpt.research.step": step_num}) as step_span:
+                step_span.preview("query", step_query)
+                report = self._research_step(step_query, tools_dict)
             intermediate_reports.append({"step": step, "content": report})
 
             yield {
@@ -251,9 +276,10 @@ class ResearchAgent(BaseAgent):
                 "tokens_used": self._tokens_used,
             },
         }
-        yield from self._synthesis_phase(
-            query, plan, intermediate_reports, tools_dict, log_context
-        )
+        with _phase_span("synthesis"):
+            yield from self._synthesis_phase(
+                query, plan, intermediate_reports, tools_dict, log_context
+            )
 
         # Sources and tool calls
         self.retrieved_docs = self.citations.get_all_docs()
@@ -277,6 +303,7 @@ class ResearchAgent(BaseAgent):
         tools_dict = self.tool_executor.get_tools()
 
         add_internal_search_tool(tools_dict, self.retriever_config)
+        add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
 
@@ -284,6 +311,7 @@ class ResearchAgent(BaseAgent):
         think_entry["config"] = {}
         tools_dict[THINK_TOOL_ID] = think_entry
 
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
         return tools_dict
 
@@ -523,7 +551,9 @@ class ResearchAgent(BaseAgent):
                 )
                 break
 
-            parsed = self.llm_handler.parse_response(response)
+            # Read the reply with the parser of the model that answered: a
+            # fallback to another provider returns that provider's shape.
+            parsed = self.llm_handler._parse_for_response(self, response)
 
             if not parsed.requires_tool_call:
                 return parsed.content or "No findings for this step."
@@ -564,25 +594,23 @@ class ResearchAgent(BaseAgent):
         """
         search_returned_empty = False
 
+        # One assistant message carries the whole parallel batch, followed by
+        # one tool message per call, as in the chat loop. Gemini 3 rejects the
+        # interleaved "call, result, call, result" layout with a 400: only the
+        # batch's first call carries a thought signature.
+        batch_assistant: Dict[str, Any] = {"role": "assistant", "content": None, "tool_calls": []}
+        if tool_calls:
+            messages.append(batch_assistant)
+
         for call in tool_calls:
-            gen = executor.execute(
-                tools_dict, call, self.llm.__class__.__name__
-            )
-            result = None
-            call_id = None
-            while True:
-                try:
-                    event = next(gen)
-                    # Log tool_call status events instead of discarding them
-                    if isinstance(event, dict) and event.get("type") == "tool_call":
-                        logger.debug(
-                            "Tool %s status: %s",
-                            event.get("data", {}).get("action_name", ""),
-                            event.get("data", {}).get("status", ""),
-                        )
-                except StopIteration as e:
-                    result, call_id = e.value
-                    break
+            # A step runs inside one turn and nobody can answer a pause here,
+            # so a call that would pause (approval, a connection, the client,
+            # an outside caller's write on the owner's account) is refused.
+            refusal = self._refuse_paused_call(tools_dict, call, executor)
+            if refusal is not None:
+                result, call_id = refusal
+            else:
+                result, call_id = self._run_step_tool(tools_dict, call, executor)
 
             # Detect empty search results for refinement
             is_search = "search" in (call.name or "").lower()
@@ -605,27 +633,123 @@ class ResearchAgent(BaseAgent):
                 if isinstance(call.arguments, dict)
                 else call.arguments
             )
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [{
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": call.name, "arguments": args_str},
-                }],
-            })
-            tool_message = self.llm_handler.create_tool_message(call, result)
-            messages.append(tool_message)
-
+            tool_call_obj = {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": args_str},
+            }
+            # Gemini 3 rejects a function call sent back without its signature.
+            if call.thought_signature:
+                tool_call_obj["thought_signature"] = call.thought_signature
+            batch_assistant["tool_calls"].append(tool_call_obj)
+            # Answer the id declared above, not the raw ``call.id``, which a
+            # provider may leave empty (the executor then mints one).
+            resolved_call = ToolCall(id=call_id, name=call.name, arguments=call.arguments)
+            # As in the chat loop: every later iteration re-sends this result,
+            # so the model gets a bounded copy (the journal keeps it whole).
+            result = _bound_tool_response_for_llm(result)
+            tool_message = self.llm_handler.create_tool_message(resolved_call, result)
+            messages.append(take_tool_images(executor, tool_message))
         return messages, search_returned_empty
 
+    def _run_step_tool(self, tools_dict: Dict, call, executor: ToolExecutor) -> tuple[Any, str]:
+        """Run one tool call for a research step, turning a raised error into its result.
+
+        As in the chat handler, a failing tool answers its call with the error
+        so the model can work around it, instead of ending the whole run.
+
+        Args:
+            tools_dict: The step's tools.
+            call: The model's tool call.
+            executor: The run's executor.
+
+        Returns:
+            ``(tool result, call id)``.
+        """
+        gen = executor.execute(tools_dict, call, self.llm.__class__.__name__)
+        try:
+            while True:
+                try:
+                    event = next(gen)
+                except StopIteration as e:
+                    return e.value
+                # Log tool_call status events instead of discarding them
+                if isinstance(event, dict) and event.get("type") == "tool_call":
+                    logger.debug(
+                        "Tool %s status: %s",
+                        event.get("data", {}).get("action_name", ""),
+                        event.get("data", {}).get("status", ""),
+                    )
+        except Exception as e:
+            logger.error(f"Research step tool {call.name} failed: {e}", exc_info=True)
+            # As in the chat loop: images the call queued before it failed
+            # must not ride on its error result.
+            take_tool_images(executor, {})
+            return f"Error executing tool: {e}", call.id or str(uuid.uuid4())
+
+    def _refuse_paused_call(
+        self, tools_dict: Dict, call, executor: ToolExecutor
+    ) -> Optional[tuple[str, str]]:
+        """Refuse a call ``check_pause`` would pause on, as a headless run does.
+
+        Args:
+            tools_dict: The step's tools.
+            call: The model's tool call.
+            executor: The run's executor.
+
+        Returns:
+            ``(tool result, call id)`` when the call is refused, else None.
+        """
+        pause_info = executor.check_pause(
+            tools_dict, call, self.llm.__class__.__name__
+        )
+        if not pause_info:
+            return None
+        pause_type = pause_info.get("pause_type")
+        if pause_type == "headless_denied":
+            reason = pause_info.get("deny_reason") or "This tool can't run here."
+            result = f"Tool denied: {reason}"
+            _, journal_error = refusal_texts(executor, reason)
+            if executor.headless:
+                executor.headless_denials.append(pause_info)
+        elif pause_info.get("connection_required"):
+            reason = "Its service needs to be connected first, and a research step can't wait for that."
+            result = (
+                "Tool not run: its service needs to be connected first, and a "
+                "research step can't wait for that."
+            )
+            journal_error = "research: connection required"
+        elif pause_type == "requires_client_execution":
+            reason = "It runs in the user's app, which a research step can't reach."
+            result = (
+                "Tool not run: it runs in the user's app, which a research step "
+                "can't reach."
+            )
+            journal_error = "research: client-side tool"
+        else:
+            reason = "This action needs the user's approval, which a research step can't ask for."
+            result = (
+                "Tool not run: this action needs the user's approval, which a "
+                "research step can't ask for. Tell the user it needs their "
+                "approval in a regular chat."
+            )
+            journal_error = "research: approval required"
+        logger.info(
+            "research_step_tool_refused",
+            extra={
+                "action_name": pause_info.get("action_name"),
+                "pause_type": pause_type,
+            },
+        )
+        record_refused_call(
+            executor, pause_info, reason=reason, model_text=result, journal_error=journal_error
+        )
+        return result, pause_info["call_id"]
+
     def _collect_step_sources(self):
-        """Collect sources from InternalSearchTool and register with CitationManager."""
-        cache_key = f"internal_search:{INTERNAL_TOOL_ID}:{self.user or ''}"
-        tool = self.tool_executor._loaded_tools.get(cache_key)
-        if tool and hasattr(tool, "retrieved_docs"):
-            for doc in tool.retrieved_docs:
-                self.citations.add(doc)
+        """Register the search tools' docs (internal search and graph pages) with CitationManager."""
+        for doc in self._search_tool_docs():
+            self.citations.add(doc)
 
     # ------------------------------------------------------------------
     # Phase 3: Synthesis
@@ -688,16 +812,22 @@ class ResearchAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _extract_text(self, response) -> str:
-        """Extract text content from a non-streaming LLM response."""
+        """Extract the text of a non-streaming LLM reply.
+
+        Reads it with the handler of the model that answered, as the chat
+        loop does: a fallback to another provider returns that provider's
+        shape. A provider that was asked for no tools may hand back the
+        text itself.
+
+        Args:
+            response: The reply ``self.llm.gen`` returned.
+
+        Returns:
+            The reply's text, or an empty string when it has none.
+        """
+        if response is None:
+            return ""
         if isinstance(response, str):
             return response
-        if hasattr(response, "message") and hasattr(response.message, "content"):
-            return response.message.content or ""
-        if hasattr(response, "choices") and response.choices:
-            choice = response.choices[0]
-            if hasattr(choice, "message") and hasattr(choice.message, "content"):
-                return choice.message.content or ""
-        if hasattr(response, "content") and isinstance(response.content, list):
-            if response.content and hasattr(response.content[0], "text"):
-                return response.content[0].text or ""
-        return str(response) if response else ""
+        content = self.llm_handler._parse_for_response(self, response).content
+        return content if isinstance(content, str) else ""

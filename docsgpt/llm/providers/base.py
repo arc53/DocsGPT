@@ -28,9 +28,12 @@ class Provider(ABC):
 
     name: ClassVar[str]
     # ``None`` means the provider appears in the catalog but isn't
-    # dispatchable through LLMCreator (e.g. Hugging Face today, where the
-    # original LLMCreator dict had no entry).
+    # dispatchable through LLMCreator; LLMCreator raises for its models.
     llm_class: ClassVar[Optional[Type["BaseLLM"]]] = None
+    # The settings field holding this provider's own key (``OPENAI_API_KEY``
+    # ...), named in the diagnostics when the provider registers no model.
+    # ``None`` for providers without one.
+    api_key_setting: ClassVar[Optional[str]] = None
 
     @abstractmethod
     def get_api_key(self, settings: "Settings") -> Optional[str]:

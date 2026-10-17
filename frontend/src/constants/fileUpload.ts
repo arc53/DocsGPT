@@ -131,10 +131,11 @@ export const SOURCE_FILE_TREE_ACCEPT_ATTR = [
 ].join(',');
 
 /**
- * Chat-attachment suffixes with a dedicated parser. Mirrors the backend's
- * `ATTACHMENT_PARSER_EXTENSIONS` (application/parser/file/constants.py) —
- * update both together. Zip is absent: source ingestion extracts archives,
- * the attachment path does not.
+ * Chat-attachment suffixes the backend reads by name. Mirrors the backend's
+ * `ATTACHMENT_PARSER_EXTENSIONS` plus `ATTACHMENT_ARCHIVE_EXTENSIONS`
+ * (docsgpt/parser/file/constants.py) — update both together. A zip is
+ * unpacked by the worker into one attachment per member; the composer keeps
+ * one chip for it.
  *
  * Not the whole allow-list, and `.txt` is deliberately not here: a suffix
  * that isn't listed (.txt, .py, .log, .yaml) is read by the backend's
@@ -187,6 +188,7 @@ export const ATTACHMENT_PARSER_EXTENSIONS: readonly string[] = [
   '.m4a',
   '.ogg',
   '.webm',
+  '.zip',
 ];
 
 /**
@@ -344,31 +346,4 @@ export function parseUploadErrorMessage(body: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/**
- * Per-file reasons from an error body, keyed by `upload_index`. A rejected
- * batch carries one `errors` entry per file, so each chip can say why it
- * failed instead of every chip repeating the first file's reason.
- */
-export function parseUploadErrorsByIndex(body: string): Map<number, string> {
-  const byIndex = new Map<number, string>();
-  if (!body) return byIndex;
-  try {
-    const parsed = JSON.parse(body) as { errors?: unknown };
-    if (!Array.isArray(parsed?.errors)) return byIndex;
-    for (const entry of parsed.errors as {
-      upload_index?: unknown;
-      error?: unknown;
-    }[]) {
-      if (
-        typeof entry?.upload_index === 'number' &&
-        typeof entry.error === 'string'
-      )
-        byIndex.set(entry.upload_index, entry.error);
-    }
-  } catch {
-    // Not JSON (a proxy's HTML 502, say) — the caller falls back.
-  }
-  return byIndex;
 }

@@ -4,7 +4,7 @@ import contextvars
 import logging
 import queue
 import threading
-from typing import Generator, Optional
+from typing import Callable, Generator, Optional
 
 from docsgpt.core.settings import settings
 
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 def with_sse_keepalive(
     inner: Generator[str, None, None],
     interval_seconds: Optional[float] = None,
+    on_disconnect: Optional[Callable[[], None]] = None,
 ) -> Generator[str, None, None]:
     """Yield from ``inner``, emitting ``: keepalive`` SSE comments whenever it
     stays quiet for ``interval_seconds`` (defaults to
@@ -37,6 +38,9 @@ def with_sse_keepalive(
     disconnects mid-stream, the pump drains the upstream generator to
     completion — matching the production ASGI adapter's pre-existing
     disconnect behavior, where the WSGI iterable is drained before close().
+    A route whose stream nobody can rejoin passes ``on_disconnect``: it is
+    called when the consumer goes away before the end, so the upstream
+    generator can stop its work instead of draining into a dead socket.
     """
     if interval_seconds is None:
         interval_seconds = float(settings.SSE_KEEPALIVE_SECONDS)
@@ -58,15 +62,23 @@ def with_sse_keepalive(
     threading.Thread(
         target=ctx.run, args=(_pump,), daemon=True, name="sse-keepalive-pump"
     ).start()
-    while True:
-        try:
-            kind, payload = frames.get(timeout=interval_seconds)
-        except queue.Empty:
-            yield ": keepalive\n\n"
-            continue
-        if kind == "item":
-            yield payload
-        elif kind == "error":
-            raise payload
-        else:
-            return
+    try:
+        while True:
+            try:
+                kind, payload = frames.get(timeout=interval_seconds)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
+            if kind == "item":
+                yield payload
+            elif kind == "error":
+                raise payload
+            else:
+                return
+    except GeneratorExit:
+        if on_disconnect is not None:
+            try:
+                on_disconnect()
+            except Exception:
+                logger.exception("SSE keepalive: disconnect callback failed")
+        raise

@@ -1,12 +1,15 @@
 import os
 import datetime
+import hmac
 import json
+import time
 from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 import logging
 
 from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import settings
+from docsgpt.decisions.backends.http import INTERNAL_ROUTES
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_session
@@ -34,7 +37,7 @@ def verify_internal_key():
         )
         return jsonify({"error": "Unauthorized", "message": "Internal API is not configured"}), 401
     internal_key = request.headers.get("X-Internal-Key")
-    if not internal_key or internal_key != settings.INTERNAL_KEY:
+    if not internal_key or not hmac.compare_digest(internal_key.encode(), settings.INTERNAL_KEY.encode()):
         logger.warning(f"Unauthorized internal API access attempt from {request.remote_addr}")
         return jsonify({"error": "Unauthorized", "message": "Invalid or missing internal key"}), 401
 
@@ -169,3 +172,62 @@ def upload_index_files():
                 legacy_mongo_id=None if looks_like_uuid(source_id) else str(source_id),
             )
     return {"status": "ok"}
+
+
+# The decision model for Celery workers in local mode: the ``docsgpt decide-server`` contract (``/v1/decide``,
+# ``/v1/decide/batch``, ``/v1/models``, ``/v1/load``) over this process's own model, which workers never load.
+# The calls are counted and traced by the worker that makes them, so nothing here records them again.
+
+
+def _decision_service():
+    """The contract over this process's model, or ``None`` when it runs none (``DECISION_MODE`` is not local)."""
+    from docsgpt import decisions
+    from docsgpt.decisions.server import DecideService
+
+    backend = decisions.get_decider().served()
+    return DecideService(backend) if backend is not None else None
+
+
+def _no_decision_model():
+    detail = "this API process runs no decision model: it does only with DECISION_MODE=local"
+    return jsonify({"error": "unavailable", "detail": detail}), 503
+
+
+def _decision_call(name: str):
+    """Run ``DecideService.<name>`` with the lane and deadline the worker's headers ask for."""
+    from docsgpt.decisions.server import RETRY_AFTER_S, deadline_of, lane_of
+
+    service = _decision_service()
+    if service is None:
+        return _no_decision_model()
+    lane = lane_of(request.headers.get("X-Decision-Priority"))
+    deadline = deadline_of(request.headers.get("X-Decision-Deadline-Ms"), lane, time.monotonic())
+    body = request.get_json(force=True, silent=True)
+    if body is None:
+        return jsonify({"error": "bad_request", "detail": "the body is not JSON"}), 400
+    status, payload = getattr(service, name)(body, lane, deadline)
+    headers = {"Retry-After": str(RETRY_AFTER_S)} if status == 429 else {}
+    return jsonify(payload), status, headers
+
+
+@internal.route(f"{INTERNAL_ROUTES}/v1/decide", methods=["POST"])
+def decision_decide():
+    return _decision_call("decide")
+
+
+@internal.route(f"{INTERNAL_ROUTES}/v1/decide/batch", methods=["POST"])
+def decision_batch():
+    return _decision_call("batch")
+
+
+@internal.route(f"{INTERNAL_ROUTES}/v1/models", methods=["GET"])
+def decision_models():
+    service = _decision_service()
+    return jsonify(service.models()) if service is not None else _no_decision_model()
+
+
+@internal.route(f"{INTERNAL_ROUTES}/v1/load", methods=["POST"])
+def decision_load():
+    """Start loading this process's model in the background; never blocks."""
+    service = _decision_service()
+    return (jsonify(service.load()), 202) if service is not None else _no_decision_model()

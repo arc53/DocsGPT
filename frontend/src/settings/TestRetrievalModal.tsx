@@ -3,10 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { EmptyState } from '../components/ui/empty-state';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
+import { cn } from '../lib/utils';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -176,33 +180,27 @@ export default function TestRetrievalModal({
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      hideTitle
       title={tr('title')}
-      size="lg"
-      mobileVariant="sheet"
-      // Same width ramp and padding as PromptsModal so the two large modals
-      // read as one family.
-      className="bg-card dark:bg-card w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
-      contentClassName="max-h-[70vh]"
+      description={
+        document?.name
+          ? tr('subtitle', {
+              name: document.name,
+              // React escapes the text; i18next escaping it too shows "&amp;".
+              interpolation: { escapeValue: false },
+            })
+          : tr('subtitleGeneric')
+      }
+      // xl, like PromptsModal, so the two large modals read as one family.
+      size="xl"
     >
       <div className="flex flex-col">
-        <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
-          {tr('title')}
-        </p>
-        <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
-          {document?.name
-            ? tr('subtitle', { name: document.name })
-            : tr('subtitleGeneric')}
-        </p>
-
         <div className="flex flex-col gap-4">
           <div className="flex flex-row items-center gap-2">
             <Input
               type="text"
               value={query}
-              autoFocus
               placeholder={tr('queryPlaceholder')}
-              className="h-[42px] flex-1 rounded-3xl px-4"
+              className="flex-1"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleRun();
@@ -212,9 +210,11 @@ export default function TestRetrievalModal({
               type="button"
               disabled={!canRun}
               onClick={handleRun}
-              className="h-[42px] min-w-[96px] shrink-0 rounded-3xl px-6 text-sm font-medium"
+              size="field"
+              loading={running}
+              className="shrink-0"
             >
-              {running ? <Spinner size="small" /> : tr('run')}
+              {tr('run')}
             </Button>
           </div>
 
@@ -230,15 +230,17 @@ export default function TestRetrievalModal({
           <p className="text-muted-foreground text-xs">{tr('notSavedHint')}</p>
 
           {!prescreenValid && (
-            <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-              {t('settings.sources.configModal.prescreenInvalidHint')}
-            </div>
+            <Alert variant="warning">
+              <AlertDescription>
+                {t('settings.sources.configModal.prescreenInvalidHint')}
+              </AlertDescription>
+            </Alert>
           )}
 
           {error && (
-            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           {result && (
@@ -246,7 +248,7 @@ export default function TestRetrievalModal({
               <div className="text-muted-foreground flex flex-row items-center justify-between text-xs">
                 <span>
                   {tr('resultSummary', {
-                    total: result.total,
+                    count: result.total,
                     retriever: result.retriever,
                   })}
                 </span>
@@ -254,22 +256,21 @@ export default function TestRetrievalModal({
               </div>
 
               {result.chunks.length === 0 ? (
-                <div className="border-border text-muted-foreground rounded-xl border border-dashed p-6 text-center text-sm">
-                  {emptyMessage}
-                </div>
+                <EmptyState
+                  size="sm"
+                  illustration="none"
+                  title={emptyMessage}
+                />
               ) : (
                 result.chunks.map((chunk) => {
                   const isOpen = expanded.has(chunk.rank);
                   return (
-                    <div
-                      key={chunk.rank}
-                      className="border-border bg-muted/40 rounded-xl border p-4"
-                    >
-                      <div className="mb-2 flex flex-row items-center justify-between gap-2">
+                    <Card key={chunk.rank} variant="outline" className="gap-2">
+                      <div className="flex flex-row items-center justify-between gap-2">
                         <div className="flex min-w-0 flex-row items-center gap-2">
-                          <span className="bg-muted text-muted-foreground shrink-0 rounded-md px-2 py-0.5 font-mono text-xs">
+                          <Badge variant="neutral" className="font-mono">
                             #{chunk.rank}
-                          </span>
+                          </Badge>
                           <span
                             className="text-foreground truncate text-sm font-medium"
                             title={chunk.source ?? undefined}
@@ -288,21 +289,23 @@ export default function TestRetrievalModal({
                           in, the collapsed clamp spends its 3 lines on nothing
                           and the preview looks empty. */}
                       <p
-                        className={`text-muted-foreground text-sm whitespace-pre-wrap ${
-                          isOpen ? '' : 'line-clamp-3'
-                        }`}
+                        className={cn(
+                          'text-muted-foreground text-sm whitespace-pre-wrap',
+                          !isOpen && 'line-clamp-3',
+                        )}
                       >
                         {chunk.text.trim()}
                       </p>
                       <Button
                         type="button"
                         variant="link"
+                        size="xs"
                         onClick={() => toggleExpanded(chunk.rank)}
-                        className="text-muted-foreground h-auto px-0 py-1 text-xs"
+                        className="-ml-2 self-start"
                       >
                         {isOpen ? tr('showLess') : tr('showMore')}
                       </Button>
-                    </div>
+                    </Card>
                   );
                 })
               )}

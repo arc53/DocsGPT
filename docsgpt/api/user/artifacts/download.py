@@ -25,7 +25,7 @@ from starlette.routing import Route
 
 from docsgpt.api.asgi_auth import authenticate, bind_log_context, json_error
 from docsgpt.api.asgi_stream import ClosingStreamingResponse
-from docsgpt.api.user.artifacts.authz import authorize_artifact, principal_for
+from docsgpt.api.user.artifacts.authz import authorize_artifact, bearer_agent_key, principal_for
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
@@ -71,14 +71,24 @@ def _content_disposition(filename: Optional[str], artifact_id: str) -> str:
 
 
 def _load_version(
-    artifact_id: str, decoded_token: Optional[dict], query: Mapping[str, str]
+    artifact_id: str,
+    decoded_token: Optional[dict],
+    query: Mapping[str, str],
+    api_key: Optional[str] = None,
 ) -> Tuple[Optional[dict], Optional[Tuple[str, int]]]:
     """Authorize the caller and fetch the requested version row; runs in a worker thread.
+
+    Args:
+        artifact_id: The artifact.
+        decoded_token: The caller's session claims, if any.
+        query: The request's query params.
+        api_key: An agent API key sent as ``Authorization: Bearer``; it
+            takes the place of an ``api_key`` query param.
 
     Returns:
         tuple: ``(version_row, None)`` or ``(None, (message, status))``.
     """
-    principal = principal_for(decoded_token, query.get("api_key"))
+    principal = principal_for(decoded_token, api_key or query.get("api_key"))
     with db_readonly() as conn:
         repo = ArtifactsRepository(conn)
         artifact = repo.get_artifact(artifact_id)
@@ -128,7 +138,13 @@ async def download_artifact(request: Request) -> Response:
     artifact_id = request.path_params["artifact_id"]
     if not looks_like_uuid(artifact_id):
         return json_error("Artifact not found", 404)
-    decoded, error = await authenticate(request)
+    # An agent API key in the Authorization header is not a session token;
+    # the JWT decoder would reject it, so it skips the decoder.
+    api_key = bearer_agent_key(request.headers)
+    if api_key:
+        decoded, error = None, None
+    else:
+        decoded, error = await authenticate(request)
     if error is not None:
         return error
     # Same endpoint value the Flask-RESTX route logged, so saved log queries keep matching.
@@ -137,7 +153,7 @@ async def download_artifact(request: Request) -> Response:
 
     try:
         version_row, failure = await anyio.to_thread.run_sync(
-            _load_version, artifact_id, decoded, query
+            _load_version, artifact_id, decoded, query, api_key
         )
         if failure is not None:
             return json_error(*failure)
@@ -154,7 +170,7 @@ async def download_artifact(request: Request) -> Response:
         # URL. If the active backend can't mint one, that's a config error:
         # surface a 500 rather than silently proxying bytes from a backend
         # the operator expected to be off the hot path.
-        if getattr(settings, "URL_STRATEGY", "backend") == "s3":
+        if settings.URL_STRATEGY == "s3":
             try:
                 url = await anyio.to_thread.run_sync(
                     partial(storage.generate_presigned_url, storage_path, expires_in=_PRESIGNED_URL_TTL)

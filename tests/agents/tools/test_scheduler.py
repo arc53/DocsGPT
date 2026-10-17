@@ -172,6 +172,21 @@ class TestListAndCancel:
         row = SchedulesRepository(pg_conn).get(created["task_id"], "u1")
         assert row["status"] == "cancelled"
 
+    def test_cancel_leaves_a_monitor_alone(self, pg_conn, patch_sessions):
+        """A monitor id (from monitor_list) must not cancel the monitor's schedule behind its back."""
+        agent_id = _make_agent(pg_conn)
+        monitor_id = pg_conn.execute(
+            text(
+                "INSERT INTO schedules (user_id, agent_id, trigger_type, instruction, next_run_at) "
+                "VALUES ('u1', CAST(:a AS uuid), 'monitor', 'watch', now()) RETURNING id"
+            ),
+            {"a": agent_id},
+        ).scalar()
+        tool = _make_tool(user_id="u1", agent_id=agent_id)
+        out = tool.execute_action("cancel_scheduled_task", task_id=str(monitor_id))
+        assert out.startswith("Error")
+        assert SchedulesRepository(pg_conn).get(str(monitor_id), "u1")["status"] == "active"
+
     def test_cancel_unknown_id_rejected(self, pg_conn, patch_sessions):
         agent_id = _make_agent(pg_conn)
         tool = _make_tool(user_id="u1", agent_id=agent_id)

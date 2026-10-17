@@ -51,6 +51,16 @@ def test_stt_type_case_insensitivity(stt_creator):
         assert result == instance
 
 
+@pytest.mark.parametrize("value", ["none", "NONE", " none ", "", None])
+def test_is_enabled_false_when_switched_off(value):
+    assert STTCreator.is_enabled(value) is False
+
+
+@pytest.mark.parametrize("value", ["openai", "faster_whisper"])
+def test_is_enabled_for_a_provider(value):
+    assert STTCreator.is_enabled(value) is True
+
+
 def test_stt_providers_integrity(stt_creator):
     providers = stt_creator.stt_providers
     assert "openai" in providers

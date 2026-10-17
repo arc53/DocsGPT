@@ -1,11 +1,14 @@
+import { configureStore } from '@reduxjs/toolkit';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
+import { Provider } from 'react-redux';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import en from '../locale/en.json';
 import { AnswerSegment } from './answerSegments';
 import AnswerFlow from './AnswerFlow';
+import { ToolCallDetail } from './StepGroup';
 import { ToolCallsType } from './types';
 
 const testI18n = i18n.createInstance();
@@ -46,6 +49,37 @@ const render = (props: {
   );
 
 describe('AnswerFlow', () => {
+  it('shows the webhook link a monitor made as its link card, with Reveal secret when signed', () => {
+    const store = configureStore({
+      reducer: { preference: () => ({ token: null }) },
+    });
+    const call = search({
+      tool_name: 'monitor',
+      action_name: 'monitor_create',
+      result: {
+        monitor_id: 'm-1',
+        url: 'https://docs.example.com/api/triggers/trg_abc',
+        signature: 'github',
+        secret:
+          'hidden from you; the user reveals it on the link card in this chat',
+      },
+    });
+    const html = renderToStaticMarkup(
+      <Provider store={store}>
+        <I18nextProvider i18n={testI18n}>
+          <AnswerFlow
+            toolCalls={[call]}
+            renderApproval={() => null}
+            renderWikiWrite={() => null}
+          />
+        </I18nextProvider>
+      </Provider>,
+    );
+    expect(html).toContain('Webhook link');
+    expect(html).toContain('https://docs.example.com/api/triggers/trg_abc');
+    expect(html).toContain('Reveal secret');
+  });
+
   it('renders the same markup whether the steps arrived live or were fetched', () => {
     const live = render({
       message: 'part one part two',
@@ -71,7 +105,7 @@ describe('AnswerFlow', () => {
       toolCalls: [search()],
       segments: [{ kind: 'tool', call_id: 'c1' }],
     });
-    expect(html.split('fade-in-bubble').length - 1).toBe(1);
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(1);
     expect(html.indexOf('Searched the web')).toBeLessThan(
       html.indexOf('part one part two'),
     );
@@ -124,6 +158,11 @@ describe('AnswerFlow', () => {
     );
   });
 
+  it('draws the reasoning icon muted, like the Sources and Tools rows', () => {
+    const html = render({ thought: 'my reasoning' });
+    expect(html).toMatch(/class="[^"]*lucide-cloud[^"]*text-muted-foreground/);
+  });
+
   it('ignores a step whose call is missing from tool_calls', () => {
     const html = render({
       toolCalls: [],
@@ -139,7 +178,50 @@ describe('AnswerFlow', () => {
       isStreaming: true,
     });
     expect(html).toContain('Searching the web');
-    expect(html).not.toContain('fade-in-bubble');
+    expect(html).not.toContain('slide-in-from-bottom-1.5');
+  });
+});
+
+describe('calls that never ran', () => {
+  const detail = (toolCall: ToolCallsType): string =>
+    renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <ToolCallDetail toolCall={toolCall} />
+      </I18nextProvider>,
+    );
+
+  it('marks a call the user moved past as not run, not as ran', () => {
+    const html = render({
+      toolCalls: [search({ status: 'denied', not_run: 'moved_on' })],
+      segments: [{ kind: 'tool', call_id: 'c1' }],
+    });
+    expect(html).not.toContain('APPROVAL_BAR');
+    expect(html).toContain('not run');
+  });
+
+  it('says why it never ran', () => {
+    expect(detail(search({ status: 'denied', not_run: 'moved_on' }))).toContain(
+      'Not run: the conversation moved on before this was approved.',
+    );
+    expect(detail(search({ status: 'denied', not_run: 'expired' }))).toContain(
+      'Not run: the approval request expired.',
+    );
+    expect(detail(search({ status: 'denied' }))).toContain('Denied by user');
+  });
+
+  it('shows a refused call as failed with the reason, after a reload too', () => {
+    const refused = search({
+      status: 'error',
+      error: 'memory never receives secrets.',
+      result: 'Tool denied: memory never receives secrets.' as never,
+    });
+    expect(
+      render({
+        toolCalls: [refused],
+        segments: [{ kind: 'tool', call_id: 'c1' }],
+      }),
+    ).toContain('failed');
+    expect(detail(refused)).toContain('memory never receives secrets.');
   });
 });
 
@@ -218,5 +300,86 @@ describe('AnswerFlow activity indicator', () => {
     });
     expect(html).not.toContain('Thinking…');
     expect(html).toContain('Searching the web');
+  });
+});
+
+describe('AnswerFlow step groups', () => {
+  const todo = (id: string, overrides: Partial<ToolCallsType> = {}) =>
+    search({
+      call_id: id,
+      tool_name: 'todo_list',
+      action_name: 'todo_create',
+      arguments: { title: `Task ${id}` },
+      ...overrides,
+    });
+  const calls = [
+    todo('a'),
+    todo('b', {
+      tool_name: 'cryptoprice',
+      action_name: 'cryptoprice_get',
+      arguments: { symbol: 'BTC', currency: 'EUR' },
+      status: 'error',
+    }),
+    todo('c'),
+  ];
+  const run: AnswerSegment[] = [
+    { kind: 'text', text: 'Now step 2:' },
+    { kind: 'tool', call_id: 'a' },
+    { kind: 'text', text: 'The price API returned 401, trying again:' },
+    { kind: 'tool', call_id: 'b' },
+    { kind: 'tool', call_id: 'c' },
+    { kind: 'text', text: 'All done.' },
+  ];
+  const message =
+    'Now step 2:The price API returned 401, trying again:All done.';
+
+  it('folds three steps into one closed row with the failure count', () => {
+    const html = render({ message, toolCalls: calls, segments: run });
+    // The Sources row's shape: the label, then the count in its own span.
+    expect(html).toMatch(/>Tools<\/span><span[^>]*>3<\/span>/);
+    expect(html).toContain('1 failed');
+    expect(html).toContain('aria-expanded="false"');
+    // The rows stay mounted inside the closed Collapsible, inert.
+    expect(html).toContain('inert');
+    expect(html).toContain('Added todo “Task a”');
+    expect(html).toContain('Checked the BTC price in EUR');
+  });
+
+  it('keeps the answer text where it was written around the group', () => {
+    const html = render({ message, toolCalls: calls, segments: run });
+    expect(html.indexOf('Now step 2:')).toBeLessThan(html.indexOf('>Tools<'));
+    expect(html.indexOf('>Tools<')).toBeLessThan(html.indexOf('All done.'));
+    // Narration between calls sits in the group, not in an answer bubble.
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(2);
+    expect(html).toContain('The price API returned 401, trying again:');
+  });
+
+  it('opens a live window while the group is the end of a streaming answer', () => {
+    const live = render({
+      message: 'Now step 2:The price API returned 401, trying again:',
+      toolCalls: [...calls.slice(0, 2), todo('c', { status: 'pending' })],
+      segments: run.slice(0, 5),
+      isStreaming: true,
+    });
+    expect(live).toContain('aria-expanded="true"');
+    expect(live).toContain('h-21');
+    expect(live).toContain('Adding todo “Task c”…');
+
+    const settled = render({
+      message,
+      toolCalls: calls,
+      segments: run,
+      isStreaming: true,
+    });
+    expect(settled).not.toContain('h-21');
+    expect(settled).toContain('aria-expanded="false"');
+  });
+
+  it('shows the result of a call that failed in-band', () => {
+    const html = render({
+      toolCalls: [todo('b', { status: 'error', result: { status_code: 401 } })],
+      segments: [{ kind: 'tool', call_id: 'b' }],
+    });
+    expect(html).toContain('failed');
   });
 });

@@ -383,7 +383,7 @@ class TestBuildHelpers:
     def test_build_config_defaults(self):
         config = build_internal_tool_config(source={"active_docs": ["abc"]})
         assert config["retriever_name"] == "classic"
-        assert config["chunks"] == 2
+        assert config["chunks"] == 6
         assert config["doc_token_limit"] == 50000
 
     def test_internal_tool_id(self):

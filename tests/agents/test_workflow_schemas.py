@@ -108,7 +108,7 @@ class TestAgentNodeConfig:
         assert c.stream_to_user is True
         assert c.tools == []
         assert c.sources == []
-        assert c.chunks == "2"
+        assert c.chunks == "6"
         assert c.retriever == ""
         assert c.model_id is None
         assert c.json_schema is None

@@ -1,3 +1,15 @@
+# Builds the images from this checkout. The API (7091) and UI (5173) are published
+# on DOCSGPT_BIND (default 127.0.0.1, this machine only; 0.0.0.0 for every
+# interface, after setting AUTH_TYPE), Postgres and Redis on 127.0.0.1 only. Run it
+# with --env-file .env from the repository root so DOCSGPT_BIND is read.
+# The decision model runs in the backend, which the worker calls, and loads
+# nothing until a decision feature is turned on. To serve it from the decider
+# container instead, add three lines to .env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# The decider refuses to start without DECISION_KEY, and the backend does not
+# wait for it (decisions fail open).
 name: docsgpt-oss
 services:
   frontend:
@@ -17,15 +29,13 @@ services:
       - VITE_BASE_URL
       - VITE_GOOGLE_CLIENT_ID
       - VITE_GOOGLE_PICKER_API_KEY
-      - VITE_SHARE_POINT_CLIENT_ID
-      - VITE_CONFLUENCE_CLIENT_ID
       - VITE_NOTIFICATION_TEXT
       - VITE_NOTIFICATION_LINK
       - VITE_ENABLE_VOICE_INPUT
       - VITE_DISABLE_SOURCE_FE
       - VITE_USE_V
     ports:
-      - "5173:5173"
+      - "${DOCSGPT_BIND:-127.0.0.1}:5173:5173"
     depends_on:
       - backend
 
@@ -41,11 +51,11 @@ services:
         EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
         # Bake the tesseract binary behind OCR_ENABLED=true (~35 MB): set
-        # INSTALL_TESSERACT=true in ../.env or the shell (setup.sh does this
-        # when OCR is enabled). Off by default, like docling. Upgrading a
-        # deployment that already runs OCR_ENABLED=true with tesseract: add
-        # INSTALL_TESSERACT=true to ../.env before rebuilding, or scanned
-        # pages fail with an install hint.
+        # INSTALL_TESSERACT=true in ../.env (read with --env-file .env) or the
+        # shell (setup.sh does this when OCR is enabled). Off by default, like
+        # docling. Upgrading a deployment that already runs OCR_ENABLED=true
+        # with tesseract: add INSTALL_TESSERACT=true to ../.env before
+        # rebuilding, or scanned pages fail with an install hint.
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     env_file:
       - ../.env
@@ -56,7 +66,7 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
-      - "7091:7091"
+      - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
       # Host data stays under application/ (the old package directory) for this
       # release so an upgraded checkout keeps its indexes; it moves with the
@@ -64,6 +74,7 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
@@ -102,16 +113,36 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
 
+  # The decision model (docsgpt decide-server), on the CPU, idle until a
+  # decision feature is turned on. Only with the decider profile (see the top).
+  decider:
+    profiles: [decider]
+    user: root
+    build:
+      context: ..
+      dockerfile: docsgpt/Dockerfile
+      args:
+        EXTRAS: ${EXTRAS:-}
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - ../.env
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
+
   redis:
     image: redis:6-alpine
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -120,7 +151,7 @@ services:
       - POSTGRES_PASSWORD=docsgpt
       - POSTGRES_DB=docsgpt
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -131,3 +162,4 @@ services:
 
 volumes:
   postgres_data:
+  decision_models:

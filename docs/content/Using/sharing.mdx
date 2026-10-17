@@ -1,0 +1,66 @@
+---
+title: Sharing Conversations
+description: Share a conversation as a public, read-only page or as a page where anyone with the link can keep asking questions on your account, and how to stop a link.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Sharing Conversations
+
+You can turn a conversation into a public page at `<your DocsGPT address>/share/<id>`. Anyone with the link can open it, without signing in. There are two kinds of link:
+
+- **Read-only**: the page shows the conversation and nothing else.
+- **Promptable**: the page also has a message box, so anyone with the link can keep asking questions. Those questions run on your account, against a source you pick, and count toward your usage.
+
+## Share a conversation
+
+1. Open the conversation and choose **Share** at the top right, or open **Share** from the conversation's menu in the sidebar.
+2. To make the link promptable, turn on **Allow users to prompt further** and choose a **Source document**. Leave the switch off for a read-only link.
+3. Choose **Create**, then copy the link.
+
+The page shows the messages that existed when you created the link: each question and answer, with its reasoning, cited sources, tool calls and the names of attached files. Messages you add later don't appear. Sharing the same conversation again after new messages creates a new link, and the old link keeps showing the earlier messages. Sharing it again with no new messages and the same settings returns the same link.
+
+## What a promptable link runs on
+
+A promptable link doesn't reuse the agent you chatted with. DocsGPT creates a published agent on your account, named after the conversation with `(shared)` at the end, for example `Billing questions(shared)`. The agent has its own API key and uses:
+
+- the source you chose in the dialog,
+- your active prompt, from **Settings → General**, and
+- 6 chunks per query (the default; the web app has no setting to change it).
+
+If you already own an agent with an API key, exactly the same prompt, source and chunk settings, and no retriever set, DocsGPT uses that agent's key instead of creating a new one. Later links with the same settings share that agent too.
+
+Questions asked on the page go through that agent's key. They are not saved as conversations, but their tokens are recorded against the agent, count toward your [usage quota](/Deploying/Usage-Quotas), and are subject to the agent's own **Token limiting** and **Request limiting**. The `(shared)` agent appears in your agent list, where you can edit it like any other agent.
+
+<Callout type="warning">
+  A promptable link hands the agent's API key to every browser that opens the page. Anyone who has the link can read the key and call the agent directly through the [Agent API](/API/agent-api), the [OpenAI-compatible API](/API/openai-compatible) or the [MCP server](/API/mcp-server), including `POST /api/search`, which returns raw chunks from the source. Share promptable links only for sources you're willing to make public, and set token or request limits on the `(shared)` agent.
+</Callout>
+
+## Stop a link
+
+There is no button or endpoint that revokes a single share link. Use these instead:
+
+| To | Do this | Effect |
+| --- | --- | --- |
+| Take a page down | Delete the conversation | Every link to that conversation, read-only or promptable, stops working at once and returns "not found". The `(shared)` agent and its key are not deleted. |
+| Stop people asking questions | Delete the `(shared)` agent (or the agent whose key the link uses) | The page still shows the conversation, but new questions fail with an invalid-key error. Its key stops working everywhere, including for anyone who copied it. |
+| Both | Delete the conversation and the agent | The page and the key are gone. |
+
+**Reset key** in the agent's **Access Details** does **not** stop a promptable link: DocsGPT moves existing links to the new key, so they keep working. Switching the agent back to a draft doesn't stop the link either.
+
+A `(shared)` agent can back several links, for example links from different conversations that use the same source and prompt. Deleting it stops all of them.
+
+## API
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/share?isPromptable=true\|false` | Signed-in session (not a personal access token) | Create a link. The body takes `conversation_id` and, for a promptable link, `source`, `prompt_id`, `chunks` and `retriever`. Returns `{"success": true, "identifier": "<id>"}`. |
+| `GET` | `/api/shared_conversation/<id>` | None | Read a shared conversation: `title`, `timestamp`, `queries`, and `api_key` for a promptable link. |
+
+The page for an identifier is `/share/<id>` on the web app.
+
+## Related
+
+- [Teams and sharing](/Using/teams-and-sharing): share agents, sources, prompts and tools with other signed-in users instead of the public.
+- [Agent API keys](/API/agent-keys): what a key can do.

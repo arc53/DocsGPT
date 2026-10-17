@@ -71,7 +71,7 @@ class TestClassicRAGScores:
         docs = _retrieve(ClassicRAG, store)
 
         assert docs
-        assert set(docs[0]) == {"text", "title", "source", "filename"}
+        assert set(docs[0]) == {"text", "title", "source", "filename", "source_id", "chunk_key"}
         store.search.assert_called_once()
         store.search_with_scores.assert_not_called()
 
@@ -156,7 +156,7 @@ class TestHybridScores:
         docs = _retrieve(HybridRetriever, store)
 
         assert docs
-        assert set(docs[0]) == {"text", "title", "source", "filename"}
+        assert set(docs[0]) == {"text", "title", "source", "filename", "source_id", "chunk_key"}
 
 
 @pytest.mark.unit

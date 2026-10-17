@@ -153,6 +153,10 @@ class AnydocParser(BaseParser):
         self._last_warnings: Optional[Tuple[Path, List[str]]] = None
         # (path, count) of scanned pages OCR'd into the most recent parse.
         self._last_ocr_pages: Optional[Tuple[Path, int]] = None
+        # (path, ocr_* fields) the OCR fallback reported for the most recent
+        # parse: request and token counts of an API engine, and for a fully
+        # scanned file the fallback's page count.
+        self._last_ocr_metadata: Optional[Tuple[Path, Dict]] = None
 
     def _init_parser(self) -> Dict:
         # Import for real rather than trusting ``find_spec``: a wheel whose
@@ -190,6 +194,7 @@ class AnydocParser(BaseParser):
         path = Path(file)
         self._last_warnings = None
         self._last_ocr_pages = None
+        self._last_ocr_metadata = None
         try:
             content = anydoc.to_markdown(str(path))
         except anydoc.ResourceLimitError as exc:
@@ -364,19 +369,36 @@ class AnydocParser(BaseParser):
             )
             return content
         extra: List[str] = []
-        for index in indices:
+        if getattr(fallback, "batch_ocr_pages", False) is True:
+            # The native parser takes every page at once, so an API engine can
+            # keep several in flight, and still skips a page that fails.
             try:
-                text = fallback.ocr_pages(path, [index]).get(index, "")
-            except Exception:  # noqa: BLE001 - one page's failure must not drop the others
+                texts = fallback.ocr_pages(path, indices, skip_failed=True)
+            except Exception:  # noqa: BLE001 - keep the text pages rather than fail the file
                 logger.warning(
-                    "OCR of page %d of %s failed; skipping that page",
-                    index + 1,
+                    "OCR of the scanned pages of %s failed; indexing the text pages only",
                     path.name,
                     exc_info=True,
                 )
-                continue
-            if text and text.strip():
-                extra.append(text)
+                texts = {}
+            extra = [texts[index] for index in indices if (texts.get(index) or "").strip()]
+            usage = getattr(fallback, "last_ocr_usage", None) or {}
+            if usage:
+                self._last_ocr_metadata = (path, dict(usage))
+        else:
+            for index in indices:
+                try:
+                    text = fallback.ocr_pages(path, [index]).get(index, "")
+                except Exception:  # noqa: BLE001 - one page's failure must not drop the others
+                    logger.warning(
+                        "OCR of page %d of %s failed; skipping that page",
+                        index + 1,
+                        path.name,
+                        exc_info=True,
+                    )
+                    continue
+                if text and text.strip():
+                    extra.append(text)
         if not extra:
             return content
         self._last_ocr_pages = (path, len(extra))
@@ -388,6 +410,9 @@ class AnydocParser(BaseParser):
         last = self._last_warnings
         if last is not None and last[0] == Path(file):
             metadata["parse_warnings"] = list(last[1])
+        ocr_metadata = self._last_ocr_metadata
+        if ocr_metadata is not None and ocr_metadata[0] == Path(file):
+            metadata.update(ocr_metadata[1])
         ocr = self._last_ocr_pages
         if ocr is not None and ocr[0] == Path(file):
             metadata["ocr_pages"] = ocr[1]
@@ -430,4 +455,16 @@ class AnydocParser(BaseParser):
                 f"{type(fallback).__name__} extracted almost nothing{hint}"
             )
         self.last_engine = getattr(fallback, "last_engine", None) or type(fallback).__name__
+        if getattr(fallback, "ocr_enabled", False):
+            self._record_fallback_ocr_metadata(path, fallback)
         return result
+
+    def _record_fallback_ocr_metadata(self, path: Path, fallback: BaseParser) -> None:
+        """Keep the ``ocr_*`` fields an OCR fallback reported for ``path`` (pages, API usage)."""
+        try:
+            fallback_metadata = fallback.get_file_metadata(path) or {}
+        except Exception:  # noqa: BLE001 - metadata must never fail a parse
+            return
+        ocr_fields = {key: value for key, value in fallback_metadata.items() if key.startswith("ocr_")}
+        if ocr_fields:
+            self._last_ocr_metadata = (path, ocr_fields)

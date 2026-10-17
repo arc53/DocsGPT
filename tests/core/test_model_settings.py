@@ -31,10 +31,8 @@ class TestModelProvider:
         assert ModelProvider.GOOGLE == "google"
         assert ModelProvider.GROQ == "groq"
         assert ModelProvider.DOCSGPT == "docsgpt"
-        assert ModelProvider.HUGGINGFACE == "huggingface"
         assert ModelProvider.NOVITA == "novita"
         assert ModelProvider.OPENROUTER == "openrouter"
-        assert ModelProvider.LLAMA_CPP == "llama.cpp"
 
 
 class TestModelCapabilities:
@@ -46,8 +44,8 @@ class TestModelCapabilities:
         assert caps.supports_streaming is True
         assert caps.supported_attachment_types == []
         assert caps.context_window == 128000
-        assert caps.input_cost_per_token is None
-        assert caps.output_cost_per_token is None
+        assert caps.input_cost_per_million is None
+        assert caps.output_cost_per_million is None
 
     @pytest.mark.unit
     def test_custom_values(self):
@@ -55,7 +53,7 @@ class TestModelCapabilities:
             supports_tools=True,
             supports_structured_output=True,
             context_window=32000,
-            input_cost_per_token=0.001,
+            input_cost_per_million=1.0,
         )
         assert caps.supports_tools is True
         assert caps.context_window == 32000

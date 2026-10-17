@@ -20,6 +20,7 @@ from the repository itself rather than assumed.
 
 import json
 import logging
+import os
 import threading
 from dataclasses import replace
 from typing import Any, List, Optional
@@ -38,6 +39,16 @@ _register_lock = threading.Lock()
 # Last-resort layout for a repository that declares nothing about itself.
 _FALLBACK_ONNX_FILE = "onnx/model.onnx"
 _FALLBACK_POOLING = "mean"
+
+# The files FastEmbed fetches with every model besides its graph (see
+# ``ModelManagement.download_files_from_huggingface``).
+_FASTEMBED_SUPPORT_FILES = (
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "preprocessor_config.json",
+)
 
 # Sentence-transformers records how a model turns token vectors into one
 # vector, and whether it normalises the result, as files in the repository.
@@ -97,17 +108,18 @@ def _register(model: EmbeddingModel) -> None:
 def _read_repo_json(repo: str, filename: str) -> Optional[dict]:
     """Fetch one small JSON from ``repo``, or ``None`` when it is not there.
 
-    Reads through the Hugging Face hub cache, so a warmed image finds it
+    Reads through the embedding model cache, so a warmed install finds it
     offline. Every failure -- absent file, no network, malformed JSON -- is the
     same answer to the caller: this repository does not tell us.
     """
     try:
         from huggingface_hub import hf_hub_download
 
+        cache_dir = settings.EMBEDDINGS_CACHE_DIR or None
         try:
-            path = hf_hub_download(repo_id=repo, filename=filename, local_files_only=True)
+            path = hf_hub_download(repo_id=repo, filename=filename, local_files_only=True, cache_dir=cache_dir)
         except Exception:  # noqa: BLE001 -- not cached: fetch it
-            path = hf_hub_download(repo_id=repo, filename=filename)
+            path = hf_hub_download(repo_id=repo, filename=filename, cache_dir=cache_dir)
         with open(path, encoding="utf-8") as handle:
             return json.load(handle)
     except Exception as exc:
@@ -187,8 +199,8 @@ def _describe_from_repo(repo: str) -> Optional[EmbeddingModel]:
 
 def _apply_overrides(spec: EmbeddingModel) -> EmbeddingModel:
     """Let ``EMBEDDINGS_POOLING``/``EMBEDDINGS_NORMALIZE`` win over any source."""
-    pooling = getattr(settings, "EMBEDDINGS_POOLING", None)
-    normalize = getattr(settings, "EMBEDDINGS_NORMALIZE", None)
+    pooling = settings.EMBEDDINGS_POOLING
+    normalize = settings.EMBEDDINGS_NORMALIZE
     changes = {}
     if isinstance(pooling, str) and pooling.strip().lower() in ("cls", "mean"):
         changes["pooling"] = pooling.strip().lower()
@@ -243,6 +255,51 @@ def _spec_for(model_name: str) -> EmbeddingModel:
     )
 
 
+def _complete_model_cache(repo: str, cache_dir: Optional[str]) -> None:
+    """Download a model's graph when its cached snapshot lacks it.
+
+    FastEmbed first loads a model from the cache and only downloads when that
+    fails, and a snapshot of the repository counts as cached whatever it
+    holds. The chunker caches only ``tokenizer.json`` there (see
+    ``docsgpt/parser/tokenization.py``), so FastEmbed then finds no graph and
+    fails to load. Fetching the files it needs first makes either order work.
+    Offline, nothing is fetched and FastEmbed reports what is missing; a
+    failed download is logged and left to FastEmbed's own sources too.
+
+    Args:
+        repo: The model's FastEmbed name.
+        cache_dir: ``EMBEDDINGS_CACHE_DIR``, or None for FastEmbed's default.
+    """
+    from fastembed import TextEmbedding
+    from fastembed.common.utils import define_cache_dir
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    lowered = repo.lower()
+    description = next(
+        (d for d in TextEmbedding._list_supported_models() if str(getattr(d, "model", "")).lower() == lowered),
+        None,
+    )
+    source = getattr(getattr(description, "sources", None), "hf", None)
+    model_file = getattr(description, "model_file", None)
+    if not source or not isinstance(model_file, str):
+        return  # Not fetched from Hugging Face: FastEmbed handles it.
+    needed = [model_file, *(getattr(description, "additional_files", None) or [])]
+    cache = str(define_cache_dir(cache_dir))
+    try:
+        for filename in needed:
+            hf_hub_download(source, filename, cache_dir=cache, local_files_only=True)
+        return
+    except Exception:  # noqa: BLE001 -- any miss means the snapshot is incomplete
+        pass
+    if os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {"1", "TRUE", "YES", "ON"}:
+        return
+    logger.warning("The cached %s has no %s; downloading the model files.", source, ", ".join(needed))
+    try:
+        snapshot_download(repo_id=source, allow_patterns=[*_FASTEMBED_SUPPORT_FILES, *needed], cache_dir=cache)
+    except Exception as exc:  # noqa: BLE001 -- best effort: FastEmbed still tries its own sources
+        logger.warning("Could not complete the cached %s (%s); leaving the download to FastEmbed.", source, exc)
+
+
 def _pad_to_longest_in_batch(model: Any) -> None:
     """Undo a fixed padding width baked into a model's ``tokenizer.json``."""
     # FastEmbed enables padding only when the tokenizer declares none, so a
@@ -261,6 +318,36 @@ def _pad_to_longest_in_batch(model: Any) -> None:
         pad_token=padding.get("pad_token", "<pad>"),
         length=None,
         pad_to_multiple_of=padding.get("pad_to_multiple_of"),
+    )
+
+
+def _cap_input_tokens(model: Any, limit: Optional[int]) -> None:
+    """Lower the tokenizer's truncation length to ``limit``, never raise it.
+
+    FastEmbed truncates only at the model's own maximum (32,768 tokens for
+    granite), and attention memory grows with the square of the input, so one
+    long input can need more memory than the host has. A model whose own
+    ceiling is already lower keeps it.
+    """
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        return
+    tokenizer = getattr(getattr(model, "model", None), "tokenizer", None)
+    if tokenizer is None:
+        return
+    truncation = getattr(tokenizer, "truncation", None)
+    if truncation is None:
+        tokenizer.enable_truncation(max_length=limit)
+        return
+    if not isinstance(truncation, dict):
+        return
+    current = truncation.get("max_length")
+    if isinstance(current, int) and current <= limit:
+        return
+    tokenizer.enable_truncation(
+        max_length=limit,
+        stride=truncation.get("stride", 0),
+        strategy=truncation.get("strategy", "longest_first"),
+        direction=truncation.get("direction", "right"),
     )
 
 
@@ -288,12 +375,13 @@ class EmbeddingsWrapper:
         try:
             _register(self.spec)
             init_kwargs = {"model_name": self.spec.repo}
-            threads = getattr(settings, "EMBEDDINGS_THREADS", None)
+            threads = settings.EMBEDDINGS_THREADS
             if isinstance(threads, int) and threads > 0:
                 init_kwargs["threads"] = threads
-            cache_dir = getattr(settings, "EMBEDDINGS_CACHE_DIR", None)
+            cache_dir = settings.EMBEDDINGS_CACHE_DIR
             if cache_dir:
                 init_kwargs["cache_dir"] = cache_dir
+            _complete_model_cache(self.spec.repo, cache_dir or None)
             self.model = TextEmbedding(**init_kwargs)
         except Exception as exc:
             raise RuntimeError(
@@ -302,6 +390,7 @@ class EmbeddingsWrapper:
             ) from exc
 
         _pad_to_longest_in_batch(self.model)
+        _cap_input_tokens(self.model, settings.EMBEDDINGS_LOCAL_MAX_TOKENS)
         self.dimension = self.spec.dimension or self._probe_dimension()
         logger.info("Embeddings model ready (dimension=%d)", self.dimension)
 
@@ -310,8 +399,12 @@ class EmbeddingsWrapper:
         return len(self.embed_query("dimension probe"))
 
     def embed_query(self, query: str) -> List[float]:
-        """Embed a single query string."""
-        return self.embed_documents([query])[0]
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        from docsgpt.parser.tokenization import get_token_counter
+        from docsgpt.vectorstore.base import clip_query
+
+        clipped = clip_query(query, lambda: get_token_counter(self.spec.repo))
+        return self.embed_documents([clipped])[0]
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents, preserving input order.
@@ -330,7 +423,7 @@ class EmbeddingsWrapper:
         if not documents:
             return []
         batch_size: Optional[int] = None
-        raw = getattr(settings, "EMBEDDINGS_MODEL_BATCH_SIZE", None)
+        raw = settings.EMBEDDINGS_MODEL_BATCH_SIZE
         if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
             batch_size = raw
 

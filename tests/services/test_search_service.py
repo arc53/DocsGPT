@@ -31,7 +31,7 @@ def _fake_db_readonly(agent_data):
         yield MagicMock()
 
     with patch(
-        "docsgpt.api.user.team_sharing.can_access", return_value=True
+        "docsgpt.api.user.resource_access.ref_principal", return_value="owner"
     ), patch(
         "docsgpt.services.search_service.db_readonly", _yield_conn
     ), patch(
@@ -254,24 +254,24 @@ class TestSourceAuthorization:
         return {"id": "agent-1", "user_id": "owner", "extra_source_ids": [], **kw}
 
     def test_readable_sources_pass_through(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
-        monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
+        monkeypatch.setattr(ra, "ref_principal", lambda *a, **k: "owner")
         agent = self._agent(extra_source_ids=["s1", "s2"])
         assert _authorized_source_ids(None, agent, ["s1", "s2"]) == ["s1", "s2"]
 
     def test_foreign_source_is_dropped(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
-        monkeypatch.setattr(ts, "can_access", lambda conn, k, sid, u: sid == "mine")
+        monkeypatch.setattr(ra, "ref_principal", lambda conn, h, agent, k, sid: "owner" if sid == "mine" else None)
         agent = self._agent()
         assert _authorized_source_ids(None, agent, ["mine", "theirs"]) == ["mine"]
 
     def test_team_shared_source_is_kept(self, monkeypatch):
         """A grant is legitimate access; only unreadable ids are dropped."""
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
-        monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
+        monkeypatch.setattr(ra, "ref_principal", lambda *a, **k: "owner")
         agent = self._agent(user_id="grantee")
         assert _authorized_source_ids(None, agent, ["shared"]) == ["shared"]
 
@@ -280,12 +280,12 @@ class TestSourceAuthorization:
         assert _authorized_source_ids(None, agent, ["s1"]) == []
 
     def test_check_failure_fails_closed(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         def _boom(*a, **k):
             raise RuntimeError("db down")
 
-        monkeypatch.setattr(ts, "can_access", _boom)
+        monkeypatch.setattr(ra, "ref_principal", _boom)
         assert _authorized_source_ids(None, self._agent(), ["s1"]) == []
 
 

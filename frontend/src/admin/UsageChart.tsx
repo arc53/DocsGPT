@@ -9,7 +9,12 @@ import {
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 
-import { htmlLegendPlugin } from '../utils/chartUtils';
+import {
+  hoverColor,
+  htmlLegendPlugin,
+  readChartPalette,
+  type ChartPalette,
+} from '../utils/chartUtils';
 
 import type { ChartData } from 'chart.js';
 
@@ -22,21 +27,38 @@ ChartJS.register(
   Legend,
 );
 
-// Chart.js renders to a canvas and can't read CSS variables, so resolve the
-// theme color to a concrete string at render time (mirrors settings/Analytics).
-function readCssVar(name: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback;
-  const value = getComputedStyle(document.body).getPropertyValue(name).trim();
-  return value || fallback;
+/**
+ * Colours for the ungrouped Prompt / Generated pair.
+ *
+ * Same as settings/Analytics: prompt is `chart-1` (the brand), generated is
+ * `chart-2`. Chart.js renders to a canvas, so these are resolved strings.
+ *
+ * @param palette The resolved theme palette; read from the DOM when omitted.
+ * @returns The two bar colours.
+ */
+export function usageColors(palette: ChartPalette = readChartPalette()): {
+  prompt: string;
+  generated: string;
+} {
+  return { prompt: palette.series[0], generated: palette.series[1] };
 }
 
-export function usageColors(): { prompt: string; generated: string } {
-  return {
-    // Violet + pink is the established DocsGPT 2-series pairing (Analytics uses
-    // --primary + SERIES_COLORS[0]); far more colorblind-separable than blue.
-    prompt: readCssVar('--primary', '#7D54D1'),
-    generated: '#FF6384',
-  };
+/**
+ * Colour for dataset `index` of a grouped chart (by model / agent / flow).
+ *
+ * Groups have no meaning of their own, so they take `chart-1` to `chart-5` in
+ * order (DESIGN.md, chart colours). Callers fold anything past five into
+ * "Other" with `foldSeries`, so the modulo never repeats a colour in practice.
+ *
+ * @param index The dataset's position.
+ * @param palette The resolved theme palette; read from the DOM when omitted.
+ * @returns The bar colour.
+ */
+export function seriesColor(
+  index: number,
+  palette: ChartPalette = readChartPalette(),
+): string {
+  return palette.series[index % palette.series.length];
 }
 
 function compactTick(value: number | string): string {
@@ -48,35 +70,57 @@ function compactTick(value: number | string): string {
   }).format(n);
 }
 
+function currencyTick(value: number | string): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(n)) return String(value);
+  return `$${new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 2,
+  }).format(n)}`;
+}
+
 type UsageChartProps = {
   data: ChartData<'bar'>;
   legendID: string;
   maxTicksLimitInX?: number;
+  /** Format the y axis as USD rather than a token count. */
+  currency?: boolean;
+  /** Grid lines and axis borders (`--border`). */
+  gridColor: string;
+  /** Axis tick labels and legend text (`--muted-foreground`). */
+  tickColor: string;
 };
 
 export default function UsageChart({
   data,
   legendID,
   maxTicksLimitInX = 8,
+  currency = false,
+  gridColor,
+  tickColor,
 }: UsageChartProps) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: false },
+      // The HTML legend copies each item's fontColor, which is this.
+      legend: { display: false, labels: { color: tickColor } },
       htmlLegend: { containerID: legendID },
     },
     scales: {
       x: {
-        grid: { lineWidth: 0.2, color: '#C4C4C4' },
-        border: { width: 0.2, color: '#C4C4C4' },
-        ticks: { maxTicksLimit: maxTicksLimitInX },
+        grid: { lineWidth: 0.2, color: gridColor },
+        border: { width: 0.2, color: gridColor },
+        ticks: { maxTicksLimit: maxTicksLimitInX, color: tickColor },
         stacked: true,
       },
       y: {
-        grid: { lineWidth: 0.2, color: '#C4C4C4' },
-        border: { width: 0.2, color: '#C4C4C4' },
-        ticks: { callback: compactTick },
+        grid: { lineWidth: 0.2, color: gridColor },
+        border: { width: 0.2, color: gridColor },
+        ticks: {
+          callback: currency ? currencyTick : compactTick,
+          color: tickColor,
+        },
         stacked: true,
       },
     },
@@ -89,7 +133,10 @@ export default function UsageChart({
         ...data,
         datasets: data.datasets.map((dataset) => ({
           ...dataset,
-          hoverBackgroundColor: `${dataset.backgroundColor}CC`,
+          hoverBackgroundColor:
+            typeof dataset.backgroundColor === 'string'
+              ? hoverColor(dataset.backgroundColor)
+              : dataset.backgroundColor,
         })),
       }}
     />

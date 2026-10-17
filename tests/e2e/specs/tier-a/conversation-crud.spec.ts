@@ -23,6 +23,12 @@ import { authedRequest } from '../../helpers/api.js';
 import { newUserContext, signJwt } from '../../helpers/auth.js';
 import { countRows, pg } from '../../helpers/db.js';
 import { resetDb } from '../../helpers/reset.js';
+import {
+  chooseConversationAction,
+  conversationLink,
+  conversationLinks,
+  conversationRow,
+} from '../../helpers/sidebar.js';
 
 // --------------------------------------------------------------------------
 // Helpers (spec-local — don't belong in the shared helpers/ yet; P2-07 will
@@ -142,29 +148,24 @@ test.describe('tier-a · conversations CRUD', () => {
         page.getByRole('link', { name: /new chat/i }).first(),
       ).toBeVisible();
 
-      // Locate the conversation tile. The auto-generated name comes from the
-      // mock LLM's title summarization — we don't know it, but we know it's
-      // the only tile rendered for this user. Hover to reveal the menu button.
-      const tile = page.locator('.conversations-container > div').first();
-      await expect(tile).toBeVisible();
-      await tile.hover();
-
-      // Open the three-dot menu (img with alt="menu" is inside the only
-      // button rendered in-tile when not editing).
-      await tile.getByRole('button').click();
-
-      // ContextMenu renders Rename label from i18n (`convTile.rename`).
-      await page.getByText('Rename', { exact: true }).click();
+      // The tile's name comes from the mock LLM's title summarization, so
+      // find the tile by its /c/<id> link instead.
+      await expect(conversationLink(page, convId)).toBeVisible();
+      await chooseConversationAction(page, convId, 'Rename');
 
       const newName = 'renamed-via-ui';
-      const input = tile.locator('input[type="text"]');
+      const row = conversationRow(page, convId);
+      const input = row.locator('input[type="text"]');
       await expect(input).toBeVisible();
       await input.fill(newName);
+      // The tile shows the new name as soon as the field closes, before the
+      // request lands, so wait for the request itself.
+      const renamed = page.waitForResponse((res) =>
+        res.url().endsWith('/api/update_conversation_name'),
+      );
       await input.press('Enter');
-
-      // Wait for the rename request to settle and the tile to re-render
-      // with the new name.
-      await expect(tile).toContainText(newName);
+      expect((await renamed).ok()).toBe(true);
+      await expect(conversationLink(page, convId)).toContainText(newName);
 
       // DB assertion — the PATCH went through.
       const { rows } = await pg.query<ConvRow>(
@@ -179,9 +180,7 @@ test.describe('tier-a · conversations CRUD', () => {
       await expect(
         page.getByRole('link', { name: /new chat/i }).first(),
       ).toBeVisible();
-      await expect(
-        page.locator('.conversations-container > div').first(),
-      ).toContainText(newName);
+      await expect(conversationLink(page, convId)).toContainText(newName);
     } finally {
       if (page) await page.close();
       await api.dispose();
@@ -224,26 +223,19 @@ test.describe('tier-a · conversations CRUD', () => {
         page.getByRole('link', { name: /new chat/i }).first(),
       ).toBeVisible();
 
-      // Find the tile for `dropId`. Tiles are rendered DESC by date; the
-      // most recently created conversation is the first one.
-      const tiles = page.locator('.conversations-container > div');
+      const tiles = conversationLinks(page);
       await expect(tiles).toHaveCount(2);
-      const dropTile = tiles.first();
-      await dropTile.hover();
-      await dropTile.getByRole('button').click();
-      await page.getByText('Delete', { exact: true }).click();
+      await chooseConversationAction(page, dropId, 'Delete');
 
-      // ConfirmationModal uses the same "Delete" label for the submit button.
-      // Scope to the modal by grabbing the button with that text within a
-      // dialog-like container. The second "Delete" on the page is the
-      // destructive submit.
+      // The confirmation dialog's submit button carries the same label.
       await page
+        .getByRole('dialog')
         .getByRole('button', { name: 'Delete', exact: true })
-        .last()
         .click();
 
-      // Tile count drops to 1.
+      // Only the kept conversation's tile is left.
       await expect(tiles).toHaveCount(1);
+      await expect(conversationLink(page, keepId)).toBeVisible();
 
       // DB — dropped conversation gone, surviving one intact.
       expect(

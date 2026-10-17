@@ -53,6 +53,8 @@ def _run(sub, repo, team_shared, client):
             "docsgpt.api.user.sources.routes.visible_with_access",
             return_value=team_shared,
         ),
+        # Owner switches all at their defaults.
+        patch("docsgpt.api.user.sources.routes.settings_many", return_value={}),
     ]
     for p in patches:
         p.start()
@@ -80,6 +82,9 @@ class TestPaginatedSourcesTeamSharing:
         assert by_id[owned]["team_access"] is None
         assert by_id[shared]["ownership"] == "team"
         assert by_id[shared]["team_access"] == "editor"
+        assert by_id[owned]["access"] == "owner"
+        assert by_id[shared]["access"] == "editor"
+        assert "edit" in by_id[shared]["allowed_actions"]
         # The shared ids are unioned into the owner-scoped queries by id.
         assert repo.list_for_user.call_args.kwargs["extra_ids"] == [shared]
         assert repo.count_for_user.call_args.kwargs["extra_ids"] == [shared]

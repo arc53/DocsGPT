@@ -1,5 +1,6 @@
 from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
 from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
+from docsgpt.parser.connectors.github.auth import GitHubAuth
 from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
 from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
 from docsgpt.parser.connectors.share_point.auth import SharePointAuth
@@ -20,8 +21,11 @@ class ConnectorCreator:
         "share_point": SharePointLoader,
     }
 
+    # GitHub signs in here too, but its repositories are read by the remote
+    # GitHub loader, so it has an auth provider and no connector class.
     auth_providers = {
         "confluence": ConfluenceAuth,
+        "github": GitHubAuth,
         "google_drive": GoogleDriveAuth,
         "share_point": SharePointAuth,
     }
@@ -74,6 +78,23 @@ class ConnectorCreator:
             List of supported connector type strings
         """
         return list(cls.connectors.keys())
+
+    @classmethod
+    def has_auth(cls, connector_type: str) -> bool:
+        """Whether ``connector_type`` signs in through the OAuth callback.
+
+        Args:
+            connector_type: Provider key, e.g. ``google_drive`` or ``github``.
+
+        Returns:
+            True when an auth provider is registered for it.
+        """
+        return (connector_type or "").lower() in cls.auth_providers
+
+    @classmethod
+    def get_auth_providers(cls) -> list:
+        """Provider keys that sign in through the OAuth callback."""
+        return list(cls.auth_providers.keys())
 
     @classmethod
     def is_supported(cls, connector_type):

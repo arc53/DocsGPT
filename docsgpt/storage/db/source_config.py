@@ -12,9 +12,11 @@ reproduces today's chunking byte-for-byte.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS
 
 
 class PreScreenConfig(BaseModel):
@@ -89,6 +91,37 @@ class ChunkingConfig(BaseModel):
     min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
     duplicate_headers: bool = False
 
+    @field_validator("max_tokens")
+    @classmethod
+    def _bounded_max_tokens(cls, value: int) -> int:
+        """Reject unsafe chunk sizes on API writes."""
+        if value < 1:
+            raise ValueError("must be >= 1")
+        if value > MAX_CHUNK_TOKENS:
+            raise ValueError(f"must be <= {MAX_CHUNK_TOKENS}")
+        return value
+
+
+class GraphRetrievalConfig(BaseModel):
+    """How the graph retriever walks a graphrag source (live; no re-ingest).
+
+    The defaults are the configuration that measured best across the corpora
+    tested rather than a neutral starting point: seed from entity matches, put
+    the passages in the walk, and blend with the source's own vector ranking.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Where the walk starts: entities whose descriptions match the question, or
+    # relationships ("A streams_to B") that do. Relationships can start the
+    # walk on an entity the question never names.
+    seed_strategy: Literal["entities", "relationships"] = "entities"
+    # Chunks join the walk as nodes, so a passage is reachable both by being
+    # about the question and by being connected to what is.
+    passage_nodes: bool = True
+    # Fuse the graph ranking with plain vector search by reciprocal rank.
+    blend_vector: bool = True
+
 
 class RetrievalConfig(BaseModel):
     """Query-time retrieval knobs (live; no re-ingest needed)."""
@@ -97,11 +130,12 @@ class RetrievalConfig(BaseModel):
 
     retriever: str = "classic"  # RetrieverCreator key
     exposure: str = "prefetch"  # prefetch | agentic_tool (D11)
-    chunks: int = 2  # final top-k
-    score_threshold: Optional[float] = None  # pgvector/mongo honor it; others ignore
+    chunks: int = 6  # final top-k
+    score_threshold: Optional[float] = None  # pgvector/mongo/qdrant/milvus honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
     reranker: Optional[dict] = None  # reserved: future cross-encoder/LLM reorder
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
+    graph: GraphRetrievalConfig = GraphRetrievalConfig()  # graphrag retriever only
 
     @field_validator("chunks")
     @classmethod
@@ -191,6 +225,24 @@ class SourceConfig(BaseModel):
             return cls()
         if not isinstance(raw, dict):
             return cls()
+        # Writes are strict, but an existing source may predate the ceiling.
+        # Clamp only that legacy field and preserve the rest of its behavior
+        # instead of making the whole row fall back to defaults.
+        chunking = raw.get("chunking")
+        if isinstance(chunking, dict):
+            stored_max = chunking.get("max_tokens")
+            if (
+                isinstance(stored_max, int)
+                and not isinstance(stored_max, bool)
+                and stored_max > MAX_CHUNK_TOKENS
+            ):
+                raw = {
+                    **raw,
+                    "chunking": {
+                        **chunking,
+                        "max_tokens": MAX_CHUNK_TOKENS,
+                    },
+                }
         try:
             return cls.model_validate(raw)
         except Exception:

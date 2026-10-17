@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 
+from sqlalchemy import text
+
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 
 
@@ -155,3 +157,193 @@ class TestUpdateMetadataIfContentNull:
     def test_missing_row_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
         assert repo.update_metadata_if_content_null("nope", "u", {"x": 1}) is False
+
+
+class TestListForPlanning:
+    """Rows for files attached on earlier turns: metadata only, in the order asked."""
+
+    def test_returns_rows_in_the_requested_order_without_content(self, pg_conn):
+        repo = _repo(pg_conn)
+        first = repo.create("u", "a.pdf", "/a", content="AAA", token_count=3, metadata={"content_hash": "h1"})
+        second = repo.create("u", "b.pdf", "/b", content="BBB", token_count=3)
+
+        rows = repo.list_for_planning([second["id"], first["id"]], "u")
+
+        assert [r["id"] for r in rows] == [second["id"], first["id"]]
+        assert all("content" not in r for r in rows)
+        assert rows[1]["metadata"]["content_hash"] == "h1"
+        assert rows[0]["token_count"] == 3
+
+    def test_other_users_rows_and_unknown_ids_are_skipped(self, pg_conn):
+        repo = _repo(pg_conn)
+        mine = repo.create("u", "a.pdf", "/a")
+        theirs = repo.create("someone-else", "b.pdf", "/b")
+
+        rows = repo.list_for_planning([theirs["id"], "not-a-uuid", mine["id"]], "u")
+
+        assert [r["id"] for r in rows] == [mine["id"]]
+
+    def test_empty(self, pg_conn):
+        assert _repo(pg_conn).list_for_planning([], "u") == []
+
+
+class TestContentHash:
+    _HASH = "b" * 64
+
+    def test_create_and_update_store_the_column(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a.pdf", "/a", content_hash=self._HASH)
+        assert doc["content_hash"] == self._HASH
+        assert repo.update(doc["id"], "u", {"content_hash": "c" * 64})
+        assert repo.get(doc["id"], "u")["content_hash"] == "c" * 64
+
+    def test_find_by_hash_returns_the_newest_parsed_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "old.pdf", "/old", content="old text", token_count=2, content_hash=self._HASH)
+        newest = repo.create("u", "new.pdf", "/new", content="new text", token_count=2, content_hash=self._HASH)
+        pg_conn.execute(
+            text("UPDATE attachments SET created_at = now() + interval '1 minute' WHERE id = CAST(:id AS uuid)"),
+            {"id": newest["id"]},
+        )
+
+        found = repo.find_by_hash("u", self._HASH)
+
+        assert found is not None and found["id"] == newest["id"]
+        assert found["content"] == "new text"
+
+    def test_find_by_hash_skips_failed_rows_other_users_and_excluded_handles(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "failed.pdf", "/f", content=None, content_hash=self._HASH)
+        repo.create("someone-else", "theirs.pdf", "/t", content="x", content_hash=self._HASH)
+        repo.create("u", "self.pdf", "/s", content="x", content_hash=self._HASH, legacy_mongo_id="handle-1")
+
+        assert repo.find_by_hash("u", self._HASH, exclude_legacy_id="handle-1") is None
+        assert repo.find_by_hash("u", "") is None
+
+    def test_find_by_hash_never_returns_a_zip_still_unpacking(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create(
+            "u", "b.zip", "/z", content="partial index", content_hash=self._HASH,
+            metadata={"archive": {"status": "processing"}},
+        )
+
+        assert repo.find_by_hash("u", self._HASH) is None
+        assert repo.find_by_hash("u", self._HASH, archive=True) is None
+
+    def test_find_by_hash_matches_zips_only_to_zips(self, pg_conn):
+        repo = _repo(pg_conn)
+        zipped = repo.create(
+            "u", "b.zip", "/z", content="Archive b.zip: 2 file(s)", content_hash=self._HASH,
+            metadata={"archive": {"status": "complete"}},
+        )
+
+        assert repo.find_by_hash("u", self._HASH, archive=False) is None
+        assert repo.find_by_hash("u", self._HASH, archive=True)["id"] == zipped["id"]
+
+        plain = repo.create("u", "b.docx", "/d", content="text", content_hash=self._HASH, metadata={})
+        assert repo.find_by_hash("u", self._HASH, archive=False)["id"] == plain["id"]
+        assert repo.find_by_hash("u", self._HASH, archive=True)["id"] == zipped["id"]
+
+    def test_list_for_planning_includes_the_hash(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a.pdf", "/a", content_hash=self._HASH)
+        assert repo.list_for_planning([doc["id"]], "u")[0]["content_hash"] == self._HASH
+
+
+class TestArchiveMembers:
+    """A zip's members load right after it, in archive order, wherever the zip is attached."""
+
+    def _archive(self, repo, user="u"):
+        parent = repo.create(
+            user, "bundle.zip", "/z", content="index", metadata={"archive": {"members": 2}}
+        )
+        second = repo.create(
+            user, "b.txt", "/b", content="b",
+            metadata={"parent_attachment_id": str(parent["id"]), "archive_path": "b.txt", "archive_index": 1},
+        )
+        first = repo.create(
+            user, "a.txt", "/a", content="a",
+            metadata={"parent_attachment_id": str(parent["id"]), "archive_path": "a.txt", "archive_index": 0},
+        )
+        return parent, first, second
+
+    def test_list_for_planning_follows_the_zip_with_its_members(self, pg_conn):
+        repo = _repo(pg_conn)
+        before = repo.create("u", "before.txt", "/x")
+        parent, first, second = self._archive(repo)
+        after = repo.create("u", "after.txt", "/y")
+
+        rows = repo.list_for_planning([before["id"], parent["id"], after["id"]], "u")
+
+        assert [r["id"] for r in rows] == [before["id"], parent["id"], first["id"], second["id"], after["id"]]
+        assert all("content" not in r for r in rows)
+
+    def test_members_named_explicitly_are_not_listed_twice(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent, first, second = self._archive(repo)
+
+        rows = repo.list_for_planning([parent["id"], first["id"], second["id"]], "u")
+
+        assert [r["id"] for r in rows] == [parent["id"], first["id"], second["id"]]
+
+    def test_expand_archives_adds_full_member_rows(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent, first, second = self._archive(repo)
+        loose = repo.create("u", "loose.txt", "/l", content="loose")
+
+        rows = repo.expand_archives([repo.get(parent["id"], "u"), repo.get(loose["id"], "u")], "u")
+
+        assert [r["id"] for r in rows] == [parent["id"], first["id"], second["id"], loose["id"]]
+        assert rows[1]["content"] == "a"
+
+    def test_other_users_rows_never_join_a_zip(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent, first, second = self._archive(repo)
+        repo.create(
+            "intruder", "evil.txt", "/e", content="e",
+            metadata={"parent_attachment_id": str(parent["id"]), "archive_path": "evil.txt", "archive_index": -1},
+        )
+
+        rows = repo.list_for_planning([parent["id"]], "u")
+
+        assert [r["id"] for r in rows] == [parent["id"], first["id"], second["id"]]
+
+    def test_rows_without_archives_pass_through(self, pg_conn):
+        repo = _repo(pg_conn)
+        loose = repo.create("u", "loose.txt", "/l", content="loose")
+        row = repo.get(loose["id"], "u")
+        assert repo.expand_archives([row], "u") == [row]
+        assert repo.expand_archives([], "u") == []
+
+
+class TestGetForUpdate:
+    """A zip's member tasks serialize their bookkeeping on the zip's row."""
+
+    def test_returns_the_owners_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "bundle.zip", "/p", metadata={"archive": {"status": "processing"}})
+
+        row = repo.get_for_update(str(doc["id"]), "u")
+
+        assert row["metadata"]["archive"] == {"status": "processing"}
+
+    def test_other_users_and_bad_ids_get_nothing(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "bundle.zip", "/p")
+
+        assert repo.get_for_update(str(doc["id"]), "someone-else") is None
+        assert repo.get_for_update("not-a-uuid", "u") is None
+
+    def test_locks_the_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "bundle.zip", "/p")
+
+        repo.get_for_update(str(doc["id"]), "u")
+
+        locks = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+                "WHERE c.relname = 'attachments' AND l.mode = 'RowShareLock' AND l.pid = pg_backend_pid()"
+            )
+        ).scalar()
+        assert locks >= 1

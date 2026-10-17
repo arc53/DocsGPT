@@ -167,17 +167,33 @@ class DeviceAuditLogRepository:
         )
 
     def list_for_device(
-        self, device_id: str, user_id: str, *, limit: int = 100
+        self, device_id: str, user_id: str, *, limit: int = 100, offset: int = 0
     ) -> list[dict]:
+        """One device's audit rows, newest first (``id`` breaks ``created_at`` ties).
+
+        Args:
+            device_id: The device id.
+            user_id: The owning user; rows of other users are never returned.
+            limit: Maximum rows to return.
+            offset: Rows to skip.
+
+        Returns:
+            The audit rows as dicts.
+        """
         result = self._conn.execute(
             text(
                 """
                 SELECT * FROM device_audit_log
                 WHERE device_id = :device_id AND user_id = :user_id
-                ORDER BY created_at DESC
-                LIMIT :limit
+                ORDER BY created_at DESC, id DESC
+                LIMIT :limit OFFSET :offset
                 """
             ),
-            {"device_id": device_id, "user_id": user_id, "limit": int(limit)},
+            {
+                "device_id": device_id,
+                "user_id": user_id,
+                "limit": int(limit),
+                "offset": max(0, int(offset)),
+            },
         )
         return [row_to_dict(r) for r in result.fetchall()]

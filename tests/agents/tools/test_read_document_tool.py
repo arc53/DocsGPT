@@ -357,9 +357,9 @@ def test_malformed_json_schema_rejected_before_enqueue(monkeypatch):
 @pytest.mark.unit
 def test_dispatch_inline_when_in_worker(monkeypatch):
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
-    # Inside a worker current_task is truthy -> parse inline, never enqueue (else the
+    # Inside a worker -> parse inline, never enqueue (else the
     # parsing queue self-deadlocks the worker that also serves it).
-    monkeypatch.setattr(rd, "current_task", object())
+    monkeypatch.setattr(rd, "in_worker", lambda: True)
 
     import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(
@@ -387,8 +387,8 @@ def test_dispatch_inline_when_in_worker(monkeypatch):
 @pytest.mark.unit
 def test_dispatch_enqueues_when_not_in_worker(monkeypatch):
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
-    # Web process: current_task falsy -> dispatch to the parsing queue, never inline.
-    monkeypatch.setattr(rd, "current_task", None)
+    # Web process -> dispatch to the parsing queue, never inline.
+    monkeypatch.setattr(rd, "in_worker", lambda: False)
     captured = _patch_task(monkeypatch, payload={"status": "ok", "content": "queued", "truncated": False})
 
     import docsgpt.worker as worker
@@ -414,9 +414,9 @@ _TIMED_OUT = "document parsing timed out after"
 
 
 def _inline(monkeypatch, run_parse, *, timeout=0.2) -> ReadDocumentTool:
-    """Drive the inline branch (current_task truthy) with a patched parse window."""
+    """Drive the inline (in-worker) branch with a patched parse window."""
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
-    monkeypatch.setattr(rd, "current_task", object())
+    monkeypatch.setattr(rd, "in_worker", lambda: True)
 
     import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(

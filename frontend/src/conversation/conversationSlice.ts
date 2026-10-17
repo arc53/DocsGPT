@@ -6,20 +6,39 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import type { Agent } from '../agents/types';
+import activityService from '../api/services/activityService';
 import conversationService from '../api/services/conversationService';
 import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import { isPageAttended } from '../backgroundJobs/usePageVisible';
+import { shownConversationId } from '../backgroundJobs/usePresence';
 import { getConversations } from '../preferences/preferenceApi';
-import { setConversations } from '../preferences/preferenceSlice';
+import {
+  receiveConversations,
+  renameConversation,
+  setSelectedAgent,
+} from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import {
   clearAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
+import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
-import { appendThoughtText, recordToolCall } from './answerSegments';
+import {
+  appendAnswerText,
+  appendThoughtText,
+  hydrateSegments,
+  recordToolCall,
+} from './answerSegments';
+import {
+  type ErrorParams,
+  readStreamError,
+  setErrorDetail,
+} from './curatedError';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -29,6 +48,7 @@ import {
 import {
   Answer,
   ConversationState,
+  FEEDBACK,
   MessageStatus,
   Query,
   ResearchStep,
@@ -40,6 +60,40 @@ import { ToolCallsType } from './types';
 // terminal ``complete`` rows expose ``response``; non-terminal rows
 // would carry the WAL placeholder text, which must never render.
 // ``failed`` rows surface as ``error`` so they pick up Retry.
+// The API stores feedback lowercase ('like' / 'dislike') so analytics can
+// count it; the thumbs compare against the uppercase FEEDBACK union.
+function toClientFeedback(value: unknown): FEEDBACK | undefined {
+  if (typeof value !== 'string') return undefined;
+  const upper = value.toUpperCase();
+  return upper === 'LIKE' || upper === 'DISLIKE' ? upper : undefined;
+}
+
+const FAILED_FALLBACK = 'Generation failed before completing.';
+
+/**
+ * A failed turn's stored error as ``{message, code, params}``. The backend
+ * stores curated text in ``error``, its reason in ``error_code``
+ * (``context_length_exceeded``) and the values it was worded from in
+ * ``error_params``; an ``error`` object with ``message``, ``code`` and
+ * ``params`` is read too. Older rows carry only the text.
+ */
+export function readStoredError(
+  error: unknown,
+  code: unknown,
+  params?: unknown,
+): { message: string; code?: string; params?: ErrorParams } {
+  if (error && typeof error === 'object') {
+    const obj = error as {
+      message?: unknown;
+      code?: unknown;
+      params?: unknown;
+    };
+    return readStoredError(obj.message, obj.code ?? code, obj.params ?? params);
+  }
+  const stored = readStreamError({ error, code, params });
+  return { ...stored, message: stored.message || FAILED_FALLBACK };
+}
+
 export function mapServerQueryToClient(raw: any): Query {
   const status = raw?.status as MessageStatus | undefined;
   const isTerminalComplete = status === 'complete';
@@ -53,7 +107,7 @@ export function mapServerQueryToClient(raw: any): Query {
   const sources = Array.isArray(raw?.sources) ? raw.sources : undefined;
   const query: Query = {
     prompt: raw?.prompt ?? '',
-    feedback: raw?.feedback ?? undefined,
+    feedback: toClientFeedback(raw?.feedback),
     thought: raw?.thought ?? undefined,
     sources: sources && sources.length > 0 ? sources : undefined,
     tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
@@ -65,13 +119,26 @@ export function mapServerQueryToClient(raw: any): Query {
     lastHeartbeatAt: raw?.last_heartbeat_at ?? undefined,
   };
 
+  const wake = wakeFromMetadata(metadata);
+  if (wake) query.wake = wake;
+
   if (isTerminalComplete) {
     query.response = raw?.response ?? '';
+    // The order the parts streamed in, saved with the message.
+    query.segments = hydrateSegments(
+      raw?.segments ?? metadata.segments,
+      query.response,
+      query.thought,
+    );
   }
   if (isFailed) {
-    query.error =
-      (typeof metadata.error === 'string' && metadata.error) ||
-      'Generation failed before completing.';
+    const stored = readStoredError(
+      metadata.error,
+      metadata.error_code,
+      metadata.error_params,
+    );
+    query.error = stored.message;
+    setErrorDetail(query, stored.code, stored.params);
   }
   return query;
 }
@@ -102,6 +169,73 @@ export function handleAbort() {
   }
 }
 
+/** How long the chat's Stop waits for the server to take it before closing. */
+export const STOP_REQUEST_TIMEOUT_MS = 1000;
+
+/** Whether a Stop is out: another press while it is would send it again. */
+let stopping = false;
+
+/**
+ * The chat's Stop. Tells the server first, so the answer is saved as stopped
+ * rather than as a dropped connection, then closes the stream. An answer
+ * stopped before it wrote anything says so at once, as it will after a
+ * reload.
+ */
+export const stopAnswer = createAsyncThunk<void, void>(
+  'conversation/stopAnswer',
+  async (_arg, { dispatch, getState }) => {
+    stopping = true;
+    try {
+      await stop(dispatch, getState);
+    } finally {
+      stopping = false;
+    }
+  },
+  { condition: () => !stopping },
+);
+
+async function stop(
+  dispatch: (action: unknown) => unknown,
+  getState: () => unknown,
+): Promise<void> {
+  const controller = abortController;
+  const { conversation, preference } = getState() as RootState;
+  const conversationId = conversation.conversationId;
+  const index = conversation.queries.length - 1;
+  const messageId = conversation.queries[index]?.messageId;
+  let taken = false;
+  // Not only a stream of this tab's: an answer picked back up after a
+  // reload is followed by polling, and only the server can stop it.
+  if (messageId && conversation.status === 'loading') {
+    taken = await Promise.race([
+      activityService.stopMessage(messageId, preference.token).then(
+        () => true,
+        () => false,
+      ),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), STOP_REQUEST_TIMEOUT_MS),
+      ),
+    ]);
+  }
+  if (abortController === controller) handleAbort();
+  // The user may have opened another chat while the request was out: mark
+  // only the answer that was stopped, in the chat it belongs to.
+  const after = (getState() as RootState).conversation;
+  if (!taken || after.conversationId !== conversationId) return;
+  const at = after.queries.findIndex((query) => query.messageId === messageId);
+  const query = after.queries[at];
+  if (query && !query.response && !query.error) {
+    dispatch(
+      conversationSlice.actions.raiseError({
+        conversationId,
+        index: at,
+        message: 'Stopped before any response was produced.',
+        code: 'stopped',
+      }),
+    );
+  }
+}
+
 // Loads a conversation and applies it to the slice. Returns
 // ``{data, stale}``: ``stale`` true means a newer load has superseded
 // this one (or Redux already matches), so callers should not react to
@@ -111,12 +245,29 @@ export type LoadConversationResult = {
   stale: boolean;
 };
 
+// The fields of a loaded chat that say which agent it belongs to.
+export type ConversationAgentFields = {
+  agent_id?: string | null;
+  is_shared_usage?: boolean;
+  shared_token?: string | null;
+};
+
+export type LoadConversationArgs = {
+  id: string;
+  force?: boolean;
+  // The chat's agent (null for none), awaited before anything is applied
+  // so its messages and agent card change in one render. Without it the
+  // selected agent is left alone.
+  resolveAgent?: (data: ConversationAgentFields) => Promise<Agent | null>;
+};
+
 let loadSeq = 0;
 
 export const loadConversation = createAsyncThunk<
   LoadConversationResult,
-  { id: string; force?: boolean }
->('loadConversation', async ({ id, force }, { dispatch, getState }) => {
+  LoadConversationArgs
+>('loadConversation', async (args, { dispatch, getState }) => {
+  const { id, force, resolveAgent } = args;
   const seq = ++loadSeq;
   const state = getState() as RootState;
   const token = state.preference.token;
@@ -129,6 +280,15 @@ export const loadConversation = createAsyncThunk<
   }
   const data = await response.json();
   if (!data) return { data: null, stale: false };
+  let agent: Agent | null | undefined;
+  try {
+    agent = resolveAgent ? await resolveAgent(data) : undefined;
+  } catch (error) {
+    // A superseded load must not reject: its caller would navigate away
+    // from the newer chat.
+    if (seq !== loadSeq) return { data: null, stale: true };
+    throw error;
+  }
 
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.
@@ -137,6 +297,7 @@ export const loadConversation = createAsyncThunk<
   }
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
+  if (agent !== undefined) dispatch(setSelectedAgent(agent));
   dispatch(conversationSlice.actions.setConversation(mappedQueries));
   dispatch(
     conversationSlice.actions.updateConversationId({
@@ -178,9 +339,7 @@ export const fetchAnswer = createAsyncThunk<
   if (arg.attachmentIds !== undefined) {
     attachmentIds = arg.attachmentIds;
   } else {
-    attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    attachmentIds = selectSendableAttachmentIds(state);
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());
     }
@@ -234,13 +393,9 @@ export const fetchAnswer = createAsyncThunk<
           ) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -332,7 +487,7 @@ export const fetchAnswer = createAsyncThunk<
                 conversationSlice.actions.raiseError({
                   conversationId: currentConversationId,
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else {
@@ -379,13 +534,9 @@ export const fetchAnswer = createAsyncThunk<
                   }),
                 );
               }
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -502,7 +653,7 @@ export const fetchAnswer = createAsyncThunk<
                 conversationSlice.actions.raiseError({
                   conversationId: currentConversationId,
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else if (data.type === 'structured_answer') {
@@ -581,13 +732,9 @@ export const fetchAnswer = createAsyncThunk<
             query: { conversationId: answer.conversationId },
           }),
         );
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
         dispatch(conversationSlice.actions.setStatus('idle'));
       }
     }
@@ -609,6 +756,24 @@ export const fetchAnswer = createAsyncThunk<
 // already terminal resolve without delay.
 const TAIL_POLL_INTERVAL_MS = 2000;
 const TAIL_MAX_POLL_DURATION_MS = 10 * 60 * 1000;
+
+/** The error code of a decision for an approval that is no longer waiting. */
+export const NOT_PENDING_CODE = 'tool_call_not_pending';
+
+/** Why a ``tool.approval.cleared`` means the open chat shows a stale approval. */
+const APPROVAL_RETIRED_REASONS = new Set(['moved_on', 'expired']);
+
+/** Whether a turn's calls include one paused for the user to decide or run. */
+export function isWaitingOnUser(toolCalls: unknown): boolean {
+  return (
+    Array.isArray(toolCalls) &&
+    toolCalls.some(
+      (call) =>
+        call?.status === 'awaiting_approval' ||
+        call?.status === 'requires_client_execution',
+    )
+  );
+}
 
 export const tailInFlightMessage = createAsyncThunk<
   void,
@@ -656,6 +821,13 @@ export const tailInFlightMessage = createAsyncThunk<
             status === 'failed' ? 'failed' : 'idle',
           ),
         );
+        return;
+      }
+      // Paused for the user (an approval, a client-side tool): nothing is
+      // generating, so wait as a live pause does, not with "Generating…"
+      // and Stop. The decision resumes the turn in a new stream.
+      if (isWaitingOnUser(data?.tool_calls)) {
+        dispatch(conversationSlice.actions.setStatus('awaiting_tool_actions'));
         return;
       }
       await new Promise((r) => setTimeout(r, TAIL_POLL_INTERVAL_MS));
@@ -713,13 +885,9 @@ export const submitToolActions = createAsyncThunk<
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
       } else if (data.type === 'id') {
         // conversation ID already set
       } else if (data.type === 'message_id') {
@@ -776,13 +944,17 @@ export const submitToolActions = createAsyncThunk<
             }),
           );
         }
+      } else if (data.type === 'error' && data.code === NOT_PENDING_CODE) {
+        // The approval is over (another tab moved on, decided it, or it
+        // expired); nothing ran. Show the turn as it ended, not a failure.
+        dispatch(loadConversation({ id: conversationId, force: true }));
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(
           conversationSlice.actions.raiseError({
             conversationId,
             index: targetIndex,
-            message: data.error,
+            ...readStreamError(data),
           }),
         );
       } else if (data.type === 'answer') {
@@ -828,10 +1000,14 @@ export const conversationSlice = createSlice({
       delete state.queries[index].tool_calls;
       delete state.queries[index].segments;
       delete state.queries[index].error;
+      delete state.queries[index].errorCode;
+      delete state.queries[index].errorParams;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
       delete state.queries[index].research;
+      // A new run answers it; the old run's files are not this answer's.
+      delete state.queries[index].workflow_run_id;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;
@@ -858,6 +1034,8 @@ export const conversationSlice = createSlice({
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
+        if (!state.queries[index].segments) state.queries[index].segments = [];
+        appendAnswerText(state.queries[index].segments, query.response);
       }
 
       if (query.structured !== undefined) {
@@ -933,7 +1111,7 @@ export const conversationSlice = createSlice({
       recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     // Records the workflow run id so the answer bubble can render the run's
-    // produced artifacts (WorkflowRunArtifacts fetches by this id).
+    // produced artifacts (useRunArtifacts lists them by this id).
     setWorkflowRunId(
       state,
       action: PayloadAction<{ index: number; workflowRunId: string }>,
@@ -1053,19 +1231,24 @@ export const conversationSlice = createSlice({
       const { index, tail } = action.payload;
       const query = state.queries[index];
       if (!query) return;
-      // A tail is a flat snapshot with no ordering. The live order is left
-      // alone: dropping it here left the stream reducers rebuilding a partial
-      // one from the next delta, which hid every step that came before. It is
-      // rendering that decides, per answer, whether the recorded order still
-      // accounts for the snapshot or synthesis has to take over.
+      // A tail carries the order the server rebuilt from its journal when
+      // it has one; otherwise the live order is left alone: dropping it here
+      // left the stream reducers rebuilding a partial one from the next
+      // delta, which hid every step that came before. It is rendering that
+      // decides, per answer, whether the recorded order still accounts for
+      // the snapshot or synthesis has to take over.
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
       if (status === 'failed') {
         // Surface as error so the placeholder text never renders.
-        query.error =
-          (typeof tail?.error === 'string' && tail.error) ||
-          'Generation failed before completing.';
+        const stored = readStoredError(
+          tail?.error,
+          tail?.error_code,
+          tail?.error_params,
+        );
+        query.error = stored.message;
+        setErrorDetail(query, stored.code, stored.params);
         delete query.response;
         return;
       }
@@ -1086,8 +1269,18 @@ export const conversationSlice = createSlice({
       if (Array.isArray(tail?.tool_calls) && tail.tool_calls.length > 0) {
         query.tool_calls = tail.tool_calls;
       }
+      // The order the turn streamed in, rebuilt by the server from its
+      // journal: without it every tool card renders above the text.
+      const tailSegments = hydrateSegments(
+        tail?.segments,
+        query.response,
+        query.thought,
+      );
+      if (tailSegments) query.segments = tailSegments;
       if (status === 'complete') {
         delete query.error;
+        delete query.errorCode;
+        delete query.errorParams;
       }
     },
     raiseError(
@@ -1096,12 +1289,17 @@ export const conversationSlice = createSlice({
         conversationId: string | null;
         index: number;
         message: string;
+        /** Why the turn failed (``context_length_exceeded``), when known. */
+        code?: string;
+        /** The values a curated error was worded from. */
+        params?: ErrorParams;
       }>,
     ) {
-      const { conversationId, index, message } = action.payload;
+      const { conversationId, index, message, code, params } = action.payload;
       if (state.conversationId !== conversationId) return;
 
       state.queries[index].error = message;
+      setErrorDetail(state.queries[index], code, params);
     },
 
     // Non-fatal counterpart to ``raiseError``: records a notice on the query
@@ -1136,6 +1334,9 @@ export const conversationSlice = createSlice({
 
       state.queries[index].response = '';
       state.queries[index].thought = '';
+      // The recorded order still holds the blocked text; the backend resets it
+      // too. The tool calls stay, as they do on the saved turn.
+      delete state.queries[index].segments;
     },
 
     resetConversation: (state) => {
@@ -1149,6 +1350,17 @@ export const conversationSlice = createSlice({
     builder
       .addCase(fetchAnswer.pending, (state) => {
         state.status = 'loading';
+        // Sending a new message moves past a turn still waiting on an
+        // approval: the server records those calls as never run, and so does
+        // this view, so the card can't be approved after the fact.
+        state.queries.forEach((query) => {
+          query.tool_calls?.forEach((call) => {
+            if (isWaitingOnUser([call])) {
+              call.status = 'denied';
+              call.not_run = 'moved_on';
+            }
+          });
+        });
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {
@@ -1200,24 +1412,80 @@ export default conversationSlice.reducer;
 
 // Listener (not a reducer) so a scheduled message appended to the open
 // chat can dispatch loadConversation + sidebar refresh.
+/** How long a continuation that landed mid-stream waits for the stream to end. */
+export const CONTINUATION_REFRESH_WAIT_MS = 10 * 60 * 1000;
+
 export const conversationListenerMiddleware = createListenerMiddleware();
+
+let listRefresh: Promise<void> | null = null;
+let listRefreshAgain = false;
+
+/**
+ * Refresh the sidebar list for an event or an answer's end, one fetch at a
+ * time. A refresh asked for while one runs folds into a single follow-up
+ * fetch, so a burst of events (a replayed backlog, several chats finishing)
+ * costs two requests and an older list never lands over a newer one; a
+ * `conversation.renamed` that arrives meanwhile gets a list read after the
+ * title. A failed fetch keeps the list on screen.
+ *
+ * Args:
+ *   getState: The store's state getter; the token is read at each fetch.
+ *   dispatch: The store's dispatch.
+ *
+ * Returns:
+ *   A promise that settles once the list is current, follow-up included.
+ */
+function refreshConversationList(
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  if (listRefresh) {
+    listRefreshAgain = true;
+    return listRefresh;
+  }
+  listRefresh = (async () => {
+    try {
+      do {
+        listRefreshAgain = false;
+        const { token } = (getState() as RootState).preference;
+        try {
+          const fetched = await getConversations(token);
+          if (fetched.data) dispatch(receiveConversations(fetched));
+        } catch (error) {
+          console.error('conversations refresh failed', error);
+        }
+      } while (listRefreshAgain);
+    } finally {
+      listRefresh = null;
+    }
+  })();
+  return listRefresh;
+}
 
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
     const envelope = action.payload;
-    if (envelope.type !== 'schedule.message.appended') return;
+    // A one-time scheduled run, or a continuation turn after a background
+    // job (or a monitor, a trigger or an approval) woke the agent.
+    if (
+      envelope.type !== 'schedule.message.appended' &&
+      envelope.type !== 'conversation.continued'
+    )
+      return;
     const payload = (envelope.payload || {}) as Record<string, unknown>;
     const conversationId =
       (payload.conversation_id as string | undefined) || '';
     if (!conversationId) return;
 
     const state = listenerApi.getState() as RootState;
-    const token = state.preference.token;
 
     // Skip mid-stream: loadConversation -> updateConversationId flips status
     // to 'idle', and the next SSE chunk dies on the 'idle' guard in
     // updateStreamingQuery. Defer the refresh to the user's next navigation.
+    const streamingHere =
+      state.conversation.conversationId === conversationId &&
+      state.conversation.status === 'loading';
     if (
       state.conversation.conversationId === conversationId &&
       state.conversation.status !== 'loading'
@@ -1228,14 +1496,143 @@ conversationListenerMiddleware.startListening({
     }
 
     // Refresh sidebar; server reorders by updated_at which just bumped.
-    try {
-      const fetched = await getConversations(token);
-      listenerApi.dispatch(setConversations(fetched));
-    } catch (error) {
-      console.error(
-        'schedule.message.appended: conversations refresh failed',
-        error,
+    await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
+
+    // A continuation that landed while the user's own answer streamed shows
+    // once that stream ends, if the chat is still open.
+    if (streamingHere && envelope.type === 'conversation.continued') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
       );
+      const after = listenerApi.getState() as RootState;
+      if (ended && after.conversation.conversationId === conversationId) {
+        listenerApi.dispatch(
+          loadConversation({ id: conversationId, force: true }),
+        );
+      }
+    }
+  },
+});
+
+// A turn this chat shows waiting on an approval was moved past in another tab
+// (or the request expired): reload it so the card becomes the call that never
+// ran. Never mid-stream: a reload then would drop the stream's later chunks,
+// so it waits for the stream (or a tail that may still hold the old turn) to end.
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    if (envelope.type !== 'tool.approval.cleared') return;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    if (!APPROVAL_RETIRED_REASONS.has(String(payload.reason ?? ''))) return;
+    const conversationId =
+      (payload.conversation_id as string | undefined) || envelope.scope?.id;
+    const state = listenerApi.getState() as RootState;
+    if (!conversationId || state.conversation.conversationId !== conversationId)
+      return;
+    if (state.conversation.status === 'loading') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
+      );
+      const after = listenerApi.getState() as RootState;
+      if (!ended || after.conversation.conversationId !== conversationId)
+        return;
+    }
+    listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
+  },
+});
+
+// A new chat is on the server, named after its question, from its answer's
+// first event: list it in the sidebar then, so it shows with its working mark
+// while it answers, not only once the answer ends. This tab's stream names it
+// (setConversationId); a chat started in another tab arrives as
+// `message.started`. One list refresh per chat, whichever comes first.
+const listingConversations = new Set<string>();
+
+async function listNewConversation(
+  conversationId: string,
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  const state = getState() as RootState;
+  const listed = state.preference.conversations.data?.some(
+    (chat) => chat.id === conversationId,
+  );
+  if (listed || listingConversations.has(conversationId)) return;
+  listingConversations.add(conversationId);
+  try {
+    await refreshConversationList(getState, dispatch);
+  } finally {
+    listingConversations.delete(conversationId);
+  }
+}
+
+conversationListenerMiddleware.startListening({
+  actionCreator: conversationSlice.actions.setConversationId,
+  effect: async (action, listenerApi) => {
+    if (!action.payload) return;
+    await listNewConversation(
+      action.payload,
+      listenerApi.getState,
+      listenerApi.dispatch,
+    );
+  },
+});
+
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    const conversationId = String(payload.conversation_id ?? '');
+    if (!conversationId) return;
+    if (envelope.type === 'message.started') {
+      await listNewConversation(
+        conversationId,
+        listenerApi.getState,
+        listenerApi.dispatch,
+      );
+    } else if (envelope.type === 'message.finished') {
+      // An answer that ended while the user was elsewhere is marked unread
+      // on the server; refresh the list for its mark. The chat this tab
+      // shows needs none while the user looks at it: nothing was marked.
+      // Unwatched, it may have been, by an answer from another tab or device
+      // that this tab never streamed. "Shows" is what presence reports (the
+      // route), not the last chat in state: on /settings that one is unwatched.
+      const state = listenerApi.getState() as RootState;
+      const shown = shownConversationId(
+        typeof window === 'undefined' ? '/' : window.location.pathname,
+        state.conversation.conversationId,
+        state.conversation.status === 'loading',
+      );
+      if (shown === conversationId && isPageAttended()) return;
+      await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
+    } else if (envelope.type === 'conversation.renamed') {
+      // The generated title, saved after the answer ended. It replaces the
+      // question-prefix name it names as `previous`: a chat the user renamed
+      // meanwhile (an event replayed after the stream dropped) keeps its
+      // name. A chat not listed yet, or a list fetch that read before the
+      // title, gets a list that holds it.
+      const name = String(payload.name ?? '');
+      if (!name) return;
+      const previous =
+        typeof payload.previous === 'string' ? payload.previous : null;
+      const chat = (
+        listenerApi.getState() as RootState
+      ).preference.conversations.data?.find((c) => c.id === conversationId);
+      if (chat && (previous === null || chat.name === previous)) {
+        listenerApi.dispatch(renameConversation({ id: conversationId, name }));
+      }
+      if (!chat || listRefresh) {
+        await refreshConversationList(
+          listenerApi.getState,
+          listenerApi.dispatch,
+        );
+      }
     }
   },
 });

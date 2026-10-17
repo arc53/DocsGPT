@@ -10,8 +10,9 @@ Celery and the vector comes back. The API pays a broker round trip per query
 and no resident model.
 
 Inside a worker there is nothing to delegate to -- dispatching would queue work
-behind the task already running and wait on itself -- so a call made while a
-task is executing runs locally, on a model this process loads once and caches.
+behind the task already running and wait on itself -- so a call made anywhere in
+a worker process, including from a thread a task started, runs locally, on a
+model this process loads once and caches.
 ``DOCUMENT_PARSE_QUEUE`` exists for the same reason on the parsing side.
 
 Production deployments should point ``EMBEDDINGS_BASE_URL`` at a real embedding
@@ -79,11 +80,11 @@ def _forget(result) -> None:
 
 
 def _in_worker() -> bool:
-    """True when a Celery task is executing in this process."""
+    """True anywhere in a Celery worker process -- on any thread, not only the task's."""
     try:
-        from docsgpt.celery_init import celery
+        from docsgpt.celery_init import in_worker
 
-        return celery.current_worker_task is not None
+        return in_worker()
     except Exception:
         return False
 
@@ -173,8 +174,8 @@ class DelegatedEmbeddings:
         the full timeout at once -- at the shipped 60s and 96 WSGI threads, an
         API that serves nothing at all, health checks included.
         """
-        queue = getattr(settings, "EMBEDDINGS_QUEUE", "embeddings")
-        timeout = getattr(settings, "EMBEDDINGS_DELEGATE_TIMEOUT", 60)
+        queue = settings.EMBEDDINGS_QUEUE
+        timeout = settings.EMBEDDINGS_DELEGATE_TIMEOUT
 
         remaining = self._cooldown_remaining()
         if remaining > 0:
@@ -227,8 +228,16 @@ class DelegatedEmbeddings:
         return vectors
 
     def embed_query(self, query: str) -> List[float]:
-        """Embed a single query string."""
-        return self.embed_documents([query])[0]
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``.
+
+        Clipped here, before dispatch: the worker embeds whatever it is sent as
+        a document, so it cannot tell a query from a chunk.
+        """
+        from docsgpt.parser.tokenization import get_token_counter
+        from docsgpt.vectorstore.base import clip_query
+
+        clipped = clip_query(query, lambda: get_token_counter(self.embeddings_name))
+        return self.embed_documents([clipped])[0]
 
     @property
     def dimension(self) -> Optional[int]:

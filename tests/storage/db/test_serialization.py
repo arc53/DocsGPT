@@ -68,6 +68,14 @@ class TestCoercePgNative:
         d = {"a": 1, "b": [2, "x"], "c": None}
         assert coerce_pg_native(d) == d
 
+    def test_pydantic_model_becomes_json_dict(self):
+        from docsgpt.storage.db.source_config import RetrievalConfig
+
+        out = coerce_pg_native({"sources": [{"id": "s", "retrieval": RetrievalConfig(chunks=3)}]})
+        retrieval = out["sources"][0]["retrieval"]
+        assert retrieval == RetrievalConfig(chunks=3).model_dump(mode="json")
+        json.dumps(out)
+
     def test_pg_row_dict_real_shape(self):
         # Mirror the actual user_tools row dict shape that broke the
         # continuation save: timestamp + UUID + nested actions.
@@ -118,6 +126,12 @@ class TestPGNativeJSONEncoder:
         assert decoded["amount"] == "42.00"
         assert decoded["scheduled_for"] == "2026-06-01"
         assert decoded["data"][0]["created_at"] == "2026-05-02T00:00:00+00:00"
+
+    def test_pydantic_model(self):
+        from docsgpt.storage.db.source_config import RetrievalConfig
+
+        decoded = json.loads(json.dumps({"r": RetrievalConfig(chunks=3)}, cls=PGNativeJSONEncoder))
+        assert decoded["r"]["chunks"] == 3
 
     def test_unsupported_type_still_raises(self):
         # Encoder must not silently swallow types it doesn't know how to

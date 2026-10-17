@@ -32,6 +32,8 @@ export async function getDocsWithPagination(
   try {
     const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
     const response = await userService.getDocsWithPagination(query, token);
+    if (!response.ok)
+      throw new Error(`Failed to load sources (${response.status})`);
     const data = await response.json();
     const docs: Doc[] = [];
     Array.isArray(data.paginated) &&
@@ -42,6 +44,7 @@ export async function getDocsWithPagination(
       docs: docs,
       totalDocuments: data.total,
       totalPages: data.totalPages,
+      currentPage: data.currentPage ?? pageNumber,
       nextCursor: data.nextCursor,
     };
   } catch (error) {
@@ -50,11 +53,17 @@ export async function getDocsWithPagination(
   }
 }
 
+/**
+ * The newest chats, or with `before` (the last chat loaded) the next older
+ * page; `CONVERSATIONS_PAGE_SIZE` per page.
+ */
 export async function getConversations(
   token: string | null,
+  before?: { date: string; id: string },
 ): Promise<GetConversationsResult> {
+  const requestedAt = Date.now();
   try {
-    const response = await conversationService.getConversations(token);
+    const response = await conversationService.getConversations(token, before);
 
     if (!response.ok) {
       console.error('Error fetching conversations:', response.statusText);
@@ -74,8 +83,12 @@ export async function getConversations(
       id: item.id,
       name: item.name,
       agent_id: item.agent_id ?? null,
+      date: item.date,
+      // The server's unread mark: a failed or finished answer, or a follow-up,
+      // that landed while the user was away. syncUnread reads it.
+      ...(typeof item.unread === 'boolean' ? { unread: item.unread } : {}),
     }));
-    return { data: conversations, loading: false };
+    return { data: conversations, loading: false, requestedAt };
   } catch (error) {
     console.error(
       'An unexpected error occurred while fetching conversations:',

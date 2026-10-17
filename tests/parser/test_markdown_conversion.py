@@ -53,8 +53,8 @@ def test_element_with_content_converts_as_before(html, expected):
 
 
 def test_crawler_conventions_are_applied_and_overridable():
-    """The ATX heading and the backslash line break are the shape all three callers share."""
-    assert MARKDOWNIFY_OPTIONS == {"heading_style": "ATX", "newline_style": "BACKSLASH"}
+    """The ATX heading, the backslash line break and the inferred table header are the shape all three callers share."""
+    assert MARKDOWNIFY_OPTIONS == {"heading_style": "ATX", "newline_style": "BACKSLASH", "table_infer_header": True}
     assert html_to_markdown_text("<h1>Title</h1>").strip() == "# Title"
     assert html_to_markdown_text("<p>a<br>b</p>").strip() == "a\\\nb"
 

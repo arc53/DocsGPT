@@ -7,11 +7,11 @@ import devicesService, {
   ApprovalMode,
   PairingResponse,
 } from '../api/services/devicesService';
-import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { CopyField } from '../components/ui/code-block';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -145,7 +145,6 @@ export default function PairDeviceModal({
         onChange={(e) => setName(e.target.value)}
         label={t('settings.devices.pairing.nameLabel')}
         placeholder={t('settings.devices.pairing.namePlaceholder')}
-        labelBgClassName="bg-card"
       />
       <Input
         type="text"
@@ -153,7 +152,6 @@ export default function PairDeviceModal({
         onChange={(e) => setDescription(e.target.value)}
         label={t('settings.devices.pairing.descriptionLabel')}
         placeholder={t('settings.devices.pairing.descriptionPlaceholder')}
-        labelBgClassName="bg-card"
       />
       <div className="flex flex-col gap-2">
         <span className="text-muted-foreground text-xs">
@@ -176,9 +174,11 @@ export default function PairDeviceModal({
           </SelectContent>
         </Select>
         {approvalMode === 'full' && (
-          <p className="text-xs text-red-600 dark:text-red-400">
-            {t('settings.devices.pairing.fullAccessWarning')}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>
+              {t('settings.devices.pairing.fullAccessWarning')}
+            </AlertDescription>
+          </Alert>
         )}
       </div>
       {error && (
@@ -198,31 +198,27 @@ export default function PairDeviceModal({
         <span className="text-muted-foreground text-xs">
           {t('settings.devices.pairing.stepOne')}
         </span>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <pre className="grow font-mono text-sm break-all whitespace-pre-wrap select-all">
-            {installCommand}
-          </pre>
-          <CopyButton textToCopy={installCommand} />
-        </div>
-        <a
-          href="https://github.com/arc53/DocsGPT-cli#installation"
-          target="_blank"
-          rel="noreferrer"
-          className="text-muted-foreground hover:text-foreground text-xs underline"
-        >
-          {t('settings.devices.pairing.installLink')}
-        </a>
+        <CopyField value={installCommand} />
+        {/* A 12px hint line, so the link takes the hint's size and weight. */}
+        <p className="text-xs">
+          <Button variant="link" size="text" asChild>
+            <a
+              href="https://github.com/arc53/DocsGPT-cli#installation"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('settings.devices.pairing.installLink')}
+            </a>
+          </Button>
+        </p>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-muted-foreground text-xs">
           {t('settings.devices.pairing.stepTwo')}
         </span>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <div className="grow text-center font-mono text-3xl tracking-widest select-all">
-            {userCode || '...'}
-          </div>
-          {userCode && <CopyButton textToCopy={userCode} />}
-        </div>
+        <CopyField value={userCode} size="display">
+          {userCode || '…'}
+        </CopyField>
       </div>
       <p className="text-muted-foreground text-xs">
         {t('settings.devices.pairing.waitingForCli')}
@@ -233,25 +229,17 @@ export default function PairDeviceModal({
   const footer = (() => {
     if (stage === 'form') {
       return (
-        <>
-          <Button variant="ghost" onClick={close} className="rounded-3xl px-5">
-            {t('settings.devices.pairing.cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleStart}
-            disabled={submitting}
-            className="rounded-3xl px-5 text-white"
-          >
-            {submitting
-              ? t('settings.devices.pairing.starting')
-              : t('settings.devices.pairing.start')}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('settings.devices.pairing.cancel')}
+          onCancel={close}
+          submitLabel={t('settings.devices.pairing.start')}
+          onSubmit={handleStart}
+          pending={submitting}
+        />
       );
     }
     return (
-      <Button variant="ghost" onClick={close} className="rounded-3xl px-5">
+      <Button variant="ghost" size="lg" shape="pill" onClick={close}>
         {t('settings.devices.pairing.cancel')}
       </Button>
     );
@@ -265,7 +253,6 @@ export default function PairDeviceModal({
       }}
       title={t('settings.devices.pairing.title')}
       footer={footer}
-      contentClassName="px-1"
     >
       {stage === 'form' && renderForm()}
       {stage === 'waiting' && renderWaiting()}

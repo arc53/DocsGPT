@@ -36,6 +36,9 @@ from docsgpt.agents.default_tools import (
     synthesized_tool_name_for_id,
 )
 from docsgpt.api import api
+from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -1136,7 +1139,8 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
         warnings.append(f"Tool type '{tool_type}' not available on this instance; skipped")
         return None
     config_requirements = inst.get_config_requirements() or {}
-    config = dict(tool.get("config") or {})
+    # An imported tool starts with no note that a connection was removed.
+    config = carry_removed_connection(dict(tool.get("config") or {}), None)
     config.update(secrets or {})
     if tool_type == "api_tool":
         label = tool.get("display_name") or tool.get("name") or tool_type
@@ -1489,18 +1493,24 @@ def _apply_workflow(
         if existing_id:
             existing = wf_repo.get(str(existing_id), user)
     if existing is not None:
+        from docsgpt.api.user.resource_access import prune_sponsors
+        from docsgpt.api.user.workflows.routes import _node_refs
+
         pg_workflow_id = str(existing["id"])
         next_version = get_workflow_graph_version(existing) + 1
         _write_graph(conn, pg_workflow_id, next_version, nodes_data, edges_data)
-        wf_repo.update(
-            pg_workflow_id,
-            user,
-            {
-                "name": name,
-                "description": description,
-                "current_graph_version": next_version,
-            },
-        )
+        workflow_fields = {
+            "name": name,
+            "description": description,
+            "current_graph_version": next_version,
+        }
+        # Sponsors of node resources the file dropped go too, so a stale
+        # record can't vouch for the resource if someone adds it back.
+        sponsors = existing.get("resource_sponsors") or {}
+        pruned = prune_sponsors(sponsors, _node_refs(nodes_data))
+        if pruned != sponsors:
+            workflow_fields["resource_sponsors"] = pruned
+        wf_repo.update(pg_workflow_id, user, workflow_fields)
         WorkflowNodesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         WorkflowEdgesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         return pg_workflow_id
@@ -1508,6 +1518,25 @@ def _apply_workflow(
     created = wf_repo.create(user, name, description=description)
     _write_graph(conn, str(created["id"]), 1, nodes_data, edges_data)
     return str(created["id"])
+
+
+def _prune_agent_sponsors(agents_repo: AgentsRepository, agent_id: str, user: str) -> None:
+    """Drop sponsor records of resources the imported agent no longer references.
+
+    Args:
+        agents_repo: Repository on the import's connection.
+        agent_id: The updated agent.
+        user: Its owner.
+    """
+    from docsgpt.api.user.resource_access import agent_refs, prune_sponsors
+
+    row = agents_repo.get(agent_id, user)
+    if not row:
+        return
+    sponsors = row.get("resource_sponsors") or {}
+    pruned = prune_sponsors(sponsors, agent_refs(row))
+    if pruned != sponsors:
+        agents_repo.update(agent_id, user, {"resource_sponsors": pruned})
 
 
 def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) -> dict:
@@ -1551,9 +1580,9 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     slug = _unique_slug(agents_repo, user, metadata.get("slug") or spec.get("name"), exclude_id=exclude_id)
 
     try:
-        chunks_value = int(spec["chunks"]) if spec.get("chunks") is not None else 2
+        chunks_value = int(spec["chunks"]) if spec.get("chunks") is not None else 6
     except (TypeError, ValueError):
-        chunks_value = 2
+        chunks_value = 6
 
     # YAML-authoritative fields — written even when the resolved value is None,
     # so a re-import can CLEAR models / json_schema / prompt-to-default. On
@@ -1646,6 +1675,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # Only a brand-new agent (the create path below) starts as a draft.
         fields = {**authoritative, **optional, "name": spec.get("name")}
         if agents_repo.update(str(target["agent_id"]), user, fields):
+            _prune_agent_sponsors(agents_repo, str(target["agent_id"]), user)
             if orphaned_workflow_id and not agents_repo.count_by_workflow(
                 orphaned_workflow_id, user
             ):
@@ -1704,7 +1734,10 @@ def _read_import_payload(req):
             data.get("yaml") or data.get("content") or "",
             resolution if isinstance(resolution, dict) else {},
         )
-    if "file" in req.files:
+    # Only a multipart body may hold a ``file`` field. Looking for one in any
+    # other body makes Werkzeug parse it as a form and use up the stream, so
+    # ``curl --data-binary @agent.yaml`` (sent as form-urlencoded) read empty.
+    if content_type.startswith("multipart/form-data") and "file" in req.files:
         raw = req.files["file"].read(MAX_IMPORT_BYTES + 1)
         if len(raw) > MAX_IMPORT_BYTES:
             raise AgentImportError("Import document too large")
@@ -1715,6 +1748,32 @@ def _read_import_payload(req):
     if len(raw) > MAX_IMPORT_BYTES:
         raise AgentImportError("Import document too large")
     return raw.decode("utf-8", "replace"), {}
+
+
+def _restricted_token_denial(conn, user: str, doc: dict) -> Optional[str]:
+    """Why a resource-restricted personal access token may not import ``doc``, if it may not.
+
+    An import resolves sources, prompts and tools by name and may create them,
+    so a token restricted on any of those families cannot be held to its
+    allowlist here. A token restricted to specific agents may update exactly
+    those; it can never create one.
+    """
+    for family in ("sources", "prompts", "tools", "workflows"):
+        if allowed_ids(request, family) is not None:
+            return f"A token restricted to specific {family} cannot import agents"
+    allowed_agents = allowed_ids(request, "agents")
+    if allowed_agents is None:
+        return None
+    target = _resolve_target(conn, user, doc.get("metadata") or {})
+    if target["action"] != "update" or target["agent_id"] not in allowed_agents:
+        return "This token is restricted to specific agents and may only update those"
+    return None
+
+
+def _token_denied_response(reason: str):
+    return make_response(
+        jsonify({"success": False, "error": "resource_not_allowed", "message": reason}), 403
+    )
 
 
 @agents_portability_ns.route("/export_agent")
@@ -1729,14 +1788,23 @@ class ExportAgent(Resource):
             return make_response(jsonify({"success": False, "message": "id is required"}), 400)
         with db_session() as conn:
             repo = AgentsRepository(conn)
-            agent = repo.get_any(agent_id, user)
+            try:
+                ra = require(conn, "agent", agent_id, user, "export")
+            except AccessDenied as denied:
+                return make_response(
+                    jsonify({"success": False, "message": denied.message}), denied.status
+                )
+            agent = repo.get_by_id(ra.resource_id)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
-            agent["slug"] = ensure_agent_slug(conn, agent, user)
+            # Serialized as the owner: the agent's prompt, sources, tools and
+            # workflow are the owner's (secrets are never exported).
+            owner_id = ra.owner_id
+            agent["slug"] = ensure_agent_slug(conn, agent, owner_id)
             try:
-                export = serialize_agent(conn, agent, user)
+                export = serialize_agent(conn, agent, owner_id)
             except AgentExportError as exc:
                 return make_response(
                     jsonify({"success": False, "message": str(exc)}), 400
@@ -1763,6 +1831,8 @@ class ImportAgentPlan(Resource):
             return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         try:
             with db_readonly() as conn:
+                if reason := _restricted_token_denial(conn, user, doc):
+                    return _token_denied_response(reason)
                 plan = plan_import(conn, user, doc)
         except Exception:
             current_app.logger.error("Agent import plan failed", exc_info=True)
@@ -1774,7 +1844,7 @@ class ImportAgentPlan(Resource):
 
 @agents_portability_ns.route("/import_agent")
 class ImportAgent(Resource):
-    @api.doc(description="Import an agent from YAML (created as a draft)")
+    @api.doc(description="Import an agent from YAML: create a draft, or update the agent matched by id or slug")
     def post(self):
         if not (decoded_token := request.decoded_token):
             return make_response(jsonify({"success": False}), 401)
@@ -1786,6 +1856,8 @@ class ImportAgent(Resource):
             return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         try:
             with db_session() as conn:
+                if reason := _restricted_token_denial(conn, user, doc):
+                    return _token_denied_response(reason)
                 result = apply_import(conn, user, doc, resolution)
         except AgentImportError as exc:
             # Apply-time rejection of the user's document (e.g. the workflow

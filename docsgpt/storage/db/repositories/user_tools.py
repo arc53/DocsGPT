@@ -23,8 +23,11 @@ from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 _JSONB_COLUMNS = {"config", "config_requirements", "actions"}
-_SCALAR_COLUMNS = {"name", "custom_name", "display_name", "description", "status"}
-_ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
+_SCALAR_COLUMNS = {"name", "custom_name", "display_name", "description", "status", "credential_mode"}
+# Set by server code only (tool creation, connection setup); route handlers
+# must not pass client input here.
+_UUID_COLUMNS = {"connection_id"}
+_ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS | _UUID_COLUMNS
 
 
 def _encode_jsonb(value: Any) -> Any:
@@ -60,6 +63,8 @@ class UserToolsRepository:
         status: bool = True,
         extra: Optional[dict] = None,
         legacy_mongo_id: Optional[str] = None,
+        connection_id: Optional[str] = None,
+        credential_mode: str = "owner",
     ) -> dict:
         """Insert a new tool row. ``extra`` is merged into the config JSONB."""
         cfg = config or {}
@@ -70,14 +75,16 @@ class UserToolsRepository:
                 """
                 INSERT INTO user_tools (
                     user_id, name, custom_name, display_name, description,
-                    config, config_requirements, actions, status, legacy_mongo_id
+                    config, config_requirements, actions, status, legacy_mongo_id,
+                    connection_id, credential_mode
                 )
                 VALUES (
                     :user_id, :name, :custom_name, :display_name, :description,
                     CAST(:config AS jsonb),
                     CAST(:config_requirements AS jsonb),
                     CAST(:actions AS jsonb),
-                    :status, :legacy_mongo_id
+                    :status, :legacy_mongo_id,
+                    CAST(:connection_id AS uuid), :credential_mode
                 )
                 RETURNING *
                 """
@@ -93,6 +100,8 @@ class UserToolsRepository:
                 "actions": _encode_jsonb(actions or []),
                 "status": status,
                 "legacy_mongo_id": legacy_mongo_id,
+                "connection_id": str(connection_id) if connection_id else None,
+                "credential_mode": credential_mode,
             },
         )
         return row_to_dict(result.fetchone())
@@ -213,6 +222,9 @@ class UserToolsRepository:
             if col in _JSONB_COLUMNS:
                 set_clauses.append(f"{col} = CAST(:{col} AS jsonb)")
                 params[col] = _encode_jsonb(val)
+            elif col in _UUID_COLUMNS:
+                set_clauses.append(f"{col} = CAST(:{col} AS uuid)")
+                params[col] = str(val) if val else None
             else:
                 set_clauses.append(f"{col} = :{col}")
                 params[col] = val

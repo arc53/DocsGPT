@@ -282,8 +282,112 @@ class TestBuildFromDocumentsBatching:
         assert sizes == [2, 2, 1]
         assert len(store.index_to_docstore_id) == 5
 
+    def test_embedding_override_preserves_full_stored_text(self):
+        embedded = []
+
+        def embed(texts):
+            embedded.extend(texts)
+            return [[1.0, 2.0] for _ in texts]
+
+        store = self._store(embed)
+        docs = [_SeedDoc("full legacy chunk text", {"source": "legacy"})]
+        store._build_from_documents(docs, embedding_texts=["bounded prefix"])
+
+        assert embedded == ["bounded prefix"]
+        assert store.get_chunks()[0]["text"] == "full legacy chunk text"
+
+    def test_embedding_override_must_match_document_count(self):
+        store = self._store(lambda texts: [[1.0, 2.0] for _ in texts])
+        with pytest.raises(ValueError, match="must match docs_init length"):
+            store._build_from_documents(self._docs(2), embedding_texts=["one"])
+
     def test_defaults_are_unchanged(self):
         store = self._store(lambda texts: [[1.0, 2.0] for _ in texts])
         store._build_from_documents(self._docs(3))
         assert len(store.documents) == 3
         assert all(len(k) == 36 for k in store.documents), "uuid4 ids by default"
+
+
+def _assert_rows_match_documents(store):
+    """Every FAISS row must hold the embedding of the chunk it maps to."""
+    import numpy as np
+
+    embeddings = _FakeEmbeddings()
+    assert store.index.ntotal == len(store.documents) == len(store.index_to_docstore_id)
+    assert sorted(store.index_to_docstore_id) == list(range(store.index.ntotal))
+    for row, doc_id in store.index_to_docstore_id.items():
+        expected = embeddings.embed_documents([store.documents[doc_id]["page_content"]])[0]
+        assert np.allclose(store.index.reconstruct(row), expected), (row, doc_id)
+
+
+@pytest.mark.unit
+class TestFaissUpdateChunk:
+    def test_keeps_id_and_position(self, populated):
+        before = [c["doc_id"] for c in populated.get_chunks()]
+        target = before[1]
+
+        returned = populated.update_chunk(target, "Redis caches things.", {"source": "cache.txt"})
+
+        assert returned == target
+        chunks = populated.get_chunks()
+        assert [c["doc_id"] for c in chunks] == before
+        assert chunks[1]["text"] == "Redis caches things."
+        assert chunks[1]["metadata"] == {"source": "cache.txt"}
+        assert populated.documents[target] == {
+            "page_content": "Redis caches things.",
+            "metadata": {"source": "cache.txt"},
+        }
+
+    def test_replaces_the_vector_and_keeps_rows_consistent(self, populated):
+        target = populated.get_chunks()[0]["doc_id"]
+
+        populated.update_chunk(target, "Redis caches things.", {})
+
+        _assert_rows_match_documents(populated)
+        # The old "Paris" vector is gone and the neutral query finds the edit.
+        assert "Paris" not in str(populated.search("Paris", k=1)[0])
+        assert "Redis" in str(populated.search("something neutral", k=1)[0])
+
+    def test_saves_once(self, populated):
+        target = populated.get_chunks()[0]["doc_id"]
+        with patch.object(populated, "_save_to_storage") as save:
+            populated.update_chunk(target, "Redis caches things.", {})
+        save.assert_called_once()
+
+    def test_embedding_failure_leaves_the_chunk_untouched(self, populated):
+        chunks_before = populated.get_chunks()
+        mapping_before = dict(populated.index_to_docstore_id)
+        target = chunks_before[1]["doc_id"]
+
+        with patch.object(
+            populated.embeddings, "embed_documents", side_effect=RuntimeError("embed down")
+        ), patch.object(populated, "_save_to_storage") as save:
+            with pytest.raises(RuntimeError):
+                populated.update_chunk(target, "Redis caches things.", {})
+
+        assert populated.get_chunks() == chunks_before
+        assert populated.index_to_docstore_id == mapping_before
+        assert populated.index.ntotal == 3
+        save.assert_not_called()
+
+    def test_unknown_id_raises(self, populated):
+        with pytest.raises(KeyError):
+            populated.update_chunk("nope", "text", {})
+        assert populated.index.ntotal == 3
+
+    @pytest.mark.parametrize("sidecar", ["json", "pickle"])
+    def test_survives_save_and_reload(self, populated, make_store, tmp_path, sidecar):
+        before = [c["doc_id"] for c in populated.get_chunks()]
+        target = before[1]
+        populated.update_chunk(target, "Redis caches things.", {"source": "cache.txt"})
+
+        if sidecar == "pickle":
+            (tmp_path / "indexes" / "src" / "index.json").unlink()
+        reloaded = make_store()
+
+        chunks = reloaded.get_chunks()
+        assert [c["doc_id"] for c in chunks] == before
+        assert chunks[1]["text"] == "Redis caches things."
+        assert chunks[1]["metadata"] == {"source": "cache.txt"}
+        _assert_rows_match_documents(reloaded)
+        assert "Redis" in str(reloaded.search("something neutral", k=1)[0])
