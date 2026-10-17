@@ -32,11 +32,11 @@ To run the bot, you need to use the separate Discord DocsGPT Extension repositor
 
 2. **Configure your environment**:
    Create a .env file in the root of the discord-docsgpt-extension directory and add your keys:
-```env
+```dotenv
 DISCORD_TOKEN=your_discord_bot_token
-# Get your API key inside DocsGPT: Dashboard -> Agents -> your agent -> API key
-   API_KEY=your_docsgpt_agent_key
-   API_BASE=https://app.docsgpt.cloud
+# Publish your agent first, then copy its key from More actions > Access Details
+API_KEY=your_docsgpt_agent_key
+API_BASE=https://gptcloud.arc53.com
    ```
 
 3. **Start the application** using Docker Compose from within the repository folder:
@@ -65,5 +65,5 @@ Before the bot can read messages, you must invite it using the correct web brows
 1. Open your regular Discord application or website.
 2. Go into your server and click on any text channel your bot can see.
 3. Type the `@` symbol followed by your bot's name (for example: `@MyDocsGPTBot hello`) and press enter to send a message.
-4. Your bot will instantly create a dedicated text thread right there in the chat and reply to you directly.
+4. If the channel allows threads, your bot creates a thread on your message and replies there. Otherwise, it replies inline.
 
