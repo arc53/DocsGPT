@@ -1,6 +1,7 @@
 import logging
 
 from bs4 import BeautifulSoup
+from docsgpt.parser.html_text import html_to_text
 
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.parser.remote.base import (
@@ -57,7 +58,7 @@ class WebLoader(BaseRemote):
                 metadata["file_path"] = url_to_virtual_path(url, include_host)
                 documents.append(
                     Document(
-                        soup.get_text(separator="\n", strip=True),
+                        html_to_text(soup),
                         extra_info=metadata,
                     )
                 )
