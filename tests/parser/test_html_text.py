@@ -2,6 +2,7 @@
 
 import time
 
+import pytest
 from bs4 import BeautifulSoup
 
 from docsgpt.parser.html_text import html_to_text
@@ -86,3 +87,42 @@ def test_many_line_breaks_flatten_in_linear_time():
     assert elapsed < 5
     assert len(lines) == 50_000
     assert set(lines) == {"x"}
+
+
+def test_adjacent_links_are_kept_apart():
+    """A navigation bar or a tag list puts its links side by side with nothing between them."""
+    assert _text("<nav><a>Home</a><a>Docs</a></nav>") == "Home Docs"
+
+
+def test_adjacent_spans_are_kept_apart():
+    assert _text("<p><span>Alice</span><span>CTO</span></p>") == "Alice CTO"
+
+
+def test_text_between_elements_is_joined_as_written():
+    """Only an element that touches another element gets a space; text is joined as it stands."""
+    assert _text("<p><b>x</b>y<b>z</b></p>") == "xyz"
+
+
+def test_a_comment_between_two_elements_does_not_join_them():
+    assert _text("<p><a>x</a><!-- note --><a>y</a></p>") == "x y"
+
+
+def test_source_line_breaks_inside_a_paragraph_collapse():
+    assert _text("<p>Hello\n    world,\n  again</p>") == "Hello world, again"
+
+
+def test_an_image_between_words_leaves_one_space():
+    assert _text('<p>Hello <img src="x.png"> world</p>') == "Hello world"
+
+
+def test_a_non_breaking_space_is_kept():
+    assert _text("<p>10&#160;km</p>") == "10\xa0km"
+
+
+def test_adjacent_elements_inside_a_pre_block_stay_joined():
+    assert _text("<pre><span>a</span><span>b</span></pre>") == "ab"
+
+
+@pytest.mark.parametrize("tag", ["form", "menu", "dialog", "center", "search", "thead", "tbody", "tfoot"])
+def test_these_elements_start_their_own_line(tag):
+    assert _text(f"before<{tag}>inside</{tag}>after") == "before\ninside\nafter"
