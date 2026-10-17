@@ -173,7 +173,7 @@ At `input` and `tool_result` the text is scored during the turn every time, unde
 
 #### Long text
 
-A text longer than about 2,000 characters (512 model tokens) is split into windows, scored in this order until the stage deadline: the last window, where an appended payload sits, then the first, then the rest from the end backwards. On 4 vCPU each window takes about 0.55 s, so within the default 2 s the end, the start and one more window of a long message are read. At most `GUARDRAILS_INJECTION_MAX_WINDOWS` (24, about 11,000 tokens) are read of a text during a turn, and `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS` (64) of an attachment scored after upload. One window over `flag_threshold` settles the verdict. Otherwise a text whose windows were not all read reports *not evaluated*, and the journal's detail says how many were, such as `timeout p=0.002 windows=3/16`, or `unscored: too_long` past the cap.
+A text longer than about 2,000 characters (512 model tokens) is split into windows, scored in this order until the stage deadline: the last window, where an appended payload sits, then the first, then the rest from the end backwards. On 4 vCPU each window takes about 0.7 s, so within the default 2 s the end and the start of a long message are read, and sometimes one more window. At most `GUARDRAILS_INJECTION_MAX_WINDOWS` (24, about 11,000 tokens) are read of a text during a turn, and `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS` (64) of an attachment scored after upload. One window over `flag_threshold` settles the verdict. Otherwise a text whose windows were not all read reports *not evaluated*, and the journal's detail says how many were, such as `timeout p=0.002 windows=3/16`, or `unscored: too_long` past the cap.
 
 #### When it cannot score
 
