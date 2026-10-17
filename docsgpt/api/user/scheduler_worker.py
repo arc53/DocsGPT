@@ -17,6 +17,7 @@ from sqlalchemy import text as sql_text
 from docsgpt.agents.headless_runner import run_agent_headless
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.quotas.service import QuotaExceededError
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.engine import get_engine
 from docsgpt.storage.db.repositories.conversations import (
@@ -26,7 +27,6 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
-from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def _ephemeral_agent_for_agentless(
         "user_id": user_id,
         "agent_type": "classic",
         "retriever": "classic",
-        "chunks": 2,
+        "chunks": 6,
         "prompt_id": "default",
         "source_id": None,
         "default_model_id": schedule.get("model_id") or "",
@@ -165,6 +165,27 @@ def _publish_message_appended(
         )
 
 
+def _notify_appended(schedule: Dict[str, Any], message: Dict[str, Any], outcome: Dict[str, Any]) -> None:
+    """Tell the user a one-time run answered in its conversation (a toast, a push or an unread mark).
+
+    Like a continuation's answer: nothing while the user watches that
+    conversation (``notify_user`` decides). Never raises.
+    """
+    from docsgpt.notifications.kinds import plain_preview
+    from docsgpt.notifications.notify import notify_user
+
+    conversation_id = str(message["conversation_id"])
+    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
+    notify_user(
+        user_id=str(schedule.get("user_id")),
+        conversation_id=conversation_id,
+        kind="schedule",
+        title=title or "Scheduled task",
+        body=plain_preview(outcome.get("answer") or ""),
+        url=f"/c/{conversation_id}",
+    )
+
+
 def _append_one_time_turn(
     schedule: Dict[str, Any],
     run: Dict[str, Any],
@@ -203,6 +224,60 @@ def _append_one_time_turn(
             },
         )
     return message
+
+
+def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> bool:
+    """Whether the schedule's user may still run this agent.
+
+    The run always executes as the agent's owner. A schedule stored under
+    someone else (set from chat on a shared agent) needs that user to still
+    see the agent — a live team grant, or a public link that is still on —
+    so revoking a grant stops their schedules on the next tick.
+
+    Args:
+        schedule: The schedule row.
+        agent_config: The agent row (or the agentless ephemeral config).
+
+    Returns:
+        True when the run may proceed.
+    """
+    user_id = schedule.get("user_id")
+    agent_id = agent_config.get("id")
+    if not agent_id or not user_id or agent_config.get("user_id") == user_id:
+        return True
+    if agent_config.get("shared"):
+        return True
+    from docsgpt.api.user.resource_access import resolve
+
+    with get_engine().connect() as conn:
+        return resolve(conn, "agent", str(agent_id), user_id) is not None
+
+
+def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> Dict[str, bool]:
+    """The caller rules a scheduled run keeps, though it acts as the owner.
+
+    A schedule set through the agent's API key is an external caller's; one
+    a user without a team grant set (they reach the agent by its public
+    link) is a public-link caller's. Neither can approve for the owner, so
+    the run writes on the owner's accounts and credentials only as far as
+    the agent's API write allowlist allows.
+
+    Args:
+        schedule: The schedule row.
+        agent_config: The agent row (or the agentless ephemeral config).
+
+    Returns:
+        ``external_caller`` and ``public_link_caller`` flags for the run.
+    """
+    public = False
+    user_id = schedule.get("user_id")
+    agent_id = agent_config.get("id")
+    if agent_id and user_id and agent_config.get("user_id") != user_id:
+        from docsgpt.api.user.resource_access import resolve
+
+        with get_engine().connect() as conn:
+            public = resolve(conn, "agent", str(agent_id), user_id) is None
+    return {"external_caller": schedule.get("created_via") == "api", "public_link_caller": public}
 
 
 def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Dict[str, Any]:
@@ -255,9 +330,26 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                            error="agent missing")
         return {"status": "failed", "reason": "agent missing"}
 
+    if not _scheduler_still_allowed(schedule, agent_config):
+        with engine.begin() as conn:
+            updated = ScheduleRunsRepository(conn).update(
+                run_id,
+                {
+                    "status": "failed",
+                    "finished_at": datetime.now(timezone.utc),
+                    "error_type": "internal",
+                    "error": "agent access revoked",
+                },
+            )
+            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+        _publish_run_event("schedule.run.failed", updated or run, schedule,
+                           error="agent access revoked")
+        return {"status": "failed", "reason": "agent access revoked"}
+
     with engine.begin() as conn:
         if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
             return {"status": "skipped", "reason": "lost race to mark_running"}
+    _publish_run_event("schedule.run.started", {**run, "status": "running"}, schedule)
 
     started = datetime.now(timezone.utc)
     instruction = schedule.get("instruction") or ""
@@ -276,12 +368,22 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             endpoint="schedule",
             conversation_id=schedule.get("origin_conversation_id"),
             chat_history=chat_history,
+            # Links the run's execution trace to its Logs row, which belongs
+            # to the user who scheduled it (not always the agent's owner).
+            request_id=str(run_id),
+            trace_user_id=run.get("user_id") or schedule.get("user_id"),
+            **_schedule_caller_rules(schedule, agent_config),
         )
     except SoftTimeLimitExceeded:
         timed_out = True
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
         error_type = "timeout"
         error_text = "run exceeded soft time limit"
+    except QuotaExceededError as exc:
+        # The owner's usage quota is spent; the run never started.
+        outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
+        error_type = "budget_exceeded"
+        error_text = str(exc)
     except Exception as exc:
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
         error_type = "agent_error"
@@ -353,24 +455,9 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             update_fields["error_type"] = error_type
             update_fields["error"] = error_text
         updated_run = ScheduleRunsRepository(conn).update(run_id, update_fields)
-        if used_tokens > 0:
-            agent_id_raw = schedule.get("agent_id")
-            try:
-                TokenUsageRepository(conn).insert(
-                    user_id=schedule.get("user_id"),
-                    api_key=None,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    timestamp=finished,
-                    agent_id=str(agent_id_raw) if agent_id_raw else None,
-                    source="schedule",
-                    request_id=str(run_id),
-                    model_id=outcome.get("model_id"),
-                )
-            except Exception:
-                logger.exception(
-                    "scheduler: token_usage insert failed run=%s", run_id,
-                )
+        # No token_usage row here: the run's LLM calls were each recorded by
+        # the usage decorators as they ran, and a run total on top of them
+        # counted every token twice. The run's own total stays on its row.
         schedules_repo = SchedulesRepository(conn)
         autopaused = False
         if new_status == "success":
@@ -423,6 +510,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                 str(schedule["id"]),
                 run_id,
             )
+            _notify_appended(schedule, appended, outcome)
 
     if new_status == "success":
         _publish_run_event("schedule.run.completed", updated_run or run, schedule)

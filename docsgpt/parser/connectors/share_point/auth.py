@@ -5,7 +5,6 @@ from typing import Optional, Dict, Any
 from msal import ConfidentialClientApplication
 
 from docsgpt.core.settings import settings
-from docsgpt.parser.connectors._auth_utils import session_token_fingerprint
 from docsgpt.parser.connectors.base import BaseConnectorAuth
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ class SharePointAuth(BaseConnectorAuth):
 
         self.redirect_uri = settings.CONNECTOR_REDIRECT_BASE_URI
         self.tenant_id = settings.MICROSOFT_TENANT_ID
-        self.authority = getattr(settings, "MICROSOFT_AUTHORITY", f"https://login.microsoftonline.com/{self.tenant_id}")
+        self.authority = settings.MICROSOFT_AUTHORITY or f"https://login.microsoftonline.com/{self.tenant_id}"
 
         self.auth_app = ConfidentialClientApplication(
             client_id=self.client_id,
@@ -75,41 +74,6 @@ class SharePointAuth(BaseConnectorAuth):
             raise ValueError(f"Error refreshing token: {result.get('error_description')}")
 
         return self.map_token_response(result)
-
-    def get_token_info_from_session(self, session_token: str) -> Dict[str, Any]:
-        try:
-            from docsgpt.storage.db.repositories.connector_sessions import (
-                ConnectorSessionsRepository,
-            )
-            from docsgpt.storage.db.session import db_readonly
-
-            with db_readonly() as conn:
-                session = ConnectorSessionsRepository(conn).get_by_session_token(
-                    session_token
-                )
-
-            if not session:
-                raise ValueError(
-                    f"Invalid session token ({session_token_fingerprint(session_token)})"
-                )
-
-            token_info = session.get("token_info")
-            if not token_info:
-                raise ValueError("Session missing token information")
-
-            required_fields = ["access_token", "refresh_token"]
-            missing_fields = [field for field in required_fields if field not in token_info or not token_info.get(field)]
-            if missing_fields:
-                raise ValueError(f"Missing required token fields: {missing_fields}")
-
-            if 'token_uri' not in token_info:
-                token_info['token_uri'] = f"https://login.microsoftonline.com/{settings.MICROSOFT_TENANT_ID}/oauth2/v2.0/token"
-
-            return token_info
-
-        except Exception as e:
-            logger.error("Failed to retrieve token from session: %s", e)
-            raise ValueError(f"Failed to retrieve SharePoint token information: {str(e)}")
 
     def is_token_expired(self, token_info: Dict[str, Any]) -> bool:
         if not token_info:

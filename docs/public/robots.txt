@@ -1,0 +1,8 @@
+# One group, on purpose, as on www.docsgpt.cloud: a crawler with its own group obeys only
+# that group and ignores `*`. Add a named group only for a rule meant for that crawler
+# alone, and then restate every rule from this group inside it.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://docs.docsgpt.cloud/sitemap.xml

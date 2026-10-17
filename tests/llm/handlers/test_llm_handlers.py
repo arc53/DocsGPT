@@ -501,51 +501,6 @@ class TestAppendUnsupportedAttachments:
 
 
 # ---------------------------------------------------------------------------
-# _prune_messages_minimal
-# ---------------------------------------------------------------------------
-
-
-class TestPruneMessagesMinimal:
-
-    def test_normal_case(self):
-        handler = ConcreteHandler()
-        messages = [
-            {"role": "system", "content": "sys prompt"},
-            {"role": "user", "content": "first question"},
-            {"role": "assistant", "content": "first answer"},
-            {"role": "user", "content": "second question"},
-        ]
-        result = handler._prune_messages_minimal(messages)
-        assert result is not None
-        assert len(result) == 2
-        assert result[0]["role"] == "system"
-        assert result[1]["role"] == "user"
-        assert result[1]["content"] == "second question"
-
-    def test_no_system_message(self):
-        handler = ConcreteHandler()
-        messages = [{"role": "user", "content": "hi"}]
-        result = handler._prune_messages_minimal(messages)
-        assert result is None
-
-    def test_no_user_message(self):
-        handler = ConcreteHandler()
-        messages = [{"role": "system", "content": "sys"}]
-        result = handler._prune_messages_minimal(messages)
-        assert result is None
-
-    def test_falls_back_to_non_user_role(self):
-        handler = ConcreteHandler()
-        messages = [
-            {"role": "system", "content": "sys"},
-            {"role": "assistant", "content": "response"},
-        ]
-        result = handler._prune_messages_minimal(messages)
-        assert result is not None
-        assert result[1]["role"] == "assistant"
-
-
-# ---------------------------------------------------------------------------
 # _extract_text_from_content
 # ---------------------------------------------------------------------------
 
@@ -795,7 +750,7 @@ class TestConvertPdfToImages:
             mock_convert.assert_called_once_with(
                 file_path="/tmp/doc.pdf",
                 storage=mock_storage,
-                max_pages=20,
+                max_pages=21,  # one past the cap signals a longer PDF
                 dpi=150,
             )
             assert result == expected
@@ -1605,7 +1560,7 @@ class TestPerformMidExecutionCompression:
         assert messages is not None
         assert agent.compressed_summary == "summary"
 
-    def test_failure_falls_back_to_pruning(self):
+    def test_failure_ends_the_tool_loop(self):
         handler = ConcreteHandler()
         agent = Mock()
         agent.conversation_id = "conv1"
@@ -1633,17 +1588,13 @@ class TestPerformMidExecutionCompression:
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
-        ), patch.object(
-            handler,
-            "_prune_messages_minimal",
-            return_value=[{"role": "system", "content": "pruned"}],
         ):
             success, messages = handler._perform_mid_execution_compression(
                 agent, [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
             )
 
-        assert success is True
-        assert messages is not None
+        assert success is False  # the tool loop ends; no pruning
+        assert messages is None
 
     def test_exception_returns_false(self):
         handler = ConcreteHandler()
@@ -1685,7 +1636,7 @@ class TestPerformInMemoryCompression:
         assert success is False
         assert messages is None
 
-    def test_compression_doesnt_reduce_falls_back_to_prune(self):
+    def test_compression_doesnt_reduce_ends_the_tool_loop(self):
         handler = ConcreteHandler()
         agent = Mock()
         agent.model_id = "gpt-4"
@@ -1718,10 +1669,6 @@ class TestPerformInMemoryCompression:
         ), patch(
             "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_service,
-        ), patch.object(
-            handler,
-            "_prune_messages_minimal",
-            return_value=[{"role": "system", "content": "pruned"}],
         ), patch(
             "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
@@ -1730,7 +1677,7 @@ class TestPerformInMemoryCompression:
                 agent, [{"role": "user", "content": "hi"}]
             )
 
-        assert success is True
+        assert success is False  # the tool loop ends; no pruning
 
     def test_exception_returns_false(self):
         handler = ConcreteHandler()
@@ -2062,16 +2009,12 @@ class TestPerformMidExecutionCompressionEdgeCases:
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
-        ), patch.object(
-            handler,
-            "_prune_messages_minimal",
-            return_value=[{"role": "system", "content": "pruned"}],
         ):
             success, messages = handler._perform_mid_execution_compression(
                 agent, [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
             )
 
-        assert success is True
+        assert success is False  # the tool loop ends; no pruning
 
     def test_rebuild_returns_none(self):
         handler = ConcreteHandler()

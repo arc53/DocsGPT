@@ -24,7 +24,32 @@ _FK_BOUND_TOOLS = frozenset({"notes", "todo_list"})
 # ``scheduler`` only makes sense from an interactive chat — letting an LLM
 # call ``schedule_task`` from a scheduled run chains new schedules each fire,
 # bounded only by ``SCHEDULE_MAX_PER_USER`` (cost foot-gun, confusing UX).
-_HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler"})
+_HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler", "check_job"})
+
+# Default tools that exist only while their feature is on.
+_FEATURE_GATED_TOOLS = {"monitor": "MONITORS_ENABLED"}
+
+# Tools the server attaches to a turn by itself, never listed, toggled or
+# picked: ``check_job`` comes with every turn that can hand calls off
+# (``BaseAgent._prepare_tools``). An entry in ``DEFAULT_CHAT_TOOLS`` or an
+# agent's saved tools is ignored, so no setting can leave hand-offs without it.
+SERVER_ATTACHED_TOOLS = frozenset({"check_job"})
+
+
+def is_server_attached_tool(tool_name: Optional[str]) -> bool:
+    """Whether the server attaches ``tool_name`` itself (``check_job``)."""
+    return bool(tool_name) and tool_name in SERVER_ATTACHED_TOOLS
+
+
+def is_server_attached_tool_id(tool_id: Any) -> bool:
+    """Whether ``tool_id`` is a server-attached tool's synthetic id (one an older agent may have saved)."""
+    return bool(tool_id) and str(tool_id) in {default_tool_id(name) for name in SERVER_ATTACHED_TOOLS}
+
+
+def _feature_enabled(tool_name: str) -> bool:
+    """False for a default tool whose feature setting is off (``monitor`` without monitors)."""
+    flag = _FEATURE_GATED_TOOLS.get(tool_name)
+    return flag is None or bool(getattr(settings, flag, True))
 
 # Agent-selectable builtins: hidden from the Add-Tool catalog (internal=True)
 # and exposed to the agent picker via the same synthetic-id machinery as
@@ -42,6 +67,7 @@ BUILTIN_AGENT_TOOLS: tuple = (
     "read_document",
     "code_executor",
     "artifact_generator",
+    "monitor",
 )
 
 # Builtins shown only in the workflow-node tool picker, never the classic
@@ -172,7 +198,7 @@ def loaded_default_tools() -> List[str]:
     key = tuple(settings.DEFAULT_CHAT_TOOLS)
     cached = _loaded_cache.get(key)
     if cached is None:
-        cached = [name for name in key if _load_tool(name) is not None]
+        cached = [name for name in key if name not in SERVER_ATTACHED_TOOLS and _load_tool(name) is not None]
         _loaded_cache[key] = cached
     return cached
 
@@ -316,7 +342,7 @@ def synthesized_default_tools(
     disabled = set(disabled_default_tools(user_doc))
     rows: List[Dict[str, Any]] = []
     for name in loaded_default_tools():
-        if name in disabled:
+        if name in disabled or not _feature_enabled(name):
             continue
         if headless and name in _HEADLESS_EXCLUDED_TOOLS:
             continue
@@ -340,6 +366,8 @@ def default_tools_for_management(
     disabled = set(disabled_default_tools(user_doc))
     rows: List[Dict[str, Any]] = []
     for name in loaded_default_tools():
+        if not _feature_enabled(name):
+            continue
         row = synthesize_default_tool(name)
         if row is None:
             continue
@@ -352,6 +380,8 @@ def builtin_agent_tools_for_management() -> List[Dict[str, Any]]:
     """Return every loaded agent-builtin tool for the agent picker (no per-user state)."""
     rows: List[Dict[str, Any]] = []
     for name in loaded_builtin_agent_tools():
+        if not _feature_enabled(name):
+            continue
         row = synthesize_builtin_agent_tool(name)
         if row is None:
             continue
@@ -369,6 +399,11 @@ def resolve_tool_by_id(
 
     Dual-registered tools (e.g. ``scheduler``) get both flags on the resolved
     row so callers can branch on either path without losing the discriminator.
+
+    A ``user_tools`` row resolves when ``user`` owns it or a team grant gives
+    ``user`` the ``use_in_own`` action on it (checked live, so a revoked grant
+    drops the tool on the next run). The returned row is the owner's, so its
+    ``user_id`` is the credential owner.
     """
     default_name = default_tool_name_for_id(tool_id)
     builtin_name = builtin_agent_tool_name_for_id(tool_id)
@@ -382,4 +417,24 @@ def resolve_tool_by_id(
         return synthesize_builtin_agent_tool(builtin_name)
     if user_tools_repo is None or not user:
         return None
-    return user_tools_repo.get_any(str(tool_id), user)
+    row = user_tools_repo.get_any(str(tool_id), user)
+    if row is not None:
+        return row
+    return _resolve_shared_tool(str(tool_id), user, user_tools_repo)
+
+
+def _resolve_shared_tool(tool_id: str, user: str, user_tools_repo: Any) -> Optional[Dict[str, Any]]:
+    """The owner's row for a team-shared tool ``user`` may use in their own agents."""
+    conn = getattr(user_tools_repo, "_conn", None)
+    if conn is None:
+        return None
+    # Lazy: resource_access lives under docsgpt.api, whose package import
+    # pulls in every route module (and those import this module).
+    from docsgpt.api.user.resource_access import resolve
+
+    ra = resolve(conn, "tool", tool_id, user)
+    if ra is None or ra.access == "owner" or not ra.can("use_in_own"):
+        if ra is not None:
+            logger.info("shared tool %s not usable by %s (access=%s); dropped", tool_id, user, ra.access)
+        return None
+    return user_tools_repo.get_any(ra.resource_id, ra.owner_id)

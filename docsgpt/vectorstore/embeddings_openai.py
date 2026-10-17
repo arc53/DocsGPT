@@ -29,15 +29,20 @@ class OpenAIEmbeddings:
         """Build the client, routing to Azure when the Azure settings are set.
 
         Args:
-            openai_api_key: API key; falls back to ``EMBEDDINGS_KEY`` then
-                ``OPENAI_API_KEY``.
+            openai_api_key: API key; falls back to ``EMBEDDINGS_KEY``, then
+                ``OPENAI_API_KEY``, then the LLM's ``API_KEY`` when
+                ``LLM_PROVIDER`` is ``openai`` (the same key serves both).
             model: Model name, or the Azure deployment name when running
                 against Azure.
         """
+        # The generic API_KEY is only an OpenAI key when the LLM provider is
+        # OpenAI; for any other provider it must not be sent to OpenAI.
+        llm_key = settings.API_KEY if settings.LLM_PROVIDER == "openai" else None
         api_key = (
             openai_api_key
             or settings.EMBEDDINGS_KEY
             or settings.OPENAI_API_KEY
+            or llm_key
             or NO_API_KEY
         )
         self.model = model or DEFAULT_MODEL
@@ -72,8 +77,11 @@ class OpenAIEmbeddings:
         return vectors
 
     def embed_query(self, query: str) -> List[float]:
-        """Embed a single query string."""
-        return self._embed([query])[0]
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        from docsgpt.parser.tokenization import TiktokenCounter
+        from docsgpt.vectorstore.base import clip_query
+
+        return self._embed([clip_query(query, TiktokenCounter)])[0]
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents."""

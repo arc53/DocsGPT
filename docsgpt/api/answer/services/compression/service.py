@@ -367,7 +367,7 @@ class CompressionService:
         never mutated.
         """
         max_tokens = int(
-            getattr(settings, "COMPRESSION_RECENT_FIELD_MAX_TOKENS", 8000) or 0
+            settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS or 0
         )
         if max_tokens <= 0:
             return queries

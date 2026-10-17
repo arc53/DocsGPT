@@ -26,8 +26,7 @@ def _retry_on_auth_failure(func):
             if e.response is not None and e.response.status_code in (401, 403):
                 logging.info(f"Auth failure in {func.__name__}, refreshing token and retrying")
                 try:
-                    new_token_info = self.auth.refresh_access_token(self.refresh_token)
-                    self.access_token = new_token_info.get('access_token')
+                    self._apply_token_info(self._refresh_rejected_token(self.access_token))
                 except Exception as refresh_error:
                     raise ValueError(
                         f"Authentication failed and could not be refreshed: {refresh_error}"
@@ -63,19 +62,22 @@ class SharePointLoader(BaseConnectorLoader):
 
     GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 
-    def __init__(self, session_token: str):
+    def __init__(self, session_token: Optional[str] = None, *, connection_id: Optional[str] = None):
         self.auth = SharePointAuth()
         self.session_token = session_token
 
-        token_info = self.auth.get_token_info_from_session(session_token)
-        self.access_token = token_info.get('access_token')
-        self.refresh_token = token_info.get('refresh_token')
+        _, token_info = self._load_token_info(session_token, connection_id)
+        self._apply_token_info(token_info)
         self.allows_shared_content = token_info.get('allows_shared_content', False)
 
         if not self.access_token:
             raise ValueError("No access token found in session")
 
         self.next_page_token = None
+
+    def _apply_token_info(self, token_info: Dict[str, Any]) -> None:
+        self.access_token = token_info.get('access_token')
+        self.expiry = token_info.get('expiry')
 
     def _get_headers(self) -> Dict[str, str]:
         return {
@@ -87,12 +89,14 @@ class SharePointLoader(BaseConnectorLoader):
         if not self.access_token:
             raise ValueError("No access token available")
 
-        token_info = {'access_token': self.access_token, 'expiry': None}
-        if self.auth.is_token_expired(token_info):
+        # The connection service refreshes under a row lock and stores the
+        # rotated refresh token; refreshing here would spend it and lose it.
+        if self.auth.is_token_expired({'access_token': self.access_token, 'expiry': self.expiry}):
             logging.info("Token expired, attempting refresh")
             try:
-                new_token_info = self.auth.refresh_access_token(self.refresh_token)
-                self.access_token = new_token_info.get('access_token')
+                from docsgpt.connectors import service
+
+                self._apply_token_info(service.get_valid_token_info(self.connection_id))
             except Exception:
                 raise ValueError("Failed to refresh access token")
 

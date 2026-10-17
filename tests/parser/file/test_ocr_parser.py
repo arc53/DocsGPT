@@ -155,6 +155,13 @@ class TestResolution:
             assert op.resolve_ocr_backend() == "native"
         assert "OCR_BACKEND=docling" in caplog.text
 
+    @pytest.mark.parametrize("backend", ["auto", "docling", "native"])
+    def test_deepseek_always_runs_on_the_native_backend(self, backend, monkeypatch, settings):
+        monkeypatch.setattr(settings, "OCR_BACKEND", backend)
+        monkeypatch.setattr(settings, "OCR_ENGINE", "deepseek")
+        monkeypatch.setitem(sys.modules, "docling", MagicMock())
+        assert op.resolve_ocr_backend() == "native"
+
     def test_unknown_backend_is_auto(self, monkeypatch, settings):
         monkeypatch.setattr(settings, "OCR_BACKEND", "paddle")
         monkeypatch.setitem(sys.modules, "docling", None)
@@ -290,8 +297,7 @@ class TestDeepseekEngine:
         assert payload["temperature"] == 0
         parts = payload["messages"][0]["content"]
         assert parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
-        assert parts[1]["text"] == op.DEEPSEEK_PROMPT
-        assert "<|grounding|>" not in parts[1]["text"]
+        assert parts[1]["text"] == op.DEEPSEEK_PROMPT == "Free OCR."
 
     def test_success_strips_grounding_markup(self):
         engine = op.DeepseekOcrEngine(url="http://x", model="m", timeout=1)
@@ -941,6 +947,8 @@ class TestDeepseekErrorShapes:
         import requests
 
         class _Resp:
+            status_code = 200
+
             def raise_for_status(self):
                 return None
 

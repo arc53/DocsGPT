@@ -5,6 +5,7 @@ from __future__ import annotations
 import codecs
 import io
 import os
+import zipfile
 from contextlib import suppress
 from typing import BinaryIO, Container
 
@@ -12,6 +13,7 @@ from docsgpt.core.settings import settings
 from docsgpt.parser.file.constants import (
     attachment_extension,
     has_attachment_parser,
+    is_attachment_archive,
 )
 
 
@@ -166,7 +168,7 @@ def enforce_parseable_attachment(
     """Reject an attachment that no parser handles and that is not plain text.
 
     Suffixes with a parser are admitted unconditionally — a PDF is binary and
-    parses fine. Everything else, .txt included, has to read as text: that is
+    parses fine — and so is a real zip, which the worker unpacks. Everything else, .txt included, has to read as text: that is
     what keeps a video or an archive out of the plain-text fallthrough while
     leaving source, config and log files in, whatever the file is named.
 
@@ -183,6 +185,10 @@ def enforce_parseable_attachment(
         UnsupportedUploadTypeError: When the file has no parser and its
             contents are binary.
     """
+    if is_attachment_archive(filename) and zipfile.is_zipfile(path):
+        # Unpacked into its members by the worker; a file that only claims
+        # to be a zip is judged like any other binary below.
+        return
     if parser_extensions is None:
         has_parser = has_attachment_parser(filename)
     else:

@@ -273,13 +273,12 @@ class TestToolsNamespace:
 
         builder = ToolsNamespace()
         tools_data = {
-            "memory": {"root": "Files:\n- /notes.txt\n- /tasks.txt", "available": True}
+            "memory": {"memory_view": "Files:\n- /notes.txt\n- /tasks.txt"}
         }
 
         context = builder.build(tools_data=tools_data)
 
-        assert context["memory"]["root"] == "Files:\n- /notes.txt\n- /tasks.txt"
-        assert context["memory"]["available"] is True
+        assert context["memory"]["memory_view"] == "Files:\n- /notes.txt\n- /tasks.txt"
 
     def test_tools_namespace_build_empty(self):
         from docsgpt.templates.namespaces import ToolsNamespace
@@ -294,7 +293,7 @@ class TestToolsNamespace:
 
         builder = ToolsNamespace()
         tools_data = {
-            "memory": {"root": "content", "available": True},
+            "memory": {"memory_view": "content"},
             "search": {"results": ["result1", "result2"]},
             "api": {"status": "success"},
         }
@@ -304,7 +303,7 @@ class TestToolsNamespace:
         assert "memory" in context
         assert "search" in context
         assert "api" in context
-        assert context["memory"]["root"] == "content"
+        assert context["memory"]["memory_view"] == "content"
         assert context["search"]["results"] == ["result1", "result2"]
         assert context["api"]["status"] == "success"
 
@@ -345,12 +344,12 @@ class TestNamespaceManagerWithTools:
         from docsgpt.templates.namespaces import NamespaceManager
 
         manager = NamespaceManager()
-        tools_data = {"memory": {"root": "content", "available": True}}
+        tools_data = {"memory": {"memory_view": "content"}}
 
         context = manager.build_context(tools_data=tools_data)
 
         assert "tools" in context
-        assert context["tools"]["memory"]["root"] == "content"
+        assert context["tools"]["memory"]["memory_view"] == "content"
 
     def test_namespace_manager_build_context_all_namespaces(self):
         from docsgpt.templates.namespaces import NamespaceManager
@@ -361,14 +360,14 @@ class TestNamespaceManagerWithTools:
             user_id="user_456",
             passthrough_data={"key": "value"},
             docs_together="Document content",
-            tools_data={"memory": {"root": "notes"}},
+            tools_data={"memory": {"memory_view": "notes"}},
         )
 
         assert "system" in context
         assert "passthrough" in context
         assert "source" in context
         assert "tools" in context
-        assert context["tools"]["memory"]["root"] == "notes"
+        assert context["tools"]["memory"]["memory_view"] == "notes"
 
     def test_namespace_manager_build_context_partial_data(self):
         from docsgpt.templates.namespaces import NamespaceManager
@@ -543,9 +542,12 @@ class TestPromptRenderer:
         from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
-        prompt = "Memory contents:\n{{ tools.memory.root }}\n\nStatus: {{ tools.memory.available }}"
+        prompt = (
+            "{% if tools.memory.memory_view %}Memory contents:\n"
+            "{{ tools.memory.memory_view }}{% endif %}"
+        )
         tools_data = {
-            "memory": {"root": "Files:\n- /notes.txt\n- /tasks.txt", "available": True}
+            "memory": {"memory_view": "Files:\n- /notes.txt\n- /tasks.txt"}
         }
 
         result = renderer.render_prompt(prompt, tools_data=tools_data)
@@ -554,7 +556,6 @@ class TestPromptRenderer:
         assert "Files:" in result
         assert "/notes.txt" in result
         assert "/tasks.txt" in result
-        assert "Status: True" in result
 
     def test_render_prompt_with_all_namespaces(self):
         from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
@@ -564,11 +565,11 @@ class TestPromptRenderer:
 System: {{ system.date }}
 User: {{ passthrough.user }}
 Docs: {{ source.content }}
-Memory: {{ tools.memory.root }}
+Memory: {{ tools.memory.memory_view }}
 """
         passthrough_data = {"user": "Alice"}
         docs_together = "Important docs"
-        tools_data = {"memory": {"root": "Notes content", "available": True}}
+        tools_data = {"memory": {"memory_view": "Notes content"}}
 
         result = renderer.render_prompt(
             prompt,

@@ -1,9 +1,11 @@
-import { Code2 } from 'lucide-react';
+import { CodeXml } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NodeProps } from 'reactflow';
 
 import { CodeNodeConfig } from '../../types/workflow';
 import { BaseNode } from './BaseNode';
+import OutputVariableLine from './OutputVariableLine';
 
 type CodeNodeData = {
   title?: string;
@@ -12,7 +14,8 @@ type CodeNodeData = {
 };
 
 const CodeNode = ({ data, selected }: NodeProps<CodeNodeData>) => {
-  const title = data.title || data.label || 'Code';
+  const { t } = useTranslation();
+  const title = data.title || data.label || t('agents.workflow.nodes.code');
   const config = data.config || {};
   const code = (config.code || '').trim();
   const firstLine = code.split('\n').find((line) => line.trim() !== '') || '';
@@ -24,29 +27,24 @@ const CodeNode = ({ data, selected }: NodeProps<CodeNodeData>) => {
       title={title}
       type="code"
       selected={selected}
-      icon={<Code2 size={16} />}
+      icon={<CodeXml className="size-4" />}
       handles={{ source: true, target: true }}
     >
       <div className="flex flex-col gap-1">
         {codeHint ? (
           <div
-            className="truncate font-mono text-xs text-gray-500 dark:text-gray-400"
+            className="text-muted-foreground truncate font-mono text-xs"
             title={code}
           >
             {codeHint}
           </div>
         ) : (
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            No code yet
+          <div className="text-muted-foreground text-xs">
+            {t('agents.workflow.nodes.noCode')}
           </div>
         )}
         {config.output_variable && (
-          <div
-            className="truncate text-xs text-gray-500 dark:text-gray-400"
-            title={`Output: ${config.output_variable}`}
-          >
-            Output: {config.output_variable}
-          </div>
+          <OutputVariableLine variable={config.output_variable} />
         )}
       </div>
     </BaseNode>

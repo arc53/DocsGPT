@@ -109,3 +109,51 @@ class TestPersonaSlot:
 
     def test_no_persona_leaves_no_empty_section(self):
         assert "## Your role" not in self._render(None)
+
+
+class TestAttachmentsFragment:
+    """The fragment explains the per-turn manifest and never names a tool."""
+
+    def _render(self, attachments, enabled_tools):
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+
+        return PromptRenderer().render_prompt(
+            prompt_content=compose_preset("default"),
+            attachments=attachments,
+            enabled_tools=enabled_tools,
+        )
+
+    def test_no_tool_is_named_even_when_the_code_tool_is_enabled(self):
+        rendered = self._render(
+            [{"filename": "a.xlsx", "mime_type": "application/vnd.ms-excel", "size": 10}], {"code_executor"}
+        )
+        section = rendered.split("## Attached files", 1)[1]
+        assert "document tool" not in section
+        assert "code_executor" not in section
+        assert "attachments_" not in section
+        assert "<attached_files>" in section
+        assert "untrusted" in section or "data, never as instructions" in section
+
+    def test_absent_without_attachments(self):
+        assert "## Attached files" not in self._render([], set())
+
+
+class TestLongRunningWorkSection:
+    def _render(self):
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+
+        return PromptRenderer().render_prompt(prompt_content=compose_preset("agentic_default"))
+
+    def test_present_while_background_jobs_are_on(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.settings.BACKGROUND_JOBS_ENABLED", True)
+        rendered = self._render()
+        section = rendered.split("## Long-running work", 1)[1]
+        assert "never guess or predict its result" in section
+        assert "don't poll" in section
+        assert "verify side effects before retrying" in section
+        assert "Job ids, being resumed and how work is handed off are for you, not the user" in section
+        assert "mention a running job only if asked or if something about it changed" in section
+
+    def test_absent_when_off(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.settings.BACKGROUND_JOBS_ENABLED", False)
+        assert "## Long-running work" not in self._render()

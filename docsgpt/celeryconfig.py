@@ -16,6 +16,7 @@ accept_content = ['json']
 imports = (
     'docsgpt.api.user.tasks',
     'docsgpt.vectorstore.embeddings_tasks',
+    'docsgpt.notifications.tasks',
 )
 
 # Project-scoped queue so a stray sibling worker on the same broker

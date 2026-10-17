@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { baseURL } from '../api/client';
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
+import { forgetPushSubscription } from '../backgroundJobs/webPush';
 import {
   clearRoles,
   selectToken,
@@ -368,8 +369,11 @@ export default function useAuth() {
     sessionStorage.removeItem(OIDC_ATTEMPT_KEY);
     sessionStorage.removeItem(OIDC_RETURN_TO_KEY);
     // Ends the IdP session too; the IdP redirects back to the app, which
-    // then walks through a fresh login.
-    window.location.href = `${baseURL}${endpoints.USER.OIDC_LOGOUT}`;
+    // then walks through a fresh login. This browser's Web Push
+    // subscription goes first, so it stops getting this user's notifications.
+    void forgetPushSubscription(token).finally(() => {
+      window.location.href = `${baseURL}${endpoints.USER.OIDC_LOGOUT}`;
+    });
   };
 
   const oidcClaims =

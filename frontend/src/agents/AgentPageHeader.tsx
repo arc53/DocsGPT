@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
@@ -7,19 +8,27 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Avatar } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { NavTab } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
-export type AgentPageTab = 'overview' | 'logs' | 'schedules';
+import { type AccessFields } from '../utils/accessUtils';
+import { canAgent } from './agentAccess';
+import {
+  AGENTS_MANAGE_ROOT,
+  agentEditPath as agentEditPathProp,
+  agentLogsPath,
+  agentSchedulesPath,
+} from './paths';
 
 type AgentPageHeaderProps = {
   agentId?: string;
   agentName?: string;
   /** Route shape for the agent's own root page. Defaults to classic edit URL. */
   agentEditPath?: string;
-  currentPage: AgentPageTab;
   /** Optional className wrapper for layout tweaks per page. */
   className?: string;
   /**
@@ -28,133 +37,154 @@ type AgentPageHeaderProps = {
    * (e.g. the workflow builder's fixed toolbar) to avoid a double rule.
    */
   inline?: boolean;
+  /** The agent's avatar URL; the robot is drawn when it's empty. */
+  agentImage?: string;
+  /**
+   * The current crumb is a button (avatar, name, chevron) that opens the
+   * agent's details.
+   */
+  onNameClick: () => void;
+  /** A status Badge placed after the crumbs. */
+  status?: ReactNode;
+  /**
+   * The agent's access fields: each tab shows only when the role allows its
+   * page. Omitted (a new workflow, not yet loaded), every tab shows.
+   */
+  access?: (AccessFields & { status?: string }) | null;
 };
 
 /**
- * Shared chrome for the agent sub-pages (Overview/Edit, Logs, Schedules).
- *
- * Top: shadcn Breadcrumb (`Agents > <agent name> > <current page>`).
- * Bottom: underline-style sub-nav linking between the agent's sub-pages.
+ * The workflow builder's toolbar chrome: a Breadcrumb (`Agents > <agent
+ * name>`), an optional status Badge, and NavTab links to the agent's
+ * Overview (the builder, always current), Logs and Schedules (hidden until
+ * the agent has an id). The builder is full-screen with no sidebar, so it
+ * needs its own way between them. The current crumb is the agent's avatar,
+ * name and a chevron in a `ghost sm` Button that opens the details, like the
+ * phone top bar's chat title. Section pages use
+ * `components/AgentPageToolbar` and the sidebar instead.
  */
 export default function AgentPageHeader({
   agentId,
   agentName,
   agentEditPath,
-  currentPage,
   className,
   inline = false,
+  agentImage,
+  onNameClick,
+  status,
+  access,
 }: AgentPageHeaderProps) {
   const { t } = useTranslation();
 
   const editPath =
-    agentEditPath ?? (agentId ? `/agents/edit/${agentId}` : '/agents');
+    agentEditPath ??
+    (agentId ? agentEditPathProp(agentId) : AGENTS_MANAGE_ROOT);
   const tabs = useMemo(
     () => [
       {
         id: 'overview' as const,
         label: t('agents.pageHeader.tabs.overview'),
         href: editPath,
+        action: 'view',
       },
       {
         id: 'logs' as const,
         label: t('agents.pageHeader.tabs.logs'),
-        href: agentId ? `/agents/logs/${agentId}` : '#',
+        href: agentId ? agentLogsPath(agentId) : '#',
+        action: 'view_logs',
       },
       {
         id: 'schedules' as const,
         label: t('agents.pageHeader.tabs.schedules'),
-        href: agentId ? `/agents/schedules/${agentId}` : '#',
+        href: agentId ? agentSchedulesPath(agentId) : '#',
+        action: 'manage_schedules',
       },
     ],
     [agentId, editPath, t],
   );
-
-  const currentTabLabel =
-    tabs.find((tab) => tab.id === currentPage)?.label ?? '';
+  const visibleTabs = tabs.filter(
+    (tab) => !access || canAgent(access, tab.action),
+  );
   const displayName = agentName?.trim() || t('agents.pageHeader.fallbackName');
 
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 md:flex-row md:items-baseline md:gap-6',
+        // The builder only renders from lg, so one row.
+        'flex min-w-0 items-center gap-6',
         className,
       )}
     >
-      <Breadcrumb className="shrink-0">
-        <BreadcrumbList className="flex-nowrap">
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link to="/agents">{t('agents.pageHeader.crumbs.agents')}</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            {currentPage === 'overview' ? (
-              <BreadcrumbPage title={displayName} className="w-[16ch] truncate">
-                {displayName}
-              </BreadcrumbPage>
-            ) : (
+      <div className="flex min-w-0 items-center gap-2">
+        <Breadcrumb className="min-w-0">
+          <BreadcrumbList>
+            <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to={editPath} className="max-w-[40ch] truncate">
-                  {displayName}
+                <Link to={AGENTS_MANAGE_ROOT}>
+                  {t('agents.pageHeader.crumbs.agents')}
                 </Link>
               </BreadcrumbLink>
-            )}
-          </BreadcrumbItem>
-          {currentPage !== 'overview' && (
-            <>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{currentTabLabel}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </>
-          )}
-        </BreadcrumbList>
-      </Breadcrumb>
-
-      <nav
-        aria-label={t('agents.pageHeader.subnavAriaLabel')}
-        className={cn(
-          'flex items-center gap-6',
-          // 1px baseline rule under the whole row; the active tab's 2px
-          // primary underline sits on top of it for the GitHub-style look.
-          !inline && 'border-border border-b',
-        )}
-      >
-        {tabs.map((tab) => {
-          const isActive = tab.id === currentPage;
-          // Always render a 2px bottom border so row height stays constant
-          // between active/inactive; only the color changes.
-          const baseClasses =
-            'whitespace-nowrap border-b-2 pb-1 text-sm font-medium transition-colors';
-          if (isActive) {
-            return (
-              <span
-                key={tab.id}
-                aria-current="page"
-                className={cn(
-                  baseClasses,
-                  'border-primary text-foreground -mb-px',
-                )}
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-haspopup="dialog"
+                onClick={onNameClick}
+                // Button is shrink-0; shrink lets a long name truncate.
+                className="min-w-0 shrink"
               >
-                {tab.label}
-              </span>
-            );
-          }
-          return (
-            <Link
+                <Avatar
+                  src={agentImage}
+                  alt=""
+                  shape="circle"
+                  className="shrink-0 overflow-hidden"
+                  imgClassName="size-5 object-contain"
+                />
+                {/* The list's muted colour would reach the name; the current
+                  crumb is foreground, like BreadcrumbPage, with its 32ch cap. */}
+                <span
+                  className="text-foreground max-w-[32ch] truncate"
+                  title={displayName}
+                >
+                  {displayName}
+                </span>
+                <ChevronDown className="text-muted-foreground" aria-hidden />
+              </Button>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        {status}
+      </div>
+
+      {agentId && (
+        <nav
+          aria-label={t('agents.pageHeader.subnavAriaLabel')}
+          className={cn(
+            'flex items-center',
+            // 1px baseline rule under the whole row; the active tab's 2px
+            // primary underline sits on top of it.
+            !inline && 'border-border border-b',
+          )}
+        >
+          {visibleTabs.map((tab) => (
+            // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
+            <NavTab
               key={tab.id}
-              to={tab.href}
-              className={cn(
-                baseClasses,
-                'text-muted-foreground hover:text-foreground hover:border-border/60 -mb-px border-transparent',
-              )}
+              current={tab.id === 'overview'}
+              className="-mb-px"
             >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
+              {tab.id === 'overview' ? (
+                <span>{tab.label}</span>
+              ) : (
+                <Link to={tab.href}>{tab.label}</Link>
+              )}
+            </NavTab>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

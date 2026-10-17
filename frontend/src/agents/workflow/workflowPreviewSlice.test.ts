@@ -34,6 +34,14 @@ describe('collectCompletedAttachmentIds', () => {
     expect(ids).toEqual(['done']);
   });
 
+  it('sends the server id, not the client placeholder', () => {
+    expect(
+      collectCompletedAttachmentIds([
+        att({ id: '1700000000000-abc', attachmentId: 'srv-1' }),
+      ]),
+    ).toEqual(['srv-1']);
+  });
+
   it('drops completed rows with no server id and returns [] when none', () => {
     expect(
       collectCompletedAttachmentIds([att({ id: '', status: 'completed' })]),

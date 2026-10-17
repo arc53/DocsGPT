@@ -1,7 +1,5 @@
-import base64
 import html
 import json
-import uuid
 from typing import Optional
 from urllib.parse import urlencode, urlsplit
 
@@ -17,16 +15,18 @@ from flask_restx import fields, Namespace, Resource
 
 
 from docsgpt.api import api
+from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.sources.access import load_source
 from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
+from docsgpt.connectors import oauth_flows, service
 from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
     owns_connector_session,
 )
-from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 
@@ -36,6 +36,12 @@ api.add_namespace(connectors_ns)
 
 # Fixed callback status path to prevent open redirect
 CALLBACK_STATUS_PATH = "/api/connectors/callback-status"
+# The API callback providers may be registered with; it forwards to the app.
+API_CALLBACK_PATH = "/api/connectors/callback"
+# The app page that finishes a sign-in with the user's own login.
+APP_CALLBACK_PATH = "/connectors/callback"
+# What the API callback passes on to that page: all it reads from the provider.
+_FORWARDED_PARAMS = ("code", "state", "error", "installation_id", "setup_action")
 
 
 def build_callback_redirect(params: dict) -> str:
@@ -70,10 +76,13 @@ def _origin_of(url: Optional[str]) -> Optional[str]:
     return f"{parts.scheme}://{host}:{port}"
 
 
-def connector_allowed_origins(request_host_url: str) -> list[str]:
-    """Frontend origins the OAuth popup may hand a connector session token to."""
+def connector_allowed_origins() -> list[str]:
+    """Frontend origins a connector sign-in may start from and return to.
+
+    Built from configuration only: the request's ``Host`` is the client's to
+    choose, and the API callback forwards authorization codes to these origins.
+    """
     candidates = [
-        request_host_url,
         settings.CONNECTOR_REDIRECT_BASE_URI,
         settings.OIDC_FRONTEND_URL,
         *(settings.CONNECTOR_ALLOWED_ORIGINS or "").split(","),
@@ -98,24 +107,24 @@ def _js_literal(value) -> str:
     return json.dumps(value).replace("</", "<\\/").replace("<!--", "<\\!--")
 
 
-def _render_callback_page(
-    status: str, message: str, provider_raw: str, session_token: str = "", user_email: str = "",
-):
-    """Popup page that reports an OAuth result to the opener on allowed origins only."""
+def _render_callback_page(status: str, message: str, provider_raw: str, user_email: str = ""):
+    """Popup page that reports an OAuth failure to the opener on allowed origins only.
+
+    Successful connector sign-ins finish on the app's own callback page; this
+    page is left for errors, MCP OAuth and GitHub App installs started on GitHub.
+    """
     status = status if status in ("success", "error", "cancelled") else "error"
     # The script only carries server-side values: the provider key comes from the
     # supported-connector list rather than the request, and no request text is posted.
     provider_key = next(
-        (key for key in ConnectorCreator.get_supported_connectors() if key == provider_raw.lower()), None,
+        (key for key in ConnectorCreator.get_auth_providers() if key == provider_raw.lower()), None,
     )
     payload = None
-    if provider_key and status == "success" and session_token:
-        payload = {"type": f"{provider_key}_auth_success", "session_token": session_token, "user_email": user_email}
-    elif provider_key and status == "error":
+    if provider_key and status == "error":
         # The frontend shows its own localized failure message; cancellations are
         # reported when the popup closes.
         payload = {"type": f"{provider_key}_auth_error"}
-    target_origins = connector_allowed_origins(request.host_url) if payload else []
+    target_origins = connector_allowed_origins() if payload else []
     provider = html.escape(provider_raw.replace("_", " ").title())
     connected_as = (
         f"<p>Connected as: {html.escape(user_email)}</p>" if status == "success" and user_email else ""
@@ -170,6 +179,100 @@ def _render_callback_page(
 
 
 
+class OriginNotAllowed(Exception):
+    """A sign-in was started from an app origin that may not receive it."""
+
+    def __init__(self, origin: str):
+        super().__init__(
+            f"Connector sign-in started from {origin}, which is not an allowed origin; add it to "
+            "CONNECTOR_ALLOWED_ORIGINS"
+        )
+        self.origin = origin
+
+
+def requesting_app_origin() -> str:
+    """The app origin the current request came from, which the sign-in returns to.
+
+    A same-origin ``fetch`` sends no ``Origin`` header, so the ``Referer``
+    names it then; with neither, the configured callback's origin. Never the
+    request's ``Host``. The origin must be allowed: the API callback forwards
+    the provider's code there.
+
+    Raises:
+        OriginNotAllowed: The origin is not one of ``connector_allowed_origins``.
+    """
+    origin = (
+        _origin_of(request.headers.get("Origin"))
+        or _origin_of(request.headers.get("Referer"))
+        or _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+    )
+    if origin not in connector_allowed_origins():
+        raise OriginNotAllowed(origin or "an unknown origin")
+    return origin
+
+
+def app_callback_origin(return_origin: str) -> str:
+    """Origin of the page the sign-in popup ends on.
+
+    The provider returns either to the app's own callback page (when
+    ``CONNECTOR_REDIRECT_BASE_URI`` names it) or to the API callback, which
+    forwards to ``return_origin``.
+    """
+    configured = settings.CONNECTOR_REDIRECT_BASE_URI
+    if urlsplit(configured).path.rstrip("/") == API_CALLBACK_PATH:
+        return return_origin
+    return _origin_of(configured) or return_origin
+
+
+def build_authorization(
+    provider: str, user_id: str, connection_id: Optional[str] = None, *, install: bool = False,
+) -> dict:
+    """Start an OAuth sign-in for ``provider`` and return its authorization URL.
+
+    Must run inside the request that starts the sign-in: the app origin it
+    came from is where the sign-in returns.
+
+    Args:
+        provider: The connector, e.g. ``google_drive`` or ``github``.
+        user_id: The caller.
+        connection_id: The caller's connection to sign in again, if any.
+        install: GitHub: send the user to install the GitHub App (where the
+            repositories it can read are chosen) instead of straight to
+            authorization. GitHub returns to the callback with the same
+            state when the app requests authorization during installation.
+
+    Raises:
+        OriginNotAllowed: See ``requesting_app_origin``.
+        service.EncryptionKeyNotConfigured: See ``ensure_can_store_credentials``.
+        service.ConnectionUnavailable: ``connection_id`` is not the caller's.
+        ValueError: ``install`` for a provider with no installation page.
+    """
+    return_origin = requesting_app_origin()
+    service.ensure_can_store_credentials()
+    auth = ConnectorCreator.create_auth(provider)
+    if install and not hasattr(auth, "get_installation_url"):
+        raise ValueError(f"{provider} has no installation page")
+    with db_session() as conn:
+        session_row = service.begin_oauth(conn, user_id, provider, connection_id)
+        state = oauth_flows.start(conn, user_id, provider, str(session_row["id"]), return_origin)
+    url = auth.get_installation_url(state=state) if install else auth.get_authorization_url(state=state)
+    return {
+        "authorization_url": url,
+        "state": state,
+        "callback_origin": app_callback_origin(return_origin),
+    }
+
+
+def origin_not_allowed_response(err: OriginNotAllowed):
+    """The 400 for a sign-in started from an origin that may not receive it; the origin is only logged."""
+    current_app.logger.warning(str(err))
+    return make_response(jsonify({
+        "success": False,
+        "error": "This app address is not an allowed origin for connector sign-ins; add it to CONNECTOR_ALLOWED_ORIGINS.",
+        "code": "origin_not_allowed",
+    }), 400)
+
+
 @connectors_ns.route("/api/connectors/auth")
 class ConnectorAuth(Resource):
     @api.doc(description="Get connector OAuth authorization URL", params={"provider": "Connector provider (e.g., google_drive)"})
@@ -179,41 +282,29 @@ class ConnectorAuth(Resource):
             if not provider:
                 return make_response(jsonify({"success": False, "error": "Missing provider"}), 400)
 
-            if not ConnectorCreator.is_supported(provider):
+            if not (ConnectorCreator.is_supported(provider) or ConnectorCreator.has_auth(provider)):
                 return make_response(jsonify({"success": False, "error": f"Unsupported provider: {provider}"}), 400)
 
             decoded_token = request.decoded_token
             if not decoded_token:
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user_id = decoded_token.get('sub')
-
-            with db_session() as conn:
-                session_row = ConnectorSessionsRepository(conn).upsert(
-                    user_id, provider, status="pending",
+            try:
+                started = build_authorization(
+                    provider, user_id, request.args.get("connection_id") or None,
+                    install=request.args.get("install") in ("1", "true"),
                 )
-            session_pg_id = str(session_row["id"])
-            state_dict = {
-                "provider": provider,
-                "object_id": session_pg_id,
-            }
-            state = base64.urlsafe_b64encode(json.dumps(state_dict).encode()).decode()
-
-            auth = ConnectorCreator.create_auth(provider)
-            authorization_url = auth.get_authorization_url(state=state)
-            # The popup drops results for origins outside the allowlist, which the
-            # user only sees as a cancelled sign-in; name the missing origin here.
-            request_origin = _origin_of(request.headers.get("Origin"))
-            if request_origin and request_origin not in connector_allowed_origins(request.host_url):
-                current_app.logger.warning(
-                    f"Connector sign-in requested from {request_origin}, which cannot receive the result; "
-                    "add it to CONNECTOR_ALLOWED_ORIGINS"
+            except OriginNotAllowed as err:
+                return origin_not_allowed_response(err)
+            except service.EncryptionKeyNotConfigured as err:
+                return make_response(
+                    jsonify({"success": False, "error": str(err), "code": "encryption_key_default"}), 400,
                 )
-            return make_response(jsonify({
-                "success": True,
-                "authorization_url": authorization_url,
-                "state": state,
-                "callback_origin": _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI),
-            }), 200)
+            except service.ConnectionUnavailable:
+                return make_response(jsonify({"success": False, "error": "Connection not found"}), 404)
+            except service.ConnectorDisabled as err:
+                return make_response(jsonify({"success": False, "error": str(err), "code": "disabled"}), 403)
+            return make_response(jsonify({"success": True, **started}), 200)
         except Exception as e:
             current_app.logger.error(f"Error generating connector auth URL: {e}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to generate authorization URL"}), 500)
@@ -221,105 +312,41 @@ class ConnectorAuth(Resource):
 
 @connectors_ns.route("/api/connectors/callback")
 class ConnectorsCallback(Resource):
-    @api.doc(description="Handle OAuth callback for external connectors")
+    @api.doc(description="OAuth redirect URI for external connectors; forwards to the app's callback page")
     def get(self):
-        """Handle OAuth callback for external connectors"""
+        """Forward the provider's answer to the app page that finishes the sign-in."""
         try:
-            from docsgpt.parser.connectors.connector_creator import ConnectorCreator
-            from flask import request, redirect
+            from flask import redirect
 
-            authorization_code = request.args.get('code')
             state = request.args.get('state')
-            error = request.args.get('error')
-
-            state_dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
-            provider = state_dict.get("provider")
-            state_object_id = state_dict.get("object_id")
-
-            # Validate provider
-            if not provider or not isinstance(provider, str) or not ConnectorCreator.is_supported(provider):
-                return redirect(build_callback_redirect({
-                    "status": "error",
-                    "message": "Invalid provider"
-                }))
-
-            if error:
-                if error == "access_denied":
-                    return redirect(build_callback_redirect({
-                        "status": "cancelled",
-                        "message": "Authentication was cancelled. You can try again if you'd like to connect your account.",
-                        "provider": provider
-                    }))
-                else:
-                    current_app.logger.warning(f"OAuth error in callback: {error}")
-                    return redirect(build_callback_redirect({
-                        "status": "error",
-                        "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
-                        "provider": provider
-                    }))
-
-            if not authorization_code:
-                return redirect(build_callback_redirect({
-                    "status": "error",
-                    "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
-                    "provider": provider
-                }))
-
-            try:
-                auth = ConnectorCreator.create_auth(provider)
-                token_info = auth.exchange_code_for_tokens(authorization_code)
-
-                session_token = str(uuid.uuid4())
-
-                try:
-                    if provider == "google_drive":
-                        credentials = auth.create_credentials_from_token_info(token_info)
-                        service = auth.build_drive_service(credentials)
-                        user_info = service.about().get(fields="user").execute()
-                        user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
-                    else:
-                        user_email = token_info.get('user_info', {}).get('email', 'Connected User')
-
-                except Exception as e:
-                    current_app.logger.warning(f"Could not get user info: {e}")
-                    user_email = 'Connected User'
-
-                sanitized_token_info = auth.sanitize_token_info(token_info)
-
-                # ``object_id`` in the OAuth state is the PG session row
-                # UUID (new flow) or a legacy Mongo ObjectId (pre-cutover
-                # issued state). Try UUID update first; fall back to
-                # legacy id path.
-                patch = {
-                    "session_token": session_token,
-                    "token_info": sanitized_token_info,
-                    "user_email": user_email,
-                    "status": "authorized",
-                }
-                with db_session() as conn:
-                    repo = ConnectorSessionsRepository(conn)
-                    if state_object_id:
-                        value = str(state_object_id)
-                        updated = False
-                        if len(value) == 36 and "-" in value:
-                            updated = repo.update(value, patch)
-                        if not updated:
-                            repo.update_by_legacy_id(value, patch)
-
-                # Render instead of redirecting so the session token never
-                # lands in a URL (browser history, access logs, Referer).
+            if not state and request.args.get('installation_id'):
+                # The GitHub App was installed from GitHub itself, not from a
+                # DocsGPT sign-in: there is no state to tie the code to a user,
+                # so the code is ignored and the user goes back to DocsGPT.
                 return _render_callback_page(
-                    "success", "Authentication successful", provider,
-                    session_token=session_token, user_email=user_email,
+                    "success",
+                    "The GitHub App is installed. Return to DocsGPT and refresh the repository list.",
+                    "github",
                 )
 
-            except Exception as e:
-                current_app.logger.error(f"Error exchanging code for tokens: {str(e)}", exc_info=True)
+            with db_readonly() as conn:
+                flow = oauth_flows.peek(conn, state)
+            # ``return_origin`` was allowed when the sign-in started; check it
+            # again in case the allowed origins changed since.
+            if flow is None or flow["return_origin"] not in connector_allowed_origins():
                 return redirect(build_callback_redirect({
                     "status": "error",
-                    "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
-                    "provider": provider
+                    "message": "This sign-in has expired. Please start again."
                 }))
+            # This request carries no login, so it cannot tell who consented.
+            # The app page posts the code with the user's own login, and only
+            # the user who started the sign-in can finish it.
+            params = {key: request.args[key] for key in _FORWARDED_PARAMS if key in request.args}
+            target = f"{flow['return_origin']}{APP_CALLBACK_PATH}?{urlencode(params)}"
+            response = redirect(target, code=302)
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            return response
 
         except Exception as e:
             current_app.logger.error(f"Error handling connector callback: {e}")
@@ -329,11 +356,85 @@ class ConnectorsCallback(Resource):
             }))
 
 
+def _exchange_code(provider: str, code: str) -> tuple[dict, str]:
+    """Exchange an authorization code; return the sanitized token info and the account's name."""
+    auth = ConnectorCreator.create_auth(provider)
+    token_info = auth.exchange_code_for_tokens(code)
+    try:
+        if provider == "google_drive":
+            credentials = auth.create_credentials_from_token_info(token_info)
+            drive_service = auth.build_drive_service(credentials)
+            user_info = drive_service.about().get(fields="user").execute()
+            account = user_info.get('user', {}).get('emailAddress', 'Connected User')
+        else:
+            # GitHub names the account by its login, the others by email.
+            user_info = token_info.get('user_info') or {}
+            account = user_info.get('email') or user_info.get('login') or 'Connected User'
+    except Exception as e:
+        current_app.logger.warning(f"Could not get user info: {e}")
+        account = 'Connected User'
+    return auth.sanitize_token_info(token_info), account
+
+
+@connectors_ns.route("/api/connectors/auth/complete")
+class ConnectorAuthComplete(Resource):
+    @api.expect(api.model("ConnectorAuthCompleteModel", {
+        "code": fields.String(required=True, description="The provider's authorization code"),
+        "state": fields.String(required=True, description="The state the provider echoed"),
+    }))
+    @api.doc(description="Finish a connector sign-in: the app's callback page posts the provider's code and state")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
+        user_id = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        code, state = data.get("code"), data.get("state")
+        if not isinstance(code, str) or not code or not isinstance(state, str) or not state:
+            return make_response(jsonify({"success": False, "error": "code and state are required"}), 400)
+        try:
+            # Used up whoever presents it, so a refused state cannot be retried.
+            with db_session() as conn:
+                flow = oauth_flows.take(conn, state, user_id)
+            if flow is None:
+                current_app.logger.warning("Connector sign-in refused: state unknown, expired or another user's")
+                return make_response(
+                    jsonify({"success": False, "error": "This sign-in has expired. Please start again."}), 400,
+                )
+            provider = flow["provider"]
+            failed = {"success": False, "provider": provider, "return_origin": flow["return_origin"]}
+            try:
+                token_info, account = _exchange_code(provider, code)
+            except Exception as e:
+                current_app.logger.error(f"Error exchanging code for tokens: {e}", exc_info=True)
+                return make_response(jsonify({
+                    **failed,
+                    "error": "Authentication failed. Please try again and make sure to grant all requested permissions.",
+                }), 400)
+            with db_session() as conn:
+                pending = ConnectorSessionsRepository(conn).get_for_user(str(flow["connection_id"]), user_id)
+                if pending is None or pending.get("provider") != provider:
+                    return make_response(jsonify({**failed, "error": "Connection not found"}), 404)
+                connection = service.complete_oauth(conn, pending, provider, token_info, account)
+            return make_response(jsonify({
+                "success": True,
+                "provider": provider,
+                "connection_id": str(connection["id"]),
+                "user_email": account,
+                # Where the page that started the sign-in lives, for the popup's message.
+                "return_origin": flow["return_origin"],
+            }), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error completing connector sign-in: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to complete sign-in"}), 500)
+
+
 @connectors_ns.route("/api/connectors/files")
 class ConnectorFiles(Resource):
     @api.expect(api.model("ConnectorFilesModel", {
         "provider": fields.String(required=True),
-        "session_token": fields.String(required=True),
+        "connection_id": fields.String(required=False),
+        "session_token": fields.String(required=False, description="Legacy; use connection_id"),
         "folder_id": fields.String(required=False),
         "limit": fields.Integer(required=False),
         "page_token": fields.String(required=False),
@@ -344,26 +445,29 @@ class ConnectorFiles(Resource):
         try:
             data = request.get_json()
             provider = data.get('provider')
-            session_token = data.get('session_token')
             limit = data.get('limit', 10)
 
-            if not provider or not session_token:
-                return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
+            if not provider or not (data.get('connection_id') or data.get('session_token')):
+                return make_response(
+                    jsonify({"success": False, "error": "provider and connection_id are required"}), 400,
+                )
 
             decoded_token = request.decoded_token
             if not decoded_token:
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user = decoded_token.get('sub')
-            with db_readonly() as conn:
-                session = ConnectorSessionsRepository(conn).get_by_session_token(
-                    session_token,
-                )
-            if not owns_connector_session(session, user, provider):
+            session = service.resolve_request_connection(user, provider, data)
+            if session is None:
                 return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
 
-            loader = ConnectorCreator.create_connector(provider, session_token)
+            try:
+                loader = ConnectorCreator.create_connector(provider, connection_id=str(session["id"]))
+            except service.ConnectionUnavailable:
+                return make_response(
+                    jsonify({"success": False, "error": "Reconnect to continue", "reconnect": True}), 401,
+                )
 
-            generic_keys = {'provider', 'session_token'}
+            generic_keys = {'provider', 'session_token', 'connection_id'}
             input_config = {
                 k: v for k, v in data.items() if k not in generic_keys
             }
@@ -408,65 +512,49 @@ class ConnectorFiles(Resource):
 
 @connectors_ns.route("/api/connectors/validate-session")
 class ConnectorValidateSession(Resource):
-    @api.expect(api.model("ConnectorValidateSessionModel", {"provider": fields.String(required=True), "session_token": fields.String(required=True)}))
-    @api.doc(description="Validate connector session token and return user info and access token")
+    @api.expect(api.model("ConnectorValidateSessionModel", {
+        "provider": fields.String(required=True),
+        "connection_id": fields.String(required=False),
+        "session_token": fields.String(required=False, description="Legacy; use connection_id"),
+    }))
+    @api.doc(description="Validate a connection and return the account and a short-lived access token")
     def post(self):
         try:
-            data = request.get_json()
+            data = request.get_json() or {}
             provider = data.get('provider')
-            session_token = data.get('session_token')
-            if not provider or not session_token:
-                return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
+            if not provider or not (data.get('connection_id') or data.get('session_token')):
+                return make_response(
+                    jsonify({"success": False, "error": "provider and connection_id are required"}), 400,
+                )
 
             decoded_token = request.decoded_token
             if not decoded_token:
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user = decoded_token.get('sub')
 
-            with db_readonly() as conn:
-                session = ConnectorSessionsRepository(conn).get_by_session_token(
-                    session_token,
-                )
-            if not owns_connector_session(session, user, provider) or not session.get("token_info"):
+            session = service.resolve_request_connection(user, provider, data)
+            if session is None:
                 return make_response(jsonify({"success": False, "error": "Invalid or expired session"}), 401)
-
-            token_info = session["token_info"]
-            auth = ConnectorCreator.create_auth(provider)
-            is_expired = auth.is_token_expired(token_info)
-
-            if is_expired and token_info.get('refresh_token'):
-                try:
-                    refreshed_token_info = auth.refresh_access_token(token_info.get('refresh_token'))
-                    sanitized_token_info = auth.sanitize_token_info(refreshed_token_info)
-                    with db_session() as conn:
-                        repo = ConnectorSessionsRepository(conn)
-                        row = repo.get_by_session_token(session_token)
-                        if row:
-                            repo.update(str(row["id"]), {"token_info": sanitized_token_info})
-                    token_info = sanitized_token_info
-                    is_expired = False
-                except Exception as refresh_error:
-                    current_app.logger.error(f"Failed to refresh token: {refresh_error}")
-            
-            if is_expired:
+            try:
+                token = service.picker_token(str(session["id"]))
+            except service.ConnectionUnavailable:
                 return make_response(jsonify({
                     "success": False,
                     "expired": True,
                     "error": "Session token has expired. Please reconnect."
                 }), 401)
+            except service.TransientConnectionError:
+                return make_response(
+                    jsonify({"success": False, "error": "The provider is not responding. Try again."}), 503,
+                )
 
-            _base_fields = {"access_token", "refresh_token", "token_uri", "expiry"}
-            provider_extras = {k: v for k, v in token_info.items() if k not in _base_fields}
-
-            response_data = {
+            return make_response(jsonify({
                 "success": True,
                 "expired": False,
-                "user_email": session.get('user_email', 'Connected User'),
-                "access_token": token_info.get('access_token'),
-                **provider_extras,
-            }
-
-            return make_response(jsonify(response_data), 200)
+                "connection_id": str(session["id"]),
+                "user_email": session.get('account_label') or session.get('user_email') or 'Connected User',
+                **token,
+            }), 200)
         except Exception as e:
             current_app.logger.error(f"Error validating connector session: {e}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to validate session"}), 500)
@@ -483,20 +571,65 @@ class ConnectorDisconnect(Resource):
         try:
             data = request.get_json()
             provider = data.get('provider')
-            session_token = data.get('session_token')
             if not provider:
                 return make_response(jsonify({"success": False, "error": "provider is required"}), 400)
 
-            if session_token:
+            session = service.resolve_request_connection(decoded_token.get('sub'), provider, data)
+            if session is not None:
                 with db_session() as conn:
-                    ConnectorSessionsRepository(conn).delete_by_session_token(
-                        session_token, decoded_token.get('sub'),
-                    )
+                    service.disconnect(conn, session)
 
             return make_response(jsonify({"success": True}), 200)
         except Exception as e:
             current_app.logger.error(f"Error disconnecting connector session: {e}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to disconnect session"}), 500)
+
+
+def _owner_connector_session(
+    conn, owner_id: str, provider: str, connection_id: Optional[str] = None,
+) -> Optional[dict]:
+    """The owner's usable connection for ``provider``, or None.
+
+    Used when a team editor syncs a shared connector source: the sync runs
+    with the owner's account, the source's own connection when it has one,
+    else the owner's first connection for the provider. A connection that is
+    not connected (signed out, flagged for reconnect, holding no
+    credentials), cannot be decrypted, or has an expired access token that
+    can't be refreshed counts as missing.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The source owner's ``sub``.
+        provider: The source's connector provider.
+        connection_id: The source's own connection, if it names one.
+
+    Returns:
+        Optional[dict]: The connection row, or None when the owner must reconnect.
+    """
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    repo = ConnectorSessionsRepository(conn)
+    if connection_id:
+        row = repo.get_for_user(str(connection_id), owner_id)
+        candidates = [row] if owns_connector_session(row, owner_id, provider) else []
+    else:
+        candidates = [s for s in repo.list_for_user(owner_id) if owns_connector_session(s, owner_id, provider)]
+    for session in candidates:
+        if service.normalize_status(session) != service.STATUS_CONNECTED:
+            continue
+        try:
+            token_info = service.read_secrets(session).get("token_info") or {}
+        except CredentialDecryptionError:
+            continue
+        if isinstance(token_info, dict) and token_info and not token_info.get("refresh_token"):
+            try:
+                if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
+                    continue
+            except Exception:
+                # Providers without an expiry check leave the verdict to the sync.
+                pass
+        return session
+    return None
 
 
 @connectors_ns.route("/api/connectors/sync")
@@ -506,7 +639,12 @@ class ConnectorSync(Resource):
             "ConnectorSyncModel",
             {
                 "source_id": fields.String(required=True, description="Source ID to sync"),
-                "session_token": fields.String(required=True, description="Authentication token")
+                "connection_id": fields.String(
+                    required=False,
+                    description="Connection to sync with; defaults to the source's own (ignored for "
+                    "team editors, whose sync uses the owner's connection)",
+                ),
+                "session_token": fields.String(required=False, description="Legacy; use connection_id")
             },
         )
     )
@@ -517,32 +655,31 @@ class ConnectorSync(Resource):
             return make_response(jsonify({"success": False}), 401)
 
         try:
-            data = request.get_json()
+            data = request.get_json() or {}
             source_id = data.get('source_id')
-            session_token = data.get('session_token')
 
-            if not all([source_id, session_token]):
+            if not source_id:
                 return make_response(
                     jsonify({
                         "success": False,
-                        "error": "source_id and session_token are required"
-                    }), 
+                        "error": "source_id is required"
+                    }),
                     400
                 )
             user_id = decoded_token.get('sub')
-            with db_readonly() as conn:
-                source = SourcesRepository(conn).get_any(source_id, user_id)
-            if not source:
+            # Owner or team editor. The sync always runs AS the owner, with the
+            # owner's connector account: a grantee can't point the source at
+            # their own account (that is ``reconnect``, owner-only).
+            try:
+                with db_readonly() as conn:
+                    source, ra = load_source(conn, source_id, user_id, "edit")
+            except AccessDenied as err:
                 return make_response(
-                    jsonify({
-                        "success": False,
-                        "error": "Source not found"
-                    }),
-                    404
+                    jsonify({"success": False, "error": err.message, "message": err.message}),
+                    err.status,
                 )
-
-            # ``get_any`` already scopes by ``user_id``; an extra guard
-            # here would be dead code.
+            owner_id = ra.owner_id
+            is_owner = ra.access == "owner"
 
             remote_data = source.get('remote_data') or {}
             if isinstance(remote_data, str):
@@ -558,17 +695,40 @@ class ConnectorSync(Resource):
                     jsonify({
                         "success": False,
                         "error": "Source provider not found in remote_data"
-                    }), 
+                    }),
                     400
                 )
 
-            with db_readonly() as conn:
-                session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
-            if not owns_connector_session(session, user_id, source_type):
-                return make_response(
-                    jsonify({"success": False, "error": "Invalid or unauthorized session"}),
-                    401,
-                )
+            source_connection = str(source['connection_id']) if source.get('connection_id') else None
+            if is_owner:
+                lookup = dict(data)
+                if not (lookup.get('connection_id') or lookup.get('session_token')):
+                    if not source_connection:
+                        return make_response(
+                            jsonify({"success": False, "error": "connection_id is required"}),
+                            400,
+                        )
+                    lookup['connection_id'] = source_connection
+                session = service.resolve_request_connection(user_id, source_type, lookup)
+                if session is None:
+                    return make_response(
+                        jsonify({"success": False, "error": "Invalid or unauthorized session"}),
+                        401,
+                    )
+            else:
+                # A grantee can't name a connection: theirs would read the
+                # source's files with another account.
+                with db_readonly() as conn:
+                    session = _owner_connector_session(conn, owner_id, source_type, source_connection)
+                if session is None:
+                    message = (
+                        "The owner needs to reconnect this source's account "
+                        "before it can be synced."
+                    )
+                    return make_response(
+                        jsonify({"success": False, "error": message, "message": message}),
+                        409,
+                    )
 
             # Extract configuration from remote_data
             file_ids = remote_data.get('file_ids', [])
@@ -578,9 +738,9 @@ class ConnectorSync(Resource):
             # Start the sync task
             task = ingest_connector_task.delay(
                 job_name=source.get('name'),
-                user=decoded_token.get('sub'),
+                user=owner_id,
                 source_type=source_type,
-                session_token=session_token,
+                connection_id=str(session["id"]),
                 file_ids=file_ids,
                 folder_ids=folder_ids,
                 recursive=recursive,

@@ -1,6 +1,12 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import activityReducer, {
+  activityListenerMiddleware,
+} from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
+import backgroundReducer from './backgroundJobs/backgroundSlice';
+import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import {
@@ -8,6 +14,7 @@ import {
   conversationSlice,
 } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
@@ -15,6 +22,7 @@ import {
   prefListenerMiddleware,
   prefSlice,
 } from './preferences/preferenceSlice';
+import monitorsReducer from './monitors/monitorsSlice';
 import graphBuildReducer from './settings/graphBuildSlice';
 import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
@@ -37,7 +45,7 @@ const preloadedState: { preference: Preference } = {
       { name: 'creative', id: 'creative', type: 'public' },
       { name: 'strict', id: 'strict', type: 'public' },
     ],
-    chunks: JSON.parse(chunks ?? '2').toString(),
+    chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
     conversations: {
       data: null,
@@ -58,6 +66,8 @@ const preloadedState: { preference: Preference } = {
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    authRequired: false,
+    attachmentBudgetShare: null,
   },
 };
 const store = configureStore({
@@ -70,14 +80,21 @@ const store = configureStore({
     agentPreview: agentPreviewReducer,
     workflowPreview: workflowPreviewReducer,
     notifications: notificationsReducer,
+    actionToast: actionToastReducer,
     schedules: schedulesReducer,
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
+    connectors: connectorsReducer,
+    monitors: monitorsReducer,
+    background: backgroundReducer,
+    activity: activityReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
+      backgroundListenerMiddleware.middleware,
+      activityListenerMiddleware.middleware,
     ),
 });
 

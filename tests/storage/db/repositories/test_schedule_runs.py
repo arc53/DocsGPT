@@ -196,3 +196,111 @@ class TestCleanup:
         )
         deleted = repo.cleanup_older_than(90, keep_recent_per_schedule=2)
         assert deleted >= 1
+
+
+def _add_run(
+    conn,
+    schedule_id: str,
+    user_id: str,
+    agent_id: str,
+    *,
+    ago: timedelta,
+    status: str,
+    prompt_tokens: int = 0,
+    generated_tokens: int = 0,
+    error_type: str | None = None,
+) -> dict:
+    repo = ScheduleRunsRepository(conn)
+    run = repo.record_pending(schedule_id, user_id, agent_id, _now() - ago)
+    return repo.update(
+        str(run["id"]),
+        {
+            "status": status,
+            "prompt_tokens": prompt_tokens,
+            "generated_tokens": generated_tokens,
+            "error_type": error_type,
+        },
+    )
+
+
+class TestStatsForAgent:
+    def test_empty_window_returns_zeros(self, pg_conn):
+        _, agent_id = _make_schedule(pg_conn)
+        stats = ScheduleRunsRepository(pg_conn).stats_for_agent(
+            agent_id, "u1", days=30,
+        )
+        assert stats == {
+            "runs": 0, "failed": 0, "tokens": 0, "latest_failure": None,
+        }
+
+    def test_aggregates_window_and_scopes_owner(self, pg_conn):
+        schedule_id, agent_id = _make_schedule(pg_conn)
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=timedelta(hours=12),
+            status="success", prompt_tokens=100, generated_tokens=50,
+        )
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=timedelta(days=3),
+            status="failed", prompt_tokens=10, generated_tokens=5,
+            error_type="agent_error",
+        )
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=timedelta(days=2),
+            status="timeout", prompt_tokens=1, generated_tokens=2,
+            error_type="timeout",
+        )
+        # Outside the window: must not count.
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=timedelta(days=40),
+            status="failed", prompt_tokens=1000, generated_tokens=1000,
+        )
+        # Another user's schedule on the same agent: must not count.
+        other = SchedulesRepository(pg_conn).create(
+            user_id="u2", agent_id=agent_id, trigger_type="recurring",
+            instruction="i", cron="* * * * *",
+            next_run_at=_now() + timedelta(minutes=5),
+        )
+        _add_run(
+            pg_conn, str(other["id"]), "u2", agent_id, ago=timedelta(hours=1),
+            status="failed", prompt_tokens=7, generated_tokens=7,
+        )
+
+        stats = ScheduleRunsRepository(pg_conn).stats_for_agent(
+            agent_id, "u1", days=30,
+        )
+        assert stats["runs"] == 3
+        assert stats["failed"] == 2
+        assert stats["tokens"] == 168
+        latest = stats["latest_failure"]
+        assert latest["status"] == "timeout"
+        assert latest["error_type"] == "timeout"
+        assert isinstance(latest["scheduled_for"], str)
+
+        # A tighter window drops the older runs.
+        narrow = ScheduleRunsRepository(pg_conn).stats_for_agent(
+            agent_id, "u1", days=1,
+        )
+        assert narrow["runs"] == 1
+        assert narrow["failed"] == 0
+        assert narrow["latest_failure"] is None
+
+    def test_future_runs_are_not_counted(self, pg_conn):
+        schedule_id, agent_id = _make_schedule(pg_conn)
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=timedelta(hours=1),
+            status="success", prompt_tokens=3, generated_tokens=4,
+        )
+        # Scheduled a day ahead: inside ``>= now() - days`` but not yet due.
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=-timedelta(days=1),
+            status="failed", prompt_tokens=500, generated_tokens=500,
+            error_type="agent_error",
+        )
+
+        stats = ScheduleRunsRepository(pg_conn).stats_for_agent(
+            agent_id, "u1", days=30,
+        )
+        assert stats["runs"] == 1
+        assert stats["failed"] == 0
+        assert stats["tokens"] == 7
+        assert stats["latest_failure"] is None

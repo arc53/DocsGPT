@@ -1,0 +1,310 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import * as sheetModule from './sheet';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './sheet';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+});
+
+const render = async (element: React.ReactElement) => {
+  await act(async () => root.render(element));
+};
+
+const content = () =>
+  document.querySelector<HTMLElement>('[data-slot="sheet-content"]')!;
+
+describe('SheetContent side="bottom"', () => {
+  it('is a card-coloured sheet with a rounded top that clears the home indicator', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="bottom"
+          title="Tools"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    const classes = content().className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'bg-card',
+        'rounded-t-2xl',
+        'max-h-sheet',
+        'pb-safe-0',
+      ]),
+    );
+    expect(classes).not.toContain('bg-background');
+    expect(classes).not.toContain('border-t');
+    expect(content().dataset.side).toBe('bottom');
+  });
+
+  it('draws the grab handle first only when asked', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="bottom"
+          handle
+          title="Tools"
+          aria-describedby={undefined}
+        >
+          <p>Body</p>
+        </SheetContent>
+      </Sheet>,
+    );
+    const handle = content().querySelector('[data-slot="sheet-handle"]');
+    expect(handle).not.toBeNull();
+    expect(handle!.getAttribute('aria-hidden')).toBe('true');
+    // The sr-only title comes first; the handle is the first visible child.
+    const visible = Array.from(content().children).filter(
+      (el) => !el.classList.contains('sr-only'),
+    );
+    expect(visible[0]).toBe(handle);
+  });
+
+  it('has no handle by default', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="bottom"
+          title="Tools"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    expect(content().querySelector('[data-slot="sheet-handle"]')).toBeNull();
+  });
+
+  it('leaves the side sheets on the page background with their border', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent side="right" title="Trace" aria-describedby={undefined} />
+      </Sheet>,
+    );
+    const classes = content().className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['bg-background', 'border-l']),
+    );
+    expect(classes).not.toContain('rounded-t-2xl');
+  });
+});
+
+describe('SheetContent side="right" size', () => {
+  const widthClasses = async (size?: 'default' | 'wide') => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="right"
+          size={size}
+          title="Drawer"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    return content()
+      .className.split(' ')
+      .filter((c) => /^(sm:|md:|lg:)?(max-)?w-/.test(c));
+  };
+
+  it('is full width on a phone and 480px from sm by default', async () => {
+    expect(await widthClasses()).toEqual(['w-full', 'sm:max-w-120']);
+  });
+
+  it('steps 600 / 700 / 800px at wide', async () => {
+    expect(await widthClasses('wide')).toEqual([
+      'w-full',
+      'sm:max-w-[600px]',
+      'md:max-w-[700px]',
+      'lg:max-w-[800px]',
+    ]);
+  });
+});
+
+describe('SheetOverlay', () => {
+  it('uses the blurred scrim every Modal uses', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent side="right" title="Trace" aria-describedby={undefined} />
+      </Sheet>,
+    );
+    const classes = document
+      .querySelector('[data-slot="sheet-overlay"]')!
+      .className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'bg-black/25',
+        'backdrop-blur-xs',
+        'dark:bg-black/50',
+      ]),
+    );
+    expect(classes).not.toContain('bg-black/50');
+  });
+
+  it('draws no X of its own: the caller brings its close (PanelHeader, the scrim)', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent side="right" title="Trace" aria-describedby={undefined} />
+      </Sheet>,
+    );
+    expect(
+      document.querySelector('[data-slot="sheet-content"] button'),
+    ).toBeNull();
+  });
+
+  it('SheetTitle defaults to the 20px title', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent>
+          <SheetTitle>Run details</SheetTitle>
+        </SheetContent>
+      </Sheet>,
+    );
+    const title = document.querySelector('[data-slot="sheet-title"]');
+    expect(title?.className).toContain('text-xl leading-tight font-semibold');
+  });
+});
+
+describe('SheetContent focus', () => {
+  const pressEscape = async () => {
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    // Radix moves focus once the closed content has unmounted.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+
+  const renderWithTrigger = () =>
+    render(
+      <Sheet>
+        <SheetTrigger data-testid="trigger">Tools</SheetTrigger>
+        {/* Like the phone pickers: no autofocus, so the keyboard stays down. */}
+        <SheetContent
+          side="bottom"
+          title="Tools"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
+          <button type="button">Inside</button>
+        </SheetContent>
+      </Sheet>,
+    );
+
+  const trigger = () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="trigger"]')!;
+
+  it('never draws the browser outline around the panel', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="bottom"
+          title="Tools"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    expect(content().className.split(' ')).toContain('outline-none');
+  });
+
+  it('leaves the trigger unfocused when a tap opened the sheet', async () => {
+    await renderWithTrigger();
+    // iOS doesn't focus a tapped button: the click lands with body focused.
+    await act(async () => trigger().click());
+    expect(content()).not.toBeNull();
+    await pressEscape();
+    expect(document.activeElement).not.toBe(trigger());
+  });
+
+  it('returns focus to the trigger when it had focus on open', async () => {
+    await renderWithTrigger();
+    trigger().focus();
+    await act(async () => trigger().click());
+    await pressEscape();
+    expect(document.activeElement).toBe(trigger());
+  });
+});
+
+describe('SheetContent bottom-bar reset', () => {
+  // Earlier tests close bottom sheets on unmount, which leaves strips behind.
+  beforeEach(() => {
+    document
+      .querySelectorAll('[data-slot="bottom-tint-reset"]')
+      .forEach((node) => node.remove());
+  });
+
+  const wait = (ms: number) =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+  const strip = () =>
+    document.querySelector<HTMLElement>('[data-slot="bottom-tint-reset"]');
+
+  const renderSheet = (open: boolean, side: 'bottom' | 'right') =>
+    render(
+      <Sheet open={open}>
+        <SheetContent side={side} title="Tools" aria-describedby={undefined} />
+      </Sheet>,
+    );
+
+  it('shows a 6px page-coloured strip on the bottom edge for one frame after a bottom sheet closes', async () => {
+    await renderSheet(true, 'bottom');
+    expect(strip()).toBeNull();
+    await renderSheet(false, 'bottom');
+    const classes = strip()!.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['bg-background', 'fixed', 'bottom-0', 'h-1.5']),
+    );
+    expect(strip()!.getAttribute('aria-hidden')).toBe('true');
+    await wait(120);
+    expect(strip()).toBeNull();
+  });
+
+  it('adds no strip for a side sheet', async () => {
+    await renderSheet(true, 'right');
+    await renderSheet(false, 'right');
+    await wait(20);
+    expect(strip()).toBeNull();
+  });
+});
+
+describe('ui/sheet surface', () => {
+  it('keeps only the parts app code uses', () => {
+    expect(Object.keys(sheetModule).sort()).toEqual([
+      'Sheet',
+      'SheetContent',
+      'SheetHandle',
+      'SheetTitle',
+      'SheetTrigger',
+      'sheetBottomShape',
+    ]);
+  });
+
+  it('offers only the right and bottom sides, with no built-in close', () => {
+    const props = { title: 'Tools', 'aria-describedby': undefined };
+    // @ts-expect-error left drawers were never used
+    void (<SheetContent side="left" {...props} />);
+    // @ts-expect-error top sheets were never used
+    void (<SheetContent side="top" {...props} />);
+    // @ts-expect-error the built-in X is gone, and its label with it
+    void (<SheetContent closeLabel="Close" {...props} />);
+    // @ts-expect-error the built-in X is gone
+    void (<SheetContent showCloseButton {...props} />);
+  });
+});

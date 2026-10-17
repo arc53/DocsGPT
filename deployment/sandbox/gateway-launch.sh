@@ -26,6 +26,16 @@ if [ -z "$TOKEN" ]; then
     exit 1
 fi
 
+# Seconds a kernel may sit idle before the gateway shuts it down. The app keeps a
+# session's kernel between calls and retires it after SANDBOX_MAX_TTL idle seconds
+# (1200 by default); this cull is the backstop for kernels no app process will
+# retire, e.g. ones held by a worker that restarted. Keep it above SANDBOX_MAX_TTL.
+# A run's length (up to the app's SANDBOX_EXEC_MAX_TIMEOUT, 1000 s by default)
+# does not add to it: the gateway never culls a busy kernel or one with an open
+# connection (cull_busy and cull_connected stay False), and both idle clocks
+# restart when the run ends.
+IDLE_TIMEOUT="${SANDBOX_KERNEL_IDLE_TIMEOUT:-1800}"
+
 # ip=0.0.0.0 so the backend/worker can reach it over the internal sandbox network.
 # auth_token gates every HTTP + WebSocket request, including loopback ones from
 # kernel code. limit_rate=False raises the iopub data-rate cap so large get_file
@@ -35,4 +45,6 @@ exec jupyter kernelgateway \
     --KernelGatewayApp.ip=0.0.0.0 \
     --KernelGatewayApp.port=8888 \
     --KernelGatewayApp.auth_token="$TOKEN" \
-    --ZMQChannelsWebsocketConnection.limit_rate=False
+    --ZMQChannelsWebsocketConnection.limit_rate=False \
+    --MappingKernelManager.cull_idle_timeout="$IDLE_TIMEOUT" \
+    --MappingKernelManager.cull_interval=300

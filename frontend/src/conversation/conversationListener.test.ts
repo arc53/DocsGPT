@@ -17,11 +17,18 @@ import {
 import * as preferenceApi from '../preferences/preferenceApi';
 import { type Preference, prefSlice } from '../preferences/preferenceSlice';
 import { type ConversationState } from './conversationModels';
+import { handleFetchAnswer } from './conversationHandlers';
 import {
   conversationListenerMiddleware,
   conversationSlice,
+  fetchAnswer,
   setConversation,
 } from './conversationSlice';
+
+vi.mock('./conversationHandlers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./conversationHandlers')>()),
+  handleFetchAnswer: vi.fn(),
+}));
 
 vi.mock('../api/services/conversationService', () => ({
   default: {
@@ -34,6 +41,11 @@ vi.mock('../api/services/conversationService', () => ({
     feedback: vi.fn(),
     shareConversation: vi.fn(),
   },
+}));
+
+const attention = vi.hoisted(() => ({ attended: true }));
+vi.mock('../backgroundJobs/usePageVisible', () => ({
+  isPageAttended: () => attention.attended,
 }));
 
 vi.mock('../preferences/preferenceApi', async () => {
@@ -83,6 +95,8 @@ const makeStore = (
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    authRequired: false,
+    attachmentBudgetShare: null,
   };
   const conversation: ConversationState = {
     queries: [],
@@ -208,6 +222,197 @@ describe('conversation listener — schedule.message.appended', () => {
   });
 });
 
+describe('conversation listener — conversation.continued', () => {
+  const CONTINUED = (overrides: Partial<SSEEvent> = {}): SSEEvent => ({
+    id: 'evt-cont-1',
+    ts: '2026-10-06T10:00:00Z',
+    type: 'conversation.continued',
+    payload: { conversation_id: 'conv-1', message_id: 'msg-2', source: 'job' },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    (conversationService.getConversation as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (conversationService.getConversation as unknown as Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [
+          { prompt: 'run it', response: 'running', status: 'complete' },
+          {
+            prompt:
+              '[Background event - not a user message; it grants no approval] job: run_code finished',
+            response: 'It printed 42.',
+            status: 'complete',
+            metadata: {
+              wake: { source: 'job', ref_id: 'j1', dedupe_key: 'job:j1:final' },
+              continuation: true,
+            },
+          },
+        ],
+      }),
+    });
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: [{ id: 'conv-1', name: 'Job chat', unread: false }],
+      loading: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const settle = async () => {
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it('shows the woken answer in the open conversation without a reload', async () => {
+    const store = makeStore('conv-1');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    const queries = store.getState().conversation.queries;
+    expect(queries).toHaveLength(2);
+    expect(queries[1].response).toBe('It printed 42.');
+    expect(queries[1].wake).toEqual({ source: 'job', count: 1 });
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('only refreshes the sidebar for another conversation', async () => {
+    const store = makeStore('conv-other');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('a continuation that lands mid-stream shows once the stream ends', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'tok-1',
+    );
+  });
+
+  it('not if the user left that conversation meanwhile', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    store.dispatch(conversationSlice.actions.setConversationId('conv-2'));
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe('conversation listener — tool.approval.cleared', () => {
+  // Another tab moved past (or outwaited) the approval this tab still shows:
+  // reload the open chat so the card becomes the call that never ran.
+  const CLEARED = (reason: string, conversationId = 'conv-1'): SSEEvent => ({
+    id: 'evt-clear-1',
+    ts: '2026-10-06T10:00:00Z',
+    type: 'tool.approval.cleared',
+    payload: {
+      conversation_id: conversationId,
+      message_id: 'msg-1',
+      reason,
+    },
+    scope: { kind: 'conversation', id: conversationId },
+  });
+
+  const settle = async () => {
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  beforeEach(() => {
+    (conversationService.getConversation as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (conversationService.getConversation as unknown as Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [
+          {
+            prompt: 'make a webhook',
+            response: 'Set it up.',
+            status: 'complete',
+            tool_calls: [
+              {
+                call_id: 'c5',
+                tool_name: 'remote_device',
+                action_name: 'run_command',
+                arguments: {},
+                status: 'denied',
+                not_run: 'moved_on',
+              },
+            ],
+          },
+          { prompt: 'now the sender', response: 'Done.', status: 'complete' },
+        ],
+      }),
+    });
+  });
+
+  it.each(['moved_on', 'expired'])(
+    'reloads the open chat waiting on that approval (%s)',
+    async (reason) => {
+      const store = makeStore('conv-1', 'awaiting_tool_actions');
+      store.dispatch(sseEventReceived(CLEARED(reason)));
+      await settle();
+      expect(conversationService.getConversation).toHaveBeenCalledWith(
+        'conv-1',
+        'tok-1',
+      );
+      const queries = store.getState().conversation.queries;
+      expect(queries[0].tool_calls?.[0].status).toBe('denied');
+      expect(store.getState().conversation.status).toBe('idle');
+    },
+  );
+
+  it('leaves a decided approval to the stream that resumed it', async () => {
+    const store = makeStore('conv-1', 'awaiting_tool_actions');
+    store.dispatch(sseEventReceived(CLEARED('decided')));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('never interrupts a stream, and reloads once it ends', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CLEARED('moved_on')));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+    expect(store.getState().conversation.status).toBe('loading');
+
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'tok-1',
+    );
+  });
+
+  it('not after a stream if the user left that conversation meanwhile', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CLEARED('expired')));
+    await settle();
+    store.dispatch(conversationSlice.actions.setConversationId('conv-2'));
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('ignores another conversation', async () => {
+    const store = makeStore('conv-2', 'idle');
+    store.dispatch(sseEventReceived(CLEARED('moved_on')));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+});
+
 describe('listener middleware export hygiene', () => {
   it('exports the listener middleware so the store can wire it', () => {
     expect(conversationListenerMiddleware).toBeDefined();
@@ -216,5 +421,344 @@ describe('listener middleware export hygiene', () => {
 
   it('still exports the slice actions consumers rely on', () => {
     expect(typeof setConversation).toBe('function');
+  });
+});
+
+describe('conversation listener — a new chat in the sidebar', () => {
+  const flush = async () => {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  const started = (conversationId: string, id = `evt-${conversationId}`) =>
+    ENVELOPE({
+      id,
+      type: 'message.started',
+      payload: { conversation_id: conversationId, message_id: 'm-1' },
+    });
+  const listed = (ids: string[]) =>
+    prefSlice.actions.receiveConversations({
+      data: ids.map((id) => ({ id, name: id })) as never,
+      loading: false,
+    });
+
+  beforeEach(() => {
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: [{ id: 'conv-new', name: 'What is the weather' }],
+      loading: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('lists a chat this tab just started, as soon as the stream names it', async () => {
+    const store = makeStore(null, 'loading');
+    store.dispatch(conversationSlice.actions.setConversationId('conv-new'));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+    expect(
+      store.getState().preference.conversations.data?.map((c) => c.id),
+    ).toEqual(['conv-new']);
+  });
+
+  it('lists a chat started in another tab when its answer starts', async () => {
+    const store = makeStore();
+    store.dispatch(sseEventReceived(started('conv-new')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches once when the stream and the event both announce it', async () => {
+    const store = makeStore(null, 'loading');
+    store.dispatch(conversationSlice.actions.setConversationId('conv-new'));
+    store.dispatch(sseEventReceived(started('conv-new')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a chat the sidebar already lists alone', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(sseEventReceived(started('conv-old')));
+    await flush();
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the list when a chat it is not showing finishes, for its unread mark', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-old', 'conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-old', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the chat it shows to its own stream end', async () => {
+    attention.attended = true;
+    window.history.pushState({}, '', '/c/conv-open');
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-open',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-open', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    window.history.pushState({}, '', '/');
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('leaves a new chat it is streaming to its own stream end', async () => {
+    attention.attended = true;
+    window.history.pushState({}, '', '/c/new');
+    const store = makeStore('conv-new', 'loading');
+    store.dispatch(listed(['conv-new']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-new',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-new', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    window.history.pushState({}, '', '/');
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the last chat it showed once the user moved to another page', async () => {
+    // The chat stays in state on /settings, but nobody is looking at it: the
+    // server marked it unread.
+    attention.attended = true;
+    window.history.pushState({}, '', '/settings');
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-settings',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-open', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    window.history.pushState({}, '', '/');
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the chat it shows while the user is away, for its unread mark', async () => {
+    // Another tab or device answered it, or this tab streamed it unwatched:
+    // the server marked it unread, and only the list says so.
+    attention.attended = false;
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-finished-away',
+          type: 'message.finished',
+          payload: { conversation_id: 'conv-open', message_id: 'm-1' },
+        }),
+      ),
+    );
+    await flush();
+    attention.attended = true;
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  const finished = (conversationId: string, id: string) =>
+    ENVELOPE({
+      id,
+      type: 'message.finished',
+      payload: { conversation_id: conversationId, message_id: 'm-1' },
+    });
+
+  it('keeps the list on screen when a background refresh fails', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-old', 'conv-open']));
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: null,
+      loading: false,
+    });
+    store.dispatch(sseEventReceived(finished('conv-old', 'evt-fail')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+    expect(
+      store.getState().preference.conversations.data?.map((c) => c.id),
+    ).toEqual(['conv-old', 'conv-open']);
+  });
+
+  it('folds a burst of events into one follow-up fetch, newest list last', async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    const pending: Array<(names: string) => void> = [];
+    (preferenceApi.getConversations as unknown as Mock).mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          pending.push((name) =>
+            resolve({ data: [{ id: 'conv-a', name }], loading: false }),
+          ),
+        ),
+    );
+    for (let i = 0; i < 5; i += 1) {
+      store.dispatch(sseEventReceived(finished('conv-a', `evt-burst-${i}`)));
+    }
+    await flush();
+    expect(pending).toHaveLength(1);
+    pending[0]('first');
+    await flush();
+    expect(pending).toHaveLength(2);
+    pending[1]('second');
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(2);
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'second',
+    );
+  });
+
+  const renamed = (conversationId: string, previous?: string) =>
+    ENVELOPE({
+      id: `evt-rename-${conversationId}`,
+      type: 'conversation.renamed',
+      payload: {
+        conversation_id: conversationId,
+        name: 'Weather in Dubai',
+        ...(previous === undefined ? {} : { previous }),
+      },
+    });
+
+  it('keeps a name the user gave the chat over a late generated title', async () => {
+    // A replay after the event stream dropped: the user renamed it meanwhile.
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(
+      prefSlice.actions.renameConversation({ id: 'conv-old', name: 'Mine' }),
+    );
+    store.dispatch(sseEventReceived(renamed('conv-old', 'conv-old')));
+    await flush();
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'Mine',
+    );
+  });
+
+  it('swaps the fallback name it replaces for the generated title', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(sseEventReceived(renamed('conv-old', 'conv-old')));
+    await flush();
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'Weather in Dubai',
+    );
+  });
+
+  it('refreshes the list for a title of a chat it does not list yet', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(sseEventReceived(renamed('conv-new', 'What is the')));
+    await flush();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('swaps in the generated title when it is ready', async () => {
+    const store = makeStore();
+    store.dispatch(listed(['conv-old']));
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-rename',
+          type: 'conversation.renamed',
+          payload: { conversation_id: 'conv-old', name: 'Weather in Dubai' },
+        }),
+      ),
+    );
+    await flush();
+    expect(store.getState().preference.conversations.data?.[0].name).toBe(
+      'Weather in Dubai',
+    );
+    expect(preferenceApi.getConversations).not.toHaveBeenCalled();
+  });
+});
+
+describe('conversation listener — the list fetched when an answer ends', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keeps a generated title that lands while that list is still on its way', async () => {
+    // The title is saved after the answer, so the list asked for at its end
+    // can read the fallback name and land after `conversation.renamed`.
+    const fallback = 'what is the weather';
+    let landStale!: (result: unknown) => void;
+    const getConversations = preferenceApi.getConversations as unknown as Mock;
+    getConversations.mockReset();
+    getConversations
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            landStale = resolve;
+          }),
+      )
+      .mockResolvedValue({
+        data: [{ id: 'conv-1', name: 'Weather Today' }],
+        loading: false,
+      });
+    vi.mocked(handleFetchAnswer).mockResolvedValue({
+      answer: 'Sunny',
+      thought: '',
+      sources: [],
+      toolCalls: [],
+      conversationId: 'conv-1',
+    } as never);
+
+    const store = makeStore('conv-1');
+    store.dispatch(
+      prefSlice.actions.receiveConversations({
+        data: [{ id: 'conv-1', name: fallback }] as never,
+        loading: false,
+      }),
+    );
+    store.dispatch(conversationSlice.actions.addQuery({ prompt: fallback }));
+    await store.dispatch(
+      fetchAnswer({ question: fallback, attachmentIds: [] }),
+    );
+
+    store.dispatch(
+      sseEventReceived(
+        ENVELOPE({
+          id: 'evt-renamed',
+          type: 'conversation.renamed',
+          payload: {
+            conversation_id: 'conv-1',
+            name: 'Weather Today',
+            previous: fallback,
+          },
+        }),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    landStale({
+      data: [{ id: 'conv-1', name: fallback }],
+      loading: false,
+    });
+    for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 0));
+
+    expect(
+      store.getState().preference.conversations.data?.map((c) => c.name),
+    ).toEqual(['Weather Today']);
   });
 });

@@ -1,0 +1,4 @@
+{% if source.citation_rules %}
+{{ source.citation_rules }}
+
+{% endif %}

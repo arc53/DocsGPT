@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const service = vi.hoisted(() => ({ remove: vi.fn() }));
+vi.mock('../../api/services/schedulesService', () => ({ default: service }));
 
 import {
   sseEventReceived,
@@ -6,7 +9,16 @@ import {
 } from '../../notifications/notificationsSlice';
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
+  resetSchedules,
+  createSchedule,
   applyEvent,
+  deleteSchedule,
+  loadAllSchedules,
+  selectAllSchedules,
+  setSchedulePaused,
+  loadRunsForSchedule,
+  RUNS_PAGE_SIZE,
+  selectRunsEnd,
   selectRunsForSchedule,
   selectSchedulesForAgent,
   type SchedulesState,
@@ -266,5 +278,233 @@ describe('schedulesSlice SSE event handling', () => {
     expect(stub.prompt_tokens).toBe(0);
     expect(stub.generated_tokens).toBe(0);
     expect(stub.trigger_source).toBe('cron');
+  });
+});
+
+describe('selectSchedulesForAgent', () => {
+  it('returns a stable empty list for an agent that has not loaded', () => {
+    // A fresh [] per call re-runs every effect that depends on the list.
+    const state = { schedules: reducer(undefined, { type: '@@init' }) };
+    expect(selectSchedulesForAgent(state, 'missing')).toBe(
+      selectSchedulesForAgent(state, 'missing'),
+    );
+  });
+});
+
+describe('loadRunsForSchedule paging', () => {
+  const wrap = (schedules: SchedulesState) => ({ schedules });
+  const fulfilled = (
+    runs: ScheduleRun[],
+    offset: number,
+    limit = RUNS_PAGE_SIZE,
+  ) => ({
+    type: loadRunsForSchedule.fulfilled.type,
+    payload: { scheduleId: 'sched-1', runs, offset, limit },
+  });
+  const runs = (from: number, n: number) =>
+    Array.from({ length: n }, (_, i) => sampleRun({ id: `run-${from + i}` }));
+
+  it('the first page replaces the list; a full page is not the end', () => {
+    const state = reducer(undefined, fulfilled(runs(0, RUNS_PAGE_SIZE), 0));
+    expect(state.runsBySchedule['sched-1']).toHaveLength(RUNS_PAGE_SIZE);
+    expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(false);
+  });
+
+  it('an older page appends, skipping runs already listed', () => {
+    let state = reducer(undefined, fulfilled(runs(0, RUNS_PAGE_SIZE), 0));
+    // A run that arrived over SSE shifted the window by one.
+    state = reducer(
+      state,
+      fulfilled(runs(RUNS_PAGE_SIZE - 1, 10), RUNS_PAGE_SIZE),
+    );
+    const ids = state.runsBySchedule['sched-1'].map((r) => r.id);
+    expect(ids).toHaveLength(RUNS_PAGE_SIZE + 9);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Shorter than a page: there are no older runs.
+    expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(true);
+  });
+});
+
+// A refused delete rejects, so the row stays and the confirm shows the error.
+describe('deleteSchedule', () => {
+  const run = (result: unknown) => {
+    service.remove.mockResolvedValue(result);
+    const dispatch = vi.fn();
+    return deleteSchedule({ id: 'sched-1', token: null })(
+      dispatch,
+      () => ({}),
+      undefined,
+    );
+  };
+
+  it('fulfils with the id when the server deletes it', async () => {
+    const action = await run({ success: true });
+    expect(action.type).toBe(deleteSchedule.fulfilled.type);
+    expect(action.payload).toBe('sched-1');
+  });
+
+  it('rejects when the server refuses the delete', async () => {
+    const action = await run({ success: false, error: 'Not allowed' });
+    expect(action.type).toBe(deleteSchedule.rejected.type);
+  });
+});
+
+describe('schedulesSlice cross-agent list', () => {
+  const seedAll = (): SchedulesState => {
+    const state = seedWithSchedule();
+    return reducer(
+      state,
+      loadAllSchedules.fulfilled(
+        [
+          { ...sampleSchedule(), agent_name: 'Deal Desk' },
+          {
+            ...sampleSchedule({ id: 'sched-2', agent_id: null }),
+            origin_conversation_name: 'QBR prep',
+          },
+        ],
+        'req',
+        { token: null },
+      ),
+    );
+  };
+
+  it('stores the loaded list', () => {
+    const state = seedAll();
+    expect(selectAllSchedules({ schedules: state })?.map((s) => s.id)).toEqual([
+      'sched-1',
+      'sched-2',
+    ]);
+  });
+
+  it('keeps the names when a mutation answers with a bare schedule', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(sampleSchedule({ status: 'paused' }), 'req', {
+        id: 'sched-1',
+        action: 'pause',
+        token: null,
+      }),
+    );
+    const row = state.all?.find((s) => s.id === 'sched-1');
+    expect(row?.status).toBe('paused');
+    expect(row?.agent_name).toBe('Deal Desk');
+    expect(state.byAgent['agent-1'][0].status).toBe('paused');
+  });
+
+  it('updates an agentless schedule, which has no per-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(
+        sampleSchedule({ id: 'sched-2', agent_id: null, status: 'paused' }),
+        'req',
+        { id: 'sched-2', action: 'pause', token: null },
+      ),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  it('applies SSE status changes to the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      sseEventReceived({
+        id: 'evt-9',
+        type: 'schedule.autopaused',
+        payload: { schedule_id: 'sched-2' },
+      } as SSEEvent),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  describe('while the list is loading', () => {
+    const loading = () =>
+      reducer(
+        seedWithSchedule(),
+        loadAllSchedules.pending('load', { token: null }),
+      );
+    const answer = (requestId = 'load') =>
+      loadAllSchedules.fulfilled(
+        [{ ...sampleSchedule(), agent_name: 'Deal Desk' }],
+        requestId,
+        { token: null },
+      );
+
+    it('keeps a schedule created meanwhile, which its answer predates', () => {
+      let state = reducer(
+        loading(),
+        createSchedule.fulfilled(sampleSchedule({ id: 'sched-new' }), 'c', {
+          agentId: 'agent-1',
+          token: null,
+        } as never),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
+    });
+
+    it('keeps a schedule deleted meanwhile deleted', () => {
+      let state = reducer(
+        loading(),
+        deleteSchedule.fulfilled('sched-1', 'd', {
+          id: 'sched-1',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all).toEqual([]);
+    });
+
+    it("hides the last account's list while another token loads", () => {
+      let state = reducer(loading(), answer());
+      expect(state.all).toHaveLength(1);
+      // The same token reloading keeps the list on screen meanwhile.
+      state = reducer(
+        state,
+        loadAllSchedules.pending('again', { token: null }),
+      );
+      expect(state.all).toHaveLength(1);
+      state = reducer(
+        state,
+        loadAllSchedules.pending('other', { token: 'other-account' }),
+      );
+      expect(state.all).toBeNull();
+      // A failed load leaves nothing of the last account to show.
+      state = reducer(
+        state,
+        loadAllSchedules.rejected(new Error('down'), 'other', {
+          token: 'other-account',
+        }),
+      );
+      expect(state.all).toBeNull();
+      expect(state.allError).toBe(true);
+    });
+
+    it('drops a load sent before a reset', () => {
+      let state = reducer(loading(), resetSchedules());
+      state = reducer(state, answer());
+      expect(state.all).toBeNull();
+    });
+
+    it('applies only the latest load', () => {
+      let state = reducer(
+        loading(),
+        loadAllSchedules.pending('newer', { token: null }),
+      );
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled([], 'newer', { token: null }),
+      );
+      state = reducer(state, answer('load'));
+      expect(state.all).toEqual([]);
+    });
+  });
+
+  it('drops a deleted schedule from the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      deleteSchedule.fulfilled('sched-2', 'req', {
+        id: 'sched-2',
+        token: null,
+      }),
+    );
+    expect(state.all?.map((s) => s.id)).toEqual(['sched-1']);
   });
 });

@@ -110,11 +110,85 @@ class TestToolExecutorGetTools:
         assert "tool1" in names
         assert "memory" in names
 
-    def test_agent_bound_chat_via_user_path_excludes_defaults(
+    def test_draft_agent_without_tools_gets_none_of_the_owners(
         self, pg_conn, monkeypatch
     ):
-        """``agent_id`` forces ``agents.tools``-only; no defaults synthesized."""
-        from docsgpt.agents.default_tools import loaded_default_tools
+        """A draft agent (no key) runs with its own empty toolset, not the owner's chat tools."""
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            user_id="alice", name="telegram", status=True
+        )
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft", tools=[],
+        )
+        assert agent.get("key") is None
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user="alice", agent_id=str(agent["id"]))
+        assert executor.get_tools() == {}
+        assert executor.get_enabled_tool_names() == set()
+
+    def test_draft_agent_resolves_exactly_its_tools(self, pg_conn, monkeypatch):
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        own = repo.create(user_id="alice", name="ntfy", status=True)
+        repo.create(user_id="alice", name="telegram", status=True)
+        scheduler_id = default_tool_id("scheduler")
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft",
+            tools=[str(own["id"]), scheduler_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        chat = ToolExecutor(user="alice", agent_id=str(agent["id"])).get_tools()
+        assert {t["name"] for t in chat.values()} == {"ntfy", "scheduler"}
+        # Headless runs drop chat-only tools, same as a keyed agent.
+        headless = ToolExecutor(user="alice", agent_id=str(agent["id"]), headless=True).get_tools()
+        assert {t["name"] for t in headless.values()} == {"ntfy"}
+
+    def test_a_saved_check_job_is_not_the_agents_choice(self, pg_conn, monkeypatch, caplog):
+        """check_job, once pickable, is attached by the server; a saved id resolves to nothing, quietly."""
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        # Even an operator who still lists it in DEFAULT_CHAT_TOOLS.
+        monkeypatch.setattr(settings, "DEFAULT_CHAT_TOOLS", ["memory", "check_job"])
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft",
+            tools=[default_tool_id("check_job"), default_tool_id("memory")],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        with caplog.at_level("INFO"):
+            tools = ToolExecutor(user="alice", agent_id=str(agent["id"])).get_tools()
+        assert {t["name"] for t in tools.values()} == {"memory"}
+        assert "check_job" not in caplog.text
+        agentless = ToolExecutor(user="alice").get_tools()
+        assert "check_job" not in {t["name"] for t in agentless.values()}
+
+    def test_draft_agent_resolves_tools_as_its_owner(self, pg_conn, monkeypatch):
+        """A teammate running someone's draft gets the agent's tools, never their own."""
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        owner_tool = repo.create(user_id="alice", name="ntfy", status=True)
+        repo.create(user_id="bob", name="telegram", status=True)
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft", tools=[str(owner_tool["id"])],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        tools = ToolExecutor(user="bob", agent_id=str(agent["id"])).get_tools()
+        assert set(tools) == {str(owner_tool["id"])}
+
+    def test_unknown_agent_gets_no_tools(self, pg_conn, monkeypatch):
         from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         UserToolsRepository(pg_conn).create(
@@ -123,10 +197,7 @@ class TestToolExecutorGetTools:
         self._patch_conn(monkeypatch, pg_conn)
 
         executor = ToolExecutor(user="alice", agent_id="agent-x")
-        tools = executor.get_tools()
-        names = {t["name"] for t in tools.values()}
-        assert "tool1" in names
-        assert not (set(loaded_default_tools()) & names)
+        assert executor.get_tools() == {}
 
     def test_get_tools_defaults_to_local(self, pg_conn, monkeypatch):
         from docsgpt.agents.default_tools import loaded_default_tools
@@ -1052,6 +1123,16 @@ class TestToolExecutorExecute:
         assert result_status({"error": None, "status": "ok"}) == "completed"
         assert result_status("plain text result") == "completed"
 
+    def test_result_status_reads_http_status_codes(self):
+        from docsgpt.agents.tool_executor import result_status
+
+        assert result_status({"status_code": 401, "message": "Failed to retrieve price."}) == "error"
+        assert result_status({"status_code": 500, "results": []}) == "error"
+        assert result_status({"status_code": 200, "results": []}) == "completed"
+        assert result_status({"status_code": 302, "message": "moved"}) == "completed"
+        assert result_status({"status_code": None, "message": "no response"}) == "completed"
+        assert result_status({"status_code": "401"}) == "completed"
+
     def test_tool_caching(self, mock_tool_manager, monkeypatch):
         executor = ToolExecutor(user="test_user")
 
@@ -1231,6 +1312,72 @@ class TestToolExecutorExecute:
             "artifact_id" in e.get("data", {}) for e in completed_events
         )
 
+    def test_execute_tool_reports_the_version_each_artifact_is_at(self, mock_tool_manager, monkeypatch):
+        """A tool's artifact entries keep the version it produced; junk versions are dropped."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "act", {}))),
+        )
+        mock_tool = mock_tool_manager.load_tool.return_value
+        mock_tool.get_artifact_id = Mock(return_value="a-1")
+        mock_tool.get_artifacts = Mock(
+            return_value=[
+                {"id": "a-1", "filename": "Deal.docx", "ref": "A1", "version": 2},
+                {"id": "a-2", "filename": "x.csv", "ref": "A2", "version": "3"},
+            ]
+        )
+        tools_dict = {
+            "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "test_tool",
+                "config": {},
+                "actions": [{"name": "act", "description": "Test", "parameters": {"properties": {}}}],
+            }
+        }
+
+        events = list(_drain(executor.execute(tools_dict, self._make_call(name="act_t1"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert completed["data"]["artifacts"] == [
+            {"id": "a-1", "filename": "Deal.docx", "ref": "A1", "version": 2},
+            {"id": "a-2", "filename": "x.csv", "ref": "A2"},
+        ]
+
+    def test_execute_tool_keeps_an_artifacts_title(self, mock_tool_manager, monkeypatch):
+        """An artifact's title travels with its entry; a non-string title is dropped."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "act", {}))),
+        )
+        mock_tool = mock_tool_manager.load_tool.return_value
+        mock_tool.get_artifact_id = Mock(return_value="a-1")
+        mock_tool.get_artifacts = Mock(
+            return_value=[
+                {"id": "a-1", "filename": "Q3.pptx", "ref": "A1", "title": "Q3 Support Review"},
+                {"id": "a-2", "filename": "x.csv", "ref": "A2", "title": 7},
+            ]
+        )
+        tools_dict = {
+            "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "test_tool",
+                "config": {},
+                "actions": [{"name": "act", "description": "Test", "parameters": {"properties": {}}}],
+            }
+        }
+
+        events = list(_drain(executor.execute(tools_dict, self._make_call(name="act_t1"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert completed["data"]["artifacts"] == [
+            {"id": "a-1", "filename": "Q3.pptx", "ref": "A1", "title": "Q3 Support Review"},
+            {"id": "a-2", "filename": "x.csv", "ref": "A2"},
+        ]
+
     def test_get_or_load_tool_encrypted_credentials(self, monkeypatch):
         """Cover lines 273-278: encrypted credentials path."""
         executor = ToolExecutor(user="test_user")
@@ -1313,6 +1460,41 @@ class TestToolExecutorExecute:
         tool_config = call_kwargs[1].get("tool_config", call_kwargs[0][1] if len(call_kwargs[0]) > 1 else {})
         assert tool_config.get("query_mode") is True
         assert tool_config.get("conversation_id") == "conv-123"
+
+    def test_get_or_load_tool_passes_the_run_scope_without_a_conversation(self, monkeypatch):
+        """A headless run with no conversation scopes run-bound tools to the run."""
+        mock_tm = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm)
+        tool_data = {"id": "00000000-0000-0000-0000-000000000004", "name": "code_executor", "config": {}}
+
+        executor = ToolExecutor(user="test_user")
+        executor.run_scope_id = "agent-run-1"
+        executor._get_or_load_tool(tool_data, "t1", "run_code")
+        assert mock_tm.load_tool.call_args[1]["tool_config"]["run_scope_id"] == "agent-run-1"
+
+        mock_tm.reset_mock()
+        chat = ToolExecutor(user="test_user")
+        chat.conversation_id = "conv-1"
+        chat.run_scope_id = "agent-run-1"
+        chat._get_or_load_tool(tool_data, "t1", "run_code")
+        assert "run_scope_id" not in mock_tm.load_tool.call_args[1]["tool_config"]
+
+    def test_mcp_tool_gets_its_stored_action_schemas(self, monkeypatch):
+        """The stored schemas carry the ``x-mcp-header`` annotations the tool sends headers for."""
+        executor = ToolExecutor(user="test_user")
+        mock_tm = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm)
+        repo = {"type": "string", "x-mcp-header": "repo", "filled_by_llm": True, "value": ""}
+        tool_data = {
+            "id": "00000000-0000-0000-0000-000000000003",
+            "name": "mcp_tool",
+            "config": {},
+            "actions": [{"name": "issue_read", "parameters": {"properties": {"repo": repo}}}],
+        }
+
+        executor._get_or_load_tool(tool_data, "t1", "issue_read")
+        tool_config = mock_tm.load_tool.call_args.kwargs["tool_config"]
+        assert tool_config["action_schemas"] == {"issue_read": {"properties": {"repo": repo}}}
 
 
 # ---------------------------------------------------------------------------
@@ -1554,3 +1736,12 @@ class TestStoredAndSynthesizedBuiltinCollapse:
             "t2": {"name": "mcp_tool", "actions": [dict(action)]},
         }
         assert len(executor.prepare_tools_for_llm(tools_dict)) == 2
+
+
+def _drain(gen):
+    """Every event a generator yields, ignoring its return value."""
+    while True:
+        try:
+            yield next(gen)
+        except StopIteration:
+            return

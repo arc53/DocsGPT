@@ -3,11 +3,20 @@
 import logging
 from typing import Any, Dict
 
-from docsgpt.core.model_utils import get_token_limit
+from docsgpt.core.model_utils import get_model_capabilities, get_token_limit
 from docsgpt.core.settings import settings
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 
 logger = logging.getLogger(__name__)
+
+
+def _uses_responses_api(model_id: str, user_id: str | None) -> bool:
+    """Whether ``model_id`` speaks the Responses API, where history replays its reasoning."""
+    try:
+        capabilities = get_model_capabilities(model_id, user_id=user_id) or {}
+    except Exception:
+        return False
+    return capabilities.get("api_flavor") == "responses"
 
 
 class CompressionThresholdChecker:
@@ -48,7 +57,12 @@ class CompressionThresholdChecker:
         try:
             # What the next turn will replay: summary + queries after the
             # last compression point, or the raw history when never compressed.
-            total_tokens = TokenCounter.count_effective_conversation_tokens(conversation)
+            # On the Responses API every replayed tool call also carries its
+            # reasoning, billed in full; left out, the check read 70% of the
+            # window while the provider was sent 133%.
+            total_tokens = TokenCounter.count_effective_conversation_tokens(
+                conversation, include_reasoning=_uses_responses_api(model_id, user_id)
+            )
             total_tokens += current_query_tokens
 
             # Get context window limit for model

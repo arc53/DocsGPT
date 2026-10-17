@@ -158,6 +158,10 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 frontend/lerna-debug.log*
+# tsc build output (composite tsconfig.node.json); Vite would load vite.config.js before .ts
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Keep frontend utility helpers tracked (overrides global lib/ ignore)
 !frontend/src/lib/
@@ -195,6 +199,11 @@ docsgpt/static/
 node_modules/
 .vscode/settings.json
 .vscode/sftp.json
+# Zed: the shared project config is tracked, anything else under .zed/ is local
+.zed/*
+!.zed/settings.json
+!.zed/tasks.json
+!.zed/debug.json
 /models/
 model/
 

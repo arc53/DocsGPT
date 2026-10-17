@@ -13,13 +13,10 @@ from typing import Optional
 
 from sqlalchemy import Connection
 
-from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.api.user.resource_access import resolve
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.storage.db.repositories.team_resource_grants import (
-    TeamResourceGrantsRepository,
-)
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
@@ -89,22 +86,14 @@ def effective_write_owner(
     ...)`` repo methods (which match on ``WHERE id AND user_id = :owner``) without
     a separate ownerless write path. None means viewer-only or no access → the
     route should answer 403/404. Delete is never authorized here — owner-only.
+
+    A thin wrapper over :func:`resource_access.resolve`; new code should call
+    ``resource_access.require`` with a specific action instead.
     """
-    if owns_resource(conn, resource_type, resource_id, user_id):
-        return user_id
-    # Past the ownership check, only canonical-UUID resources can carry a team
-    # grant; a legacy/non-UUID id can't, and casting it would poison the txn.
-    if not looks_like_uuid(resource_id):
+    ra = resolve(conn, resource_type, resource_id, user_id)
+    if ra is None or ra.access not in ("owner", "editor"):
         return None
-    grants = TeamResourceGrantsRepository(conn).list_for_resource(
-        resource_type, resource_id
-    )
-    if not grants:
-        return None
-    if TeamScopeRepository(conn).can_write(user_id, resource_type, resource_id):
-        # All grant rows carry the same denormalised owner_id.
-        return grants[0].get("owner_id")
-    return None
+    return ra.owner_id
 
 
 def can_access(
@@ -116,9 +105,9 @@ def can_access(
     ``source_id`` to an agent): you may reference what you own or what a team has
     shared with you directly. Transitive access *through* a shared agent is a
     separate, run-time concept and is intentionally NOT gated here.
+
+    A thin wrapper over :func:`resource_access.resolve`.
     """
     if not resource_id:
         return True
-    if owns_resource(conn, resource_type, resource_id, user_id):
-        return True
-    return TeamScopeRepository(conn).can_read(user_id, resource_type, resource_id)
+    return resolve(conn, resource_type, resource_id, user_id) is not None

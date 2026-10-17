@@ -59,7 +59,7 @@ def resolve_pool_max_size() -> int:
     """
     from docsgpt.core.settings import settings
 
-    value = getattr(settings, "PGVECTOR_POOL_MAX_SIZE", DEFAULT_POOL_MAX_SIZE)
+    value = settings.PGVECTOR_POOL_MAX_SIZE
     if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
     return DEFAULT_POOL_MAX_SIZE

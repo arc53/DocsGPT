@@ -1,9 +1,11 @@
-'use client';
-
-import { Check, ChevronsUpDown, X } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useFormFieldControl } from '@/components/ui/form-field';
 import {
   Command,
   CommandEmpty,
@@ -22,6 +24,8 @@ import { cn } from '@/lib/utils';
 export interface MultiSelectOption {
   value: string;
   label: string;
+  /** A muted line under the label in the list; chips show the label only. */
+  description?: string;
 }
 
 interface MultiSelectProps {
@@ -32,6 +36,19 @@ interface MultiSelectProps {
   emptyText?: string;
   searchPlaceholder?: string;
   className?: string;
+  /**
+   * Set when the MultiSelect sits inside a Modal. A non-modal popover there
+   * cannot scroll (the dialog's scroll lock swallows the wheel, since the
+   * dropdown is portalled outside it) and never closes on an outside click
+   * (Radix defers that to the document `click`, which Modal stops from
+   * propagating). A modal popover owns its own scroll lock and dismisses on
+   * pointerdown instead.
+   */
+  modal?: boolean;
+  /** The trigger's id; inside a FormField it defaults to the field's. */
+  id?: string;
+  /** `pill` in a page toolbar beside pill searches and filters. */
+  shape?: 'default' | 'pill';
 }
 
 export function MultiSelect({
@@ -42,8 +59,19 @@ export function MultiSelect({
   emptyText = 'No results found.',
   searchPlaceholder = 'Search...',
   className,
+  modal = false,
+  id,
+  shape = 'default',
 }: MultiSelectProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
+  const control = useFormFieldControl<{
+    id?: string;
+    disabled?: boolean;
+    'aria-invalid'?: React.AriaAttributes['aria-invalid'];
+    'aria-describedby'?: string;
+    'aria-required'?: React.AriaAttributes['aria-required'];
+  }>({ id });
 
   const handleSelect = (value: string) => {
     const newSelected = selected.includes(value)
@@ -52,92 +80,79 @@ export function MultiSelect({
     onChange(newSelected);
   };
 
-  const handleRemove = (value: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onChange(selected.filter((item) => item !== value));
-  };
-
-  const selectedLabels = options
-    .filter((option) => selected.includes(option.value))
-    .map((option) => option.label);
+  const selectedOptions = options.filter((option) =>
+    selected.includes(option.value),
+  );
+  // Pills show one chip and "+N more", so a toolbar stays one row.
+  const chipLimit = shape === 'pill' ? 1 : 2;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="combobox"
+          size="field"
+          shape={shape}
           role="combobox"
-          aria-expanded={open}
+          data-slot="multi-select-trigger"
+          data-placeholder={selected.length ? undefined : ''}
+          {...control}
           className={cn(
-            'border-border bg-card hover:bg-accent h-auto min-h-10 w-full justify-between py-1.5',
-            !selected.length && 'text-gray-500 dark:text-gray-400',
+            // Grows past the 38px row when the chips wrap; `group` lets the
+            // chevron turn while open, like SelectTrigger's.
+            'group h-auto min-h-9.5 w-full justify-between py-1.5',
             className,
           )}
         >
           {/* flex-1 gives the chip row a definite width; without it, a lone
               chip's percentage max-width resolves against its own natural
-              width and shaves 1rem off the label (a short ref like "A1"
-              disappears entirely). */}
-          <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+              width and truncates a short label. */}
+          <div
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-1',
+              // A pill sits in a toolbar row: one chip that truncates, then
+              // the count, never a second line.
+              shape === 'pill' ? 'flex-nowrap' : 'flex-wrap',
+            )}
+          >
             {selected.length === 0 ? (
               placeholder
             ) : (
               <>
-                {selectedLabels.slice(0, 2).map((label) => {
-                  const option = options.find((o) => o.label === label);
-                  return (
-                    <span
-                      key={option?.value || label}
-                      className="bg-primary/20 dark:bg-primary/30 inline-flex max-w-[calc(100%-1rem)] min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
-                    >
-                      <span className="truncate">{label}</span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="flex h-3 w-3 cursor-pointer items-center justify-center hover:text-purple-900 dark:hover:text-purple-200"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => handleRemove(option?.value || '', e)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleRemove(
-                              option?.value || '',
-                              e as unknown as React.MouseEvent,
-                            );
-                          }
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </span>
-                    </span>
-                  );
-                })}
-                {selected.length > 2 && (
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
-                    +{selected.length - 2} more
+                {/* No X on the chips: the trigger is a <button>, so a remove
+                    control can't nest in it. Unselect in the list. */}
+                {selectedOptions.slice(0, chipLimit).map((option) => (
+                  <Badge
+                    key={option.value}
+                    className="max-w-full min-w-0 shrink"
+                  >
+                    <span className="truncate">{option.label}</span>
+                  </Badge>
+                ))}
+                {selected.length > chipLimit && (
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {t('components.multiSelect.more', {
+                      count: selected.length - chipLimit,
+                    })}
                   </span>
                 )}
               </>
             )}
           </div>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronDown className="size-4 shrink-0 opacity-50 transition-transform duration-200 group-data-[state=open]:rotate-180" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="border-border bg-card w-(--radix-popover-trigger-width) p-0"
+        className="w-(--radix-popover-trigger-width) p-0"
         align="start"
       >
-        <Command className="bg-transparent">
-          <CommandInput placeholder={searchPlaceholder} className="h-9" />
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty className="py-2 text-center text-sm">
               {emptyText}
             </CommandEmpty>
-            <CommandGroup className="p-1">
+            <CommandGroup>
               {options.map((option) => {
                 const isSelected = selected.includes(option.value);
                 return (
@@ -145,19 +160,26 @@ export function MultiSelect({
                     key={option.value}
                     value={option.label}
                     onSelect={() => handleSelect(option.value)}
-                    className="cursor-pointer"
                   >
-                    <div
-                      className={cn(
-                        'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border-2',
-                        isSelected
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-gray-400 dark:border-gray-500',
-                      )}
-                    >
-                      {isSelected && <Check className="h-3 w-3 stroke-white" />}
-                    </div>
-                    {option.label}
+                    {/* Visual only: the row is the control (cmdk handles the
+                        click and Enter), so the box takes no focus or events. */}
+                    <Checkbox
+                      size="sm"
+                      checked={isSelected}
+                      tabIndex={-1}
+                      aria-hidden
+                      className="pointer-events-none"
+                    />
+                    {option.description ? (
+                      <span className="flex min-w-0 flex-col">
+                        <span>{option.label}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {option.description}
+                        </span>
+                      </span>
+                    ) : (
+                      option.label
+                    )}
                   </CommandItem>
                 );
               })}

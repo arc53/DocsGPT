@@ -486,3 +486,198 @@ class TestPGVectorPrecomputedQueryVector:
         store.search_with_scores("query", k=2, query_vector=None)
 
         mock_emb.embed_query.assert_called_once_with("query")
+
+
+@pytest.mark.unit
+class TestPGVectorStoreUpdateChunk:
+    def test_updates_the_row_in_place(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4, 0.5]]
+        mock_cursor.rowcount = 1
+
+        with patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: ("jsonb", v)):
+            returned = store.update_chunk("42", "new text", {"key": "val"})
+
+        assert returned == "42"
+        sql, params = mock_cursor.execute.call_args[0]
+        assert sql.strip().upper().startswith("UPDATE")
+        assert "WHERE id = %s AND source_id = %s" in sql
+        assert "INSERT" not in sql.upper() and "DELETE" not in sql.upper()
+        assert params == (
+            "new text",
+            [0.4, 0.5],
+            ("jsonb", {"key": "val", "source_id": "src1"}),
+            42,
+            "src1",
+        )
+        mock_emb.embed_documents.assert_called_once_with(["new text"])
+        mock_conn.commit.assert_called_once()
+
+    def test_does_not_mutate_the_callers_metadata(self):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_cursor.rowcount = 1
+        metadata = {"key": "val"}
+
+        store.update_chunk("42", "new text", metadata)
+
+        assert metadata == {"key": "val"}
+
+    def test_embedding_failure_writes_nothing(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.side_effect = RuntimeError("embed down")
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("42", "new text", {})
+
+        mock_cursor.execute.assert_not_called()
+        mock_conn.commit.assert_not_called()
+
+    def test_empty_embedding_raises_before_writing(self):
+        store, _, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.return_value = []
+
+        with pytest.raises(ValueError, match="Could not generate embedding"):
+            store.update_chunk("42", "new text", {})
+        mock_cursor.execute.assert_not_called()
+
+    def test_missing_row_raises_and_rolls_back(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_cursor.rowcount = 0
+
+        with pytest.raises(KeyError):
+            store.update_chunk("999", "new text", {})
+
+        mock_conn.commit.assert_not_called()
+        mock_conn.rollback.assert_called_once()
+
+    def test_db_error_rolls_back_and_raises(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_cursor.execute.side_effect = RuntimeError("db down")
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("42", "new text", {})
+        mock_conn.rollback.assert_called_once()
+
+
+@pytest.mark.unit
+def test_get_chunks_orders_by_id():
+    """An UPDATE writes a new tuple, so an unordered scan could move the row."""
+    store, _, mock_cursor, _ = _make_store()
+    mock_cursor.fetchall.return_value = []
+
+    store.get_chunks()
+
+    sql = " ".join(mock_cursor.execute.call_args[0][0].split())
+    assert sql.endswith("WHERE source_id = %s ORDER BY id;")
+
+
+@pytest.mark.unit
+class TestPGVectorStoreGetChunkByKey:
+    def test_one_query_by_source_and_md5_of_the_text(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchone.return_value = (42, "the text", {"title": "t"})
+
+        found = store.get_chunk_by_key("a" * 32)
+
+        assert found == {"doc_id": "42", "text": "the text", "metadata": {"title": "t"}}
+        sql, params = mock_cursor.execute.call_args[0]
+        sql = " ".join(sql.split())
+        assert "WHERE source_id = %s AND md5(text) = %s ORDER BY id LIMIT 1" in sql
+        assert params == ("src1", "a" * 32)
+
+    def test_no_row_is_none(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchone.return_value = None
+        assert store.get_chunk_by_key("a" * 32) is None
+        assert mock_cursor.execute.call_count == 1
+
+    def test_a_key_miss_searches_the_excerpt(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchone.side_effect = [None, (7, "Late pickup fees", {})]
+
+        found = store.get_chunk_by_key("a" * 32, excerpt="  Late Pickup ")
+
+        assert found["doc_id"] == "7"
+        sql, params = mock_cursor.execute.call_args[0]
+        sql = " ".join(sql.split())
+        assert "WHERE source_id = %s AND strpos(lower(text), %s) > 0 ORDER BY id LIMIT 1" in sql
+        assert params == ("src1", "late pickup")
+
+    def test_null_metadata_reads_as_empty(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchone.return_value = (1, "t", None)
+        assert store.get_chunk_by_key("a" * 32)["metadata"] == {}
+
+    def test_a_query_error_propagates(self):
+        # Unlike ``get_chunks`` the lookup must not read a failure as "gone":
+        # the route answers that with the excerpt-only fallback.
+        store, mock_conn, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = RuntimeError("down")
+        with pytest.raises(RuntimeError):
+            store.get_chunk_by_key("a" * 32)
+        mock_conn.rollback.assert_called_once()
+
+
+@pytest.fixture
+def _remote_embeddings_settings(monkeypatch):
+    """A remote, authenticated embeddings endpoint and a fresh embeddings cache."""
+    from docsgpt.core.settings import settings
+    from docsgpt.vectorstore.base import EmbeddingsSingleton
+
+    monkeypatch.setattr(settings, "EMBEDDINGS_BASE_URL", "http://embed:8080")
+    monkeypatch.setattr(settings, "EMBEDDINGS_KEY", "sk-real")
+    monkeypatch.setattr(settings, "EMBEDDINGS_NAME", "remote-model")
+    monkeypatch.setattr(settings, "PGVECTOR_CONNECTION_STRING", "postgresql://u:p@localhost/db")
+    monkeypatch.setattr(EmbeddingsSingleton, "_instances", {})
+    return settings
+
+
+@pytest.mark.unit
+class TestStoreEmbeddingsKey:
+    """A store built without a key must embed with the configured one.
+
+    The stores used to default to the placeholder ``"embeddings"``; the first
+    such store in a process cached a remote client sending ``Bearer
+    embeddings``, and every later retrieval on that process got a 401.
+    """
+
+    def test_default_key_resolves_settings_key(self, _remote_embeddings_settings):
+        from docsgpt.vectorstore.pgvector import PGVectorStore
+
+        store = PGVectorStore(source_id="src")
+
+        assert store._embedding.headers["Authorization"] == "Bearer sk-real"
+
+    def test_delete_path_store_does_not_poison_retrieval(self, _remote_embeddings_settings):
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        settings = _remote_embeddings_settings
+        # ``delete_source`` builds its store with no key, only to drop the index.
+        VectorCreator.create_vectorstore("pgvector", source_id="deleted")
+        # ``ClassicRAG`` builds its stores with the configured key.
+        retrieval = VectorCreator.create_vectorstore(
+            "pgvector", "other", settings.EMBEDDINGS_KEY
+        )
+
+        assert retrieval._embedding.headers["Authorization"] == "Bearer sk-real"
+
+    @pytest.mark.parametrize(
+        "module, cls",
+        [
+            ("docsgpt.vectorstore.pgvector", "PGVectorStore"),
+            ("docsgpt.vectorstore.mongodb", "MongoDBVectorStore"),
+            ("docsgpt.vectorstore.milvus", "MilvusStore"),
+            ("docsgpt.vectorstore.qdrant", "QdrantStore"),
+        ],
+    )
+    def test_default_embeddings_key_is_none(self, module, cls):
+        import importlib
+        import inspect
+
+        store_cls = getattr(importlib.import_module(module), cls)
+        default = inspect.signature(store_cls.__init__).parameters["embeddings_key"].default
+
+        assert default is None

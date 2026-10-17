@@ -24,6 +24,10 @@ def _patch_db(conn):
         "docsgpt.api.user.sources.upload.db_session", _yield
     ), patch(
         "docsgpt.api.user.sources.upload.db_readonly", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_session", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_readonly", _yield
     ):
         yield
 

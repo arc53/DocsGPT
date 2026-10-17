@@ -151,7 +151,7 @@ class TestClassicRAGInit:
 
     def test_chunks_invalid_string_defaults(self, _patch_llm_creator):
         rag = _make_rag(chunks="abc")
-        assert rag.chunks == 2
+        assert rag.chunks == 6
 
     def test_decoded_token_none(self, _patch_llm_creator):
         rag = _make_rag(decoded_token=None)

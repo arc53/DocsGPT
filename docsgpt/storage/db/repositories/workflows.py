@@ -9,6 +9,7 @@ Covers CRUD on workflow metadata:
 from __future__ import annotations
 
 import copy
+import json
 from typing import Optional
 
 from sqlalchemy import Connection, text
@@ -85,12 +86,17 @@ class WorkflowsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def update(self, workflow_id: str, user_id: str, fields: dict) -> bool:
-        allowed = {"name", "description", "current_graph_version"}
+        allowed = {"name", "description", "current_graph_version", "resource_sponsors"}
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
             return False
 
-        set_parts = [f"{col} = :{col}" for col in filtered]
+        set_parts = [
+            f"{col} = CAST(:{col} AS jsonb)" if col == "resource_sponsors" else f"{col} = :{col}"
+            for col in filtered
+        ]
+        if "resource_sponsors" in filtered:
+            filtered["resource_sponsors"] = json.dumps(filtered["resource_sponsors"] or {})
         set_parts.append("updated_at = now()")
         params = {**filtered, "id": workflow_id, "user_id": user_id}
 

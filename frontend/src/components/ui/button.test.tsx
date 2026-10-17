@@ -1,0 +1,396 @@
+import type React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
+
+import { cn } from '@/lib/utils';
+
+import { Button, buttonVariants } from './button';
+
+/** The class attribute of the rendered root element. */
+function renderedClasses(element: React.ReactElement): string {
+  const html = renderToStaticMarkup(element);
+  return /class="([^"]*)"/.exec(html)?.[1] ?? '';
+}
+
+describe('Button variants', () => {
+  it('renders a rectangular medium button by default', () => {
+    const html = renderToStaticMarkup(<Button>Save</Button>);
+    expect(html).toContain('rounded-md');
+    expect(html).toContain('h-9');
+    expect(html).toContain('data-shape="default"');
+  });
+
+  it('shape="pill" swaps the radius and widens the padding', () => {
+    // Rendered classes go through cn(), which resolves the compound
+    // variant's px-5 against the default size's px-4.
+    const classes = renderedClasses(<Button shape="pill">Save</Button>);
+    expect(classes).toContain('rounded-full');
+    expect(classes).not.toContain('rounded-md');
+    expect(classes).toContain('px-5');
+    expect(classes).not.toMatch(/(^|\s)px-4(\s|$)/);
+  });
+
+  it('large pills get the widest padding', () => {
+    const classes = buttonVariants({ shape: 'pill', size: 'lg' });
+    expect(classes).toContain('px-6');
+    expect(classes).toContain('h-10');
+  });
+
+  it('size="xs" is a compact text-xs button', () => {
+    const classes = renderedClasses(<Button size="xs">Save</Button>);
+    expect(classes).toContain('h-7');
+    expect(classes).toContain('text-xs');
+    expect(classes).not.toMatch(/(^|\s)text-sm(\s|$)/);
+  });
+
+  it('exposes muted and brand-outline variants', () => {
+    expect(buttonVariants({ variant: 'ghost-muted' })).toContain(
+      'text-muted-foreground',
+    );
+    expect(buttonVariants({ variant: 'outline-primary' })).toContain(
+      'border-primary',
+    );
+  });
+
+  it('variant="ghost-destructive" is a muted icon that warns red on hover', () => {
+    const classes = buttonVariants({ variant: 'ghost-destructive' }).split(' ');
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-destructive');
+    expect(classes).toContain('hover:bg-accent');
+    expect(classes).not.toContain('dark:hover:bg-accent/50');
+  });
+
+  it('size="inline" adds no height or padding, so a link sits mid-sentence', () => {
+    const classes = buttonVariants({ variant: 'link', size: 'inline' }).split(
+      ' ',
+    );
+    expect(classes).toContain('h-auto');
+    expect(classes).toContain('p-0');
+    expect(classes.some((c) => /^h-\d/.test(c))).toBe(false);
+    expect(classes.some((c) => /^px-\d/.test(c))).toBe(false);
+  });
+
+  it('lets callers pass layout classes through', () => {
+    const html = renderToStaticMarkup(
+      <Button className="mt-4 w-full">Save</Button>,
+    );
+    expect(html).toContain('mt-4');
+    expect(html).toContain('w-full');
+  });
+
+  it('variant="sidebar-item" is a full-width nav row, not a centred button', () => {
+    const classes = renderedClasses(
+      <Button variant="sidebar-item" aria-current="page">
+        Settings
+      </Button>,
+    ).split(' ');
+    for (const cls of [
+      'hover:bg-sidebar-accent',
+      'aria-[current=page]:bg-sidebar-accent',
+      'justify-start',
+      'gap-2.5',
+      'pl-3',
+      'pr-0',
+      'rounded-full',
+      'font-normal',
+    ]) {
+      expect(classes).toContain(cls);
+    }
+    // The default radius, centring and weight must not survive the merge.
+    // (The size's px-4 may remain; pl-3/pr-0 are emitted after padding-inline
+    // in Tailwind v4, so they win in CSS.)
+    for (const cls of ['rounded-md', 'justify-center', 'font-medium']) {
+      expect(classes).not.toContain(cls);
+    }
+  });
+
+  it('has no tab variant (route tabs use NavTab from ui/tabs)', () => {
+    type Variant = NonNullable<Parameters<typeof buttonVariants>[0]>['variant'];
+    // @ts-expect-error variant="tab" is gone
+    const tab: Variant = 'tab';
+    expect(buttonVariants({ variant: tab })).not.toContain('border-b-2');
+  });
+
+  it('has no icon-lg size (use size="icon" with a size-10 layout class)', () => {
+    type Size = NonNullable<Parameters<typeof buttonVariants>[0]>['size'];
+    // @ts-expect-error size="icon-lg" is gone
+    const lg: Size = 'icon-lg';
+    expect(buttonVariants({ size: lg })).not.toContain('size-10');
+  });
+
+  it('size="text" is a link mid-sentence: it inherits size, weight and line-height and keeps primary', () => {
+    const classes = renderedClasses(
+      <Button variant="link" size="text">
+        Learn more
+      </Button>,
+    ).split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['h-auto', 'p-0', 'text-primary']),
+    );
+    // No type of its own: font-size, weight and line-height inherit.
+    for (const cls of ['h-9', 'px-4', 'py-2']) {
+      expect(classes).not.toContain(cls);
+    }
+    expect(
+      classes.filter((c) => /^(text-(xs|sm|base|lg)|font-|leading-)/.test(c)),
+    ).toEqual([]);
+  });
+
+  it.each(['inline', 'text'] as const)(
+    'size="%s" draws an unsized icon at 12px (a trailing link icon)',
+    (size) => {
+      // cn() resolves the size's size-3 against the base's size-4.
+      const classes = cn(buttonVariants({ variant: 'link', size })).split(' ');
+      expect(classes).toContain("[&_svg:not([class*='size-'])]:size-3");
+      expect(classes).not.toContain("[&_svg:not([class*='size-'])]:size-4");
+    },
+  );
+
+  it('size="inline" keeps the 14px medium standalone link look', () => {
+    const classes = renderedClasses(
+      <Button variant="link" size="inline">
+        Show all
+      </Button>,
+    ).split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['text-sm', 'font-medium', 'text-primary']),
+    );
+  });
+
+  it('tone="current" takes the text colour from the context, hover included', () => {
+    const html = renderToStaticMarkup(
+      <Button variant="link" size="text" tone="current">
+        Setup guide
+      </Button>,
+    );
+    const classes = (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
+    expect(classes).toContain('text-current');
+    expect(classes).toContain('hover:text-current');
+    expect(classes).not.toContain('text-primary');
+    expect(classes).toContain('hover:underline');
+    expect(html).toContain('data-tone="current"');
+  });
+
+  it('without tone, no data-tone is set', () => {
+    expect(renderToStaticMarkup(<Button>Save</Button>)).not.toContain(
+      'data-tone',
+    );
+  });
+
+  it('variant="combobox" size="field" is a 38px square picker', () => {
+    const classes = renderedClasses(
+      <Button variant="combobox" size="field">
+        Europe/Oslo
+      </Button>,
+    ).split(' ');
+    expect(classes).toContain('h-9.5');
+    // The combobox's own weight beats the size's font-medium.
+    expect(classes).toContain('font-normal');
+    expect(classes).not.toContain('font-medium');
+    expect(classes).toContain('rounded-md');
+    expect(classes).not.toContain('h-9');
+  });
+
+  it('size="field" is the 38px form-row height shared with Input and SelectTrigger field', () => {
+    const classes = renderedClasses(<Button size="field">Add</Button>).split(
+      ' ',
+    );
+    expect(classes).toContain('h-9.5');
+    expect(classes).toContain('px-4');
+    expect(classes).not.toContain('h-9');
+  });
+
+  it('a field pill starts its text 20px in, like the Input and Select pills', () => {
+    const classes = renderedClasses(
+      <Button variant="combobox" size="field" shape="pill">
+        Select sources
+      </Button>,
+    ).split(' ');
+    expect(classes).toContain('h-9.5');
+    expect(classes).toContain('rounded-full');
+    expect(classes).toContain('px-5');
+    expect(classes).not.toContain('px-4');
+  });
+
+  it('variant="section-toggle" is a foreground title with a primary chevron and no ring of its own', () => {
+    const classes = renderedClasses(
+      <Button variant="section-toggle" size="sm">
+        Advanced
+      </Button>,
+    ).split(' ');
+    expect(classes).toContain('text-foreground');
+    expect(classes).toContain('decoration-primary');
+    expect(classes).toContain('hover:underline');
+    // Rendered HTML escapes `&>`, so read this one off the variant string.
+    expect(buttonVariants({ variant: 'section-toggle' }).split(' ')).toContain(
+      '[&>svg]:text-primary',
+    );
+    // The host panel draws the focus ring, so the button's own is off.
+    expect(classes).toContain('focus-visible:ring-0');
+    expect(classes).not.toContain('focus-visible:ring-3');
+    expect(classes).not.toContain('text-primary');
+  });
+
+  it('variant="ghost-on-accent" hovers with a foreground tint, not accent', () => {
+    // It sits on rows that are already bg-accent, where an accent hover
+    // would be invisible.
+    const classes = buttonVariants({ variant: 'ghost-on-accent' }).split(' ');
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).toContain('hover:bg-foreground/15');
+    expect(classes).toContain('dark:hover:bg-foreground/20');
+    expect(classes).not.toContain('hover:bg-accent');
+  });
+
+  it('variant="ghost-destructive-on-accent" hovers with a destructive tint', () => {
+    const classes = buttonVariants({
+      variant: 'ghost-destructive-on-accent',
+    }).split(' ');
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-destructive');
+    expect(classes).toContain('hover:bg-destructive/15');
+    expect(classes).toContain('dark:hover:bg-destructive/20');
+    expect(classes).not.toContain('hover:bg-accent');
+  });
+});
+
+describe('Button loading', () => {
+  const parse = (element: React.ReactElement) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(element);
+    return host.firstElementChild as HTMLButtonElement;
+  };
+
+  it('disables the button and marks it busy', () => {
+    const button = parse(<Button loading>Save</Button>);
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.hasAttribute('data-loading')).toBe(true);
+  });
+
+  it('keeps the label in place, hidden, so the width holds', () => {
+    const button = parse(
+      <Button loading size="lg" shape="pill">
+        Create token
+      </Button>,
+    );
+    const label = button.querySelector('span.invisible')!;
+    expect(label.textContent).toBe('Create token');
+    expect(label.className).toContain('contents');
+    expect(button.className).toContain('relative');
+  });
+
+  it('centres a 16px spinner over the label', () => {
+    const button = parse(<Button loading>Save</Button>);
+    const overlay = button.querySelector('span.absolute')!;
+    expect(overlay.className).toContain('inset-0');
+    const spinner = overlay.querySelector('[data-slot="spinner"]')!;
+    expect(spinner.getAttribute('data-size')).toBe('xs');
+    expect(spinner.className).toContain('size-4');
+    expect(spinner.className).not.toContain('size-5');
+  });
+
+  it('renders plainly when not loading', () => {
+    const button = parse(<Button loading={false}>Save</Button>);
+    expect(button.disabled).toBe(false);
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+    expect(button.innerHTML).toBe('Save');
+  });
+});
+
+describe('Button loading as a link', () => {
+  const parse = (element: React.ReactElement) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(element);
+    return host.firstElementChild as HTMLButtonElement;
+  };
+
+  it.each(['text', 'inline'] as const)(
+    'size="%s" keeps the label visible with a spinner after it',
+    (size) => {
+      // A link has no frame, so a hidden label leaves a lone spinner in empty
+      // space; it stays readable and the spinner follows it instead.
+      const button = parse(
+        <Button variant="link" size={size} loading>
+          Add to Knowledge
+        </Button>,
+      );
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('aria-busy')).toBe('true');
+      expect(button.querySelector('.invisible')).toBeNull();
+      expect(button.querySelector('.absolute')).toBeNull();
+      expect(button.firstChild?.textContent).toBe('Add to Knowledge');
+      const spinner = button.lastElementChild!;
+      expect(spinner.getAttribute('data-slot')).toBe('spinner');
+      expect(spinner.getAttribute('data-size')).toBe('xs');
+    },
+  );
+});
+
+describe('Button loading with an icon', () => {
+  it('keeps the icon padding while the label is wrapped', () => {
+    const html = renderToStaticMarkup(
+      <Button loading size="lg" shape="pill">
+        <svg />
+        Download
+      </Button>,
+    );
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const button = host.firstElementChild as HTMLButtonElement;
+    // The label wrapper is marked, and every icon-padding rule also matches an
+    // svg one level down inside it, so the width doesn't grow.
+    expect(
+      button.querySelector('[data-slot="button-label"]')?.querySelector('svg'),
+    ).not.toBeNull();
+    const iconRules = button.className
+      .split(' ')
+      .filter((c) => c.startsWith('has-['));
+    expect(iconRules.length).toBeGreaterThan(0);
+    for (const rule of iconRules) {
+      expect(rule).toContain('>[data-slot=button-label]>svg');
+    }
+  });
+});
+
+describe('Button dark hover', () => {
+  it.each(['ghost', 'ghost-muted', 'ghost-destructive'] as const)(
+    '%s hovers to solid accent in both themes',
+    (variant) => {
+      const classes = buttonVariants({ variant }).split(' ');
+      expect(classes).toContain('hover:bg-accent');
+      expect(classes).not.toContain('dark:hover:bg-accent/50');
+    },
+  );
+});
+
+describe('Button combobox text size', () => {
+  it.each(['default', 'field', 'lg'] as const)(
+    'combobox %s is 16px on phones, 14px from md',
+    (size) => {
+      const classes = buttonVariants({ variant: 'combobox', size }).split(' ');
+      expect(classes).toEqual(
+        expect.arrayContaining(['text-base', 'md:text-sm']),
+      );
+    },
+  );
+
+  it('combobox sm stays 14px', () => {
+    const classes = buttonVariants({ variant: 'combobox', size: 'sm' }).split(
+      ' ',
+    );
+    expect(classes).not.toContain('text-base');
+  });
+});
+
+describe('Button size="icon"', () => {
+  it('draws an unsized glyph at 20px in its 36px square', () => {
+    const classes = buttonVariants({ size: 'icon' });
+    expect(classes).toContain('size-9');
+    expect(classes).toContain("[&_svg:not([class*='size-'])]:size-5");
+    const html = renderToStaticMarkup(<Button size="icon">x</Button>);
+    expect(html).not.toContain(
+      '[&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4',
+    );
+  });
+});

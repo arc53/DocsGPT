@@ -36,22 +36,28 @@ describe('getSendReadiness', () => {
     ).toEqual({ state: 'waiting', pendingCount: 2 });
   });
 
-  it('blocks on a failed attachment, listing its name', () => {
+  it('ignores a failed attachment: it is dropped at send time', () => {
     expect(
       getSendReadiness([
         att(),
         att({ id: 'a2', status: 'failed', fileName: 'broken.pdf' }),
       ]),
-    ).toEqual({ state: 'blocked', failedNames: ['broken.pdf'] });
+    ).toEqual({ state: 'ready' });
   });
 
-  it('failed takes precedence over pending', () => {
+  it('is ready when every attachment failed', () => {
+    expect(getSendReadiness([att({ status: 'failed' })])).toEqual({
+      state: 'ready',
+    });
+  });
+
+  it('still waits on a pending file next to a failed one', () => {
     expect(
       getSendReadiness([
-        att({ status: 'processing' }),
+        att({ status: 'uploading', progress: 5 }),
         att({ id: 'a2', status: 'failed', fileName: 'broken.pdf' }),
       ]),
-    ).toEqual({ state: 'blocked', failedNames: ['broken.pdf'] });
+    ).toEqual({ state: 'waiting', pendingCount: 1 });
   });
 });
 
@@ -60,13 +66,15 @@ type HookApi = ReturnType<typeof useArmedSend>;
 function Host({
   attachments,
   onFlush,
+  canFlush,
   api,
 }: {
   attachments: Attachment[];
   onFlush: () => void;
+  canFlush?: boolean;
   api: { current: HookApi | null };
 }) {
-  const hook = useArmedSend({ attachments, onFlush });
+  const hook = useArmedSend({ attachments, onFlush, canFlush });
   api.current = hook;
   return null;
 }
@@ -90,10 +98,15 @@ describe('useArmedSend', () => {
     container.remove();
   });
 
-  const render = async (attachments: Attachment[]) => {
+  const render = async (attachments: Attachment[], canFlush?: boolean) => {
     await act(async () => {
       root.render(
-        <Host attachments={attachments} onFlush={onFlush} api={api} />,
+        <Host
+          attachments={attachments}
+          onFlush={onFlush}
+          canFlush={canFlush}
+          api={api}
+        />,
       );
     });
   };
@@ -120,19 +133,30 @@ describe('useArmedSend', () => {
     expect(onFlush).toHaveBeenCalledTimes(1);
   });
 
-  it('holds the flush while a file is failed and resumes when it is removed', async () => {
+  it('flushes once when the pending file fails instead of completing', async () => {
+    await render([att({ status: 'uploading', progress: 5 })]);
+    await act(async () => api.current!.arm());
+    expect(onFlush).not.toHaveBeenCalled();
+
+    await render([att({ status: 'failed', fileName: 'broken.pdf' })]);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(api.current!.armed).toBe(false);
+
+    await render([att({ status: 'failed', fileName: 'broken.pdf' })]);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a ready flush until canFlush turns true', async () => {
     await render([att({ status: 'processing' })]);
     await act(async () => api.current!.arm());
 
-    await render([att({ status: 'failed', fileName: 'broken.pdf' })]);
+    // Files resolved, but another answer is streaming: flushing now would
+    // clear the composer while the submit is refused.
+    await render([att()], false);
     expect(onFlush).not.toHaveBeenCalled();
     expect(api.current!.armed).toBe(true);
-    expect(api.current!.readiness).toEqual({
-      state: 'blocked',
-      failedNames: ['broken.pdf'],
-    });
 
-    await render([]);
+    await render([att()], true);
     expect(onFlush).toHaveBeenCalledTimes(1);
     expect(api.current!.armed).toBe(false);
   });

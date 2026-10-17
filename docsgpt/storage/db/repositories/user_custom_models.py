@@ -36,6 +36,7 @@ _ALLOWED_CAPABILITY_KEYS = frozenset(
         "context_window",
         "api_flavor",
         "reasoning_effort",
+        "tool_result_images",
     }
 )
 

@@ -1,6 +1,7 @@
 """Tests for SharePointLoader."""
 
 import os
+from tests.parser.connectors.token_patch import patch_tokens
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +14,7 @@ def _make_loader(access_token="at", refresh_token="rt", allows_shared=False):
     """Create a SharePointLoader with mocked dependencies."""
     with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
         mock_auth = MagicMock()
-        mock_auth.get_token_info_from_session.return_value = {
+        token_info = {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "allows_shared_content": allows_shared,
@@ -22,7 +23,8 @@ def _make_loader(access_token="at", refresh_token="rt", allows_shared=False):
         MockAuth.return_value = mock_auth
 
         from docsgpt.parser.connectors.share_point.loader import SharePointLoader
-        loader = SharePointLoader("session_tok")
+        with patch_tokens(token_info):
+            loader = SharePointLoader("session_tok")
     return loader
 
 
@@ -42,7 +44,7 @@ class TestSharePointLoaderInit:
     def test_init_sets_attributes(self, loader):
         assert loader.session_token == "session_tok"
         assert loader.access_token == "at"
-        assert loader.refresh_token == "rt"
+        assert loader.connection_id == "conn-1"
         assert loader.allows_shared_content is False
         assert loader.next_page_token is None
 
@@ -50,7 +52,7 @@ class TestSharePointLoaderInit:
     def test_no_access_token_raises(self):
         with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
             mock_auth = MagicMock()
-            mock_auth.get_token_info_from_session.return_value = {
+            token_info = {
                 "access_token": None,
                 "refresh_token": "rt",
             }
@@ -58,7 +60,8 @@ class TestSharePointLoaderInit:
 
             from docsgpt.parser.connectors.share_point.loader import SharePointLoader
             with pytest.raises(ValueError, match="No access token"):
-                SharePointLoader("st")
+                with patch_tokens(token_info):
+                    SharePointLoader("st")
 
 
 class TestGetHeaders:
@@ -86,16 +89,19 @@ class TestEnsureValidToken:
     @pytest.mark.unit
     def test_expired_token_refreshes(self, loader):
         loader.auth.is_token_expired.return_value = True
-        loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
-        loader._ensure_valid_token()
+        with patch(
+            "docsgpt.connectors.service.get_valid_token_info", return_value={"access_token": "new_at"},
+        ) as tokens:
+            loader._ensure_valid_token()
         assert loader.access_token == "new_at"
+        tokens.assert_called_once_with("conn-1")
 
     @pytest.mark.unit
     def test_refresh_failure_raises(self, loader):
         loader.auth.is_token_expired.return_value = True
-        loader.auth.refresh_access_token.side_effect = Exception("fail")
-        with pytest.raises(ValueError, match="Failed to refresh"):
-            loader._ensure_valid_token()
+        with patch("docsgpt.connectors.service.get_valid_token_info", side_effect=Exception("fail")):
+            with pytest.raises(ValueError, match="Failed to refresh"):
+                loader._ensure_valid_token()
 
 
 class TestGetItemUrl:
@@ -305,7 +311,7 @@ class TestLoadFileById:
             return mock_resp_ok
 
         loader._process_file = MagicMock(return_value=Document(text="", doc_id="f1", extra_info={}))
-        loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new_at"})
 
         with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             doc = loader._load_file_by_id("f1")
@@ -481,7 +487,7 @@ class TestDownloadFileContent:
                 raise http_error
             return mock_resp_ok
 
-        loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new_at"})
 
         with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             content = loader._download_file_content("f1")
@@ -1004,7 +1010,7 @@ class TestRetryOnAuthFailureDecorator:
                 raise http_error
             return mock_resp_ok
 
-        loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new_at"})
 
         with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             content = loader._download_file_content("f1")
@@ -1018,7 +1024,7 @@ class TestRetryOnAuthFailureDecorator:
         mock_resp_403.status_code = 403
         http_error = real_requests.exceptions.HTTPError(response=mock_resp_403)
 
-        loader.auth.refresh_access_token.side_effect = Exception("refresh fail")
+        loader._refresh_rejected_token = MagicMock(side_effect=Exception("refresh fail"))
 
         with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
             with pytest.raises(ValueError, match="could not be refreshed"):

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AnswerSegment,
+  appendAnswerText,
   appendThoughtText,
   getAnswerSegments,
+  hydrateSegments,
   recordToolCall,
   synthesizeSegments,
 } from './answerSegments';
@@ -159,5 +161,116 @@ describe('synthesizeSegments / getAnswerSegments', () => {
         segments: live,
       }),
     ).toBe(live);
+  });
+});
+
+describe('appendAnswerText', () => {
+  it('coalesces answer deltas and splits them around a tool call', () => {
+    const segments: AnswerSegment[] = [];
+    appendAnswerText(segments, 'Now ');
+    appendAnswerText(segments, 'step 2:');
+    recordToolCall(segments, 'c1');
+    appendAnswerText(segments, 'Done.');
+    appendAnswerText(segments, '');
+    expect(segments).toEqual([
+      { kind: 'text', text: 'Now step 2:' },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', text: 'Done.' },
+    ]);
+  });
+});
+
+describe('hydrateSegments', () => {
+  it('slices the saved lengths out of the response and the reasoning', () => {
+    expect(
+      hydrateSegments(
+        [
+          { kind: 'thought', length: 4 },
+          { kind: 'text', length: 3 },
+          { kind: 'tool', call_id: 'c1' },
+          { kind: 'thought', length: 6 },
+          { kind: 'text', length: 5 },
+        ],
+        'abc😀 ok',
+        'planverify',
+      ),
+    ).toEqual([
+      { kind: 'thought', text: 'plan' },
+      { kind: 'text', text: 'abc' },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'thought', text: 'verify' },
+      { kind: 'text', text: '😀 ok' },
+    ]);
+  });
+
+  it('drops an order that does not fit what was saved', () => {
+    expect(
+      hydrateSegments([{ kind: 'text', length: 10 }], 'short', ''),
+    ).toBeUndefined();
+    expect(hydrateSegments([{ kind: 'bogus' }], 'x', '')).toBeUndefined();
+    expect(hydrateSegments(null, 'x', '')).toBeUndefined();
+    expect(hydrateSegments([], 'x', '')).toBeUndefined();
+  });
+});
+
+describe('getAnswerSegments with answer text', () => {
+  const calls = [call({ call_id: 'c1' })];
+
+  it('keeps an order whose text accounts for the whole answer', () => {
+    const live: AnswerSegment[] = [
+      { kind: 'text', text: 'Now:' },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', text: 'Done.' },
+    ];
+    expect(
+      getAnswerSegments({
+        response: 'Now:Done.',
+        tool_calls: calls,
+        segments: live,
+      }),
+    ).toBe(live);
+  });
+
+  it('falls back when the answer was replaced after the order was recorded', () => {
+    expect(
+      getAnswerSegments({
+        response: 'Blocked by a guardrail.',
+        tool_calls: calls,
+        segments: [
+          { kind: 'text', text: 'Now:' },
+          { kind: 'tool', call_id: 'c1' },
+        ],
+      }),
+    ).toEqual([
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', text: 'Blocked by a guardrail.' },
+    ]);
+  });
+
+  it('puts the answer after the steps when the order recorded no text', () => {
+    expect(
+      getAnswerSegments({
+        response: 'the answer',
+        thought: 'plan',
+        tool_calls: calls,
+        segments: [
+          { kind: 'thought', text: 'plan' },
+          { kind: 'tool', call_id: 'c1' },
+        ],
+      }),
+    ).toEqual([
+      { kind: 'thought', text: 'plan' },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', text: 'the answer' },
+    ]);
+  });
+
+  it('synthesizes the answer text last for a reload with no order', () => {
+    expect(
+      getAnswerSegments({ response: 'the answer', tool_calls: calls }),
+    ).toEqual([
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', text: 'the answer' },
+    ]);
   });
 });

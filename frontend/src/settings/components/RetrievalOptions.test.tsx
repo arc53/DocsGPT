@@ -9,6 +9,7 @@ import {
   chunkingChanged,
   scoreThresholdHidden,
   DEFAULT_RETRIEVAL_OPTIONS,
+  MAX_CHUNK_TOKENS,
   RetrievalOptionsValue,
 } from './RetrievalOptions';
 
@@ -16,6 +17,13 @@ const clone = (v: RetrievalOptionsValue): RetrievalOptionsValue =>
   JSON.parse(JSON.stringify(v));
 
 describe('configToOptions (lenient read)', () => {
+  it('defaults a source to 6 chunks, the backend default', () => {
+    // Equal to the backend's RetrievalConfig default, so a new upload is not
+    // read as a per-source override.
+    expect(DEFAULT_RETRIEVAL_OPTIONS.retrieval.chunks).toBe(6);
+    expect(configToOptions(undefined).retrieval.chunks).toBe(6);
+  });
+
   it('returns all defaults for an absent config', () => {
     expect(configToOptions(undefined)).toEqual(DEFAULT_RETRIEVAL_OPTIONS);
   });
@@ -36,6 +44,13 @@ describe('configToOptions (lenient read)', () => {
     expect(opts.retrieval.chunks).toBe(5);
     expect(opts.retrieval.exposure).toBe('prefetch'); // default preserved
     expect(opts.retrieval.prescreen.enabled).toBe(false);
+  });
+
+  it('clamps an over-limit stored chunk size', () => {
+    const opts = configToOptions({
+      chunking: { max_tokens: 100_000 },
+    } as SourceConfig);
+    expect(opts.chunking.max_tokens).toBe(MAX_CHUNK_TOKENS);
   });
 
   it('marks prescreen enabled when the stored object is present', () => {
@@ -70,6 +85,12 @@ describe('optionsToConfig (write path)', () => {
     v.kind = 'classic';
     v.retrieval.retriever = 'graphrag';
     expect(optionsToConfig(v).kind).toBe('graphrag');
+  });
+
+  it('clamps an over-limit chunk size before serializing', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.chunking.max_tokens = 100_000;
+    expect(optionsToConfig(v).chunking?.max_tokens).toBe(MAX_CHUNK_TOKENS);
   });
 
   it('round-trips the graph config including model and max_chunks', () => {
@@ -146,6 +167,11 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
           batch_size: 5,
           max_keep: 10,
         },
+        graph: {
+          seed_strategy: 'relationships',
+          passage_nodes: false,
+          blend_vector: false,
+        },
       },
       graph: {
         extraction_model: null,
@@ -154,6 +180,44 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
       },
     };
     expect(configToOptions(optionsToConfig(v))).toEqual(v);
+  });
+});
+
+describe('graph retrieval options', () => {
+  it('defaults to the measured-best configuration', () => {
+    expect(DEFAULT_RETRIEVAL_OPTIONS.retrieval.graph).toEqual({
+      seed_strategy: 'entities',
+      passage_nodes: true,
+      blend_vector: true,
+    });
+  });
+
+  it('fills the defaults for a source saved before the options existed', () => {
+    const opts = configToOptions({ retrieval: { retriever: 'graphrag' } });
+    expect(opts.retrieval.graph).toEqual(
+      DEFAULT_RETRIEVAL_OPTIONS.retrieval.graph,
+    );
+  });
+
+  it('honors stored options and fills only the missing ones', () => {
+    const opts = configToOptions({
+      retrieval: { graph: { seed_strategy: 'relationships' } },
+    });
+    expect(opts.retrieval.graph).toEqual({
+      seed_strategy: 'relationships',
+      passage_nodes: true,
+      blend_vector: true,
+    });
+  });
+
+  it('writes the options into the retrieval block', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.retrieval.graph.blend_vector = false;
+    expect(optionsToConfig(v).retrieval?.graph).toEqual({
+      seed_strategy: 'entities',
+      passage_nodes: true,
+      blend_vector: false,
+    });
   });
 });
 

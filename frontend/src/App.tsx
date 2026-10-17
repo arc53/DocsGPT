@@ -1,19 +1,29 @@
 import { envVar } from '@/env';
 import './locale/i18n';
 
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
+
+import { cn } from '@/lib/utils';
 
 import Admin from './admin';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
+import { selectWorkflowPreviewOpen } from './agents/workflow/workflowPreviewSlice';
+import DocsGPTMark from './assets/logo-b.svg';
+import DocsGPTMarkWhite from './assets/logo-w.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
-import Spinner from './components/Spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Button } from './components/ui/button';
+import { ToastViewport } from './components/ui/toast';
+import {
+  createToastAvoidRegistry,
+  ToastAvoidContext,
+} from './components/ui/toast-layout';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -21,13 +31,28 @@ import { EventStreamProvider } from './events/EventStreamProvider';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
+import ConnectorCallback from './connectors/ConnectorCallback';
+import ApprovalPage from './monitors/ApprovalPage';
 import Navigation from './Navigation';
+import { outletBoundaryKey } from './navigation/outletBoundaryKey';
+import { getSectionForPath } from './navigation/sections';
+import { SidebarLevelProvider } from './navigation/SidebarLevelProvider';
 import PageNotFound from './PageNotFound';
+
+// Dev-only style guide (see frontend/DESIGN.md). The DEV guard around the
+// import lets the bundler drop the chunk from production builds entirely.
+const DesignSystem = import.meta.env.DEV
+  ? lazy(() => import('./design/DesignSystem'))
+  : null;
+import Activity from './activity';
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 import TeamNotificationToast from './notifications/TeamNotificationToast';
+import ActionToast from './notifications/ActionToast';
+import ConnectionHealthToast from './notifications/ConnectionHealthToast';
+import BackgroundNotifications from './backgroundJobs/BackgroundNotifications';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -39,6 +64,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     retryOidcLogin,
   } = useTokenAuth();
   useDataInitializer(isAuthLoading);
+  const [isDarkTheme] = useDarkTheme();
 
   if (oidcFailed) {
     const message =
@@ -48,15 +74,19 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           ? t('auth.accountDisabled')
           : t('auth.signInToContinue');
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-6">
-        <img src={DocsGPT3} alt="DocsGPT" className="size-14" />
-        <p className="text-foreground max-w-md px-6 text-center text-sm dark:text-white">
+      <div className="flex h-dvh flex-col items-center justify-center gap-6">
+        <img
+          src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
+          alt="DocsGPT"
+          className="h-14 w-auto"
+        />
+        <p className="text-foreground max-w-md px-6 text-center text-sm">
           {message}
         </p>
         <Button
           type="button"
           onClick={retryOidcLogin}
-          className="rounded-3xl px-5"
+          shape="pill"
           data-testid="oidc-signin"
         >
           {t('auth.signInWith', { provider: oidcProviderName || 'SSO' })}
@@ -65,41 +95,65 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     );
   }
   if (isAuthLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner />
-      </div>
-    );
+    return <LoadingState fill="screen" />;
   }
   return <EventStreamProvider>{children}</EventStreamProvider>;
 }
 
 function MainLayout() {
-  const { isMobile, isTablet } = useMediaQuery();
-  const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
+  const { isMobile } = useMediaQuery();
+  const [navOpen, setNavOpen] = useState(!isMobile);
   const location = useLocation();
+  // Settings and admin pages keep the profile menu but drop the chat actions:
+  // the conversation now survives the trip, so "share" would target a chat
+  // that isn't on screen.
+  const inSection = Boolean(getSectionForPath(location.pathname));
+  // The workflow Preview drawer occupies the right edge; move the toast
+  // stack to the bottom-left while it's open so it stays visible without
+  // covering the drawer's attach/send controls.
+  const previewOpen = useSelector(selectWorkflowPreviewOpen);
+  // The composers the toast stack keeps clear of (see useAvoidToasts).
+  const [toastAvoid] = useState(createToastAvoidRegistry);
 
   return (
-    <div className="bg-background relative h-screen overflow-hidden">
-      <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
-      <ActionButtons showNewChat={true} showShare={true} />
-      <div
-        className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
-          !(isMobile || isTablet)
-            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-14'}`
-            : 'ml-0 lg:ml-16'
-        }`}
-      >
-        {/* Contain route render crashes so navigation stays usable;
-            keyed by path so the boundary resets when the user leaves. */}
-        <ErrorBoundary key={location.pathname}>
-          <Outlet />
-        </ErrorBoundary>
-      </div>
-      <UploadToast />
-      <ToolApprovalToast />
-      <TeamNotificationToast />
-    </div>
+    <SidebarLevelProvider>
+      <ToastAvoidContext.Provider value={toastAvoid}>
+        <div className="bg-background relative h-dvh overflow-hidden">
+          <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
+          <ActionButtons showShare={!inSection} />
+          <div
+            className={cn(
+              'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
+              !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
+            )}
+          >
+            {/* Contain route render crashes so navigation stays usable;
+            any navigation clears a crash, and leaving a page remounts it. */}
+            <ErrorBoundary
+              key={outletBoundaryKey(location.pathname)}
+              resetKey={location.pathname}
+            >
+              <Outlet />
+            </ErrorBoundary>
+          </div>
+          {/* The one toast stack (and live region) for the app. Each toast
+          renders only its cards, top to bottom: team notifications, tool
+          approvals, uploads, action results. It rises above a composer it
+          would cover. */}
+          <ToastViewport
+            className={cn(previewOpen && 'right-auto left-2')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <TeamNotificationToast />
+            <BackgroundNotifications />
+            <ConnectionHealthToast />
+            <ToolApprovalToast />
+            <UploadToast />
+            <ActionToast />
+          </ToastViewport>
+        </div>
+      </ToastAvoidContext.Provider>
+    </SidebarLevelProvider>
   );
 }
 export default function App() {
@@ -112,10 +166,13 @@ export default function App() {
   const notificationText = envVar('VITE_NOTIFICATION_TEXT');
   const notificationLink = envVar('VITE_NOTIFICATION_LINK');
   // Hide the changelog banner on public share routes — those pages are
-  // embedded / shared externally and shouldn't carry product chrome.
+  // embedded / shared externally and shouldn't carry product chrome — and in
+  // the connector sign-in pop-up.
   const isPublicShareRoute =
     location.pathname.startsWith('/share/') ||
-    location.pathname.startsWith('/shared/');
+    location.pathname.startsWith('/shared/') ||
+    location.pathname.startsWith('/approve/') ||
+    location.pathname.startsWith('/connectors/callback');
   if (!componentMounted) {
     return <div />;
   }
@@ -150,6 +207,7 @@ export default function App() {
             path="/agents/:agentId/c/:conversationId"
             element={<Conversation />}
           />
+          <Route path="/activity/*" element={<Activity />} />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />
@@ -164,6 +222,27 @@ export default function App() {
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
+        {/* Where connector OAuth sign-ins return; finished with the user's login. */}
+        <Route
+          path="/connectors/callback"
+          element={
+            <AuthWrapper>
+              <ConnectorCallback />
+            </AuthWrapper>
+          }
+        />
+        {/* Public: a human approval link (the token is the credential). */}
+        <Route path="/approve/:token" element={<ApprovalPage />} />
+        {DesignSystem && (
+          <Route
+            path="/design"
+            element={
+              <Suspense fallback={null}>
+                <DesignSystem />
+              </Suspense>
+            }
+          />
+        )}
         <Route path="/*" element={<PageNotFound />} />
       </Routes>
     </div>

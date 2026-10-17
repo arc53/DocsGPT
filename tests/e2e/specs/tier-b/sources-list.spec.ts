@@ -5,8 +5,8 @@
  * Exercises the read-side endpoints the UI calls from
  * `frontend/src/settings/Sources.tsx`:
  *
- *   - GET /api/sources                 → legacy combined JSON (always
- *                                         includes a "Default" entry first)
+ *   - GET /api/sources                 → combined JSON of the caller's
+ *                                         ingested and team-shared sources
  *   - GET /api/sources/paginated       → page + rows + search + sort
  *   - GET /api/delete_old              → vector + file + row tear-down
  *   - GET /api/directory_structure     → returns {directory_structure,
@@ -54,7 +54,7 @@ test.describe('tier-b · sources list / paginated / delete', () => {
     await resetDb();
   });
 
-  test('GET /api/sources returns the Default entry plus each seeded source owned by the caller', async ({
+  test('GET /api/sources returns each seeded source owned by the caller and no synthetic Default', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -68,10 +68,10 @@ test.describe('tier-b · sources list / paginated / delete', () => {
       const res = await api.get('/api/sources');
       expect(res.status()).toBe(200);
       const body = (await res.json()) as SourcesListItem[];
-      // "Default" is always prepended — the widget pulls from /api/sources
-      // when chunks=0 is selected, and that remote default row is required.
-      expect(body[0].name).toBe('Default');
-      expect(body[0].location).toBe('remote');
+      // Only ingested sources are listed: the synthetic "Default" entry is
+      // gone (79d418f3); "no source" is an empty selection on the client.
+      expect(body.some((item) => item.name === 'Default')).toBe(false);
+      expect(body).toHaveLength(1);
 
       const mine = body.find((item) => item.id === id);
       expect(mine, `seeded source ${id} missing from /api/sources`).toBeDefined();

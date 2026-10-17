@@ -526,9 +526,9 @@ class TestSyncSource:
             response = SyncSource().post()
         assert response.status_code == 400
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.routes import SyncSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -539,7 +539,7 @@ class TestSyncSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = SyncSource().post()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_returns_400_for_connector_type(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SyncSource
@@ -599,6 +599,38 @@ class TestSyncSource:
             response = SyncSource().post()
         assert response.status_code == 200
         assert response.json["task_id"] == "task-123"
+
+    def test_syncs_with_the_sources_connection(self, app, pg_conn):
+        """A source synced from a connection (S3, GitHub) reads with that connection's keys."""
+        from sqlalchemy import text
+
+        from docsgpt.api.user.sources.routes import SyncSource
+
+        user = "u-conn-sync"
+        cid = str(pg_conn.execute(text(
+            "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status) "
+            "VALUES (:u, 'github', 'github', 'api_key', 'connected') RETURNING id"
+        ), {"u": user}).scalar())
+        src = _seed_source(
+            pg_conn, user, name="repo", type="github",
+            remote_data=json.dumps({"repo_url": "acme/private"}),
+        )
+        pg_conn.execute(text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = :s"),
+                        {"c": cid, "s": src["id"]})
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.sync_source.delay",
+            return_value=MagicMock(id="task-conn"),
+        ) as mock_delay, app.test_request_context(
+            "/api/sync_source", method="POST", json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["connection_id"] == cid
+        assert mock_delay.call_args.kwargs["source_data"] == "acme/private"
 
     def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
         """The route must hand the sync task the normalized URL string."""
@@ -675,9 +707,9 @@ class TestReingestSource:
             response = ReingestSource().post()
         assert response.status_code == 400
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.routes import ReingestSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -688,7 +720,7 @@ class TestReingestSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = ReingestSource().post()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_triggers_reingest_task(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import ReingestSource
@@ -886,6 +918,49 @@ class TestDirectoryStructure:
         data = response.json
         assert data["provider"] == "gdrive"
         assert data["base_path"] == "/data/nested"
+
+    def test_team_viewer_can_read(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import DirectoryStructure
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, viewer = "u-dir-owner", "u-dir-viewer"
+        src = _seed_source(
+            pg_conn, owner, name="shared",
+            directory_structure={"a.docx": {"type": "application/docx"}},
+        )
+        team = TeamsRepository(pg_conn).create("Acme", "acme-dir", owner)
+        TeamMembersRepository(pg_conn).add_member(team["id"], viewer, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(src["id"]), owner_id=owner, granted_by=owner,
+            access_level="viewer",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/directory_structure?id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": viewer}
+            response = DirectoryStructure().get()
+        assert response.status_code == 200
+        assert response.json["directory_structure"] == {"a.docx": {"type": "application/docx"}}
+
+    def test_non_owner_without_grant_404(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import DirectoryStructure
+
+        src = _seed_source(
+            pg_conn, "u-dir-owner2", name="private",
+            directory_structure={"a.txt": None},
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/directory_structure?id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-dir-stranger"}
+            response = DirectoryStructure().get()
+        assert response.status_code == 404
 
 
 class TestSourceConfigResource:

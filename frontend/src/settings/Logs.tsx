@@ -1,12 +1,28 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Activity, ChevronRight } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import {
+  selectActivityRevision,
+  selectRunningKey,
+} from '../activity/activitySlice';
+import { formatElapsed, workflowStep } from '../activity/format';
 import userService from '../api/services/userService';
-import ChevronRight from '../assets/chevron-right.svg';
 import CopyButton from '../components/CopyButton';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Input } from '../components/ui/input';
+import { useClock } from '../hooks/useClock';
+import { useScrollSentinel } from '../hooks/useLoadMore';
+import { Button } from '../components/ui/button';
+import { CodeBlock } from '../components/ui/code-block';
+import { Collapsible } from '../components/ui/collapsible';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
+import { LoadMoreStatus } from '../components/ui/load-more-status';
 import {
   Select,
   SelectContent,
@@ -15,8 +31,23 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
-import { LogData } from './types';
+import TraceChips from './traces/TraceChips';
+import TraceSheet from './traces/TraceSheet';
+import { mergeLoadedPages, newestFirst, uniqueLogs } from './logsPage';
+import { formatDurationMs } from './traces/traceUtils';
+import { LogData, TraceRef } from './types';
+
+/** How often page 1 reloads while it shows a run: runs by other people on a
+ * shared agent send their events to them, not to the owner. */
+const RUNNING_POLL_MS = 30_000;
+
+/** Rows per page. */
+const PAGE_SIZE = 10;
+
+/** The most rows one request reads: the endpoint's largest page. */
+const MAX_REQUEST_ROWS = 100;
 
 type LogsProps = {
   agentId?: string;
@@ -30,13 +61,18 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingLogs, setLoadingLogs] = useLoaderState(true);
+  // The last page failed: an error with Retry instead of "no logs".
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [levelFilter, setLevelFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
-  const logs = Object.values(logsByPage).flat();
+  const logs = uniqueLogs(Object.values(logsByPage));
+  const activityRevision = useSelector(selectActivityRevision);
+  const runningKey = useSelector(selectRunningKey);
 
   // Identifies the filter combination a request was issued under, so a
   // slow response from a previous combination is discarded instead of
@@ -50,6 +86,10 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // skips that cycle instead of fetching a stale page under the new
   // filters (which could latch hasMore=false and freeze the list).
   const resetPendingRef = useRef(false);
+  // Moves whenever the pages start over (new filters, or a refresh that
+  // read past them): a Load more still out asked for a page of the old
+  // paging, and its rows and has_more no longer fit.
+  const generationRef = useRef(0);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), 400);
@@ -62,32 +102,44 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       return;
     }
     resetPendingRef.current = true;
+    generationRef.current += 1;
+    setLoadFailed(false);
     setLogsByPage({});
     setPage(1);
     setHasMore(true);
   }, [levelFilter, typeFilter, search, agentId]);
+
+  const requestPage = (pageNumber: number, pageSize = PAGE_SIZE) =>
+    userService.getLogs(
+      {
+        page: pageNumber,
+        api_key_id: agentId,
+        page_size: pageSize,
+        level: levelFilter === 'all' ? undefined : levelFilter,
+        event_type: typeFilter === 'all' ? undefined : typeFilter,
+        search: search || undefined,
+      },
+      token,
+    );
 
   const fetchLogs = async () => {
     if (logsByPage[page] && logsByPage[page].length > 0) return;
 
     const issuedKey = filterKey;
     const issuedPage = page;
+    const issuedGeneration = generationRef.current;
     setLoadingLogs(true);
+    setLoadFailed(false);
     try {
-      const response = await userService.getLogs(
-        {
-          page: page,
-          api_key_id: agentId,
-          page_size: 10,
-          level: levelFilter === 'all' ? undefined : levelFilter,
-          event_type: typeFilter === 'all' ? undefined : typeFilter,
-          search: search || undefined,
-        },
-        token,
-      );
+      const response = await requestPage(page);
       if (!response.ok) throw new Error('Failed to fetch logs');
       const data = await response.json();
-      if (issuedKey !== filterKeyRef.current || resetPendingRef.current) return;
+      if (
+        issuedKey !== filterKeyRef.current ||
+        issuedGeneration !== generationRef.current ||
+        resetPendingRef.current
+      )
+        return;
 
       setLogsByPage((prev) => ({
         ...prev,
@@ -96,6 +148,11 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       setHasMore(data.has_more);
     } catch (error) {
       console.error(error);
+      if (
+        issuedKey === filterKeyRef.current &&
+        issuedGeneration === generationRef.current
+      )
+        setLoadFailed(true);
     } finally {
       if (issuedKey === filterKeyRef.current) setLoadingLogs(false);
     }
@@ -114,6 +171,112 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     if (hasMore) fetchLogs();
   }, [page, agentId, levelFilter, typeFilter, search, logsByPage]);
 
+  // Reloads the loaded pages in place: new rows come in on top and runs that
+  // ended give way to their finished rows. Only page 1 while no loaded page
+  // shows a run; while one does, pages 1 to the deepest one showing a run
+  // (the pages past it only shift, as past page 1 when none runs): one
+  // request up to 100 rows, past that one per 100, side by side.
+  const logsByPageRef = useRef(logsByPage);
+  logsByPageRef.current = logsByPage;
+  // The latest refresh. The poll and an activity change can each start one;
+  // an older one answering last would put back runs that have ended.
+  const refreshSeqRef = useRef(0);
+  const refreshLoadedPages = async () => {
+    const issuedKey = filterKey;
+    const seq = ++refreshSeqRef.current;
+    const loaded = logsByPageRef.current;
+    const pages = Math.max(
+      1,
+      ...Object.entries(loaded)
+        .filter(([, rows]) => rows.some((log) => log.running))
+        .map(([n]) => Number(n)),
+    );
+    const rows = pages * PAGE_SIZE;
+    try {
+      const responses = await Promise.all(
+        rows <= MAX_REQUEST_ROWS
+          ? [requestPage(1, rows)]
+          : Array.from({ length: Math.ceil(rows / MAX_REQUEST_ROWS) }, (_, i) =>
+              requestPage(i + 1, MAX_REQUEST_ROWS),
+            ),
+      );
+      if (responses.some((response) => !response.ok)) return;
+      const parts = await Promise.all(
+        responses.map((response) => response.json()),
+      );
+      // The server adds running webhook rows to request 1 only, by time
+      // within it: one older than its rows sits at its end, ahead of the
+      // next request's, so the joined rows are put back in time order.
+      // Past one request, the last reads beyond the loaded rows; what it
+      // has beyond them is more.
+      const last = parts[parts.length - 1];
+      const keep =
+        parts.length > 1
+          ? rows - (parts.length - 1) * MAX_REQUEST_ROWS
+          : last.logs.length;
+      const joined = [
+        ...parts.slice(0, -1).flatMap((part) => part.logs),
+        ...last.logs.slice(0, keep),
+      ];
+      const data = {
+        logs: parts.length > 1 ? newestFirst(joined) : joined,
+        has_more: last.has_more || last.logs.length > keep,
+      };
+      if (issuedKey !== filterKeyRef.current) return;
+      if (seq !== refreshSeqRef.current) return;
+      const previous = logsByPageRef.current;
+      if (!previous[1]) return;
+      const merged = mergeLoadedPages(
+        previous,
+        data.logs,
+        pages,
+        PAGE_SIZE,
+        Boolean(data.has_more),
+      );
+      if (merged.reset) {
+        // Loading more goes on from the refreshed pages.
+        generationRef.current += 1;
+        setLogsByPage(merged.pages);
+        setPage(pages);
+        setHasMore(true);
+        return;
+      }
+      // Merged against the latest state: a page may have landed meanwhile.
+      setLogsByPage(
+        (prev) =>
+          mergeLoadedPages(prev, data.logs, pages, PAGE_SIZE, false).pages,
+      );
+    } catch (error) {
+      // The next event or poll tries again.
+      console.error(error);
+    }
+  };
+
+  // The cue to refresh: the activity revision moves when a run ends (or a
+  // poll found news), the running key when a run starts or ends. A run that
+  // only moves a step moves neither. Both moving at once refreshes once.
+  const seen = useRef(`${activityRevision}#${runningKey}`);
+  useEffect(() => {
+    const now = `${activityRevision}#${runningKey}`;
+    if (seen.current === now) return;
+    seen.current = now;
+    void refreshLoadedPages();
+  }, [activityRevision, runningKey]);
+
+  // The poll calls this render's refresh, not the one it started with: that
+  // one's token may have been renewed since.
+  const refreshRef = useRef(refreshLoadedPages);
+  refreshRef.current = refreshLoadedPages;
+  const showsRunning = logs.some((log) => log.running);
+  useEffect(() => {
+    if (!showsRunning) return;
+    const timer = window.setInterval(
+      () => void refreshRef.current(),
+      RUNNING_POLL_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [showsRunning, filterKey]);
+
   const levelOptions = [
     { label: t('settings.logs.levels.all'), value: 'all' },
     { label: t('settings.logs.levels.info'), value: 'info' },
@@ -127,19 +290,18 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.types.webhook'), value: 'webhook' },
     { label: t('settings.logs.types.workflow'), value: 'workflow' },
     { label: t('settings.logs.types.system'), value: 'system' },
+    { label: t('settings.logs.types.search'), value: 'search' },
+    { label: t('settings.logs.types.graph'), value: 'graph' },
   ];
 
   return (
-    <div className="mt-8">
+    <div>
       <p className="text-muted-foreground mb-5 text-sm leading-6">
         {t('settings.logs.subtitle')}
       </p>
       <div className="mb-3 flex flex-row flex-wrap items-center gap-3">
         <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger
-            className="w-[125px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[125px]" size="field" shape="pill">
             <SelectValue placeholder={t('settings.logs.levels.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -151,10 +313,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger
-            className="w-[140px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[140px]" size="field" shape="pill">
             <SelectValue placeholder={t('settings.logs.types.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -165,21 +324,31 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
             ))}
           </SelectContent>
         </Select>
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={t('settings.logs.searchPlaceholder')}
-          className="w-56 rounded-3xl"
-        />
+        <div className="w-56">
+          <SearchInput
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            label={t('settings.logs.searchPlaceholder')}
+          />
+        </div>
       </div>
       <div>
         <LogsTable
           logs={logs}
           setPage={setPage}
           loading={loadingLogs}
+          hasMore={hasMore}
+          failed={loadFailed}
+          onRetry={fetchLogs}
           tableHeader={tableHeader}
+          onViewTrace={setOpenTrace}
         />
       </div>
+      <TraceSheet
+        traceRef={openTrace}
+        agentId={agentId}
+        onClose={() => setOpenTrace(null)}
+      />
     </div>
   );
 }
@@ -188,11 +357,24 @@ type LogsTableProps = {
   logs: LogData[];
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
+  hasMore: boolean;
+  /** The last page failed to load; `onRetry` asks for it again. */
+  failed: boolean;
+  onRetry: () => void;
   tableHeader?: string;
+  onViewTrace: (ref: TraceRef) => void;
 };
-function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
+function LogsTable({
+  logs,
+  setPage,
+  loading,
+  hasMore,
+  failed,
+  onRetry,
+  tableHeader,
+  onViewTrace,
+}: LogsTableProps) {
   const { t } = useTranslation();
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
 
   const handleLogToggle = (logId: string) => {
@@ -203,65 +385,59 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
     }
   };
 
-  const firstObserver = useCallback((node: HTMLDivElement | null) => {
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-    }
-
-    if (!node) return;
-
-    observerRef.current = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setPage((prev) => prev + 1);
-      }
-    });
-
-    observerRef.current.observe(node);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, []);
+  // Loads the next page as the end of the list nears the screen.
+  const sentinelRef = useScrollSentinel(
+    () => setPage((prev) => prev + 1),
+    !loading && hasMore && !failed,
+    logs.length,
+  );
 
   return (
-    <div className="logs-table border-border bg-card h-[55vh] w-full overflow-hidden rounded-xl border dark:bg-black">
-      <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
-        <p className="text-muted-foreground px-3 text-xs">
+    <div className="border-border bg-card h-[55svh] w-full overflow-hidden rounded-xl border font-mono">
+      <div className="bg-muted flex h-8 flex-col items-start justify-center">
+        <p className="text-foreground px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="relative flex h-[51vh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
-        {!loading && logs.length === 0 && (
-          <p className="text-muted-foreground w-full py-4 text-center text-xs">
-            {t('settings.logs.noLogs')}
-          </p>
+      <div className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
+        {!loading && failed && logs.length === 0 && (
+          <EmptyState
+            tone="destructive"
+            size="xs"
+            illustration="none"
+            title={t('settings.logs.loadError')}
+            onRetry={onRetry}
+            className="w-full"
+          />
         )}
-        {logs?.map((log, index) => {
-          if (index === logs.length - 1) {
-            return (
-              <div ref={firstObserver} key={index} className="w-full">
-                <Log
-                  log={log}
-                  isOpen={openLogId === log.id}
-                  onToggle={handleLogToggle}
-                />
-              </div>
-            );
-          } else
-            return (
-              <Log
-                key={index}
-                log={log}
-                isOpen={openLogId === log.id}
-                onToggle={handleLogToggle}
-              />
-            );
-        })}
+        {!loading && !failed && logs.length === 0 && (
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.logs.noLogs')}
+            className="w-full"
+          />
+        )}
+        {logs?.map((log) => (
+          <Log
+            key={log.id}
+            log={log}
+            isOpen={openLogId === log.id}
+            onToggle={handleLogToggle}
+            onViewTrace={onViewTrace}
+          />
+        ))}
+        <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
         {loading && <SkeletonLoader component="logs" />}
+        {!loading && failed && logs.length > 0 && (
+          <LoadMoreStatus
+            loading={false}
+            error
+            done={false}
+            onRetry={onRetry}
+            className="w-full"
+          />
+        )}
       </div>
     </div>
   );
@@ -271,23 +447,37 @@ function formatDuration(start?: string, end?: string): string | null {
   if (!start || !end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (isNaN(ms) || ms < 0) return null;
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  return formatDurationMs(ms);
 }
 
 function Log({
   log,
   isOpen,
   onToggle,
+  onViewTrace,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
+  onViewTrace: (ref: TraceRef) => void;
 }) {
   const { t } = useTranslation();
+  const bodyId = useId();
+  const clock = useClock(Boolean(log.running));
+  const step = log.running ? workflowStep(log.workflow_progress) : null;
+  // A failed workflow run keeps the step it was on (0053): say where it stopped.
+  const failedStep =
+    log.event_type === 'workflow' && log.status === 'failed'
+      ? workflowStep(log.workflow_progress)
+      : null;
+  // The details mount on first open (a long list stays light), then stay so
+  // closing can animate.
+  const [opened, setOpened] = useState(isOpen);
+  if (isOpen && !opened) setOpened(true);
   const logLevelColor = {
-    info: 'text-green-500',
-    error: 'text-red-500',
-    warning: 'text-yellow-500',
+    info: 'text-success',
+    error: 'text-destructive',
+    warning: 'text-warning',
   };
   const { id, action, timestamp, event_type, ...filteredLog } = log;
 
@@ -336,6 +526,17 @@ function Log({
   } else if (log.event_type === 'system' || log.event_type === 'webhook') {
     if (log.endpoint)
       detailRows.push([t('settings.logs.detail.endpoint'), log.endpoint]);
+  } else if (log.event_type === 'search' || log.event_type === 'graph') {
+    if (log.source)
+      detailRows.push([
+        t('settings.logs.detail.source'),
+        t(`settings.logs.trace.sources.${log.source}`, log.source),
+      ]);
+    if (log.status)
+      detailRows.push([
+        t('settings.logs.detail.status'),
+        t(`settings.logs.trace.status.${log.status}`, log.status),
+      ]);
   }
 
   const textBlocks: { label: string; text: string; isError?: boolean }[] = [];
@@ -392,83 +593,163 @@ function Log({
     });
 
   return (
-    <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
-      <div
+    <div
+      className={cn(
+        'group w-full rounded-xl bg-transparent',
+        !isOpen && 'hover:bg-accent',
+      )}
+    >
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={bodyId}
         onClick={() => onToggle(log.id)}
-        className={`text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 ${
-          isOpen ? 'dark:bg-background rounded-t-xl bg-[#F1F1F1]' : ''
-        }`}
+        className={cn(
+          'text-foreground focus-visible:ring-ring/50 flex w-full cursor-pointer flex-row items-start gap-2 rounded-xl p-2 px-4 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset',
+          isOpen && 'bg-secondary rounded-b-none',
+        )}
       >
-        <img
-          src={ChevronRight}
-          alt="Expand log entry"
-          className={`mt-[3px] h-3 w-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'text-muted-foreground mt-[3px] size-3 transition-transform duration-200',
+            isOpen && 'rotate-90',
+          )}
         />
         <span className="flex flex-row flex-wrap gap-2">
-          <h2 className="dark:text-foreground text-xs text-black/60">{`${log.timestamp}`}</h2>
+          <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
           {log.event_type && (
-            <h2 className="text-muted-foreground text-xs">
+            <span className="text-muted-foreground text-xs">
               {t(`settings.logs.types.${log.event_type}`)}
-            </h2>
+            </span>
           )}
-          <h2 className="text-xs text-[#913400] dark:text-orange-500">{`[${log.action}]`}</h2>
-          <h2
-            className={`max-w-72 text-xs ${logLevelColor[log.level]} wrap-break-word`}
+          {log.origin && (
+            <span className="text-muted-foreground text-xs">
+              {t(`settings.logs.origin.${log.origin}`)}
+            </span>
+          )}
+          <span className="text-warning text-xs">{`[${log.action}]`}</span>
+          {log.running && (
+            <>
+              <span className="text-info text-xs">
+                {t('settings.logs.running')}
+              </span>
+              {log.started_at && (
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {formatElapsed(log.started_at, clock)}
+                </span>
+              )}
+              {step && (
+                <span className="text-muted-foreground text-xs">
+                  {[
+                    step.total
+                      ? t('activity.now.stepOf', {
+                          step: step.step,
+                          total: step.total,
+                        })
+                      : t('activity.now.step', { step: step.step }),
+                    step.title,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
+            </>
+          )}
+          {failedStep && (
+            <>
+              <span className="text-destructive text-xs">
+                {failedStep.total
+                  ? t('settings.logs.failedAtStepOf', {
+                      step: failedStep.step,
+                      total: failedStep.total,
+                    })
+                  : t('settings.logs.failedAtStep', { step: failedStep.step })}
+              </span>
+              {failedStep.title && (
+                <span className="text-muted-foreground text-xs">
+                  {failedStep.title}
+                </span>
+              )}
+            </>
+          )}
+          {log.trace && (
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {formatDurationMs(log.trace.duration_ms)}
+            </span>
+          )}
+          <span
+            className={cn(
+              'max-w-72 text-xs wrap-break-word',
+              logLevelColor[log.level],
+            )}
           >
             {`${log.question}`.length > 250
               ? `${log.question.substring(0, 250)}...`
               : log.question}
-          </h2>
+          </span>
         </span>
-      </div>
-      {isOpen && (
-        <div className="dark:bg-background rounded-b-xl bg-[#F1F1F1] px-4 py-3">
-          {detailRows.length > 0 && (
-            <div className="flex flex-col gap-1 px-2 pb-2">
-              {detailRows.map(([label, value]) => (
-                <div key={label} className="flex flex-row gap-2 text-xs">
-                  <span className="text-muted-foreground w-28 shrink-0">
-                    {label}
-                  </span>
-                  <span className="text-foreground wrap-break-word">
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {textBlocks.map((block) => (
-            <div key={block.label} className="px-2 pb-2">
-              <p className="text-muted-foreground text-xs">{block.label}</p>
-              <pre
-                className={`font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap ${
-                  block.isError
-                    ? 'text-red-500'
-                    : 'text-gray-700 dark:text-gray-400'
-                }`}
-              >
-                {block.text}
-              </pre>
-            </div>
-          ))}
-          {jsonBlocks.map((block) => (
-            <div key={block.label} className="px-2 pb-2">
-              <p className="text-muted-foreground text-xs">{block.label}</p>
-              <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-                <pre className="font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-700 dark:text-gray-400">
-                  {JSON.stringify(block.value, null, 2)}
-                </pre>
+      </button>
+      <Collapsible open={isOpen} id={bodyId}>
+        {opened && (
+          <div className="bg-secondary rounded-b-xl px-4 py-3">
+            {log.trace && (
+              <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => log.trace && onViewTrace(log.trace.ref)}
+                >
+                  <Activity />
+                  {log.trace.count > 1
+                    ? t('settings.logs.trace.viewRounds', {
+                        count: log.trace.count,
+                      })
+                    : t('settings.logs.trace.view')}
+                </Button>
+                <TraceChips
+                  durationMs={log.trace.duration_ms}
+                  counts={log.trace.summary}
+                />
               </div>
+            )}
+            {detailRows.length > 0 && (
+              <DescriptionList size="xs" className="mx-2 mb-2">
+                {detailRows.map(([label, value]) => (
+                  <DescriptionItem key={label} label={label}>
+                    {value}
+                  </DescriptionItem>
+                ))}
+              </DescriptionList>
+            )}
+            {textBlocks.map((block) => (
+              <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
+                <p className="text-muted-foreground text-xs">{block.label}</p>
+                <CodeBlock
+                  surface="subtle"
+                  tone={block.isError ? 'destructive' : 'default'}
+                >
+                  {block.text}
+                </CodeBlock>
+              </div>
+            ))}
+            {jsonBlocks.map((block) => (
+              <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
+                <p className="text-muted-foreground text-xs">{block.label}</p>
+                <CodeBlock surface="subtle" maxHeight="md">
+                  {JSON.stringify(block.value, null, 2)}
+                </CodeBlock>
+              </div>
+            ))}
+            <div className="my-px w-fit">
+              <CopyButton
+                textToCopy={JSON.stringify(filteredLog)}
+                showText={true}
+              />
             </div>
-          ))}
-          <div className="my-px w-fit">
-            <CopyButton
-              textToCopy={JSON.stringify(filteredLog)}
-              showText={true}
-            />
           </div>
-        </div>
-      )}
+        )}
+      </Collapsible>
     </div>
   );
 }

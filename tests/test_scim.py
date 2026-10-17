@@ -276,7 +276,11 @@ class TestCreateUser:
         assert response.headers["Location"].endswith(f"/scim/v2/Users/{USER_PK}")
         scim_mocks.users.create.assert_called_once_with("alice@example.com", active=True)
         scim_mocks.audit.insert.assert_called_once_with(
-            "alice@example.com", "scim_created", metadata={"via": "scim"}
+            "alice@example.com",
+            "scim_created",
+            metadata={"via": "scim"},
+            actor_id="system:scim",
+            target_id="alice@example.com",
         )
         body = response.get_json()
         assert body["id"] == USER_PK
@@ -373,7 +377,11 @@ class TestReplaceUser:
         # already lets a fresh login through on a newer iat).
         scim_mocks.deny_user.assert_not_called()
         scim_mocks.audit.insert.assert_called_once_with(
-            "alice@example.com", "scim_reactivated", metadata={"via": "scim"}
+            "alice@example.com",
+            "scim_reactivated",
+            metadata={"via": "scim"},
+            actor_id="system:scim",
+            target_id="alice@example.com",
         )
 
     def test_put_active_false_triggers_deny(self, client, scim_settings, scim_mocks):
@@ -390,7 +398,11 @@ class TestReplaceUser:
         scim_mocks.users.set_active.assert_called_once_with(USER_PK, False)
         scim_mocks.deny_user.assert_called_once_with("alice@example.com")
         scim_mocks.audit.insert.assert_called_once_with(
-            "alice@example.com", "scim_deactivated", metadata={"via": "scim"}
+            "alice@example.com",
+            "scim_deactivated",
+            metadata={"via": "scim"},
+            actor_id="system:scim",
+            target_id="alice@example.com",
         )
 
     def test_put_differently_cased_username_deprovisions(self, client, scim_settings, scim_mocks):
@@ -445,7 +457,11 @@ class TestPatchUser:
         scim_mocks.users.set_active.assert_called_once_with(USER_PK, False)
         scim_mocks.deny_user.assert_called_once_with("alice@example.com")
         scim_mocks.audit.insert.assert_called_once_with(
-            "alice@example.com", "scim_deactivated", metadata={"via": "scim"}
+            "alice@example.com",
+            "scim_deactivated",
+            metadata={"via": "scim"},
+            actor_id="system:scim",
+            target_id="alice@example.com",
         )
 
     def test_replace_with_path_deactivates(self, client, scim_settings, scim_mocks):
@@ -479,7 +495,11 @@ class TestPatchUser:
         scim_mocks.users.set_active.assert_called_once_with(USER_PK, True)
         scim_mocks.deny_user.assert_not_called()
         scim_mocks.audit.insert.assert_called_once_with(
-            "alice@example.com", "scim_reactivated", metadata={"via": "scim"}
+            "alice@example.com",
+            "scim_reactivated",
+            metadata={"via": "scim"},
+            actor_id="system:scim",
+            target_id="alice@example.com",
         )
 
     def test_bogus_path_rejected(self, client, scim_settings, scim_mocks):
@@ -540,7 +560,11 @@ class TestDeleteUser:
         scim_mocks.users.set_active.assert_called_once_with(USER_PK, False)
         scim_mocks.deny_user.assert_called_once_with("alice@example.com")
         scim_mocks.audit.insert.assert_called_once_with(
-            "alice@example.com", "scim_deactivated", metadata={"via": "scim"}
+            "alice@example.com",
+            "scim_deactivated",
+            metadata={"via": "scim"},
+            actor_id="system:scim",
+            target_id="alice@example.com",
         )
 
     def test_delete_already_inactive_has_no_side_effects(self, client, scim_settings, scim_mocks):

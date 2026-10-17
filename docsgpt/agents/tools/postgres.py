@@ -72,9 +72,13 @@ class PostgresTool(Tool):
             if conn:
                 conn.close()
 
-    def _get_schema(self, db_name):
+    def _get_schema(self, db_name=None):
         """
         Retrieves the schema of the PostgreSQL database using a connection string.
+
+        The database is the one the connection string names. ``db_name`` is
+        accepted and ignored: tools saved before it was dropped from the
+        schema still ask the model for it.
         """
         conn = None
         try:
@@ -136,7 +140,12 @@ class PostgresTool(Tool):
         return [
             {
                 "name": "postgres_execute_sql",
-                "description": "Execute an SQL query against the PostgreSQL database and return the results. Use this tool to interact with the database, e.g., retrieve specific data or perform updates. Only SELECT queries will return data, other queries will return execution status.",
+                "access": "write",
+                "description": (
+                    "Execute an SQL query against the PostgreSQL database and return the results. "
+                    "Use this tool to interact with the database, e.g., retrieve specific data or perform updates. "
+                    "Only SELECT queries will return data, other queries will return execution status."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -151,16 +160,15 @@ class PostgresTool(Tool):
             },
             {
                 "name": "postgres_get_schema",
-                "description": "Retrieve the schema of the PostgreSQL database, including tables and their columns. Use this to understand the database structure before executing queries. db_name is 'default' if not provided.",
+                "access": "read",
+                "description": (
+                    "Retrieve the schema of the PostgreSQL database, including tables and their columns. "
+                    "Use this to understand the database structure before executing queries."
+                ),
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "db_name": {
-                            "type": "string",
-                            "description": "The name of the database to retrieve the schema for.",
-                        },
-                    },
-                    "required": ["db_name"],
+                    "properties": {},
+                    "required": [],
                     "additionalProperties": False,
                 },
             },

@@ -13,6 +13,23 @@ _PLATFORM_PARTIAL_PATH = (
 )
 _platform_partial_content: Optional[str] = None
 
+_CITATION_RULES_PATH = (
+    Path(__file__).resolve().parents[1] / "prompts" / "partials" / "citation_rules.txt"
+)
+_citation_rules: Optional[str] = None
+
+
+def citation_rules() -> str:
+    """The Citations section a prompt adds with ``{{ source.citation_rules }}``.
+
+    Read once from ``prompts/partials/citation_rules.txt``: the built-in
+    prompts and a template prompt that opts in share the one text.
+    """
+    global _citation_rules
+    if _citation_rules is None:
+        _citation_rules = _CITATION_RULES_PATH.read_text(encoding="utf-8").strip()
+    return _citation_rules
+
 
 class NamespaceBuilder(ABC):
     """Base class for building template context namespaces"""
@@ -27,6 +44,13 @@ class NamespaceBuilder(ABC):
     def namespace_name(self) -> str:
         """Name of this namespace for template access"""
         pass
+
+
+def _background_jobs_enabled() -> bool:
+    """Whether slow tool calls can become background jobs (gates the prompt's long-running-work section)."""
+    from docsgpt.core.settings import settings
+
+    return bool(settings.BACKGROUND_JOBS_ENABLED)
 
 
 class SystemNamespace(NamespaceBuilder):
@@ -64,6 +88,8 @@ class SystemNamespace(NamespaceBuilder):
             "user_id": user_id,
             "api_base_url": api_base_url,
             "platform": platform,
+            # Slow tool calls become background jobs that resume the conversation.
+            "background_jobs": _background_jobs_enabled(),
             # Operator-authored persona, injected as a VALUE: braces inside it
             # are inert, so a custom prompt can never break the skeleton or
             # reach the template sandbox.
@@ -148,7 +174,11 @@ class SourceNamespace(NamespaceBuilder):
         return "source"
 
     def build(
-        self, docs: Optional[list] = None, docs_together: Optional[str] = None, **kwargs
+        self,
+        docs: Optional[list] = None,
+        docs_together: Optional[str] = None,
+        sources_attached: bool = False,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Build source context from RAG retrieval results.
@@ -156,11 +186,18 @@ class SourceNamespace(NamespaceBuilder):
         Args:
             docs: List of retrieved documents
             docs_together: Concatenated document content (for backward compatibility)
+            sources_attached: Whether the turn has sources, searched up front
+                or by a search tool. Only then are ``attached`` and
+                ``citation_rules`` set; absent, they render empty.
 
         Returns:
             Dictionary with source variables
         """
         context = {}
+
+        if sources_attached:
+            context["attached"] = True
+            context["citation_rules"] = citation_rules()
 
         if docs:
             context["documents"] = docs

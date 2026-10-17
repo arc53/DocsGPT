@@ -45,8 +45,10 @@ COPY docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requireme
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
+# http-ece (pulled in by pywebpush for Web Push) is pure Python and has only ever shipped
+# an sdist, so it is the one package allowed to build from source.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --only-binary=:all: -r requirements.txt
+    pip install --no-cache-dir --only-binary=:all: --no-binary=http-ece -r requirements.txt
 
 # Optional extras. Each requirements-<extra>.txt is exported from the same
 # lock as requirements.txt, so installing it on top only adds the extra's
@@ -108,9 +110,10 @@ WORKDIR /app
 # The process user owns /app so the model prefetch below can run as it: an
 # unprivileged prefetch writes the model files with the right owner up front,
 # instead of a trailing chown -R that rewrites every model file into a second
-# layer.
-RUN groupadd -r appuser && \
-    useradd -r -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser && \
+# layer. The ids are fixed (999, what `-r` picked before) so a Kubernetes
+# volume can be made writable with fsGroup (the decider's model cache).
+RUN groupadd -r -g 999 appuser && \
+    useradd -r -u 999 -g appuser -d /app -s /sbin/nologin -c "Docker image user" appuser && \
     chown appuser:appuser /app && \
     install -d -o appuser -g appuser /app/models /app/docsgpt
 

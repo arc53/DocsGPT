@@ -29,6 +29,9 @@ def _make_llm(monkeypatch, capabilities=None, store_responses=False):
             AZURE_DEPLOYMENT_NAME="dep",
             OPENAI_RESPONSES_STORE=store_responses,
             OPENAI_REASONING_SUMMARY="auto",
+            OPENAI_RESPONSES_TRUNCATION_AUTO=False,
+            OPENAI_PROMPT_CACHE_KEY=False,
+            OPENAI_PROMPT_CACHE_RETENTION=None,
         ),
     )
     from docsgpt.llm.openai import OpenAILLM

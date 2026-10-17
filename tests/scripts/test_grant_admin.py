@@ -1,4 +1,4 @@
-"""Tests for scripts/grant_admin.py orchestration (grant/revoke/list/exit codes).
+"""Tests for ``docsgpt grant-admin`` (docsgpt/scripts/grant_admin.py) orchestration (grant/revoke/list/exit codes).
 
 Drives ``grant_admin.main(argv)`` against the ephemeral ``pg_conn`` by
 redirecting the script's ``db_session`` / ``db_readonly`` to yield that
@@ -10,23 +10,14 @@ script's own decision logic (audit-gating, manual-only revoke, exit codes).
 
 from __future__ import annotations
 
-import sys
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 
-# Project root on sys.path so ``scripts`` is importable.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from scripts import grant_admin  # noqa: E402
-from docsgpt.storage.db.repositories.auth_events import (  # noqa: E402
-    AuthEventsRepository,
-)
-from docsgpt.storage.db.repositories.user_roles import (  # noqa: E402
-    UserRolesRepository,
-)
-from docsgpt.storage.db.repositories.users import UsersRepository  # noqa: E402
+from docsgpt.scripts import grant_admin
+from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 @pytest.fixture
@@ -45,6 +36,11 @@ def _audit_count(conn, user_id: str, event: str) -> int:
     return sum(1 for r in rows if r["event"] == event)
 
 
+def _audit_actors(conn, user_id: str, event: str) -> list:
+    rows = AuthEventsRepository(conn).list_recent(user_id, limit=100)
+    return [r["actor_id"] for r in rows if r["event"] == event]
+
+
 class TestGrant:
     def test_missing_user_without_force_returns_1_and_writes_nothing(self, patched_db):
         assert grant_admin.main(["ghost"]) == 1
@@ -61,6 +57,10 @@ class TestGrant:
         assert grant_admin.main(["bob"]) == 0
         assert UserRolesRepository(patched_db).role_names_for("bob") == ["admin"]
 
+    def test_grant_audit_names_the_cli_as_actor(self, patched_db):
+        assert grant_admin.main(["alice", "--force"]) == 0
+        assert _audit_actors(patched_db, "alice", "role_granted") == ["cli"]
+
     def test_idempotent_grant_does_not_double_audit(self, patched_db):
         assert grant_admin.main(["alice", "--force"]) == 0
         assert grant_admin.main(["alice", "--force"]) == 0
@@ -75,6 +75,11 @@ class TestRevoke:
         assert grant_admin.main(["alice", "--revoke"]) == 0
         assert {r["source"] for r in repo.list_for("alice")} == {"oidc_group"}
         assert _audit_count(patched_db, "alice", "role_revoked") == 1
+
+    def test_revoke_audit_names_the_cli_as_actor(self, patched_db):
+        UserRolesRepository(patched_db).grant("alice", source="manual")
+        assert grant_admin.main(["alice", "--revoke"]) == 0
+        assert _audit_actors(patched_db, "alice", "role_revoked") == ["cli"]
 
     def test_revoke_without_grant_returns_0_and_no_audit(self, patched_db):
         assert grant_admin.main(["nobody", "--revoke"]) == 0

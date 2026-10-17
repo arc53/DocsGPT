@@ -2389,7 +2389,7 @@ class TestAppJWTLogic:
 
     def test_simple_jwt_token_encode_decode(self):
         """Cover lines 62-64: JWT encode/decode for simple_jwt mode."""
-        from jose import jwt
+        import jwt
 
         payload = {"sub": "local"}
         secret = "test_secret_key"
@@ -2401,7 +2401,7 @@ class TestAppJWTLogic:
     def test_session_jwt_token_generation(self):
         """Cover lines 91-96: session_jwt token generation logic."""
         import uuid
-        from jose import jwt
+        import jwt
 
         new_user_id = str(uuid.uuid4())
         secret = "test_secret"

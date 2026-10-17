@@ -533,6 +533,32 @@ class TestRawGen:
         result = llm._raw_gen(llm, model="gemini", messages=msgs, tools=tools)
         assert hasattr(result, "text")
 
+    def test_a_blocked_response_raises_a_content_refusal(self, llm, monkeypatch):
+        """google-genai returns ``text=None`` for a blocked prompt; callers get the reason, not None."""
+        from docsgpt.llm.google_ai import ContentBlockedError
+        from docsgpt.monitors.judge import is_content_refusal
+
+        blocked = types.SimpleNamespace(
+            text=None, prompt_feedback=types.SimpleNamespace(block_reason=types.SimpleNamespace(name="SAFETY")),
+            candidates=[],
+        )
+        monkeypatch.setattr(llm.client.models, "generate_content", lambda **kw: blocked)
+        with pytest.raises(ContentBlockedError) as caught:
+            llm._raw_gen(llm, model="gemini", messages=[{"role": "user", "content": "hi"}])
+        assert caught.value.reason == "SAFETY" and is_content_refusal(caught.value)
+
+        stopped = types.SimpleNamespace(
+            text=None, prompt_feedback=None,
+            candidates=[types.SimpleNamespace(finish_reason=types.SimpleNamespace(name="PROHIBITED_CONTENT"))],
+        )
+        monkeypatch.setattr(llm.client.models, "generate_content", lambda **kw: stopped)
+        with pytest.raises(ContentBlockedError):
+            llm._raw_gen(llm, model="gemini", messages=[{"role": "user", "content": "hi"}])
+
+        empty = types.SimpleNamespace(text=None, prompt_feedback=None, candidates=[])
+        monkeypatch.setattr(llm.client.models, "generate_content", lambda **kw: empty)
+        assert llm._raw_gen(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]) is None
+
     def test_with_response_schema(self, llm):
         msgs = [{"role": "user", "content": "hi"}]
         llm._raw_gen(

@@ -333,6 +333,22 @@ class TestDefaultToolsForManagement:
         assert by_name["memory"]["status"] is True
 
 
+@pytest.mark.unit
+class TestServerAttachedTools:
+    def test_check_job_is_never_a_listed_or_toggled_default(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        assert "check_job" not in settings.DEFAULT_CHAT_TOOLS
+        # An operator's older list that still names it changes nothing.
+        monkeypatch.setattr(settings, "DEFAULT_CHAT_TOOLS", ["memory", "check_job", "monitor"])
+        assert "check_job" not in default_tools.loaded_default_tools()
+        assert "check_job" not in {r["name"] for r in default_tools.default_tools_for_management(None)}
+        assert "check_job" not in {r["name"] for r in default_tools.synthesized_default_tools(None)}
+        assert "monitor" in {r["name"] for r in default_tools.default_tools_for_management(None)}
+        assert default_tools.is_server_attached_tool_id(default_tools.default_tool_id("check_job"))
+        assert not default_tools.is_server_attached_tool_id(default_tools.default_tool_id("monitor"))
+
+
 # ---------------------------------------------------------------------------
 # resolve_tool_by_id
 # ---------------------------------------------------------------------------
@@ -502,6 +518,9 @@ class TestFkBoundToolsIsInSync:
         "notes": "notes",
         "todos": "todo_list",
     }
+    # FK-bound tables that are not a tool's storage: per-user settings keyed
+    # by a tool row, never written by a running tool.
+    _NOT_TOOL_STORAGE = {"user_tool_preferences"}
 
     def test_fk_bound_tools_matches_metadata(self):
         from docsgpt.storage.db.models import metadata
@@ -509,7 +528,7 @@ class TestFkBoundToolsIsInSync:
         fk_bound_tables = set()
         for tbl in metadata.tables.values():
             tool_id_col = tbl.columns.get("tool_id")
-            if tool_id_col is None:
+            if tool_id_col is None or tbl.name in self._NOT_TOOL_STORAGE:
                 continue
             for fk in tool_id_col.foreign_keys:
                 if fk.target_fullname == "user_tools.id":

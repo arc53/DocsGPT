@@ -5,6 +5,12 @@ export type ArtifactChip = {
   id: string;
   ref?: string;
   label: string;
+  /** The artifact's title, when its tool reported one. */
+  title?: string;
+  /** The file's name; unset for a note or todo. */
+  filename?: string;
+  /** The version the latest call produced. */
+  version?: number;
   toolName: string;
   callId: string;
 };
@@ -25,12 +31,22 @@ export function formatToolName(toolName: string | undefined): string {
 
 /**
  * One entry per artifact, not per tool call: a single call (``run_code``) can
- * write several files, and only the first was reachable before.
+ * write several files, and only the first was reachable before. An artifact
+ * that several calls saved (each save adds a version) gets one chip, placed
+ * where it first appeared and described by the latest call.
  *
  * Lives here rather than inside ``ConversationBubble`` so the regression test
  * exercises this function instead of a copy of it.
  */
 export function deriveArtifactChips(
+  toolCalls: ToolCallsType[] | undefined,
+): ArtifactChip[] {
+  const chips = new Map<string, ArtifactChip>();
+  for (const chip of collectArtifactChips(toolCalls)) chips.set(chip.id, chip);
+  return [...chips.values()];
+}
+
+function collectArtifactChips(
   toolCalls: ToolCallsType[] | undefined,
 ): ArtifactChip[] {
   return (toolCalls ?? [])
@@ -48,6 +64,13 @@ export function deriveArtifactChips(
         // it ("Code Executor") tells them nothing about which file this is.
         label:
           artifact.filename || formatToolName(toolCall.tool_name) || 'Artifact',
+        title:
+          'title' in artifact && artifact.title ? artifact.title : undefined,
+        filename: artifact.filename || undefined,
+        version:
+          'version' in artifact && typeof artifact.version === 'number'
+            ? artifact.version
+            : undefined,
         toolName: toolCall.tool_name,
         callId: toolCall.call_id,
       }));

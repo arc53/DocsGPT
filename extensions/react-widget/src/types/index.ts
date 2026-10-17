@@ -1,38 +1,8 @@
 import 'styled-components';
+import type { WidgetTheme } from '../components/tokens';
 
 declare module 'styled-components' {
-  export interface DefaultTheme {
-    bg: string;
-    text: string;
-    primary: {
-      text: string;
-      bg: string;
-    };
-    secondary: {
-      text: string;
-      bg: string;
-    };
-    /** Present only in SearchBar theme */
-    name?: string;
-    /** Gradient stops for the swept status text. */
-    shimmer?: {
-      base: string;
-      highlight: string;
-    };
-    accent?: {
-      base: string;
-      hover: string;
-      strong: string;
-      contrast: string;
-      soft: string;
-      link: string;
-    };
-    hairline?: string;
-    danger?: {
-      text: string;
-      soft: string;
-      border: string;
-    };
+  export interface DefaultTheme extends WidgetTheme {
     /** Present only in DocsGPTWidget theme (always provided when these styled components render) */
     dimensions?: {
       size: string;
@@ -62,7 +32,7 @@ export interface Attachment {
   progress: number;
   /** Server-side id; what `/stream` expects in its `attachments` array. */
   attachmentId?: string;
-  /** Why it failed, when there is something worth showing. */
+  /** User-facing failure reason, if any. */
   error?: string;
 }
 
@@ -91,10 +61,20 @@ export interface Query {
   attachments?: SentAttachment[];
 }
 
+/**
+ * The credit line under the chat and the search results. `true` (the
+ * default) shows "Powered by DocsGPT", `false` hides it, and an object
+ * replaces it, e.g. `{ label: 'Powered by Acme', href: 'https://acme.com' }`.
+ */
+export type PoweredBy = boolean | { label: string; href?: string };
+
 export interface WidgetProps {
   apiHost?: string;
   apiKey?: string;
+  /** Image in the header. Without one, a person on the brand circle. */
   avatar?: string;
+  /** Image on the empty-state card. Without one, the DocsGPT mark. */
+  heroIcon?: string;
   title?: string;
   description?: string;
   heroTitle?: string;
@@ -120,19 +100,18 @@ export interface WidgetProps {
   defaultOpen?: boolean;
   /**
    * File extensions the composer accepts, e.g. `['.pdf', '.md', '.png']`.
-   * Attachments stay off until this is set, since every uploaded file is
-   * parsed and billed against the key owner's token budget. A leading dot is
-   * optional and matching is case-insensitive.
+   * Attachments are disabled while unset. A leading dot is optional and
+   * matching is case-insensitive.
    */
   allowedFileExtensions?: string[];
   /**
-   * Show the microphone that dictates into the input via the browser's Web
-   * Speech API. Off by default: outside Chromium builds with on-device
-   * recognition the browser forwards audio to its vendor's speech service.
-   * The button hides itself where the API is missing or the origin is
-   * insecure.
+   * Show a microphone that dictates into the input via the browser's Web
+   * Speech API. Hidden where the API is unavailable or the origin is
+   * insecure. Outside Chromium builds with on-device recognition, audio is
+   * sent to the browser vendor's speech service.
    */
   showMicButton?: boolean;
+  poweredBy?: PoweredBy;
 }
 export interface WidgetCoreProps extends WidgetProps {
   widgetRef?: React.RefObject<HTMLDivElement> | null;
@@ -141,13 +120,27 @@ export interface WidgetCoreProps extends WidgetProps {
   prefilledQuery?: string;
 }
 
-export interface SearchBarProps {
+/**
+ * Both props are forwarded to the chat opened from "Ask the AI";
+ * `showMicButton` also adds a microphone to the search field.
+ */
+export interface SearchBarProps extends Pick<
+  WidgetProps,
+  'allowedFileExtensions' | 'showMicButton' | 'avatar' | 'poweredBy'
+> {
   apiHost?: string;
   apiKey?: string;
   theme?: THEME;
   placeholder?: string;
   width?: string;
   buttonText?: string;
+  /** `pill` (default) or `rounded`, the app's 8px field corners. */
+  shape?: 'pill' | 'rounded';
+  /**
+   * `modal` (default) opens a search dialog from a button; `dropdown` is a
+   * field you type into, with the results in a panel under it.
+   */
+  variant?: 'modal' | 'dropdown';
 }
 
 export interface Result {

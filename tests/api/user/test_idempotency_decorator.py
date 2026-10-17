@@ -336,6 +336,79 @@ class TestLiveLeaseDefersConcurrentRun:
 
 
 @pytest.mark.unit
+class TestLeaseDeferralGivesUpQuietly:
+    """Deferral is bookkeeping, not failure.
+
+    A task that outruns the broker's visibility timeout is redelivered while
+    the first worker is still running it. The lease keeps the duplicate from
+    doing the work, but the duplicate kept re-queueing itself until celery
+    exhausted ``LEASE_RETRY_MAX`` and raised ``MaxRetriesExceededError``, so a
+    healthy long task logged a task failure. The duplicate should stand down
+    instead and leave the run to the worker that holds the lease.
+    """
+
+    def _hold_lease(self, pg_conn, key):
+        from docsgpt.storage.db.repositories.idempotency import (
+            IdempotencyRepository,
+        )
+
+        IdempotencyRepository(pg_conn).try_claim_lease(
+            key=key, task_name="thing",
+            task_id="t-worker-1", owner_id="worker-1",
+        )
+
+    def test_exhausted_retries_stand_down_without_recording_a_result(self, pg_conn):
+        from celery.exceptions import Ignore, MaxRetriesExceededError
+
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        self._hold_lease(pg_conn, "k-long-run")
+        invocations = {"count": 0}
+
+        @with_idempotency(task_name="thing")
+        def task(self, idempotency_key=None):
+            invocations["count"] += 1
+            return {"ran": True}
+
+        # Celery raises this from ``self.retry`` once max_retries is hit.
+        worker2 = _fake_celery_self("t-worker-2")
+        worker2.retry.side_effect = MaxRetriesExceededError("out of retries")
+
+        # Ignore rather than a return value: a redelivery reuses the original
+        # task id, so returning would mark the id the client is polling
+        # SUCCESS — /api/task_status hands that straight to the UI, which
+        # would announce a finished (empty) build while the holder is still
+        # working. Ignore leaves the id's state to the holder.
+        with _patch_decorator_db(pg_conn), pytest.raises(Ignore):
+            task(worker2, idempotency_key="k-long-run")
+
+        # The lease holder is still running it; the duplicate did not.
+        assert invocations["count"] == 0
+        # The holder's row is untouched — not failed, not completed.
+        row = _row_for(pg_conn, "k-long-run")
+        assert row[2] == "pending"
+
+    def test_a_normal_retry_still_propagates(self, pg_conn):
+        """Only exhaustion stands down; the first deferrals must re-queue."""
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        self._hold_lease(pg_conn, "k-busy-once")
+
+        @with_idempotency(task_name="thing")
+        def task(self, idempotency_key=None):
+            return {"ran": True}
+
+        class _RetrySignal(Exception):
+            pass
+
+        worker2 = _fake_celery_self("t-worker-2")
+        worker2.retry.side_effect = _RetrySignal("retry scheduled")
+
+        with _patch_decorator_db(pg_conn), pytest.raises(_RetrySignal):
+            task(worker2, idempotency_key="k-busy-once")
+
+
+@pytest.mark.unit
 class TestExceptionPathReleasesLease:
     """When ``fn`` raises, the lease is dropped so the next attempt
     doesn't have to wait the full TTL before re-claiming.

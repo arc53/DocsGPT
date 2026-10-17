@@ -212,6 +212,25 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     guardrails: GuardrailsConfig = GuardrailsConfig()
+    # Write actions on credentials the owner holds (a connected account, a
+    # saved API tool key, a stored secret, an MCP sign-in) that someone who
+    # can't approve for the owner may run: an API-key or widget caller, a
+    # public-link user, and schedules either of them set. Any other such
+    # write is refused for them. ``tool_id:action``.
+    api_write_allowlist: List[str] = []
+
+    @field_validator("api_write_allowlist")
+    @classmethod
+    def _check_allowlist(cls, value: List[str]) -> List[str]:
+        if len(value) > 200:
+            raise ValueError("api_write_allowlist accepts at most 200 actions")
+        cleaned = []
+        for entry in value:
+            tool_id, _, action = str(entry).partition(":")
+            if not tool_id.strip() or not action.strip():
+                raise ValueError("api_write_allowlist entries must be 'tool_id:action'")
+            cleaned.append(f"{tool_id.strip()}:{action.strip()}")
+        return sorted(set(cleaned))
 
     @classmethod
     def parse(cls, raw: Optional[dict]) -> "AgentConfig":
@@ -221,4 +240,5 @@ class AgentConfig(BaseModel):
         try:
             return cls.model_validate(raw)
         except Exception:
+            # A bad allowlist falls back to none: the safe side.
             return cls(guardrails=GuardrailsConfig.parse(raw.get("guardrails")))

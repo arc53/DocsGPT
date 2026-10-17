@@ -1,0 +1,115 @@
+---
+title: Add Knowledge
+description: Add files, web pages, GitHub repositories, wikis and synced services to Knowledge, then use them in chats and agents.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Add Knowledge
+
+**Knowledge** is the content DocsGPT searches and cites when it answers: files you upload, web pages, GitHub repositories, wikis, and content synced from services you connect. When you add a source, DocsGPT parses it, splits it into chunks and embeds them into the vector store. At question time it retrieves the most relevant chunks and passes them to the model with the question. The model itself is not changed.
+
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/adding-knowledge-poster.png"
+  aria-label="Screen recording: adding a PDF and a web page to Knowledge in DocsGPT"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/adding-knowledge.mp4" type="video/mp4" />
+</video>
+
+*The recording opens **Settings > Knowledge** and clicks **Add knowledge**. It picks **Upload File**, selects a PDF product handbook, names it "Espresso One handbook" and clicks **Add to Knowledge**. A progress panel shows the upload, and the handbook appears on the Knowledge page. It then adds a single web page with **Link**, named "DocsGPT quickstart", and both sources are listed when indexing finishes.*
+
+## Open the Add knowledge dialog
+
+<Steps>
+### Open Knowledge
+
+Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can also open the composer's **Knowledge** menu and choose **Upload new**.
+
+### Pick a source type
+
+| Option | What it adds |
+| --- | --- |
+| **Upload File** | Files from your computer, including `.zip` archives. See [Upload files](#upload-files). |
+| **Link** | One web page, by URL. |
+| **Crawler** | A website: starts at a URL and follows links on the same host, up to 10 pages. |
+| **GitHub** | A public repository, by its URL. Private repositories go through your GitHub connection. |
+| **New wiki** | An editable Markdown wiki that agents can read and rewrite. See [Wiki sources](/Sources/Wiki-sources). |
+| **Connect your data** | Content synced from a connected service, such as Google Drive, SharePoint, Confluence or Amazon S3. See [Connectors](/Sources/Connectors). This tile shows only when the instance has a connector that syncs. |
+
+### Name the source and add it
+
+Every source needs a **Name**. It is how the source appears on the Knowledge page and in the knowledge pickers. For an upload, the name starts as the first file's name.
+
+**Advanced settings** (not shown for a wiki) holds the chunking and retrieval options for this source. The defaults suit most content; see [Per-source configuration](/Sources/Per-source-configuration) for what each option does.
+
+Click **Add to Knowledge** (**Create** for a wiki). The dialog closes, and a panel in the corner shows the upload, parsing and embedding progress. The source appears on the Knowledge page when indexing finishes. If indexing fails, the source's menu offers **Reingest**.
+</Steps>
+
+## Upload files
+
+**Upload File** accepts one or more files. Files you pick together become one source.
+
+The upload dialog accepts these types:
+
+- **Documents:** `.pdf`, `.docx`, `.doc`, `.docm`, `.odt`, `.rtf`, `.txt`, `.md`, `.rst`, `.html`, `.xhtml`, `.epub`, `.json`
+- **Spreadsheets:** `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.csv`
+- **Presentations:** `.pptx`, `.ppt`, `.pptm`, `.pps`, `.ppsx`, `.ppsm`, `.pot`, `.odp`
+- **Images:** `.png`, `.jpg`, `.jpeg`. Their text is read with OCR when OCR is enabled (`OCR_ENABLED`, off by default). `PARSE_IMAGE_REMOTE` instead uploads each image to the hosted `https://llm.arc53.com/doc2md` service, so if images must stay on your servers, use `OCR_ENABLED`. With both off, an image adds no text. See [Document parsing and OCR](/Sources/ocr).
+- **Audio:** `.wav`, `.mp3`, `.m4a`, `.ogg`, `.webm`. Audio is transcribed with speech-to-text, and the transcript is indexed.
+- **Archives:** `.zip`
+
+<Callout type="info" emoji="ℹ️">
+The upload dialog takes files **up to 25 MB each**. It lists larger files, and files of other types, as not added. Uploads through the API are capped by the server instead: `UPLOAD_MAX_FILE_BYTES` (100 MB per file by default), `UPLOAD_MAX_REQUEST_BYTES` (256 MB per request) and, for audio, `STT_MAX_FILE_SIZE_MB` (50 MB).
+</Callout>
+
+**Zip archives** are extracted on the server, and every supported file inside is indexed, including archives nested up to three levels deep. Files of other types are skipped. This is also how to upload `.mdx` files, which the dialog doesn't list. The server rejects an upload whose archives expand past `UPLOAD_MAX_ARCHIVE_BYTES` (250 MB), hold more than `UPLOAD_MAX_ARCHIVE_FILES` (10,000) files, or nest deeper than `UPLOAD_MAX_ARCHIVE_DEPTH` (3). The size and file-count limits apply to all the archives in one upload combined. Office and e-book files (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` and similar) are zip containers internally, but DocsGPT parses them as documents and does not unpack them.
+
+Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [Document parsing and OCR](/Sources/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
+
+## Add a web page or a website
+
+- **Link** reads the one page at the URL.
+- **Crawler** starts at the URL and follows links on the same host until it has tried 10 pages. Pages that fail to load count toward the 10.
+
+Both fetch pages from the DocsGPT server, not from your browser. Pages behind a sign-in can't be read, and URLs that resolve to private or internal addresses are refused.
+
+## Add a GitHub repository
+
+Paste a public repository URL, such as `https://github.com/arc53/DocsGPT`. An operator can set `GITHUB_ACCESS_TOKEN` to raise GitHub's rate limit for these public reads. That token is never used for private repositories.
+
+For a private repository, use **Connect GitHub** in the form, or **Pick a repository** if you are already connected. These buttons appear when the GitHub connector is set up on the instance. They hand over to the GitHub connection, which lists your account's repositories. See [GitHub](/Sources/Connectors/github).
+
+## Sync content from connected services
+
+**Connect your data** lists the services on this instance that can sync into Knowledge. Pick one, sign in, then choose which files or folders to sync and how often. You can also start from **Connect a service** on an empty Knowledge page, or from **Settings > Connectors**. Operators must configure each connector first; see [Connectors](/Sources/Connectors).
+
+## Manage your knowledge
+
+Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
+
+- **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks.
+- **Sync: Never / Daily / Weekly / Monthly** and **Sync now** appear for sources that can be fetched again: links, crawls, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
+- **Source settings** changes chunking and retrieval. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
+- **Test retrieval** runs a question against the source and shows which chunks come back.
+- **Convert to wiki** turns the source into editable wiki pages. This can't be undone.
+- **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
+- **Delete** removes the source and its index.
+
+To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
+
+## Use knowledge in chats and agents
+
+- **In a chat without an agent**, click **Knowledge** in the composer and select one or more sources. Answers draw on the chunks retrieved from them and cite them. The menu's footer has **Go to Knowledge**, **Connect more** (the connectors that sync into Knowledge) and **Upload new**.
+- **In an agent**, pick sources in the agent builder's **Knowledge** field (**Select knowledge**). Knowledge is optional: without it, the agent answers from the model and its tools. When you chat with an agent, the composer hides the Knowledge button because the agent uses its own. See [Agents](/Agents/basics).
+
+**Attach** in the composer is different. It adds a file to the current conversation only. To reuse a file across chats and agents, add it to Knowledge instead.

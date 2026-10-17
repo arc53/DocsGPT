@@ -143,6 +143,13 @@ class TestMilvusStore:
         ):
             assert populated.get_chunks() == []
 
+    def test_chunk_lookup_raises_when_client_raises(self, populated):
+        # A citation that is only unreachable must not read as "gone".
+        with patch.object(
+            populated._client, "query", side_effect=RuntimeError("milvus down")
+        ), pytest.raises(RuntimeError):
+            populated.get_chunk_by_key("0" * 32)
+
     def test_save_local_is_noop(self, store):
         assert store.save_local() is None
 

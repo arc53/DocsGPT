@@ -276,6 +276,41 @@ class TestClassicAgentSearchExposure:
         assert INTERNAL_TOOL_ID in captured["tools_dict"]
         assert captured["tools_dict"][INTERNAL_TOOL_ID]["name"] == "internal_search"
 
+    def test_citation_registry_starts_from_the_documents_the_model_saw(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        _no_tools,
+        _no_dir_structure,
+        log_context,
+    ):
+        # ``_build_messages`` sheds the tail to fit the budget; a registry
+        # taken before that would number the first tool hit one too high.
+        mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
+        mock_llm_handler.process_message_flow = Mock(side_effect=lambda *a, **k: iter(["ok"]))
+        agent = ClassicAgent(
+            retriever_config={"source": {"active_docs": ["b"]}}, **agent_base_params
+        )
+        agent.retrieved_docs = [
+            {"text": t, "title": t, "source": "a"} for t in ("A", "B", "C")
+        ]
+        original_build = agent._build_messages
+
+        def _shedding_build(prompt, query):
+            messages = original_build(prompt, query)
+            agent.retrieved_docs = agent.retrieved_docs[:2]
+            return messages
+
+        agent._build_messages = _shedding_build
+
+        list(agent._gen_inner("q", log_context))
+
+        registry = agent.tool_executor.citation_registry
+        assert [d["title"] for d in registry] == ["A", "B"]
+
     def test_collect_internal_sources_surfaces_tool_docs(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
@@ -312,6 +347,26 @@ class TestClassicAgentSearchExposure:
             "Prefetched Doc",
             "Tool Doc",
         ]
+
+    def test_collect_internal_sources_includes_graph_pages(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Pages the graph tool read carry the answer as much as search hits do,
+        # so they are cited the same way.
+        from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID
+
+        retriever_config = {"source": {"active_docs": ["b"]}}
+        agent = ClassicAgent(retriever_config=retriever_config, **agent_base_params)
+        search = Mock()
+        search.retrieved_docs = [{"text": "Found", "title": "Search Doc", "source": "b"}]
+        graph = Mock()
+        graph.retrieved_docs = [{"text": "Quill is a store.", "title": "quill.md", "source": "b"}]
+        user = agent.user or ""
+        agent.tool_executor._loaded_tools[f"internal_search:{INTERNAL_TOOL_ID}:{user}"] = search
+        agent.tool_executor._loaded_tools[f"graph_search:{GRAPH_TOOL_ID}:{user}"] = graph
+
+        agent._collect_internal_sources()
+        assert [d["title"] for d in agent.retrieved_docs] == ["Search Doc", "quill.md"]
 
     def test_collect_internal_sources_dedupes(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator

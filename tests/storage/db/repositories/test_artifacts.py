@@ -157,6 +157,82 @@ class TestGetArtifactInParent:
             repo.get_artifact_in_parent(created["id"])
 
 
+class TestFindByCurrentFilename:
+    """The lookup capture uses to save a re-written file as a new version of its artifact."""
+
+    @staticmethod
+    def _make(repo, filename, *, conv=None, run=None, tool="code_executor", user="user-1"):
+        return repo.create_artifact(
+            user, "document", conversation_id=conv, workflow_run_id=run, filename=filename,
+            produced_by={"tool": tool, "action": "run_code"},
+        )
+
+    @staticmethod
+    def _find(repo, filename, *, conv=None, run=None, tool="code_executor", user="user-1"):
+        return repo.find_by_current_filename(
+            filename, user_id=user, conversation_id=conv, workflow_run_id=run, produced_by_tool=tool
+        )
+
+    def test_finds_the_newest_same_name_artifact_from_the_same_tool(self, pg_conn):
+        # Rows made in one transaction share now(), so ref_seq has to break the tie.
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        self._make(repo, "review.docx", conv=conv)
+        newest = self._make(repo, "review.docx", conv=conv)
+        found = self._find(repo, "review.docx", conv=conv)
+        assert found is not None and str(found["id"]) == str(newest["id"])
+
+    def test_a_later_created_at_wins_over_ref_seq(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        older = self._make(repo, "review.docx", conv=conv)
+        newer = self._make(repo, "review.docx", conv=conv)
+        pg_conn.execute(
+            text("UPDATE artifacts SET created_at = now() + interval '1 second' WHERE id = CAST(:id AS uuid)"),
+            {"id": str(older["id"])},
+        )
+        found = self._find(repo, "review.docx", conv=conv)
+        assert str(found["id"]) == str(older["id"]) != str(newer["id"])
+
+    def test_ignores_another_parent_tool_name_or_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        self._make(repo, "review.docx", conv=_conversation_id())
+        self._make(repo, "review.docx", conv=conv, tool="artifact_generator")
+        self._make(repo, "review.docx", conv=conv, user="someone-else")
+        self._make(repo, "other.docx", conv=conv)
+        assert self._find(repo, "review.docx", conv=conv) is None
+
+    def test_matches_only_the_current_version(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        created = self._make(repo, "draft.docx", conv=conv)
+        repo.append_version(created["id"], filename="final.docx", produced_by={"tool": "code_executor"})
+        assert self._find(repo, "draft.docx", conv=conv) is None
+        found = self._find(repo, "final.docx", conv=conv)
+        assert found is not None and found["current_version"] == 2
+
+    def test_the_current_versions_tool_decides(self, pg_conn):
+        # An artifact another tool edited last is that tool's file now.
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        created = self._make(repo, "deck.pptx", conv=conv)
+        repo.append_version(created["id"], filename="deck.pptx", produced_by={"tool": "artifact_generator"})
+        assert self._find(repo, "deck.pptx", conv=conv) is None
+
+    def test_workflow_run_parent(self, pg_conn):
+        repo = _repo(pg_conn)
+        run = str(uuid.uuid4())
+        made = self._make(repo, "out.csv", run=run)
+        found = self._find(repo, "out.csv", run=run)
+        assert str(found["id"]) == str(made["id"])
+        assert self._find(repo, "out.csv", conv=_conversation_id()) is None
+
+    def test_requires_a_parent(self, pg_conn):
+        with pytest.raises(ValueError):
+            self._find(_repo(pg_conn), "x.docx")
+
+
 class TestAppendVersion:
     def test_increments_current_version(self, pg_conn):
         repo = _repo(pg_conn)

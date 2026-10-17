@@ -41,6 +41,7 @@ import { authedRequest } from '../../helpers/api.js';
 import { newUserContext } from '../../helpers/auth.js';
 import { countRows, pg } from '../../helpers/db.js';
 import { resetDb } from '../../helpers/reset.js';
+import { conversationLink } from '../../helpers/sidebar.js';
 
 const API_URL = process.env.API_URL ?? 'http://127.0.0.1:7099';
 
@@ -236,13 +237,11 @@ test.describe('tier-a · chat turn save', () => {
       // ---- Reload rehydrates conversation in sidebar -----------------
       await page.reload();
       await expect(page.locator('#message-input')).toBeVisible();
-      // Conversation tiles use onClick handlers, not anchor hrefs (see
-      // Navigation.tsx:199 handleConversationClick). The resilient marker
-      // is that the conversations-container has at least one tile after
-      // reload — the exact title is LLM-generated and not stable.
-      await expect(
-        page.locator('.conversations-container > div').first(),
-      ).toBeVisible({ timeout: 15_000 });
+      // The conversation's sidebar link is back after reload. Match it by
+      // its /c/<id> href: the title is LLM-generated and not stable.
+      await expect(conversationLink(page, conv.id)).toBeVisible({
+        timeout: 15_000,
+      });
     } finally {
       await context.close();
     }

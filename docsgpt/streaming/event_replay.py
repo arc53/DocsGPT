@@ -8,7 +8,7 @@ format (``format_sse_event``), the ``message_events`` snapshot read
 (``_check_producer_liveness``), and the pub/sub envelope encode/decode.
 Keeping them here lets the async reader and the sync journal agree on the
 exact wire shape and dedup/terminal rules. See
-``docs/runbooks/sse-notifications.md``.
+``docs/content/Deploying/Troubleshooting/sse-notifications.mdx``.
 """
 
 from __future__ import annotations

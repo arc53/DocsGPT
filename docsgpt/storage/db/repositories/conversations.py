@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import conversations_table, conversation_messages_table
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
@@ -264,20 +265,48 @@ class ConversationsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def list_for_user(self, user_id: str, limit: int = 30) -> list[dict]:
+    def list_for_user(
+        self,
+        user_id: str,
+        limit: int = 30,
+        *,
+        before: Optional[datetime] = None,
+        before_id: Optional[str] = None,
+    ) -> list[dict]:
         """List a user's sidebar conversations, most recent first.
 
         Only ``visibility = 'listed'`` rows surface; agent/API/OpenAI-compat
-        traffic persists as ``'hidden'`` and is excluded.
+        traffic persists as ``'hidden'`` and is excluded. Rows are ordered
+        ``date DESC, id DESC`` so the order is total and a keyset cursor
+        never skips or repeats rows that share a timestamp.
+
+        Args:
+            user_id: Owner of the conversations.
+            limit: Maximum number of rows to return.
+            before: Keyset cursor ``date``; only applied together with
+                ``before_id``.
+            before_id: Keyset cursor ``id`` (a UUID string). With ``before``,
+                only rows where ``(date, id) < (before, before_id)`` are
+                returned.
+
+        Returns:
+            The matching conversation rows as dicts.
         """
+        params: dict = {"user_id": user_id, "limit": limit}
+        cursor_sql = ""
+        if before is not None and before_id is not None and looks_like_uuid(before_id):
+            cursor_sql = "AND (date, id) < (:before, CAST(:before_id AS uuid)) "
+            params["before"] = before
+            params["before_id"] = before_id
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
                 "WHERE user_id = :user_id "
                 "AND visibility = 'listed' "
-                "ORDER BY date DESC LIMIT :limit"
+                f"{cursor_sql}"
+                "ORDER BY date DESC, id DESC LIMIT :limit"
             ),
-            {"user_id": user_id, "limit": limit},
+            params,
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -305,17 +334,17 @@ class ConversationsRepository:
                 "  SELECT field AS match_field, txt AS match_text "
                 "  FROM ( "
                 "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
-                "    WHERE c.name ILIKE :pattern "
+                "    WHERE c.name ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'prompt'::text, m.prompt, 1 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.prompt ILIKE :pattern "
+                "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.response ILIKE :pattern "
+                "      AND m.response ILIKE :pattern ESCAPE '\\' "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
@@ -326,7 +355,7 @@ class ConversationsRepository:
             ),
             {
                 "user_id": user_id,
-                "pattern": f"%{query}%",
+                "pattern": f"%{like_escape(query)}%",
                 "limit": limit,
             },
         )
@@ -576,6 +605,18 @@ class ConversationsRepository:
 
         artifacts = ArtifactsRepository(self._conn)
         paths = artifacts.storage_paths_for_conversation(conversation_id)
+        # Traces linked to a message go with it (ON DELETE CASCADE). This
+        # takes the rest -- scheduled runs, stateless /v1 rounds, turns whose
+        # message was never reserved -- whose tool results and chunk previews
+        # the user expects gone with the conversation.
+        self._conn.execute(
+            text(
+                "DELETE FROM request_traces WHERE conversation_id = CAST(:id AS uuid) "
+                "AND EXISTS (SELECT 1 FROM conversations "
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id)"
+            ),
+            {"id": conversation_id, "user_id": user_id},
+        )
         result = self._conn.execute(
             text(
                 "DELETE FROM conversations "
@@ -597,6 +638,14 @@ class ConversationsRepository:
         artifacts = ArtifactsRepository(self._conn)
         paths = artifacts.storage_paths_for_user_conversations(user_id)
         artifacts.delete_for_user_conversations(user_id)
+        # See ``delete``: traces not linked to a message are removed explicitly.
+        self._conn.execute(
+            text(
+                "DELETE FROM request_traces WHERE conversation_id IN "
+                "(SELECT id FROM conversations WHERE user_id = :user_id)"
+            ),
+            {"user_id": user_id},
+        )
         result = self._conn.execute(
             text("DELETE FROM conversations WHERE user_id = :user_id"),
             {"user_id": user_id},
@@ -719,7 +768,9 @@ class ConversationsRepository:
         Uses ``SELECT ... FOR UPDATE`` to allocate the next position
         atomically. The caller must be inside a transaction.
 
-        Mirrors Mongo's ``$push`` on the ``queries`` array.
+        Mirrors Mongo's ``$push`` on the ``queries`` array. ``message["id"]``,
+        when given, is the new row's id (a turn that reserved its id while it
+        ran, such as a continuation).
         """
         # Lock the parent conversation row to serialize concurrent appends.
         self._conn.execute(
@@ -750,6 +801,8 @@ class ConversationsRepository:
             "model_id": message.get("model_id"),
             "message_metadata": message.get("metadata") or {},
         }
+        if message.get("id"):
+            values["id"] = str(message["id"])
         # Callers that know the turn failed (e.g. an agent that yielded a
         # terminal error) must be able to say so; without this the column
         # default silently made every appended row "complete".
@@ -1170,6 +1223,46 @@ class ConversationsRepository:
     def heartbeat_message(self, message_id: str) -> bool:
         """Stamp the heartbeat; True when an in-flight row was updated."""
         return self.heartbeat_message_state(message_id) is HeartbeatState.STAMPED
+
+    def patch_tool_call(self, message_id: str, job_id: str, patch: dict) -> bool:
+        """Merge ``patch`` into the message's tool-call entry for a background job.
+
+        A turn that handed a call off persisted its entry as running; when the
+        job finishes the entry takes the outcome, so a reload shows it. The
+        entry is matched by ``job_id``, which is unique, never by the call id,
+        which providers reuse.
+
+        Args:
+            message_id: The turn's message.
+            job_id: The job the entry carries.
+            patch: Keys to set on the entry.
+
+        Returns:
+            True when an entry was updated.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE conversation_messages SET tool_calls = (
+                    SELECT jsonb_agg(
+                        CASE WHEN elem->>'job_id' = :job_id THEN elem || CAST(:patch AS jsonb) ELSE elem END
+                        ORDER BY ord
+                    )
+                    FROM jsonb_array_elements(tool_calls) WITH ORDINALITY AS t(elem, ord)
+                )
+                WHERE id = CAST(:mid AS uuid)
+                  AND jsonb_typeof(tool_calls) = 'array'
+                  AND EXISTS (
+                      SELECT 1 FROM jsonb_array_elements(tool_calls) AS e(elem)
+                      WHERE e.elem->>'job_id' = :job_id
+                  )
+                """
+            ),
+            {"mid": message_id, "job_id": str(job_id), "patch": json.dumps(patch, cls=PGNativeJSONEncoder)},
+        )
+        return (result.rowcount or 0) > 0
 
     def confirm_executed_tool_calls(self, message_id: str) -> int:
         """Flip ``tool_call_attempts.status='executed' → 'confirmed'`` for the message."""

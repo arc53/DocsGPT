@@ -11,18 +11,12 @@ from typing import Any, Dict, List, Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.base import ScanContext
-from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
+from docsgpt.guardrails.config import AgentConfig, GuardrailControl, GuardrailsConfig
 from docsgpt.guardrails.engine import GuardrailEngine
-from docsgpt.guardrails.types import Action, StageDecision
+from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+from docsgpt.guardrails.types import ACTION_RANK, Action, Stage, StageDecision
 
 logger = logging.getLogger(__name__)
-
-# Higher wins when the floor and an agent disagree about the same control.
-_ACTION_RANK = {
-    Action.FLAG: 0,
-    Action.REDACT: 1,
-    Action.BLOCK: 2,
-}
 
 # Both modes scan every stage, so the merge is only about whether the floor
 # enforces.
@@ -38,7 +32,7 @@ def _merge_mode(agent_mode: str, floor_mode: str) -> str:
 
 def instance_floor() -> Optional[GuardrailsConfig]:
     """The operator-set minimum, or None when unset/invalid."""
-    raw = getattr(settings, "GUARDRAILS_FLOOR", None)
+    raw = settings.GUARDRAILS_FLOOR
     if not raw:
         return None
     try:
@@ -88,7 +82,7 @@ def merge_floor(agent: GuardrailsConfig, floor: Optional[GuardrailsConfig]) -> G
             continue
         existing.enabled = True
         existing.settings = dict(control.settings)
-        if _ACTION_RANK.get(existing.action, 0) < _ACTION_RANK.get(control.action, 0):
+        if ACTION_RANK.get(existing.action, 0) < ACTION_RANK.get(control.action, 0):
             existing.action = control.action
     merged.controls = list(by_key.values())
     return merged
@@ -102,12 +96,66 @@ def floor_keys() -> set:
     return {f"{c.check}:{c.stage.value}" for c in floor.controls}
 
 
+def _injection_input_mode() -> str:
+    """What ``GUARDRAILS_INJECTION_INPUT_MODE`` does now: ``off``, ``monitor`` or ``on``.
+
+    ``auto`` is ``monitor`` while the check's predicted time on this machine fits its budget, else ``off``.
+    """
+    mode = settings.GUARDRAILS_INJECTION_INPUT_MODE
+    if mode != "auto":
+        return mode
+    from docsgpt import decisions
+    from docsgpt.decisions.features import INJECTION_INPUT
+
+    return INJECTION_INPUT.auto_mode if decisions.auto_on(INJECTION_INPUT.name) else "off"
+
+
+def with_injection_input(config: GuardrailsConfig) -> GuardrailsConfig:
+    """Add the instance default's ``injection_model`` control on user input.
+
+    ``GUARDRAILS_INJECTION_INPUT_MODE`` gives every agent this control: ``monitor`` (and ``auto`` while it fits)
+    with the ``flag`` action, ``on`` with ``block``. An agent whose guardrails are off gets a config holding only
+    this control, in ``monitor_only``, so its own stored controls stay off; ``block`` therefore enforces only on
+    agents that already run ``scan_all``, since the agent's mode is never changed. An agent (or the floor) with an
+    ``injection_model`` input control of its own, enabled or not, keeps it instead.
+
+    Args:
+        config: The agent's config with the floor applied.
+
+    Returns:
+        ``config``, or a copy with the control added.
+    """
+    if settings.GUARDRAILS_INJECTION_INPUT_MODE == "off":
+        return config
+    from docsgpt.guardrails.checks.model_injection import INSTANCE_DEFAULT, ModelInjectionCheck
+
+    name = ModelInjectionCheck.name
+    if name not in GuardrailCreator.enabled_keys() or not ModelInjectionCheck.is_available():
+        return config
+    if config.enabled and any(c.check == name and c.stage is Stage.INPUT for c in config.controls):
+        return config
+    mode = _injection_input_mode()
+    if mode == "off":
+        return config
+    control = GuardrailControl(
+        check=name,
+        stage=Stage.INPUT,
+        action=Action.BLOCK if mode == "on" else Action.FLAG,
+        settings={INSTANCE_DEFAULT: True},
+    )
+    if not config.enabled:
+        return GuardrailsConfig(enabled=True, controls=[control])
+    merged = config.model_copy(deep=True)
+    merged.controls = [*merged.controls, control]
+    return merged
+
+
 def resolve_config(raw_agent_config: Optional[dict]) -> GuardrailsConfig:
-    """Parse ``agents.config`` and apply the instance floor."""
-    if not getattr(settings, "GUARDRAILS_ENABLED", True):
+    """Parse ``agents.config``, apply the instance floor, then the instance's default input controls."""
+    if not settings.GUARDRAILS_ENABLED:
         return GuardrailsConfig()
     agent = AgentConfig.parse(raw_agent_config).guardrails
-    return merge_floor(agent, instance_floor())
+    return with_injection_input(merge_floor(agent, instance_floor()))
 
 
 def _judge_factory(agent):
@@ -121,10 +169,14 @@ def _judge_factory(agent):
             api_key=agent.api_key,
             user_api_key=agent.user_api_key,
             decoded_token=agent.decoded_token,
+            # The registry id, not the upstream name: LLMCreator resolves
+            # the id to the model's own provider, key and endpoint, and a
+            # custom model's upstream name is not registered.
             model_id=(
                 model_override
-                or getattr(settings, "GUARDRAILS_JUDGE_MODEL", None)
-                or agent.upstream_model_id
+                or settings.GUARDRAILS_JUDGE_MODEL
+                or getattr(agent, "model_id", None)
+                or getattr(agent, "upstream_model_id", None)
             ),
             agent_id=agent.agent_id,
             model_user_id=agent.model_user_id,
@@ -169,7 +221,7 @@ class GuardrailRecorder:
         self._seen: set = set()
 
     def __call__(self, decision: StageDecision) -> None:
-        store_text = bool(getattr(settings, "GUARDRAILS_STORE_SCANNED_TEXT", False))
+        store_text = bool(settings.GUARDRAILS_STORE_SCANNED_TEXT)
         for verdict in decision.verdicts:
             if not verdict.outcome.triggered and verdict.outcome.evaluated:
                 continue

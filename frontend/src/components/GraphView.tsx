@@ -1,95 +1,190 @@
 import { forceCollide, type SimulationNodeDatum } from 'd3-force';
-import { Network, X } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
-import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
+import ForceGraph2D, {
+  type ForceGraphMethods,
+  type LinkObject,
+  type NodeObject,
+} from 'react-force-graph-2d';
 
-import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
-import { selectToken } from '../preferences/preferenceSlice';
-import { Button } from './ui/button';
-import SkeletonLoader from './SkeletonLoader';
+import { useThemeVersion } from '../utils/chartUtils';
+import { formatCount } from '../utils/dateTimeUtils';
+import GraphCanvasControls from './graph/GraphCanvasControls';
+import GraphEntitySearch from './graph/GraphEntitySearch';
+import GraphNodePanel, { type GraphNodeRef } from './graph/GraphNodePanel';
+import { GraphSeriesDot } from './graph/GraphTypeDot';
 import {
-  ForceGraphData,
-  GraphNode,
-  GraphNodeDetail,
-  GraphOverview,
+  DIM_ALPHA,
+  OTHER_GROUP_KEY,
+  buildAdjacency,
+  endpointId,
+  focusSet,
+  legendGroupOf,
+  linkTouches,
+  nodeHasLabel,
+  pickLabels,
+  topHubIds,
+  type LabelBox,
+} from './graph/graphCanvasUtils';
+import { useGraphNodeDetail } from './graph/useGraphNodeDetail';
+import { Card } from './ui/card';
+import { EmptyState } from './ui/empty-state';
+import { LoadingState } from './ui/loading-state';
+import { SidePanel } from './ui/side-panel';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import {
+  type FoldedGraphTypes,
+  type ForceGraphData,
+  type GraphEdge,
+  type GraphNode,
   collideRadius,
+  escapeDeselects,
   maxDegree,
   nodeAtPoint,
   nodeRadius,
-  toForceGraphData,
+  otherTypesList,
+  readGraphPalette,
 } from './graphViewUtils';
+
+/** The overview sizes the "Show top" control offers. */
+const GRAPH_LIMITS = [50, 100, 250] as const;
+
+export type GraphLoadStatus = 'loading' | 'error' | 'ready';
 
 interface GraphViewProps {
   docId: string;
-  sourceName: string;
-  onBackToDocuments: () => void;
-  /** Extra header control, right-aligned in the title row. */
-  headerAction?: React.ReactNode;
+  /** The loaded overview (top nodes by degree and the edges among them). */
+  data: ForceGraphData;
+  /** The one type fold shared with the header, the entity list and the panel. */
+  fold: FoldedGraphTypes;
+  status: GraphLoadStatus;
+  onRetry: () => void;
+  limit: number;
+  onLimitChange: (limit: number) => void;
+  selected: GraphNodeRef | null;
+  onSelect: (node: GraphNodeRef | null) => void;
+  /** False while another tab is showing; Escape then leaves the selection alone. */
+  active?: boolean;
+  /** Show a chunk's file on the Files tab (the chunk drawer's "Open in Files"). */
+  onOpenInFiles?: (path: string) => void;
+  /** Whether the chunk drawer offers Edit (`can(source, 'edit')`). */
+  canEdit?: boolean;
 }
 
-const GRAPH_LIMIT = 100;
-const HIT_SLOP = 4;
+type PositionedNode = NodeObject<GraphNode> & { x?: number; y?: number };
 
+const HIT_SLOP = 4;
+const ZOOM_STEP = 1.3;
+const ZOOM_MS = 200;
+const FOCUS_MS = 400;
+const FOCUS_ZOOM = 2;
+const FIT_PADDING = 40;
+const LABEL_PX = 11;
+/** Screen-pixel clearance kept between two labels. */
+const LABEL_GAP_PX = 2;
+
+/**
+ * The Graph tab of a knowledge-graph source: entity search, the "Show top"
+ * size, the type legend (a filter), and the canvas with its controls and the
+ * node's docked side panel (a full-width sheet on a phone).
+ */
 const GraphView: React.FC<GraphViewProps> = ({
   docId,
-  sourceName,
-  onBackToDocuments,
-  headerAction,
+  data,
+  fold,
+  status,
+  onRetry,
+  limit,
+  onLimitChange,
+  selected,
+  onSelect,
+  active = true,
+  onOpenInFiles,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
-  const token = useSelector(selectToken);
-
-  const [data, setData] = useState<ForceGraphData>({ nodes: [], links: [] });
-  const [loading, setLoading] = useState(true);
-  const [selectedNode, setSelectedNode] = useState<GraphNodeDetail | null>(
-    null,
-  );
-  const [loadingNode, setLoadingNode] = useState(false);
+  const showTopId = useId();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const hoveredNodeIdRef = useRef<string | null>(null);
-  const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
-  const [size, setSize] = useState({ width: 0, height: 480 });
+  const fgRef = useRef<ForceGraphMethods<GraphNode, GraphEdge> | undefined>(
+    undefined,
+  );
+  const hoveredIdRef = useRef<string | null>(null);
+  const fittedRef = useRef(false);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    userService
-      .getSourceGraph(docId, token, GRAPH_LIMIT)
-      .then((response) => response.json())
-      .then((body) => {
-        if (cancelled) return;
-        const overview: GraphOverview = {
-          nodes: body?.nodes ?? [],
-          edges: body?.edges ?? [],
-        };
-        setData(toForceGraphData(overview));
-      })
-      .catch((error) => console.error('Error loading graph:', error))
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [docId, token]);
+  // The canvas can't read CSS variables: resolve the tokens, and re-read them
+  // whenever the theme changes.
+  const themeVersion = useThemeVersion();
+  // themeVersion is not used inside the factory: it only signals a change.
+  const palette = useMemo(() => readGraphPalette(), [themeVersion]);
+  const fadedLink = `color-mix(in srgb, ${palette.link} 15%, transparent)`;
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const element = containerRef.current;
-    const observer = new ResizeObserver(() => {
-      setSize({ width: element.clientWidth, height: 480 });
-    });
-    observer.observe(element);
-    setSize({ width: element.clientWidth, height: 480 });
-    return () => observer.disconnect();
-  }, [loading, data.nodes.length]);
+  const selectedId = selected?.id ?? null;
+  const nodeDetail = useGraphNodeDetail(docId, selectedId);
 
   const maxNodeDegree = useMemo(() => maxDegree(data.nodes), [data.nodes]);
+  const nodeById = useMemo(
+    () => new Map(data.nodes.map((node) => [node.id, node])),
+    [data.nodes],
+  );
+  const loadedIds = useMemo(() => new Set(nodeById.keys()), [nodeById]);
+  const adjacency = useMemo(() => buildAdjacency(data.links), [data.links]);
+  const focus = useMemo(
+    () => focusSet(selectedId, adjacency, loadedIds),
+    [selectedId, adjacency, loadedIds],
+  );
 
+  const legendKeys = useMemo(
+    () => [
+      ...fold.groups.map((group) => group.key),
+      ...(fold.other.count > 0 ? [OTHER_GROUP_KEY] : []),
+    ],
+    [fold],
+  );
+
+  const isVisible = useCallback(
+    (node: GraphNode | undefined) =>
+      !!node && !hidden.has(legendGroupOf(fold, node.type)),
+    [fold, hidden],
+  );
+  const visibleNodes = useMemo(
+    () => data.nodes.filter((node) => isVisible(node)),
+    [data.nodes, isVisible],
+  );
+
+  // The busiest of what's shown keep their labels.
+  const hubs = useMemo(() => topHubIds(visibleNodes), [visibleNodes]);
+
+  // A new overview (another "Show top") starts with a fresh fit.
+  useEffect(() => {
+    fittedRef.current = false;
+  }, [data]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const measure = () => {
+      // A hidden tab measures 0: keep the last size so the canvas survives.
+      if (element.clientWidth === 0) return;
+      setSize({ width: element.clientWidth, height: element.clientHeight });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, [status, data.nodes.length]);
+
+  const hasCanvas = size.width > 0;
   useEffect(() => {
     if (!fgRef.current || data.nodes.length === 0) return;
     fgRef.current.d3Force(
@@ -99,228 +194,454 @@ const GraphView: React.FC<GraphViewProps> = ({
       ),
     );
     fgRef.current.d3ReheatSimulation();
-  }, [data, maxNodeDegree, size.width]);
+  }, [data, maxNodeDegree, hasCanvas]);
 
-  const handleNodeClick = (node: GraphNode) => {
-    setLoadingNode(true);
-    setSelectedNode(null);
-    userService
-      .getSourceGraphNode(docId, node.id, token)
-      .then((response) => response.json())
-      .then((body) => {
-        if (body?.node) setSelectedNode(body.node as GraphNodeDetail);
-      })
-      .catch((error) => console.error('Error loading graph node:', error))
-      .finally(() => setLoadingNode(false));
-  };
+  // A settled simulation stops drawing, so paint changes once.
+  const repaint = useCallback(() => {
+    const fg = fgRef.current;
+    if (fg) fg.zoom(fg.zoom());
+  }, []);
+
+  useEffect(() => {
+    repaint();
+  }, [palette, focus, hidden, fold, repaint]);
+
+  const fitView = useCallback(
+    (durationMs = FOCUS_MS) => {
+      fgRef.current?.zoomToFit(durationMs, FIT_PADDING, (node) =>
+        isVisible(node as GraphNode),
+      );
+    },
+    [isVisible],
+  );
+
+  // Centre the selection; zoom in once per new selection. Re-centre when the
+  // docked panel changes the canvas width.
+  const zoomedForRef = useRef<string | null>(null);
+  const hadSelectionRef = useRef(false);
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    if (!selectedId) {
+      zoomedForRef.current = null;
+      if (!hadSelectionRef.current) return;
+      hadSelectionRef.current = false;
+      // Deselecting hands the width back to the canvas: refit.
+      const frame = requestAnimationFrame(() => fitView());
+      return () => cancelAnimationFrame(frame);
+    }
+    hadSelectionRef.current = true;
+    const node = nodeById.get(selectedId) as PositionedNode | undefined;
+    if (!node || node.x == null || node.y == null) return;
+    const { x, y } = node;
+    const frame = requestAnimationFrame(() => {
+      fg.centerAt(x, y, FOCUS_MS);
+      if (zoomedForRef.current !== selectedId) {
+        zoomedForRef.current = selectedId;
+        fg.zoom(Math.max(fg.zoom(), FOCUS_ZOOM), FOCUS_MS);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedId, nodeById, size.width, fitView]);
+
+  useEffect(() => {
+    if (!active || !selectedId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (escapeDeselects(event)) onSelect(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [active, selectedId, onSelect]);
 
   // Geometric hit test, immune to canvas read-back farbling (e.g. Brave): map
-  // the pointer into graph coordinates and pick the nearest node directly.
+  // the pointer into graph coordinates and pick the nearest visible node.
   const pickNodeAt = (clientX: number, clientY: number): GraphNode | null => {
     const fg = fgRef.current;
     if (!fg || !containerRef.current) return null;
     const rect = containerRef.current.getBoundingClientRect();
     const g = fg.screen2GraphCoords(clientX - rect.left, clientY - rect.top);
-    return nodeAtPoint(data.nodes, g.x, g.y, maxNodeDegree, HIT_SLOP);
+    return nodeAtPoint(visibleNodes, g.x, g.y, maxNodeDegree, HIT_SLOP);
   };
 
-  const repaint = () => {
-    const fg = fgRef.current;
-    if (fg) fg.zoom(fg.zoom());
-  };
+  const onCanvas = (event: React.MouseEvent) =>
+    event.target instanceof HTMLCanvasElement;
 
   const handlePointerMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    const node = pickNodeAt(event.clientX, event.clientY);
+    const node = onCanvas(event)
+      ? pickNodeAt(event.clientX, event.clientY)
+      : null;
     if (containerRef.current) {
       containerRef.current.style.cursor = node ? 'pointer' : 'default';
     }
     const nextId = node?.id ?? null;
-    if (nextId !== hoveredNodeIdRef.current) {
-      hoveredNodeIdRef.current = nextId;
+    if (nextId !== hoveredIdRef.current) {
+      hoveredIdRef.current = nextId;
       repaint();
     }
   };
 
   const handlePointerLeave = () => {
     if (containerRef.current) containerRef.current.style.cursor = 'default';
-    if (hoveredNodeIdRef.current !== null) {
-      hoveredNodeIdRef.current = null;
+    if (hoveredIdRef.current !== null) {
+      hoveredIdRef.current = null;
       repaint();
     }
   };
 
   const handleContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    // Clicks on the controls strip are not canvas clicks.
+    if (!onCanvas(event)) return;
     const node = pickNodeAt(event.clientX, event.clientY);
-    if (node) handleNodeClick(node);
+    if (node) onSelect({ id: node.id, name: node.name, type: node.type });
+    else if (selectedId) onSelect(null);
   };
 
-  const isEmpty = !loading && data.nodes.length === 0;
+  const nodeVisibility = useCallback(
+    (node: NodeObject<GraphNode>) => isVisible(node as GraphNode),
+    [isVisible],
+  );
+  const linkVisibility = useCallback(
+    (link: LinkObject<GraphNode, GraphEdge>) =>
+      isVisible(nodeById.get(endpointId(link.source as never))) &&
+      isVisible(nodeById.get(endpointId(link.target as never))),
+    [isVisible, nodeById],
+  );
+  const linkColor = useCallback(
+    (link: LinkObject<GraphNode, GraphEdge>) => {
+      if (!focus) return palette.link;
+      return linkTouches(link as GraphEdge, selectedId)
+        ? palette.primary
+        : fadedLink;
+    },
+    [focus, selectedId, palette, fadedLink],
+  );
+  const linkWidth = useCallback(
+    (link: LinkObject<GraphNode, GraphEdge>) =>
+      focus && linkTouches(link as GraphEdge, selectedId) ? 1.5 : 1,
+    [focus, selectedId],
+  );
+  const nodeVal = useCallback(
+    (node: NodeObject<GraphNode>) =>
+      nodeRadius((node as GraphNode).degree, maxNodeDegree),
+    [maxNodeDegree],
+  );
+
+  const nodeCanvasObject = useCallback(
+    (
+      node: NodeObject<GraphNode>,
+      ctx: CanvasRenderingContext2D,
+      globalScale: number,
+    ) => {
+      const graphNode = node as PositionedNode;
+      if (graphNode.x == null || graphNode.y == null) return;
+      const { x, y } = graphNode;
+      const r = nodeRadius(graphNode.degree, maxNodeDegree);
+      const hoveredId = hoveredIdRef.current;
+      const isSelected = graphNode.id === selectedId;
+      const series = fold.seriesOf(graphNode.type);
+
+      ctx.save();
+      ctx.globalAlpha = focus && !focus.has(graphNode.id) ? DIM_ALPHA : 1;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      ctx.fillStyle =
+        series == null
+          ? palette.other
+          : (palette.series[series] ?? palette.other);
+      ctx.fill();
+      if (isSelected || graphNode.id === hoveredId) {
+        ctx.lineWidth = (isSelected ? 2.5 : 1.5) / globalScale;
+        ctx.strokeStyle = palette.hoverStroke;
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+    [maxNodeDegree, selectedId, fold, focus, palette],
+  );
+
+  // Labels go on top of every node (a per-node label would sit under the
+  // nodes drawn after it): one pass after the frame. In priority order (the
+  // selection, the hovered node, then by degree) a label that would sit on
+  // one already placed is skipped; the first two always draw.
+  const drawLabels = useCallback(
+    (ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const hoveredId = hoveredIdRef.current;
+      const rank = (node: GraphNode) =>
+        node.id === selectedId ? 0 : node.id === hoveredId ? 1 : 2;
+      const labelled = (visibleNodes as PositionedNode[])
+        .filter(
+          (node) =>
+            node.x != null &&
+            node.y != null &&
+            nodeHasLabel(node.id, { hubs, focus, hoveredId }),
+        )
+        .sort(
+          (a, b) =>
+            rank(a) - rank(b) ||
+            (b.degree || 0) - (a.degree || 0) ||
+            a.id.localeCompare(b.id),
+        );
+      ctx.save();
+      ctx.font = `${LABEL_PX / globalScale}px ${palette.font}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = 3 / globalScale;
+      ctx.lineJoin = 'round';
+      const boxes: (LabelBox & { label: string })[] = labelled.map((node) => {
+        const label = node.name ?? '';
+        return {
+          id: node.id,
+          label,
+          x: node.x as number,
+          y:
+            (node.y as number) +
+            nodeRadius(node.degree, maxNodeDegree) +
+            2 / globalScale,
+          width: ctx.measureText(label).width,
+          height: LABEL_PX / globalScale,
+          always: rank(node) < 2,
+        };
+      });
+      const shown = pickLabels(boxes, LABEL_GAP_PX / globalScale);
+      for (const box of boxes) {
+        if (!shown.has(box.id)) continue;
+        ctx.strokeStyle = palette.halo;
+        ctx.strokeText(box.label, box.x, box.y);
+        ctx.fillStyle = palette.label;
+        ctx.fillText(box.label, box.x, box.y);
+      }
+      ctx.restore();
+    },
+    [visibleNodes, hubs, focus, maxNodeDegree, palette, selectedId],
+  );
+
+  // Once a new layout settles: fit it, or, with a node selected, centre on
+  // that node (its position only exists now; the focus effect ran before).
+  const handleEngineStop = useCallback(() => {
+    if (fittedRef.current) return;
+    fittedRef.current = true;
+    const node = selectedId
+      ? (nodeById.get(selectedId) as PositionedNode | undefined)
+      : undefined;
+    if (node && node.x != null && node.y != null) {
+      fgRef.current?.centerAt(node.x, node.y, FOCUS_MS);
+    } else {
+      fitView();
+    }
+  }, [fitView, selectedId, nodeById]);
+
+  // The graph reports zoom while it renders (a prop update can move the
+  // view), so the readout follows on the next frame, at most once a frame.
+  const zoomFrameRef = useRef<number | null>(null);
+  const handleZoom = useCallback(({ k }: { k: number }) => {
+    if (zoomFrameRef.current !== null)
+      cancelAnimationFrame(zoomFrameRef.current);
+    zoomFrameRef.current = requestAnimationFrame(() => {
+      zoomFrameRef.current = null;
+      setZoom(k);
+    });
+  }, []);
+  useEffect(
+    () => () => {
+      if (zoomFrameRef.current !== null)
+        cancelAnimationFrame(zoomFrameRef.current);
+    },
+    [],
+  );
+
+  const zoomBy = (factor: number) => {
+    const fg = fgRef.current;
+    if (fg) fg.zoom(fg.zoom() * factor, ZOOM_MS);
+  };
+
+  const legendValue = legendKeys.filter((key) => !hidden.has(key));
+  const otherLabels = fold.other.labels;
+
+  const toolbar = (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <GraphEntitySearch docId={docId} fold={fold} onPick={onSelect} />
+        {/* One phrase at one size: "Show top [50 | 100 | 250] by
+            connections"; the group's track holds only the numbers. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span id={showTopId} className="text-muted-foreground text-sm">
+            {t('settings.sources.graphrag.view.showTop')}
+          </span>
+          <ToggleGroup
+            className="shrink-0"
+            type="single"
+            size="xs"
+            value={String(limit)}
+            onValueChange={(value) => value && onLimitChange(Number(value))}
+            aria-labelledby={showTopId}
+          >
+            {GRAPH_LIMITS.map((option) => (
+              <ToggleGroupItem key={option} value={String(option)}>
+                {option}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <span className="text-muted-foreground text-sm">
+            {t('settings.sources.graphrag.view.byConnections')}
+          </span>
+        </div>
+      </div>
+      {legendKeys.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup
+            type="multiple"
+            size="xs"
+            value={legendValue}
+            onValueChange={(values) =>
+              setHidden(
+                new Set(legendKeys.filter((key) => !values.includes(key))),
+              )
+            }
+            aria-label={t('settings.sources.graphrag.view.typeFilter')}
+          >
+            {fold.groups.map((group) => (
+              <ToggleGroupItem key={group.key} value={group.key}>
+                <GraphSeriesDot series={group.series} />
+                {group.label}
+                <span className="text-muted-foreground tabular-nums">
+                  {formatCount(group.count)}
+                </span>
+              </ToggleGroupItem>
+            ))}
+            {fold.other.count > 0 ? (
+              <ToggleGroupItem value={OTHER_GROUP_KEY}>
+                <GraphSeriesDot series={null} />
+                {t('settings.analytics.otherSeries')}
+                <span className="text-muted-foreground tabular-nums">
+                  {formatCount(fold.other.count)}
+                </span>
+              </ToggleGroupItem>
+            ) : null}
+          </ToggleGroup>
+          {otherLabels.length > 0 ? (
+            <span className="text-muted-foreground text-xs">
+              {t('settings.sources.graphrag.view.otherTypes', {
+                types: otherTypesList(otherLabels, (count) =>
+                  t('settings.sources.graphrag.view.otherTypesMore', {
+                    count,
+                    formatted: formatCount(count),
+                  }),
+                ),
+                interpolation: { escapeValue: false },
+              })}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (status === 'error') {
+    return (
+      <EmptyState
+        size="sm"
+        tone="destructive"
+        illustration="none"
+        title={t('settings.sources.graphrag.view.loadFailed')}
+        onRetry={onRetry}
+      />
+    );
+  }
+
+  if (status === 'ready' && data.nodes.length === 0) {
+    return (
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={t('settings.sources.graphrag.view.empty')}
+      />
+    );
+  }
+
+  const panel = selected ? (
+    <GraphNodePanel
+      key={selected.id}
+      docId={docId}
+      node={selected}
+      detail={nodeDetail.detail}
+      status={nodeDetail.status}
+      onRetry={nodeDetail.retry}
+      fold={fold}
+      onSelectNode={onSelect}
+      overview={data}
+      onOpenInFiles={onOpenInFiles}
+      onChunkSaved={nodeDetail.reload}
+      canEdit={canEdit}
+    />
+  ) : null;
 
   return (
-    <div className="flex flex-col">
-      <div className="mb-4 flex items-center">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          className="text-muted-foreground mr-3 h-[29px] w-[29px] rounded-full p-2 dark:border-0"
-          onClick={onBackToDocuments}
-          aria-label={t('settings.sources.backToAll')}
+    <div className="flex flex-col gap-4">
+      {toolbar}
+      <Card
+        variant="subtle"
+        padding="none"
+        className="relative h-[70svh] flex-row gap-0 overflow-hidden"
+      >
+        <div
+          ref={containerRef}
+          onMouseMove={handlePointerMove}
+          onMouseLeave={handlePointerLeave}
+          onClick={handleContainerClick}
+          className="relative min-w-0 flex-1"
         >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </Button>
-        <span className="text-primary font-semibold wrap-break-word">
-          {sourceName}
-        </span>
-        {headerAction ? <div className="ml-auto">{headerAction}</div> : null}
-      </div>
-
-      <div className="bg-muted/60 text-muted-foreground dark:bg-accent/40 mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
-        <Network
-          size={16}
-          strokeWidth={1.75}
-          className="mt-0.5 shrink-0"
-          aria-hidden="true"
-        />
-        <p>
-          <span className="text-foreground font-medium">
-            {t('settings.sources.graphrag.view.title')}
-          </span>{' '}
-          {t('settings.sources.graphrag.view.explainer')}
-        </p>
-      </div>
-
-      {loading ? (
-        <SkeletonLoader count={4} />
-      ) : isEmpty ? (
-        <div className="border-border text-muted-foreground flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-12 text-center text-sm">
-          <Network size={28} strokeWidth={1.5} aria-hidden="true" />
-          <p>{t('settings.sources.graphrag.view.empty')}</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <p className="text-muted-foreground text-xs">
-            {t('settings.sources.graphrag.view.stats', {
-              nodes: data.nodes.length,
-              edges: data.links.length,
-            })}
-          </p>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-            <div
-              ref={containerRef}
-              onMouseMove={handlePointerMove}
-              onMouseLeave={handlePointerLeave}
-              onClick={handleContainerClick}
-              className="border-border bg-card relative min-h-[480px] flex-1 overflow-hidden rounded-xl border"
-            >
-              {size.width > 0 && (
-                <ForceGraph2D
+          {status === 'loading' ? (
+            <LoadingState fill="parent" />
+          ) : (
+            <>
+              {hasCanvas && (
+                <ForceGraph2D<GraphNode, GraphEdge>
                   ref={fgRef}
                   graphData={data}
                   width={size.width}
                   height={size.height}
                   nodeRelSize={1}
+                  minZoom={0.2}
+                  maxZoom={8}
                   enablePointerInteraction={false}
                   enableNodeDrag={false}
-                  nodeVal={(node) =>
-                    nodeRadius((node as GraphNode).degree, maxNodeDegree)
-                  }
-                  linkColor={() => 'rgba(150,150,150,0.35)'}
+                  nodeVal={nodeVal}
+                  nodeVisibility={nodeVisibility}
+                  linkVisibility={linkVisibility}
+                  linkColor={linkColor}
+                  linkWidth={linkWidth}
                   cooldownTicks={80}
-                  nodeCanvasObject={(node, ctx, globalScale) => {
-                    const graphNode = node as GraphNode & {
-                      x?: number;
-                      y?: number;
-                    };
-                    if (graphNode.x == null) return;
-                    const r = nodeRadius(graphNode.degree, maxNodeDegree);
-                    const hovered = hoveredNodeIdRef.current === graphNode.id;
-                    ctx.beginPath();
-                    ctx.arc(graphNode.x, graphNode.y ?? 0, r, 0, 2 * Math.PI);
-                    ctx.fillStyle = hovered ? '#7aa7d9' : '#4a7fb5';
-                    ctx.fill();
-                    if (globalScale >= 1.2) {
-                      const label = graphNode.name ?? '';
-                      const x = graphNode.x;
-                      const y = (graphNode.y ?? 0) + r + 1;
-                      ctx.font = `${10 / globalScale}px sans-serif`;
-                      ctx.textAlign = 'center';
-                      ctx.textBaseline = 'top';
-                      ctx.lineWidth = 3 / globalScale;
-                      ctx.lineJoin = 'round';
-                      ctx.strokeStyle = 'rgba(10,10,10,0.85)';
-                      ctx.strokeText(label, x, y);
-                      ctx.fillStyle = hovered
-                        ? 'rgba(255,255,255,0.98)'
-                        : 'rgba(210,210,210,0.95)';
-                      ctx.fillText(label, x, y);
-                    }
-                  }}
+                  onEngineStop={handleEngineStop}
+                  onZoom={handleZoom}
+                  nodeCanvasObject={nodeCanvasObject}
+                  onRenderFramePost={drawLabels}
                 />
               )}
-            </div>
-
-            <aside className="border-border bg-card flex max-h-[480px] w-full shrink-0 flex-col overflow-y-auto rounded-xl border p-4 lg:w-80">
-              {loadingNode ? (
-                <SkeletonLoader count={3} />
-              ) : selectedNode ? (
-                <div className="flex flex-col">
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="text-foreground text-sm font-semibold wrap-break-word">
-                        {selectedNode.name}
-                      </h3>
-                      {selectedNode.type && (
-                        <span className="bg-muted-foreground/10 text-muted-foreground mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium">
-                          {selectedNode.type}
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedNode(null)}
-                      aria-label={t('settings.sources.graphrag.view.close')}
-                      className="text-muted-foreground hover:text-foreground shrink-0"
-                    >
-                      <X size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  {selectedNode.description && (
-                    <p className="text-muted-foreground mb-3 text-sm leading-relaxed wrap-break-word">
-                      {selectedNode.description}
-                    </p>
-                  )}
-
-                  <h4 className="text-foreground mb-2 text-xs font-semibold">
-                    {t('settings.sources.graphrag.view.linkedChunks')}
-                  </h4>
-                  {selectedNode.chunks.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      {t('settings.sources.graphrag.view.noChunks')}
-                    </p>
-                  ) : (
-                    <ul className="flex flex-col gap-2">
-                      {selectedNode.chunks.map((chunk) => (
-                        <li
-                          key={chunk.chunk_id}
-                          className="border-border text-muted-foreground rounded-md border px-3 py-2 text-xs leading-relaxed wrap-break-word"
-                        >
-                          {chunk.text}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ) : (
-                <p className="text-muted-foreground py-2 text-sm">
+              {!selected ? (
+                <p className="text-muted-foreground pointer-events-none absolute top-3 left-3 text-xs">
                   {t('settings.sources.graphrag.view.selectNode')}
                 </p>
-              )}
-            </aside>
-          </div>
+              ) : null}
+              <GraphCanvasControls
+                zoom={zoom}
+                onZoomIn={() => zoomBy(ZOOM_STEP)}
+                onZoomOut={() => zoomBy(1 / ZOOM_STEP)}
+                onFit={() => fitView()}
+              />
+            </>
+          )}
         </div>
-      )}
+        <SidePanel
+          variant="docked"
+          expandable="graph-node"
+          open={!!panel && active}
+          onOpenChange={(open) => {
+            if (!open) onSelect(null);
+          }}
+        >
+          {panel}
+        </SidePanel>
+      </Card>
     </div>
   );
 };

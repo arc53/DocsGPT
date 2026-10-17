@@ -4,7 +4,7 @@ import { SearchBar } from './components/SearchBar';
 export const App = () => {
   return (
     <div>
-      <SearchBar />
+      <SearchBar showMicButton/>
       <DocsGPTWidget
         allowedFileExtensions={['.pdf', '.md', '.txt', '.docx', '.png', '.jpg']}
         showMicButton

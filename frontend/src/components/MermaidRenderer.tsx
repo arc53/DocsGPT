@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { ChevronDown } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneLight,
@@ -9,9 +10,14 @@ import {
 
 import { selectStatus } from '../conversation/conversationSlice';
 import { useDarkTheme } from '../hooks';
-import CopyButton from './CopyButton';
 import { renderMermaidDiagram } from './mermaidSecurity';
+import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
+import { CodeFrame } from './ui/code-block';
+import { IconButton } from './ui/icon-button';
+import { ToggleChip } from './ui/toggle-chip';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { ActionMenu } from './ui/dropdown-menu';
 import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
@@ -27,8 +33,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
-  const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false);
-  const downloadMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const diagramRef = useRef<HTMLPreElement>(null);
   const [hoverPosition, setHoverPosition] = useState<{
@@ -114,7 +118,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           if (cancelled) return;
           console.error('Error rendering mermaid diagram:', err);
           setError(
-            `Failed to render diagram: ${err instanceof Error ? err.message : String(err)}`,
+            t('mermaid.renderFailed', {
+              message: err instanceof Error ? err.message : String(err),
+            }),
           );
         }
       }
@@ -125,22 +131,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       cancelled = true;
     };
   }, [code, isDarkTheme, isCurrentlyLoading]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        downloadMenuRef.current &&
-        !downloadMenuRef.current.contains(event.target as Node)
-      ) {
-        setShowDownloadMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showDownloadMenu]);
 
   const downloadSvg = (): void => {
     const element = document.getElementById(diagramId.current);
@@ -265,186 +255,165 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   };
 
   const downloadOptions = [
-    { label: 'Download as SVG', action: downloadSvg },
-    { label: 'Download as PNG', action: downloadPng },
-    { label: 'Download as MMD', action: downloadMmd },
+    { label: t('mermaid.downloadAs', { format: 'SVG' }), action: downloadSvg },
+    { label: t('mermaid.downloadAs', { format: 'PNG' }), action: downloadPng },
+    { label: t('mermaid.downloadAs', { format: 'MMD' }), action: downloadMmd },
   ];
 
   const showDiagramOptions = !isCurrentlyLoading && !error;
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="w-inherit group border-border bg-card relative overflow-hidden rounded-xl border">
-      <div className="bg-muted flex items-center justify-between px-2 py-1">
-        <span className="text-foreground dark:text-foreground text-xs font-medium">
-          mermaid
-        </span>
-        <div className="flex items-center gap-2">
-          <CopyButton textToCopy={String(code).replace(/\n$/, '')} />
-
-          {showDiagramOptions && (
-            <div className="relative" ref={downloadMenuRef}>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                className="h-auto gap-1 rounded-sm bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
-                title={t('mermaid.downloadOptions')}
-              >
-                Download <span className="ml-1">▼</span>
-              </Button>
-              {showDownloadMenu && (
-                <div className="border-border bg-card absolute right-0 z-10 mt-1 w-40 rounded-sm border shadow-lg">
-                  <ul>
-                    {downloadOptions.map((option, index) => (
-                      <li key={index}>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => {
-                            option.action();
-                            setShowDownloadMenu(false);
-                          }}
-                          className="h-auto w-full justify-start rounded-none px-4 py-2 text-left text-xs font-normal"
-                        >
-                          {option.label}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          {showDiagramOptions && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowCode(!showCode)}
-              className={`h-auto rounded px-2 py-1 text-xs ${
-                showCode
-                  ? 'bg-blue-200 hover:bg-blue-200/90 dark:bg-blue-800 dark:hover:bg-blue-800/90'
-                  : 'bg-gray-100 hover:bg-gray-100/90 dark:bg-gray-700 dark:hover:bg-gray-700/90'
-              }`}
-              title={t('mermaid.viewCode')}
-            >
-              Code
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {isCurrentlyLoading ? (
-        <div className="bg-card flex items-center justify-center p-4">
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Loading diagram...
-          </div>
-        </div>
-      ) : errorRender ? (
-        <div className="m-2 rounded-sm border-2 border-red-400 dark:border-red-700">
-          <div className="overflow-auto bg-red-100 px-4 py-2 text-sm wrap-break-word whitespace-normal text-red-800 dark:bg-red-900/30 dark:text-red-300">
-            {error}
-          </div>
-        </div>
-      ) : (
+    <CodeFrame
+      label="mermaid"
+      copyText={String(code).replace(/\n$/, '')}
+      actions={
         <>
-          <div
-            ref={containerRef}
-            className="no-scrollbar bg-card relative block w-full p-4"
-            style={{
-              overflow: 'auto',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              width: '100%',
-            }}
-            onMouseMove={handleMouseMove}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            onKeyDown={handleKeyDown}
-            onWheel={handleWheel}
-            tabIndex={0}
-          >
-            {isHovering && (
-              <>
-                <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      setZoomFactor((prev) => Math.max(1, prev - 0.5))
-                    }
-                    className="h-auto px-1 py-0 text-white hover:bg-gray-600 hover:text-white"
-                    title={t('mermaid.decreaseZoom')}
-                  >
-                    -
-                  </Button>
-                  <span
-                    className="cursor-pointer hover:underline"
-                    onClick={() => {
-                      setZoomFactor(2);
-                    }}
-                    title={t('mermaid.resetZoom')}
-                  >
-                    {zoomFactor.toFixed(1)}x
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      setZoomFactor((prev) => Math.min(6, prev + 0.5))
-                    }
-                    className="h-auto px-1 py-0 text-white hover:bg-gray-600 hover:text-white"
-                    title={t('mermaid.increaseZoom')}
-                  >
-                    +
-                  </Button>
-                </div>
-              </>
-            )}
-            <pre
-              ref={diagramRef}
-              className="mermaid w-full select-none"
-              id={diagramId.current}
-              key={`mermaid-${diagramId.current}`}
-              style={{
-                transform: isHovering ? `scale(${zoomFactor})` : `scale(1)`,
-                transformOrigin: getTransformOrigin(),
-                transition: 'transform 0.2s ease',
-                cursor: 'default',
-                width: '100%',
-                display: 'flex',
-                justifyContent: 'center',
-              }}
+          {showDiagramOptions && (
+            <ActionMenu
+              trigger={
+                <Button type="button" variant="ghost-muted" size="xs">
+                  {t('mermaid.download')}
+                  <ChevronDown aria-hidden="true" />
+                </Button>
+              }
+              menuWidth="fixed"
+              options={downloadOptions.map((option) => ({
+                label: option.label,
+                onClick: () => option.action(),
+              }))}
             />
-          </div>
+          )}
 
-          {showCode && (
-            <div className="border-border border-t">
-              <div className="bg-muted p-2">
-                <span className="text-foreground dark:text-foreground text-xs font-medium">
-                  Mermaid Code
-                </span>
-              </div>
-              <SyntaxHighlighter
-                language="mermaid"
-                style={isDarkTheme ? vscDarkPlus : oneLight}
-                customStyle={{
-                  margin: 0,
-                  borderRadius: 0,
-                  scrollbarWidth: 'thin',
-                  maxHeight: '300px',
-                }}
-              >
-                {code}
-              </SyntaxHighlighter>
-            </div>
+          {showDiagramOptions && (
+            <ToggleChip pressed={showCode} onPressedChange={setShowCode}>
+              {t('mermaid.code')}
+            </ToggleChip>
           )}
         </>
-      )}
-    </div>
+      }
+    >
+      <div className="bg-card">
+        {isCurrentlyLoading ? (
+          <div className="bg-card flex items-center justify-center p-4">
+            <div className="text-muted-foreground text-sm">
+              {t('mermaid.loading')}
+            </div>
+          </div>
+        ) : errorRender ? (
+          <Alert variant="destructive" className="m-2 w-auto">
+            <AlertDescription className="wrap-break-word whitespace-normal">
+              {error}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <div
+              ref={containerRef}
+              className="no-scrollbar bg-card relative block w-full p-4"
+              style={{
+                overflow: 'auto',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                width: '100%',
+              }}
+              onMouseMove={handleMouseMove}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              onKeyDown={handleKeyDown}
+              onWheel={handleWheel}
+              tabIndex={0}
+            >
+              {isHovering && (
+                <>
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
+                    <IconButton
+                      label={t('mermaid.decreaseZoom')}
+                      side="bottom"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() =>
+                        setZoomFactor((prev) => Math.max(1, prev - 0.5))
+                      }
+                      /* eslint-disable-next-line shadcn/no-restyle --
+                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
+                      className="hover:bg-white/20 hover:text-white"
+                    >
+                      -
+                    </IconButton>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="text"
+                          tone="current"
+                          onClick={() => setZoomFactor(2)}
+                        >
+                          {zoomFactor.toFixed(1)}x
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('mermaid.resetZoom')}</TooltipContent>
+                    </Tooltip>
+                    <IconButton
+                      label={t('mermaid.increaseZoom')}
+                      side="bottom"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() =>
+                        setZoomFactor((prev) => Math.min(6, prev + 0.5))
+                      }
+                      /* eslint-disable-next-line shadcn/no-restyle --
+                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
+                      className="hover:bg-white/20 hover:text-white"
+                    >
+                      +
+                    </IconButton>
+                  </div>
+                </>
+              )}
+              <pre
+                ref={diagramRef}
+                className="w-full select-none"
+                id={diagramId.current}
+                key={`mermaid-${diagramId.current}`}
+                style={{
+                  transform: isHovering ? `scale(${zoomFactor})` : `scale(1)`,
+                  transformOrigin: getTransformOrigin(),
+                  transition: 'transform 0.2s ease',
+                  cursor: 'default',
+                  width: '100%',
+                  display: 'flex',
+                  justifyContent: 'center',
+                }}
+              />
+            </div>
+
+            {showCode && (
+              <div className="border-border border-t">
+                <div className="bg-muted p-2">
+                  <span className="text-foreground text-xs font-medium">
+                    {t('mermaid.codeTitle')}
+                  </span>
+                </div>
+                <SyntaxHighlighter
+                  language="mermaid"
+                  style={isDarkTheme ? vscDarkPlus : oneLight}
+                  customStyle={{
+                    margin: 0,
+                    borderRadius: 0,
+                    scrollbarWidth: 'thin',
+                    maxHeight: '300px',
+                  }}
+                >
+                  {code}
+                </SyntaxHighlighter>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </CodeFrame>
   );
 };
 

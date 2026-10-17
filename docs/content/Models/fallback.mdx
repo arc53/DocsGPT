@@ -1,0 +1,53 @@
+---
+title: Fallback Models
+description: Switch to another model automatically when the primary model fails, and keep each provider's API key with that provider.
+lastUpdated: 2026-10-06
+---
+
+import { Callout } from 'nextra/components'
+
+# Fallback Models
+
+DocsGPT can switch to a fallback model when the primary model fails, including after an answer has started streaming. This works for streaming and non-streaming requests.
+
+## Fallback order
+
+1. **The agent's other models.** An agent can have several models selected; when the one answering fails, the others are tried in order.
+2. **The global fallback** set with the `FALLBACK_LLM_*` settings below.
+3. If none of them can answer, the error is returned.
+
+A fallback is skipped when the request is clearly too large for the fallback model's context window, since it would fail the same way.
+
+## Global fallback settings
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `FALLBACK_LLM_PROVIDER` | Provider name, as in `LLM_PROVIDER` (for example `openai`, `anthropic`, `google`) | unset (no global fallback) |
+| `FALLBACK_LLM_NAME` | Model name sent to that provider. A [catalog](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/models) id works, and so does any other model name the provider serves. | unset |
+| `FALLBACK_LLM_API_KEY` | API key for the fallback provider | The fallback provider's own key, such as `ANTHROPIC_API_KEY`; `API_KEY` only when the fallback provider is `LLM_PROVIDER` |
+
+Set all three. Without `FALLBACK_LLM_NAME` the fallback has no model to call.
+
+When `FALLBACK_LLM_API_KEY` is unset, the fallback uses its provider's own key, for example `ANTHROPIC_API_KEY` for `FALLBACK_LLM_PROVIDER=anthropic`. `API_KEY` is used only when the fallback provider is also `LLM_PROVIDER`: it is your primary provider's key, and DocsGPT never sends it to another vendor. If the fallback provider has no key at all, the fallback fails to start and the error is logged.
+
+If `FALLBACK_LLM_NAME` is a catalog model that carries its own key and endpoint, such as a DeepSeek model enabled with `DEEPSEEK_API_KEY`, that key and endpoint are used instead.
+
+## Example
+
+OpenAI answers; Anthropic takes over when it fails:
+
+```env
+LLM_PROVIDER=openai
+API_KEY=sk-your-openai-key
+LLM_NAME=gpt-5.5
+
+FALLBACK_LLM_PROVIDER=anthropic
+FALLBACK_LLM_NAME=claude-sonnet-4-6
+FALLBACK_LLM_API_KEY=sk-ant-your-anthropic-key
+```
+
+<Callout type="info">
+For the most resilience, pick a fallback provider on a different cloud from your primary one.
+</Callout>
+
+See [Cloud Providers](/Models/cloud-providers) for provider names and model ids, and the [Settings Reference](/Deploying/Settings-Reference) for every `FALLBACK_LLM_*` setting.

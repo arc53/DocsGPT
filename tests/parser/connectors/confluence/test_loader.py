@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from tests.parser.connectors.token_patch import patch_tokens
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,11 +26,12 @@ def _make_loader(token_info=None):
 
     with patch("docsgpt.parser.connectors.confluence.loader.ConfluenceAuth") as MockAuth:
         mock_auth = MagicMock()
-        mock_auth.get_token_info_from_session.return_value = token_info
+        token_info = token_info
         MockAuth.return_value = mock_auth
 
         from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
-        loader = ConfluenceLoader("session_tok")
+        with patch_tokens(token_info):
+            loader = ConfluenceLoader("session_tok")
 
     loader.auth = mock_auth
     return loader
@@ -69,7 +71,7 @@ class TestConfluenceLoaderInit:
     def test_init_sets_attributes(self, loader):
         assert loader.session_token == "session_tok"
         assert loader.access_token == "test_at"
-        assert loader.refresh_token == "test_rt"
+        assert loader.connection_id == "conn-1"
         assert loader.cloud_id == "test_cloud"
         assert loader.next_page_token is None
         assert "test_cloud" in loader.base_url
@@ -834,18 +836,16 @@ class TestRetryOnAuthFailure:
             # Second call succeeds
             return _mock_response({"results": [], "_links": {}})
 
-        loader.auth.refresh_access_token = MagicMock(return_value={
-            "access_token": "new_at",
-            "refresh_token": "new_rt",
-        })
-        loader._persist_refreshed_tokens = MagicMock()
-
-        with patch("requests.get", side_effect=flaky_request):
+        with patch(
+            "docsgpt.connectors.service.get_valid_token_info",
+            return_value={"access_token": "new_at", "cloud_id": "test_cloud"},
+        ) as tokens, patch("requests.get", side_effect=flaky_request):
             loader.load_data({})
 
-        assert loader.auth.refresh_access_token.called
+        # The rejected token goes to the service, which refreshes under the
+        # connection's row lock and stores the rotated refresh token.
+        tokens.assert_called_once_with("conn-1", rejected_access_token="test_at")
         assert loader.access_token == "new_at"
-        assert loader._persist_refreshed_tokens.called
 
     @pytest.mark.unit
     def test_raises_non_auth_http_error(self, loader):
@@ -867,11 +867,9 @@ class TestRetryOnAuthFailure:
         err = requests.exceptions.HTTPError(response=resp)
         err.response = resp
 
-        loader.auth.refresh_access_token = MagicMock(
-            side_effect=Exception("refresh failed")
-        )
-
-        with patch("requests.get", side_effect=err):
+        with patch(
+            "docsgpt.connectors.service.get_valid_token_info", side_effect=Exception("refresh failed"),
+        ), patch("requests.get", side_effect=err):
             with pytest.raises(ValueError, match="Authentication failed"):
                 loader.load_data({})
 
@@ -890,29 +888,12 @@ class TestRetryOnAuthFailure:
                 raise err
             return _mock_response({"results": [], "_links": {}})
 
-        loader.auth.refresh_access_token = MagicMock(return_value={
-            "access_token": "new_at",
-            "refresh_token": "new_rt",
-        })
-        loader._persist_refreshed_tokens = MagicMock()
-
-        with patch("requests.get", side_effect=flaky):
+        with patch(
+            "docsgpt.connectors.service.get_valid_token_info",
+            return_value={"access_token": "new_at", "cloud_id": "test_cloud"},
+        ) as tokens, patch("requests.get", side_effect=flaky):
             loader.load_data({})
 
-        assert loader.auth.refresh_access_token.called
+        assert tokens.called
 
 
-# ---------------------------------------------------------------------------
-# _persist_refreshed_tokens
-# ---------------------------------------------------------------------------
-
-
-class TestPersistRefreshedTokens:
-    pass
-
-    @pytest.mark.unit
-    def test_logs_warning_on_failure(self, loader):
-        loader.auth.sanitize_token_info = MagicMock(side_effect=Exception("db error"))
-
-        # Should not raise, just log a warning
-        loader._persist_refreshed_tokens({"access_token": "at"})

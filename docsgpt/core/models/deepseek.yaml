@@ -12,7 +12,11 @@ models:
   - id: deepseek-v4-flash
     display_name: DeepSeek V4 Flash
     description: Cost-efficient 1M-context model with hybrid thinking / non-thinking modes, tool calling and FIM completion
+    input_cost_per_million: 0.14
+    output_cost_per_million: 0.28
 
   - id: deepseek-v4-pro
     display_name: DeepSeek V4 Pro
     description: Frontier 1M-context model with hybrid thinking / non-thinking modes for advanced reasoning and agentic coding
+    input_cost_per_million: 0.435
+    output_cost_per_million: 0.87

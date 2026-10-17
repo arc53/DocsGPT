@@ -3,7 +3,7 @@
 Subscribe-then-snapshot pattern: subscribe to ``user:{user_id}``
 pub/sub, snapshot the Redis Streams backlog past ``Last-Event-ID``
 inside the SUBSCRIBE-ack callback, flush snapshot, then tail live
-events (dedup'd by stream id). See ``docs/runbooks/sse-notifications.md``.
+events (dedup'd by stream id). See ``docs/content/Deploying/Troubleshooting/sse-notifications.mdx``.
 
 A native-async Starlette route mounted ahead of Flask in ``docsgpt/asgi.py``.
 Every open browser tab holds this stream, so it runs on the event loop with
@@ -418,13 +418,13 @@ async def stream_events(request: Request) -> Response:
     # Same endpoint value the Flask route logged, so saved log queries keep matching.
     bind_log_context("event_stream.stream_events", user_id)
 
-    # In dev deployments without AUTH_TYPE configured, every request
-    # resolves to user_id="local" and shares one stream. Surface this so
-    # an accidentally-multi-user dev box doesn't silently cross-stream.
+    # With AUTH_TYPE unset or simple_jwt, every request resolves to
+    # user_id="local" and shares one stream. Surface this so an
+    # accidentally-multi-user install doesn't silently cross-stream.
     global _local_user_warned
     if user_id == "local" and not _local_user_warned:
         logger.warning(
-            "SSE serving user_id='local' (AUTH_TYPE not set). "
+            "SSE serving user_id='local' (AUTH_TYPE unset or simple_jwt). "
             "All clients on this deployment will share one event stream."
         )
         _local_user_warned = True

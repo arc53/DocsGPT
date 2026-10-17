@@ -1,0 +1,33 @@
+# https://editorconfig.org — shared whitespace rules for every editor.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.{py,pyi}]
+indent_size = 4
+max_line_length = 120
+
+[*.{sh,ps1,ini,toml}]
+indent_size = 4
+
+[{Dockerfile,Dockerfile.*,*.dockerfile}]
+indent_size = 4
+
+# Two trailing spaces are a hard line break in Markdown.
+[*.{md,mdx}]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+# Generated or vendored; leave as produced.
+[{uv.lock,package-lock.json,docsgpt/requirements*.txt}]
+indent_size = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset

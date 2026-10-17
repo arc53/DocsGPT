@@ -9,3 +9,18 @@
 .list li > .list {
   margin-top: 0.5em;
 }
+
+/* A display formula wider than the answer column scrolls in its own box, as
+   fenced code and tables do, rather than pushing the column sideways. The
+   padding keeps tall symbols clear of the clipped edge. */
+.answer :global(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25em;
+}
+
+/* Table headers are set in capitals, but a formula keeps its case: `n` and
+   `N` are different variables. */
+.answer thead :global(.katex) {
+  text-transform: none;
+}

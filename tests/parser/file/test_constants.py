@@ -8,6 +8,7 @@ import pytest
 
 from docsgpt.parser.file.bulk import get_default_file_extractor
 from docsgpt.parser.file.constants import (
+    ATTACHMENT_ARCHIVE_EXTENSIONS,
     ATTACHMENT_PARSER_EXTENSIONS,
     attachment_extension,
     has_attachment_parser,
@@ -64,11 +65,13 @@ def test_frontend_mirrors_the_parser_extensions():
     )
     assert match, "ATTACHMENT_PARSER_EXTENSIONS not found in fileUpload.ts"
     frontend_extensions = set(re.findall(r"'(\.[^']+)'", match.group(1)))
+    # The composer also takes a zip, which the worker unpacks into members.
+    backend = set(ATTACHMENT_PARSER_EXTENSIONS) | set(ATTACHMENT_ARCHIVE_EXTENSIONS)
 
-    assert frontend_extensions == set(ATTACHMENT_PARSER_EXTENSIONS), (
+    assert frontend_extensions == backend, (
         "frontend and backend attachment lists disagree — "
-        f"backend only: {sorted(set(ATTACHMENT_PARSER_EXTENSIONS) - frontend_extensions)}, "
-        f"frontend only: {sorted(frontend_extensions - set(ATTACHMENT_PARSER_EXTENSIONS))}"
+        f"backend only: {sorted(backend - frontend_extensions)}, "
+        f"frontend only: {sorted(frontend_extensions - backend)}"
     )
 
 

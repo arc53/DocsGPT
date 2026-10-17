@@ -40,6 +40,27 @@ def prompt_embeds_documents(prompt_content: Optional[str]) -> bool:
     return any(marker in prompt_content for marker in _DOCUMENT_EMBEDDING_MARKERS)
 
 
+# The variable that renders the Citations section. The built-in prompts carry
+# it (``prompts/fragments/citations.txt``); a template prompt opts in by
+# writing it, the same way it opts into memory or the platform block.
+_CITATION_RULES_MARKER = "source.citation_rules"
+
+
+def prompt_requests_citations(prompt_content: Optional[str]) -> bool:
+    """Return True when the prompt asks for ``[n]`` citations itself.
+
+    Such a prompt owns the citation instruction, so the rule after the
+    documents stops asking for source titles; any other prompt keeps it.
+
+    Args:
+        prompt_content: The raw (unrendered) prompt template.
+
+    Returns:
+        bool: True if the template references ``source.citation_rules``.
+    """
+    return bool(prompt_content) and _CITATION_RULES_MARKER in prompt_content
+
+
 def format_docs_for_prompt(docs: Optional[list]) -> Optional[str]:
     """Format retrieved chunks as XML-tagged documents for prompt injection.
 

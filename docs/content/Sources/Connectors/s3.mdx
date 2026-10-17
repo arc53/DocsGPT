@@ -1,0 +1,44 @@
+---
+title: Amazon S3 Connector
+description: Sync documents from an Amazon S3 bucket, or S3-compatible storage such as MinIO or Cloudflare R2, into Knowledge.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Amazon S3 Connector
+
+Sync documents from an S3 bucket into Knowledge. S3 needs no server settings: each member connects with their own access key.
+
+<Callout type="info">
+Members connect this service from **Settings > Connectors**. See [Connectors](/Sources/Connectors#amazon-s3) for how connections work.
+</Callout>
+
+## Create an access key
+
+Create an access key for an IAM user or role that can list and read the bucket:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::your-bucket" },
+    { "Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::your-bucket/*" }
+  ]
+}
+```
+
+## Connect
+
+In **Settings > Connectors**, pick **Amazon S3** and fill in:
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| **Access key ID** | The key's ID | Yes |
+| **Secret access key** | The key's secret | Yes |
+| **Region** | The bucket's region | No (defaults to `us-east-1`) |
+| **Custom endpoint URL** | For S3-compatible storage such as MinIO, Cloudflare R2 or DigitalOcean Spaces (`https://<region>.digitaloceanspaces.com`) | No |
+
+## Sync into Knowledge
+
+Turn on **Sync into Knowledge** and enter the **Bucket** name and an optional **Path prefix** to sync only part of it. DocsGPT reads the files it can parse under that prefix and syncs them on the schedule you choose.

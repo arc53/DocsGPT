@@ -6,7 +6,9 @@ import type {
   ScheduleResponse,
   ScheduleRunListResponse,
   ScheduleRunResponse,
+  ScheduleStats,
   ScheduleUpdatePayload,
+  UserScheduleListResponse,
 } from '../../agents/types/schedule';
 
 const json = async (response: Response | unknown) => {
@@ -15,7 +17,42 @@ const json = async (response: Response | unknown) => {
   return r.json();
 };
 
+const jsonOrUndefined = async (response: Response | unknown) => {
+  try {
+    return (await json(response)) as { message?: string } | undefined;
+  } catch {
+    // A proxy's HTML error page (a 502, say) is not JSON.
+    return undefined;
+  }
+};
+
+/**
+ * The body of a create or update, or an Error carrying the server's
+ * `message` when it refused the change (a bad run time, a finished task).
+ * Without one (an error page, a body that is not JSON) the Error has no
+ * message, so the form shows only its own "couldn't save" text.
+ */
+const savedOrThrow = async (response: Response | unknown) => {
+  const r = response as Response;
+  if (r && r.ok === false) {
+    const body = await jsonOrUndefined(r);
+    throw new Error(body?.message || '');
+  }
+  const body = await jsonOrUndefined(r);
+  if (body === undefined) throw new Error('');
+  return body;
+};
+
 const schedulesService = {
+  /** The caller's own schedules across every agent, agentless ones included. */
+  listAll: async (token: string | null): Promise<UserScheduleListResponse> => {
+    const r = await apiClient.get(endpoints.USER.USER_SCHEDULES, token);
+    if (!(r as Response).ok) {
+      throw new Error(`Schedules failed: ${(r as Response).status}`);
+    }
+    return (await json(r)) as UserScheduleListResponse;
+  },
+
   listForAgent: async (
     agentId: string,
     token: string | null,
@@ -25,6 +62,23 @@ const schedulesService = {
       token,
     );
     return (await json(r)) as ScheduleListResponse;
+  },
+
+  statsForAgent: async (
+    agentId: string,
+    token: string | null,
+    days = 30,
+  ): Promise<ScheduleStats> => {
+    const r = await apiClient.get(
+      endpoints.USER.AGENT_SCHEDULE_STATS(agentId, days),
+      token,
+    );
+    // The error body ({success: false, message}) is not stats: reject so the
+    // caller shows "—" instead of empty totals.
+    if (!(r as Response).ok) {
+      throw new Error(`Schedule stats failed: ${(r as Response).status}`);
+    }
+    return (await json(r)) as ScheduleStats;
   },
 
   create: async (
@@ -37,7 +91,7 @@ const schedulesService = {
       payload,
       token,
     );
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   get: async (id: string, token: string | null): Promise<ScheduleResponse> => {
@@ -51,7 +105,7 @@ const schedulesService = {
     token: string | null,
   ): Promise<ScheduleResponse> => {
     const r = await apiClient.put(endpoints.USER.SCHEDULE(id), payload, token);
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   setPaused: async (
@@ -64,7 +118,7 @@ const schedulesService = {
       { action },
       token,
     );
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   remove: async (
@@ -84,7 +138,7 @@ const schedulesService = {
       {},
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await savedOrThrow(r)) as ScheduleRunResponse;
   },
 
   listRuns: async (
@@ -109,7 +163,7 @@ const schedulesService = {
       endpoints.USER.SCHEDULE_RUN(id, runId),
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await savedOrThrow(r)) as ScheduleRunResponse;
   },
 };
 

@@ -16,6 +16,16 @@ describe('matchesTimezone', () => {
     expect(matchesTimezone('America/Los_Angeles', 'los angeles')).toBe(true);
   });
 
+  it('normalises separators in the query too, so "Asia/D" finds Asia/Dhaka', () => {
+    expect(matchesTimezone('Asia/Dhaka', 'Asia/D')).toBe(true);
+    expect(matchesTimezone('America/Los_Angeles', 'los_ang')).toBe(true);
+    expect(matchesTimezone('America/Los_Angeles', 'America/Los_Angeles')).toBe(
+      true,
+    );
+    // A typed zone path stays a phrase: "Asia/D" is not "asia" + any "d".
+    expect(matchesTimezone('Asia/Riyadh', 'Asia/D')).toBe(false);
+  });
+
   it('rejects non-matching queries', () => {
     expect(matchesTimezone('Europe/Warsaw', 'tokyo')).toBe(false);
     expect(matchesTimezone('Asia/Tokyo', 'warsaw')).toBe(false);

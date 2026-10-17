@@ -94,14 +94,28 @@ def test_novita_llm_uses_novita_api_key():
 
 @pytest.mark.unit
 def test_novita_llm_falls_back_to_api_key():
-    """Verify NovitaLLM falls back to API_KEY when NOVITA_API_KEY is not set."""
+    """Verify NovitaLLM falls back to API_KEY when NOVITA_API_KEY is not set and Novita is LLM_PROVIDER."""
     with patch("docsgpt.llm.novita.settings") as mock_settings:
         mock_settings.NOVITA_API_KEY = None
         mock_settings.API_KEY = "fallback-key"
+        mock_settings.LLM_PROVIDER = "novita"
         mock_settings.OPENAI_BASE_URL = None
 
         llm = NovitaLLM(api_key=None, user_api_key=None)
         assert llm.api_key == "fallback-key"
+
+
+@pytest.mark.unit
+def test_novita_llm_does_not_take_another_providers_api_key():
+    """API_KEY belongs to LLM_PROVIDER; Novita must not send it to its own endpoint."""
+    with patch("docsgpt.llm.novita.settings") as mock_settings:
+        mock_settings.NOVITA_API_KEY = None
+        mock_settings.API_KEY = "openai-key"
+        mock_settings.LLM_PROVIDER = "openai"
+        mock_settings.OPENAI_BASE_URL = None
+
+        llm = NovitaLLM(api_key=None, user_api_key=None)
+        assert llm.api_key != "openai-key"
 
 
 @pytest.mark.unit

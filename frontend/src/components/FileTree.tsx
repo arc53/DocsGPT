@@ -1,18 +1,19 @@
-import React, { SyntheticEvent, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
-import Trash from '../assets/red-trash.svg';
+import { Trash2 } from 'lucide-react';
 import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
-import type {
-  RowMenuContext,
-  TreeBrowserController,
-  TreeMenuOption,
-} from './tree/types';
+import { Button } from './ui/button';
+import type { MenuOption } from './ui/dropdown-menu';
+import type { RowMenuContext, TreeBrowserController } from './tree/types';
 import { useReingestSseWaiter } from './tree/useReingestWait';
+import type { LinkedChunk } from './chunkUtils';
 
 type QueuedOperation = {
   operation: 'add' | 'remove' | 'remove_directory';
@@ -28,6 +29,24 @@ interface FileTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control, rendered left of "Add file". */
   headerAction?: React.ReactNode;
+  /**
+   * Inside another source view (the graph source's Files tab): no Sources
+   * crumb, badge or byline, and no headerAction; Add file stays.
+   */
+  embedded?: boolean;
+  /** Embedded only: the host header's action slot (see TreeBrowser). */
+  actionsTarget?: HTMLElement | null;
+  /** A file to open once the structure loads (path, file name or display name). */
+  initialPath?: string;
+  /** The cited chunk to open in `initialPath`'s chunk list (see `LinkedChunk`). */
+  linkedChunk?: LinkedChunk;
+  /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
+  onCrumbsChange?: (crumbs: Crumb[]) => void;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`).
+   * False hides Add file, file and folder Delete (row and header menus) and the chunk writes; browsing stays.
+   */
+  canEdit?: boolean;
 }
 
 const FileTree: React.FC<FileTreeProps> = ({
@@ -35,9 +54,16 @@ const FileTree: React.FC<FileTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  embedded = false,
+  actionsTarget,
+  initialPath,
+  linkedChunk,
+  onCrumbsChange,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const dispatch = useDispatch();
 
   const controllerRef = useRef<TreeBrowserController | null>(null);
   const currentPathRef = useRef<string[]>([]);
@@ -68,6 +94,20 @@ const FileTree: React.FC<FileTreeProps> = ({
     parentDirPath?: string,
   ) => {
     currentOpRef.current = operation;
+    // A delete runs after its confirm has closed, so its failure is a toast.
+    const reportDeleteFailure = () => {
+      const path = operation === 'remove' ? filePath : directoryPath;
+      if (operation === 'add' || !path) return;
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.sources.deleteItemFailed', {
+            interpolation: { escapeValue: false },
+            name: path.split('/').pop(),
+          }),
+        }),
+      );
+    };
 
     try {
       const formData = new FormData();
@@ -106,6 +146,7 @@ const FileTree: React.FC<FileTreeProps> = ({
           }
         } else if (terminal === 'failed') {
           console.error('Reingest task failed (per SSE)');
+          reportDeleteFailure();
         } else if (terminal === 'unmounted') {
           return false;
         } else {
@@ -124,6 +165,7 @@ const FileTree: React.FC<FileTreeProps> = ({
             ? 'deleting directory'
             : 'deleting file(s)';
       console.error(`Error ${actionText}:`, error);
+      reportDeleteFailure();
     } finally {
       currentOpRef.current = null;
     }
@@ -211,18 +253,15 @@ const FileTree: React.FC<FileTreeProps> = ({
     name,
     isFile,
     defaultViewOption,
-  }: RowMenuContext): TreeMenuOption[] => {
+  }: RowMenuContext): MenuOption[] => {
+    // Read-only: View only, so a one-file source draws no header menu.
+    if (!canEdit) return [defaultViewOption];
     return [
       defaultViewOption,
       {
-        icon: Trash,
-        label: t('convTile.delete'),
-        onClick: (event: SyntheticEvent) => {
-          event.stopPropagation();
-          confirmDeleteItem(name, isFile);
-        },
-        iconWidth: 18,
-        iconHeight: 18,
+        icon: Trash2,
+        label: t('settings.sources.delete'),
+        onClick: () => confirmDeleteItem(name, isFile),
         variant: 'destructive',
       },
     ];
@@ -238,34 +277,32 @@ const FileTree: React.FC<FileTreeProps> = ({
   // Add file button is suppressed then.
   const topRightAction = (
     <>
-      {headerAction}
-      {!isProcessing ? (
-        <button
-          onClick={handleAddFile}
-          className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap text-white"
-          title={t('settings.sources.addFile')}
-        >
+      {embedded ? null : headerAction}
+      {canEdit && !isProcessing ? (
+        <Button type="button" size="field" shape="pill" onClick={handleAddFile}>
           {t('settings.sources.addFile')}
-        </button>
+        </Button>
       ) : null}
     </>
   );
 
   const extraContent = (
     <ConfirmationModal
-      message={
+      message={t('settings.sources.deleteWarning', {
+        interpolation: { escapeValue: false },
+        name: itemToDelete?.name ?? '',
+      })}
+      description={
         itemToDelete?.isFile
-          ? t('settings.sources.confirmDelete')
-          : t('settings.sources.deleteDirectoryWarning', {
-              name: itemToDelete?.name,
-            })
+          ? t('settings.sources.deleteFileConsequence')
+          : t('settings.sources.deleteDirectoryConsequence')
       }
       modalState={deleteModalState}
       setModalState={setDeleteModalState}
       handleSubmit={handleConfirmedDelete}
       handleCancel={handleCancelDelete}
-      submitLabel={t('convTile.delete')}
-      variant="danger"
+      submitLabel={t('settings.sources.delete')}
+      variant="destructive"
     />
   );
 
@@ -274,6 +311,12 @@ const FileTree: React.FC<FileTreeProps> = ({
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
+      embedded={embedded}
+      onCrumbsChange={onCrumbsChange}
+      canEdit={canEdit}
+      actionsTarget={actionsTarget}
+      initialPath={initialPath}
+      linkedChunk={linkedChunk}
       columnOrder="size-first"
       sortEntries={false}
       controllerRef={controllerRef}

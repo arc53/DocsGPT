@@ -28,7 +28,6 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
-    s.HUGGINGFACE_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -206,3 +205,29 @@ class TestOperatorValidation:
         # either way the message must surface what's wrong.
         msg = str(exc_info.value)
         assert "not_a_real_provider" in msg
+
+    @pytest.mark.parametrize("provider", ["huggingface", "llama.cpp"])
+    def test_a_removed_provider_skips_only_that_file(self, tmp_path, caplog, provider):
+        """An operator YAML written for a provider DocsGPT no longer has must not stop the app from booting."""
+        (tmp_path / "old.yaml").write_text(dedent(f"""
+            provider: {provider}
+            models:
+              - id: my-old-model
+                display_name: Old
+        """))
+        (tmp_path / "anthropic-extra.yaml").write_text(dedent("""
+            provider: anthropic
+            models:
+              - id: claude-extra
+                display_name: Extra
+        """))
+
+        s = _make_settings(ANTHROPIC_API_KEY="sk-ant", MODELS_CONFIG_DIR=str(tmp_path))
+        with caplog.at_level(logging.WARNING):
+            with patch("docsgpt.core.settings.settings", s):
+                reg = ModelRegistry()
+
+        assert reg.get_model("my-old-model") is None
+        assert reg.get_model("claude-extra") is not None
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("old.yaml" in w and provider in w and "removed" in w for w in warnings)

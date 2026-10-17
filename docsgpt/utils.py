@@ -5,9 +5,10 @@ import io
 import logging
 import os
 import re
+import unicodedata
 import uuid
 from pathlib import Path, PurePosixPath
-from typing import List
+from typing import List, Optional
 
 import tiktoken
 from flask import jsonify, make_response
@@ -347,7 +348,7 @@ def generate_agent_image_capability(
     agent_id: object, image_path: object, user_id: object
 ) -> str:
     """Create an HMAC capability for one agent's current internal image."""
-    secret = getattr(settings, "JWT_SECRET_KEY", "")
+    secret = settings.JWT_SECRET_KEY
     if not isinstance(secret, str) or not secret:
         return ""
     try:
@@ -389,7 +390,7 @@ def generate_image_url(image_path, agent_id=None, user_id=None):
     if not capability:
         return ""
     canonical_agent_id = str(uuid.UUID(str(agent_id)))
-    base_url = getattr(settings, "API_URL", "http://localhost:7091").rstrip("/")
+    base_url = settings.API_URL.rstrip("/")
     return f"{base_url}/api/images/{canonical_agent_id}/{capability}"
 
 
@@ -415,12 +416,45 @@ def calculate_compression_threshold(
     return threshold
 
 
+def _page_dpis(pdf_bytes: bytes, first_page: int, last_page: int, dpi: int, max_side: int) -> List[tuple]:
+    """``(page, dpi)`` for each page in range, lowered where the page would exceed ``max_side`` px.
+
+    Args:
+        pdf_bytes: The PDF.
+        first_page: First 1-based page.
+        last_page: Last 1-based page (cut at the page count).
+        dpi: The resolution pages are rendered at.
+        max_side: Longest side allowed, in pixels.
+
+    Returns:
+        One entry per existing page in range, in order.
+    """
+    import pypdfium2
+
+    pdf = pypdfium2.PdfDocument(pdf_bytes)
+    try:
+        pages = []
+        for number in range(first_page, min(last_page, len(pdf)) + 1):
+            page = pdf[number - 1]
+            try:
+                width, height = page.get_size()
+            finally:
+                page.close()
+            longest_inches = max(width, height, 1.0) / 72.0
+            pages.append((number, max(min(dpi, int(max_side / longest_inches)), 1)))
+        return pages
+    finally:
+        pdf.close()
+
+
 def convert_pdf_to_images(
     file_path: str,
     storage=None,
     max_pages: int = 20,
     dpi: int = 150,
     image_format: str = "PNG",
+    first_page: int = 1,
+    max_side: Optional[int] = None,
 ) -> List[dict]:
     """
     Convert PDF pages to images for LLMs that support images but not PDFs.
@@ -434,6 +468,10 @@ def convert_pdf_to_images(
         max_pages: Maximum number of pages to convert (default 20 to avoid context overflow)
         dpi: Resolution for rendering (default 150 for balance of quality/size)
         image_format: Output format (PNG recommended for quality)
+        first_page: 1-based page to start at; ``max_pages`` pages are rendered from it
+        max_side: Longest side of a rendered page in pixels; a page that
+            would be larger at ``dpi`` (a poster, a drawing) is rendered at
+            the lower resolution that fits. None renders every page at ``dpi``.
 
     Returns:
         List of dicts with keys:
@@ -457,29 +495,47 @@ def convert_pdf_to_images(
 
     images_data = []
     mime_type = f"image/{image_format.lower()}"
+    first_page = max(int(first_page or 1), 1)
+    last_page = first_page + max(int(max_pages), 1) - 1
 
     try:
+        if max_side:
+            if storage and hasattr(storage, "get_file"):
+                with storage.get_file(file_path) as pdf_file:
+                    pdf_bytes = pdf_file.read()
+            else:
+                with open(file_path, "rb") as pdf_file:
+                    pdf_bytes = pdf_file.read()
+            pil_images = []
+            for page, page_dpi in _page_dpis(pdf_bytes, first_page, last_page, dpi, int(max_side)):
+                rendered = convert_from_bytes(
+                    pdf_bytes, dpi=page_dpi, fmt=image_format.lower(), first_page=page, last_page=page
+                )
+                for image in rendered:
+                    # Rounding in the renderer can overshoot by a pixel.
+                    image.thumbnail((int(max_side), int(max_side)))
+                pil_images.extend(rendered)
         # Get PDF content either from storage or direct file path
-        if storage and hasattr(storage, "get_file"):
+        elif storage and hasattr(storage, "get_file"):
             with storage.get_file(file_path) as pdf_file:
                 pdf_bytes = pdf_file.read()
                 pil_images = convert_from_bytes(
                     pdf_bytes,
                     dpi=dpi,
                     fmt=image_format.lower(),
-                    first_page=1,
-                    last_page=max_pages,
+                    first_page=first_page,
+                    last_page=last_page,
                 )
         else:
             pil_images = convert_from_path(
                 file_path,
                 dpi=dpi,
                 fmt=image_format.lower(),
-                first_page=1,
-                last_page=max_pages,
+                first_page=first_page,
+                last_page=last_page,
             )
 
-        for page_num, pil_image in enumerate(pil_images, start=1):
+        for page_num, pil_image in enumerate(pil_images, start=first_page):
             # Convert PIL image to base64
             buffer = io.BytesIO()
             pil_image.save(buffer, format=image_format)
@@ -502,38 +558,105 @@ def convert_pdf_to_images(
         raise
 
 
+# Symbols (emoji, arrows, skin-tone modifiers), enclosing marks (keycaps),
+# format and private-use characters (zero-width joiners, tags) and
+# variation selectors.
+_UNSPOKEN_CATEGORIES = frozenset({"So", "Sk", "Me", "Cc", "Cf", "Co", "Cs", "Cn"})
+
+
+def _is_unspoken_char(ch: str) -> bool:
+    if ch.isascii():
+        return not (ch.isprintable() or ch in "\n\r\t")
+    if ch == "\u200c":  # zero-width non-joiner is part of Persian spelling
+        return False
+    if "\ufe00" <= ch <= "\ufe0f" or "\U000e0100" <= ch <= "\U000e01ef":
+        return True
+    return unicodedata.category(ch) in _UNSPOKEN_CATEGORIES
+
+
+# Markup the TTS cleaner strips. A "<...>" is only treated as a tag when it is
+# a common HTML element, a closing tag, an opener whose closing tag is in the
+# text, has attributes, or self-closes, so prose such as List<int>,
+# <your-api-key> or "a <= b" is kept. Single-letter names other than a, b, i
+# and u are left alone because they are usually generic type parameters.
+_HTML_TAGS = frozenset(
+    """a abbr audio b blockquote br center cite code dd del details div dl dt em
+    figcaption figure h1 h2 h3 h4 h5 h6 hr i iframe img ins kbd li ol p picture
+    pre script small source span strong style sub summary sup svg table tbody td
+    tfoot th thead tr u ul video""".split()
+)
+_TAG_RE = re.compile(r"<(/?)([A-Za-z][\w.:-]*)((?:\s[^<>]*?)?)(/?)>")
+_CLOSING_TAG_RE = re.compile(r"</([A-Za-z][\w.:-]*)\s*>")
+_ATTRIBUTE_RE = re.compile(r"\s[\w:.-]+\s*=")
+
+
+def _strip_html_comments(text: str) -> str:
+    """Replace each complete ``<!-- ... -->`` with a space; one pass, so linear."""
+    parts, position = [], 0
+    while (start := text.find("<!--", position)) != -1:
+        end = text.find("-->", start + 4)
+        if end == -1:
+            break
+        parts.append(text[position:start])
+        parts.append(" ")
+        position = end + 3
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def _strip_markup(text: str) -> str:
+    closed = {name.lower() for name in _CLOSING_TAG_RE.findall(text)}
+
+    def replace(match: re.Match) -> str:
+        closing, name, attributes, self_closing = match.groups()
+        name = name.lower()
+        if (
+            closing
+            or self_closing
+            or name in _HTML_TAGS
+            or name in closed
+            or _ATTRIBUTE_RE.match(attributes)
+        ):
+            return " "
+        return match.group(0)
+
+    return _TAG_RE.sub(replace, text)
+
+
 def clean_text_for_tts(text: str) -> str:
     """
     clean text for Text-to-Speech processing.
     """
-    # Handle code blocks and links
+    # Handle code blocks and links. Bracket patterns stop at the next opener,
+    # so malformed markdown is cleaned in linear time.
 
     text = re.sub(r"```mermaid[\s\S]*?```", " flowchart, ", text)  ## ```mermaid...```
     text = re.sub(r"```[\s\S]*?```", " code block, ", text)  ## ```code```
-    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)  ## [text](url)
-    text = re.sub(r"!\[([^\]]*)\]\([^\)]+\)", "", text)  ## ![alt](url)
+    text = re.sub(r"!\[([^\[\]]*)\]\([^()]+\)", "", text)  ## ![alt](url)
+    text = re.sub(r"\[([^\[\]]+)\]\([^()]+\)", r"\1", text)  ## [text](url)
 
     # Remove markdown formatting
 
     text = re.sub(r"`([^`]+)`", r"\1", text)  ## `code`
-    text = re.sub(r"\{([^}]*)\}", r" \1 ", text)  ## {text}
+    text = _strip_html_comments(text)  ## <!-- comments -->
+    text = _strip_markup(text)  ## <html> and <Jsx> tags
+    text = re.sub(r"\{([^{}]*)\}", r" \1 ", text)  ## {text}
     text = re.sub(r"[{}]", " ", text)  ## unmatched {}
-    text = re.sub(r"\[([^\]]+)\]", r" \1 ", text)  ## [text]
+    text = re.sub(r"\[([^\[\]]+)\]", r" \1 ", text)  ## [text]
     text = re.sub(r"[\[\]]", " ", text)  ## unmatched []
     text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)  ## **bold** __bold__
     text = re.sub(r"(\*|_)(.*?)\1", r"\2", text)  ## *italic* _italic_
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)  ## # headers
     text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)  ## > blockquotes
-    text = re.sub(r"^[\s]*[-\*\+]\s+", "", text, flags=re.MULTILINE)  ## - * + lists
-    text = re.sub(r"^[\s]*\d+\.\s+", "", text, flags=re.MULTILINE)  ## 1. numbered lists
+    text = re.sub(r"^[ \t]*[-\*\+]\s+", "", text, flags=re.MULTILINE)  ## - * + lists
+    text = re.sub(r"^[ \t]*\d+\.\s+", "", text, flags=re.MULTILINE)  ## 1. numbered lists
     text = re.sub(
         r"^[\*\-_]{3,}\s*$", "", text, flags=re.MULTILINE
     )  ## --- *** ___ rules
-    text = re.sub(r"<[^>]*>", "", text)  ## <html> tags
 
-    # Remove non-ASCII (emojis, special Unicode)
+    # Remove emojis and symbols; keep letters of every script
 
-    text = re.sub(r"[^\x20-\x7E\n\r\t]", "", text)
+    text = "".join(ch for ch in text if not _is_unspoken_char(ch))
 
     # Replace special sequences
 

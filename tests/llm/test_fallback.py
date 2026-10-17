@@ -1015,6 +1015,38 @@ class TestLLMCreatorPassesModelUserId:
         assert captured["model_user_id"] == "owner-alice"
 
 
+    @pytest.mark.parametrize(
+        "model_id, source, expected",
+        [(None, None, False), ("catalog-model", "builtin", False), ("byom-uuid", "user", True)],
+    )
+    def test_byom_flag_follows_the_model_source(self, monkeypatch, model_id, source, expected):
+        from types import SimpleNamespace
+
+        from docsgpt.llm.llm_creator import LLMCreator
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        class _LLM:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
+        model = SimpleNamespace(
+            source=source, api_key="own-key", base_url=None, upstream_model_id=None, capabilities=None
+        )
+        registry = SimpleNamespace(get_model=lambda _id, user_id=None: model)
+        monkeypatch.setattr(
+            "docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry
+        )
+
+        llm = LLMCreator.create_llm(
+            type="openai", api_key="k", user_api_key=None,
+            decoded_token={"sub": "u1"}, model_id=model_id,
+        )
+
+        assert llm._is_byom is expected
+        assert llm._canonical_model_id == model_id
+
+
 # Tests — responding-provider tracking (cross-provider fallback handler fix)
 
 
@@ -1241,6 +1273,8 @@ class SharedEndpointPdfFakeLLM(FakeLLM):
 class TestFallbackMessageReshaping:
 
     def _run_stream(self, primary, messages, attachments):
+        # The provider recorded which attachment it built the file part from.
+        primary._file_part_attachments = {"assistant-abc123": "att-1"}
         return list(
             primary.gen_stream(
                 model="test-model",
@@ -1299,17 +1333,17 @@ class TestFallbackMessageReshaping:
         assert isinstance(user_content, list)
         assert {"type": "file", "file": {"file_id": "assistant-abc123"}} in user_content
 
-    def test_stream_file_part_without_extracted_content_becomes_note(self):
+    def test_stream_file_part_without_extracted_content_skips_the_fallback(self):
+        # The fallback would answer without the document the user sent; the
+        # primary's error is reported instead.
         fallback = FakeLLM(stream_chunks=["fb"])
         primary = FakeLLM(fail_at=0)
         primary._fallback_llm = fallback
 
-        self._run_stream(primary, _parts_messages(), attachments=None)
+        with pytest.raises(RuntimeError):
+            self._run_stream(primary, _parts_messages(), attachments=None)
 
-        user_content = fallback.last_messages_received[1]["content"]
-        assert isinstance(user_content, str)
-        assert "could not be included" in user_content
-        assert "assistant-abc123" not in user_content
+        assert fallback.gen_stream_called is False
 
     def test_stream_string_messages_pass_through_unchanged(self):
         fallback = FakeLLM(stream_chunks=["fb"])
@@ -1325,6 +1359,7 @@ class TestFallbackMessageReshaping:
         fallback = FakeLLM(responses=["fb answer"])
         primary = FakeLLM(fail_at=0)
         primary._fallback_llm = fallback
+        primary._file_part_attachments = {"assistant-abc123": "att-1"}
 
         result = primary.gen(
             model="test-model",
@@ -1382,9 +1417,20 @@ class _GoogleFake(FakeLLM):
 
 
 class _AnthropicFake(FakeLLM):
-    """Provider with no structured-output kwarg at all."""
+    """Anthropic double: real declaration + real preparer, fake transport."""
 
     provider_name = "anthropic"
+    structured_output_kwarg = "output_format"
+    prepare_structured_output_format = AnthropicLLM.prepare_structured_output_format
+
+    def _supports_structured_output(self):
+        return True
+
+
+class _UnstructuredFake(FakeLLM):
+    """Provider with no structured-output kwarg at all."""
+
+    provider_name = "custom"
 
 
 def _openai_envelope(schema=SCHEMA, strict=True):
@@ -1412,8 +1458,13 @@ class TestStructuredOutputDeclarations:
     def test_google_declares_response_schema(self):
         assert GoogleLLM.structured_output_kwarg == "response_schema"
 
-    def test_anthropic_declares_nothing(self):
-        assert AnthropicLLM.structured_output_kwarg is None
+    def test_anthropic_declares_output_format(self):
+        assert AnthropicLLM.structured_output_kwarg == "output_format"
+
+    def test_anthropic_prepare_records_source(self):
+        llm = _AnthropicFake()
+        llm.prepare_structured_output_format(SCHEMA, strict=False)
+        assert llm._structured_output_source == (SCHEMA, False)
 
     def test_base_declares_nothing(self):
         assert BaseLLM.structured_output_kwarg is None
@@ -1690,10 +1741,86 @@ class TestCrossProviderStructuredOutputFallback:
         assert "response_format" not in fallback.last_kwargs_received
         assert "response_schema" not in fallback.last_kwargs_received
 
-    def test_anthropic_fallback_gets_neither_kwarg(self):
-        """Anthropic has no structured-output kwarg: unstructured, not broken."""
+    def test_gen_openai_primary_anthropic_fallback_gets_output_format(self):
         primary = _OpenAIWireFake(fail_at=0)
-        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4")
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4-6")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, response_format=response_format)
+
+        assert result == "fb"
+        received = fallback.last_kwargs_received
+        assert "response_format" not in received
+        assert received["output_format"]["type"] == "json_schema"
+        assert set(received["output_format"]["schema"]["properties"]) == {
+            "answer",
+            "score",
+        }
+
+    def test_stream_google_primary_anthropic_fallback_gets_output_format(self):
+        primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
+        fallback = _AnthropicFake(stream_chunks=["fb"], model_id="claude-sonnet-4-6")
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        chunks = list(primary.gen_stream(**CALL_ARGS, response_schema=response_schema))
+
+        assert chunks == ["fb"]
+        received = fallback.last_kwargs_received
+        assert "response_schema" not in received
+        assert received["output_format"]["schema"]["additionalProperties"] is False
+
+    def test_gen_anthropic_primary_openai_fallback_gets_response_format(self):
+        primary = _AnthropicFake(fail_at=0)
+        fallback = _OpenAIWireFake(responses=["fb"], model_id="gpt-4o-mini")
+        primary._fallback_llm = fallback
+        output_format = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, output_format=output_format)
+
+        assert result == "fb"
+        received = fallback.last_kwargs_received
+        assert "output_format" not in received
+        assert received["response_format"]["type"] == "json_schema"
+
+    def test_gen_anthropic_primary_google_fallback_gets_response_schema(self):
+        primary = _AnthropicFake(fail_at=0)
+        fallback = _GoogleFake(responses=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+        output_format = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(**CALL_ARGS, output_format=output_format)
+
+        received = fallback.last_kwargs_received
+        assert "output_format" not in received
+        assert received["response_schema"] == _google_schema()
+
+    def test_same_wire_family_passes_output_format_verbatim(self):
+        primary = _AnthropicFake(fail_at=0)
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-haiku-4-5")
+        primary._fallback_llm = fallback
+        output_format = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(**CALL_ARGS, output_format=output_format)
+
+        assert fallback.last_kwargs_received["output_format"] is output_format
+
+    def test_json_object_mode_dropped_for_anthropic_fallback(self):
+        """Anthropic has no schema-less JSON mode wired — drop, don't crash."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4-6")
+        primary._fallback_llm = fallback
+
+        result = primary.gen(**CALL_ARGS, response_format={"type": "json_object"})
+
+        assert result == "fb"
+        assert fallback.last_kwargs_received == {}
+
+    def test_unstructured_fallback_gets_no_kwarg(self):
+        """A provider with no structured-output kwarg: unstructured, not broken."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _UnstructuredFake(responses=["fb"], model_id="custom-model")
         primary._fallback_llm = fallback
         response_format = primary.prepare_structured_output_format(SCHEMA)
 
@@ -1702,9 +1829,9 @@ class TestCrossProviderStructuredOutputFallback:
         assert result == "fb"
         assert fallback.last_kwargs_received == {}
 
-    def test_anthropic_fallback_gets_neither_kwarg_streaming(self):
+    def test_unstructured_fallback_gets_no_kwarg_streaming(self):
         primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
-        fallback = _AnthropicFake(stream_chunks=["fb"], model_id="claude-sonnet-4")
+        fallback = _UnstructuredFake(stream_chunks=["fb"], model_id="custom-model")
         primary._fallback_llm = fallback
         response_schema = primary.prepare_structured_output_format(SCHEMA)
 
@@ -1823,3 +1950,94 @@ class TestRealOpenAIFallbackRejectsForeignKwargs:
         sent = fallback.client.chat.completions.last_kwargs
         assert "response_schema" not in sent
         assert sent["response_format"]["type"] == "json_schema"
+
+
+# Tests — which model answered
+
+
+class _AzureServerError(Exception):
+    """An upstream 5xx, as the OpenAI SDK raises it."""
+
+    status_code = 500
+
+
+def _pair(primary_kwargs=None, backup_kwargs=None):
+    primary = FakeLLM(model_id="gpt-6.1-sol", **(primary_kwargs or {}))
+    primary._provider_plugin = "azure_openai"
+    backup = FakeLLM(model_id="kimi-k3", stream_chunks=["fb1", "fb2"], **(backup_kwargs or {}))
+    backup._provider_plugin = "openai_compatible"
+    primary._fallback_llm = backup
+    return primary, backup
+
+
+# The model the primary is called with, as the agent passes it.
+ROUND = dict(CALL_ARGS, model="gpt-6.1-sol")
+
+
+@pytest.mark.unit
+class TestAnsweringModel:
+    def test_the_primary_answering_is_recorded_once(self):
+        primary, _backup = _pair()
+
+        assert list(primary.gen_stream(**ROUND)) == ["chunk1", "chunk2"]
+        list(primary.gen_stream(**ROUND))
+
+        assert primary.answered_by == [
+            {"model": "gpt-6.1-sol", "provider": "azure_openai", "fallback": False}
+        ]
+
+    def test_a_fallback_before_the_first_chunk(self):
+        primary, _backup = _pair({"fail_at": 0, "error_class": _AzureServerError})
+
+        assert list(primary.gen_stream(**ROUND)) == ["fb1", "fb2"]
+
+        assert primary.answered_by == [
+            {
+                "model": "kimi-k3",
+                "provider": "openai_compatible",
+                "fallback": True,
+                "reason": "_AzureServerError/500",
+            }
+        ]
+
+    def test_a_fallback_mid_stream_reports_both(self):
+        primary, _backup = _pair({"fail_at": 1, "error_class": _AzureServerError})
+
+        assert list(primary.gen_stream(**ROUND)) == ["chunk1", "fb1", "fb2"]
+
+        assert [(e["model"], e["fallback"]) for e in primary.answered_by] == [
+            ("gpt-6.1-sol", False),
+            ("kimi-k3", True),
+        ]
+        assert primary.answered_by[1]["reason"] == "_AzureServerError/500"
+
+    def test_tool_rounds_answered_by_different_models_report_each_change(self):
+        # Round 1 falls back, round 2 is the primary again, round 3 falls back.
+        primary, _backup = _pair({"fail_schedule": [0, None, 0]})
+
+        for _round in range(3):
+            list(primary.gen_stream(**ROUND))
+
+        assert [(e["model"], e["fallback"]) for e in primary.answered_by] == [
+            ("kimi-k3", True),
+            ("gpt-6.1-sol", False),
+            ("kimi-k3", True),
+        ]
+        assert primary.answered_by[0]["reason"] == "RuntimeError"
+
+    def test_a_failed_fallback_answered_nothing(self):
+        primary, _backup = _pair({"fail_at": 0}, {"fail_at": 0})
+
+        with pytest.raises(RuntimeError):
+            list(primary.gen_stream(**ROUND))
+
+        assert primary.answered_by == []
+
+    def test_non_streaming_fallback_is_recorded(self):
+        primary, _backup = _pair({"fail_at": 0})
+        primary._fallback_llm.responses = ["backup ok"]
+
+        assert primary.gen(**ROUND) == "backup ok"
+
+        assert primary.answered_by[-1]["model"] == "kimi-k3"
+        assert primary.answered_by[-1]["fallback"] is True

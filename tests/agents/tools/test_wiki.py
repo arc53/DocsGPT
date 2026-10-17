@@ -152,6 +152,17 @@ def patched_wiki(monkeypatch, reembed_mock, rebuild_mock):
     task = MagicMock()
     task.delay = reembed_mock
     monkeypatch.setattr("docsgpt.api.user.tasks.reembed_wiki_page", task)
+    # Every write re-checks the caller's live grant; default to editor.
+    monkeypatch.setattr(
+        "docsgpt.api.user.resource_access.resolve",
+        lambda conn, rt, rid, uid: _access("editor"),
+    )
+
+
+def _access(level):
+    from docsgpt.api.user.resource_access import build
+
+    return build("source", "src-1", level, "owner-sub", {})
 
 
 @pytest.fixture
@@ -192,6 +203,54 @@ class TestBasics:
 
     def test_updated_by_is_caller(self, wiki_tool):
         assert wiki_tool.updated_by == "caller-sub"
+
+
+# =====================================================================
+# Live grant re-check on writes
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestLiveWriteCheck:
+    @pytest.mark.parametrize("revoked", [None, "viewer"])
+    def test_revoked_or_viewer_cannot_write(self, wiki_tool, monkeypatch, reembed_mock, revoked):
+        wiki_tool.execute_action("create", path="/a.md", content="one")
+        monkeypatch.setattr(
+            "docsgpt.api.user.resource_access.resolve",
+            lambda conn, rt, rid, uid: _access(revoked) if revoked else None,
+        )
+        reembed_mock.reset_mock()
+        for action, kwargs in (
+            ("create", {"path": "/b.md", "content": "x"}),
+            ("str_replace", {"path": "/a.md", "old_str": "one", "new_str": "two"}),
+            ("insert", {"path": "/a.md", "insert_line": 1, "insert_text": "x"}),
+            ("delete", {"path": "/a.md"}),
+            ("rename", {"old_path": "/a.md", "new_path": "/c.md"}),
+        ):
+            result = wiki_tool.execute_action(action, **kwargs)
+            assert "no longer have edit access" in result, action
+        reembed_mock.assert_not_called()
+        # Reads still work.
+        assert "one" in wiki_tool.execute_action("view", path="/a.md")
+
+    def test_checks_the_invoking_user(self, wiki_tool, monkeypatch):
+        seen = []
+
+        def _resolve(conn, rt, rid, uid):
+            seen.append((rt, rid, uid))
+            return _access("editor")
+
+        monkeypatch.setattr("docsgpt.api.user.resource_access.resolve", _resolve)
+        wiki_tool.execute_action("create", path="/a.md", content="x")
+        assert seen == [("source", "src-1", "caller-sub")]
+
+    def test_no_caller_denied(self, patched_wiki):
+        from docsgpt.agents.tools.wiki import WikiTool
+
+        tool = WikiTool({"source_id": "src-1", "source_owner_id": "owner-sub"})
+        assert "no longer have edit access" in tool.execute_action(
+            "create", path="/a.md", content="x"
+        )
 
 
 # =====================================================================
@@ -498,8 +557,8 @@ class TestBuildAgentGating:
             _noop_conn,
         )
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: "owner-x",
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: "owner-x",
         )
         cfg = proc._build_wiki_config()
         assert cfg is not None
@@ -524,10 +583,10 @@ class TestBuildAgentGating:
             "docsgpt.api.answer.services.stream_processor.db_readonly",
             _noop_conn,
         )
-        # Viewer: effective_write_owner returns None.
+        # Viewer: no ``edit`` on the source, so no write owner.
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: None,
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: None,
         )
         assert proc._build_wiki_config() is None
 
@@ -550,8 +609,8 @@ class TestBuildAgentGating:
             _noop_conn,
         )
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: "owner-x",
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: "owner-x",
         )
         assert proc._build_wiki_config() is None
 
@@ -574,10 +633,176 @@ class TestBuildAgentGating:
             _noop_conn,
         )
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: "owner-x",
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: "owner-x",
         )
         cfg = proc._build_wiki_config()
         assert cfg is not None
         # v1 binds the first writable wiki source; the extra is skipped.
         assert cfg["source_id"] == "wiki-1"
+
+
+# =====================================================================
+# API, widget and public-link callers (the wiki's outside-edits setting)
+# =====================================================================
+
+
+def _outside_tool(monkeypatch, allowed):
+    from docsgpt.agents.tools.wiki import WikiTool
+
+    class _Sources:
+        def __init__(self, conn):
+            pass
+
+        def get_by_id(self, sid):
+            return {"id": sid, "wiki_outside_edits": allowed}
+
+    monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Sources)
+    return WikiTool(
+        {
+            "source_id": "src-1",
+            "source_owner_id": "owner-sub",
+            "decoded_token": {"sub": "owner-sub"},
+            "user": "owner-sub",
+            "outside_caller": True,
+        }
+    )
+
+
+_WRITES = (
+    ("create", {"path": "/b.md", "content": "x"}),
+    ("str_replace", {"path": "/a.md", "old_str": "one", "new_str": "two"}),
+    ("insert", {"path": "/a.md", "insert_line": 1, "insert_text": "x"}),
+    ("delete", {"path": "/a.md"}),
+    ("rename", {"old_path": "/a.md", "new_path": "/c.md"}),
+)
+
+
+@pytest.mark.unit
+class TestOutsideCallerWrites:
+    def test_refused_while_the_setting_is_off(self, patched_wiki, monkeypatch, reembed_mock):
+        _FakeWikiRepo().upsert("src-1", "/a.md", "one")
+        tool = _outside_tool(monkeypatch, False)
+        for action, kwargs in _WRITES:
+            result = tool.execute_action(action, **kwargs)
+            assert "API or widget" in result, action
+        reembed_mock.assert_not_called()
+        assert _FakeWikiRepo().get_by_path("src-1", "/a.md")["content"] == "one"
+        # Reading stays open to them.
+        assert "one" in tool.execute_action("view", path="/a.md")
+
+    def test_allowed_once_the_owner_turns_it_on(self, patched_wiki, monkeypatch):
+        tool = _outside_tool(monkeypatch, True)
+        assert tool.execute_action("create", path="/b.md", content="x") == "Page created: /b.md"
+
+    def test_a_missing_row_refuses(self, patched_wiki, monkeypatch):
+        tool = _outside_tool(monkeypatch, True)
+
+        class _Gone:
+            def __init__(self, conn):
+                pass
+
+            def get_by_id(self, sid):
+                return None
+
+        monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Gone)
+        assert "API or widget" in tool.execute_action("create", path="/b.md", content="x")
+
+    def test_owner_and_team_runs_skip_the_setting(self, wiki_tool, monkeypatch):
+        class _Boom:
+            def __init__(self, conn):
+                raise AssertionError("an in-app run must not read the setting")
+
+        monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Boom)
+        assert wiki_tool.execute_action("create", path="/b.md", content="x") == "Page created: /b.md"
+
+
+@pytest.mark.unit
+class TestReadOnlyEntry:
+    def _entry(self, **extra):
+        from docsgpt.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
+
+        tools_dict = {}
+        add_wiki_tool(tools_dict, {"source_id": "s1", "source_owner_id": "owner", "user": "owner", **extra})
+        return tools_dict[WIKI_TOOL_ID]
+
+    def test_outside_caller_without_the_setting_is_offered_only_view(self):
+        entry = self._entry(outside_caller=True, writes_allowed=False)
+        assert [a["name"] for a in entry["actions"]] == ["wiki_view"]
+        assert entry["config"]["outside_caller"] is True
+
+    def test_writes_offered_when_allowed(self):
+        entry = self._entry(outside_caller=True, writes_allowed=True)
+        names = {a["name"] for a in entry["actions"]}
+        assert {"wiki_view", "wiki_create", "wiki_str_replace", "wiki_delete"} <= names
+        assert entry["config"]["outside_caller"] is True
+
+    def test_approval_required_gates_writes_only(self):
+        entry = self._entry(approval_required=True)
+        for action in entry["actions"]:
+            assert bool(action.get("require_approval")) is (action["name"] != "wiki_view"), action["name"]
+        assert entry["config"]["outside_caller"] is False
+
+    def test_in_app_config_keeps_every_action(self):
+        entry = self._entry()
+        assert len(entry["actions"]) == 6
+        assert entry["config"]["outside_caller"] is False
+
+
+@pytest.mark.unit
+class TestBuildConfigOutsideCallers:
+    def _cfg(self, monkeypatch, agent_config, allowed=False):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        class _SrcRepo:
+            def __init__(self, conn):
+                pass
+
+            def get_any(self, sid, owner):
+                return {"id": sid, "config": {"kind": "wiki"}, "wiki_outside_edits": allowed}
+
+        monkeypatch.setattr("docsgpt.api.answer.services.stream_processor.SourcesRepository", _SrcRepo)
+        monkeypatch.setattr("docsgpt.api.answer.services.stream_processor.db_readonly", _noop_conn)
+        monkeypatch.setattr(
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner", lambda conn, sid, uid: "owner-x"
+        )
+        proc = StreamProcessor.__new__(StreamProcessor)
+        proc.all_sources = [{"id": "wiki-src"}]
+        proc.decoded_token = {"sub": "owner-x"}
+        if agent_config is not None:
+            proc.agent_config = agent_config
+        return proc._build_wiki_config()
+
+    def test_api_key_caller_gets_read_only_while_off(self, monkeypatch):
+        cfg = self._cfg(monkeypatch, {"external_api_caller": True})
+        assert cfg["outside_caller"] is True
+        assert cfg["writes_allowed"] is False
+        assert cfg["approval_required"] is False
+
+    def test_api_key_caller_may_write_when_on(self, monkeypatch):
+        cfg = self._cfg(monkeypatch, {"external_api_caller": True}, allowed=True)
+        assert cfg["outside_caller"] is True
+        assert cfg["writes_allowed"] is True
+
+    @pytest.mark.parametrize("allowed", [False, True])
+    def test_public_link_visitor_is_asked_whatever_the_switch(self, monkeypatch, allowed):
+        # A visitor runs as themselves, so only wikis they can edit get here;
+        # the switch doesn't apply, but every edit waits for their approval.
+        cfg = self._cfg(monkeypatch, {"public_link_caller": True}, allowed=allowed)
+        assert cfg["outside_caller"] is False
+        assert cfg["writes_allowed"] is True
+        assert cfg["approval_required"] is True
+
+    def test_v1_key_holder_gets_read_only(self, monkeypatch):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        monkeypatch.setattr(StreamProcessor, "external_caller", True, raising=False)
+        cfg = self._cfg(monkeypatch, {})
+        assert cfg["writes_allowed"] is False
+
+    @pytest.mark.parametrize("agent_config", [None, {}, {"external_api_caller": False}])
+    def test_owner_and_team_unaffected(self, monkeypatch, agent_config):
+        cfg = self._cfg(monkeypatch, agent_config)
+        assert cfg["outside_caller"] is False
+        assert cfg["writes_allowed"] is True
+        assert cfg["approval_required"] is False

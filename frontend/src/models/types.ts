@@ -1,12 +1,8 @@
 export type ModelSource = 'builtin' | 'user';
 export type ModelApiFlavor = 'chat_completions' | 'responses';
+export type ToolResultImages = 'native' | 'follow_up';
 export type ReasoningEffort =
-  | 'none'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh';
+  'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface AvailableModel {
   id: string;
@@ -43,6 +39,7 @@ export interface CustomModelCapabilities {
   context_window: number;
   api_flavor?: ModelApiFlavor;
   reasoning_effort?: ReasoningEffort;
+  tool_result_images?: ToolResultImages;
 }
 
 export interface CustomModel {

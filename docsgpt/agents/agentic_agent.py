@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Generator, Optional
 
 from docsgpt.agents.base import BaseAgent
+from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.logging import LogContext
@@ -33,12 +34,15 @@ class AgenticAgent(BaseAgent):
     ) -> Generator[Dict, None, None]:
         tools_dict = self.tool_executor.get_tools()
         add_internal_search_tool(tools_dict, self.retriever_config)
+        add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
 
         # 4. Build messages (prompt has NO pre-fetched docs)
         messages = self._build_messages(self.prompt, query)
+        self._attach_citation_registry()
 
         # 5. Call LLM — the handler manages the tool loop
         llm_response = self._llm_gen(messages, log_context)

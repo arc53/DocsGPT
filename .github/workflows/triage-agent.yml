@@ -1,0 +1,108 @@
+# Keeps the DocsGPT triage agent on DocsGPT Cloud in sync with the repository:
+# its definition (.github/triage/agent.yaml) and the documents it searches.
+# The contributor guides follow every push that changes them. The product docs
+# (docs/content, about 70 pages) are refreshed weekly instead: re-ingesting them
+# on every docs merge loaded the Cloud workers for no real gain.
+# Off until the TRIAGE_MODE repository variable is set; see .github/triage/README.md.
+name: Triage agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/triage/agent.yaml
+      - .github/workflows/triage-agent.yml
+      - AGENTS.md
+      - CONTRIBUTING.md
+      - frontend/DESIGN.md
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC: refresh the product docs
+  workflow_dispatch:
+    inputs:
+      product_docs:
+        description: Re-upload the product docs too
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: triage-agent
+  cancel-in-progress: false
+
+env:
+  CLI_VERSION: v1.6.1
+
+jobs:
+  deploy:
+    if: github.repository == 'arc53/DocsGPT' && vars.TRIAGE_MODE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    permissions:
+      contents: read
+    env:
+      DOCSGPT_URL: https://gptcloud.arc53.com
+      DOCSGPT_TOKEN: ${{ secrets.DOCSGPT_TRIAGE_PAT }}
+      DOCSGPT_NO_UPDATE_CHECK: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install docsgpt-cli
+        run: |
+          base="https://github.com/arc53/DocsGPT-cli/releases/download/${CLI_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/docsgpt-cli_linux_amd64.tar.gz"
+          curl -fsSLO "$base/checksums.txt"
+          grep ' docsgpt-cli_linux_amd64.tar.gz$' checksums.txt | sha256sum -c -
+          tar -xzf docsgpt-cli_linux_amd64.tar.gz docsgpt-cli
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Work out what to upload
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+          PRODUCT_DOCS: ${{ inputs.product_docs }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            schedule)
+              echo "docs=true" >> "$GITHUB_OUTPUT" ;;
+            workflow_dispatch)
+              echo "guides=true" >> "$GITHUB_OUTPUT"
+              if [ "$PRODUCT_DOCS" = true ]; then echo "docs=true" >> "$GITHUB_OUTPUT"; fi ;;
+            push)
+              if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null \
+                || git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -qxE 'AGENTS.md|CONTRIBUTING.md|frontend/DESIGN.md'; then
+                echo "guides=true" >> "$GITHUB_OUTPUT"
+              fi ;;
+          esac
+
+      # A slow or failed upload must not hold back the agent: the previous copy
+      # stays attached, the agent is applied anyway, and the last step reports it.
+      - name: Upload the contributor guides
+        id: guides
+        if: steps.changed.outputs.guides == 'true'
+        continue-on-error: true
+        run: |
+          docsgpt-cli sources upload AGENTS.md CONTRIBUTING.md frontend/DESIGN.md \
+            --name docsgpt-contributor-guides --wait --replace --timeout 30m
+
+      - name: Upload the product docs
+        id: docs
+        if: steps.changed.outputs.docs == 'true'
+        continue-on-error: true
+        run: |
+          (cd docs && zip -qr "$RUNNER_TEMP/product-docs.zip" content -i '*.md' '*.mdx')
+          docsgpt-cli sources upload "$RUNNER_TEMP/product-docs.zip" \
+            --name docsgpt-product-docs --wait --replace --timeout 90m
+
+      - name: Apply the agent
+        run: docsgpt-cli agents apply -f .github/triage/agent.yaml
+
+      - name: Report a failed upload
+        if: steps.guides.outcome == 'failure' || steps.docs.outcome == 'failure'
+        run: |
+          echo "::error::A source upload failed or timed out; the agent kept its previous copy."
+          exit 1

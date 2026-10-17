@@ -72,10 +72,8 @@ class TestSettingsFollowTheHome:
 
         monkeypatch.setenv(paths.HOME_ENV, str(tmp_path))
         monkeypatch.delenv("MILVUS_URI", raising=False)
-        monkeypatch.delenv("LANCEDB_PATH", raising=False)
         fresh = Settings(_env_file=None)
         assert fresh.MILVUS_URI == str(tmp_path.resolve() / "milvus_local.db")
-        assert fresh.LANCEDB_PATH == str(tmp_path.resolve() / "data" / "lancedb")
 
     def test_model_cache_defaults_under_the_home(self, monkeypatch, tmp_path):
         """FastEmbed's own default is the temp dir, which a reboot wipes."""
@@ -89,10 +87,10 @@ class TestSettingsFollowTheHome:
         from docsgpt.core.settings import Settings
 
         monkeypatch.setenv(paths.HOME_ENV, str(tmp_path))
-        monkeypatch.setenv("LANCEDB_PATH", "/srv/lancedb")
+        monkeypatch.setenv("MILVUS_URI", "/srv/milvus.db")
         monkeypatch.setenv("EMBEDDINGS_CACHE_DIR", "/srv/models")
         fresh = Settings(_env_file=None)
-        assert fresh.LANCEDB_PATH == "/srv/lancedb"
+        assert fresh.MILVUS_URI == "/srv/milvus.db"
         assert fresh.EMBEDDINGS_CACHE_DIR == "/srv/models"
 
 

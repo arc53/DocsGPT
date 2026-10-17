@@ -23,6 +23,7 @@ from docsgpt.retriever.stages.prescreen import (
     max_candidate_k,
 )
 from docsgpt.storage.db.source_config import RetrievalConfig
+from docsgpt.tracing.retrieval import describe_documents, start_retrieval_span
 from docsgpt.utils import num_tokens_from_string
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ class Dispatcher(BaseRetriever):
         source,
         chat_history=None,
         prompt="",
-        chunks=2,
+        chunks=6,
         doc_token_limit=50000,
         model_id="docsgpt-local",
         user_api_key=None,
@@ -185,12 +186,23 @@ class Dispatcher(BaseRetriever):
         score_threshold / rephrase_query) plus an opted-in prescreen config; a
         source left at defaults takes the global path so all-classic retrieval
         stays byte-identical with zero extra LLM calls.
+
+        A graph source's ``graph`` options count too: they are read from the
+        per-source config this records, so a source that changes only those
+        would otherwise run the defaults and the options would do nothing.
+        They mean nothing to any other retriever, so they only count for
+        ``graphrag`` -- an override hands the source its own chunk budget as
+        well, which a classic source must not pick up from a graph setting.
         """
         return (
             retrieval.chunks != _DEFAULT_RETRIEVAL.chunks
             or retrieval.score_threshold != _DEFAULT_RETRIEVAL.score_threshold
             or retrieval.rephrase_query != _DEFAULT_RETRIEVAL.rephrase_query
             or retrieval.prescreen is not None
+            or (
+                (retrieval.retriever or "").lower() == "graphrag"
+                and retrieval.graph != _DEFAULT_RETRIEVAL.graph
+            )
         )
 
     @staticmethod
@@ -283,6 +295,17 @@ class Dispatcher(BaseRetriever):
 
     def search(self, query: str = "") -> List[Dict[str, Any]]:
         """Run every group under the shared budget and merge the results."""
+        sources = [s for group in self._groups for s in group.get("doc_ids", [])]
+        with start_retrieval_span(
+            "retrieval",
+            sources=sources,
+            **{"docsgpt.retriever": "Dispatcher", "docsgpt.group_count": len(self._groups)},
+        ) as span:
+            docs = self._search_groups(query)
+            describe_documents(span, docs)
+            return docs
+
+    def _search_groups(self, query: str) -> List[Dict[str, Any]]:
         groups = self._groups
         n_groups = len(groups)
 
@@ -344,6 +367,6 @@ def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     Returns:
         A ``Dispatcher`` or the legacy retriever from ``create_classic``.
     """
-    if not getattr(settings, "PER_SOURCE_RETRIEVAL_ENABLED", True):
+    if not settings.PER_SOURCE_RETRIEVAL_ENABLED:
         return create_classic()
     return Dispatcher(**kwargs)

@@ -1,0 +1,3 @@
+## Citations
+- Documents provided with the question are numbered (<document index="n">) and search results are labelled [n]. Cite the source of a claim inline, right after it, as [n] with that number; cite several as [1][3].
+- Cite only numbers you were given; never invent one. Do not add a list of sources at the end: the sources are shown with the answer.

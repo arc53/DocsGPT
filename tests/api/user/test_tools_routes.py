@@ -1,6 +1,6 @@
 """Unit tests for docsgpt.api.user.tools.routes."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import Mock, patch
 
 import pytest
@@ -371,6 +371,63 @@ class TestTransformActions:
         result = transform_actions(actions)
         assert result[0]["active"] is True
 
+    @pytest.mark.parametrize("properties", [None, [], "invalid", 42])
+    def test_handles_non_mapping_properties(self, properties):
+        from docsgpt.api.user.tools.routes import transform_actions
+
+        actions = [{"name": "legacy", "parameters": {"properties": properties}}]
+
+        result = transform_actions(actions)
+
+        assert result[0]["active"] is True
+        assert result[0]["parameters"]["properties"] == {}
+
+    @pytest.mark.parametrize("definition", [None, [], "object", 42, False])
+    def test_skips_non_mapping_property_definitions(self, definition):
+        from docsgpt.api.user.tools.routes import transform_actions
+
+        actions = [
+            {
+                "name": "legacy",
+                "parameters": {
+                    "properties": {
+                        "invalid": definition,
+                        "query": {"type": "string"},
+                    }
+                },
+            }
+        ]
+
+        result = transform_actions(actions)
+        props = result[0]["parameters"]["properties"]
+
+        assert "invalid" not in props
+        assert props["query"]["filled_by_llm"] is True
+        assert props["query"]["value"] == ""
+
+    def test_materializes_missing_properties_and_preserves_schema_metadata(self):
+        from docsgpt.api.user.tools.routes import transform_actions
+
+        actions = [{
+            "name": "noop",
+            "parameters": {
+                "type": "object",
+                "description": "No arguments",
+                "required": [],
+                "additionalProperties": False,
+            },
+        }]
+
+        result = transform_actions(actions)
+
+        assert result[0]["parameters"] == {
+            "type": "object",
+            "description": "No arguments",
+            "required": [],
+            "additionalProperties": False,
+            "properties": {},
+        }
+
     def test_handles_empty_list(self):
         from docsgpt.api.user.tools.routes import transform_actions
 
@@ -412,15 +469,20 @@ class TestAvailableTools:
         assert data["data"][0]["displayName"] == "My Tool"
         assert data["data"][0]["description"] == "A great tool description"
 
-    def test_returns_400_on_error(self, app):
+    def test_a_tool_that_fails_to_describe_itself_is_skipped(self, app):
+        """One broken tool must not empty the Add Tool catalog for every user."""
         from docsgpt.api.user.tools.routes import AvailableTools
 
-        mock_tool = Mock()
-        mock_tool.__doc__ = "Bad Tool"
-        mock_tool.get_config_requirements.side_effect = Exception("fail")
+        bad_tool = Mock()
+        bad_tool.__doc__ = "Bad Tool"
+        bad_tool.get_config_requirements.side_effect = Exception("fail")
+        good_tool = Mock()
+        good_tool.__doc__ = "Good Tool"
+        good_tool.get_config_requirements.return_value = {}
+        good_tool.get_actions_metadata.return_value = []
 
         mock_manager = Mock()
-        mock_manager.tools = {"bad_tool": mock_tool}
+        mock_manager.tools = {"bad_tool": bad_tool, "good_tool": good_tool}
 
         with patch(
             "docsgpt.api.user.tools.routes.tool_manager", mock_manager
@@ -431,7 +493,50 @@ class TestAvailableTools:
                 request.decoded_token = {"sub": "user1"}
                 response = AvailableTools().get()
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert [tool["name"] for tool in response.json["data"]] == ["good_tool"]
+
+    def test_tool_without_a_docstring_is_listed_under_its_key(self, app):
+        """A Tool subclass with no class docstring has ``__doc__ = None``; it used to 400 the endpoint."""
+        from docsgpt.agents.tools.base import Tool
+        from docsgpt.api.user.tools.routes import AvailableTools
+
+        class NoDocTool(Tool):
+            def __init__(self, config):
+                self.config = config
+
+            def execute_action(self, action_name, **kwargs):
+                return None
+
+            def get_actions_metadata(self):
+                return [{"name": "search"}]
+
+            def get_config_requirements(self):
+                return {}
+
+        assert NoDocTool.__doc__ is None
+        documented = Mock()
+        documented.__doc__ = "Documented Tool\nDoes things"
+        documented.get_config_requirements.return_value = {}
+        documented.get_actions_metadata.return_value = []
+
+        mock_manager = Mock()
+        mock_manager.tools = {"no_doc_tool": NoDocTool({}), "documented": documented}
+
+        with patch(
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
+        ):
+            with app.test_request_context("/api/available_tools"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = AvailableTools().get()
+
+        assert response.status_code == 200
+        listed = {tool["name"]: tool for tool in response.json["data"]}
+        assert set(listed) == {"no_doc_tool", "documented"}
+        assert listed["no_doc_tool"]["displayName"] == "no_doc_tool"
+        assert listed["no_doc_tool"]["description"] == ""
 
     def test_single_line_docstring(self, app):
         from docsgpt.api.user.tools.routes import AvailableTools
@@ -503,6 +608,61 @@ class TestCreateTool:
         return tool_instance
 
 
+    @pytest.mark.parametrize("properties, expected_names", [
+        (None, set()),
+        ([], set()),
+        ("invalid", set()),
+        ({"invalid": None, "query": {"type": "string"}}, {"query"}),
+    ])
+    def test_persists_normalized_action_properties(self, app, properties, expected_names):
+        from docsgpt.api.user.tools.routes import CreateTool
+
+        tool_instance = Mock()
+        tool_instance.get_actions_metadata.return_value = [{
+            "name": "search",
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": False,
+            },
+        }]
+        tool_instance.get_config_requirements.return_value = {}
+        manager = Mock()
+        manager.tools = {"legacy_tool": tool_instance}
+        repository = Mock()
+        repository.create.return_value = {"id": "saved-tool"}
+
+        with (
+            patch("docsgpt.api.user.tools.routes.tool_manager", manager),
+            patch("docsgpt.api.user.tools.routes.definition_for_tool", return_value=None),
+            patch("docsgpt.api.user.tools.routes.db_session", return_value=nullcontext(Mock())),
+            patch("docsgpt.api.user.tools.routes.UserToolsRepository", return_value=repository),
+            app.test_request_context("/api/create_tool", method="POST", json={
+                "name": "legacy_tool",
+                "displayName": "Legacy tool",
+                "description": "Legacy metadata",
+                "config": {},
+                "status": True,
+            }),
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = CreateTool().post()
+
+        assert response.status_code == 200
+        repository.create.assert_called_once()
+        stored_action = repository.create.call_args.kwargs["actions"][0]
+        stored_properties = stored_action["parameters"]["properties"]
+        assert isinstance(stored_properties, dict)
+        assert set(stored_properties) == expected_names
+        assert stored_action["active"] is True
+        assert stored_action["parameters"]["additionalProperties"] is False
+        if "query" in stored_properties:
+            assert stored_properties["query"] == {
+                "type": "string", "filled_by_llm": True, "value": "",
+            }
+
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.tools.routes import CreateTool
 
@@ -515,6 +675,24 @@ class TestCreateTool:
             response = CreateTool().post()
 
         assert response.status_code == 401
+
+    def test_an_mcp_tool_on_a_blocked_address_says_why(self, app):
+        from docsgpt.api.user.tools.routes import CreateTool
+        from docsgpt.core.url_validation import SSRFError
+
+        body = {
+            "name": "mcp_tool", "displayName": "MCP", "description": "d", "status": True,
+            "config": {"server_url": "http://10.0.0.5"},
+        }
+        with patch("docsgpt.api.user.tools.routes.validate_url", side_effect=SSRFError("private range")):
+            with app.test_request_context("/api/create_tool", method="POST", json=body):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateTool().post()
+
+        assert response.status_code == 400
+        assert response.json["message"] == "Invalid server URL: private range"
 
     def test_returns_400_missing_fields(self, app):
         from docsgpt.api.user.tools.routes import CreateTool
@@ -1306,26 +1484,111 @@ class TestUpdateToolActionsHappy:
             response = UpdateToolActions().post()
         assert response.status_code == 404
 
-    def test_updates_actions(self, app, pg_conn):
-        from docsgpt.api.user.tools.routes import UpdateToolActions
+    @staticmethod
+    def _seed_actions_tool(pg_conn, user):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
-        user = "u-actions"
-        tool = _seed_tool(pg_conn, user=user)
+        return UserToolsRepository(pg_conn).create(
+            user,
+            "telegram",
+            config={},
+            display_name="Telegram",
+            description="",
+            actions=[
+                {
+                    "name": "telegram_send_message",
+                    "description": "Send a message",
+                    "active": True,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string", "filled_by_llm": True, "value": ""},
+                            "chat_id": {"type": "string", "filled_by_llm": True, "value": ""},
+                        },
+                    },
+                }
+            ],
+            status=True,
+        )
+
+    def _post(self, app, pg_conn, user, tool_id, actions):
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/update_tool_actions",
             method="POST",
-            json={
-                "id": str(tool["id"]),
-                "actions": [
-                    {"name": "action_1", "active": True, "parameters": {}}
-                ],
-            },
+            json={"id": tool_id, "actions": actions},
         ):
             from flask import request
             request.decoded_token = {"sub": user}
-            response = UpdateToolActions().post()
+            return UpdateToolActions().post()
+
+    @staticmethod
+    def _stored(pg_conn, tool):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        return UserToolsRepository(pg_conn).get_by_id(str(tool["id"]))["actions"][0]
+
+    def test_updates_actions(self, app, pg_conn):
+        user = "u-actions"
+        tool = self._seed_actions_tool(pg_conn, user)
+        response = self._post(
+            app, pg_conn, user, str(tool["id"]), [{"name": "telegram_send_message", "active": False}],
+        )
         assert response.status_code == 200
+        assert self._stored(pg_conn, tool)["active"] is False
+
+    def test_owner_pins_a_parameter(self, app, pg_conn):
+        user = "u-actions-pin"
+        tool = self._seed_actions_tool(pg_conn, user)
+        response = self._post(app, pg_conn, user, str(tool["id"]), [{
+            "name": "telegram_send_message",
+            "parameters": {"properties": {"chat_id": {"filled_by_llm": False, "value": "123"}}},
+        }])
+        assert response.status_code == 200
+        chat_id = self._stored(pg_conn, tool)["parameters"]["properties"]["chat_id"]
+        assert chat_id["filled_by_llm"] is False and chat_id["value"] == "123"
+
+    @pytest.mark.parametrize(
+        "actions",
+        [
+            [{"name": "made_up_action", "active": True}],
+            [{"name": "telegram_send_message", "parameters": {"properties": {"token": {"value": "x"}}}}],
+            [{"active": True}],
+            "not a list",
+        ],
+    )
+    def test_rejects_actions_that_do_not_match_the_schema(self, app, pg_conn, actions):
+        user = "u-actions-bad"
+        tool = self._seed_actions_tool(pg_conn, user)
+        response = self._post(app, pg_conn, user, str(tool["id"]), actions)
+        assert response.status_code == 400
+        assert self._stored(pg_conn, tool)["active"] is True
+
+    def test_team_editor_can_change_actions_but_not_pins(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, editor = "u-owner", "u-editor"
+        tool = self._seed_actions_tool(pg_conn, owner)
+        team = TeamsRepository(pg_conn).create("Pins", "t-pins", owner)
+        TeamMembersRepository(pg_conn).add_member(str(team["id"]), editor)
+        TeamResourceGrantsRepository(pg_conn).grant(
+            str(team["id"]), "tool", str(tool["id"]), owner, owner, access_level="editor",
+        )
+        toggled = self._post(
+            app, pg_conn, editor, str(tool["id"]), [{"name": "telegram_send_message", "active": False}],
+        )
+        pinned = self._post(app, pg_conn, editor, str(tool["id"]), [{
+            "name": "telegram_send_message",
+            "parameters": {"properties": {"chat_id": {"filled_by_llm": False, "value": "666"}}},
+        }])
+        assert toggled.status_code == 200
+        assert pinned.status_code == 403
+        stored = self._stored(pg_conn, tool)
+        assert stored["active"] is False
+        assert stored["parameters"]["properties"]["chat_id"]["filled_by_llm"] is True
 
 
 class TestUpdateToolStatusHappy:

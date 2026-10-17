@@ -1,0 +1,192 @@
+# Curated remote MCP servers shown as Connectors catalog cards.
+#
+# Inclusion rules: the vendor operates the server, it has a stable public URL,
+# and it signs in with OAuth plus dynamic client registration (or needs no
+# auth), so connecting takes no admin setup. Each entry was checked for OAuth
+# authorization-server metadata with a registration endpoint and for a 401
+# challenge on the MCP endpoint. Keep the list short; anything else is a
+# custom connector.
+#
+# Keys look like ``mcp:<name>``. The frontend reads ``settings.connectors
+# .descriptions.mcp_<name>`` for a translated description.
+#
+# A preset with ``sync_ingestor`` also syncs into Knowledge through its own
+# MCP server, signed in with the same connection (Linear's issues).
+#
+# ``default_actions`` lists the tools that start on when the connection's
+# tool is created; the rest start "Off" and can be turned on per action.
+# Leave it out to turn every tool on.
+
+- key: mcp:notion
+  name: Notion
+  description: Search, read and update Notion pages and databases.
+  icon: notion
+  category: knowledge
+  mcp_url: https://mcp.notion.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.notion.com/docs/mcp
+
+- key: mcp:linear
+  name: Linear
+  description: Sync issues and documents into Knowledge, and let agents find, create and update issues.
+  icon: linear
+  category: projects
+  mcp_url: https://mcp.linear.app/mcp
+  auth_kind: mcp_oauth
+  capabilities: [sync, read, write]
+  sync_ingestor: linear
+  docs_url: https://linear.app/docs/mcp
+
+- key: mcp:atlassian
+  name: Jira & Confluence
+  description: Search and update Jira issues and Confluence pages.
+  icon: atlassian
+  category: projects
+  # Shown on the Confluence card, next to syncing pages into Knowledge.
+  part_of: confluence
+  mcp_url: https://mcp.atlassian.com/v1/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/
+
+- key: mcp:sentry
+  name: Sentry
+  description: Look up Sentry issues, events and releases.
+  icon: sentry
+  category: dev
+  mcp_url: https://mcp.sentry.dev/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.sentry.io/product/sentry-mcp/
+
+- key: mcp:stripe
+  name: Stripe
+  description: Look up customers, payments and subscriptions in Stripe.
+  icon: stripe
+  category: business
+  mcp_url: https://mcp.stripe.com
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.stripe.com/mcp
+
+# draw.io as a connector
+- key: mcp:drawio
+  name: draw.io
+  description: Create editable flowcharts and other diagrams with draw.io.
+  icon: drawio
+  category: projects
+  mcp_url: https://mcp.draw.io/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://github.com/jgraph/drawio-mcp
+
+- key: mcp:clickup
+  name: ClickUp
+  description: Search, read and update ClickUp tasks, docs and lists, and add comments.
+  icon: clickup
+  category: projects
+  mcp_url: https://mcp.clickup.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server
+
+- key: mcp:zapier
+  name: Zapier
+  description: Use the actions enabled in your Zapier MCP account to read or update connected apps.
+  icon: zapier
+  category: business
+  mcp_url: https://mcp.zapier.com/api/v1/connect
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.zapier.com/mcp/get-started/connect
+
+- key: mcp:trello
+  name: Trello
+  description: Find Trello boards and cards, and create and update cards.
+  icon: trello
+  category: projects
+  mcp_url: https://mcp.trello.com/v1
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/
+
+- key: mcp:miro
+  name: Miro
+  description: Find boards, read content and comments, create diagrams, and reply to comments.
+  icon: miro
+  category: projects
+  mcp_url: https://mcp.miro.com/
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.miro.com/docs/miro-mcp
+
+- key: mcp:resend
+  name: Resend
+  description: Send emails and manage contacts, audiences and domains.
+  icon: resend
+  category: messaging
+  mcp_url: https://mcp.resend.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://resend.com/docs/knowledge-base/mcp-server
+
+- key: mcp:calcom
+  name: Cal.com
+  description: Read and manage your Cal.com bookings, event types, availability and schedules.
+  icon: calcom
+  category: business
+  mcp_url: https://mcp.cal.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://cal.com/docs/mcp-server
+
+# Alpha Vantage only accepts redirect URIs on its allowlist (DocsGPT cloud) and
+# localhost, so a self-hosted instance on its own domain adds it as a custom
+# MCP connector with ``?apikey=<KEY>`` in the URL instead.
+- key: mcp:alphavantage
+  name: Alpha Vantage
+  description: Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.
+  icon: alphavantage
+  category: business
+  mcp_url: https://mcp.alphavantage.co/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read]
+  docs_url: https://github.com/alphavantage/alpha_vantage_mcp
+  # The server has 133 tools, more than OpenAI takes in one request (128).
+  # These start on; the rest start Off. TOOL_LIST, TOOL_GET and TOOL_CALL
+  # reach any other Alpha Vantage tool without sending its definition.
+  default_actions:
+    - SYMBOL_SEARCH
+    - GLOBAL_QUOTE
+    - TIME_SERIES_DAILY
+    - TIME_SERIES_WEEKLY
+    - MARKET_STATUS
+    - TOP_GAINERS_LOSERS
+    - COMPANY_OVERVIEW
+    - EARNINGS
+    - INCOME_STATEMENT
+    - NEWS_SENTIMENT
+    - CURRENCY_EXCHANGE_RATE
+    - FX_DAILY
+    - DIGITAL_CURRENCY_DAILY
+    - CPI
+    - INFLATION
+    - REAL_GDP
+    - UNEMPLOYMENT
+    - TREASURY_YIELD
+    - FEDERAL_FUNDS_RATE
+    - TOOL_LIST
+    - TOOL_GET
+    - TOOL_CALL
+
+# Keyless server; its rate limits are shared across all users.
+- key: mcp:coingecko
+  name: CoinGecko
+  description: Look up live crypto prices, market caps, volumes, trending coins and price history.
+  icon: coingecko
+  category: business
+  mcp_url: https://mcp.api.coingecko.com/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://docs.coingecko.com/docs/mcp-server

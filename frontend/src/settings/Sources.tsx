@@ -1,74 +1,97 @@
 import {
   BookOpen,
+  CalendarIcon,
+  Check,
+  Eye,
+  HardDrive,
   Network,
-  Search as SearchIcon,
+  RefreshCw,
+  Search,
   SlidersHorizontal,
+  Trash2,
   Users,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 
-import EyeView from '../assets/eye-view.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import Trash from '../assets/red-trash.svg';
-import SyncIcon from '../assets/sync.svg';
-import ThreeDots from '../assets/three-dots.svg';
-import CalendarIcon from '../assets/calendar.svg';
-import DiscIcon from '../assets/disc.svg';
-import Pagination from '../components/DocumentPagination';
+import PageToolbar from '../components/PageToolbar';
+import RoleBadge from '../components/RoleBadge';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card, CardFooter, CardTitle } from '../components/ui/card';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { EmptyState } from '../components/ui/empty-state';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
-import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
+import { useDebouncedValue, useLoaderState } from '../hooks';
+import { usePageParam, usePageSize } from '../hooks/usePageState';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import type { Model } from '../models/types';
+import { showActionToast } from '../notifications/actionToastSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
+  selectSourceDocs,
   selectToken,
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Upload from '../upload/Upload';
 import {
+  KNOWLEDGE_LINK_PARAMS,
+  type KnowledgeLink,
+  readKnowledgeLink,
+} from './knowledgeLink';
+import {
   addUploadTask,
   removeUploadTask,
   selectUploadTasks,
   updateUploadTask,
 } from '../upload/uploadSlice';
-import { formatDate } from '../utils/dateTimeUtils';
+import { can } from '../utils/accessUtils';
+import { EMPTY_VALUE, formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
+import {
+  connectionNeedsSignIn,
+  loadConnectors,
+  selectConnections,
+  selectConnectorsLoaded,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
-import GraphView from '../components/GraphView';
+import GraphSourceView from '../components/graph/GraphSourceView';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 import TestRetrievalModal from './TestRetrievalModal';
+import WikiSettingsModal from './WikiSettingsModal';
 
-type SourceMenuOption = {
-  icon: string | LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-};
+/** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
+const SOURCE_PAGE_SIZES = [12, 24, 48];
+
+/** Six rows of the 4-column desktop grid; 12 on narrower screens. */
+const defaultSourcePageSize = (): number =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(min-width: 1024px)').matches
+    ? 24
+    : 12;
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -91,22 +114,36 @@ export default function Sources({
   handleDeleteDocument,
 }: DocumentsProps) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
-  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
+  const connections = useSelector(selectConnections);
+  // Signing in again reloads the connections, which lifts the pause.
+  const { reconnect, modals: signInModals } = useSignInAgain();
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+
+  useEffect(() => {
+    if (!connectorsLoaded) dispatch(loadConnectors({ token }));
+  }, [connectorsLoaded, dispatch, token]);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
+  // The last page load failed: an error with Retry, not "no sources".
+  const [loadFailed, setLoadFailed] = useState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  // Pagination
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
-  const [totalPages, setTotalPages] = useState<number>(1);
+  // Pagination: the page lives in the URL, the size on this device.
+  const [currentPage, setCurrentPage] = usePageParam('page');
+  const [rowsPerPage, setRowsPerPage] = usePageSize(
+    'DocsGPTPageSize:sources',
+    SOURCE_PAGE_SIZES,
+    defaultSourcePageSize(),
+  );
+  const [totalDocuments, setTotalDocuments] = useState<number>(0);
 
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
@@ -118,7 +155,44 @@ export default function Sources({
     { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
+  // A citation's "Open in Knowledge" (see knowledgeLink.ts): the source opens
+  // on the cited chunk or wiki page, once. The source comes from this page
+  // or the app's knowledge list, so the view gets the caller's real access;
+  // one in neither is out of reach and just leaves the list showing.
+  const knowledge = useSelector(selectSourceDocs);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewLink, setViewLink] = useState<KnowledgeLink | null>(null);
+  useEffect(() => {
+    const link = readKnowledgeLink(searchParams);
+    if (!link) return;
+    const listed =
+      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
+      knowledge?.find((d) => d.id === link.sourceId);
+    if (!listed && knowledge == null) return; // the list is still loading
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        KNOWLEDGE_LINK_PARAMS.forEach((key) => next.delete(key));
+        return next;
+      },
+      { replace: true },
+    );
+    if (!listed) return;
+    // The app-wide list names the folder flag `is_nested`.
+    const raw = listed as Doc & { is_nested?: boolean };
+    setDocumentToView({
+      ...listed,
+      isNested: listed.isNested ?? raw.is_nested,
+    });
+    setViewLink(link);
+  }, [searchParams, knowledge, paginatedDocuments]);
+  const closeDocument = () => {
+    setDocumentToView(undefined);
+    setViewLink(null);
+  };
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
+  const [documentForWikiSettings, setDocumentForWikiSettings] =
+    useState<Doc | null>(null);
   const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
     null,
   );
@@ -141,15 +215,19 @@ export default function Sources({
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
-  const [syncMenuState, setSyncMenuState] = useState<{
-    isOpen: boolean;
-    docId: string | null;
-    document: Doc | null;
-  }>({
-    isOpen: false,
-    docId: null,
-    document: null,
-  });
+
+  /**
+   * Shows a failed source action as a destructive toast: the forbidden
+   * message on a 403, else the action's own.
+   */
+  const showActionError = (message: string, status?: number) =>
+    dispatch(
+      showActionToast({
+        variant: 'destructive',
+        message:
+          status === 403 ? t('settings.sources.errors.forbidden') : message,
+      }),
+    );
 
   const refreshDocs = useCallback(
     (
@@ -187,25 +265,45 @@ export default function Sources({
         token,
       )
         .then((data) => {
-          dispatch(setPaginatedDocuments(data ? data.docs : []));
-          setTotalPages(data ? data.totalPages : 0);
+          setLoadFailed(data === null);
+          if (data === null) return;
+          dispatch(setPaginatedDocuments(data.docs));
+          setTotalDocuments(data.totalDocuments);
+          // The server clamps a page past the end (the last card on the
+          // last page was deleted); follow it.
+          if (data.currentPage !== page) setCurrentPage(data.currentPage);
         })
         .catch((error) => console.error(error))
         .finally(() => {
           setLoading(false);
         });
     },
-    [currentPage, rowsPerPage, sortField, sortOrder, debouncedSearchTerm],
+    [
+      currentPage,
+      rowsPerPage,
+      sortField,
+      sortOrder,
+      debouncedSearchTerm,
+      setCurrentPage,
+    ],
   );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
     setLoading(true);
     userService
       .manageSync({ source_id: doc.id, sync_frequency }, token)
-      .then(() => {
+      .then((response: Response) => {
+        if (!response.ok) {
+          showActionError(
+            t('settings.sources.errors.syncFrequency'),
+            response.status,
+          );
+          return null;
+        }
         return getDocs(token);
       })
       .then((data) => {
+        if (data === null) return null;
         dispatch(setSourceDocs(data));
         return getDocsWithPagination(
           sortField,
@@ -217,69 +315,42 @@ export default function Sources({
         );
       })
       .then((paginatedData) => {
+        if (paginatedData === null) return;
         dispatch(
           setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
         );
-        setTotalPages(paginatedData ? paginatedData.totalPages : 0);
+        setTotalDocuments(paginatedData ? paginatedData.totalDocuments : 0);
       })
-      .catch((error) => console.error('Error in handleManageSync:', error))
+      .catch((error) => {
+        console.error('Error in handleManageSync:', error);
+        showActionError(t('settings.sources.errors.syncFrequency'));
+      })
       .finally(() => {
         setLoading(false);
       });
-  };
-
-  const getConnectorProvider = async (doc: Doc): Promise<string | null> => {
-    if (doc.provider) {
-      return doc.provider;
-    }
-    if (!doc.id) {
-      return null;
-    }
-    try {
-      const directoryResponse = await userService.getDirectoryStructure(
-        doc.id,
-        token,
-      );
-      const directoryData = await directoryResponse.json();
-      return directoryData?.provider ?? null;
-    } catch (error) {
-      console.error('Error fetching connector provider:', error);
-      return null;
-    }
   };
 
   const handleSyncNow = async (doc: Doc) => {
     if (!doc.id) {
       return;
     }
+    const syncFailed = t('settings.sources.errors.sync');
     try {
+      let response: Response;
       if (doc.type?.startsWith('connector')) {
-        const provider = await getConnectorProvider(doc);
-        if (!provider) {
-          console.error('Sync now failed: provider not found');
-          return;
-        }
-        const response = await userService.syncConnector(
-          doc.id,
-          provider,
-          token,
-        );
-        const data = await response.json();
-        if (!data.success) {
-          console.error('Sync now failed:', data.error || data.message);
-        }
-        return;
+        // The server finds the connector from the source itself.
+        response = await userService.syncConnector(doc.id, token);
+      } else {
+        response = await userService.syncSource({ source_id: doc.id }, token);
       }
-      const response = await userService.syncSource(
-        { source_id: doc.id },
-        token,
-      );
-      const data = await response.json();
-      if (!data.success) {
-        console.error('Sync now failed:', data.error || data.message);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        console.error('Sync now failed:', data?.error || data?.message);
+        showActionError(syncFailed, response.status);
       }
     } catch (error) {
       console.error('Error syncing source:', error);
+      showActionError(syncFailed);
     }
   };
 
@@ -308,23 +379,25 @@ export default function Sources({
         { source_id: sourceId },
         token,
       );
-      const data = await response.json();
-      if (!data.success) {
-        console.error('Reingest failed:', data.error || data.message);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        console.error('Reingest failed:', data?.error || data?.message);
         dispatch(
           updateUploadTask({
             id: reingestTaskId,
             updates: {
               status: 'failed',
-              errorMessage: data.error || data.message,
+              errorMessage: data?.error || data?.message,
             },
           }),
         );
+        showActionError(t('settings.sources.errors.reingest'), response.status);
         return;
       }
       refreshDocs(undefined, currentPage, rowsPerPage);
     } catch (error) {
       console.error('Error reingesting source:', error);
+      showActionError(t('settings.sources.errors.reingest'));
       dispatch(
         updateUploadTask({
           id: reingestTaskId,
@@ -346,26 +419,28 @@ export default function Sources({
     setDeleteModalState('ACTIVE');
   };
 
-  const handleConfirmedDelete = () => {
-    if (documentToDelete) {
-      handleDeleteDocument(documentToDelete.index, documentToDelete.document);
-      setDeleteModalState('INACTIVE');
-      setDocumentToDelete(null);
-    }
+  // Returned to ConfirmationModal: it stays pending while the delete runs
+  // and keeps a failure (its message) in the dialog. A delete then refetches
+  // the page, so the total stays right and a page left empty steps back
+  // (the server clamps it; refreshDocs follows).
+  const handleConfirmedDelete = async () => {
+    if (!documentToDelete) return;
+    await handleDeleteDocument(
+      documentToDelete.index,
+      documentToDelete.document,
+    );
+    setDocumentToDelete(null);
+    refreshDocs(undefined, currentPage, rowsPerPage);
   };
 
-  const getActionOptions = (
-    index: number,
-    document: Doc,
-  ): SourceMenuOption[] => {
+  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
     const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
     const isGraphRAG = document.config?.kind === 'graphrag';
-    // 'team' viewers cannot write; convert is owner/editor only.
-    const canEdit =
-      document.ownership !== 'team' || document.team_access === 'editor';
-    const actions: SourceMenuOption[] = [
+    // The server's allowed_actions decide every write (utils/accessUtils).
+    const canEdit = can(document, 'edit');
+    const actions: MenuOption[] = [
       {
-        icon: isGraphRAG ? Network : EyeView,
+        icon: isGraphRAG ? Network : Eye,
         label: isWiki
           ? t('settings.sources.wiki.view')
           : isGraphRAG
@@ -374,76 +449,80 @@ export default function Sources({
         onClick: () => {
           setDocumentToView(document);
         },
-        iconWidth: 18,
-        iconHeight: 18,
         variant: 'default',
       },
     ];
 
-    if (document.ingestStatus === 'failed') {
+    if (canEdit && document.ingestStatus === 'failed') {
       actions.push({
-        icon: SyncIcon,
+        icon: RefreshCw,
         label: t('settings.sources.reingest'),
         onClick: () => {
           handleReingest(document);
         },
-        iconWidth: 14,
-        iconHeight: 14,
         variant: 'default',
       });
     }
 
-    if (document.syncFrequency) {
-      actions.push({
-        icon: SyncIcon,
-        label: t('settings.sources.sync'),
-        onClick: () => {
-          setSyncMenuState({
-            isOpen: true,
-            docId: document.id ?? null,
-            document: document,
-          });
-        },
-        iconWidth: 14,
-        iconHeight: 14,
-        variant: 'default',
+    if (canEdit && document.syncFrequency) {
+      // One row per sync frequency; the current one carries the check.
+      syncOptions.forEach((opt) => {
+        actions.push({
+          icon: document.syncFrequency === opt.value ? Check : RefreshCw,
+          label: t('settings.sources.syncFrequency.option', {
+            frequency: opt.label,
+          }),
+          onClick: () => {
+            handleManageSync(document, opt.value);
+          },
+          variant: 'default',
+        });
       });
       actions.push({
-        icon: SyncIcon,
+        icon: RefreshCw,
         label: t('settings.sources.syncNow'),
         onClick: () => {
           handleSyncNow(document);
         },
-        iconWidth: 14,
-        iconHeight: 14,
         variant: 'default',
       });
     }
 
-    if (document.id && !isWiki) {
+    // Editors edit the config; a viewer may read it (view_config).
+    if (document.id && !isWiki && (canEdit || can(document, 'view_config'))) {
       actions.push({
-        icon: SlidersHorizontal,
-        label: t('settings.sources.editConfig'),
+        icon: canEdit ? SlidersHorizontal : Eye,
+        label: canEdit
+          ? t('settings.sources.editConfig')
+          : t('settings.sources.viewConfig'),
         onClick: () => {
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
         },
-        iconWidth: 16,
-        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
+    // A wiki's own settings are the owner's (manage_settings).
+    if (document.id && isWiki && can(document, 'manage_settings')) {
+      actions.push({
+        icon: SlidersHorizontal,
+        label: t('settings.sources.wiki.settings.action'),
+        onClick: () => {
+          setDocumentForWikiSettings(document);
+        },
         variant: 'default',
       });
     }
 
     if (document.id) {
       actions.push({
-        icon: SearchIcon,
+        icon: Search,
         label: t('settings.sources.testRetrieval.action'),
         onClick: () => {
           setDocumentToTest(document);
           setTestRetrievalState('ACTIVE');
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
@@ -462,42 +541,42 @@ export default function Sources({
           setDocumentToConvert(document);
           setConvertModalState('ACTIVE');
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
 
-    // Sharing is an owner-only action: hide it for sources shared into the
-    // user's workspace by a team.
-    if (document.ownership !== 'team' && document.id) {
+    // Owner-only unless the owner lets editors share (editors_can_share).
+    if (document.id && can(document, 'share')) {
       actions.push({
         icon: Users,
         label: t('settings.sources.shareWithTeam'),
         onClick: () => {
           setDocumentToShare(document);
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
 
-    actions.push({
-      icon: Trash,
-      label: t('convTile.delete'),
-      onClick: () => {
-        handleDeleteConfirmation(index, document);
-      },
-      iconWidth: 18,
-      iconHeight: 18,
-      variant: 'destructive',
-    });
+    if (can(document, 'delete')) {
+      actions.push({
+        icon: Trash2,
+        label: t('settings.sources.delete'),
+        onClick: () => {
+          handleDeleteConfirmation(index, document);
+        },
+        variant: 'destructive',
+      });
+    }
 
     return actions;
   };
+  // The first load opens on the URL's page; a new search starts on page 1.
+  const searchedTerm = useRef(debouncedSearchTerm);
   useEffect(() => {
-    refreshDocs(undefined, 1, rowsPerPage);
+    const newSearch = searchedTerm.current !== debouncedSearchTerm;
+    searchedTerm.current = debouncedSearchTerm;
+    if (newSearch) setCurrentPage(1);
+    refreshDocs(undefined, newSearch ? 1 : currentPage, rowsPerPage);
   }, [debouncedSearchTerm]);
 
   // When a graph build reaches a terminal state via SSE, refresh the list so
@@ -553,7 +632,8 @@ export default function Sources({
     <Button
       type="button"
       variant="outline"
-      className="h-[38px] rounded-full px-4 text-sm font-medium whitespace-nowrap"
+      shape="pill"
+      size="field"
       onClick={() => {
         setDocumentToTest(documentToView);
         setTestRetrievalState('ACTIVE');
@@ -563,49 +643,65 @@ export default function Sources({
     </Button>
   ) : null;
 
+  // Chunk, file, wiki and graph writes follow the source's `edit` action.
+  const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
+  // The link only applies to the source it opened.
+  const link =
+    viewLink && viewLink.sourceId === documentToView?.id ? viewLink : null;
+
   return documentToView ? (
-    <div className="mt-8 flex flex-col">
+    <div className="flex flex-col">
       {documentToView.config?.kind === 'wiki' ||
       documentToView.type === 'wiki' ? (
         <WikiViewer
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
-          canEdit={
-            documentToView.ownership !== 'team' ||
-            documentToView.team_access === 'editor'
-          }
-          onBackToDocuments={() => setDocumentToView(undefined)}
+          canEdit={viewCanEdit}
+          onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          initialPath={link?.wikiPage}
         />
       ) : documentToView.config?.kind === 'graphrag' ? (
-        <GraphView
+        <GraphSourceView
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
-          onBackToDocuments={() => setDocumentToView(undefined)}
+          sourceType={documentToView.type}
+          isNested={!!documentToView.isNested}
+          canEdit={viewCanEdit}
+          onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          linkedChunk={link?.chunk}
         />
       ) : documentToView.isNested ? (
         documentToView.type === 'connector:file' ? (
           <ConnectorTree
             docId={documentToView.id || ''}
+            canEdit={viewCanEdit}
             sourceName={documentToView.name}
-            onBackToDocuments={() => setDocumentToView(undefined)}
+            onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            initialPath={link?.chunk?.path}
+            linkedChunk={link?.chunk}
           />
         ) : (
           <FileTree
             docId={documentToView.id || ''}
+            canEdit={viewCanEdit}
             sourceName={documentToView.name}
-            onBackToDocuments={() => setDocumentToView(undefined)}
+            onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            initialPath={link?.chunk?.path}
+            linkedChunk={link?.chunk}
           />
         )
       ) : (
         <Chunks
           documentId={documentToView.id || ''}
           documentName={documentToView.name}
-          handleGoBack={() => setDocumentToView(undefined)}
+          canEdit={viewCanEdit}
+          handleGoBack={closeDocument}
           headerAction={testRetrievalAction}
+          linkedChunk={link?.chunk}
         />
       )}
       <TestRetrievalModal
@@ -618,274 +714,224 @@ export default function Sources({
       />
     </div>
   ) : (
-    <div className="mt-8 flex w-full max-w-full flex-col">
+    <div className="flex w-full max-w-full flex-col">
       <div className="relative flex grow flex-col">
-        <p className="text-muted-foreground mb-5 text-sm leading-6">
-          {t('settings.sources.subtitle')}
-        </p>
-        <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="w-full max-w-md sm:w-auto">
-            <Input
+        <PageToolbar
+          intro={t('settings.sources.subtitle')}
+          search={
+            <SearchInput
               maxLength={256}
               label={t('settings.sources.searchPlaceholder')}
               name="Document-search-input"
-              type="text"
               id="document-search-input"
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
-              labelBgClassName="bg-background"
-              className="rounded-full"
-              leftIcon={
-                <SearchIcon
-                  className="text-muted-foreground size-4"
-                  strokeWidth={1.75}
-                />
-              }
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
-          </div>
-          <Button
-            type="button"
-            className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
-            title={t('settings.sources.addSource')}
-            onClick={() => {
-              setIsOnboarding(false);
-              setModalState('ACTIVE');
-            }}
-          >
-            {t('settings.sources.addSource')}
-          </Button>
-        </div>
+          }
+          action={
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              onClick={() => {
+                setIsOnboarding(false);
+                setModalState('ACTIVE');
+              }}
+            >
+              {t('settings.sources.addSource')}
+            </Button>
+          }
+          divider
+        />
         <div className="relative w-full">
           {loading ? (
-            <div className="grid w-full grid-cols-1 gap-6 px-2 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
+          ) : loadFailed ? (
+            <EmptyState
+              tone="destructive"
+              illustration="none"
+              title={t('settings.sources.loadError')}
+              onRetry={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+            />
           ) : !currentDocuments?.length ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <img
-                src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                alt={t('settings.sources.noData')}
-                className="mx-auto mb-6 h-32 w-32"
+            searchTerm ? (
+              <EmptyState
+                size="xs"
+                illustration="none"
+                title={t('settings.sources.noResults')}
               />
-              <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                {t('settings.sources.noData')}
-              </p>
-            </div>
+            ) : (
+              // Add knowledge is the one way in: its "From a service"
+              // section connects a service too.
+              <EmptyState
+                title={t('settings.sources.noData')}
+                description={t('settings.sources.emptyHint')}
+                action={
+                  <Button
+                    type="button"
+                    shape="pill"
+                    onClick={() => {
+                      setIsOnboarding(false);
+                      setModalState('ACTIVE');
+                    }}
+                  >
+                    {t('settings.sources.addSource')}
+                  </Button>
+                }
+              />
+            )
           ) : (
-            <div className="grid w-full grid-cols-1 gap-6 px-2 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {currentDocuments.map((document, index) => {
                 const docId = document.id ? document.id.toString() : '';
+                const connection = document.connectionId
+                  ? connections.find((c) => c.id === document.connectionId)
+                  : undefined;
+                // Sync stops until the reader signs in again (the shared rule).
+                const paused = connectionNeedsSignIn(connection);
 
                 return (
-                  <div key={docId} className="relative">
-                    <div
-                      role="button"
-                      tabIndex={0}
+                  // DESIGN "A clickable card that holds a link": a stretched
+                  // button opens the source; the menu and Reconnect are
+                  // siblings above it, never nested in it.
+                  <Card
+                    key={docId}
+                    variant="filled"
+                    padding="lg"
+                    interactive="within"
+                    // Its own height, not the row's: the meta stays under the title.
+                    className="min-h-[130px] self-start"
+                  >
+                    <button
+                      type="button"
                       aria-label={document.name}
                       onClick={() => setDocumentToView(document)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setDocumentToView(document);
-                        }
-                      }}
-                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
-                        actionMenuDocId === docId ||
-                        syncMenuState.docId === docId
-                          ? 'scale-[1.05]'
-                          : 'hover:scale-[1.05]'
-                      }`}
+                      className="flex w-full flex-1 cursor-pointer flex-col items-start pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
                     >
-                      <div className="w-full flex-1">
-                        <div className="flex w-full items-center justify-between gap-2">
-                          <h3
-                            className="dark:text-foreground text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
-                            title={document.name}
-                          >
-                            {document.name}
-                          </h3>
-                          <div className="relative flex shrink-0 items-center justify-end">
-                            {document.syncFrequency && (
-                              <DropdownMenu
-                                open={
-                                  syncMenuState.docId === docId &&
-                                  syncMenuState.isOpen
-                                }
-                                onOpenChange={(isOpen) => {
-                                  setSyncMenuState((prev) => ({
-                                    ...prev,
-                                    isOpen,
-                                    docId: isOpen ? docId : null,
-                                    document: isOpen ? document : null,
-                                  }));
-                                }}
-                              >
-                                <DropdownMenuTrigger asChild>
-                                  <span
-                                    aria-hidden
-                                    className="pointer-events-none absolute inset-0 opacity-0"
-                                  />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  className="min-w-[120px]"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {syncOptions.map((opt) => (
-                                    <DropdownMenuItem
-                                      key={opt.value}
-                                      onSelect={() =>
-                                        handleManageSync(document, opt.value)
-                                      }
-                                    >
-                                      {opt.label}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
-                            <DropdownMenu
-                              open={actionMenuDocId === docId}
-                              onOpenChange={(open) =>
-                                setActionMenuDocId(open ? docId : null)
-                              }
-                            >
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="h-[35px] w-6"
-                                  aria-label={t('settings.sources.menuAlt')}
-                                  data-testid={`menu-button-${docId}`}
-                                >
-                                  <img
-                                    src={ThreeDots}
-                                    alt={t('settings.sources.menuAlt')}
-                                    className="opacity-60 hover:opacity-100"
-                                  />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-[144px]"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {getActionOptions(index, document).map(
-                                  (option, idx) => (
-                                    <DropdownMenuItem
-                                      key={idx}
-                                      variant={option.variant}
-                                      onSelect={() => option.onClick()}
-                                    >
-                                      {typeof option.icon === 'string' ? (
-                                        <img
-                                          src={option.icon}
-                                          alt=""
-                                          width={option.iconWidth ?? 16}
-                                          height={option.iconHeight ?? 16}
-                                        />
-                                      ) : (
-                                        <option.icon
-                                          size={Math.max(
-                                            option.iconWidth ?? 16,
-                                            option.iconHeight ?? 16,
-                                          )}
-                                          strokeWidth={1.75}
-                                          aria-hidden="true"
-                                        />
-                                      )}
-                                      <span>{option.label}</span>
-                                    </DropdownMenuItem>
-                                  ),
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col items-start justify-start gap-1">
-                        {document.ownership === 'team' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
-                            <Users
-                              size={11}
-                              strokeWidth={2}
-                              aria-hidden="true"
-                            />
-                            {document.team_access === 'editor'
-                              ? t('teamAccess.editor')
-                              : t('teamAccess.viewer')}
-                          </span>
-                        )}
-                        {document.ingestStatus === 'failed' && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                            {t('settings.sources.ingestFailed')}
-                          </span>
-                        )}
-                        {document.ingestStatus === 'processing' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
-                            {t('settings.sources.ingestProcessing')}
-                          </span>
-                        )}
-                        {document.config?.kind === 'graphrag' &&
-                          (() => {
-                            const build = document.id
-                              ? graphBuilds[document.id]
-                              : undefined;
-                            const isBuilding = build?.status === 'building';
-                            const pct =
-                              isBuilding && build.total > 0
-                                ? Math.min(
-                                    100,
-                                    Math.round(
-                                      (build.current / build.total) * 100,
-                                    ),
-                                  )
-                                : null;
-                            return (
-                              <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
-                                <Network
-                                  size={11}
-                                  strokeWidth={2}
-                                  aria-hidden="true"
-                                />
-                                {isBuilding
-                                  ? pct !== null
-                                    ? t(
-                                        'settings.sources.graphrag.buildingPct',
-                                        { pct },
-                                      )
-                                    : t('settings.sources.graphrag.building')
-                                  : t('settings.sources.graphrag.badge')}
-                              </span>
-                            );
-                          })()}
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={CalendarIcon}
-                            alt=""
-                            className="h-3.5 w-3.5"
-                          />
-                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
-                            {document.date ? formatDate(document.date) : ''}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <img src={DiscIcon} alt="" className="h-3.5 w-3.5" />
-                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
-                            {document.tokens
-                              ? formatTokens(+document.tokens)
-                              : ''}
-                          </span>
-                        </div>
-                      </div>
+                      <CardTitle
+                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+                        title={document.name}
+                      >
+                        {document.name}
+                      </CardTitle>
+                    </button>
+                    <div className="absolute top-5 right-6 z-10">
+                      <ActionMenu
+                        options={getActionOptions(index, document)}
+                        triggerLabel={t('settings.sources.menuAlt')}
+                        triggerTestId={`menu-button-${docId}`}
+                        open={actionMenuDocId === docId}
+                        onOpenChange={(open) =>
+                          setActionMenuDocId(open ? docId : null)
+                        }
+                      />
                     </div>
-                  </div>
+
+                    <div className="flex flex-col items-start justify-start gap-1">
+                      <RoleBadge item={document} />
+                      {connection && paused && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="warning">
+                            {t('settings.connectors.status.reconnect')}
+                          </Badge>
+                          {/* The reader's own connection (only theirs are
+                              loaded): sign in again right here, without
+                              opening the source. */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                shape="pill"
+                                className="relative z-10"
+                                onClick={() => reconnect(connection)}
+                              >
+                                {t('settings.connectors.status.reconnect')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t('settings.sources.paused', {
+                                name: connection.name,
+                                interpolation: { escapeValue: false },
+                              })}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      )}
+                      {document.ingestStatus === 'failed' && (
+                        <Badge variant="destructive">
+                          {t('settings.sources.ingestFailed')}
+                        </Badge>
+                      )}
+                      {document.ingestStatus === 'processing' && (
+                        <Badge variant="neutral">
+                          {t('settings.sources.ingestProcessing')}
+                        </Badge>
+                      )}
+                      {document.config?.kind === 'graphrag' &&
+                        (() => {
+                          const build = document.id
+                            ? graphBuilds[document.id]
+                            : undefined;
+                          const isBuilding = build?.status === 'building';
+                          const pct =
+                            isBuilding && build.total > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (build.current / build.total) * 100,
+                                  ),
+                                )
+                              : null;
+                          return (
+                            <Badge variant="neutral">
+                              <Network aria-hidden="true" />
+                              {isBuilding
+                                ? pct !== null
+                                  ? t('settings.sources.graphrag.buildingPct', {
+                                      pct,
+                                    })
+                                  : t('settings.sources.graphrag.building')
+                                : t('settings.sources.graphrag.badge')}
+                            </Badge>
+                          );
+                        })()}
+                      <CardFooter className="flex-col items-start gap-1">
+                        {connection && (
+                          <span className="flex max-w-full min-w-0 items-center gap-2">
+                            <ConnectorIcon
+                              icon={connection.icon}
+                              className="text-muted-foreground size-3.5 shrink-0"
+                            />
+                            <span
+                              className="truncate"
+                              title={connection.account_label}
+                            >
+                              {t('settings.sources.viaConnection', {
+                                name: connection.name,
+                                interpolation: { escapeValue: false },
+                              })}
+                            </span>
+                          </span>
+                        )}
+                        <span className="flex items-center gap-2">
+                          <CalendarIcon className="size-3.5" />
+                          {document.date
+                            ? formatDate(document.date)
+                            : EMPTY_VALUE}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <HardDrive className="size-3.5" />
+                          {document.tokens
+                            ? formatTokens(+document.tokens)
+                            : EMPTY_VALUE}
+                        </span>
+                      </CardFooter>
+                    </div>
+                  </Card>
                 );
               })}
             </div>
@@ -893,17 +939,21 @@ export default function Sources({
         </div>
       </div>
 
-      {currentDocuments.length > 0 && totalPages > 1 && (
+      {currentDocuments.length > 0 && (
         <div className="mt-auto pt-4">
           <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            rowsPerPage={rowsPerPage}
+            page={currentPage}
+            pageSize={rowsPerPage}
+            total={totalDocuments}
+            pageSizeOptions={SOURCE_PAGE_SIZES}
+            rangeLabel={(range) =>
+              t('settings.sources.pageRange', pageRangeParams(range))
+            }
             onPageChange={(page) => {
               setCurrentPage(page);
               refreshDocs(undefined, page, rowsPerPage);
             }}
-            onRowsPerPageChange={(rows) => {
+            onPageSizeChange={(rows) => {
               setRowsPerPage(rows);
               setCurrentPage(1);
               refreshDocs(undefined, 1, rows);
@@ -922,23 +972,35 @@ export default function Sources({
           onSuccessfulUpload={() =>
             refreshDocs(undefined, currentPage, rowsPerPage)
           }
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         />
       )}
+
+      {signInModals}
 
       {deleteModalState === 'ACTIVE' && documentToDelete && (
         <ConfirmationModal
           message={t('settings.sources.deleteWarning', {
+            interpolation: { escapeValue: false },
             name: documentToDelete.document.name,
           })}
+          description={t('settings.sources.deleteConsequence')}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={handleConfirmedDelete}
+          error={(error) =>
+            error instanceof Error && error.message
+              ? error.message
+              : t('settings.sources.errors.delete')
+          }
           handleCancel={() => {
             setDeleteModalState('INACTIVE');
             setDocumentToDelete(null);
           }}
-          submitLabel={t('convTile.delete')}
-          variant="danger"
+          submitLabel={t('settings.sources.delete')}
+          variant="destructive"
         />
       )}
 
@@ -983,6 +1045,13 @@ export default function Sources({
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
       />
+
+      {documentForWikiSettings && (
+        <WikiSettingsModal
+          document={documentForWikiSettings}
+          onClose={() => setDocumentForWikiSettings(null)}
+        />
+      )}
 
       <ConvertToWikiModal
         modalState={convertModalState}

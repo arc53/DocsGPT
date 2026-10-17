@@ -470,6 +470,7 @@ def _stub_connector_pipeline(
     from docsgpt import worker
 
     fake_connector = MagicMock(name="connector")
+    fake_connector.connection_id = None
     fake_connector.download_to_directory.return_value = {
         "files_downloaded": files_downloaded,
         "empty_result": empty_result,
@@ -482,7 +483,7 @@ def _stub_connector_pipeline(
     monkeypatch.setattr(
         worker.ConnectorCreator,
         "create_connector",
-        staticmethod(lambda source_type, session_token: fake_connector),
+        staticmethod(lambda source_type, session_token=None, connection_id=None: fake_connector),
     )
 
     fake_reader = MagicMock(name="reader")
@@ -676,7 +677,10 @@ class TestAttachmentWorkerPublishes:
         ]
         assert publishes.calls[1][2]["current"] == 30
         failed = publishes.calls[2][2]
-        assert "parse boom" in failed["error"]
+        # The raw exception text stays in the logs; the chip gets a curated message.
+        assert "parse boom" not in failed["error"]
+        assert failed["code"] == "processing_failed"
+        assert failed["error"] == "This file could not be processed."
         assert failed["filename"] == "notes.txt"
 
 
@@ -890,6 +894,16 @@ def task_self_retry():
     return task
 
 
+@pytest.fixture
+def marks(monkeypatch):
+    """Records each Activity ingest marker a retry restores."""
+    from docsgpt import worker
+
+    calls = []
+    monkeypatch.setattr(worker, "mark_ingest_running", lambda user, payload: calls.append((user, payload)))
+    return calls
+
+
 @pytest.mark.unit
 class TestQueuedEventRetryGate:
     """``DURABLE_TASK`` retries the same body on transient embed failures.
@@ -900,7 +914,7 @@ class TestQueuedEventRetryGate:
     """
 
     def test_ingest_worker_skips_queued_on_retry(
-        self, patch_worker_db, task_self_retry, monkeypatch, publishes
+        self, patch_worker_db, task_self_retry, monkeypatch, publishes, marks
     ):
         from docsgpt import worker
 
@@ -921,9 +935,11 @@ class TestQueuedEventRetryGate:
         # Retry attempt: only ``completed`` fires; the ``queued`` from the
         # original attempt has already been published and acked.
         assert publishes.types() == ["source.ingest.completed"]
+        # The failed attempt cleared the Activity marker; the retry restores it.
+        assert [(user, payload["operation"]) for user, payload in marks] == [("eve", "upload")]
 
     def test_remote_worker_skips_queued_on_retry(
-        self, tmp_path, task_self_retry, monkeypatch, publishes
+        self, tmp_path, task_self_retry, monkeypatch, publishes, marks
     ):
         from docsgpt import worker
 
@@ -940,9 +956,10 @@ class TestQueuedEventRetryGate:
         )
 
         assert publishes.types() == ["source.ingest.completed"]
+        assert [user for user, _ in marks] == ["bob"]
 
     def test_ingest_connector_skips_queued_on_retry(
-        self, task_self_retry, monkeypatch, publishes
+        self, task_self_retry, monkeypatch, publishes, marks
     ):
         from docsgpt import worker
 
@@ -960,9 +977,10 @@ class TestQueuedEventRetryGate:
         )
 
         assert publishes.types() == ["source.ingest.completed"]
+        assert [user for user, _ in marks] == ["dave"]
 
     def test_reingest_source_worker_skips_queued_on_retry(
-        self, pg_conn, patch_worker_db, task_self_retry, monkeypatch, publishes
+        self, pg_conn, patch_worker_db, task_self_retry, monkeypatch, publishes, marks
     ):
         from docsgpt import worker
 
@@ -989,6 +1007,7 @@ class TestQueuedEventRetryGate:
 
         # Only the terminal ``completed`` — no ``queued`` re-emit.
         assert publishes.types() == ["source.ingest.completed"]
+        assert [(user, payload["source_id"]) for user, payload in marks] == [("alice", source_id)]
 
     def test_ingest_worker_first_attempt_still_emits_queued(
         self, patch_worker_db, task_self, monkeypatch, publishes

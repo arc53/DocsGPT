@@ -4,9 +4,10 @@ The wheel ships the frontend build under ``docsgpt/static`` (produced by
 ``scripts/build_frontend.sh``). When that directory holds an ``index.html``
 and ``SERVE_UI`` is on, the ASGI shell puts :class:`StaticUI` in front of
 Flask: files are served as they are, paths that belong to the backend pass
-through, and every other GET renders ``index.html`` for the client-side
-router. ``/config.js`` is generated per request so the UI talks to the origin
-it was loaded from, the same mechanism the nginx image uses.
+through, a missing ``/assets/*`` file is a 404 (as in the nginx image), and
+every other GET renders ``index.html`` for the client-side router.
+``/config.js`` is generated per request so the UI talks to the origin it was
+loaded from, the same mechanism the nginx image uses.
 """
 
 from __future__ import annotations
@@ -100,6 +101,14 @@ class StaticUI:
             await self.backend(scope, receive, send)
             return
         file = self._file(path)
+        if file is None and first == "assets":
+            # A hashed asset the current build doesn't have (an old tab asking
+            # for a chunk an upgrade renamed). index.html in its place would be
+            # read as a script with an HTML MIME type and cached as immutable;
+            # a plain 404 matches the nginx image's ``try_files $uri =404``.
+            response = Response(status_code=404, headers={"Cache-Control": "no-store"})
+            await response(scope, receive, send)
+            return
         if file is None:
             file, cache = self.index, _NO_CACHE
         else:

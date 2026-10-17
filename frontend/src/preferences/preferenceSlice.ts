@@ -16,6 +16,20 @@ import {
 } from './preferenceApi';
 
 import type { Model } from '../models/types';
+import type { ConversationSummary } from './types';
+
+/** Chats per request; a shorter page means the oldest chat is loaded. */
+export const CONVERSATIONS_PAGE_SIZE = 30;
+
+/** Whether `c` sorts after `last` in the list's (date, id) newest-first order. */
+const isOlderThan = (
+  c: ConversationSummary,
+  last: ConversationSummary,
+): boolean => {
+  if (!c.date || !last.date) return false;
+  if (c.date !== last.date) return c.date < last.date;
+  return c.id < last.id;
+};
 export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
@@ -24,8 +38,10 @@ export interface Preference {
   selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
   conversations: {
-    data: { name: string; id: string }[] | null;
+    data: ConversationSummary[] | null;
     loading: boolean;
+    /** Older chats exist past the last one loaded. */
+    hasMore?: boolean;
   };
   token: string | null;
   modalState: ActiveState;
@@ -48,6 +64,11 @@ export interface Preference {
   // config loads, so a backend without these flags keeps showing the controls.
   ttsAvailable: boolean;
   sttAvailable: boolean;
+  // The server rejects unauthenticated calls (/api/config ``requires_auth``).
+  authRequired: boolean;
+  // Share of the model's window a turn's attached files may take
+  // (/api/config ``attachment_budget_share``); null until the config loads.
+  attachmentBudgetShare: number | null;
 }
 
 const initialState: Preference = {
@@ -58,7 +79,7 @@ const initialState: Preference = {
     { name: 'creative', id: 'creative', type: 'public' },
     { name: 'strict', id: 'strict', type: 'public' },
   ],
-  chunks: '2',
+  chunks: '6',
   selectedDocs: [],
   sourceDocs: null,
   conversations: {
@@ -80,6 +101,8 @@ const initialState: Preference = {
   rolesResolved: false,
   ttsAvailable: true,
   sttAvailable: true,
+  authRequired: false,
+  attachmentBudgetShare: null,
 };
 
 export const prefSlice = createSlice({
@@ -100,6 +123,101 @@ export const prefSlice = createSlice({
     },
     setConversations: (state, action) => {
       state.conversations = action.payload;
+    },
+    /** Flags a fetch in flight without touching the chats already listed. */
+    setConversationsLoading: (state, action: PayloadAction<boolean>) => {
+      state.conversations.loading = action.payload;
+    },
+    /**
+     * The newest page, fetched again after a new chat, a rename or a
+     * delete. It replaces the top of the list and keeps the older chats
+     * already scrolled to; a short page is the whole list.
+     */
+    setConversationsHead: (
+      state,
+      action: PayloadAction<ConversationSummary[]>,
+    ) => {
+      const head = action.payload;
+      const existing = state.conversations.data ?? [];
+      if (head.length < CONVERSATIONS_PAGE_SIZE) {
+        state.conversations = { data: head, loading: false, hasMore: false };
+        return;
+      }
+      const last = head[head.length - 1];
+      const inHead = new Set(head.map((c) => c.id));
+      const older = existing.filter(
+        (c) => !inHead.has(c.id) && isOlderThan(c, last),
+      );
+      state.conversations = {
+        data: [...head, ...older],
+        loading: false,
+        hasMore: older.length ? (state.conversations.hasMore ?? true) : true,
+      };
+    },
+    /** A newest-page fetch: merged in as above, or cleared when it failed. */
+    receiveConversations: (
+      state,
+      action: PayloadAction<{
+        data: ConversationSummary[] | null;
+        loading: boolean;
+        requestedAt?: number;
+      }>,
+    ) => {
+      if (!action.payload.data) {
+        state.conversations = { data: null, loading: false };
+        return;
+      }
+      prefSlice.caseReducers.setConversationsHead(state, {
+        type: 'preference/setConversationsHead',
+        payload: action.payload.data,
+      });
+    },
+    /**
+     * An older page, loaded as the sidebar's end scrolls into view.
+     * `requestedAt`, when its request went out, orders its unread marks.
+     */
+    appendConversations: {
+      reducer: (
+        state,
+        action: PayloadAction<
+          ConversationSummary[],
+          string,
+          { requestedAt?: number }
+        >,
+      ) => {
+        const existing = state.conversations.data ?? [];
+        const seen = new Set(existing.map((c) => c.id));
+        state.conversations.data = [
+          ...existing,
+          ...action.payload.filter((c) => !seen.has(c.id)),
+        ];
+        state.conversations.hasMore =
+          action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+      },
+      prepare: (list: ConversationSummary[], requestedAt?: number) => ({
+        payload: list,
+        meta: { requestedAt },
+      }),
+    },
+    removeConversation: (state, action: PayloadAction<string>) => {
+      if (!state.conversations.data) return;
+      state.conversations.data = state.conversations.data.filter(
+        (c) => c.id !== action.payload,
+      );
+    },
+    /** Every conversation was deleted: the list is empty, with no more pages. */
+    removeAllConversations: (state) => {
+      state.conversations = { data: [], loading: false, hasMore: false };
+    },
+    /** A rename keeps the chat's place, so it is applied here, not refetched. */
+    renameConversation: (
+      state,
+      action: PayloadAction<{ id: string; name: string }>,
+    ) => {
+      const chat = state.conversations.data?.find(
+        (c) => c.id === action.payload.id,
+      );
+      if (chat) chat.name = action.payload.name;
     },
     setToken: (state, action) => {
       state.token = action.payload;
@@ -155,6 +273,12 @@ export const prefSlice = createSlice({
       state.ttsAvailable = action.payload.tts;
       state.sttAvailable = action.payload.stt;
     },
+    setAuthRequired: (state, action: PayloadAction<boolean>) => {
+      state.authRequired = action.payload;
+    },
+    setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
+      state.attachmentBudgetShare = action.payload;
+    },
   },
 });
 
@@ -163,6 +287,13 @@ export const {
   setSelectedDocs,
   setSourceDocs,
   setConversations,
+  setConversationsHead,
+  receiveConversations,
+  appendConversations,
+  removeConversation,
+  removeAllConversations,
+  renameConversation,
+  setConversationsLoading,
   setToken,
   setPrompt,
   setPrompts,
@@ -180,6 +311,8 @@ export const {
   setRoles,
   clearRoles,
   setSpeechAvailability,
+  setAuthRequired,
+  setAttachmentBudgetShare,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -328,7 +461,12 @@ export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;
 export const selectIsAdmin = (state: RootState) =>
   state.preference.roles.includes('admin');
+// Speech needs a signed-in user wherever the server requires auth, so a
+// signed-out viewer of a shared conversation gets no Speak button.
 export const selectTtsAvailable = (state: RootState) =>
-  state.preference.ttsAvailable;
+  state.preference.ttsAvailable &&
+  (!state.preference.authRequired || !!state.preference.token);
 export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
+export const selectAttachmentBudgetShare = (state: RootState) =>
+  state.preference.attachmentBudgetShare;
