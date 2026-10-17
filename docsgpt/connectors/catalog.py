@@ -475,6 +475,66 @@ def preset_for_url(url: Optional[str]) -> Optional[ConnectorDefinition]:
     return None
 
 
+def _endpoint(url: Optional[str]) -> str:
+    """``url`` as one MCP endpoint: case-folded scheme and host, no trailing slash.
+
+    Empty for anything but a plain endpoint: no scheme or host, or a query,
+    fragment or parameters (``?apikey=…`` makes it another server's setup).
+    """
+    parsed = urlparse(url or "")
+    if not parsed.scheme or not parsed.netloc or parsed.query or parsed.fragment or parsed.params:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{parsed.path.rstrip('/')}"
+
+
+def keyless_preset_for_endpoint(url: Optional[str]) -> Optional[ConnectorDefinition]:
+    """The keyless MCP preset (CoinGecko, draw.io) whose own endpoint ``url`` is, if any.
+
+    A keyless preset's Connect saves its ``mcp_url`` through the no-auth MCP
+    server form, the same way a custom server is saved, and the connection
+    keeps only the host. Matching the whole endpoint at save time is what tells
+    the preset from a custom path at its address, which setup must not rebuild
+    from the preset (see :func:`docsgpt.connectors.service.rebuilds_from_preset`).
+
+    Args:
+        url: The saved server URL.
+
+    Returns:
+        The preset, or None for any other endpoint, including an OAuth
+        preset's URL saved without auth.
+    """
+    target = _endpoint(url)
+    if not target:
+        return None
+    for definition in _registry().values():
+        if (
+            definition.publisher == "preset"
+            and definition.auth_kind == "mcp"
+            and definition.mcp_url
+            and _endpoint(definition.mcp_url) == target
+        ):
+            return definition
+    return None
+
+
+def preset_account_label(definition: ConnectorDefinition) -> str:
+    """The account label of a keyless preset's own connection: its endpoint, as ``host/path``.
+
+    A no-auth custom server is labelled with its bare host. Connections are
+    unique per user, provider, host and label, so the preset's label keeps
+    its connection on a row of its own, never shared with a custom server at
+    the same address. It comes from the preset's ``mcp_url``, not the saved
+    URL, so every spelling of the endpoint finds the same row.
+
+    Args:
+        definition: A keyless preset (see :func:`keyless_preset_for_endpoint`).
+
+    Returns:
+        For example ``mcp.api.coingecko.com/mcp``.
+    """
+    return _endpoint(definition.mcp_url).split("://", 1)[-1]
+
+
 def definition_for_tool(tool_name: str) -> Optional[ConnectorDefinition]:
     """The built-in connector that provides the ``user_tools`` template ``tool_name``."""
     if tool_name in _GENERIC_TOOL_TEMPLATES:

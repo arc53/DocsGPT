@@ -883,6 +883,15 @@ describe('ConnectionDrawer', () => {
       await render(NOTION, ACCOUNT);
       expect(button('settings.connectors.detail.addTools')).toBeUndefined();
     });
+
+    it('is not offered for a custom server at the preset address', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...NO_TOOLS, custom_server: true },
+      });
+      await render(NOTION, ACCOUNT);
+      expect(button('settings.connectors.detail.addTools')).toBeUndefined();
+    });
   });
 
   it('offers no Add tools for a custom MCP server', async () => {

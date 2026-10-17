@@ -1568,6 +1568,7 @@
         "mcp_resend": "Envía correos electrónicos y gestiona contactos, audiencias y dominios.",
         "mcp_calcom": "Lee y gestiona tus reservas, tipos de eventos, disponibilidad y horarios de Cal.com.",
         "mcp_alphavantage": "Consulta cotizaciones de acciones, datos fundamentales, divisas, criptomonedas, indicadores económicos y noticias del mercado.",
+        "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
