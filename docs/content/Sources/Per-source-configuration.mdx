@@ -1,7 +1,7 @@
 ---
 title: Per-Source Configuration
-description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, pre-screening, relevance reranking and more.
-lastUpdated: 2026-10-16
+description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, defaults for new sources and more.
+lastUpdated: 2026-10-17
 ---
 
 import { Callout } from 'nextra/components'
@@ -11,7 +11,7 @@ import Image from 'next/image'
 
 Every source in DocsGPT carries its own **behavior contract** — a small config object that controls how that source is *chunked* when it is ingested and how it is *retrieved* when you ask a question. This lets you tune each source independently: a large reference manual can use a different chunking strategy and retriever than a short FAQ.
 
-You edit this config from a source's settings in the UI (shown below), or through the API. The same options are also available in **Advanced settings** when you first upload a document.
+You edit this config from a source's settings in the UI (shown below), or through the API. The same options are also available in **Advanced settings** when you first upload a document, where they start from the [defaults for new sources](#defaults-for-new-sources) an admin has set.
 
 <Image
   src="/sources-settings-screen.png"
@@ -21,7 +21,7 @@ You edit this config from a source's settings in the UI (shown below), or throug
 />
 
 <Callout type="info" emoji="ℹ️">
-Per-source retrieval is enabled by default. Operators can turn it off instance-wide with `PER_SOURCE_RETRIEVAL_ENABLED=false`, in which case all sources fall back to the classic retriever regardless of their stored config. Pre-screening and [relevance reranking](#relevance-reranking-and-the-decision-prescreen) then do not run either, and the decision model is never called for retrieval.
+Per-source retrieval is enabled by default. Operators can turn it off instance-wide with `PER_SOURCE_RETRIEVAL_ENABLED=false`, in which case all sources fall back to the classic retriever regardless of their stored config. Pre-screening and [relevance](#relevance) then do not run either, and the decision model is never called for retrieval.
 </Callout>
 
 ## Two kinds of settings: live vs. bake-time
@@ -99,11 +99,11 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
 | `retriever` | `classic` | Retrieval strategy: `classic`, `hybrid`, or `graphrag`. |
 | `exposure` | `prefetch` | How retrieved context reaches the model: `prefetch` or `agentic_tool` (see below). |
 | `chunks` | `6` | Final number of chunks (top-k) returned to the answer. Range 1–500. Set here, it **overrides** whatever a request asks for. |
-| `score_threshold` | `null` | Minimum similarity score. Honored by pgvector, MongoDB Atlas, Qdrant and Milvus (MongoDB Atlas scores cosine as `(1 + cos) / 2`, so `0.8` there is cosine `0.6`; Qdrant's score follows `QDRANT_DISTANCE_FUNC`, cosine by default); FAISS, Elasticsearch and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
+| `score_threshold` | `null` | Minimum similarity score, shown as **Similarity threshold** under **Advanced**: it filters on the retriever's own similarity, not on the relevance model's score. Honored by pgvector, MongoDB Atlas, Qdrant and Milvus (MongoDB Atlas scores cosine as `(1 + cos) / 2`, so `0.8` there is cosine `0.6`; Qdrant's score follows `QDRANT_DISTANCE_FUNC`, cosine by default); FAISS, Elasticsearch and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
 | `rephrase_query` | `true` | Whether to run a query-rephrasing side-call before retrieval. |
-| `prescreen` | `null` | Optional LLM relevance filter (see below). `null` = off. |
+| `prescreen` | `null` | Optional LLM screening (see below). `null` = off. A source sets this or `reranker`, never both. |
 | `graph` | see [GraphRAG](/Sources/GraphRAG#graph-retrieval-settings) | How the `graphrag` retriever walks the graph: `seed_strategy`, `passage_nodes`, `blend_vector`. Ignored by the other retrievers. |
-| `reranker` | `null` | This source's relevance reranking, within what the operator turned on: `null` follows the instance, `{"type": "off"}` opts out, `{"type": "decision", ...}` opts in. See [Relevance reranking](#relevance-reranking-and-the-decision-prescreen). |
+| `reranker` | `null` | This source's [relevance](#relevance): `null` is off, `{"type": "decision", ...}` scores its chunks with the decision model while the operator has enabled it. A source sets this or `prescreen`, never both. |
 
 ### Who wins: source config or the request?
 
@@ -139,9 +139,9 @@ Keyword search for the **hybrid** retriever is currently implemented only for th
 - **`prefetch`** (default) — DocsGPT retrieves the top chunks up front and injects them into the prompt before the model answers. Best for focused Q&A over a source.
 - **`agentic_tool`** — The source is exposed to the model as a search tool it can call on demand, deciding when and what to look up (browse-as-you-go) rather than receiving a bulk prefetch. This is the default exposure for [Wiki sources](/Sources/Wiki-sources).
 
-### Pre-screening (relevance filter)
+### Pre-screening (LLM screening)
 
-Pre-screening adds an optional map-reduce step between retrieval and answering: a base retriever fetches a wider set of candidates, an LLM screens them in batches, and only the most relevant survivors are passed to the answer. It improves precision on noisy sources at the cost of extra query-time LLM calls, so it is **off by default**. Where the operator has turned it on, the [decision model](#relevance-reranking-and-the-decision-prescreen) can screen them instead, in one call.
+Pre-screening adds an optional map-reduce step between retrieval and answering: a base retriever fetches a wider set of candidates, an LLM screens them in batches, and only the most relevant survivors are passed to the answer. It improves precision on noisy sources at the cost of extra query-time LLM calls, so it is **off by default**. In a source's settings it is **LLM screening**, under **Advanced**: the alternative to [relevance](#relevance), so turning one on turns the other off. A config that sets both is refused with `400` and the message "Relevance and LLM screening cannot both be on: set reranker or prescreen, not both."
 
 ```json
 {
@@ -163,32 +163,24 @@ Pre-screening adds an optional map-reduce step between retrieval and answering: 
 | `batch_size` | `10` | Candidates screened per LLM call. |
 | `max_keep` | `8` | Survivors kept after screening. Must be `<= candidate_k`. |
 | `model` | `null` | Model used for screening. `null` reuses the request's resolved model. |
-| `backend` | `llm` | `llm`, or `decision` to screen with the decision model while the operator has set `DECISION_PRESCREEN_ENABLED` (it runs as `llm` otherwise). Configs saved without it are `llm`. |
-| `min_relevance` | `null` | `decision` only: chunks scoring below this relevance (0–1) are dropped. `null` uses `DECISION_PRESCREEN_THRESHOLD` (0.2). |
 
 The screening judges the query retrieval searched with: on a follow-up turn, the standalone rephrase rather than the raw message.
 
-A prescreen screens only the sources that set it. Sources with the same prescreen settings (`backend`, `max_keep`, `batch_size`, `model`, and `min_relevance` on the decision model) are searched and screened together; the other sources are searched in groups of their own, each with its share of the document budget, so a prescreen's `max_keep` never cuts their chunks.
+A prescreen screens only the sources that set it. Sources with the same prescreen settings (`max_keep`, `batch_size` and `model`) are searched and screened together; the other sources are searched in groups of their own, each with its share of the document budget, so a prescreen's `max_keep` never cuts their chunks.
 
-## Relevance reranking and the decision prescreen
+## Relevance
 
-The [decision model](/Models/decision-model) can score each retrieved chunk with a calibrated relevance, `p(relevant)`: does the chunk contain information that answers the query or directly addresses it. Retrieval uses it in two ways:
+The [decision model](/Models/decision-model) can score each retrieved chunk with a calibrated relevance, `p(relevant)`: does the chunk contain information that answers the query or directly addresses it. A source whose relevance is on fetches 20 candidates instead of its usual top-k, scores them in one call and orders them by it:
 
-- **Reranking.** A classic or hybrid source fetches 20 candidates instead of its usual top-k, orders them by relevance and keeps as many chunks as it would have without the model, most relevant first. It changes which chunks reach the answer and their order, not how many.
-- **The decision prescreen.** A prescreen with `"backend": "decision"` scores all its candidates in one call instead of LLM batches, keeps those at or above `min_relevance` (always at least one), orders them by relevance and keeps at most `max_keep`.
-
-On DocsGPT-shaped documentation (ten doc sites held out from the model's training, 1,314 queries, the top 20 of DocsGPT's default embedder graded by an LLM judge), reranking raised nDCG@10 from .758 in embedder order to .916, and the share of relevant chunks among the six kept from .377 to .473 at the same count. Those labels are one LLM judge's grades, the queries are standalone and mostly English, and the gain on finance Q&A, web pages or Spanish sources is smaller.
-
-### The operator turns it on
-
-A source cannot turn the model on: any user who can edit a source could otherwise make the API load a 1 GB model and spend CPU on it. Two settings in `.env` decide:
-
-| Setting | Default | What it turns on |
+| Mode in the source's settings | `reranker` | What it does |
 | --- | --- | --- |
-| `DECISION_RERANK_MODE` | `off` | The rerank for classic and hybrid sources (`DECISION_RERANK_RETRIEVERS`): `on`, `monitor` (scores and records without changing the result) or `auto` (on while the predicted call on this machine fits `DECISION_RERANK_BUDGET`, 3 s). |
-| `DECISION_PRESCREEN_ENABLED` | `false` | `"backend": "decision"` prescreens on the model. The API loads the model when it starts, so the first call does not fail open while it loads. |
+| **Off** | `null` | Retrieval as without the model. Sources created before this setting existed are off. |
+| **Reorder** | `{"type": "decision"}` | Keeps as many chunks as the source would without the model, most relevant first. It changes which chunks reach the answer and their order, not how many. |
+| **Reorder and filter** | `{"type": "decision", "min_relevance": 0.3}` | Also drops chunks scoring below `min_relevance`, always keeping at least one, so fewer and more relevant chunks reach the answer. |
 
-While `DECISION_RERANK_MODE` is not `off`, a source's `reranker` refines it:
+The filter's strictness is picked as **Loose** (0.1), **Balanced** (0.3) or **Strict** (0.5); **Advanced** takes an exact value and the number of candidates. A stored value that matches no preset shows as **Custom**. Relevance works with every retriever, `graphrag` included.
+
+On DocsGPT-shaped documentation (ten doc sites held out from the model's training, 1,314 queries, the top 20 of DocsGPT's default embedder graded by an LLM judge), reordering raised nDCG@10 from .758 in embedder order to .916, and the share of relevant chunks among the six kept from .377 to .473 at the same count. A threshold of 0.1 saves about a third of the document tokens for about 7 points of recall. Those labels are one LLM judge's grades, the queries are standalone and mostly English, and the gain on finance Q&A, web pages or Spanish sources is smaller.
 
 ```json
 { "retrieval": { "reranker": { "type": "decision", "min_relevance": 0.1, "candidate_k": 30 } } }
@@ -196,31 +188,57 @@ While `DECISION_RERANK_MODE` is not `off`, a source's `reranker` refines it:
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `type` | `decision` | `decision` reranks this source in the instance's mode even where the instance default does not reach (a `graphrag` source, the rollout's control arm); under `monitor` it is only scored and recorded, since a source never raises the operator's mode. `off` opts it out, for example a source of one-line rows, which score low against any query. |
-| `min_relevance` | `null` | Drop chunks scoring below this (0–1), keeping at least `DECISION_RELEVANCE_MIN_KEEP` (1). `null` uses `DECISION_RERANK_THRESHOLD` (0, reorder only). |
-| `candidate_k` | `null` | Candidates fetched and scored, 1–100. `null` uses `DECISION_RERANK_CANDIDATE_K` (20). |
+| `type` | `decision` | The decision model; the only reranker there is. |
+| `min_relevance` | `null` | `null` or `0` reorders only. Above 0, chunks scoring below it (0–1) are dropped, keeping at least `DECISION_RELEVANCE_MIN_KEEP` (1) and at most `chunks`. |
+| `candidate_k` | `null` | Candidates fetched and scored, 1–100 (and at most `DECISION_RELEVANCE_MAX_PASSAGES`). `null` uses 20. |
 
-While `DECISION_RERANK_MODE` is `off`, every source is off, a stored `reranker` included. A group of sources searched together shares one candidate pool: an opted-out source is searched on its own, so its chunks are never judged by a policy it turned off. `DECISION_RERANK_ROLLOUT_PERCENT` applies the instance mode to a share of conversations, by a hash of the conversation id, so the two arms can be compared. Source settings show the reranker control only while `DECISION_RERANK_MODE` is not `off`, and the prescreen backend only while `DECISION_PRESCREEN_ENABLED` is set; a newly enabled prescreen then starts on the relevance model.
+### The operator turns it on
 
-### On a CPU, `auto` keeps it off
+A source cannot turn the model on by itself: any user who can edit a source could otherwise make the API load a 1 GB model and spend CPU on it. One setting in `.env` decides:
 
-By default the model runs in the API process on the CPU, where a rerank is slow. Measured with the release model on a 4-vCPU server (AMD Zen 4), reranking 20 whole chunks takes about 27 s. Where the model runs on a CPU, DocsGPT scores each chunk on its first 64 tokens plus the window that shares the most words with the query, `DECISION_RELEVANCE_CPU_PASSAGE_TOKENS` (256) tokens in all: about 14 s for 20 chunks and 7 s for 10 on that server, at recall@6 .812 against .853 for whole chunks. Both are far above the 3 s budget, so `auto` stays off on a CPU; on a GPU or an [API-mode](/Models/decision-model#api-mode) server, whole chunks are scored and `auto` turns it on where the call fits. If you set `on` for a CPU anyway, each call waits at most `DECISION_RELEVANCE_TIMEOUT` (2 s) and then keeps the retrieval's own selection.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `DECISION_RELEVANCE_ENABLED` | `false` | Lets sources whose relevance is on use the model. While `false`, no source calls or loads the model, retrieval returns exactly what it does without it, and the source settings show only LLM screening (under **Advanced**). While `true`, the API loads the model when it starts, so the first answer does not fall back while it loads. |
+
+The tuning settings stay in `.env` and never appear in the UI: `DECISION_RELEVANCE_TIMEOUT` (2 s, the deadline of one call), `DECISION_RELEVANCE_MIN_KEEP` (1), `DECISION_RELEVANCE_MAX_PASSAGES` (100), `DECISION_RELEVANCE_CANDIDATE_TOKENS` (the candidate fetch's token budget), `DECISION_RELEVANCE_CPU_PASSAGE_TOKENS` (256, below) and `DECISION_RELEVANCE_ROLLOUT_PERCENT` (100). The rollout applies relevance to a share of conversations, by a hash of the conversation id; the rest are the `control` arm and keep the retriever's output, so the two arms can be compared.
+
+Sources searched together share one candidate pool, and a policy judges only its own sources: sources with relevance on are searched apart from those without it, and each LLM screening policy apart from both.
+
+### On a CPU
+
+By default the model runs in the API process on the CPU, where scoring is slow. Measured with the release model on a 4-vCPU server (AMD Zen 4), scoring 20 whole chunks takes about 27 s. Where the model runs on a CPU, DocsGPT scores each chunk on its first 64 tokens plus the window that shares the most words with the query, `DECISION_RELEVANCE_CPU_PASSAGE_TOKENS` (256) tokens in all: about 14 s for 20 chunks and 7 s for 10 on that server, at recall@6 .812 against .853 for whole chunks. On a GPU or an [API-mode](/Models/decision-model#api-mode) server whole chunks are scored.
+
+The admin [Defaults](#defaults-for-new-sources) panel shows what one call costs on your server ("Adds about N s per answer") once the model has loaded and been timed, and warns when that is longer than `DECISION_RELEVANCE_TIMEOUT`: such a call times out and the answer keeps the retriever's order. Raise `DECISION_RELEVANCE_TIMEOUT`, lower the candidates, or run the model on a GPU or a decision server.
 
 ### When the model cannot answer
 
-Every failure keeps exactly what retrieval returns without the model: the same chunks in the same order. That covers the model being off, loading, busy or unreachable, a call past `DECISION_RELEVANCE_TIMEOUT`, and a batch answered only in part. A decision prescreen that fails keeps its first `max_keep` candidates, as the LLM prescreen does without a query.
+Every failure keeps exactly what retrieval returns without the model: the same chunks in the same order. That covers the model being off, loading, busy or unreachable, a call past `DECISION_RELEVANCE_TIMEOUT`, and a batch answered only in part.
 
 ### What else uses the scores
 
 - Each kept chunk carries its `relevance` into the answer's sources. The sources panel and the citation reader label it as a strong (from 0.7), possible (from 0.3) or weak match, with the percentage in the tooltip; the embeddable widget does not show it yet.
 - When the prompt has no room for every chunk, the least relevant one is dropped first, rather than the last.
-- Sources searched in separate groups (different retrievers) are merged most relevant first when all of them were scored.
+- Sources searched in separate groups are merged most relevant first when all of them were scored.
 - The agent's search tool says "No relevant documents found" when a relevance threshold left none of the candidates, rather than "No documents found", so the agent can search again with other words.
-- Workflow agent nodes are reordered under the instance rerank too, keeping every chunk.
+- Workflow agent nodes follow each source's own `reranker`: that source's chunks are reordered (and filtered, with a threshold) among the places they held.
 
 ### Where the text goes
 
 The model runs in the API process or the stack's own decider by default, so chunks and queries stay inside the stack. In [API mode](/Models/decision-model#api-mode), every candidate chunk and the query are sent to the decision server you configured, the same trust boundary as an embeddings API: point `DECISION_BASE_URL` only at a server you trust with your sources' content. The decision record and traces keep numbers only.
+
+## Defaults for new sources
+
+An admin sets the retrieval settings a new source starts with under **Admin → Defaults** ("Default retrieval settings for new sources"), with the same retrieval and relevance controls as a source. They are copied into each source when it is created: an upload, a remote or connector source, a source made from chat attachments, a wiki. Settings a create request sends itself win, field by field, and a request that turns on LLM screening or relevance drops the other from the defaults. Saving the defaults never changes an existing source and there is no bulk apply: existing sources keep their own settings. Without saved defaults, new sources get the built-in defaults above.
+
+The panel also shows the relevance model's cost on this server and, while `DECISION_RELEVANCE_ENABLED` is `false`, that the administrator turns it on there; the relevance fields are hidden until then. Each save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `source_defaults_set`.
+
+| Method | Path | Who | Body / response |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/defaults/sources` | Admins | `{"retrieval": {...}, "relevance_model": {"enabled", "predicted_s", "timeout_s", "candidate_k", "runtime"}}` |
+| `PUT` | `/api/admin/defaults/sources` | Admins | `{"retrieval": {...}}`, validated as a source's retrieval config; returns the `GET` body |
+| `GET` | `/api/sources/defaults` | Any signed-in user, or a token with `sources:read` | `{"retrieval": {...}}`, to prefill a create form |
+
+`predicted_s` is the measured prediction for one relevance call over `candidate_k` (20) chunks on this server, in the shape the call has here (best-window passages on a CPU, whole chunks elsewhere), and `null` until the model has loaded; reading it never loads or times the model. `timeout_s` is `DECISION_RELEVANCE_TIMEOUT` and `runtime` where the model runs (`onnx-int8`, `vllm`, ...).
 
 ## Testing retrieval
 
@@ -235,10 +253,10 @@ The result lists the chunks in rank order with their file name, token count, sco
 The test runs the same retrieval pipeline as an answer: the same retriever, `chunks`, `score_threshold`, pre-screening and token budget. It differs in three ways:
 
 - It never rephrases the query, as with the first message of a chat.
-- It applies the source's settings even when `PER_SOURCE_RETRIEVAL_ENABLED=false`, where answers use the classic retriever. The operator's settings for the decision model still apply, but not `DECISION_RERANK_ROLLOUT_PERCENT`: a test has no conversation to put in an arm.
-- Pre-screening without its own `model` uses the instance's default model, since a test has no chat model behind it. Settings that differ from the saved ones may use at most 20 pre-screening LLM calls (`candidate_k` / `batch_size`), a `decision` prescreen included while it runs on the LLM, and at most `DECISION_RELEVANCE_MAX_PASSAGES` (100) chunks scored by the decision model.
+- It applies the source's settings even when `PER_SOURCE_RETRIEVAL_ENABLED=false`, where answers use the classic retriever. `DECISION_RELEVANCE_ENABLED` still applies, but not `DECISION_RELEVANCE_ROLLOUT_PERCENT`: a test has no conversation to put in an arm.
+- Pre-screening without its own `model` uses the instance's default model, since a test has no chat model behind it. Settings that differ from the saved ones may use at most 20 pre-screening LLM calls (`candidate_k` / `batch_size`) and at most `DECISION_RELEVANCE_MAX_PASSAGES` (100) chunks scored by the decision model.
 
-Where the operator has turned the decision model on, each chunk also shows its **relevance**, the summary says whether the model ordered the result, and **Compare with retriever order** lists every candidate in the order the retriever ranked it, with its relevance and what became of it: kept, promoted from past the retriever's own top-k, or dropped. With the rerank in `monitor` mode the result is the retriever's, and the comparison shows what the model would have changed.
+While `DECISION_RELEVANCE_ENABLED` is on, a strictness picker next to the query (Off, Reorder, Loose, Balanced, Strict) runs the test again with that relevance setting. Each chunk shows its **relevance**, the summary says whether the model ordered the result, and **Compare with retriever order** lists every candidate in the order the retriever ranked it, with its relevance and what became of it: kept, promoted from past the retriever's own top-k, or dropped. Users who can edit the source can keep the tested setting with **Save to source**.
 
 ### Reading the scores
 
@@ -295,7 +313,7 @@ curl -X POST https://your-docsgpt/api/sources/<source_id>/search \
 }
 ```
 
-`score_kind` is `cosine_similarity`, `l2_distance`, `rrf` or `null`, matching the labels above; `score` is `null` when `score_kind` is. `relevance` on a chunk is the decision model's score when it ordered the result, else `null`. The top-level `relevance` is `null` when the model did not run; otherwise `applied` is `false` in `monitor` mode or after a failure, and `fallback` names the failure (`timeout`, `unavailable`, `error`). Each of `candidates` (with `compare` only) has its place in retriever order (`rank_before`), in the result (`rank`, `null` when not kept), whether it was kept and whether retrieval would have returned it without the model (`baseline`).
+`score_kind` is `cosine_similarity`, `l2_distance`, `rrf` or `null`, matching the labels above; `score` is `null` when `score_kind` is. `relevance` on a chunk is the decision model's score when it ordered the result, else `null`. The top-level `relevance` is `null` when the model did not run; otherwise `applied` is `false` after a failure, and `fallback` names the failure (`timeout`, `unavailable`, `error`). Each of `candidates` (with `compare` only) has its place in retriever order (`rank_before`), in the result (`rank`, `null` when not kept), whether it was kept and whether retrieval would have returned it without the model (`baseline`).
 
 ## Editing the config via API
 
@@ -323,8 +341,8 @@ The response echoes the stored config and a `requires_reingest` flag:
 
 Notes:
 
-- The body replaces the whole config rather than merging into it: any group or field you leave out is reset to its default. To change one setting, send the source's current `config` (from `GET /api/sources`) with that setting changed. On a GraphRAG source, keep `"retriever": "graphrag"` and the top-level `graph` object.
-- Invalid values are rejected with `400` (strict validation on write).
+- A group the body leaves out (`chunking`, `retrieval`, `graph`) keeps its saved value, so `{"retrieval": {...}}` alone changes only the retrieval settings. A group you send replaces the saved one: any field you leave out of it is reset to its default. To change one setting, send the source's current group (from `GET /api/sources`) with that setting changed. On a GraphRAG source, keep `"retriever": "graphrag"` in `retrieval`.
+- Invalid values are rejected with `400` (strict validation on write); a `retrieval` with both `reranker` and `prescreen` says so.
 - The `kind` field (classic / wiki / graphrag) cannot be changed through this endpoint — converting a source to a [Wiki](/Sources/Wiki-sources) or enabling [GraphRAG](/Sources/GraphRAG) uses dedicated endpoints.
 - Editing requires ownership of the source or a team `editor` grant; viewers receive `403`.
 

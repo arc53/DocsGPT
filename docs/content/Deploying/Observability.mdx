@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
-lastUpdated: 2026-10-16
+lastUpdated: 2026-10-17
 ---
 
 import { Callout } from 'nextra/components'
@@ -141,7 +141,7 @@ the MCP `search_docs` tool, and graph builds.
 | `retrieval` | A retriever or the multi-source dispatcher searches |
 | `embeddings` | The query is embedded |
 | `search` | One source is searched |
-| `rerank` | Prescreening filters retrieved chunks, or the decision model scores them (`rerank relevance`) |
+| `rerank` | LLM screening filters retrieved chunks, or the decision model scores them (`rerank relevance`) |
 | `guardrail` | A guardrail calls a remote check or fires |
 | `decision` | A feature asks the [decision model](/Models/decision-model) (numbers only, never the text) |
 | `step` | A workflow node or research phase runs |
@@ -194,13 +194,12 @@ operation `decide` and provider `arc-decide`, plus a
 
 ### Relevance in retrieval
 
-When the decision model scores retrieved chunks ([relevance reranking and the
-decision prescreen](/Sources/Per-source-configuration#relevance-reranking-and-the-decision-prescreen)),
-each scoring call is a `rerank relevance` step under the `retrieval` step,
-with the `decision` step inside it. It carries
-`gen_ai.operation.name=rerank`, `docsgpt.rerank.backend=decision`,
-`docsgpt.rerank.feature` (`rag_rerank`, `rag_prescreen` or
-`retrieval_test`), `docsgpt.rerank.mode` (`on` or `monitor`),
+When the decision model scores retrieved chunks (a source's
+[relevance](/Sources/Per-source-configuration#relevance)), each scoring call
+is a `rerank relevance` step under the `retrieval` step, with the `decision`
+step inside it. It carries `gen_ai.operation.name=rerank`,
+`docsgpt.rerank.backend=decision`, `docsgpt.rerank.feature` (`rag_rerank` in
+answers and agents' searches, `retrieval_test` in a retrieval test),
 `docsgpt.rerank.arm`, `docsgpt.candidate_count`, `docsgpt.kept_count`,
 `docsgpt.relevance_threshold`, `docsgpt.top_relevance`,
 `docsgpt.query_source` (`rephrased` when it judged the standalone rephrase,
@@ -222,10 +221,12 @@ only:
 ```
 
 `replaced` counts the kept chunks that retrieval would not have returned
-without the model, `top` is the highest relevance scored, and `applied` is
-`false` in `monitor` mode and after a failure. A request in the rollout's
-control arm (`DECISION_RERANK_ROLLOUT_PERCENT` below 100) asks the model
-nothing and records this entry, so the two arms can be counted:
+without the model, `top` is the highest relevance scored, `threshold` is the
+strictest `min_relevance` of the sources scored together (0 reorders only),
+and `applied` is `false` after a failure. A request in the rollout's control arm
+(`DECISION_RELEVANCE_ROLLOUT_PERCENT` below 100) with a source whose relevance
+is on asks the model nothing and records this entry, so the two arms can be
+counted:
 
 ```json
 {"feature": "rag_rerank", "status": "skipped", "outcome": {"arm": "control"}}
