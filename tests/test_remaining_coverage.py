@@ -584,7 +584,7 @@ class TestReadWebpageErrors:
             mock_response.headers = {"Content-Type": "text/html"}
             mock_fetch.return_value = (b"<html><body>test</body></html>", mock_response)
             with patch(
-                "docsgpt.agents.tools.read_webpage.markdownify",
+                "docsgpt.agents.tools.read_webpage.html_to_markdown_text",
                 side_effect=Exception("parse error"),
             ):
                 result = tool.execute_action("read", url="https://example.com")
