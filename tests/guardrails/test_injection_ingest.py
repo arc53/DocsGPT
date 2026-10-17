@@ -217,6 +217,13 @@ class TestBackfill:
         monkeypatch.setattr(settings, "VECTOR_STORE", "elasticsearch")
         assert injection_ingest.start_backfill("src") == "lazy" and queued == ["src"]
 
+    def test_a_failing_store_check_falls_back_to_lazy(self, monkeypatch):
+        def broken():
+            raise RuntimeError("store unavailable")
+
+        monkeypatch.setattr(injection_ingest, "lists_chunks", broken)
+        assert injection_ingest.start_backfill("src") == "lazy"
+
     def _store(self, monkeypatch, texts):
         store = MagicMock(name="store")
         store.get_chunks.return_value = None if texts is None else [{"text": t} for t in texts]

@@ -215,9 +215,9 @@ def start_backfill(source_id: Any) -> str:
         ``queued``, or ``lazy`` when the store cannot list chunks (or the task could not be queued): its chunks
         are then scored as turns retrieve them.
     """
-    if not lists_chunks():
-        return "lazy"
     try:
+        if not lists_chunks():
+            return "lazy"
         from docsgpt.api.user.tasks import scan_source_injection
 
         scan_source_injection.delay(str(source_id))
