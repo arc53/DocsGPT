@@ -661,8 +661,8 @@ class SourceConfigResource(Resource):
         description="Edit a source's behavior config. Retrieval-time fields "
         "take effect live; chunking changes require an explicit re-ingest "
         "(surfaced as requires_reingest). A section the body leaves out "
-        "(chunking, retrieval, graph) keeps its saved value, so a body with "
-        "only `retrieval` saves just that."
+        "(chunking, retrieval, graph, guardrails) keeps its saved value, so a "
+        "body with only `retrieval` saves just that."
     )
     def patch(self, source_id):
         decoded_token = request.decoded_token
@@ -715,7 +715,7 @@ class SourceConfigResource(Resource):
                 new_config.kind = current_config.kind
                 # A section the body leaves out keeps its saved value (the
                 # retrieval test saves only ``retrieval``).
-                for section in ("chunking", "retrieval", "graph"):
+                for section in ("chunking", "retrieval", "graph", "guardrails"):
                     if section not in body:
                         setattr(new_config, section, getattr(current_config, section))
                 requires_reingest = (
@@ -749,9 +749,10 @@ class SourceConfigResource(Resource):
 @sources_ns.route("/sources/defaults")
 class SourceDefaultsResource(Resource):
     @api.doc(
-        description="The retrieval settings a new source starts with (set by "
-        "an admin under Admin > Defaults), for prefilling create forms: "
-        "`{retrieval: {...}}`, the built-in defaults when none are set."
+        description="The retrieval and guardrails settings a new source starts "
+        "with (set by an admin under Admin > Defaults), for prefilling create "
+        "forms: `{retrieval: {...}, guardrails: {injection_scan}}`, the "
+        "built-in defaults when none are set."
     )
     def get(self):
         decoded_token = request.decoded_token
@@ -759,7 +760,8 @@ class SourceDefaultsResource(Resource):
             return make_response(jsonify({"success": False}), 401)
         with db_readonly() as conn:
             retrieval = source_defaults.load(conn)
-        return make_response(jsonify({"success": True, "retrieval": retrieval}), 200)
+            guardrails = source_defaults.load_guardrails(conn)
+        return make_response(jsonify({"success": True, "retrieval": retrieval, "guardrails": guardrails}), 200)
 
 
 def _unsupported_retrieval_warnings(config) -> list:
