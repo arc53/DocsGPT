@@ -241,7 +241,7 @@ While it is on, every path that writes the source's chunks scores them first: an
 
 Turning it on for a source already indexed scans its existing chunks in the background. The response to the settings save says how: `injection_backfill` is `queued`, or `lazy` where the vector store cannot list a source's chunks (Elasticsearch), whose chunks are then scored as answers retrieve them. The settings page says which. Turning it off stops future scans; scores already cached stay until they expire.
 
-Scanning costs model time: on a 4 vCPU server, roughly half an hour of compute per 1,000 full-size chunks, run in the background at a quarter of the CPU, so a large source takes hours. Admin → Defaults shows the measured cost on your server. See [Prompt injection on a CPU](/Models/decision-model#prompt-injection-on-a-cpu).
+Scanning costs model time: on a 4 vCPU server, about half an hour of compute per 1,000 full-size chunks, run in the background at a quarter of the CPU, so 1,000 chunks take about two hours. Admin → Defaults shows the measured cost on your server. See [Prompt injection on a CPU](/Models/decision-model#prompt-injection-on-a-cpu).
 
 ### Reviewing flagged chunks
 
