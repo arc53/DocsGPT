@@ -43,6 +43,8 @@ _EXACT: dict[str, str] = {
     "quota_policy_deleted": "config",
     "connector_policy_set": "config",
     "source_defaults_set": "config",
+    "agent_defaults_set": "config",
+    "guardrails_settings_set": "config",
 }
 
 # Dotted namespaces, matched on the part before the first ``.``.

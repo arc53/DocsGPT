@@ -116,15 +116,6 @@ class GuardrailCheck(ABC):
         """False when the check cannot run here (missing credentials, deps)."""
         return True
 
-    @classmethod
-    def unevaluated_at_most(cls, settings: Dict[str, Any]) -> Optional[Action]:
-        """The most a control of this check may do when it could not run.
-
-        ``None`` leaves it to the agent's ``fail_open``; ``Action.FLAG`` makes
-        an unscanned text pass even on a fail-closed agent.
-        """
-        return None
-
     @abstractmethod
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         """Inspect ``text`` and report an outcome. Must not raise."""

@@ -208,6 +208,19 @@ def _decisions_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_stored_floor(monkeypatch):
+    """Run with no guardrails floor, and without reading one from a database.
+
+    Every agent turn reads the floor through a per-process cache, so an unset
+    cache would read whatever database the developer's ``.env`` points at.
+    Here it holds "no floor" until a test sets ``_floor`` itself or calls
+    ``floor.invalidate()`` to read the floor it stored.
+    """
+    monkeypatch.setattr("docsgpt.guardrails.floor._floor", None)
+    monkeypatch.setattr("docsgpt.guardrails.floor._expires", float("inf"))
+
+
+@pytest.fixture(autouse=True)
 def _graphrag_off_by_default(monkeypatch):
     """Run with GraphRAG at its shipped default (off), as CI does.
 

@@ -97,20 +97,10 @@ class GuardrailEngine:
 
     @staticmethod
     def _verdict(control, stage: Stage, outcome: CheckOutcome) -> ControlVerdict:
-        """The control's verdict, its action capped by what the outcome may carry.
-
-        An outcome that could not be evaluated is also capped by its check's
-        ``unevaluated_at_most``, so a check that must never stop a turn it
-        could not scan stays a flag even on a fail-closed agent.
-        """
-        action = capped(control.action, outcome.at_most)
-        if not outcome.evaluated:
-            try:
-                limit = GuardrailCreator.get(control.check).unevaluated_at_most(control.settings)
-            except Exception:
-                limit = None
-            action = capped(action, limit)
-        return ControlVerdict(check=control.check, stage=stage, action=action, outcome=outcome)
+        """The control's verdict, its action capped by what the outcome may carry."""
+        return ControlVerdict(
+            check=control.check, stage=stage, action=capped(control.action, outcome.at_most), outcome=outcome
+        )
 
     def _run_control(
         self,
