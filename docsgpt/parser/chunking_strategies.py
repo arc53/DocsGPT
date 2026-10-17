@@ -131,7 +131,7 @@ class RecursiveChunker(_BaseStrategyChunker):
         if sep_idx >= len(self._SEPARATORS):
             if self._token_count(text) <= self.max_tokens:
                 return [text] if text.strip() else []
-            return [p for p in self.counter.split(text, self.max_tokens) if p.strip()]
+            return [p for p in split_to_token_limit(self.counter, text, self.max_tokens) if p.strip()]
         sep = self._SEPARATORS[sep_idx]
         parts = text.split(sep)
         out: List[str] = []
