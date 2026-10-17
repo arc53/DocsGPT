@@ -341,6 +341,7 @@ class SemanticChunker(_BaseStrategyChunker):
         max_tokens: int = 2000,
         min_tokens: int = 150,
         duplicate_headers: bool = False,
+        chunk_overlap: int = 0,
     ) -> None:
         """Build a semantic chunker with the embedding ceiling enforced."""
         super().__init__(
@@ -348,6 +349,7 @@ class SemanticChunker(_BaseStrategyChunker):
             max_tokens=min(int(max_tokens), MAX_CHUNK_TOKENS),
             min_tokens=min_tokens,
             duplicate_headers=duplicate_headers,
+            chunk_overlap=chunk_overlap,
         )
 
     def _split_sentences(self, text: str) -> List[str]:

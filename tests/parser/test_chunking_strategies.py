@@ -48,9 +48,11 @@ class TestRegistration:
                 max_tokens=200,
                 min_tokens=20,
                 duplicate_headers=False,
+                chunk_overlap=50,
             )
             assert chunker.max_tokens == 200
             assert chunker.min_tokens == 20
+            assert chunker.chunk_overlap == 50
 
 
 @pytest.mark.unit
