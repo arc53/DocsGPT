@@ -178,12 +178,18 @@ def lookup(texts: Sequence[str]) -> List[Optional[InjectionScore]]:
     scorer = scorer_id()
     if scorer is None or not texts:
         return [None] * len(texts)
+    return _cached(texts, scorer)[0]
+
+
+def _cached(texts: Sequence[str], scorer: str) -> tuple[List[Optional[InjectionScore]], set[str]]:
+    """The cached score of each text, and the hashes of the rows found that were not seen today."""
     hashes = [content_hash(t) for t in texts]
     rows = _load(hashes, scorer)
+    stale = {h for h, row in rows.items() if row.get("stale")}
     return [
         InjectionScore(row["p"], row["windows_scored"], row["windows_total"], cached=True) if row else None
         for row in (rows.get(h) for h in hashes)
-    ]
+    ], stale
 
 
 def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Optional[int] = None,
@@ -223,7 +229,7 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
     hits = 0
     scorer = scorer_id() if cache else None
     if scorer is not None and todo:
-        found = lookup([texts[i] for i in todo])
+        found, stale = _cached([texts[i] for i in todo], scorer)
         misses = []
         for i, hit in zip(todo, found):
             # A row scored with fewer windows than this call reads (a cap since raised) is scored again.
@@ -235,8 +241,11 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
         todo = misses
         if hits:
             _count_cached(feature, hits)
-            if budget.lane == "background":
-                _touch([content_hash(texts[i]) for i, s in enumerate(scores) if s is not None and s.cached], scorer)
+        # Hits on rows not seen today are marked seen, so retention keeps text still in use: in the background
+        # lane right away, from a chat turn by the worker, so the turn never waits on the write.
+        seen = sorted({content_hash(texts[i]) for i, s in enumerate(scores) if s is not None and s.cached} & stale)
+        if seen:
+            (_touch if budget.lane == "background" else _touch_later)(seen, scorer)
     if live is not None:
         for i in todo[max(live, 0):]:
             reasons[i] = DEFERRED
@@ -343,14 +352,14 @@ def score_lazy(texts: Sequence[str]) -> Dict[str, int]:
     return {"texts": len(texts), "cached": result.cache_hits, "scored": scored}
 
 
-def allowed_hashes(source_ids: Iterable[str]) -> set[str]:
-    """The text hashes the sources' owners marked safe (``sources.metadata.injection_review.allowed``), in one query.
+def allowed_hashes(source_ids: Iterable[str]) -> Dict[str, set[str]]:
+    """Per source, the text hashes its owner marked safe (``sources.metadata.injection_review.allowed``), in one query.
 
     Empty when the sources cannot be read.
     """
     ids = sorted({str(s) for s in source_ids if s})
     if not ids:
-        return set()
+        return {}
     try:
         from docsgpt.storage.db.repositories.sources import SourcesRepository
         from docsgpt.storage.db.session import db_readonly
@@ -359,7 +368,7 @@ def allowed_hashes(source_ids: Iterable[str]) -> set[str]:
             return SourcesRepository(conn).injection_allowed(ids)
     except Exception:  # noqa: BLE001 - an unreadable allowlist is an empty one
         logger.warning("Could not read the owners' injection allowlists", exc_info=True)
-        return set()
+        return {}
 
 
 def _load(hashes: List[str], scorer: str) -> Dict[str, Dict[str, Any]]:
@@ -396,6 +405,15 @@ def _touch(hashes: List[str], scorer: str) -> None:
             ContentScoresRepository(conn).touch(hashes, scorer)
     except Exception:  # noqa: BLE001 - retention only
         logger.debug("Could not mark cached injection scores as seen", exc_info=True)
+
+
+def _touch_later(hashes: List[str], scorer: str) -> None:
+    try:
+        from docsgpt.api.user.tasks import touch_content_scores
+
+        touch_content_scores.delay(hashes, scorer)
+    except Exception:  # noqa: BLE001 - retention only
+        logger.debug("Could not queue marking cached injection scores as seen", exc_info=True)
 
 
 def _count_cached(feature: str, hits: int) -> None:

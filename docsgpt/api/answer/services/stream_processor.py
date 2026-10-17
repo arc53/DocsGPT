@@ -2438,7 +2438,7 @@ class StreamProcessor:
         self.decision_record.resume(agent_config.get("decisions"))
         agent.decision_record = self.decision_record
         if isinstance(saved_files, dict):
-            agent.resume_paused_attachments(saved_listing)
+            agent.resume_paused_attachments(saved_listing, withheld=saved_files.get("withheld") or [])
 
         # Store config for the route layer
         self.model_id = model_id

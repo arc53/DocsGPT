@@ -143,13 +143,30 @@ class TestRetrieval:
         assert agent.guardrails.recorder._rows[0]["action"] == "flag"
 
     def test_an_owner_allowed_chunk_is_never_scored(self, fake, monkeypatch):
-        allowed = {scoring.content_hash(PAYLOAD)}
+        allowed = {"src-1": {scoring.content_hash(PAYLOAD)}}
         seen = []
         monkeypatch.setattr(scoring, "allowed_hashes", lambda ids: seen.append(sorted(ids)) or allowed)
         agent = _agent(rules(), retrieved_docs=[dict(d) for d in DOCS])
         turn = user_turn(agent._build_messages("system prompt", "q"))
         assert PAYLOAD in turn and seen == [["src-1", "src-1", "src-1"]]
         assert [r.state["text"] for r in fake.calls[0].requests] == [DOCS[0]["text"], DOCS[2]["text"]]
+
+    def test_an_allowance_covers_only_the_source_whose_owner_gave_it(self, fake, monkeypatch):
+        allowed = {"src-1": {scoring.content_hash(PAYLOAD)}}
+        monkeypatch.setattr(scoring, "allowed_hashes", lambda ids: allowed)
+        copy = {**DOCS[1], "source_id": "src-2", "chunk_key": "k9"}
+        agent = _agent(rules(), retrieved_docs=[dict(DOCS[1]), copy])
+        agent._build_messages("system prompt", "q")
+        # The same text from a source that did not allow it is screened, and withheld.
+        assert [d.get("withheld") for d in agent.retrieved_docs] == [None, "policy"]
+
+    def test_a_clean_verdict_for_one_source_is_not_reused_for_another(self, fake, monkeypatch):
+        allowed = {"src-1": {scoring.content_hash(PAYLOAD)}}
+        monkeypatch.setattr(scoring, "allowed_hashes", lambda ids: allowed)
+        agent = _agent(rules())
+        assert agent._screen_docs([dict(DOCS[1])])[0].get("withheld") is None
+        later = agent._screen_docs([{**DOCS[1], "source_id": "src-2", "chunk_key": "k9"}])
+        assert later[0]["withheld"] == "policy"
 
     def test_a_floor_quarantine_rule_withholds_for_an_agent_without_guardrails(self, fake, monkeypatch):
         floor = GuardrailsConfig.model_validate(rules())
@@ -306,6 +323,17 @@ class TestWithheldPlan:
         assert "F2 a2.txt | text/plain" in manifest and "withheld by a content policy" in manifest
         assert "Files marked withheld (a2.txt) were held back by a content policy" in manifest
         assert PAYLOAD not in manifest
+
+    def test_a_withheld_file_is_not_called_too_large_for_the_sandbox(self):
+        from dataclasses import replace
+
+        caps = replace(self.CAPS, sandbox=True, sandbox_action="run_code")
+        plan = plan_attachments([row("a1", "Numbers."), row("a2", PAYLOAD)], caps, budget=50_000,
+                                withheld={"a2"})
+        assert plan.files[1].sandbox_eligible is False
+        manifest = render_manifest(plan)
+        withheld_line = next(line for line in manifest.splitlines() if "a2.txt |" in line)
+        assert "too large" not in withheld_line and "too large" not in manifest
 
     def test_the_attachments_tool_refuses_to_read_or_search_it(self, monkeypatch):
         rows = {"a1": row("a1", "Numbers and more numbers."), "a2": row("a2", PAYLOAD)}

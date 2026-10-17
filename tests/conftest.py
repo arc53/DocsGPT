@@ -232,8 +232,9 @@ def _no_content_score_store(monkeypatch):
     monkeypatch.setattr("docsgpt.guardrails.injection_scoring._load", lambda hashes, scorer: {})
     monkeypatch.setattr("docsgpt.guardrails.injection_scoring._store", lambda rows: None)
     monkeypatch.setattr("docsgpt.guardrails.injection_scoring._touch", lambda hashes, scorer: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._touch_later", lambda hashes, scorer: None)
     monkeypatch.setattr("docsgpt.guardrails.injection_scoring._queue", lambda texts: None)
-    monkeypatch.setattr("docsgpt.guardrails.injection_scoring.allowed_hashes", lambda source_ids: set())
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring.allowed_hashes", lambda source_ids: {})
 
 
 @pytest.fixture(autouse=True)

@@ -177,13 +177,16 @@ def _chunk_ref(doc: Dict) -> str:
 
 
 def _retrieval_hints(docs: List[Dict]) -> Optional[List[Dict]]:
-    """Per document, whether its source's owner marked the text safe from injection screening."""
+    """Per document, whether its own source's owner marked the text safe from injection screening."""
     if not settings.DECISION_INJECTION_ENABLED:
         return None
     from docsgpt.guardrails import injection_scoring
 
     allowed = injection_scoring.allowed_hashes(d.get("source_id") for d in docs)
-    return [{"allowed": bool(allowed) and injection_scoring.content_hash(d["text"]) in allowed} for d in docs]
+    return [
+        {"allowed": injection_scoring.content_hash(d["text"]) in allowed.get(str(d.get("source_id") or ""), ())}
+        for d in docs
+    ]
 
 
 def drop_least_relevant(docs: List[Dict]) -> List[Dict]:
@@ -1516,21 +1519,27 @@ class BaseAgent(ABC):
         if engine is None or not engine.config.controls_for(Stage.RETRIEVAL, item_level=True):
             return docs
         cache = self._guardrail_cache
-        first: Dict[str, Dict] = {}
+
+        def key(doc: Dict) -> tuple:
+            # By source too: an owner's allowance makes the text clean for that source only.
+            return (Stage.RETRIEVAL, "item", str(doc.get("source_id") or ""), doc.get("text"))
+
+        first: Dict[tuple, Dict] = {}
         for doc in docs:
             text = doc.get("text") if isinstance(doc, dict) and not doc.get("withheld") else None
-            if isinstance(text, str) and (Stage.RETRIEVAL, "item", text) not in cache:
-                first.setdefault(text, doc)
+            if isinstance(text, str) and key(doc) not in cache:
+                first.setdefault(key(doc), doc)
         if first:
-            texts = list(first)
-            refs = [_chunk_ref(first[t]) for t in texts]
-            decisions = engine.evaluate_items(texts, Stage.RETRIEVAL, refs, _retrieval_hints(list(first.values())))
-            for text, decision in zip(texts, decisions):
-                cache[(Stage.RETRIEVAL, "item", text)] = decision
+            todo = list(first.values())
+            decisions = engine.evaluate_items(
+                [d["text"] for d in todo], Stage.RETRIEVAL, [_chunk_ref(d) for d in todo], _retrieval_hints(todo)
+            )
+            for doc, decision in zip(todo, decisions):
+                cache[key(doc)] = decision
         screened = []
         for doc in docs:
             text = doc.get("text") if isinstance(doc, dict) else None
-            decision = cache.get((Stage.RETRIEVAL, "item", text)) if isinstance(text, str) else None
+            decision = cache.get(key(doc)) if isinstance(text, str) else None
             if decision is not None and decision.blocked and not doc.get("withheld"):
                 doc = {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT, "withheld": "policy"}
             screened.append(doc)
@@ -2038,9 +2047,11 @@ class BaseAgent(ABC):
         reads them again as their owner.
 
         Returns:
-            ``attachments`` (None when the turn has no files),
-            ``last_compression_at``, ``backup_models`` and ``decisions`` (None
-            when nothing was recorded); all JSON-safe.
+            ``attachments`` (None when the turn has no files; its ``withheld``
+            lists the ids an attachment control withheld, which the resume
+            keeps out of every tool), ``last_compression_at``,
+            ``backup_models`` and ``decisions`` (None when nothing was
+            recorded); all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -2061,6 +2072,7 @@ class BaseAgent(ABC):
                 "mode": "reference" if self.reference_attachments else None,
                 "planning": bool(self.attachment_planning),
                 "listing": listing,
+                "withheld": sorted(self.withheld_attachments),
             }
         backup_models = getattr(self.llm, "_backup_models", None)
         return {
@@ -2072,19 +2084,24 @@ class BaseAgent(ABC):
             "decisions": decision_record.snapshot(),
         }
 
-    def resume_paused_attachments(self, listing: Optional[List[Dict]]) -> None:
+    def resume_paused_attachments(self, listing: Optional[List[Dict]], withheld: Optional[List[str]] = None) -> None:
         """Take back a paused turn's files on the agent that resumes it.
 
         The saved messages already carry the files as the paused round sent
         them (inlined, natively or listed), so the handler must not merge
         them in again. The listing is what the paused turn told the client;
-        the resumed turn has no plan of its own, so it reports that one.
+        the resumed turn has no plan of its own, so it reports that one. The
+        files the paused turn withheld stay withheld: the paused tool calls
+        run before anything is screened again, and a sandbox tool must not
+        load one of them by its ``F`` ref.
 
         Args:
             listing: The paused turn's ``F`` ref listing.
+            withheld: The attachment ids the paused turn withheld.
         """
         self._attachments_merged = True
         self.paused_attachment_listing = [entry for entry in listing or [] if isinstance(entry, dict)] or None
+        self.withheld_attachments = frozenset(str(i) for i in withheld or () if i)
 
     def _truncate_history_to_fit(
         self,

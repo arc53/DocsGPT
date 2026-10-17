@@ -1120,6 +1120,19 @@ def score_injection_texts(self, texts):
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def touch_content_scores(self, hashes, scorer):
+    """Mark cached prompt-injection scores a chat turn read as seen today, so retention keeps them.
+
+    Queued by the turn rather than written in it; at most once per row and
+    day (``ContentScoresRepository.touch``).
+    """
+    from docsgpt.guardrails import injection_scoring
+
+    injection_scoring._touch(list(hashes or []), scorer)
+    return {"hashes": len(hashes or [])}
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
 def scan_source_injection(self, source_id):
     """Scan a source's chunks already indexed for prompt injection, after its owner turned scanning on.
 
