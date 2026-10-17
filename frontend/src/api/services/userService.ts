@@ -143,6 +143,8 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  getSourceDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_DEFAULTS, token),
   testSourceRetrieval: (
     sourceId: string,
     data: { query: string; retrieval?: any },

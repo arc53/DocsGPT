@@ -353,11 +353,12 @@
         "queryPlaceholder": "Ask something this source should answer...",
         "run": "Run",
         "notSavedHint": "These settings are only used for this test — they are not saved to the source. Change them in Source settings to make them permanent.",
+        "notSavedHintEditor": "These settings are only used for this test until you save them to the source.",
         "resultSummary_one": "{{count}} chunk retrieved · {{retriever}}",
         "resultSummary_other": "{{count}} chunks retrieved · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No chunks retrieved for this query.",
-        "emptyWithThreshold": "No chunks scored at or above the score threshold ({{threshold}}). Lower it to see near misses.",
+        "emptyWithThreshold": "No chunks scored at or above the similarity threshold ({{threshold}}). Lower it to see near misses.",
         "showMore": "Show full chunk",
         "showLess": "Show less",
         "noScore": "no score",
@@ -369,7 +370,31 @@
         },
         "errors": {
           "failed": "Retrieval test failed. Please try again."
-        }
+        },
+        "relevance": "relevance",
+        "compare": "Compare with retriever order",
+        "compareHint": "Also list every candidate in retriever order, with its relevance and whether the relevance model kept, promoted or dropped it.",
+        "relevanceRun": {
+          "applied": "ordered by relevance in {{ms}} ms",
+          "fallback": "relevance model not used ({{reason}}), retriever order kept"
+        },
+        "compareTitle": "Retriever order",
+        "compareDescription": "Every candidate the relevance stages received, in the order the retriever ranked them.",
+        "compareColumns": {
+          "before": "Rank",
+          "chunk": "Chunk",
+          "relevance": "Relevance",
+          "outcome": "Result"
+        },
+        "compareStatus": {
+          "promoted": "Promoted to #{{rank}}",
+          "kept": "Kept as #{{rank}}",
+          "dropped": "Dropped",
+          "notKept": "Not kept"
+        },
+        "strictness": "Relevance for this test",
+        "saveToSource": "Save to source",
+        "savedToSource": "Saved. The source now uses the settings you tested."
       },
       "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
@@ -398,14 +423,15 @@
       "searchAlt": "Search",
       "retrievalOptions": {
         "title": "Advanced settings",
+        "advanced": "Advanced",
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",
           "tag": "no re-ingest",
           "chunks": "Chunks to retrieve (top-k)",
-          "scoreThreshold": "Score threshold",
-          "scoreThresholdPlaceholder": "None",
-          "scoreThresholdHint": "Only return chunks above this relevance score (0–1); higher is stricter.",
+          "similarityThreshold": "Similarity threshold",
+          "similarityThresholdPlaceholder": "None",
+          "similarityThresholdHint": "Drops chunks whose similarity score from the retriever is below this (0–1). It filters on the retriever's score, not the relevance model.",
           "rephraseQuery": "Rephrase query before search",
           "retriever": "Retriever",
           "retrievers": {
@@ -435,13 +461,14 @@
           "agentToolHint": "Agents can also follow these relationships themselves when this source's exposure is “On-demand search tool”, or when an agentic agent uses it."
         },
         "prescreen": {
-          "enable": "Enable LLM prescreen",
-          "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
+          "enable": "LLM screening",
+          "warning": "An LLM screens a larger set of candidates and keeps the ones that answer the query. This adds latency and cost to each query.",
           "candidateK": "Candidates to fetch",
           "maxKeep": "Max chunks to keep",
           "batchSize": "Batch size",
           "model": "Model (optional)",
-          "modelPlaceholder": "Defaults to the request model"
+          "modelPlaceholder": "Defaults to the request model",
+          "exclusiveHint": "It replaces relevance: turning one on turns the other off."
         },
         "graph": {
           "title": "Graph extraction",
@@ -469,6 +496,29 @@
           "maxTokensHint": "Maximum 4,096 tokens.",
           "minTokens": "Min tokens per chunk",
           "duplicateHeaders": "Duplicate headers across chunks"
+        },
+        "relevance": {
+          "title": "Relevance",
+          "tag": "no re-ingest",
+          "mode": "Relevance model",
+          "modeHint": "Scores each retrieved chunk against the query. Reorder puts the most relevant first; Reorder and filter also drops the weak ones.",
+          "modes": {
+            "off": "Off",
+            "reorder": "Reorder",
+            "filter": "Reorder and filter"
+          },
+          "strictness": "Filter strictness",
+          "strictnessHint": "Stricter keeps fewer chunks: fewer tokens per answer, but a better chance of dropping one that mattered.",
+          "presets": {
+            "loose": "Loose",
+            "balanced": "Balanced",
+            "strict": "Strict",
+            "custom": "Custom ({{value}})"
+          },
+          "minRelevance": "Minimum relevance",
+          "minRelevanceHint": "The exact relevance (0–1) a chunk needs to be kept. Loose is 0.1, Balanced 0.3, Strict 0.5.",
+          "candidates": "Candidates to score",
+          "candidatesHint": "How many chunks the retriever fetches for the relevance model to score, up to {{max}}. Default: {{default}}."
         }
       },
       "configModal": {
@@ -477,7 +527,7 @@
         "subtitleGeneric": "Configure how this source is chunked and retrieved.",
         "save": "Save",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
-        "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "prescreenInvalidHint": "Check the LLM screening values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
         "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
         "reingestLater": "Later",
         "errors": {
@@ -2132,6 +2182,12 @@
         "loadFailed": "Couldn't load this passage.",
         "openLink": "Open link",
         "openInKnowledge": "Open in Knowledge"
+      },
+      "relevance": {
+        "strong": "Strong match",
+        "possible": "Possible match",
+        "weak": "Weak match",
+        "tooltip": "Relevance {{percent}}%"
       }
     },
     "attachments": {
@@ -3312,7 +3368,8 @@
       "usage": "Usage",
       "quotas": "Quotas",
       "audit": "Audit log",
-      "connectors": "Connectors"
+      "connectors": "Connectors",
+      "defaults": "Defaults"
     },
     "quotas": {
       "unpriced": {

@@ -352,10 +352,11 @@
         "queryPlaceholder": "輸入此來源應能回答的問題...",
         "run": "執行",
         "notSavedHint": "這些設定僅用於此次測試，不會儲存到來源。若要永久生效，請至來源設定中修改。",
+        "notSavedHintEditor": "這些設定在儲存到來源之前僅用於此次測試。",
         "resultSummary": "檢索到 {{count}} 個區塊 · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "此查詢未檢索到任何區塊。",
-        "emptyWithThreshold": "沒有區塊的分數達到分數門檻（{{threshold}}）。調低門檻可查看接近的結果。",
+        "emptyWithThreshold": "沒有區塊的分數達到相似度門檻（{{threshold}}）。調低門檻可查看接近的結果。",
         "showMore": "顯示完整區塊",
         "showLess": "收合",
         "noScore": "無分數",
@@ -367,7 +368,31 @@
         },
         "errors": {
           "failed": "檢索測試失敗。請再試一次。"
-        }
+        },
+        "relevance": "相關度",
+        "compare": "與檢索器順序比較",
+        "compareHint": "同時依檢索器順序列出所有候選，顯示其相關度，以及相關度模型是保留、提升還是捨棄了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 內依相關度排序",
+          "fallback": "未使用相關度模型（{{reason}}），保留檢索器順序"
+        },
+        "compareTitle": "檢索器順序",
+        "compareDescription": "相關度階段收到的所有候選，依檢索器的排名順序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "區塊",
+          "relevance": "相關度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留為 #{{rank}}",
+          "dropped": "已捨棄",
+          "notKept": "未保留"
+        },
+        "strictness": "此次測試的相關度",
+        "saveToSource": "儲存到來源",
+        "savedToSource": "已儲存。此來源現在使用你測試過的設定。"
       },
       "editConfig": "來源設定",
       "shareWithTeam": "與團隊分享",
@@ -396,14 +421,15 @@
       "searchAlt": "搜尋",
       "retrievalOptions": {
         "title": "進階設定",
+        "advanced": "進階",
         "retrieval": {
           "title": "檢索",
           "note": "這些變更立即生效，無需重新索引。",
           "tag": "無需重新索引",
           "chunks": "檢索區塊數（top-k）",
-          "scoreThreshold": "分數門檻",
-          "scoreThresholdPlaceholder": "無",
-          "scoreThresholdHint": "僅回傳相關性分數高於此值（0–1）的區塊；數值越高越嚴格。",
+          "similarityThreshold": "相似度門檻",
+          "similarityThresholdPlaceholder": "無",
+          "similarityThresholdHint": "捨棄檢索器相似度分數低於此值（0–1）的區塊。依檢索器的分數篩選，而非相關度模型。",
           "rephraseQuery": "搜尋前改寫查詢",
           "retriever": "檢索器",
           "retrievers": {
@@ -433,13 +459,14 @@
           "agentToolHint": "當此來源的搜尋提供方式為「隨選搜尋工具」，或由自主型（agentic）代理使用時，代理也可以自行沿著這些關係查找。"
         },
         "prescreen": {
-          "enable": "啟用 LLM 預篩選",
-          "warning": "會擷取較大的候選集合並使用 LLM 篩選。這將增加查詢延遲與成本。",
+          "enable": "LLM 篩選",
+          "warning": "由 LLM 審查較大的候選集合，只保留能回答查詢的區塊。這會增加每次查詢的延遲與成本。",
           "candidateK": "擷取候選數",
           "maxKeep": "保留區塊上限",
           "batchSize": "批次大小",
           "model": "模型（選填）",
-          "modelPlaceholder": "預設使用請求模型"
+          "modelPlaceholder": "預設使用請求模型",
+          "exclusiveHint": "它可取代相關度：開啟其中一項會關閉另一項。"
         },
         "graph": {
           "title": "圖譜擷取",
@@ -467,6 +494,29 @@
           "maxTokensHint": "最多 4,096 個 Token。",
           "minTokens": "每區塊最小 Token 數",
           "duplicateHeaders": "在各區塊間重複標頭"
+        },
+        "relevance": {
+          "title": "相關度",
+          "tag": "無需重新索引",
+          "mode": "相關度模型",
+          "modeHint": "根據查詢為擷取到的每個區塊評分。「重新排序」把最相關的排在前面；「重新排序並篩選」還會捨棄相關度低的。",
+          "modes": {
+            "off": "關閉",
+            "reorder": "重新排序",
+            "filter": "重新排序並篩選"
+          },
+          "strictness": "篩選嚴格度",
+          "strictnessHint": "越嚴格保留的區塊越少：每個回答用的 token 更少，但更可能捨棄有用的區塊。",
+          "presets": {
+            "loose": "寬鬆",
+            "balanced": "均衡",
+            "strict": "嚴格",
+            "custom": "自訂（{{value}}）"
+          },
+          "minRelevance": "最低相關度",
+          "minRelevanceHint": "區塊被保留所需的確切相關度（0–1）。寬鬆為 0.1，均衡為 0.3，嚴格為 0.5。",
+          "candidates": "評分候選數",
+          "candidatesHint": "檢索器為相關度模型擷取並評分的區塊數量，最多 {{max}} 個。預設 {{default}} 個。"
         }
       },
       "configModal": {
@@ -475,7 +525,7 @@
         "subtitleGeneric": "設定此來源的分塊與檢索方式。",
         "save": "儲存",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
-        "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
+        "prescreenInvalidHint": "請檢查 LLM 篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
         "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
         "reingestLater": "稍後",
         "errors": {
@@ -2122,6 +2172,12 @@
         "loadFailed": "無法載入這段內容。",
         "openLink": "開啟連結",
         "openInKnowledge": "在知識庫中開啟"
+      },
+      "relevance": {
+        "strong": "高度相關",
+        "possible": "可能相關",
+        "weak": "相關性低",
+        "tooltip": "相關度 {{percent}}%"
       }
     },
     "attachments": {

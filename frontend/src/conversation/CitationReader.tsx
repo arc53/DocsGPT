@@ -30,6 +30,7 @@ import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 import { SEARCH_LENGTH, knowledgeLink } from '../settings/knowledgeLink';
 import { formatDateOnly } from '../utils/dateTimeUtils';
 import { type AnswerSource, sourceExcerpt, sourceHref } from './chatCompanion';
+import SourceRelevance from './SourceRelevance';
 
 type Chunk = {
   doc_id: string;
@@ -270,7 +271,12 @@ export default function CitationReader({
       <PanelHeader
         title={source.title}
         description={knowledgeName}
-        actions={<Badge className="tabular-nums">{number}</Badge>}
+        actions={
+          <>
+            <SourceRelevance relevance={source.relevance} />
+            <Badge className="tabular-nums">{number}</Badge>
+          </>
+        }
         onBack={onBack}
         backLabel={t('conversation.sources.reader.back')}
       />

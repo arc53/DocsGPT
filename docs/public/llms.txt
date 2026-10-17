@@ -40,7 +40,7 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 
 - [Add Knowledge](https://docs.docsgpt.cloud/Sources/adding-knowledge): Add files, web pages, GitHub repositories, wikis and synced services to Knowledge, then use them in chats and agents.
 - [Document Parsing and OCR](https://docs.docsgpt.cloud/Sources/ocr): Which engine parses uploaded documents, how OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
-- [Per-Source Configuration](https://docs.docsgpt.cloud/Sources/Per-source-configuration): Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, pre-screening and more.
+- [Per-Source Configuration](https://docs.docsgpt.cloud/Sources/Per-source-configuration): Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, defaults for new sources and more.
 - [GraphRAG](https://docs.docsgpt.cloud/Sources/GraphRAG): Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
 - [Wiki Sources](https://docs.docsgpt.cloud/Sources/Wiki-sources): Create a knowledge source that the agent can read and write — a living wiki it keeps up to date, with human edits, provenance stamps, and version safety.
 - [Connectors Overview](https://docs.docsgpt.cloud/Sources/Connectors): Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
