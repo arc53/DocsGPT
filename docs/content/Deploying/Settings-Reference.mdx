@@ -1845,6 +1845,36 @@ Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
 
+### `GUARDRAILS_INJECTION_MAX_WINDOWS`
+
+Type `int`, default `24`, must be `>= 1` and `<= 64`.
+
+Windows (512 model tokens each) the `injection_model` check reads of one text at chat time: the user's message, a tool result, a retrieved document or an attached file. Past it the first window and the last ones are read, and a text that scored clean is not evaluated.
+
+### `GUARDRAILS_INJECTION_LIVE_ITEMS`
+
+Type `int | "auto"`, default `auto`.
+
+Retrieved documents or attached files the `injection_model` check scores with the model during a turn when no score is cached; the rest are scored in the background for the next turn that uses them. `auto` is 4 where the decision model is measured to score four full chunks within the stage deadline (a GPU), else 0; or a number from 0 to 40.
+
+### `GUARDRAILS_INJECTION_BATCH_STATES`
+
+Type `int`, default `8`, must be `>= 1` and `<= 64`.
+
+Windows sent to the decision model per call when texts are scored in the background.
+
+### `GUARDRAILS_INJECTION_LAZY`
+
+Type `bool`, default `true`.
+
+Score in the background the retrieved documents and attached files a turn could not score in time, so the next turn finds their scores cached.
+
+### `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS`
+
+Type `int`, default `180`, must be `>= 1`.
+
+Days a cached prompt-injection score is kept after its text was last scored or seen.
+
 
 ## Execution traces
 

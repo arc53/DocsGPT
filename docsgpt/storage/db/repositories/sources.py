@@ -237,6 +237,35 @@ class SourcesRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def injection_allowed(self, source_ids) -> set[str]:
+        """The text hashes the sources' owners marked safe from prompt-injection screening.
+
+        Read from ``metadata.injection_review.allowed`` (sha256 hex digests of
+        chunk texts) with no ownership scoping: the caller already resolved
+        these sources for the request.
+
+        Args:
+            source_ids: Source UUIDs; anything else is ignored.
+
+        Returns:
+            Every allowed hash across the sources.
+        """
+        ids = sorted({str(s) for s in source_ids if looks_like_uuid(str(s))})
+        if not ids:
+            return set()
+        result = self._conn.execute(
+            text(
+                "SELECT metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
+                "WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"ids": ids},
+        )
+        allowed: set[str] = set()
+        for row in result.fetchall():
+            if isinstance(row.allowed, list):
+                allowed.update(h for h in row.allowed if isinstance(h, str))
+        return allowed
+
     def find_by_name(self, user_id: str, name: str) -> Optional[dict]:
         """Return a user's source whose name matches ``name`` (case-insensitive).
 

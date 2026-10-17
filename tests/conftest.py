@@ -221,6 +221,22 @@ def _no_stored_floor(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_content_score_store(monkeypatch):
+    """Keep prompt-injection scoring off any database and broker.
+
+    The scorer caches scores in ``content_scores``, reads the sources' owner
+    allowlists and queues background scoring; here the cache is empty, writes
+    and queued texts go nowhere and no text is allowed. Tests of those paths
+    patch them back themselves.
+    """
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._load", lambda hashes, scorer: {})
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._store", lambda rows: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._touch", lambda hashes, scorer: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._queue", lambda texts: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring.allowed_hashes", lambda source_ids: set())
+
+
+@pytest.fixture(autouse=True)
 def _graphrag_off_by_default(monkeypatch):
     """Run with GraphRAG at its shipped default (off), as CI does.
 
