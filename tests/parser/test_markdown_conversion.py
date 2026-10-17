@@ -13,24 +13,29 @@ from docsgpt.parser.markdown_conversion import (
 )
 
 
-@pytest.mark.parametrize(
-    "tag", ["a", "b", "strong", "em", "i", "s", "del", "code", "sub", "sup"]
-)
+@pytest.mark.parametrize("tag", ["a", "b", "strong", "em", "i", "s", "del", "code", "sub", "sup"])
 def test_whitespace_only_element_keeps_the_word_boundary(tag):
     attributes = ' href="https://example.com"' if tag == "a" else ""
 
-    assert (
-        html_to_markdown_text(f"<p>Hello<{tag}{attributes}> </{tag}>world</p>").strip()
-        == "Hello world"
-    )
+    assert html_to_markdown_text(f"<p>Hello<{tag}{attributes}> </{tag}>world</p>").strip() == "Hello world"
 
 
 def test_space_between_two_styled_runs_survives():
     """An editor that emits one element per styled run puts the space in its own element."""
-    assert (
-        html_to_markdown_text("<p><b>First</b><b> </b><b>Last</b></p>").strip()
-        == "**First** **Last**"
-    )
+    assert html_to_markdown_text("<p><b>First</b><b> </b><b>Last</b></p>").strip() == "**First** **Last**"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ("<p>Hello <b> </b>world</p>", "Hello world"),
+        ("<p>Hello<b> </b> world</p>", "Hello world"),
+        ("<p>Hello<b>\n  </b>world</p>", "Hello world"),
+    ],
+)
+def test_whitespace_only_element_becomes_one_space(html, expected):
+    """A space next to the element is not doubled, and a line break inside it does not survive."""
+    assert html_to_markdown_text(html).strip() == expected
 
 
 def test_non_breaking_space_stays_itself():

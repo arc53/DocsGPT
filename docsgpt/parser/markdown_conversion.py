@@ -42,17 +42,21 @@ _WHITESPACE_ONLY_PRESERVING_TAGS = frozenset(
         "kbd",
         "s",
         "samp",
-        "strike",
         "strong",
         "sub",
         "sup",
-        "u",
     }
 )
 
 
+def _whitespace_beside(el: Any) -> bool:
+    """Whether the text right before or after ``el`` already separates it from its neighbours."""
+    before, after = el.previous_sibling, el.next_sibling
+    return (isinstance(before, str) and before[-1:].isspace()) or (isinstance(after, str) and after[:1].isspace())
+
+
 class WhitespacePreservingConverter(MarkdownConverter):
-    """markdownify's converter, with a whitespace-only inline element left as its whitespace."""
+    """markdownify's converter, with a whitespace-only inline element kept as a word boundary."""
 
     def get_conv_fn(self, tag_name: str) -> Any:
         convert_fn = super().get_conv_fn(tag_name)
@@ -60,10 +64,13 @@ class WhitespacePreservingConverter(MarkdownConverter):
             return convert_fn
 
         def keep_whitespace_only(el: Any, text: str, *args: Any, **kwargs: Any) -> str:
-            if not text.strip():
+            if text.strip():
+                return convert_fn(el, text, *args, **kwargs)
+            # Ordinary whitespace becomes one space, or none when a neighbour already
+            # supplies it; a non-breaking space is content and stays as written.
+            if not text or text.strip(" \t\r\n"):
                 return text
-
-            return convert_fn(el, text, *args, **kwargs)
+            return "" if _whitespace_beside(el) else " "
 
         return keep_whitespace_only
 
