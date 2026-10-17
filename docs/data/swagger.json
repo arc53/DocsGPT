@@ -1790,6 +1790,34 @@
         "x-pat-denied": true
       }
     },
+    "/api/admin/defaults/agents": {
+      "get": {
+        "operationId": "get_admin_agent_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The guardrails new agents start with, and what the injection model costs on this server",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_agent_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `guardrails` object as the default for new agents; existing agents keep their own",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/admin/defaults/sources": {
       "get": {
         "operationId": "get_admin_source_defaults_resource",
@@ -1798,20 +1826,21 @@
             "description": "Success"
           }
         },
-        "summary": "The default retrieval settings for new sources, and what relevance costs on this server",
+        "summary": "The default retrieval and guardrails settings for new sources, and what the decision model costs here",
         "tags": [
           "admin"
         ],
         "x-pat-denied": true
       },
       "put": {
+        "description": "Existing sources keep their own.",
         "operationId": "put_admin_source_defaults_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Store the body's `retrieval` object as the default for new sources; existing sources keep their own",
+        "summary": "Store the body's `retrieval` and/or `guardrails` objects as the defaults for new sources",
         "tags": [
           "admin"
         ],
@@ -1828,6 +1857,34 @@
           }
         },
         "summary": "Global remote-device command audit feed",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/guardrails": {
+      "get": {
+        "operationId": "get_admin_guardrails_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The floor every agent follows, whether MCP tool descriptions are scored, and the injection model's cost",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_guardrails_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `floor` (an agent guardrails object, or null for none) and/or `mcp_description_warnings`",
         "tags": [
           "admin"
         ],
@@ -2253,6 +2310,23 @@
         ],
         "x-pat-scopes": [
           "agents:keys"
+        ]
+      }
+    },
+    "/api/agents/defaults": {
+      "get": {
+        "description": "The guardrails a new agent starts with (set by an admin under Admin > Defaults), for prefilling the new-agent form: `{guardrails: {...}}`, the built-in defaults when none are set.",
+        "operationId": "get_agent_defaults",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "guardrails"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
         ]
       }
     },
@@ -5300,7 +5374,7 @@
     },
     "/api/sources/defaults": {
       "get": {
-        "description": "The retrieval settings a new source starts with (set by an admin under Admin > Defaults), for prefilling create forms: `{retrieval: {...}}`, the built-in defaults when none are set.",
+        "description": "The retrieval and guardrails settings a new source starts with (set by an admin under Admin > Defaults), for prefilling create forms: `{retrieval: {...}, guardrails: {injection_scan}}`, the built-in defaults when none are set.",
         "operationId": "get_source_defaults_resource",
         "responses": {
           "200": {
@@ -5463,7 +5537,7 @@
         }
       ],
       "patch": {
-        "description": "Edit a source's behavior config. Retrieval-time fields take effect live; chunking changes require an explicit re-ingest (surfaced as requires_reingest). A section the body leaves out (chunking, retrieval, graph) keeps its saved value, so a body with only `retrieval` saves just that.",
+        "description": "Edit a source's behavior config. Retrieval-time fields take effect live; chunking changes require an explicit re-ingest (surfaced as requires_reingest). A section the body leaves out (chunking, retrieval, graph, guardrails) keeps its saved value, so a body with only `retrieval` saves just that.",
         "operationId": "patch_source_config_resource",
         "parameters": [
           {

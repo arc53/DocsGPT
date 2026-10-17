@@ -172,6 +172,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/template_agents", "GET"): _rule("agents:read", open=True),
     ("/api/export_agent", "GET"): _rule("agents:read", (QUERY, "id")),
     ("/api/guardrails/catalog", "GET"): _rule("agents:read", open=True),
+    # The admin's defaults for new agents: no agent's data, so open to restricted tokens.
+    ("/api/agents/defaults", "GET"): _rule("agents:read", open=True),
     ("/api/guardrails/events", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/guardrails/summary", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),

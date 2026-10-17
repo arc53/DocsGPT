@@ -1053,6 +1053,24 @@ class TestSourceConfigResource:
         assert got["chunking"]["max_tokens"] == 800 and got["graph"]["gleanings"] == 1
         assert got["retrieval"]["reranker"] == reranker
 
+    def test_guardrails_alone_keep_the_retrieval_and_a_retrieval_save_keeps_them(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-scan"
+        src = _seed_source(pg_conn, user, name="cfg-scan", type="file")
+        SourcesRepository(pg_conn).update(str(src["id"]), user, {"config": {"retrieval": {"chunks": 3}}})
+        for body in ({"guardrails": {"injection_scan": True}}, {"retrieval": {"chunks": 5}}):
+            with _patch_db(pg_conn), app.test_request_context(
+                f"/api/sources/{src['id']}/config", method="PATCH", json=body
+            ):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                response = SourceConfigResource().patch(str(src["id"]))
+            assert response.status_code == 200 and response.json["requires_reingest"] is False
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)["config"]
+        assert got["guardrails"] == {"injection_scan": True} and got["retrieval"]["chunks"] == 5
+
     def test_chunking_change_requires_reingest(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SourceConfigResource
 

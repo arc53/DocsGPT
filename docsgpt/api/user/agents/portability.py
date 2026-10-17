@@ -42,6 +42,7 @@ from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -1698,7 +1699,11 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
             }
         # Row vanished between resolve and write — fall through to create.
 
-    row = agents_repo.create(user, spec.get("name"), "draft", **{**authoritative, **optional})
+    # A new agent starts from the admin's default guardrails, under the file's own.
+    created_config = _import_config({"config": agent_defaults.seed(conn, spec.get("config"))})
+    row = agents_repo.create(
+        user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
+    )
     return {
         "agent_id": str(row["id"]),
         "action": "created",
