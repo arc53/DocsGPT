@@ -16,8 +16,25 @@ from docsgpt.parser.chunking_strategies import (
 )
 from docsgpt.parser.limits import MAX_CHUNK_TOKENS
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import (
+    HuggingFaceCounter,
+    TiktokenCounter,
+    get_token_counter,
+)
 from tests.parser.counter_fakes import wordpiece_counter
+
+
+def _get_counter(name: str):
+    if name == "all-mpnet-base-v2":
+        counter = get_token_counter("huggingface_sentence-transformers/all-mpnet-base-v2")
+        assert isinstance(counter, HuggingFaceCounter)
+        assert counter.name == "sentence-transformers/all-mpnet-base-v2"
+        return counter
+    elif name == "cl100k":
+        counter = TiktokenCounter()
+        assert counter.name == "cl100k_base"
+        return counter
+    raise ValueError(f"Unknown counter: {name}")
 
 
 def _tok(text: str) -> int:
@@ -57,14 +74,20 @@ class TestRegistration:
 
 @pytest.mark.unit
 class TestRecursive:
-    def test_caps_at_max_tokens(self):
-        chunker = RecursiveChunker(max_tokens=40, min_tokens=5)
-        docs = [Document(text="word " * 500, doc_id="d")]
+    @pytest.mark.parametrize("counter_name", ["all-mpnet-base-v2", "cl100k"])
+    def test_caps_at_max_tokens(self, counter_name):
+        counter = _get_counter(counter_name)
+        chunker = RecursiveChunker(max_tokens=40, min_tokens=5, chunk_overlap=0)
+        chunker.counter = counter
+        text = "word " * 500
+        docs = [Document(text=text, doc_id="d")]
         out = chunker.chunk(docs)
         assert len(out) > 1
         for c in out:
-            assert _tok(c.text) <= 40
-            assert c.extra_info["token_count"] == _tok(c.text)
+            emitted_size = counter.count(c.text)
+            assert emitted_size <= 40
+            assert c.extra_info["token_count"] == emitted_size
+        assert "".join(c.text for c in out) == text
 
     def test_splits_on_separator_hierarchy(self):
         # Paragraph boundaries should drive the split before token slicing.
@@ -81,8 +104,10 @@ class TestRecursive:
         assert len(out) == 1
         assert out[0].text.strip() == "short text here"
 
-    def test_chunk_overlap_creates_overlapping_chunks(self):
+    @pytest.mark.parametrize("counter_name", ["all-mpnet-base-v2", "cl100k"])
+    def test_chunk_overlap_creates_overlapping_chunks(self, counter_name):
         """Ensure chunk_overlap creates ordered suffix/prefix overlap with full coverage."""
+        counter = _get_counter(counter_name)
         sentences = [
             "antelope baboon cheetah dingo",
             "elephant falcon giraffe hyena",
@@ -91,10 +116,13 @@ class TestRecursive:
         ]
         text = ". ".join(sentences) + "."
         chunker = RecursiveChunker(max_tokens=15, min_tokens=3, chunk_overlap=8)
+        chunker.counter = counter
         out = chunker.chunk([Document(text=text, doc_id="d")])
         assert len(out) >= 2
         for c in out:
-            assert _tok(c.text) <= 15
+            emitted_size = counter.count(c.text)
+            assert emitted_size <= 15
+            assert c.extra_info["token_count"] == emitted_size
 
         # Assert ordered suffix/prefix overlap between adjacent chunks
         for k in range(len(out) - 1):
@@ -148,18 +176,54 @@ class TestRecursive:
             if "anti" in c.text:
                 assert long_word in c.text
 
-    def test_forward_progress_near_overlap_limit(self):
+    @pytest.mark.parametrize("counter_name", ["all-mpnet-base-v2", "cl100k"])
+    def test_forward_progress_near_overlap_limit(self, counter_name):
         """Ensure chunker makes forward progress without looping when overlap is max_tokens - 1."""
+        counter = _get_counter(counter_name)
         sentences = [f"item_{i}" for i in range(20)]
         text = " ".join(sentences)
         chunker = RecursiveChunker(max_tokens=6, min_tokens=1, chunk_overlap=5)
+        chunker.counter = counter
         out = chunker.chunk([Document(text=text, doc_id="d")])
         assert len(out) > 1
+        for c in out:
+            emitted_size = counter.count(c.text)
+            assert emitted_size <= 6
+            assert c.extra_info["token_count"] == emitted_size
         for k in range(len(out) - 1):
             curr_words = out[k].text.split()
             next_words = out[k + 1].text.split()
             assert next_words != curr_words
+        assert "item_0" in out[0].text
         assert "item_19" in out[-1].text
+
+    @pytest.mark.parametrize("overlap", [0, 200])
+    def test_wordpiece_collapsed_span_bounded_and_preserved(self, overlap):
+        """WordPiece splitting on collapsed long-unknown spans must not emit oversized chunks."""
+        text = "a" * 32_000 + " b" * 3_000
+        counter = wordpiece_counter()
+        chunker = RecursiveChunker(max_tokens=1024, min_tokens=1, chunk_overlap=overlap)
+        chunker.counter = counter
+
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        assert out
+        for c in out:
+            emitted_size = counter.count(c.text)
+            assert emitted_size <= 1024
+            assert c.extra_info["token_count"] == emitted_size
+
+        if overlap == 0:
+            assert "".join(c.text for c in out) == text
+        else:
+            assert out[0].text == text[: len(out[0].text)]
+            assert out[-1].text == text[-len(out[-1].text) :]
+            for k in range(len(out) - 1):
+                prev_text = out[k].text
+                next_text = out[k + 1].text
+                assert any(
+                    prev_text.endswith(next_text[:m])
+                    for m in range(1, min(len(prev_text), len(next_text)) + 1)
+                )
 
     def test_recursive_chunk_alias_is_registered(self):
         """Ensure recursive_chunk alias resolves to RecursiveChunker."""
