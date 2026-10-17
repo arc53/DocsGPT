@@ -173,6 +173,10 @@ class DelegatedEmbeddings:
         returns, so every thread in the opening wave would otherwise block for
         the full timeout at once -- at the shipped 60s and 96 WSGI threads, an
         API that serves nothing at all, health checks included.
+
+        Fast path: once a dispatch has succeeded, ``_verified`` is True and
+        callers skip the probe gate entirely. When a dispatch fails,
+        ``_send`` clears ``_verified`` so the next wave is gated again.
         """
         queue = settings.EMBEDDINGS_QUEUE
         timeout = settings.EMBEDDINGS_DELEGATE_TIMEOUT
@@ -181,14 +185,18 @@ class DelegatedEmbeddings:
         if remaining > 0:
             raise self._cooldown_error(queue, remaining)
 
+        # Fast path: a proven worker adds no gate.
         if self._verified:
             return self._send(texts, queue, timeout)
 
+        # Slow path: determine role under the lock to avoid races when the
+        # worker dies after being verified (multiple threads would otherwise
+        # all enter _send and wait for the full timeout).
         with self._state_lock:
-            # "send" -- proven while we waited for the lock, just go.
-            # "wait" -- another caller is already finding out; don't pay a
+            # "send" -- worker verified while we waited for the lock, just go.
+            # "wait" -- another caller is already probing; don't pay a
             #           second full timeout to learn the same thing.
-            # "probe" -- nobody is; this call is the one that finds out.
+            # "probe" -- nobody is probing; this call discovers worker health.
             role = "send" if self._verified else "wait" if self._probing else "probe"
             if role == "probe":
                 self._probing = True
@@ -196,11 +204,13 @@ class DelegatedEmbeddings:
 
         if role == "probe":
             try:
-                return self._send(texts, queue, timeout)
+                vectors = self._send(texts, queue, timeout)
             finally:
                 with self._state_lock:
                     self._probing = False
                 self._probe_done.set()
+            # _send() sets _verified = True on success, or clears it on failure.
+            return vectors
 
         if role == "wait":
             self._probe_done.wait(_PROBE_WAIT)
