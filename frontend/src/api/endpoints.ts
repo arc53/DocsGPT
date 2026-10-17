@@ -276,6 +276,7 @@ const endpoints = {
       `/api/admin/quotas/teams/${encodeURIComponent(id)}`,
     QUOTA_USER: (id: string) =>
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
+    SOURCE_DEFAULTS: '/api/admin/defaults/sources',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

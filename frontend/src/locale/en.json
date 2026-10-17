@@ -3365,7 +3365,8 @@
       "usage": "Usage",
       "quotas": "Quotas",
       "audit": "Audit log",
-      "connectors": "Connectors"
+      "connectors": "Connectors",
+      "defaults": "Defaults"
     },
     "quotas": {
       "unpriced": {

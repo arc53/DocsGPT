@@ -19,6 +19,7 @@ import {
   ScrollText,
   Settings2,
   ShieldCheck,
+  SlidersHorizontal,
   SquarePen,
   User,
   UserCog,
@@ -295,6 +296,12 @@ export const ADMIN_SECTION: Section = {
           labelKey: 'admin.tabs.connectors',
           icon: Plug,
           feature: 'connectors',
+        },
+        {
+          key: 'defaults',
+          path: '/admin/defaults',
+          labelKey: 'admin.tabs.defaults',
+          icon: SlidersHorizontal,
         },
         {
           key: 'audit',
