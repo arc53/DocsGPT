@@ -184,6 +184,7 @@ class AttachmentDispatch:
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
             reference=bool(getattr(agent, "reference_attachments", False)),
+            withheld=getattr(agent, "withheld_attachments", None),
         )
         replanned.skipped = list(plan.skipped)
         _, merged, _ = agent.llm_handler.merge_attachment_plan(fallback, [fresh], fresh, replanned)
