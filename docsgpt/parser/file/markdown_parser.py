@@ -62,9 +62,15 @@ class MarkdownParser(BaseParser):
         for line in lines:
             header_match = re.match(r"^#+\s", line)
             if header_match:
-                if current_header is not None:
-                    if current_text == "" or None:
-                        continue
+                # Skip the append when the previous section accumulated no
+                # text (a header with no body, or two headers back-to-back),
+                # but always advance ``current_header`` so the next section's
+                # body is attributed to the latest header. The pre-fix code
+                # used ``continue`` to skip the append, which also skipped
+                # the assignment below and silently dropped every header
+                # after the first empty one, merging the body of the
+                # following section into the section before the gap.
+                if current_header is not None and current_text:
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
                 current_header = line
