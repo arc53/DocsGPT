@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-17
 ---
 
 import { Callout } from 'nextra/components'
@@ -168,6 +168,27 @@ docker compose run --rm backend alembic -c docsgpt/alembic.ini downgrade <revisi
 ## Upgrade notes
 
 Newest first. Each note says what an existing deployment has to do.
+
+### Upgrading from 1.0.0
+
+These apply to the release after 1.0.0.
+
+#### GUARDRAILS_FLOOR moves to Admin → Guardrails
+
+The [instance floor](/Agents/guardrails#the-instance-floor), the guardrails every agent follows, is now stored in the database and edited by an admin under **Admin → Guardrails** (`GET`/`PUT /api/admin/guardrails`). `GUARDRAILS_FLOOR` is deprecated:
+
+- On the first start of the new release with `GUARDRAILS_FLOOR` set, its value is stored as the floor, and the API logs a warning that the setting is deprecated. Every agent keeps the same floor; nothing else is needed.
+- From then on the stored floor applies and `GUARDRAILS_FLOOR` is ignored, with a warning at each start while it is still set. Remove it from `.env`, the Kubernetes ConfigMap or your deployment's environment once the page shows the floor.
+- A value that does not validate is not imported: the API logs an error, no floor applies, and you set the floor on the page. Check the log after upgrading an install whose floor you rely on.
+- A floor change made on the page reaches every API process and worker within 30 seconds, without a restart.
+
+#### Webhook payloads are no longer ASCII-escaped
+
+An agent [webhook](/API/webhooks)'s JSON payload now reaches the agent with its non-ASCII text as written (`"Résumé"`) instead of as `é` escapes, and so does the source search a webhook run makes when the payload has no text fields. An agent prompt or tool that relied on the escaped form sees the characters themselves.
+
+#### New table
+
+Migration `0055_content_scores` adds the `content_scores` table (cached prompt-injection scores, by text hash) and a nullable `guardrail_events.item_ref` column. It runs with the other [migrations](#migrations); downgrading below it drops both.
 
 ### Upgrading to 1.0.0
 

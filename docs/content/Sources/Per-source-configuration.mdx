@@ -1,6 +1,6 @@
 ---
 title: Per-Source Configuration
-description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, defaults for new sources and more.
+description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, prompt-injection scanning and review of flagged chunks, defaults for new sources and more.
 lastUpdated: 2026-10-17
 ---
 
@@ -26,12 +26,13 @@ Per-source retrieval is enabled by default. Operators can turn it off instance-w
 
 ## Two kinds of settings: live vs. bake-time
 
-The config has two groups of settings that differ in *when* they take effect:
+The config has groups of settings that differ in *when* they take effect:
 
 | Group | When it applies | Re-ingest needed? |
 | --- | --- | --- |
 | **Retrieval** (`retrieval.*`) | Query time — applied live on the next question | No |
 | **Chunking** (`chunking.*`) | Ingest time — baked into the stored chunks | **Yes** |
+| **Guardrails** (`guardrails.injection_scan`) | Ingest time; turning it on scans the chunks already indexed in the background ([below](#prompt-injection-scanning)) | No |
 
 Changing a retrieval setting takes effect immediately. Changing a chunking setting only affects documents ingested *after* the change, so you must re-ingest the source to apply it to existing content. The API response includes a `requires_reingest` flag to make this explicit.
 
@@ -226,19 +227,51 @@ Every failure keeps exactly what retrieval returns without the model: the same c
 
 The model runs in the API process or the stack's own decider by default, so chunks and queries stay inside the stack. In [API mode](/Models/decision-model#api-mode), every candidate chunk and the query are sent to the decision server you configured, the same trust boundary as an embeddings API: point `DECISION_BASE_URL` only at a server you trust with your sources' content. The decision record and traces keep numbers only.
 
-## Defaults for new sources
+## Prompt-injection scanning
 
-An admin sets the retrieval settings a new source starts with under **Admin → Defaults** ("Default retrieval settings for new sources"), with the same retrieval and relevance controls as a source. They are copied into each source when it is created: an upload, a remote or connector source, a source made from chat attachments, a wiki. Settings a create request sends itself win, field by field, and a request that turns on LLM screening or relevance drops the other from the defaults. Saving the defaults never changes an existing source and there is no bulk apply: existing sources keep their own settings. Without saved defaults, new sources get the built-in defaults above.
+A source can have its chunks scored for prompt injection by the [decision model](/Models/decision-model) as they are indexed, so an agent whose [`injection_model` guardrail](/Agents/guardrails#injection_model--prompt-injection-model) screens retrieved sources reads each chunk's score from a cache instead of waiting for the model during an answer. On a CPU that is the difference between a chunk being checked and going unscored the first time it is retrieved. The owner also gets a list of the chunks that look suspicious.
 
-The panel also shows the relevance model's cost on this server and, while `DECISION_RELEVANCE_ENABLED` is `false`, that the administrator turns it on there; the relevance fields are hidden until then. Each save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `source_defaults_set`.
+**Scan chunks for prompt injection** in the source's settings turns it on (`guardrails.injection_scan`, off by default). It is shown only while the operator has turned the model on with `DECISION_INJECTION_ENABLED`; while that is `false` the setting does nothing. New sources start from the admin's [default](#defaults-for-new-sources); existing sources stay unscanned until their owner turns it on.
+
+```json
+{ "guardrails": { "injection_scan": true } }
+```
+
+While it is on, every path that writes the source's chunks scores them first: an upload, a remote or connector ingest and their scheduled syncs, the files a re-ingest adds, a re-embedded wiki page, and a chunk added or edited by hand, which is scored in the background so the request does not wait. Scores go only to the score cache, never into the vector store, so this works the same on every vector store. A sync that re-embeds unchanged chunks finds them cached. Scanning never fails or retries an ingest: if the model is down or still loading, the scan stops for that run and the remaining chunks are scored when an answer first retrieves them.
+
+Turning it on for a source already indexed scans its existing chunks in the background. The response to the settings save says how: `injection_backfill` is `queued`, or `lazy` where the vector store cannot list a source's chunks (Elasticsearch), whose chunks are then scored as answers retrieve them. The settings page says which. Turning it off stops future scans; scores already cached stay until they expire.
+
+Scanning costs model time: on a 4 vCPU server, roughly half an hour of compute per 1,000 full-size chunks, run in the background at a quarter of the CPU, so a large source takes hours. Admin → Defaults shows the measured cost on your server. See [Prompt injection on a CPU](/Models/decision-model#prompt-injection-on-a-cpu).
+
+### Reviewing flagged chunks
+
+In the source's chunk view, a chunk whose cached score is 0.5 or more carries a badge: **Possible prompt injection** from 0.5, **Likely prompt injection** from 0.9. **Flagged only**, next to the search box, lists only those. Users who can edit the source can:
+
+- **delete** the chunk or **edit** it, which changes its text and so its score;
+- **mark it as safe**: agents using this source then treat the chunk as clean (`owner-allowed` in the journal), for this source only. **Undo** removes the mark. The mark is keyed by the chunk's text, so editing the text removes it. A source can mark at most 1,000 chunks safe.
+
+Nothing notifies the owner. The badges, the sources list and an agent's [Guardrail activity](/Agents/guardrails#guardrail-activity-panel) panel, which links each flagged chunk, are the review surface.
+
+The sources list shows a **N flagged chunks** badge from the scan summary, `metadata.injection_scan`, which is written at the end of each ingest, re-ingest, wiki re-embed and backfill from the cache: `{scorer, scanned, unscored, suspected, high, max_p, at}`, counting chunks with a cached score and without one, those from 0.5 (`suspected`, which includes `high`) and from 0.9 (`high`), the highest score and when it was computed. `/api/sources/paginated` returns it as `injectionScan`.
 
 | Method | Path | Who | Body / response |
 | --- | --- | --- | --- |
-| `GET` | `/api/admin/defaults/sources` | Admins | `{"retrieval": {...}, "relevance_model": {"enabled", "predicted_s", "timeout_s", "candidate_k", "runtime"}}` |
-| `PUT` | `/api/admin/defaults/sources` | Admins | `{"retrieval": {...}}`, validated as a source's retrieval config; returns the `GET` body |
-| `GET` | `/api/sources/defaults` | Any signed-in user, or a token with `sources:read` | `{"retrieval": {...}}`, to prefill a create form |
+| `GET` | `/api/get_chunks?id=<source_id>&injection=flagged` | Anyone who can read the source | Each chunk carries `injection: {content_hash, p, level, allowed}` (`p` is `null` before it is scored, `level` is `high`, `suspected` or `null`), or `injection: null` while the model is off. `injection=flagged` keeps the flagged chunks, marked-safe ones included |
+| `POST` | `/api/sources/<source_id>/injection_review` | Users who can edit the source, or a token with `sources:write` | `{"content_hash": "<sha256>", "decision": "allow" \| "clear"}`; returns `{success, content_hash, allowed, count}`, or 400 once 1,000 are marked |
 
-`predicted_s` is the measured prediction for one relevance call over `candidate_k` (20) chunks on this server, in the shape the call has here (best-window passages on a CPU, whole chunks elsewhere), and `null` until the model has loaded; reading it never loads or times the model. `timeout_s` is `DECISION_RELEVANCE_TIMEOUT` and `runtime` where the model runs (`onnx-int8`, `vllm`, ...).
+## Defaults for new sources
+
+An admin sets the settings a new source starts with under **Admin → Defaults**, **New sources**: the same retrieval and relevance controls as a source, and **Scan chunks for prompt injection when indexing**. They are copied into each source when it is created: an upload, a remote or connector source, a source made from chat attachments, a wiki. Settings a create request sends itself win, field by field, and a request that turns on LLM screening or relevance drops the other from the defaults. Saving the defaults never changes an existing source and there is no bulk apply: existing sources keep their own settings, and an existing source is scanned only once its owner turns [scanning](#prompt-injection-scanning) on. Without saved defaults, new sources get the built-in defaults above, scanning off.
+
+The panel also shows each model's cost on this server: the relevance model's per answer, and the scan's as *"Costs about N min per 1,000 chunks here"*, the compute it needs. While `DECISION_RELEVANCE_ENABLED` is `false` it says the administrator turns relevance on there and hides the relevance fields; while `DECISION_INJECTION_ENABLED` is `false` it says how to turn the prompt-injection model on and disables the scan setting. The same page sets the [guardrails new agents start with](/Agents/guardrails#defaults-for-new-agents). Each save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `source_defaults_set`, a changed scan setting as `guardrails.injection_scan`.
+
+| Method | Path | Who | Body / response |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/defaults/sources` | Admins | `{"retrieval": {...}, "guardrails": {"injection_scan"}, "relevance_model": {"enabled", "predicted_s", "timeout_s", "candidate_k", "runtime"}, "injection_model": {"enabled", "runtime", "predicted_input_s", "predicted_chunk_s", "timeout_s"}}` |
+| `PUT` | `/api/admin/defaults/sources` | Admins | `{"retrieval": {...}}`, `{"guardrails": {...}}` or both, each validated as that part of a source's config; returns the `GET` body |
+| `GET` | `/api/sources/defaults` | Any signed-in user, or a token with `sources:read` | `{"retrieval": {...}, "guardrails": {"injection_scan"}}`, to prefill a create form |
+
+`predicted_s` is the measured prediction for one relevance call over `candidate_k` (20) chunks on this server, in the shape the call has here (best-window passages on a CPU, whole chunks elsewhere), and `null` until the model has loaded; reading it never loads or times the model. `timeout_s` is `DECISION_RELEVANCE_TIMEOUT` and `runtime` where the model runs (`onnx-int8`, `vllm`, ...). In `injection_model`, `predicted_chunk_s` is the predicted compute of scanning one full-size chunk on this server, `null` until measured; it is described with [Admin → Guardrails](/Agents/guardrails#admin-api).
 
 ## Testing retrieval
 
@@ -329,19 +362,20 @@ curl -X PATCH https://your-docsgpt/api/sources/<source_id>/config \
   }'
 ```
 
-The response echoes the stored config and a `requires_reingest` flag:
+The response echoes the stored config, a `requires_reingest` flag and, when the save turned [prompt-injection scanning](#prompt-injection-scanning) on, how the chunks already indexed are scanned (`injection_backfill`: `queued`, `lazy`, or `null` when nothing was started):
 
 ```json
 {
   "success": true,
   "config": { "...": "..." },
-  "requires_reingest": true
+  "requires_reingest": true,
+  "injection_backfill": null
 }
 ```
 
 Notes:
 
-- A group the body leaves out (`chunking`, `retrieval`, `graph`) keeps its saved value, so `{"retrieval": {...}}` alone changes only the retrieval settings. A group you send replaces the saved one: any field you leave out of it is reset to its default. To change one setting, send the source's current group (from `GET /api/sources`) with that setting changed. On a GraphRAG source, keep `"retriever": "graphrag"` in `retrieval`.
+- A group the body leaves out (`chunking`, `retrieval`, `graph`, `guardrails`) keeps its saved value, so `{"retrieval": {...}}` alone changes only the retrieval settings. A group you send replaces the saved one: any field you leave out of it is reset to its default. To change one setting, send the source's current group (from `GET /api/sources`) with that setting changed. On a GraphRAG source, keep `"retriever": "graphrag"` in `retrieval`.
 - Invalid values are rejected with `400` (strict validation on write); a `retrieval` with both `reranker` and `prescreen` says so.
 - The `kind` field (classic / wiki / graphrag) cannot be changed through this endpoint — converting a source to a [Wiki](/Sources/Wiki-sources) or enabling [GraphRAG](/Sources/GraphRAG) uses dedicated endpoints.
 - Editing requires ownership of the source or a team `editor` grant; viewers receive `403`.

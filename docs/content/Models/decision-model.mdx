@@ -12,16 +12,7 @@ It runs on CPU with ONNX Runtime, which DocsGPT already ships for embeddings, so
 
 ## Everything ships off
 
-Every feature that uses the decision model is off by default, and nothing is downloaded or loaded while they all are. Each feature has a mode setting:
-
-| Mode | What the feature does |
-| --- | --- |
-| `off` (default) | Nothing; DocsGPT behaves as it does without the model. |
-| `monitor` | Asks the model and records the answer without acting on it. |
-| `on` | Asks the model and acts on the answer. |
-| `auto` | Runs only if its predicted time on this machine fits its budget; see [Measured `auto`](#measured-auto). |
-
-The first feature you set to anything but `off`, `DECISION_RELEVANCE_ENABLED` included, downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, then loads it in the background. Until it is ready, features carry on without it. The features and their settings are in [Turning features on](#turning-features-on).
+Every feature that uses the decision model is off by default, and nothing is downloaded or loaded while they all are. The operator turns each on with one switch in `.env`, `DECISION_INJECTION_ENABLED` or `DECISION_RELEVANCE_ENABLED`; what then uses the model (which agents, sources, stages and thresholds) is set in the UI. The first switch turned on downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, and the API loads it when it starts. Until it is ready, features carry on without it. The switches are in [Turning features on](#turning-features-on).
 
 Two settings apply to the model as a whole:
 
@@ -49,15 +40,26 @@ A Celery worker never loads the model: it sends its calls to the API process's m
 
 Each feature has its own switch, so you can turn them on one at a time:
 
-| To turn on | How | Default |
+| Switch (`.env`) | Default | What it lets use the model |
 | --- | --- | --- |
-| The injection check on user input, for every agent (flags only) | `GUARDRAILS_INJECTION_INPUT_MODE=monitor` in `.env`; `on` also blocks on agents that enforce their guardrails, and `auto` flags only while the check fits its 0.5 s budget on this machine | `off` |
-| The injection check on one agent | an `injection_model` control at the agent's `input` stage | none |
-| Relevance of retrieved chunks, for the sources whose **Relevance** setting is on | `DECISION_RELEVANCE_ENABLED=true` in `.env`, then a source's **Relevance** (Reorder, or Reorder and filter), or the admin's [defaults for new sources](/Sources/Per-source-configuration#defaults-for-new-sources); it loads the model when the API starts | `false` |
+| `DECISION_INJECTION_ENABLED` | `false` | Prompt-injection scanning: agents' and the floor's `injection_model` guardrail controls (Admin → Guardrails), sources set to scan their chunks when indexed, chat attachments once uploaded, and MCP tool descriptions while Admin → Guardrails warns on them |
+| `DECISION_RELEVANCE_ENABLED` | `false` | Relevance of retrieved chunks, for the sources whose **Relevance** setting is on (Reorder, or Reorder and filter), or the admin's [defaults for new sources](/Sources/Per-source-configuration#defaults-for-new-sources) |
 
-The injection check is described in [Agent Guardrails](/Agents/guardrails#injection-check-on-every-agent), relevance in [Per-Source Configuration](/Sources/Per-source-configuration#relevance). It is one switch, not a mode: there is no `monitor` or `auto` for it, and no instance-wide relevance for sources that did not ask for it. A source can never turn the model on by itself: while `DECISION_RELEVANCE_ENABLED` is `false`, a source's relevance setting does nothing and the source settings hide it.
+The injection check is described in [Agent Guardrails](/Agents/guardrails#injection_model--prompt-injection-model), scanning a source's chunks in [Per-Source Configuration](/Sources/Per-source-configuration#prompt-injection-scanning), and relevance in [Per-Source Configuration](/Sources/Per-source-configuration#relevance). Each is one switch, not a mode: there is no `monitor` or `auto` for it. Neither an agent nor a source can turn the model on by itself: while a switch is `false`, its settings do nothing and the UI hides them or marks them unavailable. While either is `true`, the API loads the model when it starts, so the first call does not fall back while it loads.
 
 On a CPU, relevance is slow for an answer: about 27 s for 20 whole chunks on 4 vCPU, about 14 s with the 256-token window DocsGPT scores there, against the 2 s `DECISION_RELEVANCE_TIMEOUT`, after which the answer keeps the retriever's order. The admin **Defaults** panel shows the predicted seconds per answer on your server once the model has loaded and warns when they exceed the timeout. On a CPU-only install, keep relevance for a few sources and fewer candidates, raise `DECISION_RELEVANCE_TIMEOUT` if a slower answer is acceptable, or run the model on a GPU or an [API-mode](#api-mode) server.
+
+### Prompt injection on a CPU
+
+On a 4 vCPU server, `DECISION_INJECTION_ENABLED` costs:
+
+- **A user message:** about 0.2 s per check, within the default 2 s stage deadline. A long message is read in 512-token windows of about 0.55 s each, end and start first, so only its first few windows fit the deadline.
+- **A tool result:** the same, during the turn; a long result is mostly *not evaluated* at the deadline.
+- **Retrieved documents and attached files:** a full-size chunk is about three windows, so on a CPU `GUARDRAILS_INJECTION_LIVE_ITEMS=auto` scores none of them during the turn. They come from the score cache, filled by sources that scan their chunks when indexed and by background scoring of what earlier turns retrieved. The first turns after an agent adds a retrieval control are mostly unscored.
+- **Scanning a source when indexed:** roughly 2 s of compute per full-size chunk, about half an hour per 1,000 chunks, estimated from the window time. Background passes keep the cores busy at most `DECISION_BACKGROUND_SHARE` (a quarter) of the time, so a scan takes up to four times as long as its compute: two hours or more per 1,000 chunks, on top of embedding. A sync of unchanged chunks costs one cache query per batch.
+- **Every chat attachment**, scored in the background once uploaded: up to 64 windows (`GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS`), about 30,000 tokens.
+
+Admin → Guardrails and Admin → Defaults show the measured figures for your server once the model has loaded: *"Checking a user message adds about N s on this server"* and *"about N min per 1,000 chunks here"*, the compute a scan needs. Scans run where the model does, in the API process by default and beside its requests: the [decider](#the-decider) keeps that work out of the API process, and a GPU, through an [API-mode](#api-mode) server, scores a chunk in a fraction of that time. On a CPU-only install, turn scanning on for the sources whose content you do not control, and keep blocking controls failing open.
 
 ## Offline and air-gapped installs
 
@@ -177,7 +179,7 @@ When the server fails, features carry on without it:
 
 States are sent in batches of `DECISION_BATCH_SIZE` (32). Up to `DECISION_API_CONCURRENCY` (4) requests are in flight for decisions someone waits on, and `DECISION_BACKGROUND_CONCURRENCY` (1) for background work, which never takes an interactive slot. DocsGPT reads the server's `GET /v1/models` before the first call and every `DECISION_PROBE_SECONDS` (30).
 
-For [Measured `auto`](#measured-auto), a server that reports its own timing on `/v1/models` is predicted from it, plus the round trip of each request. Any other server, `arcd serve` and vLLM included, is timed by sending the same few constant calls through it, when it is first used and again whenever it comes back after failing.
+For [Measured speed](#measured-speed), a server that reports its own timing on `/v1/models` is predicted from it, plus the round trip of each request. Any other server, `arcd serve` and vLLM included, is timed by sending the same few constant calls through it, when it is first used and again whenever it comes back after failing.
 
 ## Memory and speed on CPU
 
@@ -192,26 +194,29 @@ Measured on a 4 vCPU x86 server:
 
 Before it loads, DocsGPT checks that the process has room: below `DECISION_MIN_FREE_MB` (1,200 MB by default) the load is refused and features carry on without the model. The model uses the cores the process may use (its CPU affinity, container quota and physical cores); set `DECISION_THREADS` to fix the count. One pass runs at a time: work someone waits on goes first, and background work (analytics, scans) keeps the CPU busy for at most `DECISION_BACKGROUND_SHARE` (a quarter) of the time.
 
-## Measured `auto`
+## Measured speed
 
-When the model loads, DocsGPT times a few fixed passes on this machine (a second or two on 4 vCPU) and predicts from them how long each feature's calls take. A feature set to `auto` runs while its prediction fits its budget, and once on, turns off only above 1.25 times the budget, so it does not flap. Explicit `off`, `monitor` and `on` always win.
+When the model loads, DocsGPT times a few fixed passes on this machine (a second or two on 4 vCPU) and predicts from them how long each feature's calls take. The predictions are the costs the admin pages show, what `docsgpt doctor` and `GET /api/admin/decisions` compare with each feature's budget, and what `GUARDRAILS_INJECTION_LIVE_ITEMS=auto` sizes itself by. They never turn a feature on or off: each follows its switch.
 
-The predictions stay current. Real calls are compared with them, and when they drift outside 0.67 to 1.5 times the prediction the timing runs again (at most every 10 minutes). The CPU budget is re-read every minute, and a change rebuilds the model with the new thread count. If the timing leaves every `auto` feature off and no feature is set to `on` or `monitor`, the model is unloaded again and only its measurements are kept, so a machine too slow for any feature does not hold the memory for nothing.
+The predictions stay current. Real calls are compared with them, and when they drift outside 0.67 to 1.5 times the prediction the timing runs again (at most every 10 minutes). The CPU budget is re-read every minute, and a change rebuilds the model with the new thread count.
 
 ## What is recorded
 
 Nothing a feature sends the model is stored. Every call leaves numbers only:
 
-- **On the answer.** The assistant message's metadata holds `decisions`: per call, the feature, its status, how long it waited, whether it acted on the answer (`applied` is `false` in `monitor` mode) and the numbers it decided on, such as the injection check's probability and thresholds. A message keeps at most 64 entries and counts the rest in `dropped`. A turn that pauses for a tool approval keeps its entries, and the resumed turn adds its own in the next `round`.
+- **On the answer.** The assistant message's metadata holds `decisions`: per call, the feature, its status, how long it waited, whether it acted on the answer (`applied` is `false` when the answer was only recorded, as by an injection control that flags or an agent in monitor mode) and the numbers it decided on, such as the injection check's probability and thresholds, or at `retrieval` and `attachment` how many items were checked, read from the cache, scored during the turn, queued for later and withheld. A message keeps at most 64 entries and counts the rest in `dropped`. A turn that pauses for a tool approval keeps its entries, and the resumed turn adds its own in the next `round`.
 - **In the trace.** Each call is a `decision` step in the request's [execution trace](/Deploying/Observability#execution-traces), with its states, answers, tokens and timings, and in the exported OpenTelemetry spans and metrics.
-- **As daily counts.** The `decision_usage` table counts calls, states, answers and time per day, feature, mode, model version and status. Each process writes its counts once a minute, and a daily task keeps `DECISION_USAGE_RETENTION_DAYS` (90). They are the denominators for a `monitor` rollout: how many messages the injection check read, next to the [guardrail events](/Agents/guardrails) it raised.
+- **As daily counts.** The `decision_usage` table counts calls, states, answers and time per day, feature, mode, model version and status. Each process writes its counts once a minute, and a daily task keeps `DECISION_USAGE_RETENTION_DAYS` (90). Texts the prompt-injection check answered from its score cache are counted under status `cached`, beside those the model scored. They are the denominators for a flag-only rollout: how many messages and documents the injection check read, next to the [guardrail events](/Agents/guardrails#the-audit-journal) it raised. The feature labels are listed under [Observability](/Deploying/Observability#prompt-injection-scanning).
 
 ```json
 {"v": 1,
  "model": {"id": "arc53/arc-decide-0.4b-v0.2", "version": "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907",
            "runtime": "onnx-int8", "mode": "local"},
  "entries": [{"feature": "injection_input", "round": 0, "status": "ok", "applied": false, "ms": 212.4,
-              "outcome": {"p": 0.03, "flag_threshold": 0.5, "threshold": 0.9, "windows": [1, 1]}}],
+              "outcome": {"p": 0.03, "flag_threshold": 0.5, "threshold": 0.9, "windows": [1, 1]}},
+             {"feature": "injection_retrieval", "round": 0, "status": "skipped", "applied": true, "ms": null,
+              "outcome": {"items": 6, "cache_hits": 5, "live": 0, "lazy": 1, "max_p": 0.97,
+                          "flag_threshold": 0.5, "threshold": 0.9, "withheld": 1}}],
  "dropped": 0}
 ```
 
@@ -219,7 +224,7 @@ Decision calls never count toward users' token limits: the model runs on your ha
 
 ## Checking it
 
-`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. In API mode it asks the decision server once, so the model, load status and speed it shows are the server's (`"server": "no answer"` when it cannot reach it). `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing. Relevance is listed as `rag_rerank on` or `off`; when the server reports its timing, a feature that is on shows its predicted call against its budget, for `rag_rerank` the `DECISION_RELEVANCE_TIMEOUT` (`rag_rerank on at 1.20s of 2s`).
+`docsgpt decisions status` prints the settings, each feature's mode, the pinned revision and whether the files are downloaded, without loading anything. In API mode it asks the decision server once, so the model, load status and speed it shows are the server's (`"server": "no answer"` when it cannot reach it). `docsgpt doctor` adds a `decisions` line: where the model runs, what a decision server reports (its runtime, model version and load status), whether the files are here and the memory a load would have, and each feature's mode, with the `auto` verdict when the server reports its timing. Relevance is listed as `rag_rerank on` or `off`, and prompt-injection scanning as `injection_input on` or `off`; when the server reports its timing, a feature that is on shows its predicted call against its budget, for `rag_rerank` the `DECISION_RELEVANCE_TIMEOUT` (`rag_rerank on at 1.20s of 2s`), for `injection_input` the default 2 s guardrail stage deadline.
 
 A running server reports what its API process sees at `GET /api/admin/decisions` (admins only):
 
@@ -236,7 +241,7 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
   "speed": {"threads": 4, "measured_at": "2026-10-15T09:12:03+00:00", "drift": 1.02,
             "guard_s": 0.152, "relevance_s": 1.41, "analytics_s": 4.1},
   "features": {
-    "injection_input": {"mode": "auto", "effective": "monitor", "predicted_s": 0.38, "budget_s": 0.5, "reason": "fits"},
+    "injection_input": {"mode": "on", "effective": "on", "predicted_s": 0.15, "budget_s": 2.0, "reason": "configured"},
     "rag_rerank": {"mode": "on", "effective": "on", "predicted_s": 14.2, "budget_s": 2.0, "reason": "configured"}
   }
 }
@@ -245,6 +250,6 @@ A running server reports what its API process sees at `GET /api/admin/decisions`
 - `status` is `off` (`DECISION_MODE=none`), `idle` (not loaded), `loading`, `ready` or `unavailable`, and in API mode `degraded` while calls to a failing server are skipped. `reason` says why: `memory`, `download`, `offline`, `wrong_model` or `load_failed` when unavailable, and `nothing_fits` when the model was unloaded because no feature set to `auto` fits; in API mode also `circuit_open`, `auth` (the server refused the key) and `no_decider` (`DECISION_MODE=api` without `DECISION_BASE_URL`, or a [worker](#celery-workers) without `INTERNAL_KEY`).
 - `speed` is this machine's timing: the predicted seconds of an injection check, of one relevance check on a whole 1,220-token chunk and of an analytics turn. In API mode they include the transport, and `speed` adds `round_trip_ms` and `measured_by` (`server` when the server reported its own timing, `client` when DocsGPT timed it).
 - `runtime` is `onnx-int8` here; in API mode it is `vllm`, the runtime a server reports (`onnx-int8` for the decider, `torch-mps-fp16` on a Mac's GPU, `torch-cuda-bf16` on an NVIDIA one), or `remote`. A worker calling the API process reports `api-process:onnx-int8` (`api-process` before its first call).
-- `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`. `rag_rerank` is `on` while `DECISION_RELEVANCE_ENABLED` is set, predicted for one call over 20 chunks (best-window passages where the model runs on a CPU, whole chunks elsewhere), and its `budget_s` is `DECISION_RELEVANCE_TIMEOUT`.
+- `features` has, per feature, its configured `mode`, what it does now as `effective` (`off`, `monitor` or `on`), `predicted_s`, `budget_s` and `reason`. `rag_rerank` is `on` while `DECISION_RELEVANCE_ENABLED` is set, predicted for one call over 20 chunks (best-window passages where the model runs on a CPU, whole chunks elsewhere), and its `budget_s` is `DECISION_RELEVANCE_TIMEOUT`. `injection_input` is `on` while `DECISION_INJECTION_ENABLED` is set, predicted for one check on a user message, and its `budget_s` is the default guardrail stage deadline (2 s).
 
-The public `/api/config` carries two booleans and nothing about timings: `decision_available` and `decision_relevance_enabled` (`DECISION_RELEVANCE_ENABLED` and the model available). The source settings show the relevance controls only while the second is true; reading them never loads or times the model.
+The public `/api/config` carries three booleans and nothing about timings: `decision_available`, `decision_relevance_enabled` (`DECISION_RELEVANCE_ENABLED` and the model available) and `decision_injection_enabled` (`DECISION_INJECTION_ENABLED` and the model available). The source settings show the relevance controls only while the second is true, and the guardrail editors and source settings offer the prompt-injection check and scan only while the third is; reading them never loads or times the model. Admin → Guardrails and Admin → Defaults show the prompt-injection model's measured cost on this server (`predicted_input_s` and `predicted_chunk_s`), read the same way.
