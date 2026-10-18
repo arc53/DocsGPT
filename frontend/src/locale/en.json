@@ -704,7 +704,9 @@
         "activity": "Activity",
         "steps": "Steps",
         "result": "Result",
-        "source": "Source"
+        "source": "Source",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "View trace",
@@ -820,6 +822,10 @@
         "api": "API",
         "shared": "Shared",
         "chat": "Chat"
+      },
+      "feedback": {
+        "like": "Liked",
+        "dislike": "Disliked"
       }
     },
     "teams": {
@@ -1511,7 +1517,10 @@
         "tokenLabel": "Your token",
         "usageTitle": "How to use it",
         "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
-        "done": "Done"
+        "done": "Done",
+        "createTool": "Create tool for agents",
+        "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
+        "toolFailed": "Could not create the tool."
       },
       "regenerate": {
         "action": "Regenerate",

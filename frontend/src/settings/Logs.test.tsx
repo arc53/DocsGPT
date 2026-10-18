@@ -44,7 +44,7 @@ vi.mock('../api/services/userService', () => ({
   default: { getLogs: (...args: unknown[]) => getLogs(...args) },
 }));
 
-import Logs from './Logs';
+import Logs, { typeFilterParams } from './Logs';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -661,5 +661,62 @@ describe('Logs running rows', () => {
     store.state.activity.now = { running: [] };
     await act(async () => root.render(<Logs />));
     expect(getLogs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Logs chat row context', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const chat = {
+    ...log,
+    conversation_id: 'c0ffee00-0000-4000-8000-000000000001',
+    passthrough: { user_id: 'emp-42', office: 'Berlin' },
+    feedback: { text: 'dislike' },
+  };
+
+  beforeEach(async () => {
+    getLogs.mockReset();
+    getLogs.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ logs: [chat], has_more: false }),
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(<Logs agentId="agent-1" />));
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('marks a rated answer in the row header', () => {
+    expect(
+      container.querySelector('[aria-label="settings.logs.feedback.dislike"]'),
+    ).not.toBeNull();
+  });
+
+  it('shows the passthrough values and the rating, not the conversation', async () => {
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    await act(async () => toggle.click());
+    expect(container.textContent).toContain('user_id=emp-42, office=Berlin');
+    expect(container.textContent).toContain('settings.logs.detail.feedback');
+    expect(container.textContent).not.toContain(chat.conversation_id);
+  });
+});
+
+describe('typeFilterParams', () => {
+  it('asks for rated chat turns for Liked and Disliked', () => {
+    expect(typeFilterParams('like')).toEqual({ feedback: 'like' });
+    expect(typeFilterParams('dislike')).toEqual({ feedback: 'dislike' });
+  });
+
+  it('passes an event type through and nothing for all', () => {
+    expect(typeFilterParams('chat')).toEqual({ event_type: 'chat' });
+    expect(typeFilterParams('all')).toEqual({});
   });
 });

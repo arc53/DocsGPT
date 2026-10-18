@@ -722,7 +722,9 @@
         "activity": "Activité",
         "steps": "Étapes",
         "result": "Résultat",
-        "source": "Source"
+        "source": "Source",
+        "feedback": "Avis",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Voir la trace",
@@ -845,6 +847,10 @@
         "api": "API",
         "shared": "Partagé",
         "chat": "Conversation"
+      },
+      "feedback": {
+        "like": "Aimé",
+        "dislike": "Pas aimé"
       }
     },
     "teams": {
@@ -1554,7 +1560,10 @@
         "tokenLabel": "Votre jeton",
         "usageTitle": "Utilisation",
         "usageHint": "Exportez-le comme variable d’environnement, puis envoyez-le comme jeton Bearer dans l’en-tête Authorization.",
-        "done": "Terminé"
+        "done": "Terminé",
+        "createTool": "Créer un outil pour les agents",
+        "toolCreated": "Outil créé. Retrouvez-le dans Paramètres › Outils et ajoutez-le à un agent.",
+        "toolFailed": "Impossible de créer l'outil."
       },
       "regenerate": {
         "action": "Régénérer",

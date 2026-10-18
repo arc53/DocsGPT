@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.api.answer.services.passthrough import stored_passthrough
 from docsgpt.decisions.record import DecisionRecord, activate as activate_decision_record
 from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
@@ -530,6 +531,9 @@ class StreamProcessor:
             self.decoded_token.get("sub") if self.decoded_token is not None else None
         )
         self.conversation_id = self.data.get("conversation_id")
+        # Kept on the conversation and the turn's Logs row; prompt rendering
+        # reads the raw request field.
+        self.passthrough = stored_passthrough(self.data.get("passthrough"))
         self.source = {}
         self.all_sources = []
         self.attachments = []
@@ -2460,6 +2464,10 @@ class StreamProcessor:
         self.request_id = agent_config.get("request_id")
         # The turn's calls from its earlier approval rounds, kept on the message.
         self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
+        # The paused turn's values: a resume request does not resend them.
+        self.passthrough = stored_passthrough(agent_config.get("passthrough")) or stored_passthrough(
+            self.data.get("passthrough")
+        )
 
         reasoning_content = agent_config.get("reasoning_content", "")
         return (
@@ -2728,6 +2736,9 @@ class StreamProcessor:
             workflow_owner = self.agent_config.get("workflow_owner")
             if workflow_owner:
                 agent_kwargs["workflow_owner"] = workflow_owner
+            # The bounded values: the run's state is stored with the run.
+            if self.passthrough:
+                agent_kwargs["passthrough"] = self.passthrough
 
         agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 

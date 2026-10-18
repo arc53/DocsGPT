@@ -120,6 +120,10 @@ export type LogData = {
   attachments?: string[];
   request_id?: string;
   message_id?: string;
+  /** The request's passthrough values (an embedding page's user id, say). */
+  passthrough?: Record<string, string | number | boolean | null> | null;
+  /** The answer's rating, read from its message. */
+  feedback?: { text: string; timestamp?: string } | null;
   // system + webhook events (stack_logs)
   endpoint?: string;
   stacks?: Record<string, any>[];

@@ -722,7 +722,9 @@
         "activity": "Actividad",
         "steps": "Pasos",
         "result": "Resultado",
-        "source": "Origen"
+        "source": "Origen",
+        "feedback": "Valoración",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Ver traza",
@@ -845,6 +847,10 @@
         "api": "API",
         "shared": "Compartido",
         "chat": "Chat"
+      },
+      "feedback": {
+        "like": "Me gusta",
+        "dislike": "No me gusta"
       }
     },
     "teams": {
@@ -1554,7 +1560,10 @@
         "tokenLabel": "Tu token",
         "usageTitle": "Cómo usarlo",
         "usageHint": "Expórtalo como variable de entorno y envíalo como token Bearer en la cabecera Authorization.",
-        "done": "Listo"
+        "done": "Listo",
+        "createTool": "Crear herramienta para agentes",
+        "toolCreated": "Herramienta creada. Está en Ajustes › Herramientas; añádela a un agente.",
+        "toolFailed": "No se pudo crear la herramienta."
       },
       "regenerate": {
         "action": "Regenerar",

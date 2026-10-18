@@ -245,6 +245,7 @@ const endpoints = {
     ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
     ACCESS_TOKEN_REGENERATE: (id: string) =>
       `/api/user/tokens/${id}/regenerate`,
+    ACCESS_TOKEN_TOOL: (id: string) => `/api/user/tokens/${id}/tool`,
     MONITORS: (conversationId?: string) =>
       conversationId
         ? `/api/monitors?conversation_id=${encodeURIComponent(conversationId)}`
