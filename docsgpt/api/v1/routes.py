@@ -743,6 +743,7 @@ def _stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     translation_state = StreamTranslationState()
@@ -833,6 +834,7 @@ def _non_stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     result = helper.process_response_stream(stream)

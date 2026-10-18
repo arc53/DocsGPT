@@ -16,7 +16,7 @@ from docsgpt.api.user.base import (
     generate_hourly_range,
     generate_minute_range,
 )
-from docsgpt.storage.db.base_repository import like_escape
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid
 from docsgpt.storage.db.redaction import redact_secrets
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.request_traces import (
@@ -119,6 +119,7 @@ def _trace_branch(name: str, sources_sql: str, scope: str) -> dict:
         # at flush so this never detoasts ``spans``); graph builds are named
         # after their source.
         "summary": "COALESCE(t.summary->>'query', t.name, t.source)",
+        "ts": "t.started_at",
         "where": [f"t.source IN {sources_sql}", scope],
         "sql": f"""
         SELECT '{name}' AS event_type,
@@ -865,6 +866,109 @@ class GetScheduleAnalytics(Resource):
 _SCHEDULE_LOG_STATUSES = "('pending', 'running', 'success', 'completed', 'failed', 'timeout', 'skipped')"
 
 
+_UUID_RE = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+# A chat Logs row's message, cast only when the stored id is a UUID so an odd
+# legacy value cannot fail the whole query.
+_LOG_MESSAGE_ID = (
+    "CASE WHEN l.data->>'message_id' ~* :uuid_re "
+    "THEN CAST(l.data->>'message_id' AS uuid) END"
+)
+_MAX_PASSTHROUGH_FILTERS = 8
+
+
+def _parse_iso_moment(value, field: str) -> Optional[datetime.datetime]:
+    """An ISO 8601 moment from a filter field (UTC when it names no zone)."""
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an ISO 8601 string")
+    try:
+        moment = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(f"{field} must be an ISO 8601 string")
+    return moment if moment.tzinfo else moment.replace(tzinfo=datetime.timezone.utc)
+
+
+def _passthrough_filter_value(value) -> str:
+    """A filter value as Postgres' ``->>`` renders the stored JSON scalar."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _log_filters(data: dict) -> dict:
+    """The Logs request's row filters, validated.
+
+    Args:
+        data: The request body.
+
+    Returns:
+        ``conversation_id``, ``passthrough`` (``[(key, text value)]``),
+        ``feedback``, ``date_from`` and ``date_to``; each ``None`` when unset.
+
+    Raises:
+        ValueError: A filter has the wrong shape; the message is user-facing.
+    """
+    conversation_id = data.get("conversation_id") or None
+    if conversation_id is not None and not looks_like_uuid(str(conversation_id)):
+        raise ValueError("conversation_id must be a UUID")
+    feedback = data.get("feedback") or None
+    if feedback not in (None, "like", "dislike"):
+        raise ValueError("feedback must be 'like' or 'dislike'")
+    raw = data.get("passthrough")
+    passthrough = None
+    if raw not in (None, {}):
+        if not isinstance(raw, dict) or len(raw) > _MAX_PASSTHROUGH_FILTERS:
+            raise ValueError(
+                f"passthrough must be an object of at most {_MAX_PASSTHROUGH_FILTERS} keys"
+            )
+        passthrough = []
+        for key, value in raw.items():
+            if not isinstance(key, str) or not key or not isinstance(value, (str, int, float, bool)):
+                raise ValueError("passthrough filter values must be strings, numbers or booleans")
+            passthrough.append((key, _passthrough_filter_value(value)))
+    date_from = _parse_iso_moment(data.get("date_from"), "date_from")
+    date_to = _parse_iso_moment(data.get("date_to"), "date_to")
+    return {
+        "conversation_id": str(conversation_id) if conversation_id else None,
+        "passthrough": passthrough,
+        "feedback": feedback,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
+def _attach_message_feedback(conn: Connection, items: list) -> None:
+    """Add each chat row's feedback (``{text, timestamp}``) from its message, in one lookup."""
+    ids = {
+        str(item["message_id"])
+        for item in items
+        if item["event_type"] == "chat"
+        and not item.get("running")
+        and item.get("message_id")
+        and looks_like_uuid(str(item["message_id"]))
+    }
+    if not ids:
+        return
+    rows = conn.execute(
+        _sql_text(
+            "SELECT CAST(id AS text) AS id, feedback, CAST(conversation_id AS text) AS conversation_id "
+            "FROM conversation_messages WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"ids": sorted(ids)},
+    ).fetchall()
+    found = {row._mapping["id"]: row._mapping for row in rows}
+    for item in items:
+        message = found.get(str(item.get("message_id") or ""))
+        if message is None:
+            continue
+        if message["feedback"]:
+            item["feedback"] = message["feedback"]
+        # Rows logged before the conversation id was stored on them.
+        if not item.get("conversation_id"):
+            item["conversation_id"] = message["conversation_id"]
+
+
 def _running_webhook_rows(owner_id: str, agent_id: Optional[str], search: Optional[str]) -> list:
     """Timeline rows for the webhook runs going on now.
 
@@ -956,6 +1060,28 @@ class GetUserLogs(Resource):
             "search": fields.String(
                 required=False, description="Substring filter on the summary"
             ),
+            "conversation_id": fields.String(
+                required=False,
+                description="Only rows of this conversation (chat turns and scheduled runs)",
+            ),
+            "passthrough": fields.Raw(
+                required=False,
+                description=(
+                    "Only chat turns whose passthrough values match every "
+                    "given key, compared as text, e.g. {\"user_id\": \"42\"}"
+                ),
+            ),
+            "feedback": fields.String(
+                required=False,
+                description="Only chat turns rated this way",
+                enum=["like", "dislike"],
+            ),
+            "date_from": fields.String(
+                required=False, description="Rows at or after this ISO 8601 moment"
+            ),
+            "date_to": fields.String(
+                required=False, description="Rows before this ISO 8601 moment"
+            ),
         },
     )
 
@@ -1000,6 +1126,10 @@ class GetUserLogs(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid option"}), 400
             )
+        try:
+            filters = _log_filters(data)
+        except ValueError as err:
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
 
         try:
             with db_readonly() as conn:
@@ -1133,6 +1263,22 @@ class GetUserLogs(Resource):
                         "name": "chat",
                         "level": "COALESCE(l.data->>'level', 'info')",
                         "summary": "l.data->>'question'",
+                        "ts": "l.timestamp",
+                        # Rows logged before the id was stored on them are
+                        # matched through their message.
+                        "conversation": (
+                            "(l.data->>'conversation_id' = :conversation_id"
+                            " OR (l.data->>'conversation_id' IS NULL AND EXISTS ("
+                            "SELECT 1 FROM conversation_messages fm"
+                            f" WHERE fm.id = {_LOG_MESSAGE_ID}"
+                            " AND fm.conversation_id = CAST(:conversation_id AS uuid))))"
+                        ),
+                        "passthrough": "l.data->'passthrough'",
+                        "feedback": (
+                            "EXISTS (SELECT 1 FROM conversation_messages fm"
+                            f" WHERE fm.id = {_LOG_MESSAGE_ID}"
+                            " AND fm.feedback->>'text' = :feedback)"
+                        ),
                         "where": chat_where,
                         "sql": """
                         SELECT 'chat' AS event_type,
@@ -1155,6 +1301,9 @@ class GetUserLogs(Resource):
                         "event_type": "chat",
                         "level": "'info'",
                         "summary": "m.prompt",
+                        "ts": "m.timestamp",
+                        "conversation": "m.conversation_id = CAST(:conversation_id AS uuid)",
+                        "passthrough": "c.passthrough",
                         "where": running_chat_where + [
                             "m.status IN ('pending', 'streaming')",
                             "COALESCE((m.message_metadata ->> 'last_heartbeat_at')::timestamptz, m.timestamp)"
@@ -1174,6 +1323,7 @@ class GetUserLogs(Resource):
                                    'message_id', m.id,
                                    'conversation_id', m.conversation_id,
                                    'agent_id', c.agent_id,
+                                   'passthrough', c.passthrough,
                                    'origin', CASE
                                        WHEN c.is_shared_usage THEN 'shared'
                                        WHEN c.visibility = 'listed' THEN 'chat'
@@ -1188,6 +1338,7 @@ class GetUserLogs(Resource):
                         "name": "system",
                         "level": "'error'",
                         "summary": "s.query",
+                        "ts": "s.timestamp",
                         "where": system_where,
                         "sql": """
                         SELECT 'system' AS event_type,
@@ -1210,6 +1361,7 @@ class GetUserLogs(Resource):
                         "name": "webhook",
                         "level": "COALESCE(s.level, 'info')",
                         "summary": "s.query",
+                        "ts": "s.timestamp",
                         "where": webhook_where,
                         "sql": """
                         SELECT 'webhook' AS event_type,
@@ -1237,6 +1389,7 @@ class GetUserLogs(Resource):
                         "summary": (
                             "COALESCE(wr.inputs->>'query', w.name, 'Workflow run')"
                         ),
+                        "ts": "wr.started_at",
                         "where": workflow_where,
                         "sql": """
                         SELECT 'workflow' AS event_type,
@@ -1270,6 +1423,8 @@ class GetUserLogs(Resource):
                         "summary": (
                             "COALESCE(sc.name, sc.instruction, 'Scheduled run')"
                         ),
+                        "ts": "COALESCE(r.started_at, r.scheduled_for)",
+                        "conversation": "r.conversation_id = CAST(:conversation_id AS uuid)",
                         "where": schedule_where,
                         "sql": """
                         SELECT 'schedule' AS event_type,
@@ -1311,10 +1466,24 @@ class GetUserLogs(Resource):
                     params["level"] = level
                 if search:
                     params["search"] = f"%{like_escape(search)}%"
+                params["uuid_re"] = _UUID_RE
+                for name in ("conversation_id", "feedback", "date_from", "date_to"):
+                    if filters[name] is not None:
+                        params[name] = filters[name]
+                for index, (key, value) in enumerate(filters["passthrough"] or []):
+                    params[f"pt_key_{index}"] = key
+                    params[f"pt_value_{index}"] = value
 
                 branch_sqls = []
                 for branch in branches:
                     if event_type and branch.get("event_type", branch["name"]) != event_type:
+                        continue
+                    # A row filter a branch has no column for leaves it out.
+                    if (
+                        (filters["conversation_id"] and "conversation" not in branch)
+                        or (filters["passthrough"] and "passthrough" not in branch)
+                        or (filters["feedback"] and "feedback" not in branch)
+                    ):
                         continue
                     where = list(branch["where"])
                     if level:
@@ -1323,6 +1492,18 @@ class GetUserLogs(Resource):
                         where.append(
                             f"{branch['summary']} ILIKE :search ESCAPE '\\'"
                         )
+                    if filters["conversation_id"]:
+                        where.append(branch["conversation"])
+                    for index in range(len(filters["passthrough"] or [])):
+                        where.append(
+                            f"{branch['passthrough']}->>CAST(:pt_key_{index} AS text) = :pt_value_{index}"
+                        )
+                    if filters["feedback"]:
+                        where.append(branch["feedback"])
+                    if filters["date_from"]:
+                        where.append(f"{branch['ts']} >= :date_from")
+                    if filters["date_to"]:
+                        where.append(f"{branch['ts']} < :date_to")
                     branch_sqls.append(
                         branch["sql"].format(
                             level=branch["level"],
@@ -1374,6 +1555,7 @@ class GetUserLogs(Resource):
                             "message_id": payload.get("message_id"),
                             "conversation_id": payload.get("conversation_id"),
                             "agent_id": payload.get("agent_id"),
+                            "passthrough": payload.get("passthrough"),
                         }
                     )
                 elif m["event_type"] == "chat":
@@ -1386,6 +1568,8 @@ class GetUserLogs(Resource):
                             "attachments": payload.get("attachments"),
                             "request_id": payload.get("request_id"),
                             "message_id": payload.get("message_id"),
+                            "conversation_id": payload.get("conversation_id"),
+                            "passthrough": payload.get("passthrough"),
                             "error": payload.get("error"),
                         }
                     )
@@ -1445,7 +1629,15 @@ class GetUserLogs(Resource):
                     # format (JSON drops trailing zeros from the seconds).
                     item["started_at"] = item["timestamp"]
                 results.append(item)
-            if page == 1 and event_type in (None, "webhook") and level in (None, "info"):
+            row_filtered = any(
+                filters[name] for name in ("conversation_id", "passthrough", "feedback", "date_from", "date_to")
+            )
+            if (
+                page == 1
+                and event_type in (None, "webhook")
+                and level in (None, "info")
+                and not row_filtered
+            ):
                 # A webhook run has no row until it ends; its Redis marker
                 # stands in for it on the first page.
                 results = _merge_by_time(
@@ -1455,8 +1647,15 @@ class GetUserLogs(Resource):
                     ),
                 )
             if results:
-                # Trace chips are an extra: a failed lookup must leave the
-                # page intact, just without them.
+                # Feedback and trace chips are extras: a failed lookup must
+                # leave the page intact, just without them.
+                try:
+                    with db_readonly() as conn:
+                        _attach_message_feedback(conn, results)
+                except Exception:
+                    current_app.logger.warning(
+                        "Could not attach feedback to the logs page", exc_info=True
+                    )
                 try:
                     with db_readonly() as conn:
                         _attach_trace_summaries(

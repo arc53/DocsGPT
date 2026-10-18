@@ -330,6 +330,8 @@ class BaseAnswerResource:
         attachment_ids: Optional[List[str]],
         request_id: Optional[str],
         message_id: Optional[str],
+        conversation_id: Optional[str] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -350,6 +352,8 @@ class BaseAnswerResource:
             attachment_ids: Attached file ids.
             request_id: The turn's request id (links its trace).
             message_id: The reserved message id.
+            conversation_id: The conversation the turn belongs to.
+            passthrough: The request's stored passthrough values.
             error: What failed the turn, if it failed.
             extra: More fields for the row (structured-output details).
         """
@@ -368,7 +372,10 @@ class BaseAnswerResource:
             # Links the Logs row to this turn's execution trace.
             "request_id": request_id,
             "message_id": message_id,
+            "conversation_id": str(conversation_id) if conversation_id else None,
         }
+        if passthrough:
+            log_data["passthrough"] = passthrough
         if error:
             log_data["error"] = error
         if extra:
@@ -563,6 +570,7 @@ class BaseAnswerResource:
         finalize_tool_pause_as_complete: bool = False,
         request_id: Optional[str] = None,
         trace: Optional["tracing.Trace"] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -594,6 +602,8 @@ class BaseAnswerResource:
                 the pre-fetch retrieval); :func:`_traced_stream` activates it
                 and writes it when the stream ends. A new one is started when
                 omitted.
+            passthrough: The request's passthrough values bounded for
+                storage; kept on the conversation and the Logs row.
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
@@ -700,6 +710,7 @@ class BaseAnswerResource:
                     model_id=model_id or self.default_model_id,
                     request_id=request_id,
                     index=index,
+                    passthrough=passthrough,
                 )
                 conversation_id = reservation["conversation_id"]
                 reserved_message_id = reservation["message_id"]
@@ -1282,6 +1293,7 @@ class BaseAnswerResource:
                             reserved_message_id=None,
                             request_id=request_id,
                             tool_calls=tool_calls,
+                            passthrough=passthrough,
                         )
                     # Flush the held pause event now (after the state is
                     # saved), in its original position ahead of the terminal
@@ -1378,6 +1390,7 @@ class BaseAnswerResource:
                         reserved_message_id=reserved_message_id,
                         request_id=request_id,
                         tool_calls=tool_calls,
+                        passthrough=passthrough,
                     )
 
                     # Notify the user out-of-band so they can navigate back and
@@ -1668,6 +1681,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 # A yielded error (a failed workflow node) ends the turn
                 # normally but still failed it.
                 error=stream_error,
@@ -1913,6 +1928,8 @@ class BaseAnswerResource:
                     attachment_ids=attachment_ids,
                     request_id=request_id,
                     message_id=reserved_message_id,
+                    conversation_id=conversation_id,
+                    passthrough=passthrough,
                     extra={"stopped": True},
                 )
             if isinstance(stream_exit, StreamStopped) and terminal is not None:
@@ -2039,6 +2056,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 error=bounded_error_text(e),
             )
             yield _emit(
@@ -2098,6 +2117,7 @@ class BaseAnswerResource:
         reserved_message_id: Optional[str],
         request_id: Optional[str],
         tool_calls: List[Dict[str, Any]],
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Save a paused turn's continuation state so a later request can resume it.
 
@@ -2116,6 +2136,8 @@ class BaseAnswerResource:
                 its answer).
             request_id: The turn's request id.
             tool_calls: Every call of the turn so far.
+            passthrough: The request's stored passthrough values; the resume
+                logs the turn with them.
 
         Returns:
             Whether the state was saved.
@@ -2176,6 +2198,7 @@ class BaseAnswerResource:
                     # Every round's calls so far, so the message
                     # the resumed turn finalizes keeps them all.
                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    "passthrough": passthrough,
                     # The turn's files (so ``F`` refs still
                     # resolve), its compression point and
                     # backup models.

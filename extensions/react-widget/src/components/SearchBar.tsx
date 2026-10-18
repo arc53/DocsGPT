@@ -562,6 +562,7 @@ export const SearchBar = ({
   poweredBy = true,
   allowedFileExtensions,
   showMicButton,
+  passthrough,
 }: SearchBarProps) => {
   const isDropdown = variant === 'dropdown';
   const [input, setInput] = React.useState<string>('');
@@ -1060,6 +1061,7 @@ export const SearchBar = ({
           size={'large'}
           allowedFileExtensions={allowedFileExtensions}
           showMicButton={showMicButton}
+          passthrough={passthrough}
         />
       </Main>
     </ThemeProvider>
