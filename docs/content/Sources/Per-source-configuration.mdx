@@ -1,7 +1,7 @@
 ---
 title: Per-Source Configuration
-description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, defaults for new sources and more.
-lastUpdated: 2026-10-17
+description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, review of chunks flagged for prompt injection, defaults for new sources and more.
+lastUpdated: 2026-10-18
 ---
 
 import { Callout } from 'nextra/components'
@@ -226,11 +226,31 @@ Every failure keeps exactly what retrieval returns without the model: the same c
 
 The model runs in the API process or the stack's own decider by default, so chunks and queries stay inside the stack. In [API mode](/Models/decision-model#api-mode), every candidate chunk and the query are sent to the decision server you configured, the same trust boundary as an embeddings API: point `DECISION_BASE_URL` only at a server you trust with your sources' content. The decision record and traces keep numbers only.
 
+## Prompt-injection scores of chunks
+
+An agent whose [`injection_model` guardrail](/Agents/guardrails#injection_model--prompt-injection-model) screens retrieved sources scores each chunk it retrieves with the [decision model](/Models/decision-model) during the chat. Scores are kept in a cache keyed by the chunk's text, so a chunk is scored once and every later answer, by any agent, reads its score from the cache.
+
+On a CPU, scoring a full-size chunk takes longer than the guardrail's deadline, so with the default `GUARDRAILS_INJECTION_LIVE_ITEMS=auto` no chunk is scored during the turn: a chunk without a cached score is *not evaluated* the first time it is retrieved and is scored in the background right after, so the next answer that retrieves it has its score. To score retrieved chunks during the turn, run the model on a GPU-backed [decision model server](/Models/decision-model#api-mode). See [Prompt injection on a CPU](/Models/decision-model#prompt-injection-on-a-cpu).
+
+### Reviewing flagged chunks
+
+In the source's chunk view, a chunk whose cached score is 0.5 or more carries a badge (a chunk has a score once a chat has retrieved and scored it): **Possible prompt injection** from 0.5, **Likely prompt injection** from 0.9. **Flagged only**, next to the search box, lists only those. Users who can edit the source can:
+
+- **delete** the chunk or **edit** it, which changes its text and so its score;
+- **mark it as safe**: agents using this source then treat the chunk as clean (`owner-allowed` in the journal), for this source only. **Undo** removes the mark. The mark is keyed by the chunk's text, so editing the text removes it. A source can mark at most 1,000 chunks safe.
+
+Nothing notifies the owner. The badges and an agent's [Guardrail activity](/Agents/guardrails#guardrail-activity-panel) panel, which links each flagged chunk, are the review surface.
+
+| Method | Path | Who | Body / response |
+| --- | --- | --- | --- |
+| `GET` | `/api/get_chunks?id=<source_id>&injection=flagged` | Anyone who can read the source | Each chunk carries `injection: {content_hash, p, level, allowed}` (`p` is `null` before it is scored, `level` is `high`, `suspected` or `null`), or `injection: null` while the model is off. `injection=flagged` keeps the flagged chunks, marked-safe ones included |
+| `POST` | `/api/sources/<source_id>/injection_review` | Users who can edit the source, or a token with `sources:write` | `{"content_hash": "<sha256>", "decision": "allow" \| "clear"}`; returns `{success, content_hash, allowed, count}`, or 400 once 1,000 are marked |
+
 ## Defaults for new sources
 
-An admin sets the retrieval settings a new source starts with under **Admin → Defaults** ("Default retrieval settings for new sources"), with the same retrieval and relevance controls as a source. They are copied into each source when it is created: an upload, a remote or connector source, a source made from chat attachments, a wiki. Settings a create request sends itself win, field by field, and a request that turns on LLM screening or relevance drops the other from the defaults. Saving the defaults never changes an existing source and there is no bulk apply: existing sources keep their own settings. Without saved defaults, new sources get the built-in defaults above.
+An admin sets the retrieval settings a new source starts with under **Admin → Defaults**, **New sources**, with the same retrieval and relevance controls as a source. They are copied into each source when it is created: an upload, a remote or connector source, a source made from chat attachments, a wiki. Settings a create request sends itself win, field by field, and a request that turns on LLM screening or relevance drops the other from the defaults. Saving the defaults never changes an existing source and there is no bulk apply: existing sources keep their own settings. Without saved defaults, new sources get the built-in defaults above.
 
-The panel also shows the relevance model's cost on this server and, while `DECISION_RELEVANCE_ENABLED` is `false`, that the administrator turns it on there; the relevance fields are hidden until then. Each save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `source_defaults_set`.
+The panel also shows the relevance model's cost on this server and, while `DECISION_RELEVANCE_ENABLED` is `false`, that the administrator turns it on there; the relevance fields are hidden until then. The same page sets the [guardrails new agents start with](/Agents/guardrails#defaults-for-new-agents). Each save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `source_defaults_set`.
 
 | Method | Path | Who | Body / response |
 | --- | --- | --- | --- |

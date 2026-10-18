@@ -66,23 +66,36 @@ def shape_of(spec: FeatureSpec, settings: Any = None, runtime: Optional[str] = N
     return spec.shape_for(settings, runtime)
 
 
+def budget(spec: FeatureSpec, settings: Any = None) -> float:
+    """The feature's latency budget in seconds: its budget setting, else its fixed ``budget_s``.
+
+    Args:
+        spec: The feature.
+        settings: The settings to read; the process's when omitted.
+    """
+    if spec.budget_setting is None:
+        return float(spec.budget_s)
+    if settings is None:
+        from docsgpt.core.settings import settings
+
+    return float(getattr(settings, spec.budget_setting))
+
+
 def verdict(spec: FeatureSpec, profile: Optional[SpeedProfile]) -> tuple[bool, Optional[float], str]:
     """Whether ``auto`` would run the feature now.
 
     Returns:
         ``(on, predicted seconds, reason)``; the reason is ``not_measured``, ``fits`` or ``over_budget``.
     """
-    from docsgpt.core.settings import settings
-
     if profile is None:
         return False, None, "not_measured"
-    budget = float(getattr(settings, spec.budget_setting))
+    limit = budget(spec)
     predicted = profile.predict_s(shape_of(spec))
     was_on = _on.get(spec.name, False)
-    on = predicted <= budget * (HYSTERESIS if was_on else 1.0)
+    on = predicted <= limit * (HYSTERESIS if was_on else 1.0)
     if on != was_on:
         logger.info("Decision feature %s under auto is now %s: predicted %.2fs against a budget of %.2fs",
-                    spec.name, "on" if on else "off", predicted, budget)
+                    spec.name, "on" if on else "off", predicted, limit)
     _on[spec.name] = on
     return on, predicted, "fits" if on else "over_budget"
 
@@ -143,17 +156,32 @@ def reset() -> None:
 # knows all of them whatever it has imported: the API warms the model at start for any that is not ``off``, and
 # ``docsgpt decisions status`` lists them.
 
-#: The ``injection_model`` guardrail check on user input (``GUARDRAILS_INJECTION_INPUT_MODE``). It is predicted on a
-#: message of up to 320 tokens with the one ``injection`` question; under ``auto`` it only flags.
+#: The guardrail stage deadline an agent gets by default (``GuardrailsConfig.timeout_ms``), in seconds: the budget of
+#: the injection check, which runs inside it.
+STAGE_TIMEOUT_S = 2.0
+
+#: The ``injection_model`` guardrail check on user input. It has a switch, not a mode: ``DECISION_INJECTION_ENABLED``
+#: is ``on``, so the model warms at start. It is predicted on a message of up to 320 tokens with the one ``injection``
+#: question, against the default stage deadline.
 INJECTION_INPUT = register(
     FeatureSpec(
         name="injection_input",
-        mode_setting="GUARDRAILS_INJECTION_INPUT_MODE",
-        budget_setting="GUARDRAILS_INJECTION_INPUT_BUDGET",
+        mode_setting="DECISION_INJECTION_ENABLED",
+        budget_setting=None,
+        budget_s=STAGE_TIMEOUT_S,
         shape=Shape(state_tokens=320, question_tokens=GUARD.question_tokens),
-        auto_mode="monitor",
     )
 )
+
+# The labels the other injection scans pass as ``feature``: they name the ``decision`` spans and key the
+# ``decision_usage`` counts. All of them follow DECISION_INJECTION_ENABLED, which ``INJECTION_INPUT`` already warms the
+# model for, so none is registered as a feature of its own.
+INJECTION_RETRIEVAL = "injection_retrieval"
+INJECTION_TOOL_RESULT = "injection_tool_result"
+INJECTION_ATTACHMENT = "injection_attachment"
+INJECTION_TOOL_DESCRIPTION = "injection_tool_description"
+INJECTION_ATTACHMENT_PARSE = "injection_attachment_parse"
+INJECTION_LAZY = "injection_lazy"
 
 
 def _rerank_shape(settings: Any, runtime: Optional[str]) -> Shape:

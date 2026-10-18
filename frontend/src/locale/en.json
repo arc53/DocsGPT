@@ -587,7 +587,19 @@
       "deleteFileConsequence": "Its chunks are deleted too. This can't be undone.",
       "deleteDirectoryConsequence": "Everything inside it is deleted too. This can't be undone.",
       "syncConsequence": "Its content is updated from your cloud storage, which may overwrite edits you made to individual chunks.",
-      "deleteItemFailed": "Could not delete \"{{name}}\"."
+      "deleteItemFailed": "Could not delete \"{{name}}\".",
+      "injection": {
+        "flaggedOnly": "Flagged only",
+        "high": "Likely prompt injection",
+        "suspected": "Possible prompt injection",
+        "markedSafe": "Marked safe",
+        "markSafe": "Mark as safe",
+        "undo": "Undo",
+        "flaggedNotice": "This chunk reads like a prompt injection (score {{percent}}%). Agents that screen retrieved sources flag it, or leave it out of their answers.",
+        "safeNotice": "Marked safe: agents using this source treat this chunk as clean. Editing its text removes the mark.",
+        "reviewFailed": "Could not update this chunk. Please try again.",
+        "noFlagged": "No chunk in this source has been flagged. A chunk is scored once a chat retrieves it."
+      }
     },
     "analytics": {
       "label": "Analytics",
@@ -1816,6 +1828,11 @@
       "capabilityChip": {
         "sync": "Syncs into Knowledge",
         "tools": "Gives agents tools"
+      },
+      "injection": {
+        "flagged": "Possible prompt injection",
+        "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
+        "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
       }
     }
   },
@@ -2178,14 +2195,17 @@
         "forbidden": "This source was removed, or you no longer have access to it. Showing the excerpt saved with the answer.",
         "loadFailed": "Couldn't load this passage.",
         "openLink": "Open link",
-        "openInKnowledge": "Open in Knowledge"
+        "openInKnowledge": "Open in Knowledge",
+        "withheld": "This agent's guardrails left this source out of the answer because it may contain a prompt injection. The AI did not read this passage."
       },
       "relevance": {
         "strong": "Strong match",
         "possible": "Possible match",
         "weak": "Weak match",
         "tooltip": "Relevance {{percent}}%"
-      }
+      },
+      "withheld": "Withheld",
+      "withheldNote": "Left out of the answer by this agent's guardrails: it may contain a prompt injection."
     },
     "attachments": {
       "attach": "Attach",
@@ -2663,7 +2683,8 @@
           "input": "User input",
           "retrieval": "Retrieved sources",
           "toolResult": "Tool result",
-          "output": "Answer"
+          "output": "Answer",
+          "attachment": "Attached files"
         },
         "actions": {
           "flag": "Flag only",
@@ -2673,7 +2694,13 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        }
+        },
+        "itemLevelHint": "Block withholds only the flagged source or file.",
+        "advanced": "Advanced",
+        "threshold": "Action threshold",
+        "thresholdHint": "The control's action applies from this score (0 to 1, default 0.9).",
+        "flagThreshold": "Flag threshold",
+        "flagThresholdHint": "From this score the text is flagged and recorded, but nothing is blocked (default 0.5)."
       },
       "byline": {
         "new": "Set up the agent, then publish it to chat with it."
@@ -3005,7 +3032,11 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "loadError": "Could not load guardrail activity",
+      "score": "Score",
+      "openChunk": "Open chunk",
+      "attachedFile": "Attached file",
+      "chunkUnavailable": "This chunk is no longer in its source, or you can't open that source."
     },
     "workflow": {
       "expressionRow": "Expression {{index}}",
@@ -3366,7 +3397,8 @@
       "quotas": "Quotas",
       "audit": "Audit log",
       "connectors": "Connectors",
-      "defaults": "Defaults"
+      "defaults": "Defaults",
+      "guardrails": "Guardrails"
     },
     "quotas": {
       "unpriced": {

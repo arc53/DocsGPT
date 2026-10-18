@@ -51,7 +51,7 @@ class TestAdminDecisions:
             "speed": None,
             "features": {
                 "injection_input": {
-                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 0.5, "reason": "configured",
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
                 },
                 "rag_rerank": {
                     "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",

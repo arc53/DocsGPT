@@ -237,6 +237,84 @@ class SourcesRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def injection_allowed(self, source_ids) -> dict[str, set[str]]:
+        """The text hashes each source's owner marked safe from prompt-injection screening.
+
+        Read from ``metadata.injection_review.allowed`` (sha256 hex digests of
+        chunk texts) with no ownership scoping: the caller already resolved
+        these sources for the request. Kept per source: an allowance covers
+        that source's chunk, never the same text from another source.
+
+        Args:
+            source_ids: Source UUIDs; anything else is ignored.
+
+        Returns:
+            Source id to its allowed hashes; sources that allowed none are absent.
+        """
+        ids = sorted({str(s) for s in source_ids if looks_like_uuid(str(s))})
+        if not ids:
+            return {}
+        result = self._conn.execute(
+            text(
+                "SELECT id, metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
+                "WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"ids": ids},
+        )
+        allowed: dict[str, set[str]] = {}
+        for row in result.fetchall():
+            hashes = {h for h in row.allowed if isinstance(h, str)} if isinstance(row.allowed, list) else set()
+            if hashes:
+                allowed[str(row.id)] = hashes
+        return allowed
+
+    def review_injection(self, source_id: str, content_hash: str, allow: bool, cap: int) -> Optional[list[str]]:
+        """Add a text hash to the source's owner allowlist, or take it out.
+
+        The list is ``metadata.injection_review.allowed``, read under a row
+        lock so two reviews at once both land. Not scoped by owner: the route
+        checked the caller may edit the source.
+
+        Args:
+            source_id: The source's UUID.
+            content_hash: The sha256 hex digest of the chunk text.
+            allow: True to mark it safe, False to clear that.
+            cap: The most hashes the list may hold.
+
+        Returns:
+            The list as stored, or ``None`` when the source does not exist.
+
+        Raises:
+            ValueError: ``allow`` on a full list.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        row = self._conn.execute(
+            text(
+                "SELECT metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
+                "WHERE id = CAST(:id AS uuid) FOR UPDATE"
+            ),
+            {"id": str(source_id)},
+        ).fetchone()
+        if row is None:
+            return None
+        allowed = [h for h in row.allowed if isinstance(h, str)] if isinstance(row.allowed, list) else []
+        if allow and content_hash not in allowed:
+            if len(allowed) >= cap:
+                raise ValueError(f"At most {cap} chunks of a source can be marked safe")
+            allowed.append(content_hash)
+        elif not allow:
+            allowed = [h for h in allowed if h != content_hash]
+        self._conn.execute(
+            text(
+                "UPDATE sources SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{injection_review}', "
+                "jsonb_build_object('allowed', CAST(:allowed AS jsonb))) "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": str(source_id), "allowed": json.dumps(allowed)},
+        )
+        return allowed
+
     def find_by_name(self, user_id: str, name: str) -> Optional[dict]:
         """Return a user's source whose name matches ``name`` (case-insensitive).
 

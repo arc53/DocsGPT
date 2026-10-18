@@ -18,6 +18,7 @@ import {
   Radar,
   ScrollText,
   Settings2,
+  Shield,
   ShieldCheck,
   SlidersHorizontal,
   SquarePen,
@@ -296,6 +297,12 @@ export const ADMIN_SECTION: Section = {
           labelKey: 'admin.tabs.connectors',
           icon: Plug,
           feature: 'connectors',
+        },
+        {
+          key: 'guardrails',
+          path: '/admin/guardrails',
+          labelKey: 'admin.tabs.guardrails',
+          icon: Shield,
         },
         {
           key: 'defaults',

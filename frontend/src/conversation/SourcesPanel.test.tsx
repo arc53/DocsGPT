@@ -122,6 +122,42 @@ describe('SourcesPanel', () => {
     expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(2);
   });
 
+  it('marks a withheld source and never shows its placeholder text', async () => {
+    await act(async () => {
+      root.render(
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <SourcesPanel
+            sources={[
+              {
+                title: 'Planted.md',
+                text: '[Withheld by a content policy.]...',
+                withheld: 'policy',
+                relevance: 0.9,
+              },
+              sources[0],
+            ]}
+            onOpenIndexChange={vi.fn()}
+          />
+        </SidePanel>,
+      );
+    });
+    const tiles = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-slot="panel-body"] [data-slot="card"]',
+      ),
+    );
+    const badge = tiles[0].querySelector<HTMLElement>('[data-slot="badge"]')!;
+    expect(badge.textContent).toBe('conversation.sources.withheld');
+    expect(badge.dataset.variant).toBe('warning');
+    expect(tiles[0].textContent).toContain('conversation.sources.withheldNote');
+    expect(tiles[0].textContent).not.toContain('Withheld by a content policy');
+    // Its relevance no longer matters: it was left out.
+    expect(tiles[0].textContent).not.toContain(
+      'conversation.sources.relevance',
+    );
+    expect(tiles[1].querySelector('[data-slot="badge"]')).toBeNull();
+  });
+
   it('labels a scored source by its relevance band, and others not at all', async () => {
     await act(async () => {
       root.render(
