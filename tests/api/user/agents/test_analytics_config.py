@@ -48,6 +48,8 @@ class TestAnalyticsConfigValidation:
             ({"tags": [_tag(1, id="Tag-1")]}, "8 to 32 lowercase"),
             ({"tags": [_tag(1, id="abc")]}, "8 to 32 lowercase"),
             ({"tags": [_tag(1), _tag(1, name="Other")]}, "duplicate tag id"),
+            ({"tags": [_tag(1), _tag(2, name="tag 1")]}, "duplicate tag 'tag 1'"),
+            ({"topics": {"items": [{"name": "n" * 61}]}}, "60 characters"),
             ({"tags": [_tag(1, name="n" * 61)]}, "60 characters"),
             ({"tags": [_tag(1, description="d" * 301)]}, "300 characters"),
             ({"tags": [_tag(1, description="  ")]}, "needs a description"),

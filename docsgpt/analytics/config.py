@@ -144,11 +144,14 @@ class AnalyticsConfig(BaseModel):
         _, max_tags = _limits()
         if len(value) > max_tags:
             raise ValueError(f"at most {max_tags} tags")
-        seen = set()
+        ids, names = set(), set()
         for tag in value:
-            if tag.id in seen:
+            if tag.id in ids:
                 raise ValueError(f"duplicate tag id '{tag.id}'")
-            seen.add(tag.id)
+            if tag.name.lower() in names:
+                raise ValueError(f"duplicate tag '{tag.name}'")
+            ids.add(tag.id)
+            names.add(tag.name.lower())
         return value
 
     @classmethod
