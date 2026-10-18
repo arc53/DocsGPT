@@ -224,6 +224,38 @@ def _unique_upload_path(path: str, taken: Container[str]) -> str:
     return f"{stem}_{count}{ext}"
 
 
+def _unique_file_path(path: str, taken: set[str]) -> str:
+    """Like ``_unique_upload_path``, for files that must also fit a folder tree.
+
+    A file cannot share a place with a folder, so ``docs`` clashes with an
+    already staged ``docs/a.md`` and ``docs/a.md`` clashes with a staged file
+    ``docs``. The part that clashes gets the ``_2`` (``_3``, ...) suffix, so
+    ``docs/a.md`` next to a file ``docs`` is stored as ``docs_2/a.md``. Without
+    this the local storage fails part way through writing the files.
+    """
+    parts = path.split("/")
+
+    def clashes(candidate: str, is_leaf: bool) -> bool:
+        if candidate in taken:
+            return True
+        return is_leaf and any(t.startswith(f"{candidate}/") for t in taken)
+
+    for depth in range(1, len(parts) + 1):
+        is_leaf = depth == len(parts)
+        parent = parts[: depth - 1]
+        if not clashes("/".join(parts[:depth]), is_leaf):
+            continue
+        stem, ext = posixpath.splitext(parts[depth - 1]) if is_leaf else (
+            parts[depth - 1],
+            "",
+        )
+        count = 2
+        while clashes("/".join([*parent, f"{stem}_{count}{ext}"]), is_leaf):
+            count += 1
+        parts[depth - 1] = f"{stem}_{count}{ext}"
+    return "/".join(parts)
+
+
 def _source_archive_limits() -> ZipExtractionLimits:
     """Return configured limits shared by all archives in one upload."""
     return ZipExtractionLimits(
@@ -408,7 +440,7 @@ class UploadFile(Resource):
                                 _enforce_audio_path_size_limit(
                                     local_path, extracted_file
                                 )
-                                rel_path = _unique_upload_path(
+                                rel_path = _unique_file_path(
                                     posixpath.join(
                                         archive_dir,
                                         os.path.relpath(
@@ -422,7 +454,7 @@ class UploadFile(Resource):
                                     (local_path, f"{base_path}/{rel_path}")
                                 )
                     else:
-                        rel_path = _unique_upload_path(safe_path, claimed_paths)
+                        rel_path = _unique_file_path(safe_path, claimed_paths)
                         claimed_paths.add(rel_path)
                         if original_filename:
                             file_name_map[rel_path] = original_filename

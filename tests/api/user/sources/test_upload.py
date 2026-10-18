@@ -123,6 +123,34 @@ class TestUniqueUploadPath:
         assert _unique_upload_path("docs", {"docs"}) == "docs_2"
 
 
+class TestUniqueFilePath:
+    def test_free_path_is_kept(self):
+        from docsgpt.api.user.sources.upload import _unique_file_path
+
+        assert _unique_file_path("docs/a.md", {"docs/b.md"}) == "docs/a.md"
+        assert _unique_file_path("docs/a.md", {"docs_2"}) == "docs/a.md"
+
+    def test_same_path_gets_next_free_number(self):
+        from docsgpt.api.user.sources.upload import _unique_file_path
+
+        taken = {"docs/a.md", "docs/a_2.md"}
+        assert _unique_file_path("docs/a.md", taken) == "docs/a_3.md"
+
+    def test_folder_part_is_renamed_when_a_file_has_its_name(self):
+        from docsgpt.api.user.sources.upload import _unique_file_path
+
+        assert _unique_file_path("docs/a.md", {"docs"}) == "docs_2/a.md"
+        assert (
+            _unique_file_path("docs/a.md", {"docs", "docs_2"}) == "docs_3/a.md"
+        )
+
+    def test_file_is_renamed_when_a_folder_has_its_name(self):
+        from docsgpt.api.user.sources.upload import _unique_file_path
+
+        assert _unique_file_path("docs", {"docs/a.md"}) == "docs_2"
+        assert _unique_file_path("docs", {"docs/a.md", "docs_2"}) == "docs_3"
+
+
 class TestUploadFile:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.upload import UploadFile
