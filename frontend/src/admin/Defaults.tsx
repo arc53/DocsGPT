@@ -132,10 +132,23 @@ export default function Defaults() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const settle = useCallback((part: Partial<Values>) => {
-    setSaved((current) => (current ? { ...current, ...part } : current));
-    setValue((current) => (current ? { ...current, ...part } : current));
-  }, []);
+  // A section the admin edited while its save was pending keeps the edit;
+  // only the saved baseline moves to the response.
+  const settle = useCallback(
+    <K extends keyof Values>(
+      key: K,
+      next: Values[K],
+      unchanged: (current: Values[K]) => boolean,
+    ) => {
+      setSaved((current) => (current ? { ...current, [key]: next } : current));
+      setValue((current) =>
+        current && unchanged(current[key])
+          ? { ...current, [key]: next }
+          : current,
+      );
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -195,20 +208,28 @@ export default function Defaults() {
           return;
         }
         setSources(body);
-        settle({ retrieval: configToOptions({ retrieval: body.retrieval }) });
+        const sent = JSON.stringify(retrieval);
+        settle(
+          'retrieval',
+          configToOptions({ retrieval: body.retrieval }),
+          (current) =>
+            JSON.stringify(optionsToConfig(current).retrieval ?? {}) === sent,
+        );
       }
       if (agentsChanged) {
-        const res = await adminService.setAgentDefaults(
-          value.agentGuardrails,
-          token,
-        );
+        const submitted = value.agentGuardrails;
+        const res = await adminService.setAgentDefaults(submitted, token);
         const body = await res.json().catch(() => ({ success: false }));
         if (!body?.success) {
           setSaveError(body?.message || failure);
           return;
         }
         setAgents(body);
-        settle({ agentGuardrails: guardrailsOf(body) });
+        settle(
+          'agentGuardrails',
+          guardrailsOf(body),
+          (current) => JSON.stringify(current) === JSON.stringify(submitted),
+        );
       }
     } catch {
       setSaveError(failure);
