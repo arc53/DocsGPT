@@ -1430,8 +1430,8 @@ class ConversationsRepository:
         )
         return result.rowcount or 0
 
-    def set_passthrough(self, conversation_id: str, passthrough: dict) -> bool:
-        """Store the latest turn's ``passthrough`` values on a conversation."""
+    def set_passthrough(self, conversation_id: str, passthrough: dict | None) -> bool:
+        """Store the latest turn's ``passthrough`` values on a conversation; ``None`` clears them."""
         if not looks_like_uuid(conversation_id):
             return False
         result = self._conn.execute(
@@ -1439,7 +1439,7 @@ class ConversationsRepository:
                 "UPDATE conversations SET passthrough = CAST(:passthrough AS jsonb) "
                 "WHERE id = CAST(:conv_id AS uuid)"
             ),
-            {"conv_id": conversation_id, "passthrough": json.dumps(passthrough)},
+            {"conv_id": conversation_id, "passthrough": json.dumps(passthrough) if passthrough else None},
         )
         return result.rowcount > 0
 

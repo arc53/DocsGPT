@@ -31,6 +31,7 @@ from docsgpt.api.pat.tokens import (
 )
 from docsgpt.api.user.authz import admin_required
 from docsgpt.core.settings import settings
+from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.personal_access_tokens import (
     PersonalAccessTokensRepository,
@@ -304,6 +305,11 @@ class PersonalAccessTokenTool(Resource):
         parsed = urlparse(base_url) if isinstance(base_url, str) else None
         if not parsed or parsed.scheme not in ("http", "https") or not parsed.netloc:
             return _error("base_url must be an http(s) URL", 400)
+        try:
+            # Agent tools can't reach private addresses, so a tool for one would never work.
+            validate_user_base_url(base_url)
+        except UnsafeUserUrlError:
+            return _error("Agents can't reach this address: it must be public, not localhost or a private IP", 400)
 
         with db_readonly() as conn:
             row = PersonalAccessTokensRepository(conn).find_active_by_hash(hash_token(token))

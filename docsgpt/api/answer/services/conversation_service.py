@@ -290,7 +290,7 @@ class ConversationService:
         ``position >= index`` are truncated so the new placeholder
         lands at ``position = index`` rather than appending.
         ``passthrough`` (already bounded) replaces the conversation's
-        stored values when given.
+        stored values; a turn without any clears them.
 
         Returns ``{"conversation_id", "message_id", "request_id"}``.
         """
@@ -324,8 +324,8 @@ class ConversationService:
                 # than appending at the end of the conversation.
                 if isinstance(index, int) and index >= 0:
                     repo.truncate_after(conv_pg_id, keep_up_to=index - 1)
-                if passthrough:
-                    repo.set_passthrough(conv_pg_id, passthrough)
+                # The latest turn's values: a turn without any clears them.
+                repo.set_passthrough(conv_pg_id, passthrough or None)
             else:
                 fallback_name = (question[:50] if question else "New Conversation")
                 conv = repo.create(

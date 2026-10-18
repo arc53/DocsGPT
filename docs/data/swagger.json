@@ -608,6 +608,18 @@
           "description": "API Key ID",
           "type": "string"
         },
+        "conversation_id": {
+          "description": "Only rows of this conversation (chat turns and scheduled runs)",
+          "type": "string"
+        },
+        "date_from": {
+          "description": "Rows at or after this ISO 8601 moment",
+          "type": "string"
+        },
+        "date_to": {
+          "description": "Rows before this ISO 8601 moment",
+          "type": "string"
+        },
         "event_type": {
           "description": "Filter by event source",
           "enum": [
@@ -620,6 +632,15 @@
             "graph"
           ],
           "example": "chat",
+          "type": "string"
+        },
+        "feedback": {
+          "description": "Only chat turns rated this way",
+          "enum": [
+            "like",
+            "dislike"
+          ],
+          "example": "like",
           "type": "string"
         },
         "level": {
@@ -641,6 +662,10 @@
           "default": 10,
           "description": "Number of logs per page",
           "type": "integer"
+        },
+        "passthrough": {
+          "description": "Only chat turns whose passthrough values match every given key, compared as text, e.g. {\"user_id\": \"42\"}",
+          "type": "object"
         },
         "search": {
           "description": "Substring filter on the summary",
@@ -6814,6 +6839,30 @@
           }
         },
         "summary": "Issue a new secret for a token and reset its expiry",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/user/tokens/{token_id}/tool": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "The body carries the token's plaintext ``token``, which only the caller\nholds (it was just shown to them), and ``base_url``, where the API is\nreached. The tool gets the read endpoints the token may call, with the\ntoken sealed as their ``Authorization`` header.",
+        "operationId": "post_personal_access_token_tool",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Create an API tool that lets agents read this account with the token",
         "tags": [
           "tokens"
         ],

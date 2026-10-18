@@ -2736,8 +2736,9 @@ class StreamProcessor:
             workflow_owner = self.agent_config.get("workflow_owner")
             if workflow_owner:
                 agent_kwargs["workflow_owner"] = workflow_owner
-            if isinstance(self.data.get("passthrough"), dict):
-                agent_kwargs["passthrough"] = self.data["passthrough"]
+            # The bounded values: the run's state is stored with the run.
+            if self.passthrough:
+                agent_kwargs["passthrough"] = self.passthrough
 
         agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 

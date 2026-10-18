@@ -99,6 +99,23 @@ class TestTurnPersistence:
         ).scalar()
         assert stored == {"user_id": "emp-42", "page": "billing"}
 
+    def test_a_later_turn_without_values_clears_them(self, pg_conn, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from tests.api.answer.test_base_routes import _patch_db_session
+
+        with flask_app.app_context(), _patch_db_session(pg_conn):
+            _run(BaseAnswerResource(), passthrough={"user_id": "emp-42"})
+            conversation_id = pg_conn.execute(
+                sql_text("SELECT data->>'conversation_id' FROM user_logs WHERE user_id = 'owner-1'")
+            ).scalar()
+            _run(BaseAnswerResource(), conversation_id=conversation_id)
+
+        stored = pg_conn.execute(
+            sql_text("SELECT passthrough FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": conversation_id},
+        ).scalar()
+        assert stored is None
+
     def test_a_turn_without_values_logs_none(self, pg_conn, flask_app):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
         from tests.api.answer.test_base_routes import _patch_db_session

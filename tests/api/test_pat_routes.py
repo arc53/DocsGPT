@@ -431,6 +431,23 @@ class TestBuildActions:
 
 
 class TestCreateAgentTool:
+    @pytest.fixture(autouse=True)
+    def _public_base_url(self, monkeypatch):
+        """No DNS in tests: every base URL counts as public unless a test says otherwise."""
+        monkeypatch.setattr(pat_routes, "validate_user_base_url", lambda url: None)
+
+    def test_a_private_base_url_is_refused(self, client, db, monkeypatch):
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        def _refuse(url):
+            raise UnsafeUserUrlError("private")
+
+        monkeypatch.setattr(pat_routes, "validate_user_base_url", _refuse)
+        token, token_id = _new_token(client, scopes=["analytics:read"])
+        response = _make_tool(client, token, token_id, base_url="http://localhost:7091")
+        assert response.status_code == 400
+        assert db.execute(text("SELECT count(*) FROM user_tools")).scalar() == 0
+
     def test_creates_an_api_tool_with_the_token_sealed(self, client, db):
         token, token_id = _new_token(client, name="analyst", scopes=["analytics:read", "conversations:read"])
 
