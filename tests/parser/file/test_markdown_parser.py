@@ -62,25 +62,35 @@ def test_markdown_token_chunking_via_max_tokens():
         assert len(chunk) <= 4
 
 
-def test_markdown_html_cleanup_keeps_comparisons():
+def test_markdown_html_cleanup_keeps_comparisons() -> None:
     tups = MarkdownParser().markdown_to_tups("# Compare\nIf x < 10 and y > 5 then stop.\n")
     assert tups == [("Compare", "If x < 10 and y > 5 then stop.\n\n")]
 
 
-def test_markdown_html_cleanup_keeps_generics():
+def test_markdown_html_cleanup_keeps_generics() -> None:
     content = "# Types\nUse List<String>, Map<K, V> or Optional<T>; List<Object> and Array<Map> too.\n"
     text = MarkdownParser().markdown_to_tups(content)[0][1]
     for kept in ("List<String>", "Map<K, V>", "Optional<T>", "List<Object>", "Array<Map>"):
         assert kept in text
 
 
-def test_markdown_html_cleanup_removes_real_tags():
+def test_markdown_html_cleanup_removes_real_tags() -> None:
     content = '# Note\n<div class="note">Keep <b>bold</b> and line<br/>break <img src="a.png" alt="x"></div>\n'
     text = MarkdownParser().markdown_to_tups(content)[0][1]
     assert text == "Keep bold and linebreak \n\n"
 
 
-def test_markdown_html_cleanup_removes_comments():
+def test_markdown_html_cleanup_removes_comments() -> None:
     content = "# C\nbefore <!-- a\nmulti-line comment with <b>tags</b> --> after\n"
     text = MarkdownParser().markdown_to_tups(content)[0][1]
     assert text == "before  after\n\n"
+
+
+def test_markdown_html_cleanup_removes_inline_svg() -> None:
+    content = (
+        '# Icon\nIf x < 10 use List<int> <svg viewBox="0 0 24 24">\n'
+        '<g><path d="M0 0h24v24H0z"/><circle cx="12" cy="12" r="4"/></g>\n'
+        "</svg> and pass <path> here.\n"
+    )
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert text == "If x < 10 use List<int> \n\n and pass <path> here.\n\n"

@@ -18,7 +18,7 @@ _HTML_TAG_NAMES = """
     fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i
     iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object
     ol optgroup option output p param picture pre progress q rp rt ruby s samp script search
-    section select slot small source span strike strong style sub summary sup table tbody td
+    section select slot small source span strike strong style sub summary sup svg table tbody td
     template textarea tfoot th thead time title tr track tt u ul var video wbr
 """.split()
 # Lowercase only: markdown authors write HTML in lowercase, while generics such
@@ -27,6 +27,17 @@ _HTML_TAG_OR_COMMENT = re.compile(
     r"<!--.*?-->|</?(?:%s)(?=[\s/>])[^<>]*>" % "|".join(_HTML_TAG_NAMES),
     re.DOTALL,
 )
+# Everything tag-shaped inside an inline <svg> element is markup (path, g, circle,
+# rect, use, ...), so strip it there instead of listing names such as "path" or
+# "text" globally, where they would also eat placeholders like "<path>" in prose.
+_SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL)
+_ANY_TAG = re.compile(r"<[^<>]*>")
+
+
+def _strip_html(text: str) -> str:
+    """Remove inline SVG markup, known HTML tags and HTML comments from text."""
+    text = _SVG_ELEMENT.sub(lambda match: _ANY_TAG.sub("", match.group(0)), text)
+    return _HTML_TAG_OR_COMMENT.sub("", text)
 
 
 class MarkdownParser(BaseParser):
@@ -94,7 +105,7 @@ class MarkdownParser(BaseParser):
         if current_header is not None:
             # pass linting, assert keys are defined
             markdown_tups = [
-                (re.sub(r"#", "", cast(str, key)).strip(), _HTML_TAG_OR_COMMENT.sub("", value))
+                (re.sub(r"#", "", cast(str, key)).strip(), _strip_html(value))
                 for key, value in markdown_tups
             ]
         else:
