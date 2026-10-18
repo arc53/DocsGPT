@@ -614,6 +614,100 @@ class TestUploadFile:
         }
         assert kwargs["file_name_map"] == {"docs/inside.txt": "inside.txt"}
 
+    def _post_files_to_disk(self, app, tmp_path, files):
+        """Upload ``files`` through a real ``LocalStorage`` rooted in ``tmp_path``.
+
+        Returns (response, stored) where ``stored`` maps each path under the
+        source directory to the bytes on disk, so a file that clashed with a
+        folder and was dropped or overwritten shows up as missing.
+        """
+        from docsgpt.api.user.sources.upload import UploadFile
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.local import LocalStorage
+
+        with patch(
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=LocalStorage(base_dir=str(tmp_path)),
+        ), patch(
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
+            return_value=MagicMock(id="folder-task"),
+        ), app.test_request_context(
+            "/api/upload", method="POST",
+            data={"user": "alice", "name": "job", "file": files},
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        source_dir = tmp_path / settings.UPLOAD_FOLDER / "alice" / "job"
+        stored = {
+            path.relative_to(source_dir).as_posix(): path.read_bytes()
+            for path in source_dir.rglob("*")
+            if path.is_file()
+        }
+        return response, stored
+
+    @pytest.mark.parametrize("folder_first", [True, False])
+    def test_file_and_folder_with_same_name_both_stored(
+        self, app, tmp_path, folder_first
+    ):
+        files = [
+            (io.BytesIO(b"in folder"), "docs/a.md"),
+            (io.BytesIO(b"plain file"), "docs"),
+        ]
+        if not folder_first:
+            files.reverse()
+
+        response, stored = self._post_files_to_disk(app, tmp_path, files)
+
+        assert response.status_code == 200
+        assert sorted(stored.values()) == [b"in folder", b"plain file"]
+
+    @pytest.mark.parametrize("zip_first", [True, False])
+    def test_loose_file_and_zip_member_with_same_path_both_stored(
+        self, app, tmp_path, zip_first
+    ):
+        import zipfile
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("inside.txt", "zipped")
+        archive.seek(0)
+        files = [
+            (io.BytesIO(b"loose"), "docs/inside.txt"),
+            (archive, "docs/bundle.zip"),
+        ]
+        if zip_first:
+            files.reverse()
+
+        response, stored = self._post_files_to_disk(app, tmp_path, files)
+
+        assert response.status_code == 200
+        assert sorted(stored.values()) == [b"loose", b"zipped"]
+
+    @pytest.mark.parametrize("zip_first", [True, False])
+    def test_zip_member_and_file_named_like_its_folder_both_stored(
+        self, app, tmp_path, zip_first
+    ):
+        import zipfile
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("inside.txt", "zipped")
+        archive.seek(0)
+        files = [
+            (io.BytesIO(b"plain file"), "docs"),
+            (archive, "docs/bundle.zip"),
+        ]
+        if zip_first:
+            files.reverse()
+
+        response, stored = self._post_files_to_disk(app, tmp_path, files)
+
+        assert response.status_code == 200
+        assert sorted(stored.values()) == [b"plain file", b"zipped"]
+
     def test_audio_too_large_returns_413(self, app):
         from docsgpt.api.user.sources.upload import UploadFile
         from docsgpt.stt.upload_limits import AudioFileTooLargeError
