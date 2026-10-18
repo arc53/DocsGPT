@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { baseURL } from '../api/client';
@@ -14,6 +15,11 @@ interface AccessTokenCreatedModalProps {
   name: string;
   /** The secret replaces an existing token's secret rather than belonging to a new token. */
   regenerated?: boolean;
+  /**
+   * Creates an API tool that lets agents read the account with this token.
+   * Unset hides the option (a token that can read nothing agents use).
+   */
+  onCreateTool?: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -21,9 +27,30 @@ export default function AccessTokenCreatedModal({
   token,
   name,
   regenerated = false,
+  onCreateTool,
   onClose,
 }: AccessTokenCreatedModalProps) {
   const { t } = useTranslation();
+  const [toolState, setToolState] = useState<
+    'idle' | 'creating' | 'created' | 'failed'
+  >('idle');
+  const [toolError, setToolError] = useState('');
+  const createTool = async () => {
+    if (!onCreateTool) return;
+    setToolState('creating');
+    try {
+      await onCreateTool();
+      setToolState('created');
+    } catch (err) {
+      setToolError(err instanceof Error ? err.message : '');
+      setToolState('failed');
+    }
+  };
+  const close = () => {
+    setToolState('idle');
+    setToolError('');
+    onClose();
+  };
   const copy = regenerated
     ? 'settings.accessTokens.regenerate.done'
     : 'settings.accessTokens.created';
@@ -33,7 +60,7 @@ export default function AccessTokenCreatedModal({
   return (
     <Modal
       open={token !== null}
-      onOpenChange={(o) => !o && onClose()}
+      onOpenChange={(o) => !o && close()}
       title={t(`${copy}.title`)}
       description={
         <span className="break-words">
@@ -48,7 +75,7 @@ export default function AccessTokenCreatedModal({
       // dismiss it; closing takes the explicit button (or Esc).
       isPerformingTask
       footer={
-        <Button type="button" onClick={onClose} shape="pill" size="lg">
+        <Button type="button" onClick={close} shape="pill" size="lg">
           {t('settings.accessTokens.created.done')}
         </Button>
       }
@@ -86,6 +113,46 @@ export default function AccessTokenCreatedModal({
             <CopyField key={index} value={snippet} />
           ))}
         </div>
+
+        {onCreateTool && (
+          <div className="flex flex-col gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.accessTokens.created.toolTitle')}
+            />
+            <p className="text-muted-foreground text-xs">
+              {t('settings.accessTokens.created.toolHint')}
+            </p>
+            {toolState === 'created' ? (
+              <Alert variant="success">
+                <AlertDescription>
+                  <p>{t('settings.accessTokens.created.toolCreated')}</p>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                shape="pill"
+                className="w-fit"
+                disabled={toolState === 'creating'}
+                onClick={createTool}
+              >
+                {t('settings.accessTokens.created.createTool')}
+              </Button>
+            )}
+            {toolState === 'failed' && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  <p>
+                    {toolError || t('settings.accessTokens.created.toolFailed')}
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   );

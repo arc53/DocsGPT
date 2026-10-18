@@ -1556,7 +1556,12 @@
         "tokenLabel": "Tu token",
         "usageTitle": "Cómo usarlo",
         "usageHint": "Expórtalo como variable de entorno y envíalo como token Bearer en la cabecera Authorization.",
-        "done": "Listo"
+        "done": "Listo",
+        "toolTitle": "Usarlo en un agente",
+        "toolHint": "Crea una herramienta API con los endpoints que este token puede leer (agentes, registros, valoraciones, conversaciones), con el token ya incluido. Añádela a un agente para que revise esta cuenta.",
+        "createTool": "Crear herramienta para agentes",
+        "toolCreated": "Herramienta creada. Está en Ajustes › Herramientas; añádela a un agente.",
+        "toolFailed": "No se pudo crear la herramienta."
       },
       "regenerate": {
         "action": "Regenerar",

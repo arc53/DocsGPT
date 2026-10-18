@@ -1511,7 +1511,12 @@
         "tokenLabel": "您的權杖",
         "usageTitle": "使用方式",
         "usageHint": "將其匯出為環境變數，然後在 Authorization 標頭中作為 Bearer 權杖傳送。",
-        "done": "完成"
+        "done": "完成",
+        "toolTitle": "在智慧體中使用",
+        "toolHint": "建立一個 API 工具，包含此權杖可讀取的端點（智慧體、日誌、回饋、對話），並已填入權杖。將該工具加入智慧體，即可讓它分析此帳戶。",
+        "createTool": "為智慧體建立工具",
+        "toolCreated": "工具已建立。可在 設定 › 工具 中找到，並加入智慧體。",
+        "toolFailed": "無法建立工具。"
       },
       "regenerate": {
         "action": "重新產生",

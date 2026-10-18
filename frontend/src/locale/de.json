@@ -1513,7 +1513,12 @@
         "tokenLabel": "Dein Token",
         "usageTitle": "So verwendest du es",
         "usageHint": "Exportiere es als Umgebungsvariable und sende es als Bearer-Token im Authorization-Header.",
-        "done": "Fertig"
+        "done": "Fertig",
+        "toolTitle": "In einem Agenten verwenden",
+        "toolHint": "Erstellt ein API-Tool mit den Endpunkten, die dieses Token lesen kann (Agenten, Logs, Feedback, Unterhaltungen), mit eingetragenem Token. Füge das Tool einem Agenten hinzu, damit er dieses Konto auswerten kann.",
+        "createTool": "Tool für Agenten erstellen",
+        "toolCreated": "Tool erstellt. Du findest es unter Einstellungen › Tools und kannst es einem Agenten hinzufügen.",
+        "toolFailed": "Das Tool konnte nicht erstellt werden."
       },
       "regenerate": {
         "action": "Neu generieren",

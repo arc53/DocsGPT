@@ -1110,8 +1110,9 @@ class GetUserLogs(Resource):
                 jsonify({"success": False, "message": "Invalid option"}), 400
             )
         api_key_id = data.get("api_key_id")
-        level = data.get("level")
-        event_type = data.get("event_type")
+        # An empty value (a tool that fills every field) means no filter.
+        level = data.get("level") or None
+        event_type = data.get("event_type") or None
         search = data.get("search")
         if level not in (None, "info", "error", "warning") or event_type not in (
             None,
