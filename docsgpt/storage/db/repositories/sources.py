@@ -110,6 +110,10 @@ def _ingest_status_case():
     ).label("ingest_status")
 
 
+class AllowlistFull(ValueError):
+    """A source's prompt-injection allowlist already holds as many chunks as it may."""
+
+
 class SourcesRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -285,7 +289,7 @@ class SourcesRepository:
             The list as stored, or ``None`` when the source does not exist.
 
         Raises:
-            ValueError: ``allow`` on a full list.
+            AllowlistFull: ``allow`` on a full list.
         """
         if not looks_like_uuid(str(source_id)):
             return None
@@ -301,7 +305,7 @@ class SourcesRepository:
         allowed = [h for h in row.allowed if isinstance(h, str)] if isinstance(row.allowed, list) else []
         if allow and content_hash not in allowed:
             if len(allowed) >= cap:
-                raise ValueError(f"At most {cap} chunks of a source can be marked safe")
+                raise AllowlistFull(f"At most {cap} chunks of a source can be marked safe")
             allowed.append(content_hash)
         elif not allow:
             allowed = [h for h in allowed if h != content_hash]
