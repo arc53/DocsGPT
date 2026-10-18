@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from docsgpt.analytics.config import AnalyticsConfig
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,9 @@ class AgentConfig(BaseModel):
     # public-link user, and schedules either of them set. Any other such
     # write is refused for them. ``tool_id:action``.
     api_write_allowlist: List[str] = []
+    # Conversation analytics (``docsgpt.analytics``): the owner's labelling
+    # choices, not policy, so ``_policy_changed`` leaves them out.
+    analytics: AnalyticsConfig = AnalyticsConfig()
 
     @field_validator("api_write_allowlist")
     @classmethod
@@ -258,4 +262,7 @@ class AgentConfig(BaseModel):
             return cls.model_validate(raw)
         except Exception:
             # A bad allowlist falls back to none: the safe side.
-            return cls(guardrails=GuardrailsConfig.parse(raw.get("guardrails")))
+            return cls(
+                guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
+                analytics=AnalyticsConfig.parse(raw.get("analytics")),
+            )

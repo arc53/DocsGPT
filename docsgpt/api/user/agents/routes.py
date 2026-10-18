@@ -301,13 +301,17 @@ def _ref_attachable(conn, resource_type: str, resource_id: str, caller: str) -> 
 
 
 def _policy_changed(existing: dict, update_fields: dict) -> bool:
-    """True when ``update_fields`` changes any guardrail or quota value."""
+    """True when ``update_fields`` changes any guardrail or quota value.
+
+    ``config.analytics`` (topics, tags, the digest) is the owner's labelling
+    choice, not policy, so it is left out of the comparison.
+    """
     for key in POLICY_FIELDS:
         if key not in update_fields:
             continue
         new, old = update_fields[key], existing.get(key)
         if key == "config":
-            if (new or {}) != (old or {}):
+            if _without_analytics(new) != _without_analytics(old):
                 return True
         elif key.startswith("limited_"):
             if bool(new) != bool(old):
@@ -315,6 +319,11 @@ def _policy_changed(existing: dict, update_fields: dict) -> bool:
         elif int(new or 0) != int(old or 0):
             return True
     return False
+
+
+def _without_analytics(config) -> dict:
+    """``config`` without its ``analytics`` key; ``{}`` when unset."""
+    return {key: value for key, value in (config or {}).items() if key != "analytics"}
 
 
 def _reject(message: str, user: str, field: str = "-"):
