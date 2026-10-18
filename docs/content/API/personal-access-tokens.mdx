@@ -20,6 +20,7 @@ Every token is limited in three ways:
 2. Choose **Create token**, give it a name, and select the scopes it needs.
 3. Optionally restrict it to specific resources and pick an expiry.
 4. Copy the token. It starts with `dgpt_pat_` and is shown **once**. DocsGPT stores only a hash of it, so a lost token cannot be recovered. Revoke it and create a new one.
+5. Optionally, select **Create tool for agents**. It appears when the token has an `agents`, `analytics` or `conversations` scope, and adds an API tool that lets your agents read this account with the token. See [Let an agent review the logs](/Using/analytics-and-logs#let-an-agent-review-the-logs).
 
 Tokens can only be created, regenerated and revoked from a signed-in session. A token cannot create, list, regenerate or revoke tokens, so a leaked token cannot mint a replacement for itself.
 
@@ -207,6 +208,7 @@ These endpoints need a signed-in session and cannot be called with a token.
 | `POST /api/user/tokens` | Create a token. Body: `name`, `scopes`, optional `resource_filter`, optional `expires_in_days` (`0` = never, when allowed). The response carries the plaintext `token` once |
 | `POST /api/user/tokens/<id>/regenerate` | New secret and new expiry for the same token. Optional body `expires_in_days`; omitted = the lifetime it was last issued with. The response carries the plaintext `token` once |
 | `DELETE /api/user/tokens/<id>` | Revoke a token |
+| `POST /api/user/tokens/<id>/tool` | Create an API tool that reads this account with the token. Body: the plaintext `token` and `base_url`, where agents reach the API. The tool gets the read endpoints the token may call (`400` when there are none) |
 
 ## Good practice
 

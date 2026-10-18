@@ -396,6 +396,9 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 | `attachments_mode` | `"auto"` (default) or `"reference"`: keep this turn's files out of the prompt for the model's tools to work on. See [Reference mode](#reference-mode). |
 | `conversation_id` | Continue a stored conversation (see [Continuing a conversation](#continuing-a-conversation)). A top-level `conversation_id` works too. |
 | `session_id` | Link requests into one conversation (see [Session headers](#session-headers)). |
+| `passthrough` | Values for the agent's `{{ passthrough.* }}` prompt variables, such as `{"user_id": "emp-42"}`. Kept with the conversation and shown on each turn in [Logs](/Using/analytics-and-logs). See [`passthrough`](/Agents/prompts#3-passthrough---request-parameters). |
+
+The standard OpenAI `user` field (your end user's id) arrives as `passthrough.user`, unless `docsgpt.passthrough` sets `user` itself.
 
 **Response** (`docsgpt.*`):
 
@@ -429,4 +432,4 @@ A fallback that takes over in the middle of a stream starts its answer over, so 
 
 ## When to Use Native Endpoints Instead
 
-Use [`/api/answer` or `/stream`](/API/agent-api) if you need `passthrough` template variables or sidebar visibility control via `visibility`. To upload a file once and refer to it by id instead of sending its bytes, use the native `/api/store_attachment`; the resulting id then works in `docsgpt.attachments`.
+Use [`/api/answer` or `/stream`](/API/agent-api) if you need sidebar visibility control via `visibility`. To upload a file once and refer to it by id instead of sending its bytes, use the native `/api/store_attachment`; the resulting id then works in `docsgpt.attachments`.
