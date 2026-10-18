@@ -212,7 +212,11 @@ class TestInjectionCheck:
     """The ``injection_model`` input control through the real client: recorded and traced in both modes."""
 
     CONFIG = {"enabled": True, "mode": "monitor_only", "controls": [
-        {"check": "injection_model", "stage": "input", "action": "flag", "settings": {"instance_default": True}}]}
+        {"check": "injection_model", "stage": "input", "action": "flag"}]}
+
+    @pytest.fixture(autouse=True)
+    def injection_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", True)
 
     def _evaluate(self):
         rec = record.DecisionRecord()

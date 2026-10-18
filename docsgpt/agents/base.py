@@ -169,6 +169,26 @@ def _unique_reasoning_items(items: List[Any]) -> List[Any]:
     return unique
 
 
+def _chunk_ref(doc: Dict) -> str:
+    """``chunk:<source_id>:<chunk_key>``, the ref a retrieved document's guardrail verdicts carry."""
+    from docsgpt.retriever.labels import chunk_key
+
+    return f"chunk:{doc.get('source_id') or ''}:{doc.get('chunk_key') or chunk_key(doc.get('text'))}"
+
+
+def _retrieval_hints(docs: List[Dict]) -> Optional[List[Dict]]:
+    """Per document, whether its own source's owner marked the text safe from injection screening."""
+    if not settings.DECISION_INJECTION_ENABLED:
+        return None
+    from docsgpt.guardrails import injection_scoring
+
+    allowed = injection_scoring.allowed_hashes(d.get("source_id") for d in docs)
+    return [
+        {"allowed": injection_scoring.content_hash(d["text"]) in allowed.get(str(d.get("source_id") or ""), ())}
+        for d in docs
+    ]
+
+
 def drop_least_relevant(docs: List[Dict]) -> List[Dict]:
     """The documents with the one the prompt budget sheds first removed, the rest in their order.
 
@@ -207,6 +227,7 @@ class BaseAgent(ABC):
     _attachments_tool_config: Optional[Dict] = None
     # A resumed turn's file listing, as the paused turn's plan made it.
     paused_attachment_listing: Optional[List[Dict]] = None
+    withheld_attachments: frozenset = frozenset()
 
     def __init__(
         self,
@@ -386,6 +407,9 @@ class BaseAgent(ABC):
         self._guardrail_engine = None
         self._guardrail_engine_built = False
         self._guardrail_cache: Dict = {}
+        # Attachment ids an attachment control withheld this turn; every plan
+        # of the turn (a fallback's re-plan included) leaves them out.
+        self.withheld_attachments = frozenset()
 
 
     # ---- Guardrails ----
@@ -928,8 +952,10 @@ class BaseAgent(ABC):
 
             if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
                 add_check_job_tool(tools_dict)
-        # The executor gates tool calls itself, so it needs this run's engine.
+        # The executor gates tool calls itself, so it needs this run's engine,
+        # and the search tools screen their hits as retrieved documents.
         self.tool_executor.guardrail_engine = self.guardrails
+        self.tool_executor.retrieval_screen = self._screen_docs
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
@@ -1073,7 +1099,11 @@ class BaseAgent(ABC):
         # matching the manifest's refs; only the caller's own (user-scoped)
         # attachments are passed and the bridge re-checks the owner.
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
-        self.tool_executor.attachments = earlier + list(self.attachments or [])
+        withheld = self.withheld_attachments
+        self.tool_executor.attachments = [
+            a for a in earlier + list(self.attachments or [])
+            if not (isinstance(a, dict) and _attachment_id(a) in withheld)
+        ]
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )
@@ -1416,11 +1446,7 @@ class BaseAgent(ABC):
         # The template placed the documents somewhere this cannot reach. Fail
         # the turn rather than send the model text a control just rejected.
         if decision.blocked:
-            raise ValueError(
-                "Retrieved sources were withheld by a content policy and this "
-                "agent's prompt embeds them directly, so the request cannot be "
-                "completed."
-            )
+            raise ValueError(self.EMBEDDED_WITHHELD_ERROR)
         logger.warning(
             "Retrieval redaction could not be applied to an embedding prompt; "
             "the sources shown to the user were scrubbed but the prompt was not"
@@ -1464,6 +1490,104 @@ class BaseAgent(ABC):
                 {**doc, "text": per_doc.text} if per_doc.redacted else doc
             )
         self.retrieved_docs = scrubbed
+
+    EMBEDDED_WITHHELD_ERROR = (
+        "Retrieved sources were withheld by a content policy and this "
+        "agent's prompt embeds them directly, so the request cannot be "
+        "completed."
+    )
+
+    def _screen_docs(self, docs: List[Dict]) -> List[Dict]:
+        """Withhold, one by one, the documents a retrieval control blocks.
+
+        Item-level checks (the injection model) score each document's text on
+        its own before anything is formatted, so ``block`` withholds that
+        document alone: its text becomes ``RETRIEVAL_WITHHELD_TEXT`` and it
+        carries ``withheld: "policy"`` for the client. It keeps its place, so
+        ``<document index>``, ``[n]`` citations and the sources list still
+        agree. Verdicts are cached per text for the run, so the token-shed loop
+        and a search tool returning the same chunk never score it twice. The
+        search tools call this on their hits (``retrieval_screen``).
+
+        Args:
+            docs: Retrieved documents.
+
+        Returns:
+            The documents, the withheld ones replaced.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.RETRIEVAL, item_level=True):
+            return docs
+        cache = self._guardrail_cache
+
+        def key(doc: Dict) -> tuple:
+            # By source too: an owner's allowance makes the text clean for that source only.
+            return (Stage.RETRIEVAL, "item", str(doc.get("source_id") or ""), doc.get("text"))
+
+        first: Dict[tuple, Dict] = {}
+        for doc in docs:
+            text = doc.get("text") if isinstance(doc, dict) and not doc.get("withheld") else None
+            if isinstance(text, str) and key(doc) not in cache:
+                first.setdefault(key(doc), doc)
+        if first:
+            todo = list(first.values())
+            decisions = engine.evaluate_items(
+                [d["text"] for d in todo], Stage.RETRIEVAL, [_chunk_ref(d) for d in todo], _retrieval_hints(todo)
+            )
+            for doc, decision in zip(todo, decisions):
+                cache[key(doc)] = decision
+        screened = []
+        for doc in docs:
+            text = doc.get("text") if isinstance(doc, dict) else None
+            decision = cache.get(key(doc)) if isinstance(text, str) else None
+            if decision is not None and decision.blocked and not doc.get("withheld"):
+                doc = {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT, "withheld": "policy"}
+            screened.append(doc)
+        return screened
+
+    def _screen_retrieved_docs(self) -> int:
+        """Screen this turn's documents (``_screen_docs``) in place; returns how many were newly withheld."""
+        docs = list(getattr(self, "retrieved_docs", None) or [])
+        if not docs:
+            return 0
+        screened = self._screen_docs(docs)
+        self.retrieved_docs = screened
+        return sum(1 for before, after in zip(docs, screened) if after is not before)
+
+    def _screen_attachments(self) -> None:
+        """Withhold, one by one, the attached files an attachment control blocks.
+
+        This turn's files are scored by their stored text; a file from an
+        earlier turn (loaded without its text) only by the score stored with
+        it. A score stored with the file (``metadata.injection``) is used
+        first, then the cache, the model and background scoring, as for
+        retrieved documents. Withheld ids land in ``withheld_attachments``.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.ATTACHMENT, item_level=True):
+            return
+        # This turn's rows first: a file sent again carries its text there.
+        rows = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        rows += [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        cache = self._guardrail_cache
+        items: Dict[str, tuple] = {}
+        for row in rows:
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            text = row.get("content") if isinstance(row.get("content"), str) else ""
+            if not text.strip() and not isinstance(metadata.get("injection"), dict):
+                continue
+            items.setdefault(_attachment_id(row), (text, {"injection": metadata.get("injection")}))
+        todo = [i for i in items if (Stage.ATTACHMENT, "item", i, items[i][0]) not in cache]
+        if todo:
+            decisions = engine.evaluate_items(
+                [items[i][0] for i in todo], Stage.ATTACHMENT, [f"attachment:{i}" for i in todo],
+                [items[i][1] for i in todo],
+            )
+            for attachment_id, decision in zip(todo, decisions):
+                cache[(Stage.ATTACHMENT, "item", attachment_id, items[attachment_id][0])] = decision
+        self.withheld_attachments = frozenset(
+            i for i, (text, _) in items.items() if cache[(Stage.ATTACHMENT, "item", i, text)].blocked
+        )
 
     def _search_tool_docs(self) -> List[Dict]:
         """Documents this run's search tools read: internal search and the graph tool.
@@ -1550,10 +1674,25 @@ class BaseAgent(ABC):
         from docsgpt.core.model_utils import get_token_limit
         from docsgpt.utils import num_tokens_from_string
 
-        # Retrieval controls run inside _build_document_block for the usual
-        # path; a prompt that embeds the documents skips that block entirely,
-        # so its scan happens here instead.
-        if getattr(self, "prompt_embeds_documents", False):
+        from docsgpt.api.answer.services.prompt_renderer import (
+            format_docs_for_prompt,
+        )
+
+        # Item-level retrieval controls screen each document first, so a
+        # withheld one is replaced before anything renders it. A prompt that
+        # embeds the documents was rendered before the agent ran: the screened
+        # documents are swapped in for the ones it holds, and a template that
+        # formats them itself cannot be patched, so the turn fails.
+        embeds = getattr(self, "prompt_embeds_documents", False)
+        before = format_docs_for_prompt(getattr(self, "retrieved_docs", None)) if embeds else None
+        if self._screen_retrieved_docs() and embeds and before:
+            if before not in system_prompt:
+                raise ValueError(self.EMBEDDED_WITHHELD_ERROR)
+            system_prompt = system_prompt.replace(before, format_docs_for_prompt(self.retrieved_docs) or "")
+        # Whole-text retrieval controls run inside _build_document_block for
+        # the usual path; a prompt that embeds the documents skips that block
+        # entirely, so its scan happens here instead.
+        if embeds:
             system_prompt = self._guard_embedded_documents(system_prompt)
 
         if self.compressed_summary:
@@ -1819,6 +1958,7 @@ class BaseAgent(ABC):
             return None
         if self.turn_capabilities is None:
             self.turn_capabilities = self._compute_turn_capabilities({})
+        self._screen_attachments()
         budget = compute_attachment_budget(
             window=context_limit,
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
@@ -1834,6 +1974,7 @@ class BaseAgent(ABC):
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
             reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
         )
         plan.skipped = skipped
         logger.info(
@@ -1879,6 +2020,7 @@ class BaseAgent(ABC):
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
             system_tokens=TokenCounter.count_message_tokens(messages),
         )
+        self._screen_attachments()
         self.attachment_plan = plan_attachments(
             current,
             self.turn_capabilities,
@@ -1886,6 +2028,7 @@ class BaseAgent(ABC):
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
             reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
         )
         self.attachment_plan.skipped = skipped
         self._current_turn_message = carrier
@@ -1904,9 +2047,11 @@ class BaseAgent(ABC):
         reads them again as their owner.
 
         Returns:
-            ``attachments`` (None when the turn has no files),
-            ``last_compression_at``, ``backup_models`` and ``decisions`` (None
-            when nothing was recorded); all JSON-safe.
+            ``attachments`` (None when the turn has no files; its ``withheld``
+            lists the ids an attachment control withheld, which the resume
+            keeps out of every tool), ``last_compression_at``,
+            ``backup_models`` and ``decisions`` (None when nothing was
+            recorded); all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -1927,6 +2072,7 @@ class BaseAgent(ABC):
                 "mode": "reference" if self.reference_attachments else None,
                 "planning": bool(self.attachment_planning),
                 "listing": listing,
+                "withheld": sorted(self.withheld_attachments),
             }
         backup_models = getattr(self.llm, "_backup_models", None)
         return {
@@ -1938,19 +2084,24 @@ class BaseAgent(ABC):
             "decisions": decision_record.snapshot(),
         }
 
-    def resume_paused_attachments(self, listing: Optional[List[Dict]]) -> None:
+    def resume_paused_attachments(self, listing: Optional[List[Dict]], withheld: Optional[List[str]] = None) -> None:
         """Take back a paused turn's files on the agent that resumes it.
 
         The saved messages already carry the files as the paused round sent
         them (inlined, natively or listed), so the handler must not merge
         them in again. The listing is what the paused turn told the client;
-        the resumed turn has no plan of its own, so it reports that one.
+        the resumed turn has no plan of its own, so it reports that one. The
+        files the paused turn withheld stay withheld: the paused tool calls
+        run before anything is screened again, and a sandbox tool must not
+        load one of them by its ``F`` ref.
 
         Args:
             listing: The paused turn's ``F`` ref listing.
+            withheld: The attachment ids the paused turn withheld.
         """
         self._attachments_merged = True
         self.paused_attachment_listing = [entry for entry in listing or [] if isinstance(entry, dict)] or None
+        self.withheld_attachments = frozenset(str(i) for i in withheld or () if i)
 
     def _truncate_history_to_fit(
         self,

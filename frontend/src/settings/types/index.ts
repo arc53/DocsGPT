@@ -2,9 +2,24 @@ import type { WorkflowProgress } from '../../activity/types';
 import { ConfigRequirements } from '../../modals/types';
 import type { Access } from '../../utils/accessUtils';
 
+/**
+ * A chunk's prompt-injection review state (`get_chunks`): the sha256 of its
+ * text (what a review is keyed by), the cached score (null before it was
+ * scored), `high` (p ≥ 0.9), `suspected` (p ≥ 0.5) or null, and whether the
+ * source's owner marked it safe.
+ */
+export type ChunkInjection = {
+  content_hash: string;
+  p: number | null;
+  level: 'high' | 'suspected' | null;
+  allowed: boolean;
+};
+
 export type ChunkType = {
   doc_id: string;
   text: string;
+  /** Null while the operator has the prompt-injection model off. */
+  injection?: ChunkInjection | null;
   /**
    * Chunk metadata as the vector store recorded it. Values are strings for
    * most backends, but numbers (`token_count`) survive the round trip on the
@@ -223,6 +238,8 @@ export type UserToolType = {
     require_approval?: boolean;
     // Read or write, set on tools that come from a connection.
     access?: 'read' | 'write';
+    // An MCP action's description score, while Admin › Guardrails warns on them.
+    injection?: { p: number; scorer: string } | null;
   }[];
 };
 

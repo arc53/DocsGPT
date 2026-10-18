@@ -156,6 +156,21 @@ class TestPausedTurnState:
     def test_a_turn_without_decisions_saves_none(self):
         assert _agent().paused_turn_state()["decisions"] is None
 
+    def test_withheld_files_are_saved_and_stay_withheld_when_the_turn_resumes(self):
+        cur, flagged = _att("contract.txt", att_id="a-cur"), _att("notes.txt", att_id="a-bad", body="x")
+        paused = _agent(attachments=[cur, flagged])
+        paused.withheld_attachments = frozenset({"a-bad"})
+        files = paused.paused_turn_state()["attachments"]
+        assert files["withheld"] == ["a-bad"]
+
+        resumed = _agent(attachments=[cur, flagged])
+        resumed.resume_paused_attachments(files["listing"], withheld=json.loads(json.dumps(files["withheld"])))
+        resumed.tool_executor.execute = Mock(return_value=None)
+        # A paused tool call runs first on resume: a sandbox bridge must not reach the withheld file.
+        resumed._execute_tool_action({}, Mock())
+        assert resumed.withheld_attachments == frozenset({"a-bad"})
+        assert [a["id"] for a in resumed.tool_executor.attachments] == ["a-cur"]
+
     def test_a_resumed_turn_saves_what_it_was_given_for_its_next_pause(self):
         listing = [{"ref": "F1", "id": "a-cur", "filename": "contract.txt", "status": "reference"}]
         agent = _agent(attachments=[_att("contract.txt", att_id="a-cur")], attachments_mode="reference")
@@ -225,6 +240,7 @@ class TestResumeRestoresTheFiles:
                 "mode": "reference",
                 "planning": True,
                 "listing": self.LISTING,
+                "withheld": ["a-old"],
             }
         )
 
@@ -239,7 +255,7 @@ class TestResumeRestoresTheFiles:
         assert kwargs["skipped_attachments"] == [{"filename": "huge.pdf", "reason": "too large"}]
         processor._get_attachments_content.assert_called_once_with(["a-cur"], OWNER)
         processor._fetch_attachment_rows.assert_called_once_with(["a-old"])
-        agent.resume_paused_attachments.assert_called_once_with(self.LISTING)
+        agent.resume_paused_attachments.assert_called_once_with(self.LISTING, withheld=["a-old"])
 
     def test_a_state_saved_before_files_were_kept_resumes_without_them(self, resume):
         kwargs, llm_kwargs, agent, processor = resume(_state())
@@ -273,7 +289,7 @@ class TestResumeRestoresTheFiles:
 
         assert kwargs["attachments"] == []
         assert kwargs["earlier_attachments"] == []
-        agent.resume_paused_attachments.assert_called_once_with(None)
+        agent.resume_paused_attachments.assert_called_once_with(None, withheld=["a-old"])
 
     def test_a_file_deleted_before_the_resume_restores_none_rather_than_shift_the_refs(self, resume):
         """F refs are positions: without F1 the current file would answer to F1."""
@@ -282,7 +298,7 @@ class TestResumeRestoresTheFiles:
         assert kwargs["attachments"] == []
         assert kwargs["earlier_attachments"] == []
         assert kwargs["attachments_mode"] == "reference"
-        agent.resume_paused_attachments.assert_called_once_with(None)
+        agent.resume_paused_attachments.assert_called_once_with(None, withheld=["a-old"])
 
 
 @pytest.mark.unit

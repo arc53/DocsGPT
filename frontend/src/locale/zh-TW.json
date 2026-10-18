@@ -588,7 +588,19 @@
       "deleteFileConsequence": "其區塊也會一併刪除。此操作無法復原。",
       "deleteDirectoryConsequence": "其中的所有內容也會一併刪除。此操作無法復原。",
       "syncConsequence": "其內容會從您的雲端儲存空間更新，可能會覆寫您對個別區塊所做的編輯。",
-      "deleteItemFailed": "無法刪除「{{name}}」。"
+      "deleteItemFailed": "無法刪除「{{name}}」。",
+      "injection": {
+        "flaggedOnly": "僅顯示已標記",
+        "high": "很可能是提示詞注入",
+        "suspected": "疑似提示詞注入",
+        "markedSafe": "已標為安全",
+        "markSafe": "標為安全",
+        "undo": "復原",
+        "flaggedNotice": "此文本塊看起來像提示詞注入（分數 {{percent}}%）。檢查檢索來源的代理會標記它，或在回答中略去它。",
+        "safeNotice": "已標為安全：使用此來源的代理會將此文本塊視為正常內容。編輯其文字會移除該標記。",
+        "reviewFailed": "無法更新此文本塊，請再試一次。",
+        "noFlagged": "此來源中沒有被標記的文本塊。文本塊會在對話首次檢索到它時評分。"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -1821,6 +1833,11 @@
       "capabilityChip": {
         "sync": "同步到知識庫",
         "tools": "為代理提供工具"
+      },
+      "injection": {
+        "flagged": "疑似提示詞注入",
+        "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
+        "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       }
     }
   },
@@ -2180,14 +2197,17 @@
         "forbidden": "此來源已被刪除，或你已無權存取。以下顯示的是隨回答儲存的摘錄。",
         "loadFailed": "無法載入這段內容。",
         "openLink": "開啟連結",
-        "openInKnowledge": "在知識庫中開啟"
+        "openInKnowledge": "在知識庫中開啟",
+        "withheld": "此來源可能含有提示詞注入，因此此代理的防護規則將其排除在回答之外。AI 沒有讀取這段內容。"
       },
       "relevance": {
         "strong": "高度相關",
         "possible": "可能相關",
         "weak": "相關性低",
         "tooltip": "相關度 {{percent}}%"
-      }
+      },
+      "withheld": "已扣下",
+      "withheldNote": "此代理的防護規則將其排除在回答之外：其中可能含有提示詞注入。"
     },
     "attachments": {
       "attach": "附件",
@@ -2660,7 +2680,8 @@
           "input": "使用者輸入",
           "retrieval": "檢索到的來源",
           "toolResult": "工具結果",
-          "output": "回答"
+          "output": "回答",
+          "attachment": "附件"
         },
         "actions": {
           "flag": "僅標記",
@@ -2670,7 +2691,13 @@
         "modes": {
           "monitorOnly": "僅監控",
           "scanAll": "全面強制執行"
-        }
+        },
+        "itemLevelHint": "封鎖只會扣下被標記的來源或檔案。",
+        "advanced": "進階",
+        "threshold": "執行門檻",
+        "thresholdHint": "分數達到此值時執行該規則的動作（0 到 1，預設 0.9）。",
+        "flagThreshold": "標記門檻",
+        "flagThresholdHint": "分數達到此值時標記並記錄該文字，但不封鎖任何內容（預設 0.5）。"
       },
       "byline": {
         "new": "設定好代理後發佈，即可與它對話。"
@@ -3002,7 +3029,11 @@
       "detail": "詳細資訊",
       "empty": "此代理尚未觸發任何防護機制。",
       "emptyForFilter": "沒有符合此篩選條件的決策。",
-      "loadError": "無法載入防護機制活動"
+      "loadError": "無法載入防護機制活動",
+      "score": "分數",
+      "openChunk": "開啟文本塊",
+      "attachedFile": "附件",
+      "chunkUnavailable": "此文本塊已不在其來源中，或您無法開啟該來源。"
     },
     "workflow": {
       "expressionRow": "運算式 {{index}}",

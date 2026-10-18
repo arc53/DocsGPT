@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     submitResult: undefined as void | Promise<unknown>,
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
+    getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
     tools: null as unknown[] | null,
     connections: [] as unknown[],
@@ -70,6 +71,7 @@ vi.mock('../api/services/userService', () => ({
       }),
     getAgentFolders: () => jsonResponse({ folders: [] }),
     getAgent: mocks.getAgent,
+    getAgentDefaults: mocks.getAgentDefaults,
     createAgent: mocks.createAgent,
     updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
@@ -278,6 +280,33 @@ describe('NewAgent form', () => {
     Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes(text),
     )!;
+
+  it('starts a new agent from the default guardrails for new agents', async () => {
+    const defaults = {
+      enabled: true,
+      mode: 'monitor_only',
+      fail_open: true,
+      timeout_ms: 2000,
+      block_message: 'No',
+      controls: [
+        {
+          check: 'injection_model',
+          stage: 'input',
+          action: 'flag',
+          enabled: true,
+          settings: { threshold: 0.9, flag_threshold: 0.5 },
+        },
+      ],
+    };
+    mocks.getAgentDefaults.mockImplementationOnce(() =>
+      jsonResponse({ success: true, guardrails: defaults }),
+    );
+    await render();
+    expect(mocks.getAgentDefaults).toHaveBeenCalled();
+    expect(mocks.guardrailsProps.mock.calls.at(-1)?.[0].value).toEqual(
+      defaults,
+    );
+  });
 
   // Decision 63 (3): every field, picker and button in the form is 42px.
   it('renders the name field as a default-size square Input', async () => {

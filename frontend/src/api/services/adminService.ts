@@ -129,6 +129,23 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, { retrieval }, token),
+  getAgentDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.AGENT_DEFAULTS, token),
+  setAgentDefaults: (
+    guardrails: Record<string, unknown>,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.ADMIN.AGENT_DEFAULTS, { guardrails }, token),
+  getGuardrails: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.GUARDRAILS, token),
+  /** Store `floor` (null for none) and/or `mcp_description_warnings`. */
+  setGuardrails: (
+    body: {
+      floor?: Record<string, unknown> | null;
+      mcp_description_warnings?: boolean;
+    },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.ADMIN.GUARDRAILS, body, token),
 };
 
 export default adminService;

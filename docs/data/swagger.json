@@ -674,6 +674,28 @@
       },
       "type": "object"
     },
+    "InjectionReviewModel": {
+      "properties": {
+        "content_hash": {
+          "description": "The chunk's `injection.content_hash` (sha256 of its text)",
+          "type": "string"
+        },
+        "decision": {
+          "description": "`allow` marks the chunk safe from prompt-injection screening; `clear` undoes it",
+          "enum": [
+            "allow",
+            "clear"
+          ],
+          "example": "allow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content_hash",
+        "decision"
+      ],
+      "type": "object"
+    },
     "LiveSpeechToTextChunkModel": {
       "properties": {
         "chunk_index": {
@@ -1815,6 +1837,34 @@
         "x-pat-denied": true
       }
     },
+    "/api/admin/defaults/agents": {
+      "get": {
+        "operationId": "get_admin_agent_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The guardrails new agents start with, and what the injection model costs on this server",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_agent_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `guardrails` object as the default for new agents; existing agents keep their own",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/admin/defaults/sources": {
       "get": {
         "operationId": "get_admin_source_defaults_resource",
@@ -1853,6 +1903,34 @@
           }
         },
         "summary": "Global remote-device command audit feed",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/guardrails": {
+      "get": {
+        "operationId": "get_admin_guardrails_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The floor every agent follows, whether MCP tool descriptions are scored, and the injection model's cost",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_guardrails_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `floor` (an agent guardrails object, or null for none) and/or `mcp_description_warnings`",
         "tags": [
           "admin"
         ],
@@ -2278,6 +2356,23 @@
         ],
         "x-pat-scopes": [
           "agents:keys"
+        ]
+      }
+    },
+    "/api/agents/defaults": {
+      "get": {
+        "description": "The guardrails a new agent starts with (set by an admin under Admin > Defaults), for prefilling the new-agent form: `{guardrails: {...}}`, the built-in defaults when none are set.",
+        "operationId": "get_agent_defaults",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "guardrails"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
         ]
       }
     },
@@ -3811,6 +3906,12 @@
             "in": "query",
             "name": "search",
             "type": "string"
+          },
+          {
+            "description": "Optional: `flagged` keeps the chunks whose cached prompt-injection score is suspected or high (marked safe ones included)",
+            "in": "query",
+            "name": "injection",
+            "type": "string"
           }
         ],
         "responses": {
@@ -4398,7 +4499,7 @@
     },
     "/api/mcp_server/save": {
       "post": {
-        "description": "Create or update MCP server with automatic tool discovery",
+        "description": "Create or update MCP server with automatic tool discovery. While Admin > Guardrails warns on tool descriptions, each discovered action is scored for prompt injection and stored with `injection: {p, scorer}`; the response's `injection` is `{flagged: [names], unscored: [names]}` (null while the warnings are off). Nothing is deactivated.",
         "operationId": "post_mcp_server_save",
         "parameters": [
           {
@@ -5612,6 +5713,42 @@
             "description": "Success"
           }
         },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/injection_review": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Mark a flagged chunk safe from prompt-injection screening for agents using this source, or undo that. Needs chunk-edit access. Keyed by the chunk text, so editing the chunk drops the mark. At most 1000 chunks per source. Returns `{success, content_hash, allowed, count}`.\nArgs:\n    source_id: The source.\n\nReturns:\n    Response: ``{\"success\", \"content_hash\", \"allowed\", \"count\"}``, a\n    400 for a bad body or a full allowlist, or the access error.",
+        "operationId": "post_injection_review",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InjectionReviewModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Add a chunk text's hash to the source's owner allowlist, or remove it",
         "tags": [
           "sources"
         ],
