@@ -876,16 +876,24 @@ _LOG_MESSAGE_ID = (
 _MAX_PASSTHROUGH_FILTERS = 8
 
 
+class _BadLogFilter(Exception):
+    """A Logs row filter with the wrong shape; ``message`` is user-facing."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 def _parse_iso_moment(value, field: str) -> Optional[datetime.datetime]:
     """An ISO 8601 moment from a filter field (UTC when it names no zone)."""
     if value in (None, ""):
         return None
     if not isinstance(value, str):
-        raise ValueError(f"{field} must be an ISO 8601 string")
+        raise _BadLogFilter(f"{field} must be an ISO 8601 string")
     try:
         moment = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        raise ValueError(f"{field} must be an ISO 8601 string")
+        raise _BadLogFilter(f"{field} must be an ISO 8601 string")
     return moment if moment.tzinfo else moment.replace(tzinfo=datetime.timezone.utc)
 
 
@@ -907,25 +915,25 @@ def _log_filters(data: dict) -> dict:
         ``feedback``, ``date_from`` and ``date_to``; each ``None`` when unset.
 
     Raises:
-        ValueError: A filter has the wrong shape; the message is user-facing.
+        _BadLogFilter: A filter has the wrong shape.
     """
     conversation_id = data.get("conversation_id") or None
     if conversation_id is not None and not looks_like_uuid(str(conversation_id)):
-        raise ValueError("conversation_id must be a UUID")
+        raise _BadLogFilter("conversation_id must be a UUID")
     feedback = data.get("feedback") or None
     if feedback not in (None, "like", "dislike"):
-        raise ValueError("feedback must be 'like' or 'dislike'")
+        raise _BadLogFilter("feedback must be 'like' or 'dislike'")
     raw = data.get("passthrough")
     passthrough = None
     if raw not in (None, {}):
         if not isinstance(raw, dict) or len(raw) > _MAX_PASSTHROUGH_FILTERS:
-            raise ValueError(
+            raise _BadLogFilter(
                 f"passthrough must be an object of at most {_MAX_PASSTHROUGH_FILTERS} keys"
             )
         passthrough = []
         for key, value in raw.items():
             if not isinstance(key, str) or not key or not isinstance(value, (str, int, float, bool)):
-                raise ValueError("passthrough filter values must be strings, numbers or booleans")
+                raise _BadLogFilter("passthrough filter values must be strings, numbers or booleans")
             passthrough.append((key, _passthrough_filter_value(value)))
     date_from = _parse_iso_moment(data.get("date_from"), "date_from")
     date_to = _parse_iso_moment(data.get("date_to"), "date_to")
@@ -1129,8 +1137,8 @@ class GetUserLogs(Resource):
             )
         try:
             filters = _log_filters(data)
-        except ValueError as err:
-            return make_response(jsonify({"success": False, "message": str(err)}), 400)
+        except _BadLogFilter as bad:
+            return make_response(jsonify({"success": False, "message": bad.message}), 400)
 
         try:
             with db_readonly() as conn:
