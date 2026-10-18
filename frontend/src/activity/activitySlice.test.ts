@@ -8,6 +8,10 @@ vi.mock('../api/services/activityService', () => ({
 import activityService from '../api/services/activityService';
 import { markConversationRead } from '../backgroundJobs/backgroundSlice';
 import {
+  removeAllConversations,
+  removeConversation,
+} from '../preferences/preferenceSlice';
+import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
@@ -54,6 +58,19 @@ describe('activitySlice', () => {
     expect([...selectFailedConversations(state)]).toEqual(['c4']);
   });
 
+  it('counts the chat this tab is streaming as working, event stream or not', () => {
+    const streaming = {
+      activity: loaded(),
+      conversation: { conversationId: 'c8', status: 'loading' as const },
+    };
+    expect(selectWorkingConversations(streaming).has('c8')).toBe(true);
+    const done = {
+      ...streaming,
+      conversation: { conversationId: 'c8', status: 'idle' as const },
+    };
+    expect(selectWorkingConversations(done).has('c8')).toBe(false);
+  });
+
   it('marks a chat working as soon as its answer starts', () => {
     const state = reducer(
       loaded(),
@@ -78,6 +95,14 @@ describe('activitySlice', () => {
   it('clears the failed mark when the chat is opened', () => {
     const state = reducer(loaded(), markConversationRead.pending('req', 'c4'));
     expect(selectFailedConversations(wrap(state)).size).toBe(0);
+  });
+
+  it('drops the failed and approval marks of a deleted chat', () => {
+    let state = reducer(loaded(), removeConversation('c4'));
+    expect(selectFailedConversations(wrap(state)).size).toBe(0);
+    expect([...selectApprovalConversations(wrap(state))]).toEqual(['c3']);
+    state = reducer(state, removeAllConversations());
+    expect(selectApprovalConversations(wrap(state)).size).toBe(0);
   });
 
   describe('overlapping fetches', () => {

@@ -31,7 +31,9 @@
     "dismiss": "忽略",
     "toolApprovalTitle": "需要批准工具",
     "toolApprovalReview": "查看",
-    "toolApprovalFallbackName": "对话"
+    "toolApprovalFallbackName": "对话",
+    "moreToasts_other": "还有 {{count}} 条",
+    "fewerToasts": "收起"
   },
   "backgroundJobs": {
     "card": {
@@ -350,10 +352,11 @@
         "queryPlaceholder": "输入一个此来源应能回答的问题...",
         "run": "运行",
         "notSavedHint": "这些设置仅用于本次测试，不会保存到来源。如需永久生效，请在来源设置中修改。",
+        "notSavedHintEditor": "这些设置在保存到来源之前仅用于本次测试。",
         "resultSummary": "检索到 {{count}} 个文本块 · {{retriever}}",
         "latency": "{{ms}} 毫秒",
         "empty": "此查询未检索到任何文本块。",
-        "emptyWithThreshold": "没有文本块的得分达到分数阈值（{{threshold}}）。降低阈值可查看接近的结果。",
+        "emptyWithThreshold": "没有文本块的得分达到相似度阈值（{{threshold}}）。降低阈值可查看接近的结果。",
         "showMore": "显示完整文本块",
         "showLess": "收起",
         "noScore": "无得分",
@@ -365,7 +368,31 @@
         },
         "errors": {
           "failed": "检索测试失败，请重试。"
-        }
+        },
+        "relevance": "相关度",
+        "compare": "与检索器顺序比较",
+        "compareHint": "同时按检索器顺序列出所有候选，显示其相关度，以及相关度模型是保留、提升还是丢弃了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 内按相关度排序",
+          "fallback": "未使用相关度模型（{{reason}}），保留检索器顺序"
+        },
+        "compareTitle": "检索器顺序",
+        "compareDescription": "相关度阶段收到的所有候选，按检索器的排名顺序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "文本块",
+          "relevance": "相关度",
+          "outcome": "结果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留为 #{{rank}}",
+          "dropped": "已丢弃",
+          "notKept": "未保留"
+        },
+        "strictness": "本次测试的相关度",
+        "saveToSource": "保存到来源",
+        "savedToSource": "已保存。该来源现在使用你测试过的设置。"
       },
       "editConfig": "来源设置",
       "shareWithTeam": "与团队共享",
@@ -394,14 +421,15 @@
       "searchAlt": "搜索",
       "retrievalOptions": {
         "title": "高级设置",
+        "advanced": "高级",
         "retrieval": {
           "title": "检索",
           "note": "这些更改立即生效，无需重新索引。",
           "tag": "无需重新索引",
           "chunks": "检索的文本块数（top-k）",
-          "scoreThreshold": "分数阈值",
-          "scoreThresholdPlaceholder": "无",
-          "scoreThresholdHint": "仅返回相关性得分高于此值（0–1）的文本块；数值越高越严格。",
+          "similarityThreshold": "相似度阈值",
+          "similarityThresholdPlaceholder": "无",
+          "similarityThresholdHint": "丢弃检索器相似度得分低于此值（0–1）的文本块。按检索器的得分过滤，而不是按相关度模型。",
           "rephraseQuery": "搜索前改写查询",
           "retriever": "检索器",
           "retrievers": {
@@ -431,13 +459,14 @@
           "agentToolHint": "当此来源的搜索接入方式为“按需搜索工具”，或由自主型智能体使用时，智能体也可以自行沿这些关系查找。"
         },
         "prescreen": {
-          "enable": "启用 LLM 预筛选",
-          "warning": "会获取更大的候选集并使用 LLM 进行过滤。这会增加查询时的延迟和成本。",
+          "enable": "LLM 筛选",
+          "warning": "由 LLM 审查更大的候选集，只保留能回答查询的文本块。这会增加每次查询的延迟和成本。",
           "candidateK": "获取的候选数量",
           "maxKeep": "最多保留的文本块数",
           "batchSize": "批处理大小",
           "model": "模型（可选）",
-          "modelPlaceholder": "默认使用请求所用的模型"
+          "modelPlaceholder": "默认使用请求所用的模型",
+          "exclusiveHint": "它可替代相关度：开启其中一项会关闭另一项。"
         },
         "graph": {
           "title": "图谱提取",
@@ -465,6 +494,29 @@
           "maxTokensHint": "最多 4,096 个令牌。",
           "minTokens": "每块最小令牌数",
           "duplicateHeaders": "跨块重复标题"
+        },
+        "relevance": {
+          "title": "相关度",
+          "tag": "无需重新索引",
+          "mode": "相关度模型",
+          "modeHint": "根据查询为检索到的每个文本块打分。“重新排序”把最相关的排在前面；“重新排序并过滤”还会丢弃相关度低的。",
+          "modes": {
+            "off": "关闭",
+            "reorder": "重新排序",
+            "filter": "重新排序并过滤"
+          },
+          "strictness": "过滤严格度",
+          "strictnessHint": "越严格保留的文本块越少：每个回答用的 token 更少，但更可能丢掉有用的文本块。",
+          "presets": {
+            "loose": "宽松",
+            "balanced": "均衡",
+            "strict": "严格",
+            "custom": "自定义（{{value}}）"
+          },
+          "minRelevance": "最低相关度",
+          "minRelevanceHint": "文本块被保留所需的确切相关度（0–1）。宽松为 0.1，均衡为 0.3，严格为 0.5。",
+          "candidates": "评分候选数",
+          "candidatesHint": "检索器为相关度模型获取并评分的文本块数量，最多 {{max}} 个。默认 {{default}} 个。"
         }
       },
       "configModal": {
@@ -473,7 +525,7 @@
         "subtitleGeneric": "配置此来源的分块与检索方式。",
         "save": "保存",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
-        "prescreenInvalidHint": "请检查预筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
+        "prescreenInvalidHint": "请检查 LLM 筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
         "reingestRequired": "您的更改已保存。修改的分块设置需重新索引后才会生效。立即重新索引？",
         "reingestLater": "稍后",
         "errors": {
@@ -2120,6 +2172,12 @@
         "loadFailed": "无法加载这段内容。",
         "openLink": "打开链接",
         "openInKnowledge": "在知识库中打开"
+      },
+      "relevance": {
+        "strong": "高度相关",
+        "possible": "可能相关",
+        "weak": "相关性低",
+        "tooltip": "相关度 {{percent}}%"
       }
     },
     "attachments": {

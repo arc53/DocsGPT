@@ -31,7 +31,11 @@
     "dismiss": "Descartar",
     "toolApprovalTitle": "Se requiere aprobar una herramienta",
     "toolApprovalReview": "Revisar",
-    "toolApprovalFallbackName": "Conversación"
+    "toolApprovalFallbackName": "Conversación",
+    "moreToasts_one": "{{count}} más",
+    "moreToasts_many": "{{count}} más",
+    "moreToasts_other": "{{count}} más",
+    "fewerToasts": "Mostrar menos"
   },
   "backgroundJobs": {
     "card": {
@@ -362,12 +366,13 @@
         "queryPlaceholder": "Pregunta algo que esta fuente debería responder...",
         "run": "Ejecutar",
         "notSavedHint": "Estos ajustes solo se usan para esta prueba — no se guardan en la fuente. Cámbialos en Configuración de la fuente para hacerlos permanentes.",
+        "notSavedHintEditor": "Estos ajustes solo se usan para esta prueba hasta que los guardes en la fuente.",
         "resultSummary_one": "{{count}} fragmento recuperado · {{retriever}}",
         "resultSummary_other": "{{count}} fragmentos recuperados · {{retriever}}",
         "resultSummary_many": "{{count}} fragmentos recuperados · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No se recuperaron fragmentos para esta consulta.",
-        "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de puntuación ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
+        "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de similitud ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
         "showMore": "Mostrar fragmento completo",
         "showLess": "Mostrar menos",
         "noScore": "sin puntuación",
@@ -379,7 +384,31 @@
         },
         "errors": {
           "failed": "La prueba de recuperación falló. Inténtalo de nuevo."
-        }
+        },
+        "relevance": "relevancia",
+        "compare": "Comparar con el orden del recuperador",
+        "compareHint": "Muestra también todos los candidatos en el orden del recuperador, con su relevancia y si el modelo de relevancia los mantuvo, subió o descartó.",
+        "relevanceRun": {
+          "applied": "ordenados por relevancia en {{ms}} ms",
+          "fallback": "modelo de relevancia no usado ({{reason}}), se mantiene el orden del recuperador"
+        },
+        "compareTitle": "Orden del recuperador",
+        "compareDescription": "Todos los candidatos que recibieron las etapas de relevancia, en el orden en que los clasificó el recuperador.",
+        "compareColumns": {
+          "before": "Posición",
+          "chunk": "Fragmento",
+          "relevance": "Relevancia",
+          "outcome": "Resultado"
+        },
+        "compareStatus": {
+          "promoted": "Subido a #{{rank}}",
+          "kept": "Mantenido como #{{rank}}",
+          "dropped": "Descartado",
+          "notKept": "No mantenido"
+        },
+        "strictness": "Relevancia para esta prueba",
+        "saveToSource": "Guardar en la fuente",
+        "savedToSource": "Guardado. La fuente usa ahora los ajustes que probaste."
       },
       "editConfig": "Configuración de la fuente",
       "shareWithTeam": "Compartir con el equipo",
@@ -408,14 +437,15 @@
       "searchAlt": "Buscar",
       "retrievalOptions": {
         "title": "Configuración avanzada",
+        "advanced": "Avanzado",
         "retrieval": {
           "title": "Recuperación",
           "note": "Estos cambios surten efecto de inmediato, sin necesidad de reindexar.",
           "tag": "sin reindexar",
           "chunks": "Fragmentos a recuperar (top-k)",
-          "scoreThreshold": "Umbral de puntuación",
-          "scoreThresholdPlaceholder": "Ninguno",
-          "scoreThresholdHint": "Solo devuelve fragmentos por encima de esta puntuación de relevancia (0–1); cuanto más alta, más estricta.",
+          "similarityThreshold": "Umbral de similitud",
+          "similarityThresholdPlaceholder": "Ninguno",
+          "similarityThresholdHint": "Descarta los fragmentos cuya puntuación de similitud del recuperador sea inferior a este valor (0–1). Filtra por la puntuación del recuperador, no por el modelo de relevancia.",
           "rephraseQuery": "Reformular la consulta antes de buscar",
           "retriever": "Recuperador",
           "retrievers": {
@@ -445,13 +475,14 @@
           "agentToolHint": "Los agentes también pueden seguir estas relaciones por sí mismos cuando la exposición de esta fuente es «Herramienta de búsqueda bajo demanda» o cuando la usa un agente agéntico."
         },
         "prescreen": {
-          "enable": "Habilitar preselección con LLM",
-          "warning": "Obtiene un conjunto de candidatos más grande y usa un LLM para filtrarlo. Esto añade latencia y costo por consulta.",
+          "enable": "Preselección con LLM",
+          "warning": "Un LLM revisa un conjunto mayor de candidatos y conserva los que responden a la consulta. Esto añade latencia y costo a cada consulta.",
           "candidateK": "Candidatos a obtener",
           "maxKeep": "Máximo de fragmentos a conservar",
           "batchSize": "Tamaño de lote",
           "model": "Modelo (opcional)",
-          "modelPlaceholder": "Por defecto, el modelo de la solicitud"
+          "modelPlaceholder": "Por defecto, el modelo de la solicitud",
+          "exclusiveHint": "Sustituye a la relevancia: al activar una, se desactiva la otra."
         },
         "graph": {
           "title": "Extracción de grafo",
@@ -479,6 +510,29 @@
           "maxTokensHint": "Máximo de 4096 tokens.",
           "minTokens": "Mínimo de tokens por fragmento",
           "duplicateHeaders": "Duplicar encabezados entre fragmentos"
+        },
+        "relevance": {
+          "title": "Relevancia",
+          "tag": "sin reindexar",
+          "mode": "Modelo de relevancia",
+          "modeHint": "Puntúa cada fragmento recuperado frente a la consulta. Reordenar coloca primero los más relevantes; Reordenar y filtrar además descarta los débiles.",
+          "modes": {
+            "off": "Desactivado",
+            "reorder": "Reordenar",
+            "filter": "Reordenar y filtrar"
+          },
+          "strictness": "Rigor del filtro",
+          "strictnessHint": "Cuanto más estricto, menos fragmentos conserva: menos tokens por respuesta, pero más riesgo de descartar uno importante.",
+          "presets": {
+            "loose": "Flexible",
+            "balanced": "Equilibrado",
+            "strict": "Estricto",
+            "custom": "Personalizado ({{value}})"
+          },
+          "minRelevance": "Relevancia mínima",
+          "minRelevanceHint": "La relevancia exacta (0–1) que necesita un fragmento para conservarse. Flexible es 0,1, Equilibrado 0,3 y Estricto 0,5.",
+          "candidates": "Candidatos a puntuar",
+          "candidatesHint": "Cuántos fragmentos obtiene el recuperador para que el modelo de relevancia los puntúe, hasta {{max}}. Predeterminado: {{default}}."
         }
       },
       "configModal": {
@@ -487,7 +541,7 @@
         "subtitleGeneric": "Configura cómo se fragmenta y recupera esta fuente.",
         "save": "Guardar",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
-        "prescreenInvalidHint": "Revisa los valores de preselección: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
+        "prescreenInvalidHint": "Revisa los valores de la preselección con LLM: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
         "reingestLater": "Más tarde",
         "errors": {
@@ -2186,6 +2240,12 @@
         "loadFailed": "No se pudo cargar el pasaje.",
         "openLink": "Abrir enlace",
         "openInKnowledge": "Abrir en Conocimiento"
+      },
+      "relevance": {
+        "strong": "Coincidencia alta",
+        "possible": "Coincidencia posible",
+        "weak": "Coincidencia baja",
+        "tooltip": "Relevancia {{percent}} %"
       }
     },
     "attachments": {

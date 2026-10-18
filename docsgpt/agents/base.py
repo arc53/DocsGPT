@@ -169,6 +169,26 @@ def _unique_reasoning_items(items: List[Any]) -> List[Any]:
     return unique
 
 
+def drop_least_relevant(docs: List[Dict]) -> List[Dict]:
+    """The documents with the one the prompt budget sheds first removed, the rest in their order.
+
+    When every document carries a numeric ``relevance`` (the decision model
+    scored them all), that is the lowest-scored one, the later one on a tie.
+    Otherwise it is the last one: retriever order is best first.
+
+    Args:
+        docs: This turn's retrieved documents, in prompt order.
+
+    Returns:
+        A new list one document shorter (empty for an empty one).
+    """
+    scores = [doc.get("relevance") if isinstance(doc, dict) else None for doc in docs]
+    if docs and all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in scores):
+        victim = min(range(len(docs)), key=lambda i: (scores[i], -i))
+        return docs[:victim] + docs[victim + 1:]
+    return docs[:-1]
+
+
 class BaseAgent(ABC):
     # Inert defaults: an instance built without __init__ still resolves these.
     _guardrail_engine = None
@@ -1584,9 +1604,11 @@ class BaseAgent(ABC):
                 stage="build",
             )
 
-        # Then shed whole documents, lowest-ranked first: a middle-truncated
-        # document block would corrupt its XML, and retriever order is
-        # relevance-descending so the tail is the least useful.
+        # Then shed whole documents, least relevant first: a middle-truncated
+        # document block would corrupt its XML. The survivors keep their
+        # order and are renumbered on each pass, and the citation registry is
+        # seeded from the final list, so ``<document index>``, a tool hit's
+        # ``[n]`` and the sources the client lists still agree.
         document_block = self._build_document_block()
 
         # Plan the turn's files against what is left once the system prompt
@@ -1607,7 +1629,7 @@ class BaseAgent(ABC):
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
             > max_query_tokens - reserved
         ):
-            self.retrieved_docs = self.retrieved_docs[:-1]
+            self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
             document_block = self._build_document_block()
 
         user_content = self._compose_user_turn(document_block, query)

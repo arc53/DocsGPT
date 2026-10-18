@@ -122,6 +122,13 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.delete(`${quotaUrl(scope, subjectId)}${qs({ bucket })}`, token),
+  getSourceDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.SOURCE_DEFAULTS, token),
+  setSourceDefaults: (
+    retrieval: Record<string, unknown>,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, { retrieval }, token),
 };
 
 export default adminService;

@@ -131,6 +131,19 @@ class TestStopFromActivity:
         assert service.finalize_message.called
         cleared.assert_called_with(MESSAGE_ID)
 
+    def test_an_answer_that_finishes_asks_for_the_unread_mark(self, mock_mongo_db, flask_app):
+        # Finished while the user may be elsewhere: the chat is marked unread
+        # unless they are watching it (the service decides).
+        service, _, _, _ = _run(flask_app, _chatty(chunks=3, gap=0), stop_after=None)
+        kwargs = service.finalize_message.call_args.kwargs
+        assert kwargs.get("mark_unread_when_away") is True
+
+    def test_a_stopped_answer_does_not_ask_for_the_unread_mark(self, mock_mongo_db, flask_app):
+        service, _, _, _ = _run(flask_app, _chatty(), stop_after=0.2)
+        assert service.finalize_message.called
+        for call in service.finalize_message.call_args_list:
+            assert not call.kwargs.get("mark_unread_when_away")
+
     def test_a_stop_still_lands_past_the_heartbeat_ceiling(self, mock_mongo_db, flask_app):
         # The ticker stops stamping after STREAM_HEARTBEAT_MAX_SECONDS; it
         # is also what reads the Stop, so it must keep reading it.

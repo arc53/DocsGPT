@@ -13,9 +13,12 @@ import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import { isPageAttended } from '../backgroundJobs/usePageVisible';
+import { shownConversationId } from '../backgroundJobs/usePresence';
 import { getConversations } from '../preferences/preferenceApi';
 import {
   receiveConversations,
+  renameConversation,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
@@ -390,13 +393,9 @@ export const fetchAnswer = createAsyncThunk<
           ) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(receiveConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -535,13 +534,9 @@ export const fetchAnswer = createAsyncThunk<
                   }),
                 );
               }
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(receiveConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -737,13 +732,9 @@ export const fetchAnswer = createAsyncThunk<
             query: { conversationId: answer.conversationId },
           }),
         );
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(receiveConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
         dispatch(conversationSlice.actions.setStatus('idle'));
       }
     }
@@ -894,13 +885,9 @@ export const submitToolActions = createAsyncThunk<
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(receiveConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
       } else if (data.type === 'id') {
         // conversation ID already set
       } else if (data.type === 'message_id') {
@@ -1430,6 +1417,51 @@ export const CONTINUATION_REFRESH_WAIT_MS = 10 * 60 * 1000;
 
 export const conversationListenerMiddleware = createListenerMiddleware();
 
+let listRefresh: Promise<void> | null = null;
+let listRefreshAgain = false;
+
+/**
+ * Refresh the sidebar list for an event or an answer's end, one fetch at a
+ * time. A refresh asked for while one runs folds into a single follow-up
+ * fetch, so a burst of events (a replayed backlog, several chats finishing)
+ * costs two requests and an older list never lands over a newer one; a
+ * `conversation.renamed` that arrives meanwhile gets a list read after the
+ * title. A failed fetch keeps the list on screen.
+ *
+ * Args:
+ *   getState: The store's state getter; the token is read at each fetch.
+ *   dispatch: The store's dispatch.
+ *
+ * Returns:
+ *   A promise that settles once the list is current, follow-up included.
+ */
+function refreshConversationList(
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  if (listRefresh) {
+    listRefreshAgain = true;
+    return listRefresh;
+  }
+  listRefresh = (async () => {
+    try {
+      do {
+        listRefreshAgain = false;
+        const { token } = (getState() as RootState).preference;
+        try {
+          const fetched = await getConversations(token);
+          if (fetched.data) dispatch(receiveConversations(fetched));
+        } catch (error) {
+          console.error('conversations refresh failed', error);
+        }
+      } while (listRefreshAgain);
+    } finally {
+      listRefresh = null;
+    }
+  })();
+  return listRefresh;
+}
+
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
@@ -1447,7 +1479,6 @@ conversationListenerMiddleware.startListening({
     if (!conversationId) return;
 
     const state = listenerApi.getState() as RootState;
-    const token = state.preference.token;
 
     // Skip mid-stream: loadConversation -> updateConversationId flips status
     // to 'idle', and the next SSE chunk dies on the 'idle' guard in
@@ -1465,12 +1496,7 @@ conversationListenerMiddleware.startListening({
     }
 
     // Refresh sidebar; server reorders by updated_at which just bumped.
-    try {
-      const fetched = await getConversations(token);
-      listenerApi.dispatch(receiveConversations(fetched));
-    } catch (error) {
-      console.error(`${envelope.type}: conversations refresh failed`, error);
-    }
+    await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
 
     // A continuation that landed while the user's own answer streamed shows
     // once that stream ends, if the chat is still open.
@@ -1517,5 +1543,96 @@ conversationListenerMiddleware.startListening({
         return;
     }
     listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
+  },
+});
+
+// A new chat is on the server, named after its question, from its answer's
+// first event: list it in the sidebar then, so it shows with its working mark
+// while it answers, not only once the answer ends. This tab's stream names it
+// (setConversationId); a chat started in another tab arrives as
+// `message.started`. One list refresh per chat, whichever comes first.
+const listingConversations = new Set<string>();
+
+async function listNewConversation(
+  conversationId: string,
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  const state = getState() as RootState;
+  const listed = state.preference.conversations.data?.some(
+    (chat) => chat.id === conversationId,
+  );
+  if (listed || listingConversations.has(conversationId)) return;
+  listingConversations.add(conversationId);
+  try {
+    await refreshConversationList(getState, dispatch);
+  } finally {
+    listingConversations.delete(conversationId);
+  }
+}
+
+conversationListenerMiddleware.startListening({
+  actionCreator: conversationSlice.actions.setConversationId,
+  effect: async (action, listenerApi) => {
+    if (!action.payload) return;
+    await listNewConversation(
+      action.payload,
+      listenerApi.getState,
+      listenerApi.dispatch,
+    );
+  },
+});
+
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    const conversationId = String(payload.conversation_id ?? '');
+    if (!conversationId) return;
+    if (envelope.type === 'message.started') {
+      await listNewConversation(
+        conversationId,
+        listenerApi.getState,
+        listenerApi.dispatch,
+      );
+    } else if (envelope.type === 'message.finished') {
+      // An answer that ended while the user was elsewhere is marked unread
+      // on the server; refresh the list for its mark. The chat this tab
+      // shows needs none while the user looks at it: nothing was marked.
+      // Unwatched, it may have been, by an answer from another tab or device
+      // that this tab never streamed. "Shows" is what presence reports (the
+      // route), not the last chat in state: on /settings that one is unwatched.
+      const state = listenerApi.getState() as RootState;
+      const shown = shownConversationId(
+        typeof window === 'undefined' ? '/' : window.location.pathname,
+        state.conversation.conversationId,
+        state.conversation.status === 'loading',
+      );
+      if (shown === conversationId && isPageAttended()) return;
+      await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
+    } else if (envelope.type === 'conversation.renamed') {
+      // The generated title, saved after the answer ended. It replaces the
+      // question-prefix name it names as `previous`: a chat the user renamed
+      // meanwhile (an event replayed after the stream dropped) keeps its
+      // name. A chat not listed yet, or a list fetch that read before the
+      // title, gets a list that holds it.
+      const name = String(payload.name ?? '');
+      if (!name) return;
+      const previous =
+        typeof payload.previous === 'string' ? payload.previous : null;
+      const chat = (
+        listenerApi.getState() as RootState
+      ).preference.conversations.data?.find((c) => c.id === conversationId);
+      if (chat && (previous === null || chat.name === previous)) {
+        listenerApi.dispatch(renameConversation({ id: conversationId, name }));
+      }
+      if (!chat || listRefresh) {
+        await refreshConversationList(
+          listenerApi.getState,
+          listenerApi.dispatch,
+        );
+      }
+    }
   },
 });

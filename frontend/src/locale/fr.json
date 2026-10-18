@@ -31,7 +31,11 @@
     "dismiss": "Ignorer",
     "toolApprovalTitle": "Approbation d’outil requise",
     "toolApprovalReview": "Examiner",
-    "toolApprovalFallbackName": "Conversation"
+    "toolApprovalFallbackName": "Conversation",
+    "moreToasts_one": "{{count}} autre",
+    "moreToasts_many": "{{count}} autres",
+    "moreToasts_other": "{{count}} autres",
+    "fewerToasts": "Afficher moins"
   },
   "backgroundJobs": {
     "card": {
@@ -362,12 +366,13 @@
         "queryPlaceholder": "Posez une question à laquelle cette source devrait répondre…",
         "run": "Exécuter",
         "notSavedHint": "Ces paramètres ne servent qu’à ce test — ils ne sont pas enregistrés dans la source. Modifiez-les dans les paramètres de la source pour les rendre permanents.",
+        "notSavedHintEditor": "Ces paramètres ne servent qu’à ce test tant que vous ne les enregistrez pas dans la source.",
         "resultSummary_one": "{{count}} fragment récupéré · {{retriever}}",
         "resultSummary_other": "{{count}} fragments récupérés · {{retriever}}",
         "resultSummary_many": "{{count}} fragments récupérés · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "Aucun fragment récupéré pour cette requête.",
-        "emptyWithThreshold": "Aucun fragment n’atteint le seuil de score ({{threshold}}). Abaissez-le pour voir les résultats proches.",
+        "emptyWithThreshold": "Aucun fragment n’atteint le seuil de similarité ({{threshold}}). Abaissez-le pour voir les résultats proches.",
         "showMore": "Afficher le fragment entier",
         "showLess": "Afficher moins",
         "noScore": "aucun score",
@@ -379,7 +384,31 @@
         },
         "errors": {
           "failed": "Échec du test de récupération. Veuillez réessayer."
-        }
+        },
+        "relevance": "pertinence",
+        "compare": "Comparer avec l’ordre du moteur de récupération",
+        "compareHint": "Liste aussi chaque candidat dans l’ordre du moteur de récupération, avec sa pertinence et si le modèle de pertinence l’a gardé, remonté ou écarté.",
+        "relevanceRun": {
+          "applied": "ordonnés par pertinence en {{ms}} ms",
+          "fallback": "modèle de pertinence non utilisé ({{reason}}), ordre du moteur de récupération conservé"
+        },
+        "compareTitle": "Ordre du moteur de récupération",
+        "compareDescription": "Tous les candidats reçus par les étapes de pertinence, dans l’ordre où le moteur de récupération les a classés.",
+        "compareColumns": {
+          "before": "Rang",
+          "chunk": "Fragment",
+          "relevance": "Pertinence",
+          "outcome": "Résultat"
+        },
+        "compareStatus": {
+          "promoted": "Remonté en #{{rank}}",
+          "kept": "Gardé en #{{rank}}",
+          "dropped": "Écarté",
+          "notKept": "Non gardé"
+        },
+        "strictness": "Pertinence pour ce test",
+        "saveToSource": "Enregistrer dans la source",
+        "savedToSource": "Enregistré. La source utilise désormais les paramètres testés."
       },
       "editConfig": "Paramètres de la source",
       "shareWithTeam": "Partager avec l’équipe",
@@ -408,14 +437,15 @@
       "searchAlt": "Rechercher",
       "retrievalOptions": {
         "title": "Paramètres avancés",
+        "advanced": "Avancé",
         "retrieval": {
           "title": "Récupération",
           "note": "Ces modifications prennent effet immédiatement, sans réindexation.",
           "tag": "sans réindexation",
           "chunks": "Fragments à récupérer (top-k)",
-          "scoreThreshold": "Seuil de score",
-          "scoreThresholdPlaceholder": "Aucun",
-          "scoreThresholdHint": "Ne renvoyer que les fragments dont le score de pertinence dépasse ce seuil (0–1) ; plus il est élevé, plus le filtre est strict.",
+          "similarityThreshold": "Seuil de similarité",
+          "similarityThresholdPlaceholder": "Aucun",
+          "similarityThresholdHint": "Écarte les fragments dont le score de similarité du moteur de récupération est inférieur à cette valeur (0–1). Le filtre porte sur le score du moteur de récupération, pas sur le modèle de pertinence.",
           "rephraseQuery": "Reformuler la requête avant la recherche",
           "retriever": "Moteur de récupération",
           "retrievers": {
@@ -445,13 +475,14 @@
           "agentToolHint": "Les agents peuvent aussi suivre eux-mêmes ces relations lorsque l’exposition de cette source est « Outil de recherche à la demande », ou lorsqu’un agent agentique l’utilise."
         },
         "prescreen": {
-          "enable": "Activer la présélection LLM",
-          "warning": "Récupère un ensemble plus large de candidats et utilise un LLM pour le filtrer. Cela augmente la latence et le coût des requêtes.",
+          "enable": "Présélection par LLM",
+          "warning": "Un LLM examine un plus grand ensemble de candidats et garde ceux qui répondent à la requête. Cela augmente la latence et le coût de chaque requête.",
           "candidateK": "Candidats à récupérer",
           "maxKeep": "Fragments max. à conserver",
           "batchSize": "Taille de lot",
           "model": "Modèle (facultatif)",
-          "modelPlaceholder": "Par défaut, le modèle de la requête"
+          "modelPlaceholder": "Par défaut, le modèle de la requête",
+          "exclusiveHint": "Elle remplace la pertinence : activer l’une désactive l’autre."
         },
         "graph": {
           "title": "Extraction de graphe",
@@ -479,6 +510,29 @@
           "maxTokensHint": "4 096 jetons maximum.",
           "minTokens": "Jetons min. par fragment",
           "duplicateHeaders": "Dupliquer les en-têtes entre les fragments"
+        },
+        "relevance": {
+          "title": "Pertinence",
+          "tag": "sans réindexation",
+          "mode": "Modèle de pertinence",
+          "modeHint": "Note chaque fragment récupéré par rapport à la requête. Réordonner place les plus pertinents en premier ; Réordonner et filtrer écarte aussi les plus faibles.",
+          "modes": {
+            "off": "Désactivé",
+            "reorder": "Réordonner",
+            "filter": "Réordonner et filtrer"
+          },
+          "strictness": "Sévérité du filtre",
+          "strictnessHint": "Plus le filtre est strict, moins il garde de fragments : moins de tokens par réponse, mais plus de risque d’écarter un fragment utile.",
+          "presets": {
+            "loose": "Souple",
+            "balanced": "Équilibré",
+            "strict": "Strict",
+            "custom": "Personnalisé ({{value}})"
+          },
+          "minRelevance": "Pertinence minimale",
+          "minRelevanceHint": "La pertinence exacte (0–1) qu’un fragment doit atteindre pour être gardé. Souple vaut 0,1, Équilibré 0,3, Strict 0,5.",
+          "candidates": "Candidats à noter",
+          "candidatesHint": "Nombre de fragments que le moteur de récupération transmet au modèle de pertinence, jusqu’à {{max}}. Par défaut : {{default}}."
         }
       },
       "configModal": {
@@ -487,7 +541,7 @@
         "subtitleGeneric": "Configurez le découpage et la récupération de cette source.",
         "save": "Enregistrer",
         "chunkingChangeHint": "Vous avez modifié un paramètre de découpage. Après l’enregistrement, il faudra réindexer cette source pour qu’il prenne effet.",
-        "prescreenInvalidHint": "Vérifiez les valeurs de présélection : le nombre de candidats à récupérer doit être au moins égal au nombre de fragments, et le nombre de fragments à conserver ne doit pas dépasser celui des candidats.",
+        "prescreenInvalidHint": "Vérifiez les valeurs de la présélection par LLM : le nombre de candidats à récupérer doit être au moins égal au nombre de fragments, et le nombre de fragments à conserver ne doit pas dépasser celui des candidats.",
         "reingestRequired": "Vos modifications ont été enregistrées. Les paramètres de découpage modifiés ne prennent effet qu’après une réindexation. Réindexer maintenant ?",
         "reingestLater": "Plus tard",
         "errors": {
@@ -2186,6 +2240,12 @@
         "loadFailed": "Impossible de charger ce passage.",
         "openLink": "Ouvrir le lien",
         "openInKnowledge": "Ouvrir dans Connaissances"
+      },
+      "relevance": {
+        "strong": "Forte correspondance",
+        "possible": "Correspondance possible",
+        "weak": "Faible correspondance",
+        "tooltip": "Pertinence {{percent}} %"
       }
     },
     "attachments": {

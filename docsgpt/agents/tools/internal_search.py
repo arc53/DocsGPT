@@ -5,10 +5,23 @@ from typing import Dict, List, Optional
 from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
-from docsgpt.retriever.dispatcher import build_dispatcher
+from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
+from docsgpt.retriever.stages.relevance import base_selection
 
 logger = logging.getLogger(__name__)
+
+
+def _in_path(docs: List[Dict], path_filter: str) -> List[Dict]:
+    """The docs whose source, filename or title contains ``path_filter`` (case-insensitive)."""
+    path_lower = path_filter.lower()
+    return [
+        d
+        for d in docs
+        if path_lower in d.get("source", "").lower()
+        or path_lower in d.get("filename", "").lower()
+        or path_lower in d.get("title", "").lower()
+    ]
 
 
 class InternalSearchTool(Tool):
@@ -30,6 +43,10 @@ class InternalSearchTool(Tool):
         self._retriever = None
         self._directory_structure: Optional[Dict] = None
         self._dir_structure_loaded = False
+        # The current search's path filter, and how many of the retrieval's
+        # usual chunks it let through (see ``_path_stage``).
+        self._path_filter = ""
+        self._path_hits = 0
 
     def _get_retriever(self):
         if self._retriever is None:
@@ -57,12 +74,24 @@ class InternalSearchTool(Tool):
 
             # Dispatch per-source so on-demand agentic search honours the same
             # per-source config as pre-fetch; kill-switch falls back to legacy.
+            # The path filter runs as the Dispatcher's first stage, so a rerank
+            # chooses the most relevant chunks inside the path.
             self._retriever = build_dispatcher(
                 _legacy_classic,
                 sources=self.config.get("sources") or [],
+                stages=[self._path_stage],
+                conversation_id=self.config.get("conversation_id"),
                 **retriever_kwargs,
             )
         return self._retriever
+
+    def _path_stage(self, docs: List[Dict], context: Dict) -> List[Dict]:
+        """Dispatcher stage: keep the candidates inside this search's ``path_filter``."""
+        if not self._path_filter:
+            return docs
+        docs = _in_path(docs, self._path_filter)
+        self._path_hits += len(base_selection(docs))
+        return docs
 
     def _get_directory_structure(self) -> Optional[Dict]:
         """Load directory structure from Postgres for the configured sources."""
@@ -142,26 +171,27 @@ class InternalSearchTool(Tool):
 
         try:
             retriever = self._get_retriever()
+            dispatched = isinstance(retriever, Dispatcher)
+            self._path_filter = path_filter if dispatched else ""
+            self._path_hits = 0
             docs = retriever.search(query)
         except Exception as e:
             logger.error(f"Internal search failed: {e}", exc_info=True)
             return "Search failed: an internal error occurred."
+        finally:
+            self._path_filter = ""
 
+        candidates = retriever.last_candidate_count if dispatched else len(docs)
+        if not dispatched and path_filter and docs:
+            docs = _in_path(docs, path_filter)
+            self._path_hits = len(docs)
         if not docs:
-            return "No documents found matching your query."
-
-        # Apply path filter if specified
-        if path_filter:
-            path_lower = path_filter.lower()
-            docs = [
-                d
-                for d in docs
-                if path_lower in d.get("source", "").lower()
-                or path_lower in d.get("filename", "").lower()
-                or path_lower in d.get("title", "").lower()
-            ]
-            if not docs:
+            if not candidates:
+                return "No documents found matching your query."
+            if path_filter and not self._path_hits:
                 return f"No documents found matching query '{query}' in path '{path_filter}'."
+            # The retrieval's own chunks were there; the relevance stages kept none.
+            return f"No relevant documents found for '{query}'."
 
         # Accumulate for source tracking
         for doc in docs:

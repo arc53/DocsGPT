@@ -79,6 +79,7 @@ const endpoints = {
     SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
+    SOURCE_DEFAULTS: '/api/sources/defaults',
     SOURCE_CHUNK: (id: string, chunkKey: string, excerpt?: string) => {
       const params = new URLSearchParams({ chunk_key: chunkKey });
       if (excerpt) params.set('excerpt', excerpt);
@@ -275,6 +276,7 @@ const endpoints = {
       `/api/admin/quotas/teams/${encodeURIComponent(id)}`,
     QUOTA_USER: (id: string) =>
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
+    SOURCE_DEFAULTS: '/api/admin/defaults/sources',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

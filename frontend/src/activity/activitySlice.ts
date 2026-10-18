@@ -10,6 +10,10 @@ import {
 import activityService from '../api/services/activityService';
 import { markConversationRead } from '../backgroundJobs/backgroundSlice';
 import {
+  removeAllConversations,
+  removeConversation,
+} from '../preferences/preferenceSlice';
+import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
@@ -163,6 +167,22 @@ const activitySlice = createSlice({
           (id) => id !== action.meta.arg,
         );
       })
+      // A deleted chat has nothing to approve and no failure to read.
+      .addCase(removeConversation, (state, action) => {
+        if (!state.now) return;
+        state.now.failed_conversations = state.now.failed_conversations.filter(
+          (id) => id !== action.payload,
+        );
+        state.now.approval_conversations =
+          state.now.approval_conversations.filter(
+            (id) => id !== action.payload,
+          );
+      })
+      .addCase(removeAllConversations, (state) => {
+        if (!state.now) return;
+        state.now.failed_conversations = [];
+        state.now.approval_conversations = [];
+      })
       .addMatcher(
         isAnyOf(markConversationRead.fulfilled, markConversationRead.rejected),
         (state, action) => {
@@ -305,11 +325,23 @@ export const selectLiveConversations = (state: WithActivity) =>
 
 const EMPTY: ReadonlySet<string> = new Set();
 
-/** Chats answering or running a background job. */
+/** The chat this tab is streaming an answer into, if any. */
+const selectStreamingConversation = (state: {
+  conversation?: { conversationId: string | null; status: string };
+}) =>
+  state.conversation?.status === 'loading'
+    ? state.conversation.conversationId
+    : null;
+
+/**
+ * Chats answering or running a background job. The chat this tab streams
+ * counts at once, with or without the event stream's `message.started`.
+ */
 export const selectWorkingConversations = createSelector(
-  [selectActivityNow, selectLiveConversations],
-  (now, live): ReadonlySet<string> => {
+  [selectActivityNow, selectLiveConversations, selectStreamingConversation],
+  (now, live, streaming): ReadonlySet<string> => {
     const ids = new Set(Object.keys(live));
+    if (streaming) ids.add(streaming);
     for (const item of now?.running ?? []) {
       if (
         (item.kind === 'chat' || item.kind === 'job') &&
