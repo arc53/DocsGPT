@@ -10,7 +10,8 @@ These tests pin both layers against an ephemeral Postgres (``pg_engine``):
 
 - the ``docsgpt.api.v1.idempotency`` helper contract directly
   (completed → cached, fresh-pending → 409, stale-pending → re-claim,
-  non-2xx → not cached); and
+  non-2xx → not cached, and claim-ownership scoping so a request whose
+  claim was taken over cannot release/finalize its successor's row); and
 - the real ``/v1/chat/completions`` route end-to-end: the same key twice
   returns the cached body and does NOT re-run the agent or append a second
   conversation row; no key / different keys run independently; a 5xx first
@@ -124,17 +125,17 @@ class TestIdempotencyHelperContract:
         key = f"agent:{uuid.uuid4().hex}"
 
         with app.app_context():
-            claimed, replay = claim_or_replay(key)
-            assert claimed is True
+            task_id, replay = claim_or_replay(key)
+            assert task_id is not None  # this caller owns the claim
             assert replay is None
 
             # Finalize a 200 with a body, then a retry replays it byte-for-byte
             # without re-claiming.
             body = {"id": "chatcmpl-1", "choices": [{"x": 1}]}
-            finalize(key, _make_response(app, body, 200))
+            finalize(key, task_id, _make_response(app, body, 200))
 
             claimed2, replay2 = claim_or_replay(key)
-            assert claimed2 is False
+            assert claimed2 is None  # not claimed — cached outcome instead
             assert replay2 is not None
             assert replay2.status_code == 200
             assert replay2.get_json() == body
@@ -146,11 +147,11 @@ class TestIdempotencyHelperContract:
 
         with app.app_context():
             claimed, _ = claim_or_replay(key)
-            assert claimed is True  # first request in flight, never finalized
+            assert claimed is not None  # first request in flight, never finalized
 
             # A concurrent same-key request sees a fresh pending row → 409.
             claimed2, replay2 = claim_or_replay(key)
-            assert claimed2 is False
+            assert claimed2 is None
             assert replay2 is not None
             assert replay2.status_code == 409
             assert replay2.get_json()["error"]["type"] == "idempotency_conflict"
@@ -161,16 +162,19 @@ class TestIdempotencyHelperContract:
         key = f"agent:{uuid.uuid4().hex}"
 
         with app.app_context():
-            claimed, _ = claim_or_replay(key)
-            assert claimed is True
+            task_a, _ = claim_or_replay(key)
+            assert task_a is not None
             # The original request "died" before finalize; age the claim past
             # the safety window so a retry may re-claim instead of 409-ing
             # forever.
             _backdate_pending(pg_engine, key, secs_ago=STALE_PENDING_SECONDS + 5)
 
-            claimed2, replay2 = claim_or_replay(key)
-            assert claimed2 is True
+            task_b, replay2 = claim_or_replay(key)
+            assert task_b is not None
             assert replay2 is None
+            # The takeover hands the key to a new owner, not back to the
+            # stale claimant's token.
+            assert task_b != task_a
 
     def test_non_2xx_response_is_not_cached(self, pg_engine, monkeypatch):
         app = Flask(__name__)
@@ -178,10 +182,10 @@ class TestIdempotencyHelperContract:
         key = f"agent:{uuid.uuid4().hex}"
 
         with app.app_context():
-            claimed, _ = claim_or_replay(key)
-            assert claimed is True
+            task_id, _ = claim_or_replay(key)
+            assert task_id is not None
             # A 5xx must release the claim (not cache the error).
-            finalize(key, _make_response(app, {"error": {"message": "boom"}}, 500))
+            finalize(key, task_id, _make_response(app, {"error": {"message": "boom"}}, 500))
 
         with pg_engine.connect() as conn:
             row = conn.execute(
@@ -195,14 +199,121 @@ class TestIdempotencyHelperContract:
         _wire_idem_db(pg_engine, monkeypatch)
         key = f"agent:{uuid.uuid4().hex}"
         with app.app_context():
-            claim_or_replay(key)
-            release(key)
+            task_id, _ = claim_or_replay(key)
+            assert task_id is not None
+            release(key, task_id)
         with pg_engine.connect() as conn:
             row = conn.execute(
                 text("SELECT * FROM task_dedup WHERE idempotency_key = :k"),
                 {"k": key},
             ).fetchone()
         assert row is None
+
+    def test_release_by_non_owner_is_a_noop(self, pg_engine, monkeypatch):
+        """``release`` is scoped to the claiming request's ``task_id`` (#3109)."""
+        app = Flask(__name__)
+        _wire_idem_db(pg_engine, monkeypatch)
+        key = f"agent:{uuid.uuid4().hex}"
+        with app.app_context():
+            task_id, _ = claim_or_replay(key)
+            assert task_id is not None
+            release(key, "some-other-task-id")
+        with pg_engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT status, task_id FROM task_dedup "
+                    "WHERE idempotency_key = :k"
+                ),
+                {"k": key},
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "pending"
+        assert row[1] == task_id
+
+    def test_stale_takeover_survives_original_request_release(
+        self, pg_engine, monkeypatch
+    ):
+        """#3109: after a stale takeover, the original (slow) request's
+        error-path ``release`` must not delete the successor's live claim —
+        otherwise a third retry starts a duplicate agent run instead of 409.
+        """
+        app = Flask(__name__)
+        _wire_idem_db(pg_engine, monkeypatch)
+        key = f"agent:{uuid.uuid4().hex}"
+
+        with app.app_context():
+            task_a, _ = claim_or_replay(key)
+            assert task_a is not None
+
+            # B retries while A is still alive but its claim looks stale.
+            _backdate_pending(pg_engine, key, secs_ago=STALE_PENDING_SECONDS + 5)
+            task_b, _ = claim_or_replay(key)
+            assert task_b is not None
+            assert task_b != task_a
+
+            # A now fails and runs its error-path release.
+            release(key, task_a)
+
+            # B's claim must still be in flight...
+            with pg_engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        "SELECT status, task_id FROM task_dedup "
+                        "WHERE idempotency_key = :k"
+                    ),
+                    {"k": key},
+                ).fetchone()
+            assert row is not None
+            assert row[0] == "pending"
+            assert row[1] == task_b
+
+            # ...so a third retry still gets the 409, not a third agent run.
+            task_c, replay_c = claim_or_replay(key)
+            assert task_c is None
+            assert replay_c is not None
+            assert replay_c.status_code == 409
+
+    def test_stale_takeover_survives_original_request_finalize(
+        self, pg_engine, monkeypatch
+    ):
+        """#3109: a slow original request finishing 2xx after its claim was
+        taken over must not finalize the successor's row — the successor's
+        own result has to be the one cached under the key.
+        """
+        app = Flask(__name__)
+        _wire_idem_db(pg_engine, monkeypatch)
+        key = f"agent:{uuid.uuid4().hex}"
+
+        with app.app_context():
+            task_a, _ = claim_or_replay(key)
+            assert task_a is not None
+            _backdate_pending(pg_engine, key, secs_ago=STALE_PENDING_SECONDS + 5)
+            task_b, _ = claim_or_replay(key)
+            assert task_b is not None
+            assert task_b != task_a
+
+            # A finishes 2xx late — its body must NOT complete B's claim.
+            finalize(key, task_a, _make_response(app, {"id": "chatcmpl-A"}, 200))
+            with pg_engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        "SELECT status, task_id, result_json FROM task_dedup "
+                        "WHERE idempotency_key = :k"
+                    ),
+                    {"k": key},
+                ).fetchone()
+            assert row is not None
+            assert row[0] == "pending"
+            assert row[1] == task_b
+            assert row[2] is None  # A's late body was not written
+
+            # B completes its own run; the retry replays B's answer.
+            finalize(key, task_b, _make_response(app, {"id": "chatcmpl-B"}, 200))
+            task_c, replay_c = claim_or_replay(key)
+            assert task_c is None
+            assert replay_c is not None
+            assert replay_c.status_code == 200
+            assert replay_c.get_json() == {"id": "chatcmpl-B"}
 
 
 # ---------------------------------------------------------------------------

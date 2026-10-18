@@ -347,6 +347,11 @@ def chat_completions():
     # only resolve a key for non-streaming requests. No header → byte-for-byte
     # today's behavior.
     idem_key: Optional[str] = None
+    # The owner token of the claim this request won, set by ``_serve``.
+    # Error paths release only that claim, so a request that failed before
+    # claiming (or whose claim a stale sweep handed to a successor) can
+    # never delete another request's live row (#3109).
+    claimed_task_id: Optional[str] = None
     if not is_stream:
         raw_key, key_error = v1_idempotency.read_idempotency_key()
         if key_error is not None:
@@ -438,6 +443,7 @@ def chat_completions():
 
     def _serve(processor: StreamProcessor, keepalive: bool = True) -> Response:
         """Run the request once its files are attachment rows."""
+        nonlocal claimed_task_id
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None
 
@@ -586,8 +592,8 @@ def chat_completions():
         # build, immediately before running the agent) so a duplicate retry
         # short-circuits to the cached body / 409 instead of re-running.
         if idem_key:
-            claimed, replay = v1_idempotency.claim_or_replay(idem_key)
-            if not claimed:
+            claimed_task_id, replay = v1_idempotency.claim_or_replay(idem_key)
+            if claimed_task_id is None:
                 # ``completed`` cache hit, or a 409 for an in-flight same-key
                 # request — either way return without re-running the agent.
                 # The original request already has its trace; this retry's
@@ -614,17 +620,26 @@ def chat_completions():
 
         # Cache only successful (2xx) responses; ``finalize`` releases the
         # claim on a non-2xx so a real retry can still succeed (matches OpenAI).
-        if idem_key:
-            v1_idempotency.finalize(idem_key, response)
+        if idem_key and claimed_task_id is not None:
+            v1_idempotency.finalize(idem_key, claimed_task_id, response)
         return response
+
+    def _release_claim() -> None:
+        """Release this request's own claim, if it won one (#3109).
+
+        Scoped to ``claimed_task_id``: an error raised before the claim (or
+        after a stale takeover moved the key to a successor) must leave the
+        row alone, or it would delete someone else's in-flight claim.
+        """
+        if idem_key and claimed_task_id is not None:
+            v1_idempotency.release(idem_key, claimed_task_id)
 
     def _error_response(error: BaseException) -> Response:
         """The response for an error raised while setting up or running the request."""
         try:
             raise error
         except ResumeInProgressError:
-            if idem_key:
-                v1_idempotency.release(idem_key)
+            _release_claim()
             return make_response(
                 jsonify({
                     "error": {
@@ -638,8 +653,7 @@ def chat_completions():
         except ContinuationNotPendingError:
             # Results for calls whose pause is over (a new turn moved past it,
             # or it expired) while another pause waits: nothing ran.
-            if idem_key:
-                v1_idempotency.release(idem_key)
+            _release_claim()
             return make_response(
                 jsonify({
                     "error": {
@@ -651,13 +665,11 @@ def chat_completions():
                 409,
             )
         except ContextOverflowError as e:
-            if idem_key:
-                v1_idempotency.release(idem_key)
+            _release_claim()
             logger.info(f"/v1/chat/completions request does not fit the model: {e}")
             return _context_length_response(e)
         except ValueError as e:
-            if idem_key:
-                v1_idempotency.release(idem_key)
+            _release_claim()
             logger.error(
                 f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
                 extra={"error": str(e)},
@@ -667,8 +679,7 @@ def chat_completions():
                 400,
             )
         except Exception as e:
-            if idem_key:
-                v1_idempotency.release(idem_key)
+            _release_claim()
             logger.error(
                 f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
                 extra={"error": str(e)},
