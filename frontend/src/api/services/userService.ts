@@ -143,6 +143,8 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  getSourceDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_DEFAULTS, token),
   testSourceRetrieval: (
     sourceId: string,
     data: { query: string; retrieval?: any },
@@ -317,6 +319,8 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
+  cancelMCPOAuth: (taskId: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_OAUTH_CANCEL, { task_id: taskId }, token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   // The source's own connection syncs it; no browser token is involved.

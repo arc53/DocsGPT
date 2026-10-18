@@ -80,9 +80,14 @@ vi.mock('../preferences/preferenceApi', async (importOriginal) => ({
   getDocs,
 }));
 
+// The admin's defaults for new sources (GET /api/sources/defaults).
+const sourceDefaults = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve({ ok: false, json: async () => ({}) })),
+);
 vi.mock('../api/services/userService', () => ({
   default: {
     getConfig: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+    getSourceDefaults: () => sourceDefaults(),
   },
 }));
 
@@ -633,6 +638,65 @@ describe('Upload source-type tiles', () => {
     expect(sent[0].body.get('source')).toBe('crawler');
     expect(JSON.parse(String(sent[0].body.get('data')))).toEqual({
       url: 'https://docs.example',
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("starts a new source from the admin's defaults", async () => {
+    const sent: FormData[] = [];
+    class FakeXhr {
+      upload = { addEventListener() {} };
+      addEventListener() {}
+      open() {}
+      setRequestHeader() {}
+      send(body: FormData) {
+        sent.push(body);
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    sourceDefaults.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        retrieval: {
+          chunks: 4,
+          reranker: { type: 'decision', min_relevance: 0.3, candidate_k: null },
+        },
+      }),
+    });
+    await render();
+    const crawler = tiles().find((tile) =>
+      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+    )!;
+    await act(async () => crawler.click());
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    const type = async (input: HTMLInputElement, value: string) => {
+      await act(async () => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    await type(
+      document.body.querySelector<HTMLInputElement>('input[type="text"]')!,
+      'Docs site',
+    );
+    await type(
+      document.body.querySelector<HTMLInputElement>('input[name="url"]')!,
+      'https://docs.example',
+    );
+    const train = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.train',
+    )!;
+    await act(async () => train.click());
+    const config = JSON.parse(String(sent[0].get('config')));
+    expect(config.retrieval.chunks).toBe(4);
+    expect(config.retrieval.reranker).toEqual({
+      type: 'decision',
+      min_relevance: 0.3,
+      candidate_k: null,
     });
     vi.unstubAllGlobals();
   });

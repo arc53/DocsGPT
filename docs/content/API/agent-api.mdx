@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-15
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -84,6 +84,7 @@ Streaming-only fields:
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `attachments` | `string[]` | No | List of attachment IDs from `/api/task_status` success result. |
+| `attachments_mode` | `string` | No | `"auto"` (default) or `"reference"`. In reference mode none of the turn's files go into the prompt; the model reads, searches or processes them with its tools by their `F` ref. Any other value is treated as `"auto"`. See [Reference mode](/API/openai-compatible#reference-mode). |
 | `index` | `number` | No | Update an existing query index. If provided, `conversation_id` is required. |
 
 To resume a turn that paused for tool approval, send `conversation_id` and `tool_actions` instead of `question`; see [Tools that need approval](#tools-that-need-approval).
@@ -104,6 +105,8 @@ Response fields:
 - `tool_calls`
 - `thought`
 - `pending_tool_calls`, when the turn paused for tool approval (see [Tools that need approval](#tools-that-need-approval))
+- `artifacts`, when the turn made files (see [Artifacts](#artifacts))
+- `attachments`, the conversation's files with their `F` refs and attachment ids, when it has any
 - Optional structured output metadata (`structured`, `schema`) when enabled
 
 An error during the run returns HTTP `400` with `{"error": "..."}`.
@@ -186,7 +189,7 @@ Each `data:` frame is JSON with `type`:
 | `answer` | `answer` | Incremental answer chunk. |
 | `thought` | `thought` | Reasoning chunk (model and agent dependent). |
 | `source` | `source` | The retrieved sources and chunks. |
-| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. |
+| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. A call that made files also has `artifacts` (see [Artifacts](#artifacts)). |
 | `tool_calls` | `tool_calls` | The completed tool calls of the turn. |
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
@@ -195,9 +198,9 @@ Each `data:` frame is JSON with `type`:
 | `workflow_step` | `node_id`, `node_type`, `node_title`, `status`, and `output`/`state_delta` or `error` | A workflow node is `running`, `completed` or `failed`. |
 | `notice` | `notice` | A non-fatal message for the user (for example, some input documents were skipped). |
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
-| `error` | `error` | Error message. |
+| `error` | `error`, `code` | Error message. `code`, when present, names the cause; `stopped` means the answer was stopped (from **Activity → Now** or with `POST /api/messages/<message_id>/cancel`) before it wrote anything. |
 | `id` | `id` | The conversation ID. |
-| `end` | | The stream is complete. |
+| `end` | `artifacts`, `attachments` | The stream is complete. `artifacts` lists every artifact the turn created or changed; `attachments` lists the conversation's files with their `F` refs and attachment ids. Each is present only when there is something to list. |
 
 New event types can be added, so ignore types you don't handle.
 
@@ -391,6 +394,19 @@ requests.put(
 ```
 
 Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
+
+## Artifacts
+
+Files the agent makes with the [Artifact or Code Executor tool](/Tools/artifacts-and-code-execution) are
+artifacts. Each tool call that made one lists it under `artifacts`, with its `id`, `ref` (`A1`), `filename`,
+`version`, `kind`, `title`, `mime_type`, `size`, `sha256` and a `download_url` pinned to that version. The `end`
+event of `/stream`, and the `/api/answer` response, carry `artifacts`: every artifact the turn created or changed,
+once each at its latest version.
+
+Fetch `download_url` with your agent API key in the `Authorization: Bearer` header; the URL itself carries no
+key. The key reads only artifacts of its agent's conversations, and only with the `conversation_id` the URL
+carries. See [Artifacts](/API/openai-compatible#artifacts) on the OpenAI-compatible page for an example and for
+S3 storage.
 
 ## Search API
 

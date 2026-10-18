@@ -343,7 +343,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 18
+        assert sender.add_periodic_task.call_count == 19
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -370,28 +370,31 @@ class TestSetupPeriodicTasks:
         # guardrail_events retention sweep (24h)
         assert calls[8][0][0] == timedelta(hours=24)
         assert calls[8][1].get("name") == "cleanup-guardrail-events"
-        # request_traces retention sweep (24h)
+        # decision_usage retention sweep (24h)
         assert calls[9][0][0] == timedelta(hours=24)
-        assert calls[9][1].get("name") == "cleanup-traces"
-        # orphan memories sweep (24h)
+        assert calls[9][1].get("name") == "cleanup-decision-usage"
+        # request_traces retention sweep (24h)
         assert calls[10][0][0] == timedelta(hours=24)
-        assert calls[10][1].get("name") == "cleanup-orphan-memories"
+        assert calls[10][1].get("name") == "cleanup-traces"
+        # orphan memories sweep (24h)
+        assert calls[11][0][0] == timedelta(hours=24)
+        assert calls[11][1].get("name") == "cleanup-orphan-memories"
         # scheduler dispatcher
-        assert calls[11][1].get("name") == "dispatch-scheduled-runs"
+        assert calls[12][1].get("name") == "dispatch-scheduled-runs"
         # schedule runs cleanup (24h)
-        assert calls[12][0][0] == timedelta(hours=24)
-        assert calls[12][1].get("name") == "cleanup-schedule-runs"
+        assert calls[13][0][0] == timedelta(hours=24)
+        assert calls[13][1].get("name") == "cleanup-schedule-runs"
         # sandbox session reaper (60s)
-        assert calls[13][0][0] == timedelta(seconds=60)
-        assert calls[13][1].get("name") == "reap-sandbox-sessions"
+        assert calls[14][0][0] == timedelta(seconds=60)
+        assert calls[14][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[14][0][0] == timedelta(seconds=300)
-        assert calls[14][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[15][0][0] == timedelta(seconds=300)
+        assert calls[15][1].get("name") == "reap-stale-workflow-runs"
         # background jobs: lost leases and deadlines (60s), retention (24h)
-        assert calls[15][0][0] == timedelta(seconds=60)
-        assert calls[15][1].get("name") == "sweep-background-jobs"
-        assert calls[16][0][0] == timedelta(hours=24)
-        assert calls[16][1].get("name") == "cleanup-background-jobs"
+        assert calls[16][0][0] == timedelta(seconds=60)
+        assert calls[16][1].get("name") == "sweep-background-jobs"
+        assert calls[17][0][0] == timedelta(hours=24)
+        assert calls[17][1].get("name") == "cleanup-background-jobs"
 
 
 class TestMcpOauthTask:
@@ -808,6 +811,51 @@ class TestCleanupMessageEventsTask:
         assert [r["sequence_no"] for r in rows] == [1]
 
 
+class TestCleanupDecisionUsageTask:
+    """Retention janitor for ``decision_usage``."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from docsgpt.api.user.tasks import cleanup_decision_usage
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        assert cleanup_decision_usage.run() == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_days_past_retention_window(self, pg_conn, monkeypatch):
+        import datetime
+
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_decision_usage
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.decision_usage import DecisionUsageRepository
+
+        today = datetime.date.today()
+        DecisionUsageRepository(pg_conn).add([
+            {"day": day, "feature": "injection_input", "mode": "local", "model_version": "v", "status": "ok",
+             "calls": 1, "states": 1, "answered": 1, "ms_total": 1.0, "queue_ms_total": 0.0}
+            for day in (today - datetime.timedelta(days=120), today)
+        ])
+        monkeypatch.setattr(settings, "POSTGRES_URI", "postgresql://stub", raising=False)
+        monkeypatch.setattr(settings, "DECISION_USAGE_RETENTION_DAYS", 90)
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine):
+            result = cleanup_decision_usage.run()
+
+        assert result == {"deleted": 1, "ttl_days": 90}
+        assert pg_conn.execute(_text("SELECT day FROM decision_usage")).scalars().all() == [today]
+
+
 class TestCleanupTracesTask:
     """Retention janitor for ``request_traces``."""
 
@@ -972,6 +1020,13 @@ class TestIngestPoisonEvent:
     """The poison hook publishes a terminal source.ingest.failed so the
     upload toast resolves instead of hanging on "training".
     """
+
+    @pytest.fixture(autouse=True)
+    def _no_progress_close(self):
+        # Closing the progress row opens a DB session; covered in
+        # tests/worker/test_ingest_failure_progress.py.
+        with patch("docsgpt.worker.close_failed_ingest_progress"):
+            yield
 
     @pytest.mark.unit
     def test_publishes_failed_event(self):

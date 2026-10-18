@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.decisions.record import DecisionRecord, activate as activate_decision_record
 from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -24,6 +25,7 @@ from docsgpt.api.answer.services.prompt_renderer import (
     resolve_prompt_skeleton,
 )
 from docsgpt.agents.attachment_budget import (
+    _attachment_id,
     compute_attachment_budget,
     manifest_estimate,
     plan_attachments,
@@ -450,11 +452,12 @@ T = TypeVar("T")
 
 
 def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
-    """Run a request-setup method inside the request's execution trace.
+    """Run a request-setup method inside the request's execution trace and decision record.
 
     Agent setup does real work worth seeing in the trace -- pre-fetch
     retrieval, history compression -- before ``complete_stream`` runs, so
-    the trace is started here, in the request thread, and handed on.
+    the trace is started here, in the request thread, and handed on. The
+    decision record goes to the stream on the agent (``decision_record``).
     """
 
     @functools.wraps(method)
@@ -463,7 +466,7 @@ def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
         if trace is None:
             trace = tracing.start_trace(source=getattr(self, "trace_source", "stream"))
             self.trace = trace
-        with tracing.activate(trace):
+        with tracing.activate(trace), activate_decision_record(self.decision_record):
             try:
                 return method(self, *args, **kwargs)
             finally:
@@ -572,6 +575,15 @@ class StreamProcessor:
         # one made this turn); the agent stamps it on the turn's metadata.
         self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
+
+    @functools.cached_property
+    def decision_record(self) -> DecisionRecord:
+        """The turn's decision record.
+
+        Setup records into it, the agent carries it to ``complete_stream``
+        (``agent.decision_record``), and a resume continues the paused turn's.
+        """
+        return DecisionRecord()
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -1028,6 +1040,16 @@ class StreamProcessor:
         except Exception:
             return 0
 
+    def attachments_mode(self) -> str:
+        """How this turn's files reach the model: ``auto`` (default) or ``reference``.
+
+        ``reference`` lists the files for the attachments tool and the code
+        sandbox without putting their content in the prompt; any other value
+        is ``auto``.
+        """
+        mode = (self.data or {}).get("attachments_mode")
+        return "reference" if mode == "reference" else "auto"
+
     def _preliminary_attachment_reserve(self) -> int:
         """Tokens the turn's attachments are expected to take, before the agent plans.
 
@@ -1064,6 +1086,7 @@ class StreamProcessor:
                 ),
                 earlier=earlier,
                 max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+                reference=self.attachments_mode() == "reference",
             )
             return plan.reserved_tokens
         except Exception as e:
@@ -1808,6 +1831,7 @@ class StreamProcessor:
         return build_dispatcher(
             _legacy_classic,
             sources=per_source,
+            conversation_id=getattr(self, "conversation_id", None),
             **retriever_kwargs,
         )
 
@@ -2303,6 +2327,7 @@ class StreamProcessor:
 
         # Recreate dependencies
         system_api_key = api_key or get_api_key_for_provider(llm_name)
+        backup_models = [m for m in agent_config.get("backup_models") or [] if isinstance(m, str)]
         llm = LLMCreator.create_llm(
             llm_name,
             api_key=system_api_key,
@@ -2311,6 +2336,7 @@ class StreamProcessor:
             model_id=model_id,
             agent_id=agent_id,
             model_user_id=model_user_id,
+            backup_models=backup_models or None,
         )
         importer = getattr(llm, "import_responses_state", None)
         if callable(importer):
@@ -2393,11 +2419,26 @@ class StreamProcessor:
         if saved_guardrails:
             agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
         agent_kwargs["request_id"] = agent_config.get("request_id")
+        # The paused turn's files, so the resumed one can still hand them to
+        # its tools (``run_code`` inputs by ``F`` ref) and list their refs.
+        saved_files = agent_config.get("attachments")
+        saved_listing = None
+        if isinstance(saved_files, dict):
+            file_kwargs, saved_listing = self._resumed_attachment_kwargs(saved_files)
+            agent_kwargs.update(file_kwargs)
+        # Stamped on the turn's metadata, so the next turn may chain onto it.
+        if agent_config.get("last_compression_at"):
+            agent_kwargs["last_compression_at"] = agent_config["last_compression_at"]
 
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        # The paused rounds' decisions, continued in the next round.
+        self.decision_record.resume(agent_config.get("decisions"))
+        agent.decision_record = self.decision_record
+        if isinstance(saved_files, dict):
+            agent.resume_paused_attachments(saved_listing)
 
         # Store config for the route layer
         self.model_id = model_id
@@ -2429,6 +2470,52 @@ class StreamProcessor:
             tool_actions,
             reasoning_content,
         )
+
+    def _resumed_attachment_kwargs(self, saved: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[List[Dict]]]:
+        """Agent kwargs for a paused turn's files, read again as their owner.
+
+        Args:
+            saved: The ``attachments`` entry of the paused state
+                (``BaseAgent.paused_turn_state``).
+
+        Returns:
+            The agent kwargs (``attachments``, ``earlier_attachments``,
+            ``skipped_attachments``, ``attachments_mode`` and
+            ``attachment_planning``) and the paused turn's ``F`` ref listing.
+            When the rows read back are not the saved ones (a file was
+            deleted meanwhile), no files are restored: ``F`` refs are
+            positions, and a gap would point a ref at another file. The
+            resume itself never fails over it.
+        """
+        current_ids = [str(i) for i in saved.get("current") or [] if i]
+        earlier_ids = [str(i) for i in saved.get("earlier") or [] if i]
+        current = self._get_attachments_content(current_ids, self.initial_user_id) if current_ids else []
+        earlier: List[Dict[str, Any]] = []
+        if earlier_ids:
+            try:
+                earlier = self._fetch_attachment_rows(earlier_ids)
+            except Exception as e:
+                logger.error("Error loading the paused turn's earlier attachments: %s", bounded_error_text(e))
+        restored_ids = [_attachment_id(row) for row in [*earlier, *current] if isinstance(row, dict)]
+        if restored_ids != earlier_ids + current_ids:
+            logger.warning(
+                "The paused turn's files changed before its resume (%d of %d read back); resuming without them",
+                len(restored_ids),
+                len(earlier_ids) + len(current_ids),
+            )
+            current, earlier = [], []
+            listing = None
+        else:
+            listing = saved.get("listing")
+        mode = saved.get("mode")
+        kwargs = {
+            "attachments": current,
+            "earlier_attachments": earlier,
+            "skipped_attachments": [s for s in saved.get("skipped") or [] if isinstance(s, dict)],
+            "attachments_mode": mode if isinstance(mode, str) else None,
+            "attachment_planning": bool(saved.get("planning", True)),
+        }
+        return kwargs, listing if isinstance(listing, list) else None
 
     def create_agent(
         self,
@@ -2587,6 +2674,7 @@ class StreamProcessor:
             "attachment_planning": True,
             "earlier_attachments": self.earlier_attachments,
             "skipped_attachments": self._request_skipped_files(),
+            "attachments_mode": self.attachments_mode(),
         }
 
         # Wiki tool injection + authz: only for agent types that build a
@@ -2645,5 +2733,6 @@ class StreamProcessor:
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
+        agent.decision_record = self.decision_record
 
         return agent

@@ -1,6 +1,7 @@
 """`docsgpt doctor`, `restart`, following native logs, and settings that apply themselves."""
 
 import argparse
+import re
 import socket
 
 import pytest
@@ -677,3 +678,180 @@ class TestDoctorEndToEnd:
     def test_registry_logging_stays_out_of_the_report(self, tmp_path):
         result, _ = _doctor_subprocess(tmp_path, "LLM_PROVIDER=openai\nAPI_KEY=sk\n")
         assert "skipped: env var" not in result.stdout + result.stderr
+
+
+class TestDoctorDecisions:
+    """The decisions row: where the model runs, what it reports, and each feature's mode; never a failure."""
+
+    @pytest.fixture
+    def server(self, monkeypatch):
+        """Route doctor's probe to a fake server; returns the requests it saw and lets a test set the reply."""
+        import httpx2
+
+        seen, reply = [], {"status": 200, "json": None, "error": None}
+        real = httpx2.Client
+
+        def handle(request):
+            seen.append(request)
+            if reply["error"]:
+                raise reply["error"]
+            return httpx2.Response(reply["status"], json=reply["json"])
+
+        monkeypatch.setattr(httpx2, "Client", lambda **kwargs: real(transport=httpx2.MockTransport(handle), **kwargs))
+        return seen, reply
+
+    def test_by_default_it_is_in_the_api_process_and_every_feature_is_off(self, tmp_path):
+        env = {"DECISION_CACHE_DIR": str(tmp_path)}
+        check = commands._check_decisions(env, docker=False)
+        assert check.level == "ok"
+        assert "in the API process" in check.detail and "not downloaded yet" in check.detail
+        assert "injection_input off" in check.detail
+
+    def test_downloaded_files_are_named(self, tmp_path):
+        from docsgpt.decisions import files
+        from docsgpt.decisions.models import V02
+
+        folder = tmp_path / V02.id / V02.revision / "onnx"
+        folder.mkdir(parents=True)
+        for name in files.ONNX_FILES:
+            (folder / name).write_bytes(b"x")
+        check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=False)
+        assert str(folder) in check.detail
+
+    def test_relevance_is_listed_as_rag_rerank_and_counts_as_a_feature_on(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(commands.sys, "platform", "darwin")
+        check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=True)
+        assert check.level == "ok" and "rag_rerank off" in check.detail
+        check = commands._check_decisions({"DECISION_RELEVANCE_ENABLED": "true"}, docker=True)
+        assert "rag_rerank on" in check.detail
+        assert check.level == "warn" and "--device mps" in check.detail
+
+    def test_mode_none(self):
+        assert commands._check_decisions({"DECISION_MODE": "none"}, docker=False).detail == "off (DECISION_MODE=none)"
+
+    def test_a_docker_stack_holds_the_model_in_its_backend(self, monkeypatch):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        assert check.level == "ok" and "backend container" in check.detail
+        assert "injection_input monitor" in check.detail
+
+    def test_a_docker_stack_with_the_decider_points_at_it(self, monkeypatch):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095", "DECISION_KEY": "d",
+               "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        check = commands._check_decisions(env, docker=True)
+        assert check.level == "ok" and "decider container" in check.detail
+
+    @pytest.mark.parametrize("env", [{"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095"},
+                                     {"COMPOSE_PROFILES": "https,decider"},
+                                     {"DECISION_BASE_URL": "http://decider:7095"}])
+    def test_the_decider_without_a_key_is_a_warning_even_with_every_feature_off(self, monkeypatch, env):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        check = commands._check_decisions({**env, "INTERNAL_KEY": "i"}, docker=True)
+        assert check.level == "warn" and "without DECISION_KEY: set one in .env" in check.detail
+
+    def test_a_decider_url_without_its_profile_is_a_warning(self, monkeypatch):
+        monkeypatch.setattr(commands.sys, "platform", "linux")
+        env = {"DECISION_BASE_URL": "http://decider:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        check = commands._check_decisions(env, docker=True)
+        assert check.level == "warn" and "docsgpt up --decider" in check.detail
+
+    def test_on_a_mac_a_feature_in_docker_gets_the_mps_hint(self, monkeypatch):
+        monkeypatch.setattr(commands.sys, "platform", "darwin")
+        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        assert check.level == "warn" and "--device mps" in check.detail
+        assert commands._check_decisions({}, docker=True).level == "ok", "no hint while every feature is off"
+
+    def test_a_server_reports_its_model_and_the_auto_verdicts(self, server):
+        from docsgpt.decisions.latency import SpeedProfile
+
+        seen, reply = server
+        speed = SpeedProfile(0.05, 0.0005, 0.0, overhead=60, threads=0, plan="torch").wire()
+        reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2", "prompt_hash": "78cfb276f93a",
+                                     "calibration": "c3bc72ff6907", "runtime": "torch-mps-fp16",
+                                     "status": "ready", "speed": speed}]}
+        env = {"DECISION_BASE_URL": "http://host.docker.internal:7095", "DECISION_KEY": "k",
+               "GUARDRAILS_INJECTION_INPUT_MODE": "auto"}
+        check = commands._check_decisions(env, docker=True)
+        assert check.level == "ok"
+        assert "torch-mps-fp16" in check.detail and "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907" in check.detail
+        assert "injection_input auto, on at" in check.detail
+        assert "rag_rerank off" in check.detail
+        (request,) = seen
+        assert str(request.url) == "http://127.0.0.1:7095/v1/models"
+        assert request.headers["authorization"] == "Bearer k"
+
+    @pytest.mark.parametrize("plan, tokens", [("onnx", 320), ("torch", 1220)])
+    def test_relevance_on_shows_its_call_against_the_timeout(self, server, monkeypatch, plan, tokens):
+        from docsgpt.decisions.latency import SpeedProfile
+
+        _, reply = server
+        speed = SpeedProfile(0.05, 0.0005, 0.0, overhead=60, threads=0, plan=plan).wire()
+        reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2", "prompt_hash": "78cfb276f93a",
+                                     "calibration": "c3bc72ff6907", "runtime": "onnx-int8", "status": "ready",
+                                     "speed": speed}]}
+        shapes = []
+        real = SpeedProfile.predict_s
+
+        def predict(self, shape):
+            shapes.append(shape)
+            return real(self, shape)
+
+        monkeypatch.setattr(SpeedProfile, "predict_s", predict)
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_KEY": "k", "DECISION_RELEVANCE_ENABLED": "true"}
+        check = commands._check_decisions(env, docker=False)
+        assert re.search(r"rag_rerank on at \d+\.\d\ds of 2s", check.detail)
+        # A CPU (ONNX) server scores best-window passages; a GPU one whole chunks.
+        (shape,) = shapes
+        assert shape.states == 20 and shape.state_tokens == tokens
+
+    @pytest.mark.parametrize("models", [{"name": "x"}, "arc53/arc-decide-0.4b-v0.2", [], ["x"]])
+    def test_a_wrong_shaped_model_list_is_reported_not_raised(self, server, models):
+        _, reply = server
+        reply["json"] = {"models": models}
+        check = commands._check_decisions({"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_KEY": "k"},
+                                          docker=False)
+        assert "an unnamed model" in check.detail
+
+    @pytest.mark.parametrize("docker", [True, False])
+    def test_internal_key_is_never_sent(self, server, docker):
+        seen, reply = server
+        reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2"}]}
+        commands._check_decisions({"DECISION_BASE_URL": "http://127.0.0.1:7095", "INTERNAL_KEY": "i"}, docker=docker)
+        assert "authorization" not in seen[0].headers
+
+    @pytest.mark.parametrize("status, error, said", [(401, None, "refused DECISION_KEY"),
+                                                     (500, None, "HTTP 500"),
+                                                     (200, "connect", "does not answer")])
+    def test_a_server_that_does_not_serve_is_a_warning_when_a_feature_is_on(self, server, status, error, said):
+        import httpx2
+
+        _, reply = server
+        reply["status"] = status
+        reply["error"] = httpx2.ConnectError("refused") if error else None
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "on"}
+        check = commands._check_decisions(env, docker=False)
+        assert check.level == "warn" and said in check.detail
+        env["GUARDRAILS_INJECTION_INPUT_MODE"] = "off"
+        assert commands._check_decisions(env, docker=False).level == "ok"
+
+    def test_vllm(self, server):
+        _, reply = server
+        reply["json"] = {"object": "list", "data": [{"id": "arc53/arc-decide-0.6b-v0.1"}]}
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:8000", "DECISION_PROTOCOL": "vllm"}
+        assert "vLLM at http://127.0.0.1:8000 serving arc53/arc-decide-0.6b-v0.1" in \
+            commands._check_decisions(env, docker=False).detail
+
+    def test_credentials_in_the_url_stay_out_of_the_report(self, server):
+        seen, reply = server
+        reply["status"] = 401
+        check = commands._check_decisions({"DECISION_BASE_URL": "http://user:secret@127.0.0.1:7095"}, docker=False)
+        assert "secret" not in check.detail
+        assert "authorization" in seen[0].headers
+
+    def test_it_is_a_row_of_the_report(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(commands, "_check_postgres", lambda uri: commands.Check("postgres", "ok", "fine"))
+        monkeypatch.setattr(commands, "_check_redis", lambda urls: commands.Check("redis", "ok", "fine"))
+        (tmp_path / ".env").write_text("LLM_PROVIDER=docsgpt\n", encoding="utf-8")
+        _run(["doctor", "--dir", str(tmp_path)], _context())
+        assert any(" decisions " in line for line in capsys.readouterr().out.splitlines())

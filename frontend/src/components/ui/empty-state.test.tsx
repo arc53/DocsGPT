@@ -1,6 +1,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Monitor } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -36,6 +37,33 @@ describe('EmptyState', () => {
       <EmptyState illustration="none" title="No results" />,
     );
     expect(html).not.toContain('<svg');
+  });
+
+  it('draws a muted 32px icon in place of the art', () => {
+    const html = renderToStaticMarkup(
+      <EmptyState icon={Monitor} title="Open on a larger screen" />,
+    );
+    expect(html).toContain('lucide-monitor');
+    expect(html).toContain('text-muted-foreground mb-3 size-8');
+    expect(html).not.toContain('size-32');
+  });
+
+  // A page whose only content is the empty state needs it as its heading.
+  it('draws the title as a heading with titleAs, keeping its look', () => {
+    const html = renderToStaticMarkup(
+      <EmptyState titleAs="h1" illustration="none" title="Page not found" />,
+    );
+    expect(html).toContain(
+      '<h1 class="text-muted-foreground text-lg">Page not found</h1>',
+    );
+  });
+
+  it('keeps the red alert icon over a passed icon', () => {
+    const html = renderToStaticMarkup(
+      <EmptyState tone="destructive" icon={Monitor} title="Failed" />,
+    );
+    expect(html).toContain('lucide-circle-alert');
+    expect(html).not.toContain('lucide-monitor');
   });
 
   it('turns red and announces itself with tone="destructive"', () => {

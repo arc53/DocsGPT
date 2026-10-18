@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
 
+import type { ArtifactCardItem } from './artifactCards';
+
 /**
  * One retrieved source of an answer, as the backend labels a chunk.
  *
@@ -21,6 +23,9 @@ export type AnswerSource = {
   // A chunk synced from a connection names the service, never the account.
   connector_key?: string | null;
   connector_name?: string | null;
+  // The decision model's p(relevant) against the searched query, when a
+  // relevance stage ordered the answer's sources; absent otherwise.
+  relevance?: number | null;
 };
 
 /**
@@ -31,7 +36,19 @@ export type AnswerSource = {
  * SidePanel instead.
  */
 export const ChatCompanionContext = createContext<{
-  openSources: (sources: AnswerSource[], index?: number) => void;
+  /** Unset where sources keep their modal panel (the builder preview). */
+  openSources?: (sources: AnswerSource[], index?: number) => void;
+  /** The artifact (and version) the docked panel shows, so its card is marked open. */
+  openArtifact?: { id: string; version?: number } | null;
+  /**
+   * Shows an answer's full artifact list (its “N more files” card). `key`
+   * names the answer, so its card is marked open and its list kept current.
+   */
+  openArtifactList?: (items: ArtifactCardItem[], key: string) => void;
+  /** The key of the answer whose list the panel shows. */
+  openArtifactListKey?: string | null;
+  /** An answer's current files; updates the panel's list when it is that answer's. */
+  syncArtifactList?: (key: string, items: ArtifactCardItem[]) => void;
 } | null>(null);
 
 export const useChatCompanion = () => useContext(ChatCompanionContext);
@@ -48,4 +65,17 @@ export function sourceHref(source: AnswerSource): string | null {
  */
 export function sourceExcerpt(source: AnswerSource): string {
   return (source.text ?? '').replace(/\.\.\.$/, '').trim();
+}
+
+export type RelevanceBand = 'strong' | 'possible' | 'weak';
+
+/**
+ * The coarse label a relevance score earns: strong from 0.7, possible from
+ * 0.3, weak below. `null` for a source without a score, which shows no label.
+ */
+export function relevanceBand(relevance: unknown): RelevanceBand | null {
+  if (typeof relevance !== 'number' || !Number.isFinite(relevance)) return null;
+  if (relevance >= 0.7) return 'strong';
+  if (relevance >= 0.3) return 'possible';
+  return 'weak';
 }

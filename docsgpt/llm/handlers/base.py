@@ -268,6 +268,9 @@ class LLMHandler(ABC):
         plan = self._attachment_plan_of(agent)
         if plan is not None:
             return self._prepare_planned_messages(agent, messages, plan)
+        if getattr(agent, "_attachments_merged", False) is True:
+            # A resumed turn: its saved messages already carry the files.
+            return messages
         if not attachments:
             return messages
         logger.info(f"Preparing messages with {len(attachments)} attachments")

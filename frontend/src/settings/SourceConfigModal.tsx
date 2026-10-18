@@ -14,6 +14,8 @@ import { can } from '../utils/accessUtils';
 import RetrievalOptions, {
   chunkingChanged,
   configToOptions,
+  type DecisionFeatures,
+  NO_DECISION_FEATURES,
   isPrescreenConfigValid,
   optionsToConfig,
   type RetrievalOptionsValue,
@@ -29,6 +31,8 @@ interface SourceConfigModalProps {
   hybridAvailable?: boolean;
   graphRAGAvailable?: boolean;
   availableModels?: Model[];
+  // The decision-model controls the operator turned on (/api/config).
+  decision?: DecisionFeatures;
   // Switching the retriever to graphrag on a non-graphrag source can't go
   // through the config PATCH (the backend blocks kind→graphrag); the parent
   // routes it through EnableGraphRAGModal instead.
@@ -43,6 +47,7 @@ export default function SourceConfigModal({
   hybridAvailable = false,
   graphRAGAvailable = false,
   availableModels = [],
+  decision = NO_DECISION_FEATURES,
   onEnableGraphRAG,
 }: SourceConfigModalProps) {
   const { t } = useTranslation();
@@ -200,6 +205,7 @@ export default function SourceConfigModal({
               hybridAvailable={hybridAvailable}
               graphRAGAvailable={graphRAGAvailable}
               availableModels={availableModels}
+              decision={decision}
             />
             {willRequireReingest && !isReadOnly && (
               <Alert variant="warning">

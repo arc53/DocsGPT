@@ -159,7 +159,7 @@ class TestCatalogRoute:
         names = {c["name"] for c in payload["checks"]}
         assert names == {
             "pii", "secrets", "denylist", "url", "injection",
-            "groundedness", "policy",
+            "injection_model", "groundedness", "policy",
         }, f"unexpected catalog: {sorted(names)}"
 
     def test_each_check_carries_the_ui_contract(self, app):

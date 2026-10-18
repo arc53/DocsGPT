@@ -10,11 +10,13 @@ vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
 }));
 
+const updateSourceConfig = vi.hoisted(() => vi.fn());
 vi.mock('../api/services/userService', () => ({
-  default: { updateSourceConfig: vi.fn() },
+  default: { updateSourceConfig },
 }));
 
 import type { Doc } from '../models/misc';
+import type { DecisionFeatures } from './components/RetrievalOptions';
 import SourceConfigModal from './SourceConfigModal';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -43,7 +45,7 @@ describe('SourceConfigModal access', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (document: Doc) => {
+  const render = async (document: Doc, decision?: DecisionFeatures) => {
     await act(async () => {
       root.render(
         <SourceConfigModal
@@ -52,6 +54,7 @@ describe('SourceConfigModal access', () => {
           document={document}
           onReingest={vi.fn()}
           onEnableGraphRAG={vi.fn()}
+          decision={decision}
         />,
       );
     });
@@ -112,5 +115,43 @@ describe('SourceConfigModal access', () => {
   it('an owned source without access fields is editable', async () => {
     await render(doc({}));
     expect(readOnlyNotice()).toBe(false);
+  });
+
+  it('saves a strictness picked in the Relevance section', async () => {
+    updateSourceConfig.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, requires_reingest: false }),
+    });
+    await render(
+      doc({
+        config: {
+          retrieval: {
+            reranker: { type: 'decision', min_relevance: 0.3 },
+          },
+        },
+      }),
+      { relevance: true },
+    );
+    const strict = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '#retrieval-relevance-strictness [data-slot="toggle-group-item"]',
+      ),
+    ).find(
+      (b) =>
+        b.textContent ===
+        'settings.sources.retrievalOptions.relevance.presets.strict',
+    )!;
+    await act(async () => strict.click());
+    const save = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.configModal.save',
+    )!;
+    await act(async () => save.click());
+    const config = updateSourceConfig.mock.calls[0][1];
+    expect(config.retrieval.reranker).toEqual({
+      type: 'decision',
+      min_relevance: 0.5,
+      candidate_k: null,
+    });
+    expect(config.retrieval.prescreen).toBe(null);
   });
 });

@@ -197,6 +197,7 @@ class TestUserLifecycle:
         users = Mock()
         users.get.return_value = {
             "user_id": "bob",
+            "email": "bob@example.com",
             "active": True,
             "created_at": None,
             "updated_at": None,
@@ -223,6 +224,7 @@ class TestUserLifecycle:
         assert resp.status_code == 200
         data = _body(resp)
         assert data["user"]["user_id"] == "bob"
+        assert data["user"]["email"] == "bob@example.com"
         assert "admin" in data["roles"] and "user" in data["roles"]
 
 

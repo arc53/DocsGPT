@@ -28,6 +28,41 @@ export function LoadError({
   );
 }
 
+/** The email on file, or null when there is none. */
+function emailOf(email?: string | null): string | null {
+  return email?.trim() || null;
+}
+
+/** How a confirm or a dialog title names a user: the email, else the id. */
+export function userName(userId: string, email?: string | null): string {
+  return emailOf(email) ?? userId;
+}
+
+/**
+ * A user in an admin table: the email on file over the full user id, or the
+ * id alone. Admins filter and set quotas by the id, so it is never cut.
+ */
+export function UserIdentity({
+  userId,
+  email,
+}: {
+  userId: string;
+  email?: string | null;
+}) {
+  const mail = emailOf(email);
+  if (!mail) {
+    return <span className="font-mono text-xs wrap-anywhere">{userId}</span>;
+  }
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span className="wrap-anywhere">{mail}</span>
+      <span className="text-muted-foreground font-mono text-xs wrap-anywhere">
+        {userId}
+      </span>
+    </span>
+  );
+}
+
 // Audit-feed pills render as Badge; these helpers pick its variant.
 type Tone = NonNullable<VariantProps<typeof badgeVariants>['variant']>;
 
@@ -97,6 +132,7 @@ const EVENT_LABELS: Record<string, string> = {
   quota_policy_set: 'Quota set',
   quota_policy_deleted: 'Quota removed',
   connector_policy_set: 'Connector policy changed',
+  source_defaults_set: 'Source defaults changed',
   pat_created: 'Token created',
   pat_revoked: 'Token revoked',
   pat_regenerated: 'Token regenerated',

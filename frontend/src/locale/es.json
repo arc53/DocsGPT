@@ -31,10 +31,13 @@
     "dismiss": "Descartar",
     "toolApprovalTitle": "Se requiere aprobar una herramienta",
     "toolApprovalReview": "Revisar",
-    "toolApprovalFallbackName": "Conversación"
+    "toolApprovalFallbackName": "Conversación",
+    "moreToasts_one": "{{count}} más",
+    "moreToasts_many": "{{count}} más",
+    "moreToasts_other": "{{count}} más",
+    "fewerToasts": "Mostrar menos"
   },
   "backgroundJobs": {
-    "unread": "No leído",
     "card": {
       "status": {
         "working": "En segundo plano",
@@ -227,8 +230,10 @@
           "inProgress": "Convirtiendo archivos en páginas de wiki…",
           "summaryPages_one": "{{count}} página creada",
           "summaryPages_other": "{{count}} páginas creadas",
+          "summaryPages_many": "{{count}} páginas creadas",
           "summarySkipped_one": "{{count}} archivo omitido",
           "summarySkipped_other": "{{count}} archivos omitidos",
+          "summarySkipped_many": "{{count}} archivos omitidos",
           "skippedHeading": "Archivos omitidos",
           "done": "Listo",
           "errors": {
@@ -240,6 +245,7 @@
         "badge": "Wiki vivo",
         "byline_one": "{{pages}} página · {{tokens}} tokens",
         "byline_other": "{{pages}} páginas · {{tokens}} tokens",
+        "byline_many": "{{pages}} páginas · {{tokens}} tokens",
         "explainer": "Los agentes leen y reescriben estas páginas mientras trabajan.",
         "explainerEditable": "Los agentes leen y reescriben estas páginas mientras trabajan; cualquier agente que use esta fuente puede editarla.",
         "home": "Inicio",
@@ -276,10 +282,13 @@
           "inProgressPct": "Construyendo grafo… {{pct}}%",
           "summaryNodes_one": "{{count}} entidad",
           "summaryNodes_other": "{{count}} entidades",
+          "summaryNodes_many": "{{count}} entidades",
           "summaryEdges_one": "{{count}} relación",
           "summaryEdges_other": "{{count}} relaciones",
+          "summaryEdges_many": "{{count}} relaciones",
           "summaryChunks_one": "{{count}} fragmento procesado",
           "summaryChunks_other": "{{count}} fragmentos procesados",
+          "summaryChunks_many": "{{count}} fragmentos procesados",
           "done": "Listo",
           "errors": {
             "generic": "No se pudo habilitar GraphRAG. Inténtalo de nuevo.",
@@ -308,6 +317,7 @@
           "otherTypes": "Otros: {{types}}",
           "otherTypesMore_one": "{{formatted}} más",
           "otherTypesMore_other": "{{formatted}} más",
+          "otherTypesMore_many": "{{formatted}} más",
           "untyped": "Sin tipo",
           "loadFailed": "No se pudo cargar el grafo.",
           "entitiesLoadFailed": "No se pudieron cargar las entidades.",
@@ -320,6 +330,7 @@
           "relationships": "Relaciones",
           "relationshipsCapped_one": "Se muestran las {{shown}} más fuertes de {{total}} relación.",
           "relationshipsCapped_other": "Se muestran las {{shown}} más fuertes de {{total}} relaciones.",
+          "relationshipsCapped_many": "Se muestran las {{shown}} más fuertes de {{total}} relaciones.",
           "noRelationships": "Esta entidad no tiene relaciones.",
           "relatedTo": "relacionada con",
           "showAll": "Mostrar las {{formatted}}",
@@ -329,12 +340,16 @@
           "allTypes": "Todos los tipos",
           "chunkCount_one": "{{formatted}} fragmento",
           "chunkCount_other": "{{formatted}} fragmentos",
+          "chunkCount_many": "{{formatted}} fragmentos",
           "entityCount_one": "{{formatted}} entidad",
           "entityCount_other": "{{formatted}} entidades",
+          "entityCount_many": "{{formatted}} entidades",
           "entityRange_one": "{{from}}–{{to}} de {{formatted}} entidad",
           "entityRange_other": "{{from}}–{{to}} de {{formatted}} entidades",
+          "entityRange_many": "{{from}}–{{to}} de {{formatted}} entidades",
           "relationshipCount_one": "{{formatted}} relación",
           "relationshipCount_other": "{{formatted}} relaciones",
+          "relationshipCount_many": "{{formatted}} relaciones",
           "chunk": "Fragmento",
           "chunkMeta": "{{file}} · {{tokens}} tokens",
           "chunkTokens": "{{tokens}} tokens",
@@ -351,11 +366,13 @@
         "queryPlaceholder": "Pregunta algo que esta fuente debería responder...",
         "run": "Ejecutar",
         "notSavedHint": "Estos ajustes solo se usan para esta prueba — no se guardan en la fuente. Cámbialos en Configuración de la fuente para hacerlos permanentes.",
+        "notSavedHintEditor": "Estos ajustes solo se usan para esta prueba hasta que los guardes en la fuente.",
         "resultSummary_one": "{{count}} fragmento recuperado · {{retriever}}",
         "resultSummary_other": "{{count}} fragmentos recuperados · {{retriever}}",
+        "resultSummary_many": "{{count}} fragmentos recuperados · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No se recuperaron fragmentos para esta consulta.",
-        "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de puntuación ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
+        "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de similitud ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
         "showMore": "Mostrar fragmento completo",
         "showLess": "Mostrar menos",
         "noScore": "sin puntuación",
@@ -367,7 +384,31 @@
         },
         "errors": {
           "failed": "La prueba de recuperación falló. Inténtalo de nuevo."
-        }
+        },
+        "relevance": "relevancia",
+        "compare": "Comparar con el orden del recuperador",
+        "compareHint": "Muestra también todos los candidatos en el orden del recuperador, con su relevancia y si el modelo de relevancia los mantuvo, subió o descartó.",
+        "relevanceRun": {
+          "applied": "ordenados por relevancia en {{ms}} ms",
+          "fallback": "modelo de relevancia no usado ({{reason}}), se mantiene el orden del recuperador"
+        },
+        "compareTitle": "Orden del recuperador",
+        "compareDescription": "Todos los candidatos que recibieron las etapas de relevancia, en el orden en que los clasificó el recuperador.",
+        "compareColumns": {
+          "before": "Posición",
+          "chunk": "Fragmento",
+          "relevance": "Relevancia",
+          "outcome": "Resultado"
+        },
+        "compareStatus": {
+          "promoted": "Subido a #{{rank}}",
+          "kept": "Mantenido como #{{rank}}",
+          "dropped": "Descartado",
+          "notKept": "No mantenido"
+        },
+        "strictness": "Relevancia para esta prueba",
+        "saveToSource": "Guardar en la fuente",
+        "savedToSource": "Guardado. La fuente usa ahora los ajustes que probaste."
       },
       "editConfig": "Configuración de la fuente",
       "shareWithTeam": "Compartir con el equipo",
@@ -396,14 +437,15 @@
       "searchAlt": "Buscar",
       "retrievalOptions": {
         "title": "Configuración avanzada",
+        "advanced": "Avanzado",
         "retrieval": {
           "title": "Recuperación",
           "note": "Estos cambios surten efecto de inmediato, sin necesidad de reindexar.",
           "tag": "sin reindexar",
           "chunks": "Fragmentos a recuperar (top-k)",
-          "scoreThreshold": "Umbral de puntuación",
-          "scoreThresholdPlaceholder": "Ninguno",
-          "scoreThresholdHint": "Solo devuelve fragmentos por encima de esta puntuación de relevancia (0–1); cuanto más alta, más estricta.",
+          "similarityThreshold": "Umbral de similitud",
+          "similarityThresholdPlaceholder": "Ninguno",
+          "similarityThresholdHint": "Descarta los fragmentos cuya puntuación de similitud del recuperador sea inferior a este valor (0–1). Filtra por la puntuación del recuperador, no por el modelo de relevancia.",
           "rephraseQuery": "Reformular la consulta antes de buscar",
           "retriever": "Recuperador",
           "retrievers": {
@@ -433,13 +475,14 @@
           "agentToolHint": "Los agentes también pueden seguir estas relaciones por sí mismos cuando la exposición de esta fuente es «Herramienta de búsqueda bajo demanda» o cuando la usa un agente agéntico."
         },
         "prescreen": {
-          "enable": "Habilitar preselección con LLM",
-          "warning": "Obtiene un conjunto de candidatos más grande y usa un LLM para filtrarlo. Esto añade latencia y costo por consulta.",
+          "enable": "Preselección con LLM",
+          "warning": "Un LLM revisa un conjunto mayor de candidatos y conserva los que responden a la consulta. Esto añade latencia y costo a cada consulta.",
           "candidateK": "Candidatos a obtener",
           "maxKeep": "Máximo de fragmentos a conservar",
           "batchSize": "Tamaño de lote",
           "model": "Modelo (opcional)",
-          "modelPlaceholder": "Por defecto, el modelo de la solicitud"
+          "modelPlaceholder": "Por defecto, el modelo de la solicitud",
+          "exclusiveHint": "Sustituye a la relevancia: al activar una, se desactiva la otra."
         },
         "graph": {
           "title": "Extracción de grafo",
@@ -464,8 +507,32 @@
             "semantic": "Semántica"
           },
           "maxTokens": "Máximo de tokens por fragmento",
+          "maxTokensHint": "Máximo de 4096 tokens.",
           "minTokens": "Mínimo de tokens por fragmento",
           "duplicateHeaders": "Duplicar encabezados entre fragmentos"
+        },
+        "relevance": {
+          "title": "Relevancia",
+          "tag": "sin reindexar",
+          "mode": "Modelo de relevancia",
+          "modeHint": "Puntúa cada fragmento recuperado frente a la consulta. Reordenar coloca primero los más relevantes; Reordenar y filtrar además descarta los débiles.",
+          "modes": {
+            "off": "Desactivado",
+            "reorder": "Reordenar",
+            "filter": "Reordenar y filtrar"
+          },
+          "strictness": "Rigor del filtro",
+          "strictnessHint": "Cuanto más estricto, menos fragmentos conserva: menos tokens por respuesta, pero más riesgo de descartar uno importante.",
+          "presets": {
+            "loose": "Flexible",
+            "balanced": "Equilibrado",
+            "strict": "Estricto",
+            "custom": "Personalizado ({{value}})"
+          },
+          "minRelevance": "Relevancia mínima",
+          "minRelevanceHint": "La relevancia exacta (0–1) que necesita un fragmento para conservarse. Flexible es 0,1, Equilibrado 0,3 y Estricto 0,5.",
+          "candidates": "Candidatos a puntuar",
+          "candidatesHint": "Cuántos fragmentos obtiene el recuperador para que el modelo de relevancia los puntúe, hasta {{max}}. Predeterminado: {{default}}."
         }
       },
       "configModal": {
@@ -474,7 +541,7 @@
         "subtitleGeneric": "Configura cómo se fragmenta y recupera esta fuente.",
         "save": "Guardar",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
-        "prescreenInvalidHint": "Revisa los valores de preselección: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
+        "prescreenInvalidHint": "Revisa los valores de la preselección con LLM: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
         "reingestLater": "Más tarde",
         "errors": {
@@ -500,14 +567,18 @@
       "filesLoadError": "No se pudieron cargar los archivos",
       "filesByline_one": "{{files}} archivo · {{tokens}} tokens",
       "filesByline_other": "{{files}} archivos · {{tokens}} tokens",
+      "filesByline_many": "{{files}} archivos · {{tokens}} tokens",
       "filterFiles": "Filtrar archivos",
       "searchChunks": "Buscar fragmentos",
       "chunkCount_one": "{{formatted}} fragmento",
       "chunkCount_other": "{{formatted}} fragmentos",
+      "chunkCount_many": "{{formatted}} fragmentos",
       "chunkRange_one": "{{from}}–{{to}} de {{formatted}} fragmento",
       "chunkRange_other": "{{from}}–{{to}} de {{formatted}} fragmentos",
+      "chunkRange_many": "{{from}}–{{to}} de {{formatted}} fragmentos",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} fuente",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} fuentes",
+      "pageRange_many": "{{from}}–{{to}} de {{formatted}} fuentes",
       "editor": {
         "write": "Escribir",
         "preview": "Vista previa",
@@ -645,6 +716,7 @@
         "view": "Ver traza",
         "viewRounds_one": "Ver traza ({{count}} ronda)",
         "viewRounds_other": "Ver traza ({{count}} rondas)",
+        "viewRounds_many": "Ver traza ({{count}} rondas)",
         "title": "Traza de ejecución",
         "empty": "No se registró ninguna traza para esta entrada.",
         "failed": "No se pudo cargar la traza.",
@@ -654,23 +726,30 @@
         "toggleChildren": "Mostrar u ocultar pasos anidados",
         "droppedSpans_one": "{{count}} paso más no se registró (límite de tamaño de la traza).",
         "droppedSpans_other": "{{count}} pasos más no se registraron (límite de tamaño de la traza).",
+        "droppedSpans_many": "{{count}} pasos más no se registraron (límite de tamaño de la traza).",
         "chips": {
           "llmCalls_one": "{{count}} llamada al LLM",
           "llmCalls_other": "{{count}} llamadas al LLM",
+          "llmCalls_many": "{{count}} llamadas al LLM",
           "tokens": "{{input}} entrada / {{output}} salida",
           "toolCalls_one": "{{count}} llamada a herramienta",
           "toolCalls_other": "{{count}} llamadas a herramientas",
+          "toolCalls_many": "{{count}} llamadas a herramientas",
           "retrieval": "RAG {{duration}}",
           "errors_one": "{{count}} error",
-          "errors_other": "{{count}} errores"
+          "errors_other": "{{count}} errores",
+          "errors_many": "{{count}} errores"
         },
         "headline": {
           "tokens": "{{input}} → {{output}} tok",
           "chunks_one": "{{count}} fragmento",
           "chunks_other": "{{count}} fragmentos",
+          "chunks_many": "{{count}} fragmentos",
           "hits_one": "{{count}} resultado",
           "hits_other": "{{count}} resultados",
-          "cached": "en caché"
+          "hits_many": "{{count}} resultados",
+          "cached": "en caché",
+          "answered": "{{answered}}/{{total}} respondidas"
         },
         "status": {
           "ok": "OK",
@@ -684,12 +763,13 @@
         "kinds": {
           "agent": "Agente",
           "llm": "Llamada al LLM",
+          "decision": "Llamada al modelo de decisión",
           "tool": "Llamada a herramienta",
           "retrieval": "Recuperación",
           "search": "Búsqueda vectorial",
-          "embedding": "Embedding",
+          "embedding": "Incrustación",
           "rerank": "Reordenación",
-          "guardrail": "Guardrail",
+          "guardrail": "Barrera de protección",
           "step": "Paso"
         },
         "sources": {
@@ -745,7 +825,15 @@
           "allAttributes": "Todos los atributos"
         }
       },
-      "loadError": "No se pudieron cargar los registros."
+      "loadError": "No se pudieron cargar los registros.",
+      "running": "en curso",
+      "failedAtStep": "falló en el paso {{step}}",
+      "failedAtStepOf": "falló en el paso {{step}} de {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Compartido",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Equipos",
@@ -761,9 +849,8 @@
       "save": "Guardar",
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
-      "noDescription": "Sin descripción",
       "loadError": "No se pudieron cargar los equipos.",
-      "roleAdmin": "admin",
+      "roleAdmin": "administrador",
       "roleMember": "miembro",
       "sourceManual": "Añadido manualmente",
       "sourceSso": "vía SSO",
@@ -806,7 +893,7 @@
       },
       "share": {
         "titleNamed": "Compartir \"{{name}}\"",
-        "titleGeneric": "Compartir este {{type}}",
+        "titleGeneric": "Compartir {{type}}",
         "subtitle": "Los miembros del equipo pueden usarlo; los editores también pueden modificarlo. Tú sigues siendo el propietario.",
         "noTeams": "Aún no eres miembro de ningún equipo. Crea uno en Configuración → Equipos.",
         "accessLevel": {
@@ -832,6 +919,7 @@
         "showAll": "Ver los {{formatted}}",
         "andMore_one": "y {{formatted}} más",
         "andMore_other": "y {{formatted}} más",
+        "andMore_many": "y {{formatted}} más",
         "allSummary": "{{name}} · Equipos: {{teams}} · Personas: {{people}}",
         "searchAccess": "Buscar personas y equipos…",
         "filterLabel": "Filtrar personas con acceso",
@@ -883,8 +971,10 @@
       },
       "memberCount_one": "{{formatted}} miembro",
       "memberCount_other": "{{formatted}} miembros",
+      "memberCount_many": "{{formatted}} miembros",
       "sharedCount_one": "{{formatted}} compartido",
       "sharedCount_other": "{{formatted}} compartidos",
+      "sharedCount_many": "{{formatted}} compartidos",
       "accessChangeError": "No se pudo cambiar el acceso.",
       "accessSettings": {
         "title": "Ajustes de acceso",
@@ -954,12 +1044,12 @@
         "tool": "Los editores pueden cambiar acciones y sustituir credenciales, pero no pueden leer secretos.",
         "toolNoCredentials": "Los editores pueden cambiar acciones, pero no las credenciales.",
         "prompt": "Los editores pueden cambiar el texto.",
-        "noShareNoDelete": "No pueden compartirlo ni eliminarlo.",
-        "shareOnly": "También pueden compartirlo, pero no eliminarlo.",
-        "deleteOnly": "También pueden eliminarlo, pero no compartirlo.",
-        "shareAndDelete": "También pueden compartirlo y eliminarlo.",
-        "noShare": "No pueden compartirlo ni eliminarlo.",
-        "share": "También pueden compartirlo, pero no eliminarlo."
+        "noShareNoDelete": "No pueden compartir ni eliminar.",
+        "shareOnly": "También pueden compartir, pero no eliminar.",
+        "deleteOnly": "También pueden eliminar, pero no compartir.",
+        "shareAndDelete": "También pueden compartir y eliminar.",
+        "noShare": "No pueden compartir ni eliminar.",
+        "share": "También pueden compartir, pero no eliminar."
       },
       "capabilities": {
         "agent": {
@@ -1016,6 +1106,7 @@
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} editores",
+        "badgeWithEditors_many": "{{level}} · +{{formatted}} editores",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "Filtrar recursos compartidos",
         "filter": {
@@ -1028,7 +1119,8 @@
         "search": "Buscar compartidos…",
         "noMatches": "No hay coincidencias.",
         "pageRange_one": "{{from}}–{{to}} de {{formatted}} recurso",
-        "pageRange_other": "{{from}}–{{to}} de {{formatted}} recursos"
+        "pageRange_other": "{{from}}–{{to}} de {{formatted}} recursos",
+        "pageRange_many": "{{from}}–{{to}} de {{formatted}} recursos"
       },
       "drawer": {
         "subtitle": "{{type}} · propiedad de {{owner}}",
@@ -1055,13 +1147,15 @@
       },
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
+      "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",
       "searchMembers": "Buscar miembros…",
       "membersRange_one": "{{from}}–{{to}} de {{formatted}} miembro",
       "membersRange_other": "{{from}}–{{to}} de {{formatted}} miembros",
+      "membersRange_many": "{{from}}–{{to}} de {{formatted}} miembros",
       "membersLoadError": "No se pudieron cargar los miembros.",
       "deleteTeamConsequence": "Sus miembros pierden el acceso a todo lo que se compartió con él. No se puede deshacer.",
       "delete": "Eliminar",
-      "removeMemberConsequence": "Pierde el acceso a todo lo que se compartió con {{team}}. Puedes volver a añadirlo en cualquier momento."
+      "removeMemberConsequence": "Pierde el acceso a todo lo que se compartió con {{team}}. Puedes volver a añadir a esta persona en cualquier momento."
     },
     "tools": {
       "label": "Herramientas",
@@ -1181,7 +1275,8 @@
         "advanced": "Configuración avanzada",
         "testBeforeSave": "Prueba la conexión antes de guardar.",
         "discoveredTools_one": "{{formatted}} acción encontrada",
-        "discoveredTools_other": "{{formatted}} acciones encontradas"
+        "discoveredTools_other": "{{formatted}} acciones encontradas",
+        "discoveredTools_many": "{{formatted}} acciones encontradas"
       },
       "configErrors": {
         "required": "{{field}} es obligatorio",
@@ -1202,6 +1297,10 @@
       "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} herramienta",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} herramientas",
+      "pageRange_many": "{{from}}–{{to}} de {{formatted}} herramientas",
+      "triggerLabel_one": "Herramientas, {{formatted}} seleccionada",
+      "triggerLabel_other": "Herramientas, {{formatted}} seleccionadas",
+      "triggerLabel_many": "Herramientas, {{formatted}} seleccionadas",
       "manageInConnectors": "Gestionar en Conectores",
       "defaultBadge": "Predeterminada",
       "noToolsYet": "Aún no hay herramientas",
@@ -1286,7 +1385,7 @@
       "deleteWarning": "¿Eliminar \"{{modelName}}\"?",
       "actionsMenuAria": "Acciones para {{modelName}}",
       "modelsGroup": {
-        "builtin": "Modelos de DocsGPT",
+        "builtin": "Integrados",
         "user": "Mis modelos"
       },
       "actions": {
@@ -1348,6 +1447,7 @@
       },
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} modelo",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} modelos",
+      "pageRange_many": "{{from}}–{{to}} de {{formatted}} modelos",
       "loadError": "No se pudieron cargar tus modelos."
     },
     "accessTokens": {
@@ -1357,6 +1457,7 @@
       "disabledNotice": "Los tokens de acceso personal no están disponibles en este servidor. Requieren inicio de sesión con cuenta y deben ser habilitados por tu administrador.",
       "limitReached_one": "Has alcanzado el límite de {{count}} token activo. Revoca uno para crear otro.",
       "limitReached_other": "Has alcanzado el límite de {{count}} tokens activos. Revoca uno para crear otro.",
+      "limitReached_many": "Has alcanzado el límite de {{count}} tokens activos. Revoca uno para crear otro.",
       "loadError": "No se pudieron cargar los tokens de acceso. Inténtalo de nuevo.",
       "revokeError": "No se pudo revocar el token. Inténtalo de nuevo.",
       "empty": "Aún no hay tokens de acceso",
@@ -1380,14 +1481,19 @@
       "restrictionCount": {
         "agents_one": "{{count}} agente",
         "agents_other": "{{count}} agentes",
+        "agents_many": "{{count}} agentes",
         "sources_one": "{{count}} fuente",
         "sources_other": "{{count}} fuentes",
+        "sources_many": "{{count}} fuentes",
         "prompts_one": "{{count}} prompt",
         "prompts_other": "{{count}} prompts",
+        "prompts_many": "{{count}} prompts",
         "tools_one": "{{count}} herramienta",
         "tools_other": "{{count}} herramientas",
+        "tools_many": "{{count}} herramientas",
         "workflows_one": "{{count}} flujo de trabajo",
-        "workflows_other": "{{count}} flujos de trabajo"
+        "workflows_other": "{{count}} flujos de trabajo",
+        "workflows_many": "{{count}} flujos de trabajo"
       },
       "families": {
         "agents": "Agentes",
@@ -1410,6 +1516,7 @@
         "expiration": "Caducidad",
         "expiryDays_one": "{{count}} día",
         "expiryDays_other": "{{count}} días",
+        "expiryDays_many": "{{count}} días",
         "noExpiration": "Sin caducidad",
         "noExpirationHint": "Los tokens que nunca caducan son más peligrosos si se filtran. Es preferible fijar una fecha de caducidad.",
         "expiresOn": "Caduca el {{date}}",
@@ -1503,12 +1610,14 @@
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
         "mcp_drawio": "Crea diagramas de flujo y otros diagramas editables con draw.io.",
+        "mcp_coingecko": "Consulta precios de criptomonedas en tiempo real, capitalizaciones de mercado, volúmenes, monedas en tendencia e historial de precios.",
         "mcp_clickup": "Busca, lee y actualiza tareas, documentos y listas de ClickUp, y añade comentarios.",
         "mcp_zapier": "Usa las acciones habilitadas en tu cuenta de Zapier MCP para leer o actualizar aplicaciones conectadas.",
         "mcp_trello": "Busca tableros y tarjetas de Trello, y crea y actualiza tarjetas.",
         "mcp_miro": "Busca tableros de Miro, lee contenido y comentarios, crea diagramas y responde a comentarios.",
         "mcp_resend": "Envía correos electrónicos y gestiona contactos, audiencias y dominios.",
         "mcp_calcom": "Lee y gestiona tus reservas, tipos de eventos, disponibilidad y horarios de Cal.com.",
+        "mcp_alphavantage": "Consulta cotizaciones de acciones, datos fundamentales, divisas, criptomonedas, indicadores económicos y noticias del mercado.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
@@ -1565,9 +1674,11 @@
         "failed": "No se pudo desconectar. Inténtalo de nuevo.",
         "bodyBoth_one": "El elemento que sincronizó sigue en Conocimiento, pero deja de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
         "bodyBoth_other": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
+        "bodyBoth_many": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
         "bodyTools": "Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
         "bodySources_one": "El elemento que sincronizó sigue en Conocimiento, pero deja de actualizarse hasta que reconectes.",
         "bodySources_other": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse hasta que reconectes.",
+        "bodySources_many": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse hasta que reconectes.",
         "bodyNone": "Se olvida su inicio de sesión. Reconecta para volver a usar esta cuenta."
       },
       "fields": {
@@ -1600,8 +1711,10 @@
         "doneSummaryNone": "Conectado como {{account}}.",
         "sourcesCount_one": "{{formatted}} elemento",
         "sourcesCount_other": "{{formatted}} elementos",
+        "sourcesCount_many": "{{formatted}} elementos",
         "toolsCount_one": "{{formatted}} herramienta",
         "toolsCount_other": "{{formatted}} herramientas",
+        "toolsCount_many": "{{formatted}} herramientas",
         "toolsHeading": "Herramientas ({{formatted}})",
         "tryInChat": "Probar en el chat",
         "done": "Listo",
@@ -1640,10 +1753,12 @@
         "description": "Se borra el inicio de sesión guardado. Elige qué pasa con lo que alimenta esta conexión.",
         "sourcesLabel_one": "El elemento que sincronizó en Conocimiento",
         "sourcesLabel_other": "Los {{formatted}} elementos que sincronizó en Conocimiento",
+        "sourcesLabel_many": "Los {{formatted}} elementos que sincronizó en Conocimiento",
         "keepSources": "Conservar el contenido (dejar de sincronizar)",
         "deleteSources": "Eliminar",
         "toolsLabel_one": "Su herramienta",
         "toolsLabel_other": "Sus {{formatted}} herramientas",
+        "toolsLabel_many": "Sus {{formatted}} herramientas",
         "deleteTools": "Eliminar",
         "keepTools": "Conservar, desactivadas",
         "failed": "No se pudo eliminar la conexión. Inténtalo de nuevo."
@@ -1652,9 +1767,11 @@
         "reconnect": "Reconecta {{name}} para seguir sincronizando.",
         "reconnectSources_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse en Conocimiento",
         "reconnectSources_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse en Conocimiento",
+        "reconnectSources_many": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse en Conocimiento",
         "reconnectTools": "Vuelve a conectar {{name}} para que los agentes puedan usarlo de nuevo",
         "reconnectBoth_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse y los agentes no pueden usarlo",
         "reconnectBoth_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse y los agentes no pueden usarlo",
+        "reconnectBoth_many": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse y los agentes no pueden usarlo",
         "navDot": "Una conexión necesita atención",
         "signInAgain": "Vuelve a iniciar sesión",
         "pickerNotice": "{{name}} necesita que vuelvas a iniciar sesión."
@@ -1722,6 +1839,7 @@
         "show": "Parámetros",
         "fixedCount_one": "{{formatted}} fijo",
         "fixedCount_other": "{{formatted}} fijos",
+        "fixedCount_many": "{{formatted}} fijos",
         "ai": "Que decida la IA",
         "fixed": "Usar siempre",
         "choiceLabel": "Cómo se rellena {{parameter}}",
@@ -1842,8 +1960,8 @@
           "connect": "Conectar a Google Drive",
           "validateFailed": "No se pudo comprobar el inicio de sesión. Inténtalo de nuevo.",
           "pickerFailed": "No se pudo abrir el selector de archivos. Inténtalo de nuevo.",
-          "selectedFiles": "Archivos seleccionados",
-          "selectFiles": "Seleccionar archivos",
+          "selectedFiles": "Elementos seleccionados",
+          "selectFiles": "Seleccionar archivos o carpetas",
           "noFilesSelected": "Aún no hay archivos ni carpetas seleccionados.",
           "removeItem": "Quitar {{name}}"
         }
@@ -1872,7 +1990,7 @@
       "copy": "Copiar",
       "copied": "Copiado",
       "confirm": "He guardado la Clave",
-      "apiKeyLabel": "API Key"
+      "apiKeyLabel": "Clave de API"
     },
     "deleteConv": {
       "confirm": "¿Eliminar todas las conversaciones?",
@@ -1887,8 +2005,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Buscar conversaciones",
-      "noResults": "No se encontraron resultados",
-      "loading": "Cargando..."
+      "noResults": "No se encontraron resultados"
     },
     "configTool": {
       "title": "Configuración de la Herramienta",
@@ -1897,7 +2014,7 @@
       "apiKeyPlaceholder": "Introduce la clave de API",
       "addButton": "Agregar Herramienta",
       "closeButton": "Cerrar",
-      "customNamePlaceholder": "Enter custom name (optional)",
+      "customNamePlaceholder": "Introduce un nombre personalizado (opcional)",
       "fieldRequired": "{{field}} es obligatorio",
       "positiveNumber": "Debe ser un número positivo",
       "maxTimeout": "El tiempo de espera máximo es de 300 segundos"
@@ -1958,20 +2075,20 @@
       "deleteConfirmation": "¿Eliminar este fragmento?"
     },
     "addAction": {
-      "title": "New Action",
-      "actionNamePlaceholder": "Action Name",
-      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
-      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
-      "addButton": "Add"
+      "title": "Nueva acción",
+      "actionNamePlaceholder": "Nombre de la acción",
+      "invalidFormat": "Formato de nombre de función no válido. Usa solo letras, números, guiones bajos y guiones.",
+      "formatHelp": "Usa solo letras, números, guiones bajos y guiones (p. ej., `get_data`, `send_report`, etc.)",
+      "addButton": "Agregar"
     },
     "agentDetails": {
       "title": "Detalles de acceso",
-      "publicLink": "Public Link",
-      "apiKey": "API Key",
-      "webhookUrl": "Webhook URL",
-      "generate": "Generate",
-      "test": "Test",
-      "learnMore": "Learn more",
+      "publicLink": "Enlace público",
+      "apiKey": "Clave de API",
+      "webhookUrl": "URL del webhook",
+      "generate": "Generar",
+      "test": "Probar",
+      "learnMore": "Más información",
       "resetKey": "Restablecer clave",
       "resetKeyConfirm": "¿Restablecer la clave de API de \"{{name}}\"?",
       "apiWrites": {
@@ -1981,6 +2098,7 @@
         "summaryNone": "Aún no hay nada permitido",
         "summaryTools_one": "{{tools}} puede hacer cambios",
         "summaryTools_other": "{{tools}} pueden hacer cambios",
+        "summaryTools_many": "{{tools}} pueden hacer cambios",
         "summaryCount": "{{allowed}} de {{formatted}} permitidos",
         "toolLabel": "Permitir cambios por API, widget y enlaces públicos en {{tool}}",
         "choose": "Elegir qué se permite"
@@ -2001,6 +2119,7 @@
       "baseUrl": "URL base",
       "actionsFound_one": "{{count}} acción encontrada",
       "actionsFound_other": "{{count}} acciones encontradas",
+      "actionsFound_many": "{{count}} acciones encontradas",
       "selectAll": "Seleccionar todo",
       "deselectAll": "Deseleccionar todo",
       "cancel": "Cancelar",
@@ -2008,36 +2127,36 @@
       "import": "Importar ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "Importar agente desde YAML",
+      "description": "Sube un archivo YAML de agente. Las fuentes y herramientas se asocian con tu cuenta; lo que falte se puede asignar o crear en el siguiente paso. Un agente nuevo se importa como borrador; al volver a importarlo se actualiza el agente correspondiente y se mantiene su estado actual.",
+      "dropzoneText": "Haz clic para subir o arrastra y suelta un archivo .yaml",
+      "invalidFileType": "Solo se admiten archivos .yaml o .yml",
+      "readError": "No se pudo leer este archivo de agente",
+      "importError": "No se pudo importar",
+      "willCreate": "Crea un agente nuevo.",
+      "willUpdate": "Actualiza un agente existente (coincidencia por {{matchedBy}}).",
+      "workflowCreate": "Incluye un flujo de trabajo con {{nodes}} nodos — se creará automáticamente.",
+      "workflowUpdate": "Incluye un flujo de trabajo con {{nodes}} nodos — se actualizará tu flujo de trabajo actual.",
+      "workflowDelete": "No incluye ningún flujo de trabajo — el flujo de trabajo actual del agente ({{nodes}} nodos), su historial de ejecuciones y sus artefactos se eliminarán de forma permanente.",
+      "sources": "Fuentes",
+      "tools": "Herramientas",
+      "models": "Modelos",
+      "sourceMatched": "{{name}}: se usa tu fuente existente",
+      "sourceMissing": "{{name}}: no se encontró",
+      "leaveUnattached": "Dejar sin vincular",
+      "toolBuiltin": "{{type}}: herramienta integrada",
+      "toolReuse": "{{name}}: se reutiliza tu herramienta existente",
+      "toolUnavailable": "{{type}}: no está disponible en esta instancia, se omitirá",
+      "toolCreate": "{{name}}: se creará",
+      "secretPlaceholder": "{{field}} (déjalo en blanco para omitir esta herramienta)",
+      "modelCustom": "{{name}}: modelo personalizado",
+      "apiKeyPlaceholder": "Clave de API (déjala en blanco para omitir este modelo)",
+      "warningsTitle": "Agente importado como borrador. Algunos elementos requieren tu atención:",
+      "warningsTitlePublished": "Se actualizó tu agente publicado. Algunos elementos requieren tu atención:",
+      "cancel": "Cancelar",
+      "review": "Revisar",
+      "import": "Importar",
+      "continueToAgent": "Continuar al agente"
     },
     "jwt": {
       "title": "Añadir token JWT",
@@ -2091,8 +2210,12 @@
       "link": "Enlace fuente",
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
+      "view_more_many": "Ver {{count}} fuentes más",
       "noSourcesAvailable": "Aún no hay conocimiento",
       "selectedCount": "{{count}} seleccionados",
+      "triggerLabel_one": "Conocimiento, {{formatted}} seleccionada",
+      "triggerLabel_other": "Conocimiento, {{formatted}} seleccionadas",
+      "triggerLabel_many": "Conocimiento, {{formatted}} seleccionadas",
       "groupOwn": "Tuyos",
       "groupTeam": "Compartidas con el equipo",
       "fromConnector": "De {{name}}",
@@ -2100,6 +2223,7 @@
       "knowledge": "Conocimiento",
       "forAnswer_one": "{{count}} fuente para esta respuesta",
       "forAnswer_other": "{{count}} fuentes para esta respuesta",
+      "forAnswer_many": "{{count}} fuentes para esta respuesta",
       "open": "Abrir fuente {{num}}",
       "reader": {
         "back": "Todas las fuentes",
@@ -2116,6 +2240,12 @@
         "loadFailed": "No se pudo cargar el pasaje.",
         "openLink": "Abrir enlace",
         "openInKnowledge": "Abrir en Conocimiento"
+      },
+      "relevance": {
+        "strong": "Coincidencia alta",
+        "possible": "Coincidencia posible",
+        "weak": "Coincidencia baja",
+        "tooltip": "Relevancia {{percent}} %"
       }
     },
     "attachments": {
@@ -2133,9 +2263,11 @@
       "knowledgeFailed": "No se pudieron añadir estos archivos al conocimiento. Inténtalo de nuevo.",
       "knowledgeName_one": "{{name}} y {{count}} más",
       "knowledgeName_other": "{{name}} y {{count}} más",
+      "knowledgeName_many": "{{name}} y {{count}} más",
       "unsupportedType": "Tipo de archivo no compatible ({{extension}})",
       "waitingToSend_one": "Se enviará cuando termine de procesarse {{count}} archivo…",
       "waitingToSend_other": "Se enviará cuando terminen de procesarse {{count}} archivos…",
+      "waitingToSend_many": "Se enviará cuando terminen de procesarse {{count}} archivos…",
       "cancelQueuedSend": "Cancelar",
       "unreadableByModel": "{{model}} no puede leer {{name}}: cambia a un modelo compatible con imágenes o PDF",
       "queued": "En espera para subir",
@@ -2144,13 +2276,15 @@
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",
+    "stoppedTitle": "Detenida",
     "errors": {
       "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
       "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
       "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
       "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
       "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
-      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo."
+      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo.",
+      "stopped": "Detuviste esta respuesta antes de que escribiera nada. Inténtalo de nuevo para obtener una."
     },
     "reasoning": "Razonamiento",
     "wikiWrite": {
@@ -2278,7 +2412,6 @@
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
     },
     "send": "Enviar",
-    "viewArtifact": "Ver artefacto",
     "stopSpeaking": "Dejar de hablar",
     "loadingAudio": "Cargando audio",
     "voice": {
@@ -2344,12 +2477,42 @@
       "synthesizing": "Redactando el informe…",
       "complete": "Completado",
       "researched_one": "{{count}} tema investigado",
-      "researched_other": "{{count}} temas investigados"
+      "researched_other": "{{count}} temas investigados",
+      "researched_many": "{{count}} temas investigados"
     },
     "openFile": "Abrir archivo",
     "stepGroup": {
       "title": "Herramientas",
       "failed": "{{count}} con error"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "Página HTML",
+        "pdf": "PDF",
+        "slides": "Diapositivas",
+        "document": "Documento",
+        "spreadsheet": "Hoja de cálculo",
+        "data": "Archivo de datos",
+        "image": "Imagen",
+        "file": "Archivo"
+      },
+      "version": "v{{version}}",
+      "download": "Descargar {{title}}",
+      "more_one": "{{count}} archivo más",
+      "more_other": "{{count}} archivos más",
+      "more_many": "{{count}} archivos más",
+      "fileCount_one": "{{count}} archivo",
+      "fileCount_other": "{{count}} archivos",
+      "fileCount_many": "{{count}} archivos",
+      "showAll": "Ver los {{count}}",
+      "listTitle": "Archivos de esta respuesta",
+      "backToList": "Volver a los archivos",
+      "group": {
+        "documents": "Documentos",
+        "images": "Imágenes",
+        "data": "Datos",
+        "other": "Otros archivos"
+      }
     }
   },
   "agents": {
@@ -2365,9 +2528,9 @@
     },
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
     "newAgent": "Nuevo Agente",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "importAgent": "Importar",
+    "exportAgent": "Exportar como YAML",
+    "exportAgentFailed": "No se pudo exportar el agente",
     "close": "Cerrar",
     "shareWithTeam": "Compartir con el equipo",
     "backToAll": "Volver a todos los agentes",
@@ -2439,7 +2602,7 @@
         "agentType": "Tipo de agente",
         "models": "Modelos",
         "advanced": "Avanzado",
-        "guardrails": "Guardrails",
+        "guardrails": "Barreras de protección",
         "preview": "Vista previa",
         "basics": "Básico",
         "knowledge": "Conocimiento y comportamiento",
@@ -2528,54 +2691,55 @@
         "saveDraftFailed": "No se pudo guardar el borrador. Inténtalo de nuevo."
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
+        "enable": "Activar barreras de protección",
+        "enableDescription": "Aplica las comprobaciones seleccionadas a las ejecuciones de este agente",
+        "mode": "Modo de aplicación",
+        "monitorHint": "El modo de supervisión registra lo que habría ocurrido sin cambiar ninguna respuesta. Empieza aquí, revisa el registro y luego cambia al modo de aplicación.",
+        "checks": "Comprobaciones",
+        "latencyHint": "Latencia añadida aproximada cuando se ejecuta esta comprobación",
+        "notConfigured": "Sin configurar",
+        "lockedByFloor": "Requisito de la política de la instancia; no se puede quitar",
+        "configure": "Configurar",
+        "blockMessage": "Mensaje de respuesta bloqueada",
+        "blockMessageDescription": "Se muestra al usuario cuando una comprobación bloquea una solicitud o una respuesta",
+        "failOpen": "Continuar si una comprobación falla",
+        "failOpenDescription": "Si una comprobación agota el tiempo de espera o da error, deja pasar el turno. Desactívalo para detener el turno.",
+        "timeout": "Tiempo de espera de la comprobación (ms)",
+        "loadError": "No se pudo cargar el catálogo de barreras de protección",
+        "terms": "Términos prohibidos (uno por línea)",
+        "termsPlaceholder": "nombre de un competidor\nnombre en clave interno",
+        "allowHosts": "Hosts permitidos (uno por línea)",
+        "blockHosts": "Hosts bloqueados (uno por línea)",
+        "policyText": "Política",
+        "minOverlap": "Coincidencia mínima con las fuentes",
+        "minWords": "Longitud mínima de la respuesta (palabras)",
+        "confidence": "Umbral de confianza",
+        "confidenceHint": "El juez debe marcar el contenido y, además, tener al menos esta confianza (predeterminado: 0.7)",
+        "activeCount": "Activas: {{count}}",
         "needsSetup_one": "{{count}} necesita configuración",
         "needsSetup_other": "{{count}} necesitan configuración",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "needsSetup_many": "{{count}} necesitan configuración",
+        "setupRequired": "Completa los ajustes de esta comprobación antes de guardar.",
+        "pickAtLeastOne": "Elige al menos una opción: la comprobación no puede ejecutarse sin ninguna seleccionada.",
+        "remove": "Quitar",
+        "instanceDisabled": "Las barreras de protección están desactivadas en esta instancia, así que nada de lo que configures aquí se ejecutará. Pide a tu administrador que configure GUARDRAILS_ENABLED.",
+        "floorNotice": "Esta instancia exige {{count}} control(es), que siempre se aplican.",
+        "floorControl": "{{stage}}: {{action}} — lo exige la política de la instancia",
+        "unknownCheck": "Este agente usa una comprobación que no está disponible aquí ({{check}}). Se volverá a ejecutar si la comprobación vuelve a estar disponible.",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "Entrada del usuario",
+          "retrieval": "Fuentes recuperadas",
+          "toolResult": "Resultado de la herramienta",
+          "output": "Respuesta"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "Solo marcar",
+          "redact": "Censurar",
+          "block": "Bloquear"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
+          "monitorOnly": "Solo supervisión",
+          "scanAll": "Aplicar en todo"
         }
       },
       "byline": {
@@ -2650,13 +2814,17 @@
         },
         "description_one": "El propietario del agente no puede usarlo. Si lo añades, se ejecuta con tu acceso para todos los que usen este agente.",
         "description_other": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
+        "description_many": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
         "takeOverDescription_one": "El propietario del agente no puede usarlo. Se ejecutará con tu acceso para todos los que usen este agente.",
         "takeOverDescription_other": "El propietario del agente no puede usarlos. Se ejecutarán con tu acceso para todos los que usen este agente.",
+        "takeOverDescription_many": "El propietario del agente no puede usarlos. Se ejecutarán con tu acceso para todos los que usen este agente.",
         "takeOverConfirm": "Ejecutar con mi acceso",
         "audienceTitle_one": "Quién puede usarlo a través de este agente",
         "audienceTitle_other": "Quién puede usarlos a través de este agente",
+        "audienceTitle_many": "Quién puede usarlos a través de este agente",
         "stopNote_one": "Deja de ejecutarse si pierdes el acceso de edición.",
-        "stopNote_other": "Dejan de ejecutarse si pierdes el acceso de edición."
+        "stopNote_other": "Dejan de ejecutarse si pierdes el acceso de edición.",
+        "stopNote_many": "Dejan de ejecutarse si pierdes el acceso de edición."
       }
     },
     "logs": {
@@ -2738,6 +2906,7 @@
           "dec": "Dic"
         },
         "frequencyLabel": "Frecuencia",
+        "customTiming": "Esta programación usa un horario personalizado: {{pattern}}. Cambia el horario de abajo para reemplazarlo.",
         "dayOfWeek": "Día de la semana"
       },
       "status": {
@@ -2768,13 +2937,15 @@
         "error": "Error",
         "errorWithType": "Error ({{type}})",
         "output": "Salida",
-        "truncated": "(truncada)"
+        "truncated": "(truncada)",
+        "openConversation": "Abrir conversación"
       },
       "toolCard": {
         "cancelFailed": "No se pudo cancelar",
         "taskCancelled": "Tarea programada cancelada.",
         "pendingCount_one": "{{count}} tarea programada pendiente",
         "pendingCount_other": "{{count}} tareas programadas pendientes",
+        "pendingCount_many": "{{count}} tareas programadas pendientes",
         "schedulingFailed": "No se pudo programar",
         "scheduling": "Programando…",
         "scheduled": "Tarea programada"
@@ -2807,7 +2978,20 @@
           "oct": "octubre",
           "nov": "noviembre",
           "dec": "diciembre"
-        }
+        },
+        "weekdays": "Todos los días laborables a las {{time}}",
+        "weekends": "Cada día del fin de semana a las {{time}}",
+        "days": "Cada {{days}} a las {{time}}",
+        "hourly": "Cada hora",
+        "hourlyAt": "Cada hora a los :{{minute}}",
+        "hourlyRange": "Cada hora de {{from}} a {{to}}",
+        "hourlyRangeWeekdays": "Cada hora de {{from}} a {{to}} los días laborables",
+        "everyMinutes_one": "Cada {{formatted}} minuto",
+        "everyMinutes_other": "Cada {{formatted}} minutos",
+        "everyMinutes_many": "Cada {{formatted}} minutos",
+        "everyHours_one": "Cada {{formatted}} hora",
+        "everyHours_other": "Cada {{formatted}} horas",
+        "everyHours_many": "Cada {{formatted}} horas"
       },
       "runLog": {
         "when": "Cuándo",
@@ -2820,6 +3004,7 @@
       "cancelTask": "Cancelar tarea",
       "failureStreak_one": "{{count}} fallo seguido",
       "failureStreak_other": "{{count}} fallos seguidos",
+      "failureStreak_many": "{{count}} fallos seguidos",
       "meta": {
         "nextRun": "Próxima ejecución {{time}}",
         "runsAt": "Se ejecuta el {{time}}",
@@ -2834,10 +3019,12 @@
         "latestFailure": "Última: {{status}}, {{date}}",
         "paused_one": "{{count}} en pausa",
         "paused_other": "{{count}} en pausa",
+        "paused_many": "{{count}} en pausa",
         "overdue": "Atrasada"
       },
       "deleteFailed": "No se pudo eliminar esta programación.",
-      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer."
+      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer.",
+      "allSchedules": "Todas las programaciones"
     },
     "shared": {
       "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",
@@ -2875,26 +3062,26 @@
       "deleteConsequence": "Los agentes que contiene salen de la carpeta; no se eliminan."
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "Actividad de las barreras de protección",
+      "description": "Cada control que se activó en este agente y cada uno que no pudo ejecutarse.",
+      "lastDays": "Últimos {{count}} días",
+      "blocked": "Bloqueado",
+      "redacted": "Censurado",
+      "flagged": "Marcado",
+      "notEvaluated": "No evaluado",
+      "notEvaluatedHint": "La comprobación agotó el tiempo de espera o dio error, así que este contenido nunca llegó a inspeccionarse. No equivale a que esté limpio.",
+      "byCheck": "Por comprobación",
+      "allChecks": "Todas las comprobaciones",
+      "allOutcomes": "Todos los resultados",
+      "tableHeader": "Decisiones de las barreras de protección",
+      "when": "Cuándo",
+      "check": "Comprobación",
+      "stage": "Etapa",
+      "outcome": "Resultado",
+      "detail": "Detalle",
+      "empty": "Aún no se ha activado ninguna barrera de protección en este agente.",
+      "emptyForFilter": "Ninguna decisión coincide con este filtro.",
+      "loadError": "No se pudo cargar la actividad de las barreras de protección"
     },
     "workflow": {
       "expressionRow": "Expresión {{index}}",
@@ -2907,15 +3094,8 @@
       "redo": "Rehacer",
       "redoHint": "Rehacer (Ctrl+Mayús+Z)",
       "artifacts": {
-        "previewUnsupported": "Este artefacto no se puede previsualizar",
         "loadListFailed": "No se pudieron cargar los artefactos",
-        "loadFailed": "No se pudo cargar el artefacto",
-        "loading": "Cargando artefactos...",
-        "inProgress": "Ejecución en curso: los artefactos aparecen aquí a medida que los nodos los generan.",
-        "empty": "Esta ejecución no generó artefactos.",
-        "back": "Volver a los artefactos",
-        "untitled": "Artefacto {{id}}",
-        "fileKind": "archivo"
+        "untitled": "Artefacto {{id}}"
       },
       "builder": {
         "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",
@@ -3048,8 +3228,8 @@
         "extract": "Extraer"
       },
       "mobileBlocker": {
-        "title": "Se requiere un ordenador",
-        "body": "El creador de flujos de trabajo necesita una pantalla más grande para ofrecer la mejor experiencia. Abre esta página en un ordenador de sobremesa o portátil."
+        "title": "Ábrelo en una pantalla más grande",
+        "body": "El creador de flujos de trabajo necesita una pantalla más ancha. Usa un ordenador o gira la tableta en horizontal."
       },
       "nodes": {
         "start": "Inicio",
@@ -3070,8 +3250,10 @@
         "else": "Si no",
         "operationCount_one": "{{count}} operación",
         "operationCount_other": "{{count}} operaciones",
+        "operationCount_many": "{{count}} operaciones",
         "variableCount_one": "{{count}} variable",
         "variableCount_other": "{{count}} variables",
+        "variableCount_many": "{{count}} variables",
         "variableTitle": "Variable: {{name}}",
         "valueTitle": "Valor: {{value}}"
       },
@@ -3079,12 +3261,13 @@
         "executionDetails": "Detalles de la ejecución",
         "stepCount_one": "({{count}} paso)",
         "stepCount_other": "({{count}} pasos)",
+        "stepCount_many": "({{count}} pasos)",
         "outputLabel": "Salida:",
         "errorLabel": "Error:",
-        "artifacts": "Artefactos",
         "minimapHeading": "Flujo de trabajo",
         "emptyTitle": "Prueba el flujo de trabajo",
-        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa."
+        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa.",
+        "backToRun": "Volver a la ejecución"
       },
       "documents": {
         "modeAll": "Todos los documentos de entrada",
@@ -3120,17 +3303,19 @@
     "deleteFailed": "No se pudo eliminar el agente. Inténtalo de nuevo.",
     "showAll_one": "Ver los {{formatted}}",
     "showAll_other": "Ver los {{formatted}}",
+    "showAll_many": "Ver los {{formatted}}",
     "pageRange_one": "{{from}}–{{to}} de {{formatted}} agente",
     "pageRange_other": "{{from}}–{{to}} de {{formatted}} agentes",
+    "pageRange_many": "{{from}}–{{to}} de {{formatted}} agentes",
     "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer."
   },
   "components": {
     "fileUpload": {
-      "clickToUpload": "Click to upload or drag and drop",
-      "dropFiles": "Drop the files here",
-      "fileTypes": "PNG, JPG, JPEG up to",
+      "clickToUpload": "Haz clic para subir o arrastra y suelta",
+      "dropFiles": "Suelta los archivos aquí",
+      "fileTypes": "PNG, JPG, JPEG de hasta",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit",
+      "fileSizeError": "El archivo supera el límite de {{size}} MB",
       "preview": "Vista previa de la imagen",
       "remove": "Quitar archivo"
     },
@@ -3149,6 +3334,7 @@
       "note": {
         "lines_one": "{{count}} línea",
         "lines_other": "{{count}} líneas",
+        "lines_many": "{{count}} líneas",
         "empty": "Nota vacía"
       },
       "notFound": "Artefacto no encontrado",
@@ -3167,13 +3353,14 @@
     },
     "multiSelect": {
       "more_one": "+{{count}} más",
-      "more_other": "+{{count}} más"
+      "more_other": "+{{count}} más",
+      "more_many": "+{{count}} más"
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Página no encontrada",
+    "message": "La página que buscas no existe.",
+    "goHome": "Ir al inicio"
   },
   "filePicker": {
     "searchPlaceholder": "Buscar archivos y carpetas",
@@ -3220,7 +3407,8 @@
         "personal": "Personal",
         "workspace": "Espacio de trabajo",
         "insights": "Estadísticas",
-        "administration": "Administración"
+        "administration": "Administración",
+        "automations": "Automatizaciones"
       }
     },
     "openSidebar": "Abrir barra lateral",
@@ -3237,7 +3425,7 @@
       "ariaLabel": "Cambiar de equipo",
       "personal": "Cuenta personal",
       "personalSubtitle": "Espacio de trabajo personal",
-      "roleAdmin": "Admin",
+      "roleAdmin": "Administrador",
       "roleMember": "Miembro",
       "manageTeams": "Gestionar equipos",
       "createTeam": "Crear equipo",
@@ -3300,7 +3488,6 @@
     "loadError": "No se pudieron cargar tus monitores",
     "actionError": "No funcionó. Inténtalo de nuevo.",
     "untitled": "Monitor",
-    "watching": "Vigilando cambios",
     "every": "Cada {{interval}}",
     "onEvent": "Cuando ocurra",
     "openConversation": "Abrir conversación",
@@ -3377,5 +3564,295 @@
       "conversationGone": "Terminado: su conversación ya no se puede reanudar"
     },
     "endedBecause": "Terminado: {{reason}}"
+  },
+  "activity": {
+    "label": "Actividad",
+    "schedules": {
+      "label": "Programaciones",
+      "subtitle": "Todas las ejecuciones recurrentes y tareas únicas de tus agentes, además de las que el asistente creó en un chat.",
+      "search": "Buscar programaciones",
+      "createdInChat": "Creadas en un chat",
+      "createdInChatHint": "Sin agente. Cada una pertenece al chat que la creó.",
+      "agentSchedules": "Programaciones del agente",
+      "openChat": "Abrir chat",
+      "noMatches": "Ninguna programación coincide con tu búsqueda.",
+      "loadError": "No se pudieron cargar tus programaciones",
+      "empty": "Aún no hay programaciones",
+      "emptyHint": "Crea una aquí o pide al asistente en un chat que haga algo de forma programada.",
+      "agentLabel": "Agente",
+      "agentPlaceholder": "Elige un agente",
+      "agentSearch": "Buscar agentes",
+      "agentEmpty": "No hay agentes que puedas programar",
+      "teamAgent": "Agente de un compañero que gestionas a través de un equipo"
+    },
+    "marks": {
+      "failed": "Algo falló",
+      "needsYou": "Esperando tu aprobación",
+      "working": "En curso",
+      "unread": "Sin leer",
+      "watching": "Vigilando cambios"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Tarea en segundo plano",
+      "code": "Ejecución de código",
+      "schedule": "Ejecución programada",
+      "workflow": "Flujo de trabajo",
+      "webhook": "Ejecución por webhook",
+      "ingest": "Conocimiento",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} en curso",
+      "running_other": "{{formatted}} en curso",
+      "running_many": "{{formatted}} en curso",
+      "needsYou_one": "{{formatted}} te necesita",
+      "needsYou_other": "{{formatted}} te necesitan",
+      "needsYou_many": "{{formatted}} te necesitan"
+    },
+    "now": {
+      "label": "Ahora",
+      "subtitle": "Qué se está ejecutando, qué espera tu respuesta y qué se ejecuta después. Se actualiza en vivo.",
+      "loadError": "No se pudo cargar tu actividad",
+      "stopFailed": "No se pudo detener la respuesta. Inténtalo de nuevo o detenla desde el chat.",
+      "thinking": "pensando",
+      "writing": "escribiendo la respuesta",
+      "ranByHand": "ejecución manual",
+      "due": "prevista {{time}}",
+      "chunks": "{{done}} de {{total}} fragmentos incrustados",
+      "background": "Segundo plano",
+      "running": "En curso",
+      "stop": "Detener",
+      "cancel": "Cancelar",
+      "open": "Abrir",
+      "approve": "Aprobar {{tools}}",
+      "approveAction": "Aprobar una acción de herramienta",
+      "expires": "caduca {{time}}",
+      "approval": "Aprobación",
+      "review": "Revisar",
+      "pausedAfter_one": "{{name}} en pausa tras {{formatted}} fallo",
+      "pausedAfter_other": "{{name}} en pausa tras {{formatted}} fallos",
+      "pausedAfter_many": "{{name}} en pausa tras {{formatted}} fallos",
+      "errorType": {
+        "auth_expired": "un inicio de sesión caducó",
+        "tool_not_allowed": "una herramienta no estaba permitida",
+        "budget_exceeded": "superó su presupuesto de tokens",
+        "timeout": "se agotó el tiempo",
+        "agent_error": "el agente falló",
+        "internal": "un error interno",
+        "missed": "se perdió su hora",
+        "overlap": "la ejecución anterior seguía en curso",
+        "stream_error": "se cortó la respuesta",
+        "empty_output": "no produjo nada"
+      },
+      "viewRuns": "Ver ejecuciones",
+      "fromChat": "De {{name}}",
+      "timesToday_one": "{{formatted}} ejecución en las próximas 24 horas",
+      "timesToday_other": "{{formatted}} ejecuciones en las próximas 24 horas",
+      "timesToday_many": "{{formatted}} ejecuciones en las próximas 24 horas",
+      "oneTime": "única",
+      "stats": {
+        "running": "En curso",
+        "background_one": "{{formatted}} en segundo plano",
+        "background_other": "{{formatted}} en segundo plano",
+        "background_many": "{{formatted}} en segundo plano",
+        "needsYou": "Te necesita",
+        "approvalExpires": "Una aprobación caduca {{time}}",
+        "next24h": "Próximas 24 horas",
+        "nextAt": "Siguiente a las {{time}}, {{name}}",
+        "failed": "Fallidas, últimas 24 horas",
+        "viewInHistory": "Ver en el historial"
+      },
+      "needsYou": "Te necesita",
+      "reconnect": "{{name}} necesita reconectarse",
+      "reconnectAction": "Reconectar",
+      "runningTitle": "En curso",
+      "filter": "Mostrar",
+      "filters": {
+        "all": "Todo",
+        "chats": "Chats",
+        "automations": "Automatizaciones",
+        "knowledge": "Conocimiento"
+      },
+      "nothingRunning": "No se está ejecutando nada",
+      "upNext": "A continuación",
+      "nothingPlanned": "Nada se ejecuta en las próximas 24 horas",
+      "watching": "Vigilando",
+      "allMonitors": "Todos los monitores",
+      "nothingWatched": "No se está vigilando nada",
+      "checked": "revisado {{time}}",
+      "openCalendar": "Abrir calendario",
+      "step": "paso {{step}}",
+      "stepOf": "paso {{step}} de {{total}}",
+      "apiRequests_one": "{{formatted}} solicitud",
+      "apiRequests_other": "{{formatted}} solicitudes",
+      "apiRequests_many": "{{formatted}} solicitudes",
+      "reading": "leyendo el contenido",
+      "operation": {
+        "upload": "Subida",
+        "sync": "Sincronización",
+        "reingest": "Reindexación"
+      },
+      "syncBatch": {
+        "daily": "Sincronización diaria",
+        "weekly": "Sincronización semanal",
+        "monthly": "Sincronización mensual"
+      },
+      "syncSources_one": "{{formatted}} fuente",
+      "syncSources_other": "{{formatted}} fuentes",
+      "syncSources_many": "{{formatted}} fuentes",
+      "syncBlocked_one": "{{formatted}} necesita reconectarse",
+      "syncBlocked_other": "{{formatted}} necesitan reconectarse",
+      "syncBlocked_many": "{{formatted}} necesitan reconectarse"
+    },
+    "calendar": {
+      "label": "Calendario",
+      "subtitle": "Ejecuciones previstas, ejecuciones pasadas según su resultado y lo que se vigila.",
+      "loadError": "No se pudo cargar el calendario",
+      "runLoadError": "No se pudo abrir la ejecución. Inténtalo de nuevo.",
+      "runNowError": "No se pudo iniciar la ejecución. Inténtalo de nuevo.",
+      "todayButton": "Hoy",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "agentFilter": "Agente",
+      "allAgents": "Todos los agentes",
+      "viewLabel": "Vista",
+      "views": {
+        "day": "Día",
+        "week": "Semana",
+        "month": "Mes",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitores",
+      "knowledgeSyncs": "Sincronizaciones",
+      "hidePast": "Ocultar ejecuciones pasadas",
+      "legend": {
+        "planned": "Prevista",
+        "running": "En curso",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "paused": "En pausa u omitida",
+        "missed": "Perdida",
+        "sync": "Sincronización de conocimiento"
+      },
+      "truncated": "Algunas programaciones muy frecuentes solo muestran sus primeras ejecuciones en este rango.",
+      "watching": "Vigilando",
+      "state": {
+        "planned": "Prevista",
+        "paused": "En pausa",
+        "pending": "Iniciando",
+        "running": "En curso",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "skipped": "Omitida",
+        "timeout": "Tiempo agotado",
+        "missed": "Perdida"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "block_many": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} más",
+      "more_other": "+{{formatted}} más",
+      "more_many": "+{{formatted}} más",
+      "today": "Hoy",
+      "tomorrow": "Mañana",
+      "empty": "No hay nada previsto en estos días",
+      "blockDone_one": "{{done}} de {{formatted}} ejecución hecha",
+      "blockDone_other": "{{done}} de {{formatted}} ejecuciones hechas",
+      "blockDone_many": "{{done}} de {{formatted}} ejecuciones hechas",
+      "slotCount_one": "{{formatted}} ejecución",
+      "slotCount_other": "{{formatted}} ejecuciones",
+      "slotCount_many": "{{formatted}} ejecuciones",
+      "oneTime": "Única",
+      "recurring": "Recurrente",
+      "when": "Cuándo",
+      "repeats": "Se repite",
+      "fromChat": "Del chat",
+      "pausedNote": "Esta programación está en pausa, así que esta ejecución no se hará. Reanúdala en su página.",
+      "dayRuns": "Ejecuciones de este día",
+      "queued": "Ejecución iniciada. Aparece en Ahora y en el registro de ejecuciones.",
+      "openSchedule": "Abrir programación",
+      "timezone": "Zona horaria de la programación",
+      "missedNote": "Esta ejecución nunca empezó: el planificador estaba parado o con retraso en ese momento. Ejecútala ahora o comprueba que el worker funciona con beat.",
+      "syncRepeats": {
+        "daily": "Cada día, contado desde que se inició el planificador",
+        "weekly": "Cada semana, contado desde que se inició el planificador",
+        "monthly": "Cada 30 días, contado desde que se inició el planificador"
+      },
+      "sources": "Fuentes",
+      "needsReconnecting": "Necesita reconectarse",
+      "lastSynced": "Sincronizado {{time}}",
+      "notSyncedYet": "Aún sin sincronizar",
+      "openKnowledge": "Abrir Conocimiento"
+    },
+    "history": {
+      "label": "Historial",
+      "subtitle": "Ejecuciones terminadas de tus programaciones, webhooks, flujos de trabajo, tareas en segundo plano y monitores. Ajustes › Registros guarda el registro técnico completo.",
+      "search": "Buscar ejecuciones",
+      "statusFilter": "Estado",
+      "kindFilter": "Tipo",
+      "statusFilters": {
+        "all": "Todos los estados",
+        "failed": "Fallidas",
+        "success": "Correctas",
+        "skipped": "Omitidas",
+        "cancelled": "Canceladas"
+      },
+      "kindFilters": {
+        "all": "Todo",
+        "schedule": "Programaciones",
+        "webhook": "Webhooks",
+        "workflow": "Flujos",
+        "job": "Segundo plano",
+        "monitor": "Avisos de monitores"
+      },
+      "kind": {
+        "schedule": "Programación",
+        "webhook": "Webhook",
+        "workflow": "Flujo de trabajo",
+        "job": "Segundo plano",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Correcta",
+        "failed": "Fallida",
+        "timeout": "Tiempo agotado",
+        "skipped": "Omitida",
+        "cancelled": "Cancelada"
+      },
+      "trigger": {
+        "cron": "Programación",
+        "manual": "Manual",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Cambio detectado",
+        "trigger": "Enlace de webhook",
+        "approval": "Enlace de aprobación",
+        "monitor_paused": "Monitor en pausa",
+        "monitor_expired": "Monitor caducado"
+      },
+      "columns": {
+        "when": "Cuándo",
+        "run": "Ejecución",
+        "owner": "Agente / chat",
+        "kind": "Tipo",
+        "trigger": "Origen",
+        "status": "Estado",
+        "duration": "Duración",
+        "tokens": "Tokens"
+      },
+      "yesterday": "Ayer",
+      "loadError": "No se pudo cargar el historial",
+      "runLoadError": "No se pudo abrir la ejecución. Inténtalo de nuevo.",
+      "noMatches": "Ninguna ejecución coincide con estos filtros",
+      "empty": "Aún no hay ejecuciones terminadas",
+      "emptyHint": "Las ejecuciones de tus programaciones, webhooks, flujos, tareas en segundo plano y monitores aparecen aquí al terminar.",
+      "loadMore": "Cargar más",
+      "retention": "Por defecto, las ejecuciones programadas se guardan 90 días, las ejecuciones por webhook 30, y las tareas en segundo plano y los avisos de monitores 7. Las ejecuciones de flujos siguen en la lista y su traza se guarda 30 días.",
+      "period_one": "Último {{formatted}} día",
+      "period_other": "Últimos {{formatted}} días",
+      "period_many": "Últimos {{formatted}} días",
+      "periodFilter": "Periodo"
+    }
   }
 }

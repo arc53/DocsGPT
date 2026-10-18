@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Dict, Iterable, List, Optional
 
 from docsgpt import tracing
@@ -29,6 +30,7 @@ from docsgpt.api.answer.services.stream_processor import (
     wiki_tool_config,
 )
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.guardrails.config import AgentConfig
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -125,7 +127,8 @@ def run_agent_headless(
     -- and with ``query`` otherwise.
 
     The run is recorded as one execution trace under ``endpoint`` as its
-    source. ``request_id`` links that trace to the caller's own record (the
+    source, and its decision-model entries go to ``metadata["decisions"]``.
+    ``request_id`` links that trace to the caller's own record (the
     scheduler passes its run id, the webhook worker its task id); it is kept
     off the LLM's token-usage rows, whose request ids drive request counts.
     ``trace_user_id`` owns the trace when the run belongs to someone other
@@ -158,7 +161,7 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    with tracing.activate(trace):
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()):
         try:
             outcome = _run_agent_headless(
                 agent_config,
@@ -174,6 +177,7 @@ def run_agent_headless(
                 public_link_caller=public_link_caller,
                 message_id=message_id,
                 background=background,
+                request_id=request_id,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -200,6 +204,7 @@ def _run_agent_headless(
     public_link_caller: bool = False,
     message_id: Optional[str] = None,
     background: Any = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -303,10 +308,11 @@ def _run_agent_headless(
             decoded_token=decoded_token,
         )
         # Routed per source like a chat's pre-fetch, so each source keeps its
-        # own retriever and retrieval settings.
+        # own retriever and retrieval settings (and its turns their rerank arm).
         retriever = build_dispatcher(
             lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
             sources=prefetch_sources,
+            conversation_id=conversation_id,
             **retriever_kwargs,
         )
         try:
@@ -329,6 +335,8 @@ def _run_agent_headless(
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
+    else:
+        tool_executor.run_scope_id = f"agent-run-{uuid.uuid4().hex}"
     if message_id:
         tool_executor.message_id = str(message_id)
     if background is not None:
@@ -405,6 +413,9 @@ def _run_agent_headless(
     agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
     if conversation_id:
         agent.conversation_id = str(conversation_id)
+    # Not ``agent.request_id``: that one reaches the token-usage rows.
+    if message_id or request_id:
+        agent.started_by = str(message_id or request_id)
 
     answer_full = ""
     thought = ""
@@ -414,6 +425,8 @@ def _run_agent_headless(
     # Responses continuity (response id, reasoning state, usage) the agent
     # reports for the turn; a continuation stores it like a chat turn does.
     message_metadata: Dict[str, Any] = {}
+    # The decision model's entries for the run, under ``decisions``.
+    decision_record.attach(message_metadata)
     steps_completed = 0
     # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
     tool_since_text = False

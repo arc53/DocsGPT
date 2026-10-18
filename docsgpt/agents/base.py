@@ -11,6 +11,7 @@ from docsgpt.agents.attachment_budget import (
     _attachment_id,
     compute_attachment_budget,
     plan_attachments,
+    plan_listing,
 )
 from docsgpt.agents.attachment_dispatch import AttachmentDispatch
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
@@ -27,6 +28,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.llm.handlers.base import (
     ToolCall,
     _bound_tool_response_for_llm,
@@ -167,6 +169,26 @@ def _unique_reasoning_items(items: List[Any]) -> List[Any]:
     return unique
 
 
+def drop_least_relevant(docs: List[Dict]) -> List[Dict]:
+    """The documents with the one the prompt budget sheds first removed, the rest in their order.
+
+    When every document carries a numeric ``relevance`` (the decision model
+    scored them all), that is the lowest-scored one, the later one on a tie.
+    Otherwise it is the last one: retriever order is best first.
+
+    Args:
+        docs: This turn's retrieved documents, in prompt order.
+
+    Returns:
+        A new list one document shorter (empty for an empty one).
+    """
+    scores = [doc.get("relevance") if isinstance(doc, dict) else None for doc in docs]
+    if docs and all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in scores):
+        victim = min(range(len(docs)), key=lambda i: (scores[i], -i))
+        return docs[:victim] + docs[victim + 1:]
+    return docs[:-1]
+
+
 class BaseAgent(ABC):
     # Inert defaults: an instance built without __init__ still resolves these.
     _guardrail_engine = None
@@ -178,10 +200,13 @@ class BaseAgent(ABC):
     attachment_planning = False
     attachment_plan: Optional[AttachmentPlan] = None
     earlier_attachments: List[Dict] = []
+    reference_attachments = False
     _current_turn_message: Optional[Dict] = None
     _attachments_merged = False
     _attachment_token_correction = 0
     _attachments_tool_config: Optional[Dict] = None
+    # A resumed turn's file listing, as the paused turn's plan made it.
+    paused_attachment_listing: Optional[List[Dict]] = None
 
     def __init__(
         self,
@@ -221,6 +246,7 @@ class BaseAgent(ABC):
         attachment_planning: bool = False,
         earlier_attachments: Optional[List[Dict]] = None,
         skipped_attachments: Optional[List[Dict]] = None,
+        attachments_mode: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -322,6 +348,10 @@ class BaseAgent(ABC):
         self.context_limit_reached = False
         self.conversation_id: Optional[str] = None
         self.initial_user_id: Optional[str] = None
+        # What started this turn: the chat or API answer's message id, a
+        # scheduled run's id, a webhook's task id. A workflow run records it,
+        # so Activity shows the run's step on the right one.
+        self.started_by: Optional[str] = None
 
         self.request_id = request_id
         # The turn came through ``/v1/chat/completions``: the client owns the
@@ -340,6 +370,9 @@ class BaseAgent(ABC):
         # file too large, of an unreadable type, or not parsed in time):
         # named in the manifest with the reason.
         self.skipped_attachments = [s for s in (skipped_attachments or []) if isinstance(s, dict)]
+        # ``attachments_mode: "reference"``: this turn's files are listed for
+        # the attachments tool and the sandbox, never inlined.
+        self.reference_attachments = attachments_mode == "reference"
         self.attachment_plan = None
         # The user message ``_build_messages`` built for this turn; the
         # handler merges the plan into it and compression keeps it whole.
@@ -1571,9 +1604,11 @@ class BaseAgent(ABC):
                 stage="build",
             )
 
-        # Then shed whole documents, lowest-ranked first: a middle-truncated
-        # document block would corrupt its XML, and retriever order is
-        # relevance-descending so the tail is the least useful.
+        # Then shed whole documents, least relevant first: a middle-truncated
+        # document block would corrupt its XML. The survivors keep their
+        # order and are renumbered on each pass, and the citation registry is
+        # seeded from the final list, so ``<document index>``, a tool hit's
+        # ``[n]`` and the sources the client lists still agree.
         document_block = self._build_document_block()
 
         # Plan the turn's files against what is left once the system prompt
@@ -1594,7 +1629,7 @@ class BaseAgent(ABC):
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
             > max_query_tokens - reserved
         ):
-            self.retrieved_docs = self.retrieved_docs[:-1]
+            self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
             document_block = self._build_document_block()
 
         user_content = self._compose_user_turn(document_block, query)
@@ -1798,6 +1833,7 @@ class BaseAgent(ABC):
             budget=budget,
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            reference=self.reference_attachments,
         )
         plan.skipped = skipped
         logger.info(
@@ -1849,12 +1885,72 @@ class BaseAgent(ABC):
             budget=budget,
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            reference=self.reference_attachments,
         )
         self.attachment_plan.skipped = skipped
         self._current_turn_message = carrier
         self._attachments_merged = False
         self._attachment_token_correction = 0
         self._sync_attachments_tool()
+
+    def paused_turn_state(self) -> Dict[str, Any]:
+        """What a paused turn saves so its resume rebuilds the same turn.
+
+        The resume builds a new agent from the saved state alone; without
+        these it would lose the turn's files (``run_code`` could not load an
+        ``F`` ref, the response would list no refs), the compression point the
+        turn's metadata is stamped with, the agent's backup models and the
+        decision model's entries so far. Files are saved by id: the resume
+        reads them again as their owner.
+
+        Returns:
+            ``attachments`` (None when the turn has no files),
+            ``last_compression_at``, ``backup_models`` and ``decisions`` (None
+            when nothing was recorded); all JSON-safe.
+        """
+        current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [
+            _attachment_id(a) for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)
+        ]
+        skipped = [dict(s) for s in (getattr(self, "skipped_attachments", None) or []) if isinstance(s, dict)]
+        files = None
+        if current or earlier or skipped:
+            plan = getattr(self, "attachment_plan", None)
+            if isinstance(plan, AttachmentPlan) and plan.files:
+                listing = plan_listing(plan)
+            else:
+                listing = list(self.paused_attachment_listing or [])
+            files = {
+                "current": current,
+                "earlier": earlier,
+                "skipped": skipped,
+                "mode": "reference" if self.reference_attachments else None,
+                "planning": bool(self.attachment_planning),
+                "listing": listing,
+            }
+        backup_models = getattr(self.llm, "_backup_models", None)
+        return {
+            "attachments": files,
+            "last_compression_at": _epoch_text(getattr(self, "last_compression_at", None)),
+            "backup_models": (
+                [m for m in backup_models if isinstance(m, str)] if isinstance(backup_models, list) else []
+            ),
+            "decisions": decision_record.snapshot(),
+        }
+
+    def resume_paused_attachments(self, listing: Optional[List[Dict]]) -> None:
+        """Take back a paused turn's files on the agent that resumes it.
+
+        The saved messages already carry the files as the paused round sent
+        them (inlined, natively or listed), so the handler must not merge
+        them in again. The listing is what the paused turn told the client;
+        the resumed turn has no plan of its own, so it reports that one.
+
+        Args:
+            listing: The paused turn's ``F`` ref listing.
+        """
+        self._attachments_merged = True
+        self.paused_attachment_listing = [entry for entry in listing or [] if isinstance(entry, dict)] or None
 
     def _truncate_history_to_fit(
         self,

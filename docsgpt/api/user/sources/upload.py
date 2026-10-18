@@ -33,7 +33,8 @@ from docsgpt.storage.db.repositories.connector_sessions import (
 )
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.storage.db import source_defaults
+from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.stt.upload_limits import (
@@ -90,7 +91,9 @@ def _parse_source_config(raw):
     """Strict-validate an optional ``config`` JSON blob from the request.
 
     Returns ``(config_dict_or_None, error_response)``. Absent/empty → ``None``
-    (worker uses classic defaults). Invalid JSON or a config that fails
+    (worker uses classic defaults; the source's retrieval comes from the
+    admin's defaults when it is created). A config's ``retrieval`` is overlaid
+    on those defaults first. Invalid JSON or a config that fails
     ``SourceConfig`` validation → a 400 (strict-on-write, D7).
 
     Dedup note: ``config`` does NOT participate in the idempotency key, so a
@@ -104,11 +107,23 @@ def _parse_source_config(raw):
         parsed = json.loads(raw) if isinstance(raw, str) else raw
         if not isinstance(parsed, dict):
             raise ValueError("config must be a JSON object")
-        # Validate strictly; normalize to a plain dict for the Celery payload.
-        return SourceConfig.model_validate(parsed).model_dump(), None
     except Exception:
         return None, make_response(
             jsonify({"success": False, "message": "Invalid source config"}),
+            400,
+        )
+    # A new source starts from the admin's default retrieval settings; the
+    # fields this request sent win. Without a config the source gets them when
+    # it is created (``/api/upload_index``).
+    parsed = source_defaults.seed_new(parsed)
+    try:
+        # Validate strictly; normalize to a plain dict for the Celery payload.
+        return SourceConfig.model_validate(parsed).model_dump(), None
+    except Exception as err:
+        return None, make_response(
+            jsonify(
+                {"success": False, "message": validation_message(err, "Invalid source config")}
+            ),
             400,
         )
 

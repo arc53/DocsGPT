@@ -220,6 +220,44 @@ def test_response_usage_reports_cumulative_turn_totals():
 
 
 @pytest.mark.unit
+def test_response_usage_reports_the_turns_cached_prompt_tokens():
+    from types import SimpleNamespace
+
+    from docsgpt.api.v1.routes import _response_usage
+
+    # The cache bins are the sum over the turn's calls, in the
+    # Chat Completions ``prompt_tokens_details`` shape.
+    agent = SimpleNamespace(
+        llm=SimpleNamespace(
+            token_usage={
+                "prompt_tokens": 9000,
+                "generated_tokens": 40,
+                "cached_tokens": 7400,
+                "cache_write_tokens": 1500,
+            }
+        )
+    )
+    assert _response_usage(agent) == {
+        "prompt_tokens": 9000,
+        "completion_tokens": 40,
+        "total_tokens": 9040,
+        "prompt_tokens_details": {"cached_tokens": 7400, "cache_write_tokens": 1500},
+    }
+
+
+@pytest.mark.unit
+def test_response_usage_reports_a_cache_miss_as_zero_cached_tokens():
+    from types import SimpleNamespace
+
+    from docsgpt.api.v1.routes import _response_usage
+
+    agent = SimpleNamespace(
+        llm=SimpleNamespace(token_usage={"prompt_tokens": 10, "generated_tokens": 2, "cached_tokens": 0})
+    )
+    assert _response_usage(agent)["prompt_tokens_details"] == {"cached_tokens": 0}
+
+
+@pytest.mark.unit
 class TestLookupAgentHappy:
     def test_returns_agent_for_valid_key(self, pg_conn):
         from docsgpt.api.v1.routes import _lookup_agent

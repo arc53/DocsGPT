@@ -62,11 +62,10 @@ import {
   isHiddenUpload,
 } from './folderUpload';
 import RetrievalOptions, {
-  DEFAULT_RETRIEVAL_OPTIONS,
   isPrescreenConfigValid,
   optionsToConfig,
-  type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
@@ -127,9 +126,12 @@ function Upload({
     if (input) input.webkitdirectory = true;
   }, []);
   const [activeTab, setActiveTab] = useState<boolean>(true);
-  const [retrievalOptions, setRetrievalOptions] =
-    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const { graphRAGAvailable, hybridAvailable, availableModels } =
+  const {
+    value: retrievalOptions,
+    setValue: setRetrievalOptions,
+    reset: resetRetrievalOptions,
+  } = useNewSourceOptions(token);
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
 
   const renderFormFields = () => {
@@ -293,9 +295,9 @@ function Upload({
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
     setRejectedFiles([]);
-    setRetrievalOptions(DEFAULT_RETRIEVAL_OPTIONS);
+    resetRetrievalOptions();
     setNameTouched(false);
-  }, []);
+  }, [resetRetrievalOptions]);
 
   const handleTaskFailure = useCallback(
     (clientTaskId: string, errorMessage?: string) => {
@@ -1075,6 +1077,7 @@ function Upload({
                     hybridAvailable={hybridAvailable}
                     graphRAGAvailable={graphRAGAvailable}
                     availableModels={availableModels}
+                    decision={decision}
                   />
                 )}
               </div>

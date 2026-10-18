@@ -684,6 +684,9 @@ class ToolExecutor:
         # (artifact_generator / code_executor) address artifacts by the
         # workflow run rather than a conversation.
         self.workflow_run_id: Optional[str] = None
+        # Set by the headless runner for a scheduled or webhook run with no
+        # conversation, so code_executor still gets a sandbox for the run.
+        self.run_scope_id: Optional[str] = None
         self.message_id: Optional[str] = None
         # The request's own (already user-scoped) chat attachments, stamped onto
         # sandbox tools so a referenced attachment can be lazily bridged to a
@@ -2169,6 +2172,11 @@ class ToolExecutor:
                         "id": str(a["id"]).strip(),
                         "filename": a.get("filename"),
                         "ref": a.get("ref"),
+                        # The version this call produced, so a later edit in the
+                        # same turn cannot make this call's entry describe it.
+                        **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
+                        # The name the chat's artifact card shows; the filename stays the download name.
+                        **({"title": a["title"]} if isinstance(a.get("title"), str) and a["title"].strip() else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
@@ -2349,6 +2357,8 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            elif self.run_scope_id and not self.conversation_id:
+                tool_config["run_scope_id"] = self.run_scope_id
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
             if tool_data["name"] == "scheduler":

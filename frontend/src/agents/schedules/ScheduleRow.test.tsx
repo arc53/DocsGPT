@@ -120,7 +120,7 @@ describe('ScheduleRow', () => {
     expect(handlers.onToggleRuns).toHaveBeenCalledWith('s1');
   });
 
-  it('shows a one-time task with its run time and only a menu', async () => {
+  it('shows a one-time task with its run time, a menu and its run log', async () => {
     await render({
       ...base,
       trigger_type: 'once',
@@ -131,8 +131,25 @@ describe('ScheduleRow', () => {
     expect(
       buttons().some((b) => b.textContent?.includes('agents.schedules.runNow')),
     ).toBe(false);
+    // One-time tasks open their run log too, so a finished task shows its result.
     expect(
       container.querySelector('button[aria-label="agents.schedules.showRuns"]'),
-    ).toBeNull();
+    ).not.toBeNull();
+  });
+
+  it('appends extra meta, such as the chat an agentless task came from', async () => {
+    await act(async () => {
+      root.render(
+        <ScheduleRow
+          schedule={{ ...base, agent_id: null }}
+          expanded={false}
+          {...handlers}
+          extraMeta={<a href="/c/c1">QBR prep</a>}
+        />,
+      );
+    });
+    expect(container.querySelector('a[href="/c/c1"]')?.textContent).toBe(
+      'QBR prep',
+    );
   });
 });

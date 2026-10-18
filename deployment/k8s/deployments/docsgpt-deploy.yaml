@@ -10,6 +10,14 @@
 #
 # Uploads are stored in the bucket named in docsgpt-secrets (STORAGE_TYPE=s3)
 # and vectors in pgvector, so any number of API and worker replicas share them.
+#
+# The API holds the decision model, and the worker calls it there through
+# WORKER_API_URL; each API replica loads its own copy (~1 GB) the first time a
+# decision feature is on, into the emptyDir at /app/models/decision, and
+# downloads it again (~0.5 GB) whenever the pod is recreated. The worker keeps
+# only the tokenizer (11 MB). The optional-decider component moves the model
+# into a Deployment of its own; to call a vLLM server instead, add its address
+# as DECISION_BASE_URL and DECISION_PROTOCOL: vllm to docsgpt-secrets.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -140,6 +148,14 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      # The model in local mode (0.5 GB), or only its tokenizer with the decider.
+      - name: decision-models
+        emptyDir:
+          sizeLimit: 1Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -267,10 +283,18 @@ spec:
         env:
         - name: DEPLOYMENT_TYPE
           value: "cloud"
-        # The worker hands finished indexes to the API over the in-cluster Service.
-        - name: API_URL
+        # Keep API_URL from the Secret for public links and OAuth callbacks.
+        # Index handoff uses the in-cluster Service instead.
+        - name: WORKER_API_URL
           value: "http://docsgpt-api-service"
         - name: AUTO_MIGRATE
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      - name: decision-models
+        emptyDir:
+          sizeLimit: 64Mi
