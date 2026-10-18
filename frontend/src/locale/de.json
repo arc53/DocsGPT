@@ -692,7 +692,9 @@
         "activity": "Aktivität",
         "steps": "Schritte",
         "result": "Ergebnis",
-        "source": "Quelle"
+        "source": "Quelle",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Trace anzeigen",
@@ -808,7 +810,19 @@
         "api": "API",
         "shared": "Geteilt",
         "chat": "Chat"
-      }
+      },
+      "feedback": {
+        "all": "Jedes Feedback",
+        "like": "Gefällt",
+        "dislike": "Gefällt nicht"
+      },
+      "passthroughFilter": "Passthrough (Schlüssel=Wert)",
+      "conversationFilter": "Unterhaltung {{id}}",
+      "clearConversation": "Alle Unterhaltungen anzeigen",
+      "showConversation": "Ihre Beiträge anzeigen",
+      "anyTime": "Jederzeit",
+      "dateRange": "Zeitraum",
+      "clearDates": "Daten löschen"
     },
     "teams": {
       "label": "Teams",

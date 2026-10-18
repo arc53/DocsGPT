@@ -690,7 +690,9 @@
         "activity": "活动",
         "steps": "步骤",
         "result": "结果",
-        "source": "来源"
+        "source": "来源",
+        "feedback": "反馈",
+        "passthrough": "透传参数"
       },
       "trace": {
         "view": "查看追踪",
@@ -806,7 +808,19 @@
         "api": "API",
         "shared": "共享",
         "chat": "聊天"
-      }
+      },
+      "feedback": {
+        "all": "全部反馈",
+        "like": "赞",
+        "dislike": "踩"
+      },
+      "passthroughFilter": "透传参数 (键=值)",
+      "conversationFilter": "对话 {{id}}",
+      "clearConversation": "显示所有对话",
+      "showConversation": "查看该对话的轮次",
+      "anyTime": "任意时间",
+      "dateRange": "日期范围",
+      "clearDates": "清除日期"
     },
     "teams": {
       "label": "团队",

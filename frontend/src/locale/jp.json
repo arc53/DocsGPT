@@ -690,7 +690,9 @@
         "activity": "アクティビティ",
         "steps": "ステップ",
         "result": "結果",
-        "source": "ソース"
+        "source": "ソース",
+        "feedback": "評価",
+        "passthrough": "パススルー"
       },
       "trace": {
         "view": "トレースを表示",
@@ -806,7 +808,19 @@
         "api": "API",
         "shared": "共有",
         "chat": "チャット"
-      }
+      },
+      "feedback": {
+        "all": "すべての評価",
+        "like": "高評価",
+        "dislike": "低評価"
+      },
+      "passthroughFilter": "パススルー (キー=値)",
+      "conversationFilter": "会話 {{id}}",
+      "clearConversation": "すべての会話を表示",
+      "showConversation": "この会話のやり取りを表示",
+      "anyTime": "全期間",
+      "dateRange": "期間",
+      "clearDates": "日付をクリア"
     },
     "teams": {
       "label": "チーム",

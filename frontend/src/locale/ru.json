@@ -728,7 +728,9 @@
         "activity": "Активность",
         "steps": "Шаги",
         "result": "Результат",
-        "source": "Источник"
+        "source": "Источник",
+        "feedback": "Оценка",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Открыть трассировку",
@@ -858,7 +860,19 @@
         "api": "API",
         "shared": "Общий доступ",
         "chat": "Чат"
-      }
+      },
+      "feedback": {
+        "all": "Любая оценка",
+        "like": "Нравится",
+        "dislike": "Не нравится"
+      },
+      "passthroughFilter": "Passthrough (ключ=значение)",
+      "conversationFilter": "Разговор {{id}}",
+      "clearConversation": "Показать все разговоры",
+      "showConversation": "Показать его ходы",
+      "anyTime": "За всё время",
+      "dateRange": "Период",
+      "clearDates": "Сбросить даты"
     },
     "teams": {
       "label": "Команды",

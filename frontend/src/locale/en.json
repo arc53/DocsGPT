@@ -692,7 +692,9 @@
         "activity": "Activity",
         "steps": "Steps",
         "result": "Result",
-        "source": "Source"
+        "source": "Source",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "View trace",
@@ -808,7 +810,19 @@
         "api": "API",
         "shared": "Shared",
         "chat": "Chat"
-      }
+      },
+      "feedback": {
+        "all": "Any feedback",
+        "like": "Liked",
+        "dislike": "Disliked"
+      },
+      "passthroughFilter": "Passthrough (key=value)",
+      "conversationFilter": "Conversation {{id}}",
+      "clearConversation": "Show all conversations",
+      "showConversation": "Show its turns",
+      "anyTime": "Any time",
+      "dateRange": "Date range",
+      "clearDates": "Clear dates"
     },
     "teams": {
       "label": "Teams",

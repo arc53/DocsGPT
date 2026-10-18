@@ -710,7 +710,9 @@
         "activity": "Actividad",
         "steps": "Pasos",
         "result": "Resultado",
-        "source": "Origen"
+        "source": "Origen",
+        "feedback": "Valoración",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Ver traza",
@@ -833,7 +835,19 @@
         "api": "API",
         "shared": "Compartido",
         "chat": "Chat"
-      }
+      },
+      "feedback": {
+        "all": "Cualquier valoración",
+        "like": "Me gusta",
+        "dislike": "No me gusta"
+      },
+      "passthroughFilter": "Passthrough (clave=valor)",
+      "conversationFilter": "Conversación {{id}}",
+      "clearConversation": "Mostrar todas las conversaciones",
+      "showConversation": "Ver sus turnos",
+      "anyTime": "Cualquier fecha",
+      "dateRange": "Rango de fechas",
+      "clearDates": "Borrar fechas"
     },
     "teams": {
       "label": "Equipos",

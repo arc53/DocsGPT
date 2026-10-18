@@ -663,3 +663,86 @@ describe('Logs running rows', () => {
     expect(getLogs).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Logs chat row context', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const chat = {
+    ...log,
+    conversation_id: 'c0ffee00-0000-4000-8000-000000000001',
+    passthrough: { user_id: 'emp-42' },
+    feedback: { text: 'dislike' },
+  };
+
+  const openRow = async () => {
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    await act(async () => toggle.click());
+  };
+
+  const buttonWith = (text: string) =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (el) => el.textContent === text,
+    )!;
+
+  const lastRequest = () =>
+    getLogs.mock.calls[getLogs.mock.calls.length - 1][0] as Record<
+      string,
+      unknown
+    >;
+
+  beforeEach(async () => {
+    getLogs.mockReset();
+    getLogs.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ logs: [chat], has_more: false }),
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(<Logs agentId="agent-1" />));
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('marks a rated answer in the row header', () => {
+    expect(
+      container.querySelector('[aria-label="settings.logs.feedback.dislike"]'),
+    ).not.toBeNull();
+  });
+
+  it('shows the conversation, the passthrough values and the rating', async () => {
+    await openRow();
+    expect(container.textContent).toContain(chat.conversation_id);
+    expect(buttonWith('user_id=emp-42')).toBeDefined();
+    expect(container.textContent).toContain('settings.logs.detail.feedback');
+  });
+
+  it('filters by a passthrough value clicked on a row', async () => {
+    await openRow();
+    await act(async () => buttonWith('user_id=emp-42').click());
+    expect(lastRequest()).toMatchObject({
+      api_key_id: 'agent-1',
+      page: 1,
+      passthrough: { user_id: 'emp-42' },
+    });
+  });
+
+  it('filters to one conversation and clears it from its chip', async () => {
+    await openRow();
+    await act(async () => buttonWith('settings.logs.showConversation').click());
+    expect(lastRequest()).toMatchObject({
+      conversation_id: chat.conversation_id,
+    });
+    const clear = container.querySelector<HTMLButtonElement>(
+      '[aria-label="settings.logs.clearConversation"]',
+    )!;
+    await act(async () => clear.click());
+    expect(lastRequest().conversation_id).toBeUndefined();
+  });
+});

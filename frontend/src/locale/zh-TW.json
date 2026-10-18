@@ -690,7 +690,9 @@
         "activity": "活動",
         "steps": "步驟",
         "result": "結果",
-        "source": "來源"
+        "source": "來源",
+        "feedback": "回饋",
+        "passthrough": "透傳參數"
       },
       "trace": {
         "view": "檢視追蹤",
@@ -806,7 +808,19 @@
         "api": "API",
         "shared": "共用",
         "chat": "聊天"
-      }
+      },
+      "feedback": {
+        "all": "全部回饋",
+        "like": "讚",
+        "dislike": "倒讚"
+      },
+      "passthroughFilter": "透傳參數 (鍵=值)",
+      "conversationFilter": "對話 {{id}}",
+      "clearConversation": "顯示所有對話",
+      "showConversation": "查看該對話的輪次",
+      "anyTime": "任何時間",
+      "dateRange": "日期範圍",
+      "clearDates": "清除日期"
     },
     "teams": {
       "label": "團隊",
