@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ViewOnlyNotice from '../components/ViewOnlyNotice';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Modal, ModalActions } from '../components/ui/modal';
-import { SettingRow, SettingRows } from '../components/ui/setting-row';
-import { Switch } from '../components/ui/switch';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
-import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { can } from '../utils/accessUtils';
 
@@ -54,7 +51,6 @@ export default function SourceConfigModal({
   onEnableGraphRAG,
 }: SourceConfigModalProps) {
   const { t } = useTranslation();
-  const dispatch = useDispatch();
   const token = useSelector(selectToken);
 
   // Without `edit` (a viewer opening View config) the form is read-only; the
@@ -67,11 +63,6 @@ export default function SourceConfigModal({
   const [options, setOptions] = useState<RetrievalOptionsValue>(() =>
     configToOptions(document?.config),
   );
-  // The source's prompt-injection scan, a guardrails setting beside the
-  // retrieval form; saved only while the operator has the model on.
-  const savedScan = Boolean(document?.config?.guardrails?.injection_scan);
-  const [initialScan, setInitialScan] = useState(savedScan);
-  const [injectionScan, setInjectionScan] = useState(savedScan);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set after a successful save that requires a re-ingest; gates the prompt.
@@ -82,8 +73,6 @@ export default function SourceConfigModal({
       const hydrated = configToOptions(document?.config);
       setInitial(hydrated);
       setOptions(hydrated);
-      setInitialScan(Boolean(document?.config?.guardrails?.injection_scan));
-      setInjectionScan(Boolean(document?.config?.guardrails?.injection_scan));
       setSaving(false);
       setError(null);
       setReingestPrompt(false);
@@ -112,13 +101,7 @@ export default function SourceConfigModal({
     try {
       const response = await userService.updateSourceConfig(
         document.id,
-        {
-          ...optionsToConfig(options),
-          // Left out, the server keeps the saved value.
-          ...(decision.injection
-            ? { guardrails: { injection_scan: injectionScan } }
-            : {}),
-        },
+        optionsToConfig(options),
         token,
       );
       const data = await response.json().catch(() => ({}));
@@ -136,23 +119,6 @@ export default function SourceConfigModal({
       // The form's stored baseline is now the saved config; settle it so a
       // follow-up edit compares against the new state.
       setInitial(options);
-      setInitialScan(injectionScan);
-      // The scan of the chunks already indexed runs after the modal closes.
-      if (
-        data.injection_backfill === 'queued' ||
-        data.injection_backfill === 'lazy'
-      ) {
-        dispatch(
-          showActionToast({
-            variant: 'success',
-            message: t(
-              data.injection_backfill === 'queued'
-                ? 'settings.sources.configModal.backfillQueued'
-                : 'settings.sources.configModal.backfillLazy',
-            ),
-          }),
-        );
-      }
       if (data.requires_reingest) {
         setReingestPrompt(true);
       } else {
@@ -174,8 +140,7 @@ export default function SourceConfigModal({
 
   const hasChanges =
     JSON.stringify(optionsToConfig(initial)) !==
-      JSON.stringify(optionsToConfig(options)) ||
-    (decision.injection && injectionScan !== initialScan);
+    JSON.stringify(optionsToConfig(options));
   // Surface that the pending change will need a re-ingest before saving too.
   const willRequireReingest = chunkingChanged(initial, options);
   // The backend rejects an incoherent prescreen config; block save up-front.
@@ -242,24 +207,6 @@ export default function SourceConfigModal({
               availableModels={availableModels}
               decision={decision}
             />
-            {decision.injection && (
-              <SettingRows>
-                <SettingRow
-                  label={t('settings.sources.configModal.injectionScan')}
-                  description={t(
-                    'settings.sources.configModal.injectionScanDescription',
-                  )}
-                  alignStart
-                >
-                  <Switch
-                    checked={injectionScan}
-                    disabled={isReadOnly}
-                    onCheckedChange={setInjectionScan}
-                    data-testid="source-injection-scan"
-                  />
-                </SettingRow>
-              </SettingRows>
-            )}
             {willRequireReingest && !isReadOnly && (
               <Alert variant="warning">
                 <AlertDescription>

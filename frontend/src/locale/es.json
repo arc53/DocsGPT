@@ -547,11 +547,7 @@
         "errors": {
           "forbidden": "No tienes permiso para editar la configuración de esta fuente.",
           "saveFailed": "No se pudo guardar la configuración. Inténtalo de nuevo."
-        },
-        "injectionScan": "Analizar fragmentos en busca de inyección de prompt",
-        "injectionScanDescription": "Puntúa cada fragmento con el modelo de decisión al indexarlo, para que los agentes puedan marcar o dejar fuera uno sospechoso sin esperar a un análisis.",
-        "backfillQueued": "Analizando en segundo plano los fragmentos que ya tiene esta fuente.",
-        "backfillLazy": "Los fragmentos que ya tiene esta fuente se analizarán a medida que los chats los recuperen."
+        }
       },
       "chunkErrors": {
         "add": "No se pudo añadir el fragmento",
@@ -623,10 +619,7 @@
         "flaggedNotice": "Este fragmento parece una inyección de prompt (puntuación {{percent}} %). Los agentes que revisan las fuentes recuperadas lo marcan o lo dejan fuera de sus respuestas.",
         "safeNotice": "Marcado como seguro: los agentes que usan esta fuente tratan este fragmento como limpio. Si editas su texto, se quita la marca.",
         "reviewFailed": "No se pudo actualizar este fragmento. Inténtalo de nuevo.",
-        "noFlagged": "No se ha marcado ningún fragmento de esta fuente.",
-        "flaggedCount_one": "{{formatted}} fragmento marcado",
-        "flaggedCount_many": "{{formatted}} fragmentos marcados",
-        "flaggedCount_other": "{{formatted}} fragmentos marcados"
+        "noFlagged": "No se ha marcado ningún fragmento de esta fuente. Un fragmento se puntúa cuando un chat lo recupera."
       }
     },
     "analytics": {

@@ -531,11 +531,7 @@
         "errors": {
           "forbidden": "您没有权限编辑此来源的配置。",
           "saveFailed": "保存配置失败，请重试。"
-        },
-        "injectionScan": "扫描文本块中的提示词注入",
-        "injectionScanDescription": "在建立索引时用决策模型为每个文本块打分，智能体无需等待扫描即可标记或略去可疑内容。",
-        "backfillQueued": "正在后台扫描此来源已有的文本块。",
-        "backfillLazy": "此来源已有的文本块会在对话检索到它们时进行扫描。"
+        }
       },
       "chunkErrors": {
         "add": "无法添加文本块",
@@ -603,8 +599,7 @@
         "flaggedNotice": "此文本块看起来像提示词注入（分数 {{percent}}%）。检查检索来源的智能体会标记它，或在回答中略去它。",
         "safeNotice": "已标为安全：使用此来源的智能体会将此文本块视为正常内容。编辑其文本会移除该标记。",
         "reviewFailed": "无法更新此文本块，请重试。",
-        "noFlagged": "此来源中没有被标记的文本块。",
-        "flaggedCount_other": "{{formatted}} 个已标记文本块"
+        "noFlagged": "此来源中没有被标记的文本块。文本块会在对话首次检索到它时评分。"
       }
     },
     "analytics": {

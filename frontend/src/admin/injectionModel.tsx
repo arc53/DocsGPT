@@ -5,29 +5,14 @@ export type InjectionModel = {
   /** The operator's switch (`DECISION_INJECTION_ENABLED`) and a usable model. */
   enabled: boolean;
   runtime: string | null;
-  // One check on a user message, and one full-size chunk scanned as
-  // ingestion does, on this server; null until the model has been measured.
+  // One check on a user message on this server; null until the model has
+  // been measured.
   predicted_input_s: number | null;
-  predicted_chunk_s: number | null;
   /** The deadline the chat-time check runs within. */
   timeout_s: number;
 };
 
 const fmtSeconds = (s: number) => `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
-
-/**
- * "about 6.2 min per 1,000 chunks here": what scanning chunks as they are
- * indexed costs on this server, from one chunk's measured time; null before
- * the model has been measured.
- */
-export function chunkScanCost(model: InjectionModel): string | null {
-  const perChunk = model.predicted_chunk_s;
-  if (perChunk === null) return null;
-  const minutes = (perChunk * 1000) / 60;
-  if (minutes < 1) return 'under a minute per 1,000 chunks here';
-  const shown = minutes < 10 ? minutes.toFixed(1) : String(Math.round(minutes));
-  return `about ${shown} min per 1,000 chunks here`;
-}
 
 /** How the administrator turns the model on, while it is off. */
 export function InjectionModelOff() {
@@ -35,7 +20,7 @@ export function InjectionModelOff() {
     <Alert variant="info" role="note">
       <AlertDescription>
         The prompt-injection model is off on this server, so agents can&apos;t
-        use the model check and no source is scanned. Turn it on with{' '}
+        use the model check. Turn it on with{' '}
         <code className="font-mono">DECISION_INJECTION_ENABLED=true</code> in
         the server&apos;s environment.
       </AlertDescription>
@@ -52,7 +37,6 @@ export function InjectionModelNotice({ model }: { model: InjectionModel }) {
   if (!model.enabled) return <InjectionModelOff />;
   const predicted = model.predicted_input_s;
   const runtime = model.runtime ? ` (${model.runtime})` : '';
-  const scan = chunkScanCost(model);
   return (
     <div className="flex flex-col gap-3">
       <Alert variant="info" role="note">
@@ -60,7 +44,6 @@ export function InjectionModelNotice({ model }: { model: InjectionModel }) {
           {predicted === null
             ? 'Cost on this server: measured after the model loads.'
             : `Checking a user message adds about ${fmtSeconds(predicted)} on this server${runtime}.`}
-          {scan ? ` Scanning sources as they are indexed takes ${scan}.` : ''}
         </AlertDescription>
       </Alert>
       {predicted !== null && predicted > model.timeout_s && (

@@ -435,9 +435,8 @@ class TestFeature:
 
     def test_the_labels_of_the_other_scans(self):
         labels = [features.INJECTION_RETRIEVAL, features.INJECTION_TOOL_RESULT, features.INJECTION_ATTACHMENT,
-                  features.INJECTION_TOOL_DESCRIPTION, features.INJECTION_INGEST,
-                  features.INJECTION_ATTACHMENT_PARSE, features.INJECTION_LAZY]
-        assert all(label.startswith("injection_") for label in labels) and len(set(labels)) == 7
+                  features.INJECTION_TOOL_DESCRIPTION, features.INJECTION_ATTACHMENT_PARSE, features.INJECTION_LAZY]
+        assert all(label.startswith("injection_") for label in labels) and len(set(labels)) == 6
         assert {spec.name for spec in features.specs()}.isdisjoint(labels)
 
     def test_the_catalog_shows_the_measured_time(self):

@@ -126,23 +126,18 @@ function withRelevance(
 /**
  * The decision-model controls the operator turned on, from /api/config.
  * While `relevance` is false the Relevance section is hidden, and a source's
- * stored value is kept as it is; `injection` does the same for a source's
- * prompt-injection scan (SourceConfigModal).
+ * stored value is kept as it is.
  */
-export type DecisionFeatures = { relevance: boolean; injection: boolean };
+export type DecisionFeatures = { relevance: boolean };
 
-export const NO_DECISION_FEATURES: DecisionFeatures = {
-  relevance: false,
-  injection: false,
-};
+export const NO_DECISION_FEATURES: DecisionFeatures = { relevance: false };
 
 /** Read `DecisionFeatures` off an /api/config response; all off without the model. */
 export function decisionFeatures(config: unknown): DecisionFeatures {
   const c = (config ?? {}) as Record<string, unknown>;
-  const available = c.decision_available === true;
   return {
-    relevance: available && c.decision_relevance_enabled === true,
-    injection: available && c.decision_injection_enabled === true,
+    relevance:
+      c.decision_available === true && c.decision_relevance_enabled === true,
   };
 }
 

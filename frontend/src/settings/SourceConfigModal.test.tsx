@@ -5,10 +5,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const dispatch = vi.hoisted(() => vi.fn());
 vi.mock('react-redux', () => ({
   useSelector: () => null,
-  useDispatch: () => dispatch,
+  useDispatch: () => vi.fn(),
 }));
 
 const updateSourceConfig = vi.hoisted(() => vi.fn());
@@ -131,7 +130,7 @@ describe('SourceConfigModal access', () => {
           },
         },
       }),
-      { relevance: true, injection: false },
+      { relevance: true },
     );
     const strict = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
@@ -154,109 +153,5 @@ describe('SourceConfigModal access', () => {
       candidate_k: null,
     });
     expect(config.retrieval.prescreen).toBe(null);
-  });
-});
-
-describe('SourceConfigModal prompt-injection scan', () => {
-  let container: HTMLDivElement;
-  let root: Root;
-  const setModalState = vi.fn();
-
-  beforeEach(() => {
-    updateSourceConfig.mockReset();
-    dispatch.mockReset();
-    setModalState.mockReset();
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    container.remove();
-    document.body.innerHTML = '';
-  });
-
-  const owned = doc({
-    access: 'owner',
-    allowed_actions: ['use', 'view_config', 'edit'],
-    config: { guardrails: { injection_scan: false } },
-  });
-
-  const render = async (injection: boolean) => {
-    await act(async () => {
-      root.render(
-        <SourceConfigModal
-          modalState="ACTIVE"
-          setModalState={setModalState}
-          document={owned}
-          onReingest={vi.fn()}
-          onEnableGraphRAG={vi.fn()}
-          decision={{ relevance: false, injection }}
-        />,
-      );
-    });
-  };
-
-  const scan = () =>
-    document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="source-injection-scan"]',
-    );
-  const save = () =>
-    Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'settings.sources.configModal.save',
-    )!;
-
-  it('is not offered while the operator has the model off', async () => {
-    await render(false);
-    expect(scan()).toBeNull();
-  });
-
-  it('saves the scan and says the indexed chunks are being scanned', async () => {
-    updateSourceConfig.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        requires_reingest: false,
-        injection_backfill: 'queued',
-      }),
-    });
-    await render(true);
-    expect(scan()?.getAttribute('aria-checked')).toBe('false');
-    expect(document.body.textContent).toContain(
-      'settings.sources.configModal.injectionScan',
-    );
-    expect(save().disabled).toBe(true);
-    await act(async () => scan()!.click());
-    expect(save().disabled).toBe(false);
-    await act(async () => save().click());
-    const config = updateSourceConfig.mock.calls[0][1];
-    expect(config.guardrails).toEqual({ injection_scan: true });
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payload: {
-          variant: 'success',
-          message: 'settings.sources.configModal.backfillQueued',
-        },
-      }),
-    );
-    expect(setModalState).toHaveBeenCalledWith('INACTIVE');
-  });
-
-  it('says chunks are scanned as they are retrieved where the store cannot list them', async () => {
-    updateSourceConfig.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        requires_reingest: false,
-        injection_backfill: 'lazy',
-      }),
-    });
-    await render(true);
-    await act(async () => scan()!.click());
-    await act(async () => save().click());
-    expect(dispatch.mock.calls[0][0].payload.message).toBe(
-      'settings.sources.configModal.backfillLazy',
-    );
   });
 });

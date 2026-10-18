@@ -1,10 +1,10 @@
 """Prompt-injection scores for texts: from a cache keyed by content, else from the decision model.
 
 Every surface that scores text for prompt injection goes through here: the ``injection_model`` guardrail check at
-chat time, background scoring of the texts a turn could not score in time, and (with a source's scan setting) the
-chunks of an index. A score is a function of the text alone, so it is cached in ``content_scores`` by the text's
-sha256 and the scorer that produced it (``scorer_id``: the model version, the question and the windowing). A new
-model revision, question wording or window size is a new scorer, so every lookup misses and text is scored again.
+chat time, background scoring of the texts a turn could not score in time, and chat attachments once uploaded. A
+score is a function of the text alone, so it is cached in ``content_scores`` by the text's sha256 and the scorer
+that produced it (``scorer_id``: the model version, the question and the windowing). A new model revision, question
+wording or window size is a new scorer, so every lookup misses and text is scored again.
 
 A long text is split into windows of ``WINDOW_TOKENS`` model tokens with a ``WINDOW_OVERLAP`` overlap, scored in
 the order most likely to matter: the last window (where an appended payload sits), the first, then the rest from

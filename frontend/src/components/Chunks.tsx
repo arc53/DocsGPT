@@ -126,7 +126,7 @@ interface ChunksProps {
 
 type SheetMode = 'edit' | 'add';
 
-/** Whether the prompt-injection scan flagged the chunk (suspected or high). */
+/** Whether the chunk's cached prompt-injection score is flagged (suspected or high). */
 const isFlagged = (injection?: ChunkInjection | null): boolean =>
   Boolean(injection?.level);
 
@@ -209,7 +209,8 @@ const Chunks: React.FC<ChunksProps> = ({
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
-  // Only the chunks the prompt-injection scan flagged (`injection=flagged`).
+  // Only the chunks whose cached prompt-injection score is flagged
+  // (`injection=flagged`); a chunk is scored once a chat retrieves it.
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const flaggedOnlyId = useId();

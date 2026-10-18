@@ -547,11 +547,7 @@
         "errors": {
           "forbidden": "Vous n’avez pas l’autorisation de modifier la configuration de cette source.",
           "saveFailed": "Échec de l’enregistrement de la configuration. Veuillez réessayer."
-        },
-        "injectionScan": "Analyser les fragments à la recherche d’injections de prompt",
-        "injectionScanDescription": "Note chaque fragment avec le modèle de décision lors de l’indexation, pour que les agents puissent signaler ou écarter un fragment suspect sans attendre une analyse.",
-        "backfillQueued": "Analyse en arrière-plan des fragments déjà indexés de cette source.",
-        "backfillLazy": "Les fragments déjà indexés de cette source seront analysés au fur et à mesure que les conversations les récupèrent."
+        }
       },
       "chunkErrors": {
         "add": "Impossible d’ajouter le fragment",
@@ -623,10 +619,7 @@
         "flaggedNotice": "Ce fragment ressemble à une injection de prompt (score {{percent}} %). Les agents qui contrôlent les sources récupérées le signalent ou l’écartent de leurs réponses.",
         "safeNotice": "Marqué comme sûr : les agents qui utilisent cette source traitent ce fragment comme sain. Modifier son texte retire la marque.",
         "reviewFailed": "Impossible de mettre à jour ce fragment. Veuillez réessayer.",
-        "noFlagged": "Aucun fragment de cette source n’a été signalé.",
-        "flaggedCount_one": "{{formatted}} fragment signalé",
-        "flaggedCount_many": "{{formatted}} fragments signalés",
-        "flaggedCount_other": "{{formatted}} fragments signalés"
+        "noFlagged": "Aucun fragment de cette source n’a été signalé. Un fragment est noté dès qu’une conversation le récupère."
       }
     },
     "analytics": {

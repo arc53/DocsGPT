@@ -102,7 +102,7 @@ describe('RetrievalOptions relevance controls', () => {
     container.remove();
   });
 
-  const ON: DecisionFeatures = { relevance: true, injection: false };
+  const ON: DecisionFeatures = { relevance: true };
 
   const withRetrieval = (
     patch: Partial<RetrievalOptionsValue['retrieval']>,

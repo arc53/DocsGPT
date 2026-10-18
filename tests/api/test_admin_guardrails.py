@@ -101,8 +101,7 @@ class TestRoutes:
             "floor": None,
             "mcp_description_warnings": False,
             "injection_model": {
-                "enabled": False, "runtime": "onnx-int8", "predicted_input_s": None, "predicted_chunk_s": None,
-                "timeout_s": 2.0,
+                "enabled": False, "runtime": "onnx-int8", "predicted_input_s": None, "timeout_s": 2.0,
             },
         }
         assert decisions.get_decider()._backend is None
@@ -112,7 +111,6 @@ class TestRoutes:
         from docsgpt.decisions import features
         from docsgpt.decisions.latency import SpeedProfile
         from docsgpt.decisions.testing import FakeDecider, installed
-        from docsgpt.guardrails.checks.model_injection import chunk_shape
 
         profile = SpeedProfile(c=0.01, a=0.0001, b=0.0, overhead=50, threads=4, measured_at=0.0)
         fake = FakeDecider(profile=profile)
@@ -124,7 +122,6 @@ class TestRoutes:
             "enabled": True,
             "runtime": "vllm",
             "predicted_input_s": round(profile.predict_s(features.INJECTION_INPUT.shape), 3),
-            "predicted_chunk_s": round(profile.predict_s(chunk_shape()), 3),
             "timeout_s": 2.0,
         }
         assert fake.calls == [] and fake.warmed == 0

@@ -1,7 +1,7 @@
 ---
 title: Agent Guardrails
 description: Scan user input, attached files, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns, or a local model that withholds only the flagged document or file), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, the rules every agent follows and the defaults for new agents (Admin), and the API reference.
-lastUpdated: 2026-10-17
+lastUpdated: 2026-10-18
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -163,11 +163,11 @@ The model is too slow on a CPU to score every retrieved chunk during a turn: a f
 
 1. **The owner's allowlist.** A chunk its source's owner [marked as safe](/Sources/Per-source-configuration#reviewing-flagged-chunks) is clean (detail `owner-allowed`), for agents using that source.
 2. **A score stored with the file.** Chat attachments are scored in the background once uploaded.
-3. **The score cache**, the `content_scores` table: a score per text, keyed by the text's SHA-256 and the scorer (the model version, the question and the windowing). It is filled by sources that [scan their chunks when indexed](/Sources/Per-source-configuration#prompt-injection-scanning), by background scoring and by earlier turns.
+3. **The score cache**, the `content_scores` table: a score per text, keyed by the text's SHA-256 and the scorer (the model version, the question and the windowing). It is filled by earlier turns and by background scoring.
 4. **The model, during the turn**, for at most `GUARDRAILS_INJECTION_LIVE_ITEMS` uncached items within the stage deadline. Its default, `auto`, is 4 where the model is measured to score four full chunks within the deadline (a GPU, or a fast decision server), and 0 otherwise.
 5. **Later.** The rest are *not evaluated* this turn, and up to 16 of them are queued for background scoring (`GUARDRAILS_INJECTION_LAZY`, on by default), so the next turn that retrieves them reads the cache.
 
-On a CPU install, then, a document is unscored the first time it is retrieved unless its source scans its chunks when indexed. The cache stores scores, not verdicts, so changing a threshold never needs a rescore. A new model revision is a new scorer: every lookup misses and text is scored again as it is used. Cached scores unseen for `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` (180) are deleted daily. They are shared across users, since a score depends on the text alone, and only hashes are stored, never the text.
+On a CPU install, then, a document is unscored the first time it is retrieved and scored in the background right after, so the next turn that retrieves it reads its score. To score retrieved documents during the turn, run the model on a GPU-backed [decision model server](/Models/decision-model#api-mode). The cache stores scores, not verdicts, so changing a threshold never needs a rescore. A new model revision is a new scorer: every lookup misses and text is scored again as it is used. Cached scores unseen for `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` (180) are deleted daily. They are shared across users, since a score depends on the text alone, and only hashes are stored, never the text.
 
 At `input` and `tool_result` the text is scored during the turn every time, under the stage deadline (`timeout_ms`): about 0.2 s for a short message on a 4 vCPU x86 server, less on a GPU.
 
@@ -414,7 +414,7 @@ Leaving `policy` out of `GUARDRAILS_CHECKS_ENABLED` is how an air-gapped or priv
 
 ### Turning the model check on
 
-The operator decides whether the model may scan at all; which agents, stages, actions and thresholds use it is set in the UI.
+The operator decides whether the model may score text at all; which agents, stages, actions and thresholds use it is set in the UI.
 
 ```env
 DECISION_INJECTION_ENABLED=true
@@ -423,18 +423,17 @@ DECISION_INJECTION_ENABLED=true
 While it is `true`:
 
 - agents' `injection_model` controls, the [floor's](#the-instance-floor) and the [defaults for new agents](#defaults-for-new-agents) run;
-- sources whose owner turned on [scanning when indexed](/Sources/Per-source-configuration#prompt-injection-scanning) are scored as they are indexed;
 - every chat attachment is scored in the background once uploaded;
 - MCP tool descriptions are scored when [Admin → Guardrails warns on them](#mcp-tool-descriptions);
-- the API loads the model when it starts, and `/api/config` reports `decision_injection_enabled: true` (the switch, with the model available), which is what the agent, admin and source settings read to offer the check.
+- the API loads the model when it starts, and `/api/config` reports `decision_injection_enabled: true` (the switch, with the model available).
 
-While it is `false` (the default), nothing loads or calls the model for guardrails. The `GUARDRAILS_INJECTION_*` settings above are tuning knobs and never appear in the UI. `GUARDRAILS_CHECKS_ENABLED` must allow `injection_model` for controls to use it; scanning sources and attachments and MCP warnings follow `DECISION_INJECTION_ENABLED` alone. On a CPU-only install, see [what each scan costs](/Models/decision-model#prompt-injection-on-a-cpu).
+While it is `false` (the default), nothing loads or calls the model for guardrails. The `GUARDRAILS_INJECTION_*` settings above are tuning knobs and never appear in the UI. `GUARDRAILS_CHECKS_ENABLED` must allow `injection_model` for controls to use it; scoring attachments and MCP warnings follow `DECISION_INJECTION_ENABLED` alone. On a CPU-only install, see [what each check costs](/Models/decision-model#prompt-injection-on-a-cpu).
 
 [Webhook](/API/webhooks) and scheduled runs, which run in the Celery worker, are scored too: the worker never loads the model, and calls the API process's model or, with `DECISION_BASE_URL` set, the decision server (see [Celery workers](/Models/decision-model#celery-workers)). A worker that reaches neither reports the control *not evaluated*. A webhook's payload reaches the agent's `input` controls, the floor's included, as JSON with its non-ASCII text as written.
 
 ## Admin → Guardrails
 
-The **Guardrails** page of the admin area holds the settings that apply to every agent. It is for admins only, and every save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `guardrails_settings_set`, with each changed field as `[old, new]`. It also shows what the prompt-injection model costs on this server, once the model has loaded and been timed: *"Checking a user message adds about 0.2 s on this server (onnx-int8). Scanning sources as they are indexed takes about N min per 1,000 chunks here."* When one check is predicted to take longer than its stage deadline, it warns that messages will be recorded as not evaluated. While `DECISION_INJECTION_ENABLED` is off, the page says how to turn the model on.
+The **Guardrails** page of the admin area holds the settings that apply to every agent. It is for admins only, and every save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `guardrails_settings_set`, with each changed field as `[old, new]`. It also shows what the prompt-injection model costs on this server, once the model has loaded and been timed: *"Checking a user message adds about 0.2 s on this server (onnx-int8)."* When one check is predicted to take longer than its stage deadline, it warns that messages will be recorded as not evaluated. While `DECISION_INJECTION_ENABLED` is off, the page says how to turn the model on.
 
 ### The instance floor
 
@@ -479,10 +478,10 @@ It only warns. Legitimate descriptions are instructions to an AI ("always call t
 
 | Method | Path | Body / response |
 | --- | --- | --- |
-| `GET` | `/api/admin/guardrails` | `{"success", "floor", "mcp_description_warnings", "injection_model": {"enabled", "runtime", "predicted_input_s", "predicted_chunk_s", "timeout_s"}}` |
+| `GET` | `/api/admin/guardrails` | `{"success", "floor", "mcp_description_warnings", "injection_model": {"enabled", "runtime", "predicted_input_s", "timeout_s"}}` |
 | `PUT` | `/api/admin/guardrails` | Any of `floor` (an agent `guardrails` object, or `null` for no floor) and `mcp_description_warnings` (`true` or `false`); returns the `GET` body |
 
-`floor` is `null` when none is stored. `predicted_input_s` is the predicted time of one check on a user message and `predicted_chunk_s` of scanning one full-size chunk as indexing does, both on this server and `null` until the model has been measured; reading them never loads or times the model. `timeout_s` is the default stage deadline (2 s) and `enabled` is `DECISION_INJECTION_ENABLED` with the model available. An invalid body gets a 400 whose `message` names the field, such as `floor.controls.0.check: unknown check 'x'` or `floor.controls.0: flag_threshold must not exceed threshold`.
+`floor` is `null` when none is stored. `predicted_input_s` is the predicted time of one check on a user message on this server, `null` until the model has been measured; reading it never loads or times the model. `timeout_s` is the default stage deadline (2 s) and `enabled` is `DECISION_INJECTION_ENABLED` with the model available. An invalid body gets a 400 whose `message` names the field, such as `floor.controls.0.check: unknown check 'x'` or `floor.controls.0: flag_threshold must not exceed threshold`.
 
 ## Defaults for new agents
 
@@ -494,14 +493,14 @@ Under **Admin → Defaults**, **New agents** sets the guardrails a new agent sta
 | `PUT` | `/api/admin/defaults/agents` | Admins | `{"guardrails": {...}}`, validated as an agent's guardrails; returns the `GET` body |
 | `GET` | `/api/agents/defaults` | Any signed-in user, or a token with `agents:read` | `{"success", "guardrails"}`, to prefill the new-agent form |
 
-With nothing saved, each returns the built-in defaults (guardrails off) and new agents start exactly as before. The same page sets [whether new sources scan their chunks for prompt injection](/Sources/Per-source-configuration#defaults-for-new-sources).
+With nothing saved, each returns the built-in defaults (guardrails off) and new agents start exactly as before. The same page sets the [retrieval settings new sources start with](/Sources/Per-source-configuration#defaults-for-new-sources).
 
 ## Scope and limitations
 
 - **Workflow agents** run the `input` stage with their own controls, but the AI Agent nodes inside the workflow run only the [instance floor](#the-instance-floor), not the parent agent's controls. Aggregate output guarding across a workflow is not yet wired.
 - **Pattern checks match formats, not meaning.** `pii` does not find names; `injection` misses obfuscated payloads; `groundedness` measures word overlap, not truth. Use `policy` where you need a semantic judgement, and keep an eye on the *Not evaluated* count when you do.
 - **Redaction is best-effort against structured identifiers.** A value that does not match a known format passes through. Treat `redact` as a safety net, not as a data-loss-prevention guarantee.
-- **Latency.** Local checks add low single-digit milliseconds. An `injection_model` control on `input` adds about 0.2 s on CPU before the answer starts; at `retrieval` and `attachment` it mostly reads cached scores, and on a CPU it scores nothing during the turn by default, so a document's first retrieval goes unscored unless its source scans its chunks when indexed. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
+- **Latency.** Local checks add low single-digit milliseconds. An `injection_model` control on `input` adds about 0.2 s on CPU before the answer starts; at `retrieval` and `attachment` it mostly reads cached scores, and on a CPU it scores nothing during the turn by default, so a document's first retrieval goes unscored and it is scored in the background for the next turn. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
 
 ## Extending: writing your own check
 

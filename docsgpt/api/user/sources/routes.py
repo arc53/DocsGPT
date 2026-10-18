@@ -30,7 +30,6 @@ from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
-from docsgpt.guardrails import injection_ingest
 from docsgpt.parser.remote.remote_creator import normalize_remote_data
 from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
@@ -257,7 +256,6 @@ class PaginatedSources(Resource):
                         None if owned else team_shared.get(str(doc["id"]))
                     ),
                     "connectionId": _connection_id(doc),
-                    "injectionScan": (doc.get("metadata") or {}).get("injection_scan"),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -663,14 +661,8 @@ class SourceConfigResource(Resource):
         description="Edit a source's behavior config. Retrieval-time fields "
         "take effect live; chunking changes require an explicit re-ingest "
         "(surfaced as requires_reingest). A section the body leaves out "
-        "(chunking, retrieval, graph, guardrails) keeps its saved value, so a "
-        "body with only `retrieval` saves just that. Turning on "
-        "`guardrails.injection_scan` scans the chunks already indexed: "
-        "`injection_backfill` is `queued` (a background scan of them), `lazy` "
-        "(the vector store cannot list chunks, so they are scored as chats "
-        "retrieve them) or null (nothing to start: the setting was not turned "
-        "on, or the operator has not enabled the model). Turning it off stops "
-        "future scans only."
+        "(chunking, retrieval, graph) keeps its saved value, so a body with "
+        "only `retrieval` saves just that."
     )
     def patch(self, source_id):
         decoded_token = request.decoded_token
@@ -723,7 +715,7 @@ class SourceConfigResource(Resource):
                 new_config.kind = current_config.kind
                 # A section the body leaves out keeps its saved value (the
                 # retrieval test saves only ``retrieval``).
-                for section in ("chunking", "retrieval", "graph", "guardrails"):
+                for section in ("chunking", "retrieval", "graph"):
                     if section not in body:
                         setattr(new_config, section, getattr(current_config, section))
                 requires_reingest = (
@@ -733,10 +725,6 @@ class SourceConfigResource(Resource):
                 repo.update(
                     str(doc["id"]), owner, {"config": new_config.model_dump()}
                 )
-                scan_turned_on = (
-                    new_config.guardrails.injection_scan
-                    and not current_config.guardrails.injection_scan
-                )
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:
@@ -745,12 +733,6 @@ class SourceConfigResource(Resource):
             )
             return make_response(jsonify({"success": False}), 400)
 
-        # Queued once the new config is committed: the scan reads it.
-        injection_backfill = (
-            injection_ingest.start_backfill(str(doc["id"]))
-            if scan_turned_on and settings.DECISION_INJECTION_ENABLED
-            else None
-        )
         return make_response(
             jsonify(
                 {
@@ -758,7 +740,6 @@ class SourceConfigResource(Resource):
                     "config": new_config.model_dump(),
                     "requires_reingest": requires_reingest,
                     "warnings": _unsupported_retrieval_warnings(new_config),
-                    "injection_backfill": injection_backfill,
                 }
             ),
             200,
@@ -768,10 +749,9 @@ class SourceConfigResource(Resource):
 @sources_ns.route("/sources/defaults")
 class SourceDefaultsResource(Resource):
     @api.doc(
-        description="The retrieval and guardrails settings a new source starts "
-        "with (set by an admin under Admin > Defaults), for prefilling create "
-        "forms: `{retrieval: {...}, guardrails: {injection_scan}}`, the "
-        "built-in defaults when none are set."
+        description="The retrieval settings a new source starts with (set by "
+        "an admin under Admin > Defaults), for prefilling create forms: "
+        "`{retrieval: {...}}`, the built-in defaults when none are set."
     )
     def get(self):
         decoded_token = request.decoded_token
@@ -779,8 +759,7 @@ class SourceDefaultsResource(Resource):
             return make_response(jsonify({"success": False}), 401)
         with db_readonly() as conn:
             retrieval = source_defaults.load(conn)
-            guardrails = source_defaults.load_guardrails(conn)
-        return make_response(jsonify({"success": True, "retrieval": retrieval, "guardrails": guardrails}), 200)
+        return make_response(jsonify({"success": True, "retrieval": retrieval}), 200)
 
 
 def _unsupported_retrieval_warnings(config) -> list:

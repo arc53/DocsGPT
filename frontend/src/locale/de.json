@@ -533,11 +533,7 @@
         "errors": {
           "forbidden": "Du hast keine Berechtigung, die Konfiguration dieser Quelle zu bearbeiten.",
           "saveFailed": "Konfiguration konnte nicht gespeichert werden. Bitte versuche es erneut."
-        },
-        "injectionScan": "Chunks auf Prompt-Injection prüfen",
-        "injectionScanDescription": "Bewertet jeden Chunk beim Indexieren mit dem Entscheidungsmodell, damit Agenten verdächtige Chunks markieren oder weglassen können, ohne auf eine Prüfung zu warten.",
-        "backfillQueued": "Die vorhandenen Chunks dieser Quelle werden im Hintergrund geprüft.",
-        "backfillLazy": "Die vorhandenen Chunks dieser Quelle werden geprüft, sobald Chats sie abrufen."
+        }
       },
       "chunkErrors": {
         "add": "Der Chunk konnte nicht hinzugefügt werden",
@@ -605,9 +601,7 @@
         "flaggedNotice": "Dieser Chunk liest sich wie eine Prompt-Injection (Wert {{percent}} %). Agenten, die abgerufene Quellen prüfen, markieren ihn oder lassen ihn in ihren Antworten weg.",
         "safeNotice": "Als sicher markiert: Agenten, die diese Quelle nutzen, behandeln diesen Chunk als unbedenklich. Wenn du den Text bearbeitest, wird die Markierung entfernt.",
         "reviewFailed": "Der Chunk konnte nicht aktualisiert werden. Bitte versuche es erneut.",
-        "noFlagged": "In dieser Quelle wurde kein Chunk markiert.",
-        "flaggedCount_one": "{{formatted}} markierter Chunk",
-        "flaggedCount_other": "{{formatted}} markierte Chunks"
+        "noFlagged": "In dieser Quelle wurde kein Chunk markiert. Ein Chunk wird bewertet, sobald ein Chat ihn abruft."
       }
     },
     "analytics": {

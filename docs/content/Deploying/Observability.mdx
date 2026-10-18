@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
-lastUpdated: 2026-10-17
+lastUpdated: 2026-10-18
 ---
 
 import { Callout } from 'nextra/components'
@@ -245,11 +245,10 @@ The [`injection_model` guardrail](/Agents/guardrails#injection_model--prompt-inj
 | `injection_tool_result` | A tool result |
 | `injection_attachment` | Attached files, during the turn |
 | `injection_attachment_parse` | A chat attachment, in the background once uploaded |
-| `injection_ingest` | A source's chunks as they are indexed, and its existing chunks when scanning is turned on |
 | `injection_lazy` | What a turn could not score in time, in the background |
 | `injection_tool_description` | MCP tool descriptions, when a server is saved or refreshed |
 
-Background scans run outside any request and leave no trace; they are counted in `decision_usage` like every call. Texts answered from the score cache are counted there too, under status `cached`, so the texts checked per feature are the model-scored states plus the `cached` ones. Each chat-time evaluation also adds an entry to the answer's [decision record](/Models/decision-model#what-is-recorded). A flagged or withheld document or file writes a [guardrail event](/Agents/guardrails#the-audit-journal) whose `item_ref` names it: `chunk:<source_id>:<chunk_key>` or `attachment:<id>`.
+Background scoring runs outside any request and leaves no trace; it is counted in `decision_usage` like every call. Texts answered from the score cache are counted there too, under status `cached`, so the texts checked per feature are the model-scored states plus the `cached` ones. Each chat-time evaluation also adds an entry to the answer's [decision record](/Models/decision-model#what-is-recorded). A flagged or withheld document or file writes a [guardrail event](/Agents/guardrails#the-audit-journal) whose `item_ref` names it: `chunk:<source_id>:<chunk_key>` or `attachment:<id>`.
 
 Backends that understand the GenAI conventions — Langfuse
 (`/api/public/otel`), Arize Phoenix, Datadog LLM Observability, Grafana —

@@ -71,23 +71,6 @@ export type SourceConfig = {
   chunking?: SourceChunkingConfig;
   retrieval?: SourceRetrievalConfig;
   graph?: SourceGraphConfig;
-  // Live (no re-ingest): score chunks for prompt injection as they are indexed.
-  guardrails?: { injection_scan?: boolean };
-};
-
-/**
- * A source's prompt-injection scan summary (`metadata.injection_scan`):
- * chunks scored, not yet scored, suspected (p ≥ 0.5, high included) and high
- * (p ≥ 0.9), the highest score, and when it was computed.
- */
-export type InjectionScanSummary = {
-  scorer?: string;
-  scanned: number;
-  unscored: number;
-  suspected: number;
-  high: number;
-  max_p: number | null;
-  at?: string;
 };
 
 export type Doc = {
@@ -117,8 +100,6 @@ export type Doc = {
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
-  // The latest prompt-injection scan of its chunks; absent while unscanned.
-  injectionScan?: InjectionScanSummary | null;
 };
 
 export type GetDocsResponse = {

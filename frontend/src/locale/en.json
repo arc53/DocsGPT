@@ -533,11 +533,7 @@
         "errors": {
           "forbidden": "You don't have permission to edit this source's config.",
           "saveFailed": "Failed to save config. Please try again."
-        },
-        "injectionScan": "Scan chunks for prompt injection",
-        "injectionScanDescription": "Score each chunk with the decision model as it is indexed, so agents can flag or leave out a suspicious one without waiting for a scan.",
-        "backfillQueued": "Scanning this source's existing chunks in the background.",
-        "backfillLazy": "This source's existing chunks will be scanned as chats retrieve them."
+        }
       },
       "chunkErrors": {
         "add": "Could not add the chunk",
@@ -605,9 +601,7 @@
         "flaggedNotice": "This chunk reads like a prompt injection (score {{percent}}%). Agents that screen retrieved sources flag it, or leave it out of their answers.",
         "safeNotice": "Marked safe: agents using this source treat this chunk as clean. Editing its text removes the mark.",
         "reviewFailed": "Could not update this chunk. Please try again.",
-        "noFlagged": "No chunk in this source has been flagged.",
-        "flaggedCount_one": "{{formatted}} flagged chunk",
-        "flaggedCount_other": "{{formatted}} flagged chunks"
+        "noFlagged": "No chunk in this source has been flagged. A chunk is scored once a chat retrieves it."
       }
     },
     "analytics": {
