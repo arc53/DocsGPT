@@ -60,3 +60,27 @@ def test_markdown_token_chunking_via_max_tokens():
     assert len(tups) > 1
     for _hdr, chunk in tups:
         assert len(chunk) <= 4
+
+
+def test_markdown_html_cleanup_keeps_comparisons():
+    tups = MarkdownParser().markdown_to_tups("# Compare\nIf x < 10 and y > 5 then stop.\n")
+    assert tups == [("Compare", "If x < 10 and y > 5 then stop.\n\n")]
+
+
+def test_markdown_html_cleanup_keeps_generics():
+    content = "# Types\nUse List<String>, Map<K, V> or Optional<T>; List<Object> and Array<Map> too.\n"
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    for kept in ("List<String>", "Map<K, V>", "Optional<T>", "List<Object>", "Array<Map>"):
+        assert kept in text
+
+
+def test_markdown_html_cleanup_removes_real_tags():
+    content = '# Note\n<div class="note">Keep <b>bold</b> and line<br/>break <img src="a.png" alt="x"></div>\n'
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert text == "Keep bold and linebreak \n\n"
+
+
+def test_markdown_html_cleanup_removes_comments():
+    content = "# C\nbefore <!-- a\nmulti-line comment with <b>tags</b> --> after\n"
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert text == "before  after\n\n"

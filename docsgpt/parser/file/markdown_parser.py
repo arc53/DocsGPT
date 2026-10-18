@@ -10,6 +10,24 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from docsgpt.parser.file.base_parser import BaseParser
 from docsgpt.utils import num_tokens_from_string
 
+# HTML element names that the cleanup in markdown_to_tups strips. Only these are
+# treated as tags, so text such as "x < 10 and y > 5" or "List<String>" survives.
+_HTML_TAG_NAMES = """
+    a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption
+    center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed
+    fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i
+    iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object
+    ol optgroup option output p param picture pre progress q rp rt ruby s samp script search
+    section select slot small source span strike strong style sub summary sup table tbody td
+    template textarea tfoot th thead time title tr track tt u ul var video wbr
+""".split()
+# Lowercase only: markdown authors write HTML in lowercase, while generics such
+# as List<Object> or Array<Map> use capitalised names that collide with tags.
+_HTML_TAG_OR_COMMENT = re.compile(
+    r"<!--.*?-->|</?(?:%s)(?=[\s/>])[^<>]*>" % "|".join(_HTML_TAG_NAMES),
+    re.DOTALL,
+)
+
 
 class MarkdownParser(BaseParser):
     """Markdown parser.
@@ -76,7 +94,7 @@ class MarkdownParser(BaseParser):
         if current_header is not None:
             # pass linting, assert keys are defined
             markdown_tups = [
-                (re.sub(r"#", "", cast(str, key)).strip(), re.sub(r"<.*?>", "", value))
+                (re.sub(r"#", "", cast(str, key)).strip(), _HTML_TAG_OR_COMMENT.sub("", value))
                 for key, value in markdown_tups
             ]
         else:
