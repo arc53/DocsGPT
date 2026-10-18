@@ -190,3 +190,13 @@
   auth_kind: mcp
   capabilities: [read]
   docs_url: https://docs.coingecko.com/docs/mcp-server
+
+- key: mcp:canva
+  name: Canva
+  description: settings.connectors.descriptions.mcp_canva
+  icon: canva
+  category: business
+  mcp_url: https://mcp.canva.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://www.canva.dev/docs/mcp
