@@ -126,7 +126,7 @@ class TestPresets:
         assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
         assert definition.configured
 
-    def test_microsoftlearn_preset_connects_without_oauth(self):
+    def test_microsoftlearn_preset_connects_without_oauth(self: TestPresets) -> None:
         definition = catalog.get_definition("mcp:microsoftlearn")
 
         assert definition.name == "Microsoft Learn"
