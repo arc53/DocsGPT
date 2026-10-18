@@ -1552,6 +1552,7 @@
       "descriptions": {
         "google_drive": "Sync Docs, Sheets and PDFs into Knowledge.",
         "share_point": "Sync files from SharePoint sites and OneDrive into Knowledge.",
+        "mcp_canva": "Work with Canva designs, export, and utilize brand templates.",
         "confluence": "Sync Confluence spaces and pages into Knowledge.",
         "s3": "Sync documents from an S3 bucket into Knowledge.",
         "reddit": "Sync Reddit posts that match your searches into Knowledge.",
