@@ -13,7 +13,7 @@ from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.core.settings import settings
 from docsgpt.guardrails import injection_scoring
 from docsgpt.guardrails.checks.model_injection import FLAG_THRESHOLD, THRESHOLD
-from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.sources import AllowlistFull, SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.utils import check_required_fields, num_tokens_from_string
@@ -645,8 +645,16 @@ class InjectionReview(Resource):
                 )
         except AccessDenied as err:
             return denied_response(err)
-        except ValueError as err:
-            return make_response(jsonify({"success": False, "message": str(err)}), 400)
+        except AllowlistFull:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": f"At most {INJECTION_REVIEW_MAX} chunks of a source can be marked safe",
+                    }
+                ),
+                400,
+            )
         except Exception as e:
             current_app.logger.error(f"Error reviewing a chunk of source {source_id}: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)

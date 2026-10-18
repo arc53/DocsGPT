@@ -126,6 +126,15 @@ class TestReview:
         response = _review(app, str(src["id"]), "u", {"content_hash": "b" * 64, "decision": "allow"})
         assert response.status_code == 400 and "At most 1" in response.json["message"]
 
+    def test_an_unexpected_error_is_not_echoed(self, app, db, monkeypatch):
+        def fail(*args, **kwargs):
+            raise ValueError("internal detail")
+
+        monkeypatch.setattr(SourcesRepository, "review_injection", fail)
+        src = SourcesRepository(db).create("docs", user_id="u")
+        response = _review(app, str(src["id"]), "u", {"content_hash": "a" * 64, "decision": "allow"})
+        assert response.status_code == 500 and "internal detail" not in response.get_data(as_text=True)
+
     @pytest.mark.parametrize("body", [
         {"content_hash": "A" * 64, "decision": "allow"},
         {"content_hash": "a" * 63, "decision": "allow"},
