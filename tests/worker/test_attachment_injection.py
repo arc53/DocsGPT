@@ -43,6 +43,7 @@ class TestAttachmentScoring:
     def test_nothing_is_scored_while_the_switch_is_off(self, pg_conn, patch_worker_db, monkeypatch):
         from docsgpt import worker
 
+        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", False)
         fake = FakeDecider({"injection": 0.93})
         with installed(fake):
             assert worker._score_attachment_injection("alice", "handle-1", "text", {}) is None
