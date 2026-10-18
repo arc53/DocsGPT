@@ -202,6 +202,26 @@ describe('Admin Defaults', () => {
     expect(save().disabled).toBe(true);
   });
 
+  it('keeps an edit made while the save is pending', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    let respond: (value: unknown) => void = () => {};
+    admin.setSourceDefaults.mockReturnValue(
+      new Promise((resolve) => {
+        respond = resolve;
+      }),
+    );
+    await render();
+    const chunks = () =>
+      container.querySelector<HTMLInputElement>('#retrieval-chunks')!;
+    await typeInto(chunks(), '9');
+    await act(async () => save().click());
+    await typeInto(chunks(), '12');
+    await act(async () => respond(body({}, { chunks: 9 })));
+    for (let i = 0; i < 3; i += 1) await act(async () => Promise.resolve());
+    expect(chunks().value).toBe('12');
+    expect(save().disabled).toBe(false);
+  });
+
   it('shows a refused save above the form', async () => {
     admin.getSourceDefaults.mockResolvedValue(body());
     admin.setSourceDefaults.mockResolvedValue({
