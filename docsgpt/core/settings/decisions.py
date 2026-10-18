@@ -206,6 +206,20 @@ class DecisionSettings(SettingsGroup):
         ),
     )
 
+    # Conversation analytics: the operator's switch. Which agents are labelled, with which topics and tags, lives in
+    # the UI; the sweep's tuning knobs are the ANALYTICS_* settings.
+    DECISION_ANALYTICS_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Let the decision model label stored conversations in the background (answer status, docs gaps, "
+            "reactions, frustration, requests for a person, goal met, topics and custom tags) for the Analytics "
+            "and Logs pages. While false the sweep does nothing and the UI says how to turn it on. While true, the "
+            "worker labels conversations without an agent and those of every agent whose analytics setting is on, "
+            "calling the model at background priority, and the API process (or the decide server) loads the model "
+            "at start."
+        ),
+    )
+
     # Model-scored relevance in retrieval: the operator's switch, then the tuning knobs (never shown in the UI).
     DECISION_RELEVANCE_ENABLED: bool = Field(
         default=False,

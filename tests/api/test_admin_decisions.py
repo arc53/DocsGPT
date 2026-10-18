@@ -53,6 +53,9 @@ class TestAdminDecisions:
                 "injection_input": {
                     "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
                 },
+                "analytics_turn": {
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 120.0, "reason": "configured",
+                },
                 "rag_rerank": {
                     "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
                 },

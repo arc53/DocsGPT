@@ -178,6 +178,7 @@ class TestConfigRoute:
             "decision_available": True,
             "decision_relevance_enabled": False,
             "decision_injection_enabled": False,
+            "decision_analytics_enabled": False,
         }
         assert decisions.get_decider()._backend is None
 
@@ -186,7 +187,9 @@ class TestConfigRoute:
         "enabled, mode, expected",
         [(True, None, True), (False, None, False), (True, "none", False)],
     )
-    @pytest.mark.parametrize("switch", ["DECISION_RELEVANCE_ENABLED", "DECISION_INJECTION_ENABLED"])
+    @pytest.mark.parametrize(
+        "switch", ["DECISION_RELEVANCE_ENABLED", "DECISION_INJECTION_ENABLED", "DECISION_ANALYTICS_ENABLED"]
+    )
     def test_the_operator_switches(self, client, monkeypatch, enabled, mode, expected, switch):
         from docsgpt import decisions
         from docsgpt.core.settings import settings

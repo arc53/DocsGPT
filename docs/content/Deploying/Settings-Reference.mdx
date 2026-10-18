@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-18
+lastUpdated: 2026-10-19
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -652,6 +652,12 @@ Type `bool`, default `false`.
 
 Let the decision model score text for prompt injection: the `injection_model` guardrail check of agents and of the floor (Admin > Guardrails), chat attachments once uploaded, and MCP tool descriptions when Admin > Guardrails warns on them. While false nothing loads or calls the model for guardrails, those controls are not evaluated, and the UI marks the check unavailable. While true, the API process (or the decide server) loads the model at start.
 
+### `DECISION_ANALYTICS_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model label stored conversations in the background (answer status, docs gaps, reactions, frustration, requests for a person, goal met, topics and custom tags) for the Analytics and Logs pages. While false the sweep does nothing and the UI says how to turn it on. While true, the worker labels conversations without an agent and those of every agent whose analytics setting is on, calling the model at background priority, and the API process (or the decide server) loads the model at start.
+
 ### `DECISION_RELEVANCE_ENABLED`
 
 Type `bool`, default `false`.
@@ -693,6 +699,83 @@ Deadline, in seconds, of one relevance call; past it the retrieval returns what 
 Type `int`, default `256`, must be `>= 128` and `<= 2048`.
 
 Where the decision model runs on a CPU, each chunk is scored on its first 64 tokens plus the window sharing the most words with the query, this many tokens in all; GPU and API-mode servers score whole chunks.
+
+
+## Conversation analytics
+
+How the analytics sweep runs; none of these are shown in the UI.
+
+### `ANALYTICS_QUEUE`
+
+Type `str`, default `analytics`.
+
+Celery queue of the analytics sweep. A sweep waits on decision-model calls for minutes, so its own queue keeps it from holding a `docsgpt` or `parsing` slot; a bare worker still consumes it, and operators can isolate it with `-Q analytics -c 1`.
+
+### `ANALYTICS_SWEEP_SECONDS`
+
+Type `int`, default `300`, must be `>= 60`.
+
+Seconds between two analytics sweeps; new labels appear within about two intervals.
+
+### `ANALYTICS_SWEEP_BUDGET_SECONDS`
+
+Type `int`, default `240`, must be `>= 10`.
+
+Seconds one sweep may spend starting decision-model calls; shorter than the interval, so sweeps do not queue up. A call started near the end may still run to its background deadline.
+
+### `ANALYTICS_BATCH_STATES`
+
+Type `int`, default `16`, must be `>= 1` and `<= 64`.
+
+States per decision-model call, about four turns: around 25 s of compute on 4 vCPU, within the background deadline at the default share.
+
+### `ANALYTICS_TURN_SETTLE_SECONDS`
+
+Type `int`, default `60`, must be `>= 0`.
+
+Seconds a message must be unchanged before it is labelled, so a retry or edit finishes first.
+
+### `ANALYTICS_CONVERSATION_IDLE_MINUTES`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Minutes after its last message before a conversation's own labels (goal met, tags) are asked.
+
+### `ANALYTICS_RESOLUTION_WINDOW_HOURS`
+
+Type `int`, default `24`, must be `>= 1`.
+
+Hours of silence after which a conversation's resolution is no longer pending.
+
+### `ANALYTICS_BACKFILL_DAYS`
+
+Type `int`, default `7`, must be `>= 1`.
+
+Days back the sweep labels, newest first; also how far rows from an older model are relabelled. Must not exceed ANALYTICS_RETENTION_DAYS.
+
+### `ANALYTICS_RETENTION_DAYS`
+
+Type `int`, default `90`, must be `>= 1`.
+
+Days conversation labels are kept, by message time, before the cleanup task removes them; labels are also deleted with their conversation.
+
+### `ANALYTICS_MAX_TOPICS`
+
+Type `int`, default `15`, must be `>= 2` and `<= 15`.
+
+Most topics an agent's topic question offers; the decision model's 16 options less 'none of these'. Automatic topic lists keep the largest sections.
+
+### `ANALYTICS_MAX_TAGS`
+
+Type `int`, default `20`, must be `>= 0` and `<= 50`.
+
+Most custom tags per agent; every tag is one more question per conversation.
+
+### `ANALYTICS_FILTER_MIN_PROBABILITY`
+
+Type `float`, default `0.5`, must be `> 0.0` and `< 1.0`.
+
+Probability a label needs for the Logs label filter, its chips and the docs-gap examples. Rates never use it: they are sums of probabilities.
 
 
 ## Retrieval

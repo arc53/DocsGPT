@@ -316,6 +316,11 @@ class TestCrossFieldRules:
     def test_scim_disabled_needs_no_token(self):
         assert Settings.model_validate({"SCIM_ENABLED": False}).SCIM_TOKEN is None
 
+    def test_analytics_backfill_must_fit_in_retention(self):
+        with pytest.raises(ValidationError, match="ANALYTICS_BACKFILL_DAYS must not exceed ANALYTICS_RETENTION_DAYS"):
+            Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14})
+        assert Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 14, "ANALYTICS_RETENTION_DAYS": 14})
+
 
 @pytest.mark.unit
 class TestClosedChoices:

@@ -275,6 +275,9 @@ def get_config():
         # Whether the model may score text for prompt injection
         # (DECISION_INJECTION_ENABLED, with the model available).
         "decision_injection_enabled": bool(settings.DECISION_INJECTION_ENABLED and decision_available),
+        # Whether the model may label stored conversations for analytics
+        # (DECISION_ANALYTICS_ENABLED, with the model available).
+        "decision_analytics_enabled": bool(settings.DECISION_ANALYTICS_ENABLED and decision_available),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {
