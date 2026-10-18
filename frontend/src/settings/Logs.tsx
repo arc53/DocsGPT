@@ -1,4 +1,4 @@
-import { Activity, ChevronRight } from 'lucide-react';
+import { Activity, ChevronRight, ThumbsDown, ThumbsUp } from 'lucide-react';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -116,7 +116,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         api_key_id: agentId,
         page_size: pageSize,
         level: levelFilter === 'all' ? undefined : levelFilter,
-        event_type: typeFilter === 'all' ? undefined : typeFilter,
+        ...typeFilterParams(typeFilter),
         search: search || undefined,
       },
       token,
@@ -292,6 +292,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.types.system'), value: 'system' },
     { label: t('settings.logs.types.search'), value: 'search' },
     { label: t('settings.logs.types.graph'), value: 'graph' },
+    { label: t('settings.logs.feedback.like'), value: 'like' },
+    { label: t('settings.logs.feedback.dislike'), value: 'dislike' },
   ];
 
   return (
@@ -351,6 +353,19 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       />
     </div>
   );
+}
+
+/**
+ * The request filters for the event-type select: an event type, or Liked /
+ * Disliked, which ask for chat turns rated that way.
+ */
+export function typeFilterParams(value: string): {
+  event_type?: string;
+  feedback?: string;
+} {
+  if (value === 'all') return {};
+  if (value === 'like' || value === 'dislike') return { feedback: value };
+  return { event_type: value };
 }
 
 type LogsTableProps = {
@@ -494,6 +509,17 @@ function Log({
       detailRows.push([
         t('settings.logs.detail.sources'),
         String(log.sources.length),
+      ]);
+    if (log.feedback?.text === 'like' || log.feedback?.text === 'dislike')
+      detailRows.push([
+        t('settings.logs.detail.feedback'),
+        t(`settings.logs.feedback.${log.feedback.text}`),
+      ]);
+    const passthrough = Object.entries(log.passthrough ?? {});
+    if (passthrough.length)
+      detailRows.push([
+        t('settings.logs.detail.passthrough'),
+        passthrough.map(([key, value]) => `${key}=${value}`).join(', '),
       ]);
   } else if (log.event_type === 'schedule') {
     if (log.status)
@@ -672,6 +698,18 @@ function Log({
                 </span>
               )}
             </>
+          )}
+          {log.feedback?.text === 'like' && (
+            <ThumbsUp
+              className="text-success mt-[2px] size-3"
+              aria-label={t('settings.logs.feedback.like')}
+            />
+          )}
+          {log.feedback?.text === 'dislike' && (
+            <ThumbsDown
+              className="text-destructive mt-[2px] size-3"
+              aria-label={t('settings.logs.feedback.dislike')}
+            />
           )}
           {log.trace && (
             <span className="text-muted-foreground text-xs tabular-nums">

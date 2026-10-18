@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from time import monotonic
-from typing import Any, ClassVar, Dict, Optional, Set
+from typing import Any, ClassVar, Dict, List, Optional, Sequence, Set
 
 from docsgpt.guardrails.types import Action, CheckOutcome, ControlVerdict, Stage
 
@@ -34,6 +34,7 @@ class ScanContext:
         llm_factory=None,
         agent_id: Optional[str] = None,
         user: Optional[str] = None,
+        item_hints: Optional[List[Dict[str, Any]]] = None,
     ):
         self.query = query
         # Retrieval can land after the engine is built, and an agent rebinds
@@ -50,6 +51,11 @@ class ScanContext:
         self.llm_factory = llm_factory
         self.agent_id = agent_id
         self.user = user
+        # What the caller knows about each item of an item-level scan, aligned
+        # with the items: ``allowed`` (the source's owner marked the text safe)
+        # and ``injection`` (a score stored with the item, as an attachment
+        # parsed with a scan carries). Set per ``evaluate_items`` call.
+        self.item_hints = item_hints
 
     @property
     def retrieved_docs(self) -> list:
@@ -86,6 +92,10 @@ class GuardrailCheck(ABC):
     #: True when the check may block on a network call or model inference;
     #: it then runs under the stage deadline.
     remote: ClassVar[bool] = False
+    #: True when the check scores each item of an item stage (a retrieved
+    #: document, an attached file) on its own, so ``block`` withholds that item.
+    #: Such a check is left out of the whole-text pass over the joined items.
+    item_level: ClassVar[bool] = False
     #: Longest match this check can report, in characters. The streaming guard
     #: sizes its withhold window from this, so a check that under-declares it
     #: will miss matches straddling a chunk boundary.
@@ -116,18 +126,17 @@ class GuardrailCheck(ABC):
         """False when the check cannot run here (missing credentials, deps)."""
         return True
 
-    @classmethod
-    def unevaluated_at_most(cls, settings: Dict[str, Any]) -> Optional[Action]:
-        """The most a control of this check may do when it could not run.
-
-        ``None`` leaves it to the agent's ``fail_open``; ``Action.FLAG`` makes
-        an unscanned text pass even on a fail-closed agent.
-        """
-        return None
-
     @abstractmethod
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         """Inspect ``text`` and report an outcome. Must not raise."""
+
+    def scan_items(self, texts: Sequence[str], stage: Stage, context: ScanContext) -> List[CheckOutcome]:
+        """Inspect each item on its own; one outcome per item, in order. Must not raise.
+
+        The default scans them one by one; a check that can score many texts
+        in one call overrides it.
+        """
+        return [self.scan(text, stage, context) for text in texts]
 
     def settled(self, action: Action, verdict: ControlVerdict) -> None:
         """Called after ``scan`` with the verdict the engine reached; a no-op unless a check needs it.
@@ -136,6 +145,15 @@ class GuardrailCheck(ABC):
             action: The control's action at this stage, after the agent's mode
                 (``monitor_only`` makes every action a flag).
             verdict: The control's verdict, its action capped by the outcome.
+        """
+
+    def settled_items(self, action: Action, verdicts: List[ControlVerdict], withheld: List[bool]) -> None:
+        """Called after ``scan_items`` with the verdicts the engine reached; a no-op unless a check needs it.
+
+        Args:
+            action: The control's action at this stage, after the agent's mode.
+            verdicts: One verdict per item, in order.
+            withheld: Per item, whether the stage withholds it.
         """
 
     @classmethod
@@ -149,5 +167,6 @@ class GuardrailCheck(ABC):
             "supports_redaction": cls.supports_redaction,
             "latency_hint_ms": cls.latency_hint_ms,
             "remote": cls.remote,
+            "item_level": cls.item_level,
             "available": cls.is_available(),
         }

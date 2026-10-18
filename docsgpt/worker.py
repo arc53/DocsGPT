@@ -23,7 +23,10 @@ from docsgpt import tracing
 from docsgpt.activity.flags import mark_ingest_running
 from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
+from docsgpt.decisions import Budget
+from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
@@ -2176,7 +2179,8 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns:
         Its extraction record, page count, transcript/OCR details and parse
-        warnings, plus ``reused_from`` naming the row.
+        warnings, its prompt-injection score when the current scorer made it,
+        plus ``reused_from`` naming the row.
     """
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     copied = {
@@ -2184,8 +2188,51 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
         for key, value in metadata.items()
         if key in ("extraction", "page_count", "parse_warnings") or key.startswith(("transcript_", "ocr_"))
     }
+    if injection_scoring.from_metadata(metadata.get("injection")) is not None:
+        copied["injection"] = metadata["injection"]
     copied["reused_from"] = str(row.get("id"))
     return copied
+
+
+def _score_attachment_injection(user: str, attachment_id: Any, content: str, metadata: Dict[str, Any]):
+    """Score a stored attachment's text for prompt injection and keep it as ``metadata.injection``.
+
+    Runs once the upload is complete, so the user never waits on it; a turn
+    that sends the file first scores it then, or queues it. Gated by
+    ``DECISION_INJECTION_ENABLED``. A reuse that copied a score of the current
+    scorer is not scored again. A text not wholly scored within the
+    background budget gets no key, and the score cache answers instead.
+    Never raises.
+
+    Args:
+        user: The uploader.
+        attachment_id: The upload's handle.
+        content: The text stored for the prompt.
+        metadata: The metadata just stored.
+
+    Returns:
+        ``{p, scorer, windows_scored, windows_total}`` as stored, or None.
+    """
+    if not settings.DECISION_INJECTION_ENABLED or not (content or "").strip():
+        return None
+    if injection_scoring.from_metadata(metadata.get("injection")) is not None:
+        return None
+    try:
+        result = injection_scoring.score(
+            [content],
+            feature=INJECTION_ATTACHMENT_PARSE,
+            budget=Budget.BACKGROUND,
+            max_windows=settings.GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS,
+        )
+        if result[0] is None or result.reasons[0] is not None:
+            return None
+        stored = injection_scoring.as_metadata(result[0])
+        with db_session() as conn:
+            AttachmentsRepository(conn).set_metadata_key(str(attachment_id), user, "injection", stored)
+        return stored
+    except Exception:  # noqa: BLE001 - the upload is already complete
+        logging.warning(f"Could not score attachment {attachment_id} for prompt injection", exc_info=True)
+        return None
 
 
 def _write_attachment_failure_row(
@@ -2515,6 +2562,9 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             },
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
+        injection = _score_attachment_injection(user, attachment_id, content, metadata)
+        if injection is not None:
+            metadata = {**metadata, "injection": injection}
 
         return {
             "filename": filename,
@@ -3506,7 +3556,8 @@ def agent_webhook_worker(self, agent_id, payload):
                 agent_config = repo.get_by_legacy_id(str(agent_id))
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
-        input_data = json.dumps(payload)
+        # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
+        input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         raise
@@ -3662,7 +3713,7 @@ def _webhook_retrieval_query(payload: Any) -> str:
                 walk(item, depth + 1)
 
     walk(payload, 0)
-    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload)
+    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload, ensure_ascii=False)
     return query[:_WEBHOOK_QUERY_MAX_CHARS]
 
 

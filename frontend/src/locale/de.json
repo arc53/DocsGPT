@@ -590,7 +590,19 @@
       "deleteFileConsequence": "Ihre Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteDirectoryConsequence": "Alles darin wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "syncConsequence": "Der Inhalt wird aus deinem Cloud-Speicher aktualisiert. Dabei können Änderungen an einzelnen Abschnitten überschrieben werden.",
-      "deleteItemFailed": "„{{name}}“ konnte nicht gelöscht werden."
+      "deleteItemFailed": "„{{name}}“ konnte nicht gelöscht werden.",
+      "injection": {
+        "flaggedOnly": "Nur markierte",
+        "high": "Wahrscheinlich Prompt-Injection",
+        "suspected": "Mögliche Prompt-Injection",
+        "markedSafe": "Als sicher markiert",
+        "markSafe": "Als sicher markieren",
+        "undo": "Rückgängig",
+        "flaggedNotice": "Dieser Chunk liest sich wie eine Prompt-Injection (Wert {{percent}} %). Agenten, die abgerufene Quellen prüfen, markieren ihn oder lassen ihn in ihren Antworten weg.",
+        "safeNotice": "Als sicher markiert: Agenten, die diese Quelle nutzen, behandeln diesen Chunk als unbedenklich. Wenn du den Text bearbeitest, wird die Markierung entfernt.",
+        "reviewFailed": "Der Chunk konnte nicht aktualisiert werden. Bitte versuche es erneut.",
+        "noFlagged": "In dieser Quelle wurde kein Chunk markiert. Ein Chunk wird bewertet, sobald ein Chat ihn abruft."
+      }
     },
     "analytics": {
       "label": "Analytik",
@@ -692,7 +704,9 @@
         "activity": "Aktivität",
         "steps": "Schritte",
         "result": "Ergebnis",
-        "source": "Quelle"
+        "source": "Quelle",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Trace anzeigen",
@@ -808,6 +822,10 @@
         "api": "API",
         "shared": "Geteilt",
         "chat": "Chat"
+      },
+      "feedback": {
+        "like": "Gefällt",
+        "dislike": "Gefällt nicht"
       }
     },
     "teams": {
@@ -1499,7 +1517,10 @@
         "tokenLabel": "Dein Token",
         "usageTitle": "So verwendest du es",
         "usageHint": "Exportiere es als Umgebungsvariable und sende es als Bearer-Token im Authorization-Header.",
-        "done": "Fertig"
+        "done": "Fertig",
+        "createTool": "Tool für Agenten erstellen",
+        "toolCreated": "Tool erstellt. Du findest es unter Einstellungen › Tools und kannst es einem Agenten hinzufügen.",
+        "toolFailed": "Das Tool konnte nicht erstellt werden."
       },
       "regenerate": {
         "action": "Neu generieren",
@@ -1820,6 +1841,11 @@
       "capabilityChip": {
         "sync": "Synchronisiert ins Wissen",
         "tools": "Gibt Agenten Tools"
+      },
+      "injection": {
+        "flagged": "Mögliche Prompt-Injection",
+        "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
+        "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
       }
     }
   },
@@ -2182,14 +2208,17 @@
         "forbidden": "Diese Quelle wurde entfernt, oder du hast keinen Zugriff mehr darauf. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
         "loadFailed": "Die Passage konnte nicht geladen werden.",
         "openLink": "Link öffnen",
-        "openInKnowledge": "In Wissen öffnen"
+        "openInKnowledge": "In Wissen öffnen",
+        "withheld": "Die Guardrails dieses Agenten haben diese Quelle aus der Antwort herausgehalten, weil sie eine Prompt-Injection enthalten könnte. Die KI hat diese Passage nicht gelesen."
       },
       "relevance": {
         "strong": "Starke Übereinstimmung",
         "possible": "Mögliche Übereinstimmung",
         "weak": "Schwache Übereinstimmung",
         "tooltip": "Relevanz {{percent}} %"
-      }
+      },
+      "withheld": "Zurückgehalten",
+      "withheldNote": "Von den Guardrails dieses Agenten aus der Antwort herausgehalten: Die Quelle enthält möglicherweise eine Prompt-Injection."
     },
     "attachments": {
       "attach": "Anhängen",
@@ -2667,7 +2696,8 @@
           "input": "Benutzereingabe",
           "retrieval": "Abgerufene Quellen",
           "toolResult": "Werkzeugergebnis",
-          "output": "Antwort"
+          "output": "Antwort",
+          "attachment": "Angehängte Dateien"
         },
         "actions": {
           "flag": "Nur markieren",
@@ -2677,7 +2707,13 @@
         "modes": {
           "monitorOnly": "Nur beobachten",
           "scanAll": "Überall durchsetzen"
-        }
+        },
+        "itemLevelHint": "Blockieren hält nur die markierte Quelle oder Datei zurück.",
+        "advanced": "Erweitert",
+        "threshold": "Schwelle für die Aktion",
+        "thresholdHint": "Ab diesem Wert greift die Aktion der Regel (0 bis 1, Standard 0,9).",
+        "flagThreshold": "Schwelle für Markierungen",
+        "flagThresholdHint": "Ab diesem Wert wird der Text markiert und protokolliert, aber nichts blockiert (Standard 0,5)."
       },
       "byline": {
         "new": "Richten Sie den Agenten ein und veröffentlichen Sie ihn, um mit ihm zu chatten."
@@ -3009,7 +3045,11 @@
       "detail": "Details",
       "empty": "Für diesen Agenten gibt es noch keine Guardrail-Ereignisse.",
       "emptyForFilter": "Keine Entscheidungen entsprechen diesem Filter.",
-      "loadError": "Die Guardrail-Aktivität konnte nicht geladen werden"
+      "loadError": "Die Guardrail-Aktivität konnte nicht geladen werden",
+      "score": "Wert",
+      "openChunk": "Chunk öffnen",
+      "attachedFile": "Angehängte Datei",
+      "chunkUnavailable": "Dieser Chunk ist nicht mehr in seiner Quelle, oder du kannst diese Quelle nicht öffnen."
     },
     "workflow": {
       "expressionRow": "Ausdruck {{index}}",

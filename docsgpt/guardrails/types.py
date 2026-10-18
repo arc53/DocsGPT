@@ -14,6 +14,7 @@ class Stage(str, Enum):
     RETRIEVAL = "retrieval"
     TOOL_RESULT = "tool_result"
     OUTPUT = "output"
+    ATTACHMENT = "attachment"
 
 
 class Action(str, Enum):
@@ -44,7 +45,15 @@ ACTIONS_BY_STAGE = {
     Stage.RETRIEVAL: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.TOOL_RESULT: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.OUTPUT: {Action.FLAG, Action.REDACT, Action.BLOCK},
+    # A chat attachment is screened as a whole file: ``block`` withholds that
+    # file, and there is nothing to redact it with.
+    Stage.ATTACHMENT: {Action.FLAG, Action.BLOCK},
 }
+
+#: Stages whose text is a list of items (retrieved documents, attached files):
+#: item-level checks score each item on its own, so ``block`` withholds one
+#: item, and the whole-text pass over the joined items leaves them out.
+ITEM_STAGES = frozenset({Stage.RETRIEVAL, Stage.ATTACHMENT})
 
 
 @dataclass(frozen=True)
@@ -117,6 +126,9 @@ class ControlVerdict:
     stage: Stage
     action: Action
     outcome: CheckOutcome
+    #: The item an item-level verdict is about (``chunk:<source>:<key>``,
+    #: ``attachment:<id>``); ``None`` for a whole-text verdict.
+    item_ref: Optional[str] = None
 
     @property
     def blocking(self) -> bool:
@@ -134,6 +146,7 @@ class ControlVerdict:
             "detail": self.outcome.detail,
             "error": self.outcome.error,
             "match_count": len(self.outcome.spans),
+            "item_ref": self.item_ref,
         }
 
 

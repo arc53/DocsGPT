@@ -273,6 +273,27 @@ describe('ToolConfig', () => {
     ).toBe('settings.tools.saveFailed');
   });
 
+  it('marks an MCP action whose description reads like a prompt injection', async () => {
+    const scored = (name: string, p: number) => ({
+      ...userTool.actions[0],
+      name,
+      injection: { p, scorer: 'arc-decide:v0.2' },
+    });
+    await render({
+      ...userTool,
+      name: 'mcp_tool',
+      actions: [scored('search', 0.71), scored('fetch', 0.1)],
+    } as UserToolType);
+    const badges = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="badge"]'),
+    ).filter(
+      (badge) => badge.textContent === 'settings.connectors.injection.flagged',
+    );
+    expect(badges).toHaveLength(1);
+    expect(badges[0].dataset.variant).toBe('warning');
+    expect(badges[0].closest('button')?.textContent).toContain('Search');
+  });
+
   describe('a shared MCP server', () => {
     const mcpTool = (authType: string) =>
       ({

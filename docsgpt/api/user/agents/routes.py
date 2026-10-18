@@ -25,6 +25,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -807,6 +808,7 @@ class CreateAgent(Resource):
                     jsonify({"success": False, "message": "Invalid JSON schema"}),
                     400,
                 )
+        requested_config = data.get("config")
         if "config" in data:
             try:
                 normalized_config = normalize_agent_config(data.get("config"))
@@ -957,6 +959,12 @@ class CreateAgent(Resource):
                         and not build_data.get("retriever")
                     ):
                         build_data["retriever"] = "classic"
+
+                # A new agent starts from the admin's default guardrails, under
+                # the guardrails fields this request sets.
+                seeded_config = agent_defaults.seed(conn, requested_config)
+                if seeded_config is not requested_config:
+                    build_data["config"] = normalize_agent_config(seeded_config)
 
                 kwargs = _build_create_kwargs(
                     build_data, image_url=image_url, agent_type=agent_type,
@@ -2117,6 +2125,11 @@ class AdoptAgent(Resource):
                 for col in ("json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
+                # The adopted agent starts from the admin's default guardrails,
+                # under any the template sets.
+                adopted_config = agent_defaults.seed(conn, create_kwargs.get("config"))
+                if adopted_config is not None:
+                    create_kwargs["config"] = adopted_config
                 # Tool ids resolve owner-scoped at run time, so the template
                 # owner's rows would silently drop on every run — keep only
                 # what the adopter can actually use (builtins, own tools).

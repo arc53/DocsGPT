@@ -608,7 +608,19 @@
       "deleteFileConsequence": "También se eliminan sus fragmentos. No se puede deshacer.",
       "deleteDirectoryConsequence": "También se elimina todo su contenido. No se puede deshacer.",
       "syncConsequence": "Su contenido se actualiza desde tu almacenamiento en la nube, lo que puede sobrescribir los cambios que hiciste en fragmentos concretos.",
-      "deleteItemFailed": "No se pudo eliminar «{{name}}»."
+      "deleteItemFailed": "No se pudo eliminar «{{name}}».",
+      "injection": {
+        "flaggedOnly": "Solo marcados",
+        "high": "Probable inyección de prompt",
+        "suspected": "Posible inyección de prompt",
+        "markedSafe": "Marcado como seguro",
+        "markSafe": "Marcar como seguro",
+        "undo": "Deshacer",
+        "flaggedNotice": "Este fragmento parece una inyección de prompt (puntuación {{percent}} %). Los agentes que revisan las fuentes recuperadas lo marcan o lo dejan fuera de sus respuestas.",
+        "safeNotice": "Marcado como seguro: los agentes que usan esta fuente tratan este fragmento como limpio. Si editas su texto, se quita la marca.",
+        "reviewFailed": "No se pudo actualizar este fragmento. Inténtalo de nuevo.",
+        "noFlagged": "No se ha marcado ningún fragmento de esta fuente. Un fragmento se puntúa cuando un chat lo recupera."
+      }
     },
     "analytics": {
       "label": "Analítica",
@@ -710,7 +722,9 @@
         "activity": "Actividad",
         "steps": "Pasos",
         "result": "Resultado",
-        "source": "Origen"
+        "source": "Origen",
+        "feedback": "Valoración",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Ver traza",
@@ -833,6 +847,10 @@
         "api": "API",
         "shared": "Compartido",
         "chat": "Chat"
+      },
+      "feedback": {
+        "like": "Me gusta",
+        "dislike": "No me gusta"
       }
     },
     "teams": {
@@ -1542,7 +1560,10 @@
         "tokenLabel": "Tu token",
         "usageTitle": "Cómo usarlo",
         "usageHint": "Expórtalo como variable de entorno y envíalo como token Bearer en la cabecera Authorization.",
-        "done": "Listo"
+        "done": "Listo",
+        "createTool": "Crear herramienta para agentes",
+        "toolCreated": "Herramienta creada. Está en Ajustes › Herramientas; añádela a un agente.",
+        "toolFailed": "No se pudo crear la herramienta."
       },
       "regenerate": {
         "action": "Regenerar",
@@ -1872,6 +1893,12 @@
       "capabilityChip": {
         "sync": "Sincroniza en Conocimiento",
         "tools": "Da herramientas a los agentes"
+      },
+      "injection": {
+        "flagged": "Posible inyección de prompt",
+        "notice_one": "La descripción de {{formatted}} acción parece contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísala en Personalizar antes de permitirla.",
+        "notice_many": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas.",
+        "notice_other": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas."
       }
     }
   },
@@ -2239,14 +2266,17 @@
         "forbidden": "Esta fuente se eliminó o ya no tienes acceso a ella. Se muestra el extracto guardado con la respuesta.",
         "loadFailed": "No se pudo cargar el pasaje.",
         "openLink": "Abrir enlace",
-        "openInKnowledge": "Abrir en Conocimiento"
+        "openInKnowledge": "Abrir en Conocimiento",
+        "withheld": "Las barreras de seguridad de este agente dejaron esta fuente fuera de la respuesta porque puede contener una inyección de prompt. La IA no leyó este pasaje."
       },
       "relevance": {
         "strong": "Coincidencia alta",
         "possible": "Coincidencia posible",
         "weak": "Coincidencia baja",
         "tooltip": "Relevancia {{percent}} %"
-      }
+      },
+      "withheld": "Retenida",
+      "withheldNote": "Las barreras de seguridad de este agente la dejaron fuera de la respuesta: puede contener una inyección de prompt."
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -2730,7 +2760,8 @@
           "input": "Entrada del usuario",
           "retrieval": "Fuentes recuperadas",
           "toolResult": "Resultado de la herramienta",
-          "output": "Respuesta"
+          "output": "Respuesta",
+          "attachment": "Archivos adjuntos"
         },
         "actions": {
           "flag": "Solo marcar",
@@ -2740,7 +2771,13 @@
         "modes": {
           "monitorOnly": "Solo supervisión",
           "scanAll": "Aplicar en todo"
-        }
+        },
+        "itemLevelHint": "Bloquear retiene solo la fuente o el archivo marcado.",
+        "advanced": "Avanzado",
+        "threshold": "Umbral de acción",
+        "thresholdHint": "La acción del control se aplica a partir de esta puntuación (de 0 a 1, 0,9 por defecto).",
+        "flagThreshold": "Umbral de marcado",
+        "flagThresholdHint": "A partir de esta puntuación el texto se marca y se registra, pero no se bloquea nada (0,5 por defecto)."
       },
       "byline": {
         "new": "Configura el agente y publícalo para chatear con él."
@@ -3081,7 +3118,11 @@
       "detail": "Detalle",
       "empty": "Aún no se ha activado ninguna barrera de protección en este agente.",
       "emptyForFilter": "Ninguna decisión coincide con este filtro.",
-      "loadError": "No se pudo cargar la actividad de las barreras de protección"
+      "loadError": "No se pudo cargar la actividad de las barreras de protección",
+      "score": "Puntuación",
+      "openChunk": "Abrir fragmento",
+      "attachedFile": "Archivo adjunto",
+      "chunkUnavailable": "Este fragmento ya no está en su fuente, o no puedes abrir esa fuente."
     },
     "workflow": {
       "expressionRow": "Expresión {{index}}",
