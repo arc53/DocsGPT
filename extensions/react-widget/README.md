@@ -65,7 +65,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
@@ -88,7 +88,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', {
@@ -146,7 +146,7 @@ import { SearchBar } from "docsgpt";
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SearchBar Embedding</title>
-  <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
+  <script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
 </head>
 <body>
   <!-- Element where the SearchBar will render -->
