@@ -1042,6 +1042,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     validateAndSetFolder();
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
+  // A new agent starts from the guardrails an admin set for new agents
+  // (Admin › Defaults), unless the form already has some. The server copies
+  // the same defaults in at creation, so this shows what the agent gets.
+  useEffect(() => {
+    if (mode !== 'new') return;
+    let cancelled = false;
+    userService
+      .getAgentDefaults(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.guardrails) return;
+        setAgent((prev) =>
+          prev.config?.guardrails
+            ? prev
+            : {
+                ...prev,
+                config: { ...(prev.config ?? {}), guardrails: data.guardrails },
+              },
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, token]);
+
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
       const getAgent = async () => {

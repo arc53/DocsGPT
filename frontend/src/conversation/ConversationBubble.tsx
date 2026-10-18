@@ -429,7 +429,9 @@ const ConversationBubble = forwardRef<
                               onClick={() => openSources(index)}
                             >
                               <span className="line-clamp-3 h-12 text-xs wrap-break-word">
-                                {source.text}
+                                {source.withheld
+                                  ? t('conversation.sources.withheldNote')
+                                  : source.text}
                               </span>
                             </button>
                             {href ? (

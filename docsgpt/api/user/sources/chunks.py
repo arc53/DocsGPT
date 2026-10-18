@@ -10,7 +10,11 @@ from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
-from docsgpt.storage.db.session import db_readonly
+from docsgpt.core.settings import settings
+from docsgpt.guardrails import injection_scoring
+from docsgpt.guardrails.checks.model_injection import FLAG_THRESHOLD, THRESHOLD
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.utils import check_required_fields, num_tokens_from_string
 from docsgpt.vectorstore.base import InvalidChunkMetadataError
@@ -18,6 +22,10 @@ from docsgpt.vectorstore.base import InvalidChunkMetadataError
 sources_chunks_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
 )
+
+#: Chunk texts one source's owner may mark safe from prompt-injection screening.
+INJECTION_REVIEW_MAX = 1000
+_CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
 
 
 def _resolve_source(doc_id: str, user: str, action: str = "use") -> dict:
@@ -157,6 +165,47 @@ def _chunk_matches_path(metadata: dict, path: str) -> bool:
     return False
 
 
+def _injection_level(p) -> str | None:
+    """``high`` from the threshold a blocking control acts at, ``suspected`` from the flag threshold."""
+    if p is None:
+        return None
+    if p >= THRESHOLD:
+        return "high"
+    return "suspected" if p >= FLAG_THRESHOLD else None
+
+
+def _with_injection(chunks: list, doc: dict) -> list:
+    """Attach each chunk's prompt-injection score as ``injection``, from the score cache in one query.
+
+    ``{content_hash, p, level, allowed}``: the sha256 of the text (what
+    ``injection_review`` takes), the cached probability (``None`` before the
+    chunk was scored), ``high`` or ``suspected`` or ``None``, and whether the
+    owner marked it safe. ``None`` instead while the operator has not enabled
+    the model (``DECISION_INJECTION_ENABLED``).
+
+    Args:
+        chunks: The chunk dicts.
+        doc: The source row, for its owner allowlist.
+
+    Returns:
+        The same list.
+    """
+    if not settings.DECISION_INJECTION_ENABLED:
+        for chunk in chunks:
+            chunk["injection"] = None
+        return chunks
+    review = ((doc.get("metadata") or {}).get("injection_review") or {})
+    allowed = set(review.get("allowed") or []) if isinstance(review, dict) else set()
+    texts = [chunk.get("text") or "" for chunk in chunks]
+    for chunk, text, score in zip(chunks, texts, injection_scoring.lookup(texts)):
+        p = round(score.p, 4) if score is not None else None
+        digest = injection_scoring.content_hash(text)
+        chunk["injection"] = {
+            "content_hash": digest, "p": p, "level": _injection_level(p), "allowed": digest in allowed,
+        }
+    return chunks
+
+
 @sources_chunks_ns.route("/get_chunks")
 class GetChunks(Resource):
     @api.doc(
@@ -167,6 +216,10 @@ class GetChunks(Resource):
             "per_page": "Number of chunks per page",
             "path": "Optional: Filter chunks by relative file path",
             "search": "Optional: Search term to filter chunks by title or content",
+            "injection": (
+                "Optional: `flagged` keeps the chunks whose cached prompt-injection score is suspected or high "
+                "(marked safe ones included)"
+            ),
         },
     )
     def get(self):
@@ -179,6 +232,7 @@ class GetChunks(Resource):
         per_page = int(request.args.get("per_page", 10))
         path = request.args.get("path")
         search_term = request.args.get("search", "").strip().lower()
+        flagged_only = request.args.get("injection") == "flagged"
 
         if not doc_id:
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
@@ -208,11 +262,20 @@ class GetChunks(Resource):
                         continue
                 filtered_chunks.append(chunk)
             chunks = filtered_chunks
+            if flagged_only:
+                # Every chunk is scored up front so the page and the total
+                # count only the flagged ones.
+                chunks = [
+                    c for c in _with_injection(chunks, doc)
+                    if c["injection"] is not None and c["injection"]["level"] is not None
+                ]
 
             total_chunks = len(chunks)
             start = (page - 1) * per_page
             end = start + per_page
             paginated_chunks = _with_token_counts(chunks[start:end])
+            if not flagged_only:
+                _with_injection(paginated_chunks, doc)
 
             return make_response(
                 jsonify(
@@ -223,6 +286,7 @@ class GetChunks(Resource):
                         "chunks": paginated_chunks,
                         "path": path if path else None,
                         "search": search_term if search_term else None,
+                        "injection": "flagged" if flagged_only else None,
                     }
                 ),
                 200,
@@ -525,3 +589,75 @@ class UpdateChunk(Resource):
         except Exception as e:
             current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
+
+
+@sources_chunks_ns.route("/sources/<string:source_id>/injection_review")
+class InjectionReview(Resource):
+    @api.expect(
+        api.model(
+            "InjectionReviewModel",
+            {
+                "content_hash": fields.String(
+                    required=True, description="The chunk's `injection.content_hash` (sha256 of its text)"
+                ),
+                "decision": fields.String(
+                    required=True, enum=["allow", "clear"],
+                    description="`allow` marks the chunk safe from prompt-injection screening; `clear` undoes it",
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description=(
+            "Mark a flagged chunk safe from prompt-injection screening for agents using this source, or undo "
+            "that. Needs chunk-edit access. Keyed by the chunk text, so editing the chunk drops the mark. At most "
+            f"{INJECTION_REVIEW_MAX} chunks per source. Returns `{{success, content_hash, allowed, count}}`."
+        )
+    )
+    def post(self, source_id: str):
+        """Add a chunk text's hash to the source's owner allowlist, or remove it.
+
+        Args:
+            source_id: The source.
+
+        Returns:
+            Response: ``{"success", "content_hash", "allowed", "count"}``, a
+            400 for a bad body or a full allowlist, or the access error.
+        """
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        digest = data.get("content_hash")
+        decision = data.get("decision")
+        if not isinstance(digest, str) or not _CONTENT_HASH.fullmatch(digest):
+            return make_response(
+                jsonify({"success": False, "message": "content_hash must be 64 lowercase hex characters"}), 400
+            )
+        if decision not in ("allow", "clear"):
+            return make_response(jsonify({"success": False, "message": "decision must be allow or clear"}), 400)
+        try:
+            with db_session() as conn:
+                doc, _ra = load_source(conn, source_id, user, "edit")
+                allowed = SourcesRepository(conn).review_injection(
+                    str(doc["id"]), digest, decision == "allow", INJECTION_REVIEW_MAX
+                )
+        except AccessDenied as err:
+            return denied_response(err)
+        except ValueError as err:
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
+        except Exception as e:
+            current_app.logger.error(f"Error reviewing a chunk of source {source_id}: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 500)
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "content_hash": digest,
+                    "allowed": decision == "allow",
+                    "count": len(allowed or []),
+                }
+            ),
+            200,
+        )

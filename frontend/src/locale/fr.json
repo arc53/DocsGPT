@@ -608,7 +608,19 @@
       "deleteFileConsequence": "Ses fragments sont également supprimés. Cette action est irréversible.",
       "deleteDirectoryConsequence": "Tout son contenu est également supprimé. Cette action est irréversible.",
       "syncConsequence": "Son contenu est mis à jour depuis votre stockage cloud, ce qui peut écraser les modifications apportées à certains fragments.",
-      "deleteItemFailed": "Impossible de supprimer « {{name}} »."
+      "deleteItemFailed": "Impossible de supprimer « {{name}} ».",
+      "injection": {
+        "flaggedOnly": "Signalés uniquement",
+        "high": "Injection de prompt probable",
+        "suspected": "Injection de prompt possible",
+        "markedSafe": "Marqué comme sûr",
+        "markSafe": "Marquer comme sûr",
+        "undo": "Annuler",
+        "flaggedNotice": "Ce fragment ressemble à une injection de prompt (score {{percent}} %). Les agents qui contrôlent les sources récupérées le signalent ou l’écartent de leurs réponses.",
+        "safeNotice": "Marqué comme sûr : les agents qui utilisent cette source traitent ce fragment comme sain. Modifier son texte retire la marque.",
+        "reviewFailed": "Impossible de mettre à jour ce fragment. Veuillez réessayer.",
+        "noFlagged": "Aucun fragment de cette source n’a été signalé. Un fragment est noté dès qu’une conversation le récupère."
+      }
     },
     "analytics": {
       "label": "Statistiques",
@@ -1871,6 +1883,12 @@
       "capabilityChip": {
         "sync": "Se synchronise dans Connaissances",
         "tools": "Fournit des outils aux agents"
+      },
+      "injection": {
+        "flagged": "Injection de prompt possible",
+        "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
+        "notice_many": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser.",
+        "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       }
     }
   },
@@ -2238,14 +2256,17 @@
         "forbidden": "Cette source a été supprimée ou vous n’y avez plus accès. Affichage de l’extrait enregistré avec la réponse.",
         "loadFailed": "Impossible de charger ce passage.",
         "openLink": "Ouvrir le lien",
-        "openInKnowledge": "Ouvrir dans Connaissances"
+        "openInKnowledge": "Ouvrir dans Connaissances",
+        "withheld": "Les garde-fous de cet agent ont écarté cette source de la réponse, car elle peut contenir une injection de prompt. L’IA n’a pas lu ce passage."
       },
       "relevance": {
         "strong": "Forte correspondance",
         "possible": "Correspondance possible",
         "weak": "Faible correspondance",
         "tooltip": "Pertinence {{percent}} %"
-      }
+      },
+      "withheld": "Retenue",
+      "withheldNote": "Écartée de la réponse par les garde-fous de cet agent : elle peut contenir une injection de prompt."
     },
     "attachments": {
       "attach": "Joindre",
@@ -2729,7 +2750,8 @@
           "input": "Saisie de l’utilisateur",
           "retrieval": "Sources récupérées",
           "toolResult": "Résultat de l’outil",
-          "output": "Réponse"
+          "output": "Réponse",
+          "attachment": "Fichiers joints"
         },
         "actions": {
           "flag": "Signaler uniquement",
@@ -2739,7 +2761,13 @@
         "modes": {
           "monitorOnly": "Surveillance uniquement",
           "scanAll": "Appliquer partout"
-        }
+        },
+        "itemLevelHint": "Bloquer retient uniquement la source ou le fichier signalé.",
+        "advanced": "Avancé",
+        "threshold": "Seuil d’action",
+        "thresholdHint": "L’action du contrôle s’applique à partir de ce score (de 0 à 1, 0,9 par défaut).",
+        "flagThreshold": "Seuil de signalement",
+        "flagThresholdHint": "À partir de ce score, le texte est signalé et enregistré, sans rien bloquer (0,5 par défaut)."
       },
       "byline": {
         "new": "Configurez l’agent, puis publiez-le pour converser avec lui."
@@ -3080,7 +3108,11 @@
       "detail": "Détail",
       "empty": "Aucun garde-fou ne s’est encore déclenché sur cet agent.",
       "emptyForFilter": "Aucune décision ne correspond à ce filtre.",
-      "loadError": "Impossible de charger l’activité des garde-fous"
+      "loadError": "Impossible de charger l’activité des garde-fous",
+      "score": "Score",
+      "openChunk": "Ouvrir le fragment",
+      "attachedFile": "Fichier joint",
+      "chunkUnavailable": "Ce fragment ne figure plus dans sa source, ou vous ne pouvez pas ouvrir cette source."
     },
     "workflow": {
       "expressionRow": "Expression {{index}}",

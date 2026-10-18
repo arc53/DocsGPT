@@ -731,14 +731,14 @@ class TestDoctorDecisions:
 
     def test_a_docker_stack_holds_the_model_in_its_backend(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        check = commands._check_decisions({"DECISION_INJECTION_ENABLED": "true"}, docker=True)
         assert check.level == "ok" and "backend container" in check.detail
-        assert "injection_input monitor" in check.detail
+        assert "injection_input on" in check.detail
 
     def test_a_docker_stack_with_the_decider_points_at_it(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
         env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095", "DECISION_KEY": "d",
-               "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+               "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok" and "decider container" in check.detail
 
@@ -752,17 +752,17 @@ class TestDoctorDecisions:
 
     def test_a_decider_url_without_its_profile_is_a_warning(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        env = {"DECISION_BASE_URL": "http://decider:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        env = {"DECISION_BASE_URL": "http://decider:7095", "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "warn" and "docsgpt up --decider" in check.detail
 
     def test_on_a_mac_a_feature_in_docker_gets_the_mps_hint(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "darwin")
-        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        check = commands._check_decisions({"DECISION_INJECTION_ENABLED": "true"}, docker=True)
         assert check.level == "warn" and "--device mps" in check.detail
         assert commands._check_decisions({}, docker=True).level == "ok", "no hint while every feature is off"
 
-    def test_a_server_reports_its_model_and_the_auto_verdicts(self, server):
+    def test_a_server_reports_its_model_and_each_feature_against_its_budget(self, server):
         from docsgpt.decisions.latency import SpeedProfile
 
         seen, reply = server
@@ -771,11 +771,11 @@ class TestDoctorDecisions:
                                      "calibration": "c3bc72ff6907", "runtime": "torch-mps-fp16",
                                      "status": "ready", "speed": speed}]}
         env = {"DECISION_BASE_URL": "http://host.docker.internal:7095", "DECISION_KEY": "k",
-               "GUARDRAILS_INJECTION_INPUT_MODE": "auto"}
+               "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok"
         assert "torch-mps-fp16" in check.detail and "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907" in check.detail
-        assert "injection_input auto, on at" in check.detail
+        assert re.search(r"injection_input on at \d+\.\d\ds of 2s", check.detail)
         assert "rag_rerank off" in check.detail
         (request,) = seen
         assert str(request.url) == "http://127.0.0.1:7095/v1/models"
@@ -829,10 +829,10 @@ class TestDoctorDecisions:
         _, reply = server
         reply["status"] = status
         reply["error"] = httpx2.ConnectError("refused") if error else None
-        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "on"}
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=False)
         assert check.level == "warn" and said in check.detail
-        env["GUARDRAILS_INJECTION_INPUT_MODE"] = "off"
+        env["DECISION_INJECTION_ENABLED"] = "false"
         assert commands._check_decisions(env, docker=False).level == "ok"
 
     def test_vllm(self, server):
