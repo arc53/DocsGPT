@@ -1595,6 +1595,7 @@
       "descriptions": {
         "google_drive": "Sincroniza Docs, Hojas de cálculo y PDF en Conocimiento.",
         "share_point": "Sincroniza archivos de sitios de SharePoint y OneDrive en Conocimiento.",
+        "mcp_canva": "Trabaje con diseños de Canva, exporte y utilice plantillas de marca.",
         "confluence": "Sincroniza espacios y páginas de Confluence en Conocimiento.",
         "s3": "Sincroniza documentos de un bucket de S3 en Conocimiento.",
         "reddit": "Sincroniza publicaciones de Reddit que coinciden con tus búsquedas en Conocimiento.",
