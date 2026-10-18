@@ -728,7 +728,7 @@ conversations_table = Table(
     # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
     Column("unread_at", DateTime(timezone=True)),
     Column("read_at", DateTime(timezone=True)),
-    # The latest turn's request ``passthrough`` values. See migration 0055.
+    # The latest turn's request ``passthrough`` values. See migration 0056.
     Column("passthrough", JSONB),
 )
 

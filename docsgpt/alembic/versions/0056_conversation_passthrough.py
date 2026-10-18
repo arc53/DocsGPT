@@ -1,4 +1,4 @@
-"""0055 conversation passthrough — the request values a conversation was asked with.
+"""0056 conversation passthrough — the request values a conversation was asked with.
 
 * ``conversations.passthrough``: the scalar ``passthrough`` values of the
   conversation's latest turn (bounded, see
@@ -8,8 +8,8 @@
 
 Idempotent both ways. Downgrade drops the column.
 
-Revision ID: 0055_conversation_passthrough
-Revises: 0054_decision_usage
+Revision ID: 0056_conversation_passthrough
+Revises: 0055_content_scores
 """
 
 from typing import Sequence, Union
@@ -17,8 +17,8 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "0055_conversation_passthrough"
-down_revision: Union[str, None] = "0054_decision_usage"
+revision: str = "0056_conversation_passthrough"
+down_revision: Union[str, None] = "0055_content_scores"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
