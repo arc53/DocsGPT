@@ -1,4 +1,4 @@
-"""The admin's default settings for new sources (retrieval, guardrails): storage, routes and seeding on every path."""
+"""The admin's default retrieval settings for new sources: storage, routes and seeding on every creation path."""
 
 from __future__ import annotations
 
@@ -13,11 +13,9 @@ from sqlalchemy import text
 
 from docsgpt.storage.db import source_defaults
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.storage.db.source_config import RELEVANCE_OR_PRESCREEN, RetrievalConfig, SourceGuardrailsConfig
+from docsgpt.storage.db.source_config import RELEVANCE_OR_PRESCREEN, RetrievalConfig
 
 STRICT = {"chunks": 4, "reranker": {"type": "decision", "min_relevance": 0.5, "candidate_k": None}}
-SCAN = {"injection_scan": True}
-NO_SCAN = SourceGuardrailsConfig().model_dump()
 
 
 @contextmanager
@@ -27,10 +25,6 @@ def _yielding(conn):
 
 def _store(conn, **retrieval):
     return source_defaults.save(conn, RetrievalConfig(**retrieval))
-
-
-def _scan(conn):
-    return source_defaults.save_guardrails(conn, SourceGuardrailsConfig(**SCAN))
 
 
 @pytest.fixture
@@ -110,30 +104,6 @@ class TestStorage:
         assert source_defaults.stored(pg_conn) is None
         assert source_defaults.load(pg_conn) == RetrievalConfig().model_dump()
 
-    def test_guardrails_are_seeded_on_their_own(self, pg_conn):
-        assert source_defaults.load_guardrails(pg_conn) == NO_SCAN == {"injection_scan": False}
-        _scan(pg_conn)
-        assert source_defaults.seed(pg_conn, None) == {"guardrails": SCAN}
-        seeded = source_defaults.seed(pg_conn, {"retrieval": {"chunks": 9}})
-        assert seeded == {"retrieval": {"chunks": 9}, "guardrails": SCAN}
-
-    def test_both_sections_seed_and_the_request_wins_in_each(self, pg_conn):
-        _store(pg_conn, **STRICT)
-        _scan(pg_conn)
-        seeded = source_defaults.seed(pg_conn, {"guardrails": {"injection_scan": False}})
-        assert seeded["guardrails"] == {"injection_scan": False} and seeded["retrieval"]["chunks"] == 4
-
-    def test_malformed_guardrails_are_left_to_validation(self, pg_conn):
-        _scan(pg_conn)
-        config = {"guardrails": "on"}
-        assert source_defaults.seed(pg_conn, config) is config
-
-    def test_an_unreadable_guardrails_row_is_no_row(self, pg_conn):
-        from docsgpt.storage.db.repositories.app_metadata import AppMetadataRepository
-
-        AppMetadataRepository(pg_conn).set(source_defaults.GUARDRAILS_KEY, json.dumps({"bogus": 1}))
-        assert source_defaults.stored_guardrails(pg_conn) is None and source_defaults.load_guardrails(pg_conn) == NO_SCAN
-
 
 @pytest.mark.unit
 class TestAdminRoutes:
@@ -167,13 +137,8 @@ class TestAdminRoutes:
         assert resp.json == {
             "success": True,
             "retrieval": RetrievalConfig().model_dump(),
-            "guardrails": NO_SCAN,
             "relevance_model": {
                 "enabled": False, "predicted_s": None, "timeout_s": 2.0, "candidate_k": 20, "runtime": "onnx-int8",
-            },
-            "injection_model": {
-                "enabled": False, "runtime": "onnx-int8", "predicted_input_s": None, "predicted_chunk_s": None,
-                "timeout_s": 2.0,
             },
         }
         assert decisions.get_decider()._backend is None
@@ -195,9 +160,9 @@ class TestAdminRoutes:
         monkeypatch.setattr(SpeedProfile, "predict_s", lambda self, shape: shapes.append(shape) or real(self, shape))
         with installed(fake), _admin():
             model = client.get("/api/admin/defaults/sources").json["relevance_model"]
-        relevance = {(s.states, s.state_tokens, s.question_tokens) for s in shapes if s.lane == "hot" and s.states > 1}
+        relevance = {(s.states, s.state_tokens, s.question_tokens) for s in shapes if s.states > 1}
         assert relevance == {(20, tokens, RELEVANCE.question_tokens)}
-        shape = next(s for s in shapes if s.lane == "hot" and s.states > 1)
+        shape = next(s for s in shapes if s.states > 1)
         assert model["predicted_s"] == round(real(profile, shape), 3) and model["runtime"] == runtime
         assert model["enabled"] is True and fake.calls == [] and fake.warmed == 0
 
@@ -216,41 +181,11 @@ class TestAdminRoutes:
         actor, metadata = rows[0]
         assert actor == "admin1" and set(metadata["changes"]) == {"chunks", "reranker"}
 
-    def test_the_injection_model_says_what_a_chunk_costs(self, client, db, monkeypatch):
-        from docsgpt.core.settings import settings
-        from docsgpt.decisions.latency import SpeedProfile
-        from docsgpt.decisions.testing import FakeDecider, installed
-        from docsgpt.guardrails.checks.model_injection import chunk_shape
-
-        profile = SpeedProfile(c=0.01, a=0.0001, b=0.0, overhead=50, threads=4, measured_at=0.0)
-        fake = FakeDecider(profile=profile)
-        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", True)
-        with installed(fake), _admin():
-            model = client.get("/api/admin/defaults/sources").json["injection_model"]
-        assert model["enabled"] is True and model["predicted_chunk_s"] == round(profile.predict_s(chunk_shape()), 3)
-        assert fake.calls == [] and fake.warmed == 0
-
-    def test_put_guardrails_alone_keeps_the_retrieval_and_audits_it(self, client, db):
-        with _admin():
-            client.put("/api/admin/defaults/sources", json={"retrieval": STRICT})
-            resp = client.put("/api/admin/defaults/sources", json={"guardrails": SCAN})
-        assert resp.status_code == 200
-        assert resp.json["guardrails"] == SCAN and resp.json["retrieval"]["chunks"] == 4
-        assert source_defaults.stored_guardrails(db) == SCAN
-        rows = db.execute(text("SELECT metadata FROM auth_events WHERE event = 'source_defaults_set'")).fetchall()
-        assert sorted(sorted(row[0]["changes"]) for row in rows) == [["chunks", "reranker"], ["guardrails.injection_scan"]]
-        assert {"guardrails.injection_scan": [False, True]} in [row[0]["changes"] for row in rows]
-
     @pytest.mark.parametrize(
         "body, message",
         [
-            ({}, "Send retrieval, guardrails or both"),
-            ([], "Send retrieval, guardrails or both"),
+            ({}, "retrieval must be an object"),
             ({"retrieval": []}, "retrieval must be an object"),
-            ({"guardrails": []}, "guardrails must be an object"),
-            ({"guardrails": {"injection_scan": "maybe"}},
-             "guardrails.injection_scan: Input should be a valid boolean, unable to interpret input"),
-            ({"guardrails": {"quarantine": 0.9}}, "guardrails.quarantine: Extra inputs are not permitted"),
             ({"retrieval": {"chunks": 0}}, "Invalid retrieval config: one or more fields failed validation."),
             ({"retrieval": {"reranker": {"type": "off"}}},
              "Invalid retrieval config: one or more fields failed validation."),
@@ -262,14 +197,13 @@ class TestAdminRoutes:
         with _admin():
             resp = client.put("/api/admin/defaults/sources", json=body)
         assert resp.status_code == 400 and resp.json == {"success": False, "message": message}
-        assert source_defaults.stored(db) is None and source_defaults.stored_guardrails(db) is None
+        assert source_defaults.stored(db) is None
 
     def test_saving_defaults_never_touches_an_existing_source(self, client, db):
         repo = SourcesRepository(db)
         before = repo.create("old", user_id="u", config={"retrieval": {"chunks": 3}})
         with _admin():
-            body = {"retrieval": STRICT, "guardrails": SCAN}
-            assert client.put("/api/admin/defaults/sources", json=body).status_code == 200
+            assert client.put("/api/admin/defaults/sources", json={"retrieval": STRICT}).status_code == 200
         assert repo.get_any(str(before["id"]), "u")["config"] == before["config"]
 
 
@@ -279,16 +213,14 @@ class TestMemberRead:
         with patch("docsgpt.app.handle_auth", return_value=None):
             assert client.get("/api/sources/defaults").status_code == 401
 
-    def test_any_user_reads_the_settings_without_the_cost(self, client, db):
+    def test_any_user_reads_the_retrieval_only(self, client, db):
         with _as("member"):
             empty = client.get("/api/sources/defaults")
         _store(db, **STRICT)
-        _scan(db)
         with _as("member"):
             stored = client.get("/api/sources/defaults")
-        assert empty.status_code == 200
-        assert empty.json == {"success": True, "retrieval": RetrievalConfig().model_dump(), "guardrails": NO_SCAN}
-        assert stored.json == {"success": True, "retrieval": RetrievalConfig(**STRICT).model_dump(), "guardrails": SCAN}
+        assert empty.status_code == 200 and empty.json == {"success": True, "retrieval": RetrievalConfig().model_dump()}
+        assert stored.json == {"success": True, "retrieval": RetrievalConfig(**STRICT).model_dump()}
 
     def test_a_token_may_read_it(self):
         from docsgpt.api.pat.rules import RULES, is_denied
@@ -335,12 +267,6 @@ class TestSeeding:
         retrieval = SourcesRepository(pg_conn).get_by_legacy_id("legacy-seed-2", "alice")["config"]["retrieval"]
         assert retrieval["chunks"] == 9 and retrieval["reranker"]["min_relevance"] == 0.5
 
-    def test_an_ingest_copies_the_default_guardrails(self, pg_conn):
-        _scan(pg_conn)
-        _upload_index(pg_conn, id="legacy-seed-5", config=json.dumps({"retrieval": {"chunks": 9}}))
-        config = SourcesRepository(pg_conn).get_by_legacy_id("legacy-seed-5", "alice")["config"]
-        assert config["guardrails"] == SCAN and config["retrieval"]["chunks"] == 9
-
     def test_without_defaults_an_ingest_stores_what_it_always_did(self, pg_conn):
         _upload_index(pg_conn, id="legacy-seed-3")
         assert SourcesRepository(pg_conn).get_by_legacy_id("legacy-seed-3", "alice")["config"] == {}
@@ -383,16 +309,6 @@ class TestSeeding:
             assert error is None and config["retrieval"]["reranker"] is None
             # Without a config nothing is read here: the source is seeded when it is created.
             assert _parse_source_config(None) == (None, None)
-
-    def test_an_upload_config_keeps_its_own_guardrails(self, db):
-        from docsgpt.api.user.sources.upload import _parse_source_config
-
-        _scan(db)
-        with Flask(__name__).app_context():
-            config, error = _parse_source_config(json.dumps({"retrieval": {"chunks": 2}}))
-            assert error is None and config["guardrails"] == SCAN
-            config, _ = _parse_source_config(json.dumps({"guardrails": {"injection_scan": False}}))
-            assert config["guardrails"] == NO_SCAN
 
     def test_an_upload_config_with_both_says_why(self, db):
         from docsgpt.api.user.sources.upload import _parse_source_config

@@ -14,8 +14,6 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { LoadingState } from '../components/ui/loading-state';
 import { SectionHeader } from '../components/ui/section-header';
-import { SettingRow, SettingRows } from '../components/ui/setting-row';
-import { Switch } from '../components/ui/switch';
 import type { SourceRetrievalConfig } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import RetrievalOptions, {
@@ -26,11 +24,7 @@ import RetrievalOptions, {
 } from '../settings/components/RetrievalOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import { LoadError } from './AdminUI';
-import {
-  type InjectionModel,
-  InjectionModelOff,
-  chunkScanCost,
-} from './injectionModel';
+import { type InjectionModel, InjectionModelOff } from './injectionModel';
 
 /** What the relevance model costs here, as GET /api/admin/defaults/sources reports it. */
 export type RelevanceModel = {
@@ -46,9 +40,7 @@ export type RelevanceModel = {
 type SourceDefaultsBody = {
   success: boolean;
   retrieval: SourceRetrievalConfig;
-  guardrails?: { injection_scan?: boolean };
   relevance_model: RelevanceModel;
-  injection_model: InjectionModel;
 };
 
 type AgentDefaultsBody = {
@@ -57,10 +49,9 @@ type AgentDefaultsBody = {
   injection_model: InjectionModel;
 };
 
-/** The form: the retrieval options, the scan toggle and the new-agent guardrails. */
+/** The form: the retrieval options and the new-agent guardrails. */
 type Values = {
   retrieval: RetrievalOptionsValue;
-  injectionScan: boolean;
   agentGuardrails: GuardrailsConfig;
 };
 
@@ -74,7 +65,6 @@ const valuesOf = (
   agents: AgentDefaultsBody,
 ): Values => ({
   retrieval: configToOptions({ retrieval: sources.retrieval }),
-  injectionScan: Boolean(sources.guardrails?.injection_scan),
   agentGuardrails: guardrailsOf(agents),
 });
 
@@ -124,8 +114,8 @@ export function RelevanceModelNotice({ model }: { model: RelevanceModel }) {
 }
 
 /**
- * Admin › Defaults: the settings a new source (retrieval, the prompt-injection
- * scan) and a new agent (guardrails) start with. They are copied in when the
+ * Admin › Defaults: the settings a new source (retrieval) and a new agent
+ * (guardrails) start with. They are copied in when the
  * source or agent is created; saving never changes an existing one.
  */
 export default function Defaults() {
@@ -185,41 +175,27 @@ export default function Defaults() {
   const retrievalChanged =
     JSON.stringify(retrieval) !==
     JSON.stringify(optionsToConfig(saved.retrieval).retrieval);
-  const scanChanged = value.injectionScan !== saved.injectionScan;
   const agentsChanged =
     JSON.stringify(value.agentGuardrails) !==
     JSON.stringify(saved.agentGuardrails);
   const valid =
     isPrescreenConfigValid(value.retrieval) &&
     !guardrailsIncomplete(value.agentGuardrails);
-  const injection = sources.injection_model;
-  const scanCost = chunkScanCost(injection);
 
   const save = async () => {
     setSaving(true);
     setSaveError(null);
     const failure = 'Could not save the defaults.';
     try {
-      if (retrievalChanged || scanChanged) {
-        const res = await adminService.setSourceDefaults(
-          {
-            ...(retrievalChanged ? { retrieval } : {}),
-            ...(scanChanged
-              ? { guardrails: { injection_scan: value.injectionScan } }
-              : {}),
-          },
-          token,
-        );
+      if (retrievalChanged) {
+        const res = await adminService.setSourceDefaults(retrieval, token);
         const body = await res.json().catch(() => ({ success: false }));
         if (!body?.success) {
           setSaveError(body?.message || failure);
           return;
         }
         setSources(body);
-        settle({
-          retrieval: configToOptions({ retrieval: body.retrieval }),
-          injectionScan: Boolean(body.guardrails?.injection_scan),
-        });
+        settle({ retrieval: configToOptions({ retrieval: body.retrieval }) });
       }
       if (agentsChanged) {
         const res = await adminService.setAgentDefaults(
@@ -251,9 +227,7 @@ export default function Defaults() {
             shape="pill"
             onClick={save}
             loading={saving}
-            disabled={
-              !(retrievalChanged || scanChanged || agentsChanged) || !valid
-            }
+            disabled={!(retrievalChanged || agentsChanged) || !valid}
             className="w-full sm:w-auto"
           >
             Save
@@ -295,39 +269,8 @@ export default function Defaults() {
             hybridAvailable={hybridAvailable}
             graphRAGAvailable={graphRAGAvailable}
             availableModels={availableModels}
-            decision={{
-              relevance: sources.relevance_model.enabled,
-              injection: injection.enabled,
-            }}
+            decision={{ relevance: sources.relevance_model.enabled }}
           />
-          <div className="flex flex-col gap-3">
-            <SectionHeader size="xs" as="h3" title="Prompt injection" />
-            {!injection.enabled && <InjectionModelOff />}
-            <SettingRows>
-              <SettingRow
-                label="Scan chunks for prompt injection when indexing"
-                description={
-                  injection.enabled
-                    ? `Scores every chunk with the prompt-injection model as it is indexed, so agents can flag or withhold a suspicious one without waiting. ${
-                        scanCost
-                          ? `Costs ${scanCost}.`
-                          : 'The cost is measured after the model loads.'
-                      }`
-                    : 'Scores every chunk with the prompt-injection model as it is indexed, while the model is on.'
-                }
-                alignStart
-              >
-                <Switch
-                  checked={value.injectionScan}
-                  disabled={!injection.enabled}
-                  onCheckedChange={(injectionScan) =>
-                    setValue({ ...value, injectionScan })
-                  }
-                  data-testid="default-injection-scan"
-                />
-              </SettingRow>
-            </SettingRows>
-          </div>
         </section>
         <section className="flex flex-col gap-5">
           <SectionHeader

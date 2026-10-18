@@ -18,7 +18,6 @@ const user = vi.hoisted(() => ({ getGuardrailCatalog: vi.fn() }));
 vi.mock('../api/services/userService', () => ({ default: user }));
 
 import Guardrails from './Guardrails';
-import { chunkScanCost } from './injectionModel';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -26,7 +25,6 @@ const model = (over: Record<string, unknown> = {}) => ({
   enabled: true,
   runtime: 'onnx-int8',
   predicted_input_s: 0.31,
-  predicted_chunk_s: 0.42,
   timeout_s: 2,
   ...over,
 });
@@ -136,7 +134,6 @@ describe('Admin Guardrails', () => {
     expect(text()).toContain(
       'Checking a user message adds about 0.3 s on this server (onnx-int8).',
     );
-    expect(text()).toContain('about 7.0 min per 1,000 chunks here');
     expect(text()).not.toContain('will time out');
   });
 
@@ -207,20 +204,5 @@ describe('Admin Guardrails', () => {
     admin.getGuardrails.mockRejectedValue(new Error('network'));
     await render();
     expect(text()).toContain('Failed to load the guardrails.');
-  });
-});
-
-describe('chunkScanCost', () => {
-  it('turns one chunk into minutes per 1,000', () => {
-    expect(chunkScanCost(model({ predicted_chunk_s: 0.42 }))).toBe(
-      'about 7.0 min per 1,000 chunks here',
-    );
-    expect(chunkScanCost(model({ predicted_chunk_s: 1.5 }))).toBe(
-      'about 25 min per 1,000 chunks here',
-    );
-    expect(chunkScanCost(model({ predicted_chunk_s: 0.02 }))).toBe(
-      'under a minute per 1,000 chunks here',
-    );
-    expect(chunkScanCost(model({ predicted_chunk_s: null }))).toBeNull();
   });
 });

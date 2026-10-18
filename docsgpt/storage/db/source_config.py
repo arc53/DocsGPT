@@ -272,20 +272,6 @@ class RetrievalConfig(BaseModel):
             return None
 
 
-class SourceGuardrailsConfig(BaseModel):
-    """A source's own guardrails (live; no re-ingest).
-
-    ``injection_scan`` scores the source's chunks for prompt injection with the
-    decision model as they are indexed, while the operator has set
-    ``DECISION_INJECTION_ENABLED``; off for every source until its owner (or
-    the admin's defaults for new sources) turns it on.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    injection_scan: bool = False
-
-
 class SourceConfig(BaseModel):
     """Per-source behavior contract stored in ``sources.config``."""
 
@@ -295,7 +281,6 @@ class SourceConfig(BaseModel):
     chunking: ChunkingConfig = ChunkingConfig()
     retrieval: RetrievalConfig = RetrievalConfig()
     graph: GraphConfig = GraphConfig()
-    guardrails: SourceGuardrailsConfig = SourceGuardrailsConfig()
 
     def wiki_enabled(self) -> dict:
         """Return a config dict flipped to wiki mode + browse-as-you-go exposure.

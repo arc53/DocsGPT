@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Any, Callable, List, Optional
+from typing import Any, List, Optional
 from retry import retry
 from tqdm import tqdm
 from docsgpt.core.settings import settings
@@ -250,7 +250,6 @@ def embed_and_store_documents(
     user_id: Optional[str] = None,
     progress_start: int = 0,
     progress_end: int = 100,
-    scan: Optional[Callable[[List[str]], None]] = None,
 ) -> None:
     """Embeds documents and stores them in a vector store.
 
@@ -278,11 +277,6 @@ def embed_and_store_documents(
             (e.g. parsing). Defaults to ``0`` (embed owns the whole bar).
         progress_end: Percent the reported progress maps to at the final
             chunk. Defaults to ``100``.
-        scan: Called with each batch's texts before the batch is embedded
-            (the FAISS seed chunk first), for a source scanned for prompt
-            injection (``injection_ingest.Scanner``). It writes only the
-            score cache and never raises, so it cannot fail or retry the
-            ingest.
 
     Returns:
         None
@@ -338,8 +332,6 @@ def embed_and_store_documents(
         else:
             # FAISS requires at least one doc to construct the store;
             # seed with ``docs[0]`` and let the loop pick up at index 1.
-            if scan is not None:
-                scan([docs[0].page_content])
             store = VectorCreator.create_vectorstore(
                 settings.VECTOR_STORE,
                 docs_init=[docs[0]],
@@ -422,8 +414,6 @@ def embed_and_store_documents(
                 )
                 last_published_pct = progress
 
-            if scan is not None:
-                scan([doc.page_content for doc in docs[batch_start:batch_end]])
             # Add the batch to the vector store
             add_texts_to_store_with_retry(
                 store, docs[batch_start:batch_end], source_id

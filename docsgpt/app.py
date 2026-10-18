@@ -272,9 +272,8 @@ def get_config():
         # only then. Read from settings and the client's own state, so this
         # route never loads, warms or times the model.
         "decision_relevance_enabled": bool(settings.DECISION_RELEVANCE_ENABLED and decision_available),
-        # Whether the model may scan for prompt injection
-        # (DECISION_INJECTION_ENABLED, with the model available); the
-        # guardrail editors offer the model check only then.
+        # Whether the model may score text for prompt injection
+        # (DECISION_INJECTION_ENABLED, with the model available).
         "decision_injection_enabled": bool(settings.DECISION_INJECTION_ENABLED and decision_available),
     }
     if settings.AUTH_TYPE == "oidc":

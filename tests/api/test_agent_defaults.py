@@ -136,9 +136,7 @@ class TestAdminRoutes:
             resp = client.get(URL)
         assert resp.status_code == 200
         assert resp.json["guardrails"] == GuardrailsConfig().model_dump(mode="json")
-        assert set(resp.json["injection_model"]) == {
-            "enabled", "runtime", "predicted_input_s", "predicted_chunk_s", "timeout_s"
-        }
+        assert set(resp.json["injection_model"]) == {"enabled", "runtime", "predicted_input_s", "timeout_s"}
 
     def test_put_stores_returns_the_get_body_and_audits_once(self, client, db):
         with _admin():

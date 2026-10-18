@@ -157,20 +157,6 @@ class TestPaginatedSources:
         assert data["currentPage"] == 1
         assert len(data["paginated"]) == 2
 
-    def test_entries_carry_the_injection_scan_summary(self, app, pg_conn):
-        from docsgpt.api.user.sources.routes import PaginatedSources
-
-        user = "u-pag-scan"
-        summary = {"scanned": 3, "unscored": 0, "suspected": 1, "high": 0, "max_p": 0.6}
-        _seed_source(pg_conn, user, name="scanned", metadata={"injection_scan": summary})
-        _seed_source(pg_conn, user, name="plain")
-        with _patch_db(pg_conn), app.test_request_context("/api/sources/paginated"):
-            from flask import request
-            request.decoded_token = {"sub": user}
-            response = PaginatedSources().get()
-        scans = {d["name"]: d["injectionScan"] for d in response.json["paginated"]}
-        assert scans == {"scanned": summary, "plain": None}
-
     def test_search_filter(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import PaginatedSources
 
@@ -1066,59 +1052,6 @@ class TestSourceConfigResource:
         got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)["config"]
         assert got["chunking"]["max_tokens"] == 800 and got["graph"]["gleanings"] == 1
         assert got["retrieval"]["reranker"] == reranker
-
-    def test_guardrails_alone_keep_the_retrieval_and_a_retrieval_save_keeps_them(self, app, pg_conn):
-        from docsgpt.api.user.sources.routes import SourceConfigResource
-        from docsgpt.storage.db.repositories.sources import SourcesRepository
-
-        user = "u-cfg-scan"
-        src = _seed_source(pg_conn, user, name="cfg-scan", type="file")
-        SourcesRepository(pg_conn).update(str(src["id"]), user, {"config": {"retrieval": {"chunks": 3}}})
-        for body in ({"guardrails": {"injection_scan": True}}, {"retrieval": {"chunks": 5}}):
-            with _patch_db(pg_conn), app.test_request_context(
-                f"/api/sources/{src['id']}/config", method="PATCH", json=body
-            ):
-                from flask import request
-                request.decoded_token = {"sub": user}
-                response = SourceConfigResource().patch(str(src["id"]))
-            assert response.status_code == 200 and response.json["requires_reingest"] is False
-        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)["config"]
-        assert got["guardrails"] == {"injection_scan": True} and got["retrieval"]["chunks"] == 5
-
-    def test_turning_the_scan_on_queues_a_scan_of_the_indexed_chunks_once(self, app, pg_conn, monkeypatch):
-        from docsgpt.api.user.sources.routes import SourceConfigResource
-        from docsgpt.core.settings import settings
-        from docsgpt.guardrails import injection_ingest
-
-        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", True)
-        started: list = []
-        monkeypatch.setattr(injection_ingest, "start_backfill", lambda sid: started.append(sid) or "queued")
-        user = "u-cfg-backfill"
-        src = _seed_source(pg_conn, user, name="cfg-backfill", type="file")
-        answers = []
-        for on in (True, True, False):
-            with _patch_db(pg_conn), app.test_request_context(
-                f"/api/sources/{src['id']}/config", method="PATCH", json={"guardrails": {"injection_scan": on}}
-            ):
-                from flask import request
-                request.decoded_token = {"sub": user}
-                answers.append(SourceConfigResource().patch(str(src["id"])).json["injection_backfill"])
-        # Only the change from off to on starts a scan; turning it off stops future scans only.
-        assert answers == ["queued", None, None] and started == [str(src["id"])]
-
-    def test_no_scan_is_started_while_the_model_is_off(self, app, pg_conn, monkeypatch):
-        from docsgpt.api.user.sources.routes import SourceConfigResource
-        from docsgpt.guardrails import injection_ingest
-
-        monkeypatch.setattr(injection_ingest, "start_backfill", lambda sid: pytest.fail("started a scan"))
-        user = "u-cfg-backfill-off"
-        src = _seed_source(pg_conn, user, name="cfg-backfill-off", type="file")
-        with _patch_db(pg_conn), app.test_request_context(
-            f"/api/sources/{src['id']}/config", method="PATCH", json={"guardrails": {"injection_scan": True}}
-        ):
-            from flask import request
-            request.decoded_token = {"sub": user}
-            assert SourceConfigResource().patch(str(src["id"])).json["injection_backfill"] is None
 
     def test_chunking_change_requires_reingest(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SourceConfigResource

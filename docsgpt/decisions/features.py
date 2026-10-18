@@ -180,7 +180,6 @@ INJECTION_RETRIEVAL = "injection_retrieval"
 INJECTION_TOOL_RESULT = "injection_tool_result"
 INJECTION_ATTACHMENT = "injection_attachment"
 INJECTION_TOOL_DESCRIPTION = "injection_tool_description"
-INJECTION_INGEST = "injection_ingest"
 INJECTION_ATTACHMENT_PARSE = "injection_attachment_parse"
 INJECTION_LAZY = "injection_lazy"
 

@@ -73,10 +73,7 @@ AUTO_LIVE_ITEMS = 4
 
 
 def chunk_shape() -> Shape:
-    """A full-size DocsGPT chunk (the chunker's default ``max_tokens``) scored as windows in the background lane.
-
-    What scanning one chunk for prompt injection costs; the admin pages show its prediction.
-    """
+    """A full-size DocsGPT chunk (the chunker's default ``max_tokens``) scored as windows in the background lane."""
     from docsgpt.storage.db.source_config import ChunkingConfig
 
     step = WINDOW_TOKENS - WINDOW_OVERLAP

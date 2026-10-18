@@ -24,7 +24,6 @@ from docsgpt.api.user.authz import admin_required
 from docsgpt.core.settings import settings
 from docsgpt.decisions import features
 from docsgpt.guardrails import floor as floor_store
-from docsgpt.guardrails.checks.model_injection import chunk_shape
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -40,17 +39,15 @@ def injection_model() -> dict:
     """The injection model as the admin pages show it.
 
     ``predicted_input_s`` is the measured prediction for the check on a user
-    message on this machine and ``predicted_chunk_s`` for scanning one
-    full-size chunk as ingestion does, each ``None`` before the model has been
-    measured. ``timeout_s`` is the default stage deadline the chat-time check
-    runs within.
+    message on this machine, ``None`` before the model has been measured.
+    ``timeout_s`` is the default stage deadline the chat-time check runs
+    within.
     """
     info = decisions.model_info()
     return {
         "enabled": bool(settings.DECISION_INJECTION_ENABLED and decisions.available()),
         "runtime": info.runtime if info else None,
         "predicted_input_s": _rounded(decisions.predict_s(features.shape_of(features.INJECTION_INPUT))),
-        "predicted_chunk_s": _rounded(decisions.predict_s(chunk_shape())),
         "timeout_s": features.budget(features.INJECTION_INPUT),
     }
 

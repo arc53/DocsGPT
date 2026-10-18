@@ -1,5 +1,5 @@
-"""Owner review of prompt-injection scores on a source's chunks: scores on ``get_chunks``, the flagged filter,
-marking a chunk safe, and chunks written by hand queued for scoring."""
+"""Owner review of prompt-injection scores on a source's chunks: scores on ``get_chunks``, the flagged filter
+and marking a chunk safe."""
 
 from __future__ import annotations
 
@@ -150,40 +150,3 @@ class TestReview:
         assert _review(app, str(src["id"]), "viewer", body).status_code == 403
         assert _review(app, str(src["id"]), "stranger", body).status_code == 404
 
-
-class TestHandWrittenChunks:
-    def _queued(self, monkeypatch):
-        queued: list = []
-        monkeypatch.setattr(injection_scoring, "_queue", lambda texts: queued.extend(texts))
-        return queued
-
-    def test_an_added_chunk_of_a_scanned_source_is_queued(self, app, db, scores, monkeypatch):
-        from docsgpt.api.user.sources.chunks import AddChunk
-
-        queued = self._queued(monkeypatch)
-        scanned = SourcesRepository(db).create("on", user_id="u", config={"guardrails": {"injection_scan": True}})
-        plain = SourcesRepository(db).create("off", user_id="u")
-        for src in (scanned, plain):
-            with patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=_store()), \
-                    app.test_request_context("/api/add_chunk", method="POST",
-                                             json={"id": str(src["id"]), "text": f"text for {src['name']}"}):
-                from flask import request
-                request.decoded_token = {"sub": "u"}
-                assert AddChunk().post().status_code == 201
-        assert queued == ["text for on"]
-
-    def test_an_edited_text_is_queued_metadata_only_is_not(self, app, db, scores, monkeypatch):
-        from docsgpt.api.user.sources.chunks import UpdateChunk
-
-        queued = self._queued(monkeypatch)
-        src = SourcesRepository(db).create("on", user_id="u", config={"guardrails": {"injection_scan": True}})
-        store = _store()
-        store.update_chunk.side_effect = lambda chunk_id, text, metadata: chunk_id
-        for body in ({"text": "edited text"}, {"metadata": {"title": "T"}}):
-            with patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=store), \
-                    app.test_request_context("/api/update_chunk", method="PUT",
-                                             json={"id": str(src["id"]), "chunk_id": "0", **body}):
-                from flask import request
-                request.decoded_token = {"sub": "u"}
-                assert UpdateChunk().put().status_code == 200
-        assert queued == ["edited text"]

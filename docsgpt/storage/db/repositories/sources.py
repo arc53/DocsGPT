@@ -268,31 +268,6 @@ class SourcesRepository:
                 allowed[str(row.id)] = hashes
         return allowed
 
-    def set_injection_scan(self, source_id: str, summary: dict) -> bool:
-        """Store a source's prompt-injection scan summary as ``metadata.injection_scan``.
-
-        Only that key is written, so a concurrent write of another metadata
-        key is kept. Not scoped by owner: the worker that scanned the source
-        already resolved it.
-
-        Args:
-            source_id: The source's UUID.
-            summary: The summary to store.
-
-        Returns:
-            Whether a row was updated.
-        """
-        if not looks_like_uuid(str(source_id)):
-            return False
-        result = self._conn.execute(
-            text(
-                "UPDATE sources SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{injection_scan}', "
-                "CAST(:summary AS jsonb)) WHERE id = CAST(:id AS uuid)"
-            ),
-            {"id": str(source_id), "summary": json.dumps(summary)},
-        )
-        return bool(result.rowcount)
-
     def review_injection(self, source_id: str, content_hash: str, allow: bool, cap: int) -> Optional[list[str]]:
         """Add a text hash to the source's owner allowlist, or take it out.
 

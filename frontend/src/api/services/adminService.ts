@@ -124,15 +124,11 @@ const adminService = {
     apiClient.delete(`${quotaUrl(scope, subjectId)}${qs({ bucket })}`, token),
   getSourceDefaults: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.SOURCE_DEFAULTS, token),
-  /** Store `retrieval` and/or `guardrails` as the defaults for new sources. */
   setSourceDefaults: (
-    body: {
-      retrieval?: Record<string, unknown>;
-      guardrails?: { injection_scan: boolean };
-    },
+    retrieval: Record<string, unknown>,
     token: string | null,
   ): Promise<any> =>
-    apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, body, token),
+    apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, { retrieval }, token),
   getAgentDefaults: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.AGENT_DEFAULTS, token),
   setAgentDefaults: (

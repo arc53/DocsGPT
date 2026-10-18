@@ -529,11 +529,7 @@
         "errors": {
           "forbidden": "您沒有編輯此來源設定的權限。",
           "saveFailed": "儲存設定失敗。請再試一次。"
-        },
-        "injectionScan": "掃描文本塊中的提示詞注入",
-        "injectionScanDescription": "在建立索引時用決策模型為每個文本塊評分，代理無需等待掃描即可標記或略去可疑內容。",
-        "backfillQueued": "正在背景掃描此來源既有的文本塊。",
-        "backfillLazy": "此來源既有的文本塊會在對話檢索到它們時進行掃描。"
+        }
       },
       "chunkErrors": {
         "add": "無法新增文本塊",
@@ -601,9 +597,7 @@
         "flaggedNotice": "此文本塊看起來像提示詞注入（分數 {{percent}}%）。檢查檢索來源的代理會標記它，或在回答中略去它。",
         "safeNotice": "已標為安全：使用此來源的代理會將此文本塊視為正常內容。編輯其文字會移除該標記。",
         "reviewFailed": "無法更新此文本塊，請再試一次。",
-        "noFlagged": "此來源中沒有被標記的文本塊。",
-        "flaggedCount_one": "{{formatted}} 個已標記文本塊",
-        "flaggedCount_other": "{{formatted}} 個已標記文本塊"
+        "noFlagged": "此來源中沒有被標記的文本塊。文本塊會在對話首次檢索到它時評分。"
       }
     },
     "analytics": {

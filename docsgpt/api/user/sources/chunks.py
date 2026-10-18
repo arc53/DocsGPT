@@ -206,12 +206,6 @@ def _with_injection(chunks: list, doc: dict) -> list:
     return chunks
 
 
-def _scan_later(doc: dict, text: str) -> None:
-    """Queue a chunk written by hand for a prompt-injection score when its source is scanned; never waits."""
-    if SourceConfig.parse(doc.get("config")).guardrails.injection_scan:
-        injection_scoring.enqueue_lazy([text])
-
-
 @sources_chunks_ns.route("/get_chunks")
 class GetChunks(Resource):
     @api.doc(
@@ -453,7 +447,6 @@ class AddChunk(Resource):
         try:
             store = get_vector_store(str(doc["id"]))
             chunk_id = store.add_chunk(text, metadata)
-            _scan_later(doc, text)
             return make_response(
                 jsonify({"message": "Chunk added successfully", "chunk_id": chunk_id}),
                 201,
@@ -573,8 +566,6 @@ class UpdateChunk(Resource):
                 new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
                 if new_chunk_id != chunk_id:
                     _remap_graph_chunk(doc, chunk_id, new_chunk_id)
-                if text is not None:
-                    _scan_later(doc, new_text)
                 return make_response(
                     jsonify(
                         {
