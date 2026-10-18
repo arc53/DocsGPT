@@ -812,17 +812,9 @@
         "chat": "Chat"
       },
       "feedback": {
-        "all": "Any feedback",
         "like": "Liked",
         "dislike": "Disliked"
-      },
-      "passthroughFilter": "Passthrough (key=value)",
-      "conversationFilter": "Conversation {{id}}",
-      "clearConversation": "Show all conversations",
-      "showConversation": "Show its turns",
-      "anyTime": "Any time",
-      "dateRange": "Date range",
-      "clearDates": "Clear dates"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -1514,8 +1506,6 @@
         "usageTitle": "How to use it",
         "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
         "done": "Done",
-        "toolTitle": "Use it in an agent",
-        "toolHint": "Creates an API tool with the endpoints this token can read (agents, logs, feedback, conversations), with the token filled in. Add the tool to an agent to let it review this account.",
         "createTool": "Create tool for agents",
         "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
         "toolFailed": "Could not create the tool."

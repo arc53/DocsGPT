@@ -55,22 +55,15 @@ The charts below them:
 The Logs list shows the newest entries first and loads more as you scroll. Runs are placed at the time they started. A run that is still going (an answer being written, a scheduled, webhook or workflow run) is listed as **running**, with how long it has run and, for a workflow, the step it is on. The list updates on its own: when the run ends, its finished entry replaces it. An answer being written also says who asked: **API** for calls through the API, **Shared** for someone using a shared agent, **Chat** for a chat in the app. Narrow the list with:
 
 - the level: **All levels**, **Info**, **Warning** or **Error**;
-- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**;
-- the feedback: **Liked** or **Disliked** answers;
-- a date range, picked on a calendar in your time zone;
-- **Search logs...**, which matches the entry's summary, usually the question;
-- **Passthrough (key=value)**, such as `user_id=emp-42`, which matches chat turns sent with that [passthrough](/Agents/prompts#3-passthrough---request-parameters) value. Values compare as text, so `tier=2` matches a number `2`.
-
-The feedback and passthrough filters only match chat turns, so other event types drop out while they are on.
+- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**, or **Liked** and **Disliked** for answers rated that way;
+- **Search logs...**, which matches the entry's summary, usually the question.
 
 Each row shows the time, the event type, the action, how long it took and the summary, colored by level. Click a row to expand it. What it holds depends on the type:
 
-- **Chat**: the agent, the visitor's like or dislike, the conversation, the passthrough values the request carried, the answer, the tool calls and the sources used. A rated answer also shows a thumb in its row.
+- **Chat**: the agent, the visitor's like or dislike, the [passthrough](/Agents/prompts#3-passthrough---request-parameters) values the request carried (such as `user_id=emp-42`), the answer, the tool calls and the sources used. A rated answer also shows a thumb in its row.
 - **Scheduled**: the status, what triggered it, the error type, tokens, duration, the conversation the run wrote to, the instruction and the output.
 - **Workflow**: the workflow, its status, duration, steps and result.
 - **Webhook** and **System**: the endpoint and the error or activity details.
-
-Selecting a passthrough value in an expanded row fills the passthrough filter with it, so you see every turn from that user. **Show its turns**, next to the conversation, narrows the list to that conversation's turns in order; remove the **Conversation** chip above the list to go back.
 
 **Copy** copies the entry as JSON, without its id, action, timestamp and event type.
 
@@ -94,7 +87,7 @@ An agent's **Logs** tab also has **Guardrail activity**: every [guardrail](/Agen
 
 The same data is available over the API, scoped the same way, with an agent's id as `api_key_id` to limit it to that agent: `POST /api/get_message_analytics`, `/api/get_token_analytics`, `/api/get_feedback_analytics`, `/api/get_tool_analytics`, `/api/get_schedule_analytics` and `/api/get_user_logs`, and `GET /api/traces`. A [personal access token](/API/personal-access-tokens) needs the `analytics:read` scope. See the [REST API reference](/API/reference).
 
-`/api/get_user_logs` takes the same filters as the list. Chat rows carry `conversation_id`, `passthrough` and `feedback` (`{"text": "like" | "dislike", "timestamp"}`):
+`/api/get_user_logs` takes the list's filters and a few more. Chat rows carry `conversation_id`, `passthrough` and `feedback` (`{"text": "like" | "dislike", "timestamp"}`):
 
 | Field | Filters to |
 | --- | --- |

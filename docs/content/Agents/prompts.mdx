@@ -97,7 +97,7 @@ To use passthrough data, send it in your API request:
 
 The [chat widget](/Extensions/chat-widget) sends it from its `passthrough` prop, and the [OpenAI-compatible API](/API/openai-compatible) from `docsgpt.passthrough` (OpenAI's `user` field arrives as `passthrough.user`). Workflow agents get the same values as `{{ passthrough.* }}` in their nodes.
 
-The values are also stored with the conversation and each turn's [Logs](/Using/analytics-and-logs) row, so an agent's owner can see who asked what and filter Logs by a value, such as `user_id=emp-42`.
+The values are also stored with the conversation and each turn's [Logs](/Using/analytics-and-logs) row, so an agent's owner can see who asked what, and the Logs API can filter by a value, such as `user_id=emp-42`.
 
 #### 4. **`tools`** - Pre-fetched Tool Data
 Access results of tool actions that run before the agent. Results are keyed by
@@ -532,8 +532,8 @@ office: {{ passthrough.office | default("unknown") }}
 </employee>
 ```
 
-Each turn's Logs row then carries `user_id`, so the agent's owner can filter
-Logs by `user_id=emp-42` to see that employee's questions and ratings. What an
+Each turn's Logs row then carries `user_id`, so the agent's owner sees which
+employee asked, and `/api/get_user_logs` can filter by `user_id=emp-42`. What an
 employee may see belongs in the agent's sources and tools, not in the prompt:
 anyone who can load the page can send any passthrough value.
 

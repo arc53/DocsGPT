@@ -225,7 +225,7 @@ Browser support is uneven, and the microphone hides itself where it cannot work.
 The values do three things:
 
 - The agent's prompt can read them, e.g. `{{ passthrough.office }}`. See [`passthrough`](/Agents/prompts#3-passthrough---request-parameters) in Customizing Prompts.
-- Each turn's row in the agent's [Logs](/Using/analytics-and-logs) shows them next to the question, the answer, the conversation and the visitor's like or dislike. Selecting a value filters the Logs by it.
+- Each turn's row in the agent's [Logs](/Using/analytics-and-logs) shows them next to the question, the answer and the visitor's like or dislike. The Logs API can filter by them.
 - They are stored with the conversation, so `GET /api/get_single_conversation` returns them.
 
 Only strings, numbers, booleans and `null` are kept. The page that embeds the widget sets them, so anyone who can open that page can send other values: treat them as a label for who is asking, not as proof of identity, and don't let the prompt grant access based on them.

@@ -1,10 +1,4 @@
-import {
-  Activity,
-  CalendarIcon,
-  ChevronRight,
-  ThumbsDown,
-  ThumbsUp,
-} from 'lucide-react';
+import { Activity, ChevronRight, ThumbsDown, ThumbsUp } from 'lucide-react';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -20,9 +14,7 @@ import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useClock } from '../hooks/useClock';
 import { useScrollSentinel } from '../hooks/useLoadMore';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Calendar } from '../components/ui/calendar';
 import { CodeBlock } from '../components/ui/code-block';
 import { Collapsible } from '../components/ui/collapsible';
 import {
@@ -30,13 +22,7 @@ import {
   DescriptionList,
 } from '../components/ui/description-list';
 import { EmptyState } from '../components/ui/empty-state';
-import { Input } from '../components/ui/input';
 import { LoadMoreStatus } from '../components/ui/load-more-status';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '../components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -49,12 +35,6 @@ import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
-import {
-  dateRangeParams,
-  LogsDateRange,
-  parsePassthroughFilter,
-  passthroughFilterText,
-} from './logsFilters';
 import { mergeLoadedPages, newestFirst, uniqueLogs } from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
 import { LogData, TraceRef } from './types';
@@ -88,14 +68,6 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [feedbackFilter, setFeedbackFilter] = useState('all');
-  const [dateRange, setDateRange] = useState<LogsDateRange>({});
-  // `key=value`, typed or filled in by clicking a value on a row.
-  const [passthroughInput, setPassthroughInput] = useState('');
-  const [passthroughFilter, setPassthroughFilter] = useState('');
-  const [conversationFilter, setConversationFilter] = useState<string | null>(
-    null,
-  );
   const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
   const logs = uniqueLogs(Object.values(logsByPage));
@@ -105,18 +77,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // Identifies the filter combination a request was issued under, so a
   // slow response from a previous combination is discarded instead of
   // landing in the freshly reset cache.
-  const dates = dateRangeParams(dateRange);
-  const filterKey = [
-    agentId ?? '',
-    levelFilter,
-    typeFilter,
-    search,
-    feedbackFilter,
-    passthroughFilter,
-    conversationFilter ?? '',
-    dates.date_from ?? '',
-    dates.date_to ?? '',
-  ].join('|');
+  const filterKey = [agentId ?? '', levelFilter, typeFilter, search].join('|');
   const filterKeyRef = useRef(filterKey);
   filterKeyRef.current = filterKey;
   const isFirstRender = useRef(true);
@@ -136,14 +97,6 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   }, [searchInput]);
 
   useEffect(() => {
-    const handle = setTimeout(
-      () => setPassthroughFilter(passthroughInput),
-      400,
-    );
-    return () => clearTimeout(handle);
-  }, [passthroughInput]);
-
-  useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       return;
@@ -154,7 +107,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     setLogsByPage({});
     setPage(1);
     setHasMore(true);
-  }, [filterKey]);
+  }, [levelFilter, typeFilter, search, agentId]);
 
   const requestPage = (pageNumber: number, pageSize = PAGE_SIZE) =>
     userService.getLogs(
@@ -163,12 +116,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         api_key_id: agentId,
         page_size: pageSize,
         level: levelFilter === 'all' ? undefined : levelFilter,
-        event_type: typeFilter === 'all' ? undefined : typeFilter,
+        ...typeFilterParams(typeFilter),
         search: search || undefined,
-        feedback: feedbackFilter === 'all' ? undefined : feedbackFilter,
-        passthrough: parsePassthroughFilter(passthroughFilter) ?? undefined,
-        conversation_id: conversationFilter ?? undefined,
-        ...dates,
       },
       token,
     );
@@ -220,7 +169,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       return;
     }
     if (hasMore) fetchLogs();
-  }, [page, filterKey, logsByPage]);
+  }, [page, agentId, levelFilter, typeFilter, search, logsByPage]);
 
   // Reloads the loaded pages in place: new rows come in on top and runs that
   // ended give way to their finished rows. Only page 1 while no loaded page
@@ -343,17 +292,9 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.types.system'), value: 'system' },
     { label: t('settings.logs.types.search'), value: 'search' },
     { label: t('settings.logs.types.graph'), value: 'graph' },
-  ];
-  const feedbackOptions = [
-    { label: t('settings.logs.feedback.all'), value: 'all' },
     { label: t('settings.logs.feedback.like'), value: 'like' },
     { label: t('settings.logs.feedback.dislike'), value: 'dislike' },
   ];
-  const filterByPassthrough = (key: string, value: unknown) => {
-    const text = passthroughFilterText(key, value);
-    setPassthroughInput(text);
-    setPassthroughFilter(text);
-  };
 
   return (
     <div>
@@ -385,19 +326,6 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
             ))}
           </SelectContent>
         </Select>
-        <Select value={feedbackFilter} onValueChange={setFeedbackFilter}>
-          <SelectTrigger className="w-[150px]" size="field" shape="pill">
-            <SelectValue placeholder={t('settings.logs.feedback.all')} />
-          </SelectTrigger>
-          <SelectContent>
-            {feedbackOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <DateRangeFilter value={dateRange} onChange={setDateRange} />
         <div className="w-56">
           <SearchInput
             value={searchInput}
@@ -405,26 +333,6 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
             label={t('settings.logs.searchPlaceholder')}
           />
         </div>
-        <div className="w-56">
-          <Input
-            shape="pill"
-            labelSurface="background"
-            value={passthroughInput}
-            onChange={(e) => setPassthroughInput(e.target.value)}
-            label={t('settings.logs.passthroughFilter')}
-          />
-        </div>
-        {conversationFilter && (
-          <Badge
-            variant="neutral"
-            onRemove={() => setConversationFilter(null)}
-            removeLabel={t('settings.logs.clearConversation')}
-          >
-            {t('settings.logs.conversationFilter', {
-              id: conversationFilter.slice(0, 8),
-            })}
-          </Badge>
-        )}
       </div>
       <div>
         <LogsTable
@@ -436,8 +344,6 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           onRetry={fetchLogs}
           tableHeader={tableHeader}
           onViewTrace={setOpenTrace}
-          onFilterConversation={setConversationFilter}
-          onFilterPassthrough={filterByPassthrough}
         />
       </div>
       <TraceSheet
@@ -447,6 +353,19 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       />
     </div>
   );
+}
+
+/**
+ * The request filters for the event-type select: an event type, or Liked /
+ * Disliked, which ask for chat turns rated that way.
+ */
+export function typeFilterParams(value: string): {
+  event_type?: string;
+  feedback?: string;
+} {
+  if (value === 'all') return {};
+  if (value === 'like' || value === 'dislike') return { feedback: value };
+  return { event_type: value };
 }
 
 type LogsTableProps = {
@@ -459,8 +378,6 @@ type LogsTableProps = {
   onRetry: () => void;
   tableHeader?: string;
   onViewTrace: (ref: TraceRef) => void;
-  onFilterConversation: (conversationId: string) => void;
-  onFilterPassthrough: (key: string, value: unknown) => void;
 };
 function LogsTable({
   logs,
@@ -471,8 +388,6 @@ function LogsTable({
   onRetry,
   tableHeader,
   onViewTrace,
-  onFilterConversation,
-  onFilterPassthrough,
 }: LogsTableProps) {
   const { t } = useTranslation();
   const [openLogId, setOpenLogId] = useState<string | null>(null);
@@ -525,8 +440,6 @@ function LogsTable({
             isOpen={openLogId === log.id}
             onToggle={handleLogToggle}
             onViewTrace={onViewTrace}
-            onFilterConversation={onFilterConversation}
-            onFilterPassthrough={onFilterPassthrough}
           />
         ))}
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
@@ -545,64 +458,6 @@ function LogsTable({
   );
 }
 
-/** A day range for the Logs, picked on a calendar; "Any time" while unset. */
-function DateRangeFilter({
-  value,
-  onChange,
-}: {
-  value: LogsDateRange;
-  onChange: (next: LogsDateRange) => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const format = (d: Date) =>
-    d.toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
-  const label = value.from
-    ? value.to && value.to.getTime() !== value.from.getTime()
-      ? `${format(value.from)} – ${format(value.to)}`
-      : format(value.from)
-    : t('settings.logs.anyTime');
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="combobox"
-          size="field"
-          shape="pill"
-          aria-label={t('settings.logs.dateRange')}
-          className="w-auto"
-        >
-          <CalendarIcon className="opacity-70" />
-          {label}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="range"
-          selected={value.from ? { from: value.from, to: value.to } : undefined}
-          onSelect={(range) => onChange({ from: range?.from, to: range?.to })}
-          disabled={{ after: new Date() }}
-        />
-        {value.from && (
-          <div className="border-border flex justify-end border-t p-2">
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                onChange({});
-                setOpen(false);
-              }}
-            >
-              {t('settings.logs.clearDates')}
-            </Button>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function formatDuration(start?: string, end?: string): string | null {
   if (!start || !end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
@@ -615,15 +470,11 @@ function Log({
   isOpen,
   onToggle,
   onViewTrace,
-  onFilterConversation,
-  onFilterPassthrough,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
   onViewTrace: (ref: TraceRef) => void;
-  onFilterConversation: (conversationId: string) => void;
-  onFilterPassthrough: (key: string, value: unknown) => void;
 }) {
   const { t } = useTranslation();
   const bodyId = useId();
@@ -644,7 +495,6 @@ function Log({
     warning: 'text-warning',
   };
   const { id, action, timestamp, event_type, ...filteredLog } = log;
-  const passthroughEntries = Object.entries(log.passthrough ?? {});
 
   const detailRows: [string, string][] = [];
   if (log.event_type === 'chat') {
@@ -665,6 +515,12 @@ function Log({
         t('settings.logs.detail.feedback'),
         t(`settings.logs.feedback.${log.feedback.text}`),
       ]);
+    const passthrough = Object.entries(log.passthrough ?? {});
+    if (passthrough.length)
+      detailRows.push([
+        t('settings.logs.detail.passthrough'),
+        passthrough.map(([key, value]) => `${key}=${value}`).join(', '),
+      ]);
   } else if (log.event_type === 'schedule') {
     if (log.status)
       detailRows.push([t('settings.logs.detail.status'), log.status]);
@@ -680,6 +536,11 @@ function Log({
     const duration = formatDuration(log.started_at, log.finished_at);
     if (duration)
       detailRows.push([t('settings.logs.detail.duration'), duration]);
+    if (log.conversation_id)
+      detailRows.push([
+        t('settings.logs.detail.conversation'),
+        log.conversation_id,
+      ]);
   } else if (log.event_type === 'workflow') {
     if (log.workflow_name)
       detailRows.push([t('settings.logs.detail.workflow'), log.workflow_name]);
@@ -890,55 +751,13 @@ function Log({
                 />
               </div>
             )}
-            {(detailRows.length > 0 ||
-              log.conversation_id ||
-              passthroughEntries.length > 0) && (
+            {detailRows.length > 0 && (
               <DescriptionList size="xs" className="mx-2 mb-2">
                 {detailRows.map(([label, value]) => (
                   <DescriptionItem key={label} label={label}>
                     {value}
                   </DescriptionItem>
                 ))}
-                {log.conversation_id && (
-                  <DescriptionItem
-                    label={t('settings.logs.detail.conversation')}
-                  >
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="wrap-anywhere">
-                        {log.conversation_id}
-                      </span>
-                      <Button
-                        variant="link"
-                        size="text"
-                        onClick={() =>
-                          log.conversation_id &&
-                          onFilterConversation(log.conversation_id)
-                        }
-                      >
-                        {t('settings.logs.showConversation')}
-                      </Button>
-                    </span>
-                  </DescriptionItem>
-                )}
-                {passthroughEntries.length > 0 && (
-                  <DescriptionItem
-                    label={t('settings.logs.detail.passthrough')}
-                  >
-                    <span className="flex flex-wrap gap-1.5">
-                      {passthroughEntries.map(([key, value]) => (
-                        <Button
-                          key={key}
-                          variant="outline"
-                          size="xs"
-                          shape="pill"
-                          onClick={() => onFilterPassthrough(key, value)}
-                        >
-                          {passthroughFilterText(key, value)}
-                        </Button>
-                      ))}
-                    </span>
-                  </DescriptionItem>
-                )}
               </DescriptionList>
             )}
             {textBlocks.map((block) => (

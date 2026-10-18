@@ -116,14 +116,6 @@ export default function AccessTokenCreatedModal({
 
         {onCreateTool && (
           <div className="flex flex-col gap-2">
-            <SectionHeader
-              as="h3"
-              size="xs"
-              title={t('settings.accessTokens.created.toolTitle')}
-            />
-            <p className="text-muted-foreground text-xs">
-              {t('settings.accessTokens.created.toolHint')}
-            </p>
             {toolState === 'created' ? (
               <Alert variant="success">
                 <AlertDescription>

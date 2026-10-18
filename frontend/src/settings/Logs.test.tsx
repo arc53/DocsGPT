@@ -44,7 +44,7 @@ vi.mock('../api/services/userService', () => ({
   default: { getLogs: (...args: unknown[]) => getLogs(...args) },
 }));
 
-import Logs from './Logs';
+import Logs, { typeFilterParams } from './Logs';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -671,27 +671,9 @@ describe('Logs chat row context', () => {
   const chat = {
     ...log,
     conversation_id: 'c0ffee00-0000-4000-8000-000000000001',
-    passthrough: { user_id: 'emp-42' },
+    passthrough: { user_id: 'emp-42', office: 'Berlin' },
     feedback: { text: 'dislike' },
   };
-
-  const openRow = async () => {
-    const toggle = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
-    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
-    await act(async () => toggle.click());
-  };
-
-  const buttonWith = (text: string) =>
-    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (el) => el.textContent === text,
-    )!;
-
-  const lastRequest = () =>
-    getLogs.mock.calls[getLogs.mock.calls.length - 1][0] as Record<
-      string,
-      unknown
-    >;
 
   beforeEach(async () => {
     getLogs.mockReset();
@@ -716,33 +698,25 @@ describe('Logs chat row context', () => {
     ).not.toBeNull();
   });
 
-  it('shows the conversation, the passthrough values and the rating', async () => {
-    await openRow();
-    expect(container.textContent).toContain(chat.conversation_id);
-    expect(buttonWith('user_id=emp-42')).toBeDefined();
+  it('shows the passthrough values and the rating, not the conversation', async () => {
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    await act(async () => toggle.click());
+    expect(container.textContent).toContain('user_id=emp-42, office=Berlin');
     expect(container.textContent).toContain('settings.logs.detail.feedback');
+    expect(container.textContent).not.toContain(chat.conversation_id);
+  });
+});
+
+describe('typeFilterParams', () => {
+  it('asks for rated chat turns for Liked and Disliked', () => {
+    expect(typeFilterParams('like')).toEqual({ feedback: 'like' });
+    expect(typeFilterParams('dislike')).toEqual({ feedback: 'dislike' });
   });
 
-  it('filters by a passthrough value clicked on a row', async () => {
-    await openRow();
-    await act(async () => buttonWith('user_id=emp-42').click());
-    expect(lastRequest()).toMatchObject({
-      api_key_id: 'agent-1',
-      page: 1,
-      passthrough: { user_id: 'emp-42' },
-    });
-  });
-
-  it('filters to one conversation and clears it from its chip', async () => {
-    await openRow();
-    await act(async () => buttonWith('settings.logs.showConversation').click());
-    expect(lastRequest()).toMatchObject({
-      conversation_id: chat.conversation_id,
-    });
-    const clear = container.querySelector<HTMLButtonElement>(
-      '[aria-label="settings.logs.clearConversation"]',
-    )!;
-    await act(async () => clear.click());
-    expect(lastRequest().conversation_id).toBeUndefined();
+  it('passes an event type through and nothing for all', () => {
+    expect(typeFilterParams('chat')).toEqual({ event_type: 'chat' });
+    expect(typeFilterParams('all')).toEqual({});
   });
 });

@@ -810,17 +810,9 @@
         "chat": "チャット"
       },
       "feedback": {
-        "all": "すべての評価",
         "like": "高評価",
         "dislike": "低評価"
-      },
-      "passthroughFilter": "パススルー (キー=値)",
-      "conversationFilter": "会話 {{id}}",
-      "clearConversation": "すべての会話を表示",
-      "showConversation": "この会話のやり取りを表示",
-      "anyTime": "全期間",
-      "dateRange": "期間",
-      "clearDates": "日付をクリア"
+      }
     },
     "teams": {
       "label": "チーム",
@@ -1512,8 +1504,6 @@
         "usageTitle": "使い方",
         "usageHint": "環境変数としてエクスポートし、AuthorizationヘッダーのBearerトークンとして送信します。",
         "done": "完了",
-        "toolTitle": "エージェントで使う",
-        "toolHint": "このトークンで読めるエンドポイント (エージェント、ログ、評価、会話) を持つ API ツールを、トークン入りで作成します。ツールをエージェントに追加すると、このアカウントを確認できます。",
         "createTool": "エージェント用ツールを作成",
         "toolCreated": "ツールを作成しました。設定 › ツールから、エージェントに追加してください。",
         "toolFailed": "ツールを作成できませんでした。"

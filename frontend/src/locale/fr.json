@@ -837,17 +837,9 @@
         "chat": "Conversation"
       },
       "feedback": {
-        "all": "Tous les avis",
         "like": "Aimé",
         "dislike": "Pas aimé"
-      },
-      "passthroughFilter": "Passthrough (clé=valeur)",
-      "conversationFilter": "Conversation {{id}}",
-      "clearConversation": "Afficher toutes les conversations",
-      "showConversation": "Voir ses échanges",
-      "anyTime": "N'importe quand",
-      "dateRange": "Période",
-      "clearDates": "Effacer les dates"
+      }
     },
     "teams": {
       "label": "Équipes",
@@ -1557,8 +1549,6 @@
         "usageTitle": "Utilisation",
         "usageHint": "Exportez-le comme variable d’environnement, puis envoyez-le comme jeton Bearer dans l’en-tête Authorization.",
         "done": "Terminé",
-        "toolTitle": "L'utiliser dans un agent",
-        "toolHint": "Crée un outil API avec les endpoints que ce token peut lire (agents, journaux, avis, conversations), token déjà renseigné. Ajoutez l'outil à un agent pour qu'il examine ce compte.",
         "createTool": "Créer un outil pour les agents",
         "toolCreated": "Outil créé. Retrouvez-le dans Paramètres › Outils et ajoutez-le à un agent.",
         "toolFailed": "Impossible de créer l'outil."
