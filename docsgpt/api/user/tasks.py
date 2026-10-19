@@ -877,6 +877,21 @@ def setup_periodic_tasks(sender, **kwargs):
         name="cleanup-background-jobs",
     )
     sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
+    # Conversation analytics (``docsgpt.analytics.tasks``): each task returns at
+    # once while DECISION_ANALYTICS_ENABLED is off.
+    from docsgpt.analytics.tasks import analytics_gap_digest, analytics_sweep, cleanup_conversation_labels
+
+    sender.add_periodic_task(
+        timedelta(seconds=max(60, settings.ANALYTICS_SWEEP_SECONDS)),
+        analytics_sweep.s(),
+        name="analytics-sweep",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_conversation_labels.s(),
+        name="cleanup-conversation-labels",
+    )
+    sender.add_periodic_task(timedelta(weeks=1), analytics_gap_digest.s(), name="analytics-gap-digest")
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the

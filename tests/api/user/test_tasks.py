@@ -343,7 +343,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 20
+        assert sender.add_periodic_task.call_count == 23
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -398,6 +398,14 @@ class TestSetupPeriodicTasks:
         assert calls[17][1].get("name") == "sweep-background-jobs"
         assert calls[18][0][0] == timedelta(hours=24)
         assert calls[18][1].get("name") == "cleanup-background-jobs"
+        assert calls[19][1].get("name") == "cleanup-trigger-hits"
+        # conversation analytics: the sweep (5 min), retention (24h), the digest (weekly)
+        assert calls[20][0][0] == timedelta(seconds=300)
+        assert calls[20][1].get("name") == "analytics-sweep"
+        assert calls[21][0][0] == timedelta(hours=24)
+        assert calls[21][1].get("name") == "cleanup-conversation-labels"
+        assert calls[22][0][0] == timedelta(weeks=1)
+        assert calls[22][1].get("name") == "analytics-gap-digest"
 
 
 class TestMcpOauthTask:

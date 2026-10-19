@@ -21,6 +21,7 @@ class TestHeading:
             ("trigger", "Webhook received"),
             ("approval", "Approval received"),
             ("schedule", "Scheduled task finished"),
+            ("docs_gaps", "Weekly docs gaps"),
         ],
     )
     def test_known_kinds(self, kind, heading):

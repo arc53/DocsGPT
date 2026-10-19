@@ -17,6 +17,7 @@ imports = (
     'docsgpt.api.user.tasks',
     'docsgpt.vectorstore.embeddings_tasks',
     'docsgpt.notifications.tasks',
+    'docsgpt.analytics.tasks',
 )
 
 # Project-scoped queue so a stray sibling worker on the same broker
@@ -36,6 +37,10 @@ task_default_routing_key = "docsgpt"
 task_routes = {
     "docsgpt.api.user.tasks.parse_document": {"queue": settings.DOCUMENT_PARSE_QUEUE},
     "docsgpt.vectorstore.embeddings_tasks.embed_texts": {"queue": settings.EMBEDDINGS_QUEUE},
+    # The analytics sweep waits on decision-model calls for minutes; its own
+    # queue keeps it off the ``docsgpt`` slots chat-side tasks need.
+    "docsgpt.analytics.tasks.analytics_sweep": {"queue": settings.ANALYTICS_QUEUE},
+    "docsgpt.analytics.tasks.analytics_gap_digest": {"queue": settings.ANALYTICS_QUEUE},
 }
 
 # Declare every queue so a bare ``celery worker`` (no -Q) consumes ALL of them —
@@ -45,7 +50,7 @@ task_routes = {
 task_queues = tuple(
     Queue(name)
     for name in dict.fromkeys(
-        ["docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE]
+        ["docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE, settings.ANALYTICS_QUEUE]
     )
 )
 

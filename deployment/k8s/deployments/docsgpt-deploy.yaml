@@ -266,10 +266,10 @@ spec:
         # RedBeat lock in Redis lets only one of them schedule at a time.
         # The queues: docsgpt (ingestion and app tasks), parsing (read_document)
         # and embeddings (query embedding for the API; without it every search
-        # times out). For heavy or OCR parsing, run a separate Deployment with
-        # `-Q parsing`.
+        # times out) and analytics (the conversation-analytics sweep). For heavy
+        # or OCR parsing, run a separate Deployment with `-Q parsing`.
         command: ["celery", "-A", "docsgpt.app.celery", "worker", "-B", "-l", "INFO", "-n", "worker.%h",
-                  "-Q", "docsgpt,parsing,embeddings"]
+                  "-Q", "docsgpt,parsing,embeddings,analytics"]
         resources:
           limits:
             memory: "4Gi"
