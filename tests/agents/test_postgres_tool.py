@@ -41,6 +41,7 @@ class TestPostgresExecuteAction:
     def test_insert_query(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
+        mock_cur.description = None
         mock_cur.rowcount = 1
         mock_conn.cursor.return_value = mock_cur
         mock_connect.return_value = mock_conn
@@ -53,6 +54,63 @@ class TestPostgresExecuteAction:
         assert result["status_code"] == 200
         assert "1 rows affected" in result["response_data"]["message"]
         mock_conn.commit.assert_called_once()
+        mock_conn.close.assert_called_once()
+
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
+    def test_cte_query(self, mock_connect, tool):
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.description = [("id",), ("name",)]
+        mock_cur.fetchall.return_value = [(1, "Alice")]
+        mock_conn.cursor.return_value = mock_cur
+        mock_connect.return_value = mock_conn
+
+        result = tool.execute_action(
+            "postgres_execute_sql",
+            sql_query="WITH active AS (SELECT id, name FROM users) SELECT * FROM active",
+        )
+
+        assert result["status_code"] == 200
+        assert result["response_data"]["column_names"] == ["id", "name"]
+        assert result["response_data"]["data"] == [{"id": 1, "name": "Alice"}]
+        mock_conn.close.assert_called_once()
+
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
+    def test_commented_query(self, mock_connect, tool):
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.description = [("id",)]
+        mock_cur.fetchall.return_value = [(1,)]
+        mock_conn.cursor.return_value = mock_cur
+        mock_connect.return_value = mock_conn
+
+        result = tool.execute_action(
+            "postgres_execute_sql",
+            sql_query="-- fetch id\nSELECT id FROM users",
+        )
+
+        assert result["status_code"] == 200
+        assert result["response_data"]["column_names"] == ["id"]
+        assert result["response_data"]["data"] == [{"id": 1}]
+        mock_conn.close.assert_called_once()
+
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
+    def test_returning_query(self, mock_connect, tool):
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.description = [("id",)]
+        mock_cur.fetchall.return_value = [(42,)]
+        mock_conn.cursor.return_value = mock_cur
+        mock_connect.return_value = mock_conn
+
+        result = tool.execute_action(
+            "postgres_execute_sql",
+            sql_query="INSERT INTO users (name) VALUES ('Bob') RETURNING id",
+        )
+
+        assert result["status_code"] == 200
+        assert result["response_data"]["column_names"] == ["id"]
+        assert result["response_data"]["data"] == [{"id": 42}]
         mock_conn.close.assert_called_once()
 
     @patch("docsgpt.agents.tools.postgres.psycopg.connect")
