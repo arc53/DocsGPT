@@ -396,6 +396,43 @@ def _decisions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analytics(args: argparse.Namespace) -> int:
+    """``docsgpt analytics backfill``: label the last N days of conversations now, in the foreground.
+
+    The same sweep the worker runs every ANALYTICS_SWEEP_SECONDS, without its
+    time budget. Like a worker it calls the model where it runs (the decider,
+    the API process or the remote endpoint) at background priority and never
+    loads it here; it does nothing while DECISION_ANALYTICS_ENABLED is off.
+    ``--dry-run`` prints the unlabelled messages and a time estimate instead.
+    """
+    if getattr(args, "analytics_action", None) != "backfill":
+        print("usage: docsgpt analytics backfill --days N [--agent ID] [--dry-run]", file=sys.stderr)
+        return 2
+    from docsgpt.core.settings import settings
+
+    days = args.days or settings.ANALYTICS_BACKFILL_DAYS
+    if not 1 <= days <= settings.ANALYTICS_RETENTION_DAYS:
+        # Older labels are purged by retention, so they would be labelled again and again.
+        print(f"docsgpt: --days must be 1 to ANALYTICS_RETENTION_DAYS ({settings.ANALYTICS_RETENTION_DAYS})",
+              file=sys.stderr)
+        return 2
+    import docsgpt.celery_init as celery_init
+    from docsgpt.analytics import tasks
+
+    # Calls go where a worker's go: in local mode, to the API process's model.
+    celery_init._mark_worker_process()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    if args.dry_run:
+        print(json.dumps(tasks.backfill_estimate(days, args.agent), indent=2))
+        return 0
+    if not tasks.enabled():
+        print("docsgpt: DECISION_ANALYTICS_ENABLED is off (or DECISION_MODE=none); nothing to label", file=sys.stderr)
+        return 1
+    report = tasks.sweep(budget_seconds=None, days=days, agent_id=args.agent)
+    print(json.dumps(report, indent=2))
+    return 0 if report.get("stopped") in (None, "budget") and "skipped" not in report else 1
+
+
 def _decide_server(args: argparse.Namespace) -> int:
     """Serve the decision model over ``/v1/decide`` in this process; see ``docsgpt.decisions.server``."""
     from docsgpt.decisions import server
@@ -460,6 +497,18 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="show the decision model settings, feature modes and whether its files are downloaded"
     )
     decisions.set_defaults(func=_decisions)
+
+    analytics = commands.add_parser("analytics", help="conversation analytics: label past conversations now")
+    analytics_actions = analytics.add_subparsers(dest="analytics_action", metavar="<action>")
+    backfill = analytics_actions.add_parser(
+        "backfill", help="label the last N days of conversations in the foreground (the sweep without its budget)"
+    )
+    backfill.add_argument("--days", type=int, help="days back to label (default: ANALYTICS_BACKFILL_DAYS)")
+    backfill.add_argument("--agent", help="only this agent's conversations (its id)")
+    backfill.add_argument(
+        "--dry-run", action="store_true", help="print the unlabelled messages and a time estimate; label nothing"
+    )
+    analytics.set_defaults(func=_analytics)
 
     decide_server = commands.add_parser(
         "decide-server", help="serve the decision model over HTTP (/v1/decide) for the API and the worker"

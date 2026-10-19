@@ -260,6 +260,56 @@ class TestConnectorsReencrypt:
         assert "tool and custom-model secrets" in help_text
 
 
+class TestAnalyticsBackfill:
+    @pytest.fixture(autouse=True)
+    def _restore_the_worker_flag(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.celery_init._IS_WORKER_PROCESS", False)
+
+    def test_without_an_action_prints_usage(self, capsys):
+        assert cli.main(["analytics"]) == 2
+        assert "docsgpt analytics backfill --days N" in capsys.readouterr().err
+
+    def test_days_past_retention_are_refused(self, capsys):
+        assert cli.main(["analytics", "backfill", "--days", "365"]) == 2
+        assert "ANALYTICS_RETENTION_DAYS (90)" in capsys.readouterr().err
+
+    def test_dry_run_prints_the_estimate_and_calls_like_a_worker(self, monkeypatch, capsys):
+        import json
+
+        import docsgpt.celery_init as celery_init
+        from docsgpt.analytics import tasks
+
+        seen = []
+
+        def estimate(days, agent_id):
+            seen.append((days, agent_id, celery_init.in_worker()))
+            return {"messages": 3}
+
+        monkeypatch.setattr(tasks, "backfill_estimate", estimate)
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: pytest.fail("a dry run labels nothing"))
+        assert cli.main(["analytics", "backfill", "--days", "3", "--agent", "a1", "--dry-run"]) == 0
+        assert json.loads(capsys.readouterr().out) == {"messages": 3}
+        assert seen == [(3, "a1", True)]
+
+    def test_does_nothing_while_the_switch_is_off(self, monkeypatch, capsys):
+        from docsgpt.analytics import tasks
+
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: pytest.fail("the switch is off"))
+        assert cli.main(["analytics", "backfill"]) == 1
+        assert "DECISION_ANALYTICS_ENABLED is off" in capsys.readouterr().err
+
+    def test_runs_the_sweep_without_a_budget(self, monkeypatch, capsys):
+        from docsgpt.analytics import tasks
+
+        calls = []
+        monkeypatch.setattr(tasks, "enabled", lambda: True)
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: calls.append(kwargs) or {"messages": 2, "stopped": None})
+        assert cli.main(["analytics", "backfill", "--agent", "a1"]) == 0
+        assert calls == [{"budget_seconds": None, "days": 7, "agent_id": "a1"}]
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: {"stopped": "unavailable"})
+        assert cli.main(["analytics", "backfill"]) == 1
+
+
 class TestDecisions:
     def test_prefetch_downloads_the_selected_model(self, monkeypatch, tmp_path, capsys):
         from docsgpt.decisions import files
