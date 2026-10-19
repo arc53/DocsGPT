@@ -144,16 +144,37 @@ def retrieval_relevance(m: Message) -> Optional[float]:
 
 
 # Script heuristics from arc-decide's real-traffic evaluation (``arcd/data/prod.py``): three characters of a script,
-# else two common Spanish words. Latin text that is not Spanish reads as ``en``: English or another Latin language.
-_SCRIPTS = [("zh", re.compile(r"[一-鿿]")), ("ru", re.compile(r"[Ѐ-ӿ]")),
-            ("ja", re.compile(r"[぀-ヿ]")), ("ko", re.compile(r"[가-힯]"))]
-_ES = re.compile(r"\b(?:el|la|los|las|que|para|cómo|como|por|una|del|qué|está|puedo)\b", re.IGNORECASE)
-LANGUAGES = ("en", "es", "zh", "ru", "ja", "ko")
+# kana before kanji so Japanese is not read as Chinese. Latin text votes on common words: Spanish was trained, the
+# other Latin languages were not, so they are told apart from English for the language note rather than read as it.
+_SCRIPTS = [("ja", re.compile(r"[぀-ヿ]")), ("ko", re.compile(r"[가-힯]")),
+            ("ru", re.compile(r"[Ѐ-ӿ]")), ("zh", re.compile(r"[一-鿿]"))]
+_WORDS = {
+    "en": {"the", "is", "are", "how", "what", "do", "does", "can", "i", "to", "of", "and", "my", "it", "for", "in",
+           "on", "where", "why", "with", "you", "this", "that", "or", "when", "which"},
+    "es": {"el", "la", "los", "las", "que", "para", "cómo", "como", "por", "una", "del", "qué", "está", "puedo", "es",
+           "con", "mi", "se", "y"},
+    "fr": {"le", "les", "des", "est", "une", "comment", "pour", "je", "de", "du", "que", "pas", "avec", "mon", "sur",
+           "ce", "et", "mot", "passe"},
+    "de": {"der", "die", "das", "ist", "wie", "ich", "nicht", "und", "mit", "kann", "ein", "eine", "für", "auf", "zu",
+           "mein", "den", "dem"},
+    "pt": {"o", "os", "as", "é", "não", "como", "faço", "para", "com", "um", "uma", "do", "da", "meu", "minha", "eu",
+           "você", "que"},
+    "it": {"il", "lo", "gli", "è", "come", "posso", "per", "non", "un", "una", "che", "di", "mi", "con", "sono",
+           "della", "la"},
+}
+_WORD = re.compile(r"\w+")
+LANGUAGES = ("en", "es", "zh", "ru", "ja", "ko", "fr", "de", "pt", "it")
 
 
 def lang(text: str) -> str:
-    """The language a label row records for the user text it read: one of ``LANGUAGES``."""
+    """The language a label row records for the user text it read: one of ``LANGUAGES``.
+
+    Latin text is English unless another language's common words outnumber English ones, at least two of them.
+    """
     for name, pattern in _SCRIPTS:
         if len(pattern.findall(text)) >= 3:
             return name
-    return "es" if len(_ES.findall(text)) >= 2 else "en"
+    words = [w.lower() for w in _WORD.findall(text)]
+    hits = {name: sum(w in vocab for w in words) for name, vocab in _WORDS.items()}
+    best = max((name for name in _WORDS if name != "en"), key=lambda name: hits[name])
+    return best if hits[best] >= 2 and hits[best] > hits["en"] else "en"

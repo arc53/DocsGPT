@@ -95,7 +95,10 @@ class TestStates:
         "text, lang",
         [("How do I reset it?", "en"), ("¿Cómo puedo cambiar la contraseña?", "es"), ("如何重置密码", "zh"),
          ("Как сбросить пароль?", "ru"), ("パスワードをリセット", "ja"), ("비밀번호 재설정", "ko"),
-         ("Comment changer le mot de passe ?", "en")],
+         ("Comment changer le mot de passe ?", "fr"), ("Wie kann ich das Passwort ändern?", "de"),
+         ("Como faço para mudar a senha?", "pt"), ("Come posso cambiare la password?", "it"),
+         ("東京の会社で使えますか", "ja"), ("Is the API rate limit per user or per workspace?", "en"),
+         ("Where is the Docker port set?", "en")],
     )
     def test_lang(self, text, lang):
         assert states.lang(text) == lang

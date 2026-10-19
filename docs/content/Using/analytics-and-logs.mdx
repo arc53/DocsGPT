@@ -109,7 +109,7 @@ For a yes/no label, AUROC is the chance that a random "yes" scores above a rando
 
 The model was trained on English, Spanish, Chinese and Russian. In all four, frustration, asking for a person, goal met and tags are within 3 points of each other. Answer status, why not fully answered and topic are 4 to 9 points less accurate in Russian, and implicit feedback was 14 points less accurate in Chinese. Other languages are labelled too, with accuracy nobody has measured.
 
-When more than 10% of the messages behind one of those labels are in a language it reads less accurately, a note above the tiles gives the share and names the labels. A message's language is told from its script (Chinese, Cyrillic, Japanese, Korean) and a few common Spanish words, so text in other Latin-script languages, such as French or German, counts as English and raises no note.
+When more than 10% of the messages behind one of those labels are in a language it reads less accurately, a note above the tiles gives the share and names the labels. A message's language is told from its script (Chinese, Cyrillic, Japanese, Korean) and, for Latin script, from common words: Spanish, French, German, Portuguese and Italian are told apart from English. A short message with too few common words counts as English.
 
 ### What is not shown
 
