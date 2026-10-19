@@ -1,9 +1,4 @@
-import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
-
-import { Card } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
-import { SectionHeader } from '@/components/ui/section-header';
 
 import { useChartPalette } from '../../utils/chartUtils';
 import { formatCount, formatDate } from '../../utils/dateTimeUtils';
@@ -15,12 +10,13 @@ import {
   rangePoints,
   REACTION_SERIES,
 } from './format';
+import ChartPanel from './ChartPanel';
 import TierBadge from './TierBadge';
 
 /**
- * How users' next messages responded to answers, beside the thumbs: thanks,
- * asking again, and pushback or complaint, in the same green, amber and red
- * as the thumbs so the two read together. Neutral reactions (a new question,
+ * How users' next messages responded to answers: thanks, asking again, and
+ * pushback or complaint, in the same green, amber and red as the thumbs on
+ * Analytics so the two read together. Neutral reactions (a new question,
  * a follow-up) are not drawn.
  */
 export default function ImplicitFeedbackPanel({
@@ -30,7 +26,6 @@ export default function ImplicitFeedbackPanel({
 }) {
   const { t } = useTranslation();
   const palette = useChartPalette();
-  const legendId = useId();
   const reaction = data.totals.reaction;
   const enough = (reaction?.n ?? 0) >= MIN_SAMPLE;
 
@@ -61,64 +56,44 @@ export default function ImplicitFeedbackPanel({
   );
 
   return (
-    <Card
-      variant="subtle"
-      padding="lg"
-      className="h-[345px] w-full overflow-hidden xl:w-1/2"
-      data-testid="implicit-feedback"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <SectionHeader
-          as="h3"
-          size="xs"
-          title={t('settings.analytics.insights.panels.implicitFeedback')}
-        />
+    <ChartPanel
+      title={t('settings.analytics.insights.panels.implicitFeedback')}
+      badge={
         <TierBadge tier="estimated" points={enough ? points : undefined} />
-      </div>
-      <div className="relative h-[245px] w-full">
-        {enough ? (
-          <>
-            <div
-              id={legendId}
-              className="flex flex-row items-center justify-end"
-            ></div>
-            <AnalyticsChart
-              data={{
-                labels: data.series.map((bucket) => formatDate(bucket.bucket)),
-                datasets,
-              }}
-              legendID={legendId}
-              maxTicksLimitInX={8}
-              gridColor={palette.border}
-              tickColor={palette.mutedForeground}
-              isStacked
-              tooltipCallbacks={{
-                label: (item) =>
-                  t('settings.analytics.insights.panels.tooltipCount', {
-                    name: item.dataset.label,
-                    value: formatEstimate(Number(item.raw)),
-                    interpolation: { escapeValue: false },
-                  }),
-                footer: (items) => {
-                  const n =
-                    data.series[items[0]?.dataIndex ?? -1]?.labels.reaction
-                      ?.n ?? 0;
-                  return t('settings.analytics.insights.panels.ofReplies', {
-                    count: n,
-                    formatted: formatCount(n),
-                  });
-                },
-              }}
-            />
-          </>
-        ) : (
-          <EmptyState
-            size="xs"
-            illustration="none"
-            title={t('settings.analytics.insights.notEnoughReplies')}
-          />
-        )}
-      </div>
-    </Card>
+      }
+      empty={
+        enough ? undefined : t('settings.analytics.insights.notEnoughReplies')
+      }
+      data-testid="implicit-feedback"
+      chart={(legendId) => (
+        <AnalyticsChart
+          data={{
+            labels: data.series.map((bucket) => formatDate(bucket.bucket)),
+            datasets,
+          }}
+          legendID={legendId}
+          maxTicksLimitInX={8}
+          gridColor={palette.border}
+          tickColor={palette.mutedForeground}
+          isStacked
+          tooltipCallbacks={{
+            label: (item) =>
+              t('settings.analytics.insights.panels.tooltipCount', {
+                name: item.dataset.label,
+                value: formatEstimate(Number(item.raw)),
+                interpolation: { escapeValue: false },
+              }),
+            footer: (items) => {
+              const n =
+                data.series[items[0]?.dataIndex ?? -1]?.labels.reaction?.n ?? 0;
+              return t('settings.analytics.insights.panels.ofReplies', {
+                count: n,
+                formatted: formatCount(n),
+              });
+            },
+          }}
+        />
+      )}
+    />
   );
 }

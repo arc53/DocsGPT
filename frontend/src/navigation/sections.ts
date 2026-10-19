@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   LayoutTemplate,
+  Lightbulb,
   Plug,
   Radar,
   ScrollText,
@@ -39,6 +40,7 @@ import {
 import {
   AGENTS_MANAGE_ROOT,
   agentEditPath,
+  agentInsightsPath,
   agentLogsPath,
   agentSchedulesPath,
   agentsFilterPath,
@@ -59,7 +61,7 @@ export type SectionItem = {
   /** Jumps to a different section rather than navigating within this one. */
   leavesSection?: boolean;
   /** Hidden when the backend reports this feature off (`/api/config`). */
-  feature?: 'connectors';
+  feature?: 'connectors' | 'analytics';
 };
 
 /** Items sharing a heading in the nav. */
@@ -372,6 +374,7 @@ export const AGENTS_SECTION: Section = {
 const TAB_ACTIONS: Record<string, string> = {
   overview: 'view',
   logs: 'view_logs',
+  insights: 'view_logs',
   schedules: 'manage_schedules',
 };
 
@@ -380,8 +383,9 @@ const TAB_ACTIONS: Record<string, string> = {
  * its title is the agent's name and its paths carry the agent's id.
  *
  * `access` is the agent's record once loaded: each tab shows only when the
- * caller's role allows its page (Overview `view`, Logs `view_logs`,
- * Schedules `manage_schedules`). Until the record arrives every tab shows,
+ * caller's role allows its page (Overview `view`, Logs and Conversation
+ * insights `view_logs`, Schedules `manage_schedules`); Conversation insights
+ * also only while the server labels conversations. Until the record arrives every tab shows,
  * and the route guard sends a caller who may not open a page back to the
  * list.
  */
@@ -406,6 +410,13 @@ export function buildAgentSection(
       icon: ScrollText,
     },
     {
+      key: 'insights',
+      path: agentInsightsPath(agentId),
+      labelKey: 'agents.pageHeader.tabs.insights',
+      icon: Lightbulb,
+      feature: 'analytics',
+    },
+    {
       key: 'schedules',
       path: agentSchedulesPath(agentId),
       labelKey: 'agents.pageHeader.tabs.schedules',
@@ -421,6 +432,7 @@ export function buildAgentSection(
     matches: [
       agentEditPath(agentId, workflow),
       agentLogsPath(agentId),
+      agentInsightsPath(agentId),
       agentSchedulesPath(agentId),
     ],
     parentPath: AGENTS_MANAGE_ROOT,

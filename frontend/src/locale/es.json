@@ -683,7 +683,6 @@
         "description": "Estimado por el modelo de decisión a partir de cada conversación. Cada cifra va con el rango en el que es más probable que esté.",
         "learnMore": "Más información",
         "coverage": "{{labelled}} de {{total}} respuestas etiquetadas",
-        "serverOff": "La información de las conversaciones está desactivada en este servidor. Configura DECISION_ANALYTICS_ENABLED=true en los ajustes del servidor para activarla.",
         "agentOff": "La información de las conversaciones está desactivada para este agente.",
         "agentOffLink": "Actívala en los ajustes del agente",
         "noTraffic": "No hay conversaciones en este periodo.",
@@ -730,6 +729,7 @@
         },
         "panels": {
           "answerStatus": "Estado de las respuestas a lo largo del tiempo",
+          "sentiment": "Sentimiento a lo largo del tiempo",
           "whyNot": "Por qué no se respondió del todo",
           "requestType": "Tipo de solicitud",
           "topic": "Tema",
@@ -794,6 +794,11 @@
             "accountBilling": "Cuenta o facturación",
             "chitChat": "Charla",
             "other": "Otro"
+          },
+          "sentiment": {
+            "positive": "Positivo",
+            "neutral": "Neutral",
+            "negative": "Negativo"
           }
         }
       },
@@ -1029,6 +1034,7 @@
         "frustrated": "Frustración",
         "asksHuman": "Pidió una persona",
         "negativeReaction": "Reacción negativa",
+        "negativeSentiment": "Sentimiento negativo",
         "tags": "Etiquetas propias",
         "hint": "Las etiquetas son estimaciones y pueden equivocarse.",
         "conversation": "Conversación",
@@ -2754,6 +2760,7 @@
       "tabs": {
         "overview": "Resumen",
         "logs": "Registros",
+        "insights": "Información de las conversaciones",
         "schedules": "Programaciones"
       },
       "fallbackName": "Agente sin título",

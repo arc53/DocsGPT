@@ -1,5 +1,6 @@
-import { CalendarClock, Monitor, ScrollText } from 'lucide-react';
+import { CalendarClock, Lightbulb, Monitor, ScrollText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -9,12 +10,14 @@ import { LoadingState } from '@/components/ui/loading-state';
 
 import { BackLink } from '../../../navigation/SectionPageHeader';
 import SectionShell from '../../../navigation/SectionShell';
+import { selectAnalyticsEnabled } from '../../../preferences/preferenceSlice';
 import { canAgent } from '../../agentAccess';
 import AgentPageToolbar, {
   LastUsedMeta,
 } from '../../components/AgentPageToolbar';
 import {
   AGENTS_MANAGE_ROOT,
+  agentInsightsPath,
   agentLogsPath,
   agentSchedulesPath,
 } from '../../paths';
@@ -41,6 +44,7 @@ export default function MobileBlocker({
   loading?: boolean;
 }) {
   const { t } = useTranslation();
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
   if (loading) {
     return (
       <div className="h-full lg:hidden">
@@ -78,6 +82,16 @@ export default function MobileBlocker({
       icon: ScrollText,
       label: t('agents.pageHeader.tabs.logs'),
     },
+    ...(analyticsEnabled
+      ? [
+          {
+            action: 'view_logs',
+            to: agentInsightsPath(agent.id),
+            icon: Lightbulb,
+            label: t('agents.pageHeader.tabs.insights'),
+          },
+        ]
+      : []),
     {
       action: 'manage_schedules',
       to: agentSchedulesPath(agent.id),

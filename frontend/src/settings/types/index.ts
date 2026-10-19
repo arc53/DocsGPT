@@ -157,7 +157,7 @@ export type LogData = {
   /**
    * A chat row's conversation labels that clear the filter threshold:
    * `docs_gap`, `not_answered`, `frustrated`, `asks_human`,
-   * `negative_reaction`, `tag:<id>`.
+   * `negative_reaction`, `negative_sentiment`, `tag:<id>`.
    */
   labels?: string[];
   /** A running answer: who asked (`api`, `shared` or the owner's own `chat`). */

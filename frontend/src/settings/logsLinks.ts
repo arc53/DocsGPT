@@ -7,6 +7,7 @@ export const LOG_LABELS = [
   'frustrated',
   'asks_human',
   'negative_reaction',
+  'negative_sentiment',
 ] as const;
 
 export type LogLabel = (typeof LOG_LABELS)[number] | `tag:${string}`;

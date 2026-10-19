@@ -663,7 +663,6 @@
         "description": "由决策模型根据每段对话估算。每个数字都附有它最可能落入的范围。",
         "learnMore": "了解更多",
         "coverage": "已标注 {{labelled}}/{{total}} 条回答",
-        "serverOff": "此服务器已关闭对话洞察。要开启，请在服务器设置中设置 DECISION_ANALYTICS_ENABLED=true。",
         "agentOff": "此智能体已关闭对话洞察。",
         "agentOffLink": "在智能体设置中开启",
         "noTraffic": "此期间没有对话。",
@@ -706,6 +705,7 @@
         },
         "panels": {
           "answerStatus": "回答状态随时间变化",
+          "sentiment": "情绪随时间变化",
           "whyNot": "未完全回答的原因",
           "requestType": "请求类型",
           "topic": "主题",
@@ -766,6 +766,11 @@
             "accountBilling": "账户或账单",
             "chitChat": "闲聊",
             "other": "其他"
+          },
+          "sentiment": {
+            "positive": "正面",
+            "neutral": "中性",
+            "negative": "负面"
           }
         }
       },
@@ -991,6 +996,7 @@
         "frustrated": "不满",
         "asksHuman": "要求人工",
         "negativeReaction": "负面反应",
+        "negativeSentiment": "负面情绪",
         "tags": "自定义标签",
         "hint": "标注是估算结果，可能有误。",
         "conversation": "对话",
@@ -2664,6 +2670,7 @@
       "tabs": {
         "overview": "概览",
         "logs": "日志",
+        "insights": "对话洞察",
         "schedules": "计划"
       },
       "fallbackName": "未命名智能体",

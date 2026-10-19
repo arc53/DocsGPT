@@ -11,7 +11,7 @@ import { Callout } from 'nextra/components'
 DocsGPT records every chat, API call, scheduled run and webhook run. You can review them in two places:
 
 - **Settings → Analytics** and **Settings → Logs** (under **Insights**) cover your account.
-- An agent's **Logs** tab covers that one agent: the same charts, its guardrail activity and its logs.
+- An agent's **Logs** tab covers that one agent: the same charts, its guardrail activity and its logs. Its **Conversation insights** tab holds the agent's [conversation insights](#conversation-insights) and [docs gaps](#docs-gaps).
 
 For a readable list of what your automations did (scheduled, webhook and workflow runs, background jobs and monitor wakes), use [Activity → History](/Using/activity#history); Logs stays the full technical record.
 
@@ -22,9 +22,9 @@ For metrics and traces sent to an external backend such as Grafana or Honeycomb,
 | Page | Shows |
 | --- | --- |
 | **Settings → Analytics / Logs** | Traffic recorded under your account: your own chats, plus calls through your agents' API keys, webhooks and schedules. When a teammate chats with an agent you shared, that traffic is recorded under their account, not yours. |
-| An agent's **Logs** tab | All traffic on that agent, whoever sent it: your chats, teammates' chats, public links, the API key, webhooks and schedules. |
+| An agent's **Logs** and **Conversation insights** tabs | All traffic on that agent, whoever sent it: your chats, teammates' chats, public links, the API key, webhooks and schedules. |
 
-Conversation insights and docs gaps follow the same rules as the page they're on. The agent's **Logs** tab is open to the owner and editors. Viewers see it only when the owner turns on **Viewers can see logs** in the agent's share dialog (see [Teams and sharing](/Using/teams-and-sharing)).
+Conversation insights and docs gaps follow the same rules as the page they're on. An agent's **Logs** and **Conversation insights** tabs are open to the owner and editors. Viewers see them only when the owner turns on **Viewers can see logs** in the agent's share dialog (see [Teams and sharing](/Using/teams-and-sharing)).
 
 ## Analytics
 
@@ -52,9 +52,9 @@ The charts below them:
 
 ## Conversation insights
 
-Thumbs are rarely given. **Conversation insights** estimate from the conversations themselves whether answers helped, what people ask about, how they react and where the docs fall short. The [decision model](/Models/decision-model) reads each stored conversation in the background and labels it with probabilities; nothing runs while someone is chatting. The section sits below the charts on **Settings → Analytics** and on an agent's **Logs** tab, and follows the period picked at the top.
+Thumbs are rarely given. **Conversation insights** estimate from the conversations themselves whether answers helped, what people ask about, how they react and where the docs fall short. The [decision model](/Models/decision-model) reads each stored conversation in the background and labels it with probabilities; nothing runs while someone is chatting. For your account, the section sits below the charts on **Settings → Analytics** and follows the period picked at the top. For one agent, it is the agent's **Conversation insights** tab, with its own period picker.
 
-It is off until the operator sets `DECISION_ANALYTICS_ENABLED=true` (see [Conversation analytics](/Models/decision-model#conversation-analytics)). Until then admins see a note saying so, and other users see no insights section. An agent whose owner turned labelling off shows **Conversation insights are off for this agent**, with a link to its settings for those who can edit it.
+It is off until the operator sets `DECISION_ANALYTICS_ENABLED=true` (see [Conversation analytics](/Models/decision-model#conversation-analytics)). Until then there is no insights section on **Settings → Analytics** and no **Conversation insights** tab. An agent whose owner turned labelling off shows **Conversation insights are off for this agent**, with a link to its settings for those who can edit it.
 
 Labels appear a few minutes after each message: a background sweep runs every 5 minutes and leaves a message a minute to settle. **Goal met** and tags wait until a conversation has been quiet for 30 minutes. When labelling is first turned on, the last 7 days are labelled, newest first. While some answers in the period are still unlabelled, the header says how many are done, such as **118 of 120 answers labelled**.
 
@@ -71,11 +71,12 @@ Labels appear a few minutes after each message: a background sweep runs every 5 
 The panels below them:
 
 - **Answer status over time**: per interval, answers that were **Fully answered** or **Partially answered**, where the assistant **Said it didn't know**, or where it **Asked for details**. Greetings and small talk are not drawn.
+- **Sentiment over time**: per interval, the tone of users' replies to answers: **Positive**, **Neutral** (factual; describing a problem is neutral) or **Negative**.
+- **Implicit feedback**: how users reply to answers, per interval: **Thanks or confirmed**, **Asked again** (the same question rephrased, a sign the answer didn't help) and **Pushback or complaint**. Read it next to the thumbs under **User feedback** on Analytics: a large gap between thumbs-down and pushback is worth a look.
 - **Why not fully answered**: why answers fell short: **Docs missing or not found**, **Out of scope** (not about your product), **Unsupported feature** (a feature request), **Needs account access or staff**, **Unclear question** or **Other**. Each answer counts by how likely it fell short, so a fully answered one adds almost nothing. The shares are of all labelled answers.
 - **Request type**: **Troubleshooting**, **How-to**, **Fact lookup**, **Explanation**, **Comparison**, **Feature request**, **Account or billing**, **Small talk** or **Other**, as a share of user messages.
 - **Topic**: the part of the docs each message is about, from the agent's [topic list](#topics). Only on an agent with topics. A short follow-up such as "and on Windows?" takes the topic of the question it follows, weighted by how likely it is a follow-up.
 - **Tags**: the share of conversations each of the agent's [tags](#tags) applies to.
-- **Implicit feedback**, beside **User feedback**: how users reply to answers, per interval: **Thanks or confirmed**, **Asked again** (the same question rephrased, a sign the answer didn't help) and **Pushback or complaint**. Read it next to the thumbs: a large gap between thumbs-down and pushback is worth a look.
 
 ### How to read the figures
 
@@ -93,6 +94,7 @@ How each label holds up was measured on 2,500 real conversations from Arc53's ho
 | Goal met | Headline | AUROC 0.89 | ±6.7 points |
 | Frustrated | Headline | AUROC 0.99 | ±2.4 points |
 | Asked for a person | Headline | AUROC 0.99 | ±1.4 points |
+| Sentiment | Headline | 96.3% | ±2.9 points |
 | Tags | Headline | Not measured there; 98% balanced accuracy on tag definitions the model had never seen, in simulated conversations | ±2.2 points |
 | Why not fully answered | Estimated | 61.5% | ±13.2 points |
 | Implicit feedback | Estimated | 65.9% | ±10 points |
@@ -103,17 +105,16 @@ For a yes/no label, AUROC is the chance that a random "yes" scores above a rando
 
 ### Replies only
 
-**Frustrated**, **Asked for a person** and **Implicit feedback** read the user's reply to an answer, so only a message sent after an answer has them. A conversation's first message never counts: a first message asking for a person is not caught (its request type may read **Account or billing**). Many conversations are a single question, so these figures are shares of replies, and their tiles say how many.
+**Frustrated**, **Asked for a person**, **Sentiment** and **Implicit feedback** read the user's reply to an answer, so only a message sent after an answer has them. A conversation's first message never counts: a first message asking for a person is not caught (its request type may read **Account or billing**). Many conversations are a single question, so these figures are shares of replies, and their tiles say how many.
 
 ### Languages
 
-The model was trained on English, Spanish, Chinese and Russian. In all four, frustration, asking for a person, goal met and tags are within 3 points of each other. Answer status, why not fully answered and topic are 4 to 9 points less accurate in Russian, and implicit feedback was 14 points less accurate in Chinese. Other languages are labelled too, with accuracy nobody has measured.
+The model was trained on English, Spanish, Chinese and Russian. In all four, sentiment, frustration, asking for a person, goal met and tags are within 3 points of each other. Answer status, why not fully answered and topic are 4 to 9 points less accurate in Russian, and implicit feedback was 14 points less accurate in Chinese. Other languages are labelled too, with accuracy nobody has measured.
 
 When more than 10% of the messages behind one of those labels are in a language it reads less accurately, a note above the tiles gives the share and names the labels. A message's language is told from its script (Chinese, Cyrillic, Japanese, Korean) and, for Latin script, from common words: Spanish, French, German, Portuguese and Italian are told apart from English. A short message with too few common words counts as English.
 
 ### What is not shown
 
-- **Sentiment** is labelled and returned by the API but not shown: frustration and implicit feedback carry the same signal.
 - A per-conversation resolution and experience score are stored for a later release and not shown yet.
 - No probability of a single message, and no count of messages "with" a label. The [Logs label filter](#labels-in-logs) is the one place a threshold is used.
 - Tool calls are not labelled.
@@ -172,14 +173,14 @@ Each tag is one more question per conversation. On a CPU-only server, keep them 
 
 ### Weekly docs-gaps notification
 
-Off by default. Once a week the agent's owner gets a notification titled with the agent's name, listing its top docs-gap topics with their expected counts (the total, for an agent without topics); **Open** goes to the agent's docs gaps. It shows as a toast while a DocsGPT tab is open and as a Web Push notification otherwise, when the operator has set Web Push up (see [Notifications](/Tools/background-jobs#notifications)). A week with less than half an expected gap sends nothing. Editors can turn it on, but only the owner receives it.
+Off by default. Once a week the agent's owner gets a notification titled with the agent's name, listing its top docs-gap topics with their expected counts (the total, for an agent without topics); **Open** goes to the docs gaps on the agent's **Conversation insights** tab. It shows as a toast while a DocsGPT tab is open and as a Web Push notification otherwise, when the operator has set Web Push up (see [Notifications](/Tools/background-jobs#notifications)). A week with less than half an expected gap sends nothing. Editors can turn it on, but only the owner receives it.
 
 ## Labels and privacy
 
 - **Labels hold no text.** Each is a probability over fixed options, plus the owner's topic and tag names. The example questions under Docs gaps and in Logs are read from the conversation itself, as Logs always has.
 - **They stay off the conversation.** Labels live in their own table (`conversation_labels`), never in the message, so the chat user and shared conversations never see them.
 - **They go with the conversation.** Deleting a conversation deletes its labels, and editing or regenerating a message deletes the labels that read it. A daily task deletes labels older than 90 days (`ANALYTICS_RETENTION_DAYS`).
-- **The same people see them as see the logs**: on an agent's **Logs** tab its owner and editors, and viewers when **Viewers can see logs** is on; on **Settings → Analytics**, the traffic recorded under your account; and personal access tokens with `analytics:read`.
+- **The same people see them as see the logs**: on an agent's **Conversation insights** and **Logs** tabs its owner and editors, and viewers when **Viewers can see logs** is on; on **Settings → Analytics**, the traffic recorded under your account; and personal access tokens with `analytics:read`.
 - **Where the text goes.** By default the model runs inside your DocsGPT stack and the text never leaves it. In [API mode](/Models/decision-model#api-mode) the conversation text goes to the decision server the operator configured, which should be one trusted with that data, as an LLM provider is.
 - **They describe people's messages**, such as a reply that was frustrated. Turn off **Label this agent's conversations** for an agent whose users should not be labelled; the operator stops all labelling with `DECISION_ANALYTICS_ENABLED=false`.
 
@@ -203,12 +204,12 @@ Each row shows the time, the event type, the action, how long it took and the su
 
 ### Labels in Logs
 
-While conversation insights are on, chat rows show their labels as chips: **Docs gap**, **Not fully answered**, **Negative reaction**, **Frustrated**, **Asked for a person** and the agent's tags. The label filter, next to the event type, lists the same labels, and on an agent's **Logs** tab its tags.
+While conversation insights are on, chat rows show their labels as chips: **Docs gap**, **Not fully answered**, **Negative reaction**, **Negative sentiment**, **Frustrated**, **Asked for a person** and the agent's tags. The label filter, next to the event type, lists the same labels, and on an agent's **Logs** tab its tags.
 
 A row has a label when the model gives it even odds or better (`ANALYTICS_FILTER_MIN_PROBABILITY`, 0.5), so chips and the filter are wrong now and then, both ways: use them to find conversations, and the [insights](#how-to-read-the-figures), which use no threshold, to count them.
 
-- **Negative reaction** means the user asked again, pushed back or complained. It, **Frustrated** and **Asked for a person** sit on the row of the user message that showed them, the reply to the answer before.
-- **Docs gap** takes the place of **Not fully answered** on the same row, since a gap is one kind of it.
+- **Negative reaction** means the user asked again, pushed back or complained; **Negative sentiment**, that the reply's tone was negative. They, **Frustrated** and **Asked for a person** sit on the row of the user message that showed them, the reply to the answer before.
+- **Docs gap** takes the place of **Not fully answered** on the same row, since a gap is one kind of it, and **Frustrated** takes the place of **Negative sentiment**.
 - A row shows up to three chips, and **+2** for the rest.
 - An example question under [Docs gaps](#docs-gaps) opens Logs on its conversation, shown as a **Conversation** chip in the filter row. Remove the chip to see every conversation again.
 
@@ -241,7 +242,7 @@ The same data is available over the API, scoped the same way, with an agent's id
 | `conversation_id` | The turns of one conversation, and the scheduled runs that wrote to it. |
 | `passthrough` | Chat turns whose passthrough values match every given key, compared as text: `{"user_id": "emp-42"}`. Up to 8 keys. |
 | `feedback` | `like` or `dislike`: chat turns rated that way. |
-| `label` | `not_answered`, `docs_gap`, `frustrated`, `asks_human`, `negative_reaction` or `tag:<id>`: chat turns with that label at even odds or better. Any other value is a 400. |
+| `label` | `not_answered`, `docs_gap`, `frustrated`, `asks_human`, `negative_reaction`, `negative_sentiment` or `tag:<id>`: chat turns with that label at even odds or better. Any other value is a 400. |
 | `date_from`, `date_to` | Entries at or after `date_from` and before `date_to`, as ISO 8601 moments. A moment without a time zone is UTC. |
 
 ## Let an agent review the logs

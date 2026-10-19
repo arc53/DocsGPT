@@ -195,20 +195,39 @@ describe('buildAgentSection tabs by role', () => {
     ).map((item) => item.key);
 
   it('shows every tab before the agent has loaded', () => {
-    expect(keys()).toEqual(['overview', 'logs', 'schedules']);
+    expect(keys()).toEqual(['overview', 'logs', 'insights', 'schedules']);
   });
 
-  it('shows an editor all three tabs', () => {
+  it('shows an editor every tab', () => {
     expect(keys(['view', 'view_logs', 'manage_schedules'])).toEqual([
       'overview',
       'logs',
+      'insights',
       'schedules',
     ]);
   });
 
-  it('shows a viewer no tabs, or Logs when the owner shares them', () => {
+  it('shows a viewer no tabs, or Logs and insights when the owner shares logs', () => {
     expect(keys(['pin', 'use'])).toEqual([]);
-    expect(keys(['pin', 'use', 'view_logs'])).toEqual(['logs']);
+    expect(keys(['pin', 'use', 'view_logs'])).toEqual(['logs', 'insights']);
+  });
+
+  it('hides Conversation insights while the server labels no conversations', () => {
+    const visible = (analytics: boolean) =>
+      getVisibleGroups(buildAgentSection('a1', 'Bot', false), {
+        features: { analytics },
+      })
+        .flatMap((group) => group.items)
+        .map((item) => item.key);
+    expect(visible(false)).toEqual(['overview', 'logs', 'schedules']);
+    expect(visible(true)).toContain('insights');
+  });
+
+  it('owns the agent insights route', () => {
+    const section = buildAgentSection('a1', 'Bot', false);
+    expect(getActiveItem(section, '/agents/manage/insights/a1')?.key).toBe(
+      'insights',
+    );
   });
 });
 

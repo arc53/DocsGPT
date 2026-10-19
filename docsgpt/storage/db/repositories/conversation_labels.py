@@ -115,6 +115,7 @@ LOG_LABELS: Dict[str, tuple[str, str, tuple[str, ...]]] = {
     "not_answered": ("message", "answer_status",
                      ("partially answered", "declined, no information", "asked a clarifying question")),
     "negative_reaction": ("reply", "reaction", NEGATIVE_REACTIONS),
+    "negative_sentiment": ("reply", "sentiment", ("0",)),
     "frustrated": ("reply", "frustrated", ("yes",)),
     "asks_human": ("reply", "asks_human", ("yes",)),
 }

@@ -29,6 +29,19 @@ describe('labelChips', () => {
     ).toEqual(['not_answered']);
   });
 
+  it('lets frustration stand for a negative tone', () => {
+    expect(
+      labelChips(['negative_sentiment', 'frustrated'], {}, name).map(
+        (chip) => chip.id,
+      ),
+    ).toEqual(['frustrated']);
+    expect(
+      labelChips(['negative_reaction', 'negative_sentiment'], {}, name).map(
+        (chip) => chip.id,
+      ),
+    ).toEqual(['negative_reaction', 'negative_sentiment']);
+  });
+
   it('names tags from the agent, and leaves out a tag it has no name for', () => {
     expect(
       labelChips(

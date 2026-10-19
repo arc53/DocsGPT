@@ -679,11 +679,10 @@
         }
       },
       "insights": {
-        "heading": "Aperçu des conversations",
+        "heading": "Analyse des conversations",
         "description": "Estimé par le modèle de décision à partir de chaque conversation. Chaque chiffre est accompagné de la fourchette où il se situe le plus probablement.",
         "learnMore": "En savoir plus",
         "coverage": "{{labelled}} réponses analysées sur {{total}}",
-        "serverOff": "L’aperçu des conversations est désactivé sur ce serveur. Définissez DECISION_ANALYTICS_ENABLED=true dans les paramètres du serveur pour l’activer.",
         "agentOff": "L’aperçu des conversations est désactivé pour cet agent.",
         "agentOffLink": "Activez-le dans les paramètres de l’agent",
         "noTraffic": "Aucune conversation sur cette période.",
@@ -730,6 +729,7 @@
         },
         "panels": {
           "answerStatus": "Statut des réponses dans le temps",
+          "sentiment": "Sentiment au fil du temps",
           "whyNot": "Pourquoi la réponse est incomplète",
           "requestType": "Type de demande",
           "topic": "Sujet",
@@ -794,6 +794,11 @@
             "accountBilling": "Compte ou facturation",
             "chitChat": "Échange informel",
             "other": "Autre"
+          },
+          "sentiment": {
+            "positive": "Positif",
+            "neutral": "Neutre",
+            "negative": "Négatif"
           }
         }
       },
@@ -1029,6 +1034,7 @@
         "frustrated": "Frustration",
         "asksHuman": "Demande d’un humain",
         "negativeReaction": "Réaction négative",
+        "negativeSentiment": "Sentiment négatif",
         "tags": "Étiquettes personnalisées",
         "hint": "Les étiquettes sont des estimations et peuvent être fausses.",
         "conversation": "Conversation",
@@ -2754,6 +2760,7 @@
       "tabs": {
         "overview": "Aperçu",
         "logs": "Journaux",
+        "insights": "Analyse des conversations",
         "schedules": "Planifications"
       },
       "fallbackName": "Agent sans titre",

@@ -195,20 +195,9 @@ describe('ConversationInsights', () => {
   const tile = (key: string) =>
     container.querySelector<HTMLElement>(`[data-testid="insight-${key}"]`)!;
 
-  it('tells an administrator how to turn insights on, and nothing else', () => {
+  it('shows nothing at all while the server has it off, to an administrator too', () => {
     render(data({ available: false, enabled: false }));
-    const note = section()!.querySelector('[role="note"]')!;
-    expect(note.textContent).toBe('settings.analytics.insights.serverOff');
-    expect(container.querySelector('[data-testid="insight-tiles"]')).toBeNull();
-    expect(
-      container.querySelector('[data-testid="docs-gaps-stub"]'),
-    ).toBeNull();
-  });
-
-  it('shows no section to anyone else while the server has it off', () => {
-    store.state.preference.roles = [];
-    render(data({ available: false, enabled: false }));
-    expect(section()).toBeNull();
+    expect(container.innerHTML).toBe('');
   });
 
   it("links an agent's editors to its settings when the agent has it off", () => {
@@ -219,9 +208,11 @@ describe('ConversationInsights', () => {
     expect(link.getAttribute('href')).toBe('/agents/manage/edit/a1');
   });
 
-  it("shows nothing about the agent's switch to someone who can't change it", () => {
+  it("says the agent has it off, with no link, to someone who can't change it", () => {
     render(data({ enabled: false }), { agentProp: agent(['view']) });
-    expect(section()).toBeNull();
+    const note = section()!.querySelector('[role="note"]')!;
+    expect(note.textContent).toBe('settings.analytics.insights.agentOff');
+    expect(note.querySelector('a')).toBeNull();
   });
 
   it('says when there was no traffic, and when labelling has only started', () => {
@@ -325,7 +316,9 @@ describe('ConversationInsights', () => {
     const badges = Array.from(
       section()!.querySelectorAll<HTMLElement>('button[data-variant]'),
     );
+    // Implicit feedback, request type, why not fully answered.
     expect(badges.map((badge) => badge.textContent)).toEqual([
+      'settings.analytics.insights.tiers.estimated',
       'settings.analytics.insights.tiers.estimated',
       'settings.analytics.insights.tiers.estimated',
     ]);
@@ -333,7 +326,7 @@ describe('ConversationInsights', () => {
       true,
     );
     const lists = section()!.querySelectorAll('[role="list"]');
-    // Request type sits beside the chart, then why not fully answered.
+    // Request type sits beside the third chart, then why not fully answered.
     expect(lists[0].getAttribute('aria-label')).toBe(
       'settings.analytics.insights.panels.requestType',
     );
@@ -359,6 +352,65 @@ describe('ConversationInsights', () => {
     expect(
       container.querySelector('[data-testid="docs-gaps-stub"]'),
     ).not.toBeNull();
+  });
+
+  it('charts answer status, sentiment and implicit feedback first, in that order', () => {
+    const response = data();
+    response.totals.sentiment = {
+      tier: 'dashboard',
+      n: 40,
+      options: {
+        negative: option(6, 0.15, 0.08, 0.24),
+        neutral: option(26, 0.65, 0.55, 0.74),
+        positive: option(8, 0.2, 0.12, 0.3),
+      },
+    };
+    render(response);
+    const grid = tile('answer-status').parentElement!;
+    expect(
+      Array.from(grid.children)
+        .slice(0, 3)
+        .map((panel) => panel.getAttribute('data-testid')),
+    ).toEqual([
+      'insight-answer-status',
+      'insight-sentiment',
+      'implicit-feedback',
+    ]);
+    expect(tile('sentiment').textContent).toContain(
+      [
+        'settings.analytics.insights.options.sentiment.positive',
+        'settings.analytics.insights.options.sentiment.neutral',
+        'settings.analytics.insights.options.sentiment.negative',
+      ].join(','),
+    );
+  });
+
+  it('waits for enough replies before charting sentiment', () => {
+    render(data());
+    expect(tile('sentiment').querySelector('[data-testid="chart"]')).toBeNull();
+    expect(tile('sentiment').textContent).toContain(
+      'settings.analytics.insights.notEnoughReplies',
+    );
+  });
+
+  it('opens with its description, not a heading, as a page of its own', () => {
+    act(() =>
+      root.render(
+        <MemoryRouter>
+          <ConversationInsights
+            state="ready"
+            data={data()}
+            filterOption="last_30_days"
+            onRetry={() => undefined}
+            standalone
+          />
+        </MemoryRouter>,
+      ),
+    );
+    expect(section()!.querySelector('h2')).toBeNull();
+    expect(section()!.firstElementChild!.textContent).toContain(
+      'settings.analytics.insights.description',
+    );
   });
 
   it('draws answer status as four outcomes, greetings left out', () => {

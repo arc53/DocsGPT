@@ -30,15 +30,9 @@ vi.mock('../api/services/userService', () => ({
       }),
   },
 }));
-const seen = vi.hoisted(() => ({
-  analytics: [] as unknown[],
-  logs: [] as unknown[],
-}));
+const seen = vi.hoisted(() => ({ logs: [] as unknown[] }));
 vi.mock('../settings/Analytics', () => ({
-  default: (props: { agent?: unknown }) => {
-    seen.analytics.push(props.agent);
-    return <div data-testid="analytics" />;
-  },
+  default: () => <div data-testid="analytics" />,
 }));
 vi.mock('../settings/Logs', () => ({
   default: (props: { analytics?: unknown }) => {
@@ -91,9 +85,9 @@ describe('AgentLogs', () => {
     expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
   });
 
-  // Insights link to the agent's settings; Logs filters by its labels and
-  // tags, and is the `#logs` target of a drill-down.
-  it('hands the agent to insights and its analytics to Logs', async () => {
+  // Logs filters by the agent's labels and tags, and is the `#logs` target
+  // of a drill-down from its Conversation insights.
+  it("hands the agent's analytics to Logs", async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={['/agents/manage/logs/a1']}>
@@ -106,7 +100,6 @@ describe('AgentLogs', () => {
         </MemoryRouter>,
       );
     });
-    expect(seen.analytics.at(-1)).toMatchObject({ id: 'a1' });
     expect(seen.logs.at(-1)).toEqual({
       enabled: true,
       tags: [{ id: 'a1b2c3d4', name: 'Pricing', description: 'Prices' }],

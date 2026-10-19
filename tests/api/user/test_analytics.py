@@ -1641,8 +1641,9 @@ class TestLogsLabels:
         labels = {row["message_id"]: row["labels"] for row in data["logs"]}
         # docs gap and not fully answered on the turns; frustration on the reply that showed it; tags everywhere
         assert labels[first] == ["docs_gap", "not_answered", f"tag:{_TAG}"]
-        assert labels[second] == ["docs_gap", "not_answered", "negative_reaction", "frustrated", f"tag:{_TAG}"]
-        assert labels[calm_second] == ["negative_reaction", f"tag:{_TAG}"]
+        assert labels[second] == ["docs_gap", "not_answered", "negative_reaction", "negative_sentiment", "frustrated",
+                                  f"tag:{_TAG}"]
+        assert labels[calm_second] == ["negative_reaction", "negative_sentiment", f"tag:{_TAG}"]
         assert data["tag_names"] == {_TAG: "Pricing question"}
 
     def test_label_filters(self, app, pg_conn):
@@ -1657,6 +1658,7 @@ class TestLogsLabels:
         assert ids({"label": "docs_gap"}) == {first, second}
         assert ids({"label": "not_answered"}) == {first, second}
         assert len(ids({"label": "negative_reaction"})) == 2
+        assert len(ids({"label": "negative_sentiment"})) == 2
         assert len(ids({"label": f"tag:{_TAG}"})) == 4
         assert ids({"label": "asks_human"}) == set()
         assert ids({"label": "frustrated", "conversation_id": cid}) == {second}

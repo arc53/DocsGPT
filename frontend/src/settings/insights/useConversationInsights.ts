@@ -8,8 +8,7 @@ import type { InsightsFetchStatus } from './format';
 
 /**
  * The window's conversation insights (POST /api/get_conversation_insights),
- * fetched again when the agent or the time filter changes. One fetch feeds
- * both the implicit-feedback panel and the insights section.
+ * fetched again when the agent or the time filter changes.
  *
  * Args:
  *   agentId: The agent's id, or nothing for the whole account.

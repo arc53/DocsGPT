@@ -20,6 +20,7 @@ import {
   setConversations,
   setConversationsLoading,
   setPrompts,
+  setAnalyticsEnabled,
   setAttachmentBudgetShare,
   setAuthRequired,
   setSourceDocs,
@@ -35,7 +36,8 @@ import type { AppDispatch } from '../store';
  * - Fetching and setting up source documents
  * - Fetching and setting up prompts
  * - Fetching and setting up conversations
- * - Reading which speech features the server has switched on
+ * - Reading which speech features the server has switched on, and whether
+ *   conversation insights are
  *
  * @param isAuthLoading -
  */
@@ -59,6 +61,9 @@ export default function useDataInitializer(isAuthLoading: boolean) {
         dispatch(setAuthRequired(config?.requires_auth === true));
         // A backend from before connectors has no flag: hide the page.
         dispatch(setConnectorsEnabled(config?.connectors_enabled === true));
+        dispatch(
+          setAnalyticsEnabled(config?.decision_analytics_enabled === true),
+        );
         const share = Number(config?.attachment_budget_share);
         dispatch(
           setAttachmentBudgetShare(

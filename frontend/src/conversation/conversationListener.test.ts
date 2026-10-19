@@ -97,6 +97,7 @@ const makeStore = (
     sttAvailable: true,
     authRequired: false,
     attachmentBudgetShare: null,
+    analyticsEnabled: false,
   };
   const conversation: ConversationState = {
     queries: [],

@@ -60,6 +60,9 @@ describe('matchAgentScopedRoute', () => {
       workflow: false,
     });
     expect(matchAgentScopedRoute('/agents/manage/logs/a1')?.page).toBe('logs');
+    expect(matchAgentScopedRoute('/agents/manage/insights/a1')?.page).toBe(
+      'insights',
+    );
     expect(matchAgentScopedRoute('/agents/manage/schedules/a1')?.page).toBe(
       'schedules',
     );

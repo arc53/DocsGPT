@@ -62,11 +62,11 @@ describe('Analytics with conversation insights', () => {
     container.remove();
   });
 
-  const render = async () => {
+  const render = async (agentId?: string) => {
     await act(async () =>
       root.render(
         <MemoryRouter>
-          <Analytics agentId="a1" />
+          <Analytics agentId={agentId} />
         </MemoryRouter>,
       ),
     );
@@ -78,27 +78,35 @@ describe('Analytics with conversation insights', () => {
       .find((h) => h.textContent === 'settings.analytics.userFeedback')!
       .closest('[data-slot="card"]')!.parentElement!;
 
-  it('asks once for the window, and puts implicit feedback beside the thumbs', async () => {
+  it("shows the account's insights under the thumbs, which keep the full width", async () => {
     insights.body = examples.insights;
     await render();
     expect(userService.getConversationInsights).toHaveBeenCalledWith(
-      { api_key_id: 'a1', filter_option: 'last_30_days' },
+      { api_key_id: undefined, filter_option: 'last_30_days' },
       'token',
     );
-    expect(feedbackRow().className).toContain('xl:flex-row');
-    expect(
-      feedbackRow().querySelector('[data-testid="implicit-feedback"]'),
-    ).not.toBeNull();
-    expect(container.querySelector('[data-testid="insights"]')).not.toBeNull();
-  });
-
-  it('keeps the thumbs full width, and shows no section, while the server has it off', async () => {
-    insights.body = { ...examples.insights, available: false, enabled: false };
-    await render();
     expect(feedbackRow().className).not.toContain('xl:flex-row');
     expect(
-      container.querySelector('[data-testid="implicit-feedback"]'),
+      feedbackRow().querySelector('[data-testid="implicit-feedback"]'),
     ).toBeNull();
+    const section = container.querySelector('[data-testid="insights"]')!;
+    expect(
+      section.querySelector('[data-testid="implicit-feedback"]'),
+    ).not.toBeNull();
+  });
+
+  it('shows no section, and no note, while the server has it off', async () => {
+    insights.body = { ...examples.insights, available: false, enabled: false };
+    await render();
+    expect(container.querySelector('[data-testid="insights"]')).toBeNull();
+    expect(container.querySelector('[role="note"]')).toBeNull();
+  });
+
+  it("leaves an agent's insights to its own page", async () => {
+    vi.mocked(userService.getConversationInsights).mockClear();
+    insights.body = examples.insights;
+    await render('a1');
+    expect(userService.getConversationInsights).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="insights"]')).toBeNull();
   });
 });

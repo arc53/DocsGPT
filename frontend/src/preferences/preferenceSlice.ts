@@ -69,6 +69,9 @@ export interface Preference {
   // Share of the model's window a turn's attached files may take
   // (/api/config ``attachment_budget_share``); null until the config loads.
   attachmentBudgetShare: number | null;
+  // The decision model may label conversations (/api/config
+  // ``decision_analytics_enabled``); off until the config loads.
+  analyticsEnabled: boolean;
 }
 
 const initialState: Preference = {
@@ -103,6 +106,7 @@ const initialState: Preference = {
   sttAvailable: true,
   authRequired: false,
   attachmentBudgetShare: null,
+  analyticsEnabled: false,
 };
 
 export const prefSlice = createSlice({
@@ -279,6 +283,9 @@ export const prefSlice = createSlice({
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
     },
+    setAnalyticsEnabled: (state, action: PayloadAction<boolean>) => {
+      state.analyticsEnabled = action.payload;
+    },
   },
 });
 
@@ -313,6 +320,7 @@ export const {
   setSpeechAvailability,
   setAuthRequired,
   setAttachmentBudgetShare,
+  setAnalyticsEnabled,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -470,3 +478,5 @@ export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
 export const selectAttachmentBudgetShare = (state: RootState) =>
   state.preference.attachmentBudgetShare;
+export const selectAnalyticsEnabled = (state: RootState) =>
+  state.preference.analyticsEnabled;

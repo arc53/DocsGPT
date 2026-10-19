@@ -68,6 +68,7 @@ const preloadedState: { preference: Preference } = {
     sttAvailable: true,
     authRequired: false,
     attachmentBudgetShare: null,
+    analyticsEnabled: false,
   },
 };
 const store = configureStore({

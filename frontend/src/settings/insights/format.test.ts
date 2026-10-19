@@ -13,7 +13,6 @@ import {
   optionName,
   rangePoints,
   showsFigures,
-  showsImplicitFeedback,
   weakLanguages,
 } from './format';
 
@@ -76,12 +75,10 @@ describe('insightsState', () => {
     ).toBe('ready');
   });
 
-  it('shows figures only with labels, and implicit feedback with no traffic too', () => {
+  it('shows figures only with labels', () => {
     expect(showsFigures('partial')).toBe(true);
     expect(showsFigures('ready')).toBe(true);
     expect(showsFigures('starting')).toBe(false);
-    expect(showsImplicitFeedback('noTraffic')).toBe(true);
-    expect(showsImplicitFeedback('serverOff')).toBe(false);
   });
 });
 

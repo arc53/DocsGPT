@@ -663,7 +663,6 @@
         "description": "意思決定モデルが各会話から推定した値です。各数値には、その値が入る可能性が最も高い範囲を併記しています。",
         "learnMore": "詳細",
         "coverage": "{{total}} 件中 {{labelled}} 件の回答を分析済み",
-        "serverOff": "このサーバーでは会話インサイトがオフになっています。オンにするには、サーバーの設定で DECISION_ANALYTICS_ENABLED=true を設定してください。",
         "agentOff": "このエージェントでは会話インサイトがオフになっています。",
         "agentOffLink": "エージェントの設定でオンにする",
         "noTraffic": "この期間の会話はありません。",
@@ -706,6 +705,7 @@
         },
         "panels": {
           "answerStatus": "回答状況の推移",
+          "sentiment": "感情の推移",
           "whyNot": "完全に回答されなかった理由",
           "requestType": "依頼の種類",
           "topic": "トピック",
@@ -766,6 +766,11 @@
             "accountBilling": "アカウント・請求",
             "chitChat": "雑談",
             "other": "その他"
+          },
+          "sentiment": {
+            "positive": "肯定的",
+            "neutral": "中立",
+            "negative": "否定的"
           }
         }
       },
@@ -991,6 +996,7 @@
         "frustrated": "不満",
         "asksHuman": "担当者を希望",
         "negativeReaction": "否定的な反応",
+        "negativeSentiment": "否定的な感情",
         "tags": "タグ",
         "hint": "ラベルは推定であり、誤っていることがあります。",
         "conversation": "会話",
@@ -2666,6 +2672,7 @@
       "tabs": {
         "overview": "概要",
         "logs": "ログ",
+        "insights": "会話インサイト",
         "schedules": "スケジュール"
       },
       "fallbackName": "無題のエージェント",

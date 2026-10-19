@@ -433,7 +433,7 @@ class TestDigestAndBackfill:
         assert tasks.gap_digest() == {"sent": 1}
         (note,) = sent
         assert note["user_id"] == "owner" and note["kind"] == "docs_gaps" and note["title"] == "Docs bot"
-        assert note["url"] == f"/agents/manage/logs/{agent['id']}#docs-gaps"
+        assert note["url"] == f"/agents/manage/insights/{agent['id']}#docs-gaps"
         # four turns, each 0.56 docs missing, 70% of it about install
         assert note["body"].startswith("install 1.6")
 

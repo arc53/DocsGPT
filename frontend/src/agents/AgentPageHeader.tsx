@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
 import { type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import {
@@ -15,11 +16,13 @@ import { Button } from '@/components/ui/button';
 import { NavTab } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
+import { selectAnalyticsEnabled } from '../preferences/preferenceSlice';
 import { type AccessFields } from '../utils/accessUtils';
 import { canAgent } from './agentAccess';
 import {
   AGENTS_MANAGE_ROOT,
   agentEditPath as agentEditPathProp,
+  agentInsightsPath,
   agentLogsPath,
   agentSchedulesPath,
 } from './paths';
@@ -75,6 +78,7 @@ export default function AgentPageHeader({
   access,
 }: AgentPageHeaderProps) {
   const { t } = useTranslation();
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
 
   const editPath =
     agentEditPath ??
@@ -93,6 +97,16 @@ export default function AgentPageHeader({
         href: agentId ? agentLogsPath(agentId) : '#',
         action: 'view_logs',
       },
+      ...(analyticsEnabled
+        ? [
+            {
+              id: 'insights' as const,
+              label: t('agents.pageHeader.tabs.insights'),
+              href: agentId ? agentInsightsPath(agentId) : '#',
+              action: 'view_logs',
+            },
+          ]
+        : []),
       {
         id: 'schedules' as const,
         label: t('agents.pageHeader.tabs.schedules'),
@@ -100,7 +114,7 @@ export default function AgentPageHeader({
         action: 'manage_schedules',
       },
     ],
-    [agentId, editPath, t],
+    [agentId, analyticsEnabled, editPath, t],
   );
   const visibleTabs = tabs.filter(
     (tab) => !access || canAgent(access, tab.action),

@@ -642,7 +642,7 @@ def gap_digest(now: Optional[datetime.datetime] = None) -> dict:
         top = [(name, value) for name, value in top if name != schema.NONE_OPTION and value >= 0.5][:DIGEST_GROUPS]
         body = " · ".join(f"{name} {_count(value)}" for name, value in top) or _count(gaps["expected"])
         notify_user(user_id=agent["user_id"], conversation_id=None, kind="docs_gaps", title=agent["name"],
-                    body=body, url=f"/agents/manage/logs/{agent['id']}#docs-gaps")
+                    body=body, url=f"/agents/manage/insights/{agent['id']}#docs-gaps")
         sent += 1
     return {"sent": sent}
 

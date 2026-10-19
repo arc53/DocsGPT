@@ -704,7 +704,7 @@
           "type": "string"
         },
         "label": {
-          "description": "Only chat turns the decision model labelled this way at ANALYTICS_FILTER_MIN_PROBABILITY or better: one of docs_gap, not_answered, negative_reaction, frustrated, asks_human, or tag:<id> (a tag of the turn's conversation)",
+          "description": "Only chat turns the decision model labelled this way at ANALYTICS_FILTER_MIN_PROBABILITY or better: one of docs_gap, not_answered, negative_reaction, negative_sentiment, frustrated, asks_human, or tag:<id> (a tag of the turn's conversation)",
           "type": "string"
         },
         "level": {

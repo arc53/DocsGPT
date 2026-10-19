@@ -71,7 +71,7 @@ export default function AgentLogs() {
       )}
       {agentId && (
         <>
-          <Analytics agentId={agentId} agent={agent} />
+          <Analytics agentId={agentId} />
           <GuardrailEvents agentId={agentId} />
           <div ref={logsRef} id="logs" className="mt-8 scroll-mt-4">
             <Logs

@@ -5,6 +5,9 @@ import { MemoryRouter } from 'react-router-dom';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+// The only selector read is whether the server labels conversations.
+const server = vi.hoisted(() => ({ analytics: false }));
+vi.mock('react-redux', () => ({ useSelector: () => server.analytics }));
 
 import AgentPageHeader from './AgentPageHeader';
 
@@ -15,6 +18,7 @@ describe('AgentPageHeader sub-nav', () => {
   let root: Root;
 
   beforeEach(() => {
+    server.analytics = false;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -126,5 +130,34 @@ describe('AgentPageHeader sub-nav', () => {
         'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
       ),
     ).toBeNull();
+  });
+
+  it('adds Conversation insights after Logs while the server labels conversations', () => {
+    server.analytics = true;
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <AgentPageHeader
+            agentId="a1"
+            agentName="Renewals"
+            onNameClick={vi.fn()}
+            access={{
+              access: 'editor',
+              allowed_actions: ['view', 'view_logs'],
+            }}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const nav = container.querySelector(
+      'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
+    );
+    const tabs = Array.from(nav?.children ?? []);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'agents.pageHeader.tabs.overview',
+      'agents.pageHeader.tabs.logs',
+      'agents.pageHeader.tabs.insights',
+    ]);
+    expect(tabs[2].getAttribute('href')).toBe('/agents/manage/insights/a1');
   });
 });

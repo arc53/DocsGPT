@@ -64,6 +64,7 @@ const LABEL_KEYS: Record<(typeof LOG_LABELS)[number], string> = {
   frustrated: 'frustrated',
   asks_human: 'asksHuman',
   negative_reaction: 'negativeReaction',
+  negative_sentiment: 'negativeSentiment',
 };
 
 type LogsProps = {

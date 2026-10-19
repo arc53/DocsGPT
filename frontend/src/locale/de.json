@@ -665,7 +665,6 @@
         "description": "Vom Entscheidungsmodell aus jedem Gespräch geschätzt. Zu jeder Zahl gehört der Bereich, in dem sie am wahrscheinlichsten liegt.",
         "learnMore": "Mehr erfahren",
         "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
-        "serverOff": "Gesprächseinblicke sind auf diesem Server ausgeschaltet. Setze DECISION_ANALYTICS_ENABLED=true in den Servereinstellungen, um sie einzuschalten.",
         "agentOff": "Gesprächseinblicke sind für diesen Agenten ausgeschaltet.",
         "agentOffLink": "In den Einstellungen des Agenten einschalten",
         "noTraffic": "Keine Gespräche in diesem Zeitraum.",
@@ -708,6 +707,7 @@
         },
         "panels": {
           "answerStatus": "Antwortstatus im Zeitverlauf",
+          "sentiment": "Stimmung im Zeitverlauf",
           "whyNot": "Warum nicht vollständig beantwortet",
           "requestType": "Art der Anfrage",
           "topic": "Thema",
@@ -768,6 +768,11 @@
             "accountBilling": "Konto oder Abrechnung",
             "chitChat": "Smalltalk",
             "other": "Sonstiges"
+          },
+          "sentiment": {
+            "positive": "Positiv",
+            "neutral": "Neutral",
+            "negative": "Negativ"
           }
         }
       },
@@ -993,6 +998,7 @@
         "frustrated": "Frustriert",
         "asksHuman": "Nach einem Menschen gefragt",
         "negativeReaction": "Negative Reaktion",
+        "negativeSentiment": "Negative Stimmung",
         "tags": "Tags",
         "hint": "Labels sind Schätzungen und können falsch sein.",
         "conversation": "Gespräch",
@@ -2680,6 +2686,7 @@
       "tabs": {
         "overview": "Übersicht",
         "logs": "Protokolle",
+        "insights": "Gesprächseinblicke",
         "schedules": "Zeitpläne"
       },
       "fallbackName": "Unbenannter Agent",

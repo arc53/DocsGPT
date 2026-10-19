@@ -53,11 +53,6 @@ export function showsFigures(state: InsightsState): boolean {
   return state === 'partial' || state === 'ready';
 }
 
-/** States in which the implicit-feedback panel sits beside the thumbs. */
-export function showsImplicitFeedback(state: InsightsState): boolean {
-  return showsFigures(state) || state === 'noTraffic';
-}
-
 /** The catch-all option of the topic question. */
 export const NONE_OF_THESE = 'none of these';
 
@@ -101,6 +96,11 @@ export const OPTION_KEYS: Record<string, Record<string, string>> = {
     'chit-chat': 'requestType.chitChat',
     other: 'requestType.other',
   },
+  sentiment: {
+    positive: 'sentiment.positive',
+    neutral: 'sentiment.neutral',
+    negative: 'sentiment.negative',
+  },
 };
 
 /** The four answer outcomes drawn over time, in order; greetings are left out. */
@@ -110,6 +110,9 @@ export const ANSWER_STATUS_SERIES = [
   'declined, no information',
   'asked a clarifying question',
 ] as const;
+
+/** Sentiment drawn over time, in order: green, grey, red from the bottom. */
+export const SENTIMENT_SERIES = ['positive', 'neutral', 'negative'] as const;
 
 /** Implicit feedback's three series and the reaction options each sums. */
 export const REACTION_SERIES = {

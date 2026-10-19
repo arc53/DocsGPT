@@ -1,4 +1,5 @@
 import {
+  Annoyed,
   CircleQuestionMark,
   FileQuestionMark,
   Frown,
@@ -36,6 +37,11 @@ const LABELS: Record<string, ChipSpec> = {
     variant: 'warning',
     icon: MessageSquareWarning,
   },
+  negative_sentiment: {
+    key: 'negativeSentiment',
+    variant: 'destructive',
+    icon: Annoyed,
+  },
   frustrated: { key: 'frustrated', variant: 'destructive', icon: Frown },
   asks_human: { key: 'asksHuman', variant: 'info', icon: Headset },
 };
@@ -49,8 +55,9 @@ type Chip = { id: string; label: string; spec?: ChipSpec };
 
 /**
  * The chips a row shows, in order: a docs gap stands for "not fully
- * answered" (it is one kind of it), and a tag whose name is unknown (a
- * deleted tag) is left out.
+ * answered" (it is one kind of it), frustration for a negative tone (it is
+ * a strong one), and a tag whose name is unknown (a deleted tag) is left
+ * out.
  */
 export function labelChips(
   labels: string[],
@@ -59,6 +66,7 @@ export function labelChips(
 ): Chip[] {
   const set = new Set(labels);
   if (set.has('docs_gap')) set.delete('not_answered');
+  if (set.has('frustrated')) set.delete('negative_sentiment');
   const known = ORDER.filter((label) => set.has(label)).map((label) => ({
     id: label,
     label: name(LABELS[label].key),

@@ -663,7 +663,6 @@
         "description": "由決策模型根據每段對話估算。每個數字都附有它最可能落入的範圍。",
         "learnMore": "了解更多",
         "coverage": "已標註 {{labelled}}/{{total}} 則回答",
-        "serverOff": "此伺服器已關閉對話洞察。若要開啟，請在伺服器設定中設定 DECISION_ANALYTICS_ENABLED=true。",
         "agentOff": "此代理已關閉對話洞察。",
         "agentOffLink": "在代理設定中開啟",
         "noTraffic": "此期間沒有對話。",
@@ -706,6 +705,7 @@
         },
         "panels": {
           "answerStatus": "回答狀態隨時間變化",
+          "sentiment": "情緒隨時間變化",
           "whyNot": "未完整回答的原因",
           "requestType": "請求類型",
           "topic": "主題",
@@ -766,6 +766,11 @@
             "accountBilling": "帳戶或帳單",
             "chitChat": "閒聊",
             "other": "其他"
+          },
+          "sentiment": {
+            "positive": "正面",
+            "neutral": "中性",
+            "negative": "負面"
           }
         }
       },
@@ -991,6 +996,7 @@
         "frustrated": "不滿",
         "asksHuman": "要求真人",
         "negativeReaction": "負面反應",
+        "negativeSentiment": "負面情緒",
         "tags": "自訂標籤",
         "hint": "標註是估算結果，可能有誤。",
         "conversation": "對話",
@@ -2666,6 +2672,7 @@
       "tabs": {
         "overview": "總覽",
         "logs": "日誌",
+        "insights": "對話洞察",
         "schedules": "排程"
       },
       "fallbackName": "未命名代理",

@@ -4,7 +4,6 @@ import { useSelector } from 'react-redux';
 import { foldSeries, OTHER_SERIES_KEY } from './foldSeries';
 
 import userService from '../api/services/userService';
-import type { Agent } from '../agents/types';
 import SkeletonLoader from '../components/SkeletonLoader';
 import StatCard from '../components/StatCard';
 import { Card } from '../components/ui/card';
@@ -18,48 +17,26 @@ import {
 } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { useLoaderState } from '../hooks';
-import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { useChartPalette } from '../utils/chartUtils';
 import { formatCount, formatDate } from '../utils/dateTimeUtils';
 import AnalyticsChart from './AnalyticsChart';
 import UsageQuota from './components/UsageQuota';
-import ConversationInsights from './insights/ConversationInsights';
-import { insightsState, showsImplicitFeedback } from './insights/format';
-import ImplicitFeedbackPanel from './insights/ImplicitFeedbackPanel';
-import { useConversationInsights } from './insights/useConversationInsights';
+import { InsightsSection } from './insights/ConversationInsights';
+import TimeFilterSelect, {
+  DEFAULT_TIME_FILTER,
+  type TimeFilter,
+} from './TimeFilterSelect';
 
 type TokenGroupBy = 'none' | 'model' | 'agent' | 'source';
 
 type AnalyticsProps = {
   agentId?: string;
-  /** The agent whose page this is, once loaded: insights link to its settings. */
-  agent?: Agent;
 };
 
-export default function Analytics({ agentId, agent }: AnalyticsProps) {
+export default function Analytics({ agentId }: AnalyticsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-
-  const filterOptions = [
-    { label: t('settings.analytics.filterOptions.hour'), value: 'last_hour' },
-    {
-      label: t('settings.analytics.filterOptions.last24Hours'),
-      value: 'last_24_hour',
-    },
-    {
-      label: t('settings.analytics.filterOptions.last7Days'),
-      value: 'last_7_days',
-    },
-    {
-      label: t('settings.analytics.filterOptions.last15Days'),
-      value: 'last_15_days',
-    },
-    {
-      label: t('settings.analytics.filterOptions.last30Days'),
-      value: 'last_30_days',
-    },
-  ];
 
   const groupByOptions: { label: string; value: TokenGroupBy }[] = [
     { label: t('settings.analytics.groupOptions.total'), value: 'none' },
@@ -100,18 +77,8 @@ export default function Analytics({ agentId, agent }: AnalyticsProps) {
     { completed: number; failed: number; skipped: number }
   > | null>(null);
 
-  const [timeFilter, setTimeFilter] = useState<{
-    label: string;
-    value: string;
-  }>({
-    label: t('settings.analytics.filterOptions.last30Days'),
-    value: 'last_30_days',
-  });
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
   const [tokenGroupBy, setTokenGroupBy] = useState<TokenGroupBy>('none');
-  // One fetch for the implicit-feedback panel and the insights section.
-  const insights = useConversationInsights(agentId, timeFilter.value);
-  const insightsView = insightsState(insights.status, insights.data);
-  const twoUpFeedback = showsImplicitFeedback(insightsView) && insights.data;
   // Side-channel = tokens spent outside a user request (title generation,
   // history compression, RAG condensing).
   const [includeSideChannel, setIncludeSideChannel] = useState(false);
@@ -258,14 +225,14 @@ export default function Analytics({ agentId, agent }: AnalyticsProps) {
   };
 
   useEffect(() => {
-    fetchMessagesData(agentId, timeFilter.value);
-    fetchFeedbackData(agentId, timeFilter.value);
-    fetchToolsData(agentId, timeFilter.value);
-    fetchScheduleData(agentId, timeFilter.value);
+    fetchMessagesData(agentId, timeFilter);
+    fetchFeedbackData(agentId, timeFilter);
+    fetchToolsData(agentId, timeFilter);
+    fetchScheduleData(agentId, timeFilter);
   }, [agentId, timeFilter]);
 
   useEffect(() => {
-    fetchTokenData(agentId, timeFilter.value, tokenGroupBy, includeSideChannel);
+    fetchTokenData(agentId, timeFilter, tokenGroupBy, includeSideChannel);
   }, [agentId, timeFilter, tokenGroupBy, includeSideChannel]);
 
   const totalMessages = Object.values(messagesData || {}).reduce(
@@ -351,26 +318,7 @@ export default function Analytics({ agentId, agent }: AnalyticsProps) {
         <p className="text-muted-foreground text-sm leading-6">
           {t('settings.analytics.subtitle')}
         </p>
-        <Select
-          value={timeFilter.value}
-          onValueChange={(value) => {
-            const opt = filterOptions.find((o) => o.value === value);
-            if (opt) setTimeFilter(opt);
-          }}
-        >
-          <SelectTrigger className="w-[125px]" size="field" shape="pill">
-            <SelectValue
-              placeholder={t('settings.analytics.filterPlaceholder')}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {filterOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
       </div>
 
       {/* Summary stat cards */}
@@ -596,21 +544,12 @@ export default function Analytics({ agentId, agent }: AnalyticsProps) {
         </Card>
       </div>
 
-      {/* Feedback Analytics: two-up with the implicit feedback while
-          insights show, else full width as before. */}
-      <div
-        className={cn(
-          'mt-4 flex w-full flex-col gap-3',
-          twoUpFeedback && 'xl:flex-row',
-        )}
-      >
+      {/* Feedback Analytics */}
+      <div className="mt-4 flex w-full flex-col gap-3">
         <Card
           variant="subtle"
           padding="lg"
-          className={cn(
-            'h-[345px] w-full overflow-hidden',
-            twoUpFeedback && 'xl:w-1/2',
-          )}
+          className="h-[345px] w-full overflow-hidden"
         >
           <SectionHeader
             as="h3"
@@ -656,17 +595,10 @@ export default function Analytics({ agentId, agent }: AnalyticsProps) {
             )}
           </div>
         </Card>
-        {twoUpFeedback && <ImplicitFeedbackPanel data={twoUpFeedback} />}
       </div>
 
-      <ConversationInsights
-        state={insightsView}
-        data={insights.data}
-        agentId={agentId}
-        agent={agent}
-        filterOption={timeFilter.value}
-        onRetry={insights.retry}
-      />
+      {/* An agent's insights are its own page. */}
+      {!agentId && <InsightsSection filterOption={timeFilter} />}
     </div>
   );
 }

@@ -1,6 +1,5 @@
-import { useId, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -15,7 +14,6 @@ import { agentEditPathFor } from '../../agents/paths';
 import type { Agent } from '../../agents/types';
 import SkeletonLoader from '../../components/SkeletonLoader';
 import StatCard from '../../components/StatCard';
-import { selectIsAdmin } from '../../preferences/preferenceSlice';
 import { useChartPalette } from '../../utils/chartUtils';
 import {
   EMPTY_VALUE,
@@ -34,6 +32,7 @@ import {
   formatEstimateRange,
   formatShare,
   formatShareRange,
+  insightsState,
   joinList,
   languageName,
   MIN_SAMPLE,
@@ -46,8 +45,12 @@ import {
   type BarRow,
   type InsightsState,
 } from './format';
+import ChartPanel from './ChartPanel';
+import ImplicitFeedbackPanel from './ImplicitFeedbackPanel';
 import IntervalBars from './IntervalBars';
+import SentimentPanel from './SentimentPanel';
 import TierBadge from './TierBadge';
+import { useConversationInsights } from './useConversationInsights';
 
 const DOCS_URL =
   'https://docs.docsgpt.cloud/Using/analytics-and-logs#conversation-insights';
@@ -63,6 +66,9 @@ const INLINE_LABELS = [
 /** Gap types derived from signals not computed yet: drawn only once they carry mass. */
 const GAP_SKIP = ['none'];
 
+/** Chart panels ahead of the bar panels in the grid. */
+const CHARTS = 3;
+
 type ConversationInsightsProps = {
   state: InsightsState;
   data: Insights | null;
@@ -71,13 +77,19 @@ type ConversationInsightsProps = {
   agent?: Agent;
   filterOption: string;
   onRetry: () => void;
+  /**
+   * The whole page (an agent's Conversation insights), whose title already
+   * names it: the section opens with its description, not a heading.
+   */
+  standalone?: boolean;
 };
 
 /**
- * The Conversation insights section of Analytics: what the decision model
- * estimated about the window's conversations, as rates with their ranges,
- * then the docs-gap report. It owns every off, empty and error message, so
- * the panels and the report render nothing in those states.
+ * Conversation insights: what the decision model estimated about the
+ * window's conversations, as rates with their ranges, then the docs-gap
+ * report. A section of the account's Analytics, and an agent's own page. It
+ * owns every off, empty and error message, so the panels and the report
+ * render nothing in those states.
  */
 export default function ConversationInsights({
   state,
@@ -86,38 +98,47 @@ export default function ConversationInsights({
   agent,
   filterOption,
   onRetry,
+  standalone = false,
 }: ConversationInsightsProps) {
   const { t } = useTranslation();
-  const isAdmin = useSelector(selectIsAdmin);
   const canEditAgent = Boolean(agent) && canAgent(agent, 'edit');
 
-  // Only someone who can act on a note sees it: the server switch is the
-  // administrator's, the agent's own switch its editors'.
-  if (state === 'serverOff' && !isAdmin) return null;
-  if (state === 'agentOff' && !canEditAgent) return null;
+  // Off on the server: nothing to show, and nothing the page can change.
+  if (state === 'serverOff') return null;
 
   const coverage = data?.coverage;
-  const header = (
+  const count =
+    state === 'partial' && coverage
+      ? t('settings.analytics.insights.coverage', {
+          labelled: formatCount(coverage.labelled_turns),
+          total: formatCount(coverage.turns),
+        })
+      : undefined;
+  const description = (
+    <>
+      {t('settings.analytics.insights.description')}{' '}
+      <Button variant="link" size="text" asChild>
+        <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+          {t('settings.analytics.insights.learnMore')}
+        </a>
+      </Button>
+    </>
+  );
+  const header = standalone ? (
+    <p className="text-muted-foreground text-sm leading-6">
+      {description}
+      {count && (
+        <>
+          <span aria-hidden> · </span>
+          <span className="tabular-nums">{count}</span>
+        </>
+      )}
+    </p>
+  ) : (
     <SectionHeader
       title={t('settings.analytics.insights.heading')}
-      count={
-        state === 'partial' && coverage
-          ? t('settings.analytics.insights.coverage', {
-              labelled: formatCount(coverage.labelled_turns),
-              total: formatCount(coverage.turns),
-            })
-          : undefined
-      }
-      description={
-        <>
-          {t('settings.analytics.insights.description')}{' '}
-          <Button variant="link" size="text" asChild>
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
-              {t('settings.analytics.insights.learnMore')}
-            </a>
-          </Button>
-        </>
-      }
+      count={count}
+      description={description}
     />
   );
 
@@ -133,24 +154,21 @@ export default function ConversationInsights({
         onRetry={onRetry}
       />
     );
-  else if (state === 'serverOff')
+  else if (state === 'agentOff')
     body = (
       <Alert variant="info" role="note">
         <AlertDescription>
-          {t('settings.analytics.insights.serverOff')}
-        </AlertDescription>
-      </Alert>
-    );
-  else if (state === 'agentOff' && agent)
-    body = (
-      <Alert variant="info" role="note">
-        <AlertDescription>
-          {t('settings.analytics.insights.agentOff')}{' '}
-          <Button variant="link" size="text" asChild>
-            <Link to={agentEditPathFor(agent)}>
-              {t('settings.analytics.insights.agentOffLink')}
-            </Link>
-          </Button>
+          {t('settings.analytics.insights.agentOff')}
+          {agent && canEditAgent && (
+            <>
+              {' '}
+              <Button variant="link" size="text" asChild>
+                <Link to={agentEditPathFor(agent)}>
+                  {t('settings.analytics.insights.agentOffLink')}
+                </Link>
+              </Button>
+            </>
+          )}
         </AlertDescription>
       </Alert>
     );
@@ -182,7 +200,10 @@ export default function ConversationInsights({
 
   return (
     <>
-      <section className="mt-8 flex flex-col gap-4" data-testid="insights">
+      <section
+        className={cn('flex flex-col gap-4', !standalone && 'mt-8')}
+        data-testid="insights"
+      >
         {header}
         {body}
       </section>
@@ -430,7 +451,7 @@ function InsightPanels({ data }: { data: Insights }) {
     };
   });
 
-  const panels: Omit<BarsPanelProps, 'wide'>[] = [
+  const bars: Omit<BarsPanelProps, 'wide'>[] = [
     {
       title: t('settings.analytics.insights.panels.requestType'),
       tier: 'estimated',
@@ -449,7 +470,7 @@ function InsightPanels({ data }: { data: Insights }) {
     },
   ];
   if (data.tags.length > 0)
-    panels.push({
+    bars.push({
       title: t('settings.analytics.insights.panels.tags'),
       n: tagN,
       denominatorKey: 'shareOfConversations',
@@ -459,7 +480,7 @@ function InsightPanels({ data }: { data: Insights }) {
       alwaysRows: true,
     });
   if (topic && topic.n > 0)
-    panels.push({
+    bars.push({
       title: t('settings.analytics.insights.panels.topic'),
       tier: 'experimental',
       n: topic.n,
@@ -467,19 +488,21 @@ function InsightPanels({ data }: { data: Insights }) {
       rows: topicRows,
     });
 
-  // Panels sit in rows of two with equal heights, paired by length: the
-  // chart with request type's nine rows, then the two short lists (why
-  // not, tags). An odd one out, usually topics, takes the whole row and
-  // lays its bars in two columns.
-  const odd = (panels.length + 1) % 2 === 1;
+  // Rows of two with equal heights, paired by length: the three charts
+  // first, the third beside request type's nine rows, then the two short
+  // lists (why not, tags). An odd one out, usually topics, takes the whole
+  // row and lays its bars in two columns.
+  const odd = (CHARTS + bars.length) % 2 === 1;
   return (
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
       <AnswerStatusPanel data={data} />
-      {panels.map((panel, index) => (
+      <SentimentPanel data={data} />
+      <ImplicitFeedbackPanel data={data} />
+      {bars.map((panel, index) => (
         <BarsPanel
           key={panel.title}
           {...panel}
-          wide={odd && index === panels.length - 1}
+          wide={odd && index === bars.length - 1}
         />
       ))}
     </div>
@@ -489,7 +512,6 @@ function InsightPanels({ data }: { data: Insights }) {
 function AnswerStatusPanel({ data }: { data: Insights }) {
   const { t } = useTranslation();
   const palette = useChartPalette();
-  const legendId = useId();
   const enough = (data.totals.answer_status?.n ?? 0) >= MIN_SAMPLE;
   const colors = [
     palette.success,
@@ -503,62 +525,45 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
         sum + (data.series[index]?.labels.answer_status?.options[option] ?? 0),
       0,
     );
-  const title = t('settings.analytics.insights.panels.answerStatus');
   return (
-    <Card
-      variant="subtle"
-      padding="lg"
-      className="h-full min-h-[345px] w-full overflow-hidden"
+    <ChartPanel
+      title={t('settings.analytics.insights.panels.answerStatus')}
+      empty={
+        enough ? undefined : t('settings.analytics.insights.notEnoughShort')
+      }
       data-testid="insight-answer-status"
-    >
-      <SectionHeader as="h3" size="xs" title={title} />
-      <div className="relative min-h-[245px] w-full flex-1">
-        {enough ? (
-          <>
-            <div
-              id={legendId}
-              className="flex flex-row flex-wrap items-center justify-end"
-            ></div>
-            <AnalyticsChart
-              data={{
-                labels: data.series.map((bucket) => formatDate(bucket.bucket)),
-                datasets: ANSWER_STATUS_SERIES.map((option, index) => ({
-                  label: optionName(t, 'answer_status', option),
-                  data: data.series.map(
-                    (bucket) =>
-                      bucket.labels.answer_status?.options[option] ?? 0,
-                  ),
-                  backgroundColor: colors[index],
-                })),
-              }}
-              legendID={legendId}
-              maxTicksLimitInX={8}
-              gridColor={palette.border}
-              tickColor={palette.mutedForeground}
-              isStacked
-              tooltipCallbacks={{
-                label: (item) => {
-                  const value = Number(item.raw);
-                  const total = bucketTotal(item.dataIndex);
-                  return t('settings.analytics.insights.panels.tooltipValue', {
-                    name: item.dataset.label,
-                    value: formatEstimate(value),
-                    share: formatShare(total > 0 ? value / total : 0),
-                    interpolation: { escapeValue: false },
-                  });
-                },
-              }}
-            />
-          </>
-        ) : (
-          <EmptyState
-            size="xs"
-            illustration="none"
-            title={t('settings.analytics.insights.notEnoughShort')}
-          />
-        )}
-      </div>
-    </Card>
+      chart={(legendId) => (
+        <AnalyticsChart
+          data={{
+            labels: data.series.map((bucket) => formatDate(bucket.bucket)),
+            datasets: ANSWER_STATUS_SERIES.map((option, index) => ({
+              label: optionName(t, 'answer_status', option),
+              data: data.series.map(
+                (bucket) => bucket.labels.answer_status?.options[option] ?? 0,
+              ),
+              backgroundColor: colors[index],
+            })),
+          }}
+          legendID={legendId}
+          maxTicksLimitInX={8}
+          gridColor={palette.border}
+          tickColor={palette.mutedForeground}
+          isStacked
+          tooltipCallbacks={{
+            label: (item) => {
+              const value = Number(item.raw);
+              const total = bucketTotal(item.dataIndex);
+              return t('settings.analytics.insights.panels.tooltipValue', {
+                name: item.dataset.label,
+                value: formatEstimate(value),
+                share: formatShare(total > 0 ? value / total : 0),
+                interpolation: { escapeValue: false },
+              });
+            },
+          }}
+        />
+      )}
+    />
   );
 }
 
@@ -632,5 +637,23 @@ function BarsPanel({
         </>
       )}
     </Card>
+  );
+}
+
+type InsightsSectionProps = Omit<
+  ConversationInsightsProps,
+  'state' | 'data' | 'onRetry'
+>;
+
+/** `ConversationInsights` with its own fetch, for the window it is given. */
+export function InsightsSection(props: InsightsSectionProps) {
+  const insights = useConversationInsights(props.agentId, props.filterOption);
+  return (
+    <ConversationInsights
+      {...props}
+      state={insightsState(insights.status, insights.data)}
+      data={insights.data}
+      onRetry={insights.retry}
+    />
   );
 }
