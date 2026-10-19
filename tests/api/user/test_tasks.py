@@ -1201,7 +1201,7 @@ def test_interactive_and_beat_tasks_stay_on_default_queue(task_name):
 @pytest.mark.unit
 def test_every_ingest_route_names_a_registered_task():
     """A typo in a route key silently leaves that task on the default queue."""
-    import docsgpt.api.user.tasks  # noqa: F401  (registers the tasks)
+    from docsgpt.api.user.tasks import ingest  # noqa: F401  (importing the module registers the tasks)
     import docsgpt.celeryconfig as celeryconfig
     from docsgpt.celery_init import celery
     from docsgpt.core.settings import settings
