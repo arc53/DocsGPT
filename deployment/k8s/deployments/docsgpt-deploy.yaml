@@ -264,12 +264,14 @@ spec:
         # -B embeds the beat scheduler, which fires scheduled agent runs, source
         # syncs, reconciliation and cleanups. It is safe on every replica: the
         # RedBeat lock in Redis lets only one of them schedule at a time.
-        # The queues: docsgpt (ingestion and app tasks), parsing (read_document)
-        # and embeddings (query embedding for the API; without it every search
-        # times out). For heavy or OCR parsing, run a separate Deployment with
-        # `-Q parsing`.
+        # The queues: docsgpt (app and beat tasks, attachments), parsing
+        # (read_document), embeddings (query embedding for the API; without it
+        # every search times out) and ingest (uploads, remote and connector
+        # ingests, syncs; without it no source is ever indexed). For heavy or OCR
+        # parsing, run a separate Deployment with `-Q parsing`; to keep long
+        # ingests off the beat tasks, one with `-Q ingest`.
         command: ["celery", "-A", "docsgpt.app.celery", "worker", "-B", "-l", "INFO", "-n", "worker.%h",
-                  "-Q", "docsgpt,parsing,embeddings"]
+                  "-Q", "docsgpt,parsing,embeddings,ingest"]
         resources:
           limits:
             memory: "4Gi"

@@ -1,7 +1,7 @@
 ---
 title: Deploying DocsGPT on Kubernetes
 description: Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
-lastUpdated: 2026-10-16
+lastUpdated: 2026-10-19
 ---
 
 import { Callout } from 'nextra/components'
@@ -194,6 +194,8 @@ The example's annotations are for ingress-nginx, which is retired. They raise th
 You can raise `replicas` on `docsgpt-api` and `docsgpt-worker`. At least one worker must always run: it ingests documents, embeds every search query for the API, and runs the beat scheduler (`-B`). The scheduler fires scheduled agent runs, source syncs, reconciliation, cleanups and the version check. Running it on every worker replica is safe, because a lock in Redis lets only one of them schedule at a time.
 
 For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the resources it needs.
+
+Source uploads, remote and connector ingests, source syncs and graph builds go to the `ingest` queue (`INGEST_QUEUE`); chat attachments stay on `docsgpt`. A large one can hold a worker slot for hours, and while every slot is busy the scheduler's tasks wait too: scheduled runs, reconciliation and cleanups. To keep them apart, run a second worker Deployment with `-Q ingest`, and drop `ingest` from the first worker's `-Q` list. Every queue still needs at least one worker consuming it. If you change `INGEST_QUEUE`, use the new name in both workers' `-Q` lists.
 
 ## The decision model
 
