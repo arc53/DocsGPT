@@ -74,7 +74,8 @@
         "monitor_paused": "Moniteur en pause",
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
-        "default": "Nouvelle réponse"
+        "default": "Nouvelle réponse",
+        "docs_gaps": "Lacunes de la doc de la semaine"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"
@@ -676,6 +677,175 @@
           "direct": "Conversation sans agent",
           "agent": "Via des agents"
         }
+      },
+      "insights": {
+        "heading": "Aperçu des conversations",
+        "description": "Estimé par le modèle de décision à partir de chaque conversation. Chaque chiffre est accompagné de la fourchette où il se situe le plus probablement.",
+        "learnMore": "En savoir plus",
+        "coverage": "{{labelled}} réponses analysées sur {{total}}",
+        "serverOff": "L’aperçu des conversations est désactivé sur ce serveur. Définissez DECISION_ANALYTICS_ENABLED=true dans les paramètres du serveur pour l’activer.",
+        "agentOff": "L’aperçu des conversations est désactivé pour cet agent.",
+        "agentOffLink": "Activez-le dans les paramètres de l’agent",
+        "noTraffic": "Aucune conversation sur cette période.",
+        "starting": "L’analyse a commencé",
+        "startingDescription": "L’aperçu apparaît quelques minutes après chaque conversation. Les plus récentes sont analysées en premier.",
+        "loadError": "Impossible de charger l’aperçu des conversations.",
+        "notEnough": "Pas encore assez de données ({{formatted}} pour l’instant)",
+        "notEnoughShort": "Pas encore assez de données",
+        "notEnoughReplies": "Pas encore assez de relances",
+        "languageNote": "{{share}} de ces messages sont en {{languages}}, que le modèle lit moins précisément. {{labels}} peuvent être moins fiables.",
+        "otherLanguages": "d’autres langues",
+        "tiers": {
+          "estimated": "Estimé",
+          "estimatedHint": "Moins sûr que les chiffres principaux : environ ±{{points}} points. Affiché sous forme de fourchette, jamais comme un nombre exact.",
+          "estimatedHintPlain": "Moins sûr que les chiffres principaux. Affiché sous forme de fourchette, jamais comme un nombre exact.",
+          "experimental": "Expérimental",
+          "experimentalHint": "Souvent faux sur les messages de suivi courts. À utiliser pour repérer des tendances, pas pour des chiffres exacts."
+        },
+        "stats": {
+          "fullyAnswered": "Réponse complète",
+          "fullyAnsweredHint": "Questions auxquelles la réponse a entièrement répondu. Les salutations et les échanges informels ne comptent pas.",
+          "goalMet": "Objectif atteint",
+          "goalMetHint": "Conversations où l’utilisateur a obtenu ce qu’il demandait, jugées sur l’ensemble de la conversation une fois qu’elle est retombée.",
+          "frustrated": "Frustration",
+          "frustratedHint": "Relances qui montrent une frustration nette. Seuls les messages envoyés après une réponse comptent, donc jamais le premier message d’une conversation.",
+          "asksHuman": "Demande d’un humain",
+          "asksHumanHint": "Relances qui demandent une personne, un ticket ou un autre moyen de vous joindre. Un premier message qui le demande ne compte pas.",
+          "docsGaps": "Lacunes de la doc",
+          "docsGapsHint": "Réponses insuffisantes parce que la doc ne couvre pas la question ou que la recherche n’a pas trouvé la page. Regroupées plus bas."
+        },
+        "sub": {
+          "ofQuestions_one": "{{range}} · sur {{formatted}} question",
+          "ofQuestions_other": "{{range}} · sur {{formatted}} questions",
+          "ofQuestions_many": "{{range}} · sur {{formatted}} questions",
+          "ofReplies_one": "{{range}} · sur {{formatted}} relance",
+          "ofReplies_other": "{{range}} · sur {{formatted}} relances",
+          "ofReplies_many": "{{range}} · sur {{formatted}} relances",
+          "ofConversations_one": "{{range}} · sur {{formatted}} conversation",
+          "ofConversations_other": "{{range}} · sur {{formatted}} conversations",
+          "ofConversations_many": "{{range}} · sur {{formatted}} conversations",
+          "inAnswers_one": "{{range}} · dans {{formatted}} réponse",
+          "inAnswers_other": "{{range}} · dans {{formatted}} réponses",
+          "inAnswers_many": "{{range}} · dans {{formatted}} réponses"
+        },
+        "panels": {
+          "answerStatus": "Statut des réponses dans le temps",
+          "whyNot": "Pourquoi la réponse est incomplète",
+          "requestType": "Type de demande",
+          "topic": "Sujet",
+          "tags": "Étiquettes",
+          "implicitFeedback": "Retours implicites",
+          "shareOfAnswers_one": "Part de {{formatted}} réponse",
+          "shareOfAnswers_other": "Part de {{formatted}} réponses",
+          "shareOfAnswers_many": "Part de {{formatted}} réponses",
+          "shareOfMessages_one": "Part de {{formatted}} message",
+          "shareOfMessages_other": "Part de {{formatted}} messages",
+          "shareOfMessages_many": "Part de {{formatted}} messages",
+          "shareOfConversations_one": "Part de {{formatted}} conversation",
+          "shareOfConversations_other": "Part de {{formatted}} conversations",
+          "shareOfConversations_many": "Part de {{formatted}} conversations",
+          "ofReplies_one": "Sur {{formatted}} relance",
+          "ofReplies_other": "Sur {{formatted}} relances",
+          "ofReplies_many": "Sur {{formatted}} relances",
+          "barLabel": "{{name}} : {{value}}, probablement entre {{low}} et {{high}}",
+          "barLabelNone": "{{name}} : pas encore assez de données",
+          "noneOfThese": "Aucun de ces sujets",
+          "tooltipValue": "{{name}} : {{value}} ({{share}})",
+          "tooltipCount": "{{name}} : {{value}}",
+          "empty": "Rien à afficher sur cette période."
+        },
+        "labelNamesInline": {
+          "answer_status": "le statut des réponses",
+          "gap_type": "la raison d’une réponse incomplète",
+          "topic_effective": "le sujet",
+          "reaction": "les retours implicites"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Réponse complète",
+            "partiallyAnswered": "Réponse partielle",
+            "declined": "A dit ne pas savoir",
+            "clarifying": "A demandé des précisions"
+          },
+          "gapType": {
+            "docsMissing": "Doc manquante ou introuvable",
+            "docsMissingOnly": "Doc manquante",
+            "notRetrieved": "La recherche a manqué la page",
+            "answerMissed": "La réponse a ignoré la page",
+            "outOfScope": "Hors sujet",
+            "featureNotSupported": "Fonctionnalité non prise en charge",
+            "needsAccountData": "Nécessite l’accès au compte ou l’équipe",
+            "ambiguous": "Question peu claire",
+            "confidentlyUngrounded": "Réponse non étayée par la doc",
+            "other": "Autre"
+          },
+          "reaction": {
+            "thanks": "Remerciement ou confirmation",
+            "reAsk": "Question reposée",
+            "pushbackOrComplaint": "Contestation ou plainte"
+          },
+          "requestType": {
+            "troubleshooting": "Dépannage",
+            "howTo": "Mode d’emploi",
+            "lookup": "Recherche d’une information",
+            "concept": "Explication",
+            "comparison": "Comparaison",
+            "featureRequest": "Demande de fonctionnalité",
+            "accountBilling": "Compte ou facturation",
+            "chitChat": "Échange informel",
+            "other": "Autre"
+          }
+        }
+      },
+      "gaps": {
+        "heading": "Lacunes de la doc",
+        "description": {
+          "page": "Questions auxquelles la doc n’a pas pu répondre, regroupées par la page la plus proche trouvée par la recherche.",
+          "source": "Questions auxquelles la doc n’a pas pu répondre, regroupées par la source de la page la plus proche.",
+          "topic": "Questions auxquelles la doc n’a pas pu répondre, regroupées par sujet."
+        },
+        "groupBy": "Regrouper les lacunes par",
+        "groups": {
+          "page": "Page",
+          "source": "Source",
+          "topic": "Sujet"
+        },
+        "columns": {
+          "gaps": "Lacunes",
+          "share": "Part des questions",
+          "change": "Évolution",
+          "example": "Exemple de question",
+          "open": "Exemples"
+        },
+        "share_one": "{{percent}} sur {{formatted}}",
+        "share_other": "{{percent}} sur {{formatted}}",
+        "share_many": "{{percent}} sur {{formatted}}",
+        "gapsCount_one": "{{formatted}} lacune ({{range}})",
+        "gapsCount_other": "{{formatted}} lacunes ({{range}})",
+        "gapsCount_many": "{{formatted}} lacunes ({{range}})",
+        "change": {
+          "new": "Nouveau",
+          "none": "Aucune évolution",
+          "upLabel": "{{formatted}} de plus que la période précédente",
+          "downLabel": "{{formatted}} de moins que la période précédente"
+        },
+        "noPage": "Aucune page trouvée",
+        "openRow": "Voir les exemples pour {{name}}",
+        "export": "Exporter en CSV",
+        "empty": "Aucune lacune de la doc sur cette période.",
+        "emptyDescription": "Les questions auxquelles la doc n’a pas pu répondre apparaissent ici.",
+        "loadError": "Impossible de charger les lacunes de la doc.",
+        "panel": {
+          "gaps": "Lacunes",
+          "gapsValue": "{{value}} ({{range}})",
+          "share": "Part des questions",
+          "shareValue_one": "{{percent}} ({{range}}) sur {{formatted}}",
+          "shareValue_other": "{{percent}} ({{range}}) sur {{formatted}}",
+          "shareValue_many": "{{percent}} ({{range}}) sur {{formatted}}",
+          "previous": "Période précédente",
+          "examples": "Exemples de questions",
+          "allInLogs": "Voir toutes les lacunes dans les journaux"
+        }
       }
     },
     "logs": {
@@ -851,6 +1021,20 @@
       "feedback": {
         "like": "Aimé",
         "dislike": "Pas aimé"
+      },
+      "labels": {
+        "filterAll": "Toutes les étiquettes",
+        "notAnswered": "Réponse incomplète",
+        "docsGap": "Lacune de la doc",
+        "frustrated": "Frustration",
+        "asksHuman": "Demande d’un humain",
+        "negativeReaction": "Réaction négative",
+        "tags": "Étiquettes personnalisées",
+        "hint": "Les étiquettes sont des estimations et peuvent être fausses.",
+        "conversation": "Conversation",
+        "clearConversation": "Afficher toutes les conversations",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "Aucun message ne correspond à ces filtres."
       }
     },
     "teams": {
@@ -2635,7 +2819,8 @@
         "preview": "Aperçu",
         "basics": "Informations de base",
         "knowledge": "Connaissances et comportement",
-        "model": "Modèle"
+        "model": "Modèle",
+        "analytics": "Statistiques"
       },
       "placeholders": {
         "agentName": "Nom de l’agent",
@@ -2861,6 +3046,76 @@
         "stopNote_one": "Il cesse de s’exécuter si vous perdez l’accès en modification.",
         "stopNote_other": "Ils cessent de s’exécuter si vous perdez l’accès en modification.",
         "stopNote_many": "Ils cessent de s’exécuter si vous perdez l’accès en modification."
+      },
+      "analytics": {
+        "on": "Activé",
+        "enable": "Analyser les conversations de cet agent",
+        "enableDescription": "Estime en arrière-plan si les réponses ont aidé, ce que demandent les utilisateurs et où la doc est insuffisante. Les résultats apparaissent dans les journaux de cet agent.",
+        "learnMore": "En savoir plus",
+        "serverOff": "Les statistiques sont désactivées sur ce serveur, ces paramètres ne s’appliquent donc pas encore. Demandez à votre administrateur de définir DECISION_ANALYTICS_ENABLED=true.",
+        "topics": "Sujets",
+        "topicModes": {
+          "auto": "Depuis les sources",
+          "custom": "Personnalisés",
+          "off": "Désactivés"
+        },
+        "topicHints": {
+          "auto": "Construits à partir des dossiers des sources de cet agent et utilisés pour regrouper les questions dans les statistiques. Le regroupement par sujet est expérimental.",
+          "custom": "Votre propre liste. Les questions y sont classées selon le nom et la description.",
+          "off": "Les questions ne sont pas regroupées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source."
+        },
+        "customTopics": "Sujets personnalisés",
+        "countOf": "{{count}} sur {{max}}",
+        "addTopic": "Ajouter un sujet",
+        "suggest": "Suggérer depuis les sources",
+        "suggestNone": "Les sources de cet agent n’ont aucun dossier à partir duquel suggérer des sujets.",
+        "suggestNoNew": "Ces sujets sont déjà dans la liste.",
+        "suggestFull": "La liste est pleine, certaines suggestions ont donc été écartées.",
+        "suggestFailed": "Impossible de charger les suggestions de sujets.",
+        "topicsEmpty": "Aucun sujet pour l’instant",
+        "topicsFew": "Ajoutez au moins deux sujets, sinon les questions ne sont pas regroupées.",
+        "tags": "Étiquettes",
+        "tagsDescription": "Étiquettes oui/non que vous rédigez pour des conversations entières, comme « Question sur les prix » ou « Veut un remboursement ». Chacune est vérifiée une fois la conversation retombée, et une nouvelle étiquette s’applique aussi aux conversations récentes.",
+        "addTag": "Ajouter une étiquette",
+        "tagsEmpty": "Aucune étiquette pour l’instant",
+        "itemActions": "Actions pour {{name}}",
+        "edit": "Modifier",
+        "remove": "Retirer",
+        "modal": {
+          "addTopic": "Ajouter un sujet",
+          "editTopic": "Modifier le sujet",
+          "topicDescription": "Les questions sont classées dans vos sujets selon leur nom et leur description.",
+          "addTag": "Ajouter une étiquette",
+          "editTag": "Modifier l’étiquette",
+          "tagDescription": "Le modèle lit le nom et la description pour décider si l’étiquette s’applique à une conversation.",
+          "name": "Nom",
+          "description": "Description",
+          "topicNamePlaceholder": "Installation",
+          "topicDescriptionStart": "Pages comme :",
+          "topicDescriptionHint": "Citez quelques pages qui en font partie. {{used}}/{{max}}",
+          "tagNamePlaceholder": "Question sur les prix",
+          "tagDescriptionPlaceholder": "L’utilisateur demande les prix, les offres ou combien coûte quelque chose.",
+          "tagDescriptionHint": "Une phrase que le modèle compare à la conversation.",
+          "submitAddTopic": "Ajouter le sujet",
+          "submitUpdateTopic": "Mettre à jour le sujet",
+          "submitAddTag": "Ajouter l’étiquette",
+          "submitUpdateTag": "Mettre à jour l’étiquette"
+        },
+        "errors": {
+          "nameRequired": "Saisissez un nom.",
+          "topicNameTaken": "Un autre sujet porte déjà ce nom.",
+          "topicNameReserved": "Ce nom est réservé aux questions qui ne correspondent à aucun sujet.",
+          "tagNameTaken": "Une autre étiquette porte déjà ce nom.",
+          "descriptionRequired": "Saisissez une description.",
+          "topicDescriptionTooLong": "Trop long. Raccourcissez-la à {{max}} (les caractères chinois, japonais et coréens comptent triple)."
+        },
+        "removeTag": {
+          "title": "Retirer « {{name}} » ?",
+          "description": "Ses étiquettes passées ne s’affichent plus dans les statistiques. Ajouter à nouveau l’étiquette démarre un nouvel historique.",
+          "submit": "Retirer"
+        },
+        "digest": "Notification hebdomadaire des lacunes de la doc",
+        "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification dans l’application avec les principales lacunes de la doc et leur évolution."
       }
     },
     "logs": {

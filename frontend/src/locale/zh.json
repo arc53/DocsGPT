@@ -72,7 +72,8 @@
         "monitor_paused": "监控已暂停",
         "monitor_expired": "监控已过期",
         "schedule": "计划任务已完成",
-        "default": "新回复"
+        "default": "新回复",
+        "docs_gaps": "每周文档缺口"
       },
       "open": "打开",
       "fallbackTitle": "你的助手有新消息"
@@ -656,6 +657,164 @@
           "direct": "不使用智能体的聊天",
           "agent": "通过智能体"
         }
+      },
+      "insights": {
+        "heading": "对话洞察",
+        "description": "由决策模型根据每段对话估算。每个数字都附有它最可能落入的范围。",
+        "learnMore": "了解更多",
+        "coverage": "已标注 {{labelled}}/{{total}} 条回答",
+        "serverOff": "此服务器已关闭对话洞察。要开启，请在服务器设置中设置 DECISION_ANALYTICS_ENABLED=true。",
+        "agentOff": "此智能体已关闭对话洞察。",
+        "agentOffLink": "在智能体设置中开启",
+        "noTraffic": "此期间没有对话。",
+        "starting": "已开始标注",
+        "startingDescription": "洞察会在每段对话结束几分钟后出现。最新的对话最先标注。",
+        "loadError": "无法加载对话洞察。",
+        "notEnough": "数据还不够（目前 {{formatted}} 条）",
+        "notEnoughShort": "数据还不够",
+        "notEnoughReplies": "回复还不够",
+        "languageNote": "这些消息中有 {{share}} 使用{{languages}}，模型对这些语言的理解不够准确。{{labels}}可能不太可靠。",
+        "otherLanguages": "其他语言",
+        "tiers": {
+          "estimated": "估算",
+          "estimatedHint": "不如主要数字确定：约 ±{{points}} 个百分点。始终以范围显示，绝不显示为精确数量。",
+          "estimatedHintPlain": "不如主要数字确定。始终以范围显示，绝不显示为精确数量。",
+          "experimental": "实验性",
+          "experimentalHint": "对简短的追问消息经常判断错误。适合用来发现趋势，不适合看精确数字。"
+        },
+        "stats": {
+          "fullyAnswered": "完整回答",
+          "fullyAnsweredHint": "回答完整解决了的问题。问候和闲聊不计入。",
+          "goalMet": "达成目标",
+          "goalMetHint": "用户得到了所需内容的对话，在对话平静下来后根据整段对话判断。",
+          "frustrated": "不满",
+          "frustratedHint": "明显表现出不满的回复。只统计回答之后发送的消息，因此对话的第一条消息从不计入。",
+          "asksHuman": "要求人工",
+          "asksHumanHint": "要求人工、工单或其他联系方式的回复。第一条消息中提出的要求不计入。",
+          "docsGaps": "文档缺口",
+          "docsGapsHint": "因文档未涵盖该问题或搜索未找到页面而不够完整的回答。下方分组列出。"
+        },
+        "sub": {
+          "ofQuestions_one": "{{range}} · 共 {{formatted}} 个问题",
+          "ofQuestions_other": "{{range}} · 共 {{formatted}} 个问题",
+          "ofReplies_one": "{{range}} · 共 {{formatted}} 条回复",
+          "ofReplies_other": "{{range}} · 共 {{formatted}} 条回复",
+          "ofConversations_one": "{{range}} · 共 {{formatted}} 段对话",
+          "ofConversations_other": "{{range}} · 共 {{formatted}} 段对话",
+          "inAnswers_one": "{{range}} · 共 {{formatted}} 条回答",
+          "inAnswers_other": "{{range}} · 共 {{formatted}} 条回答"
+        },
+        "panels": {
+          "answerStatus": "回答状态随时间变化",
+          "whyNot": "未完全回答的原因",
+          "requestType": "请求类型",
+          "topic": "主题",
+          "tags": "标签",
+          "implicitFeedback": "隐性反馈",
+          "shareOfAnswers_one": "占 {{formatted}} 条回答的比例",
+          "shareOfAnswers_other": "占 {{formatted}} 条回答的比例",
+          "shareOfMessages_one": "占 {{formatted}} 条消息的比例",
+          "shareOfMessages_other": "占 {{formatted}} 条消息的比例",
+          "shareOfConversations_one": "占 {{formatted}} 段对话的比例",
+          "shareOfConversations_other": "占 {{formatted}} 段对话的比例",
+          "ofReplies_one": "共 {{formatted}} 条回复",
+          "ofReplies_other": "共 {{formatted}} 条回复",
+          "barLabel": "{{name}}：{{value}}，可能在 {{low}} 到 {{high}} 之间",
+          "barLabelNone": "{{name}}：数据还不够",
+          "noneOfThese": "不属于这些主题",
+          "tooltipValue": "{{name}}：{{value}}（{{share}}）",
+          "tooltipCount": "{{name}}：{{value}}",
+          "empty": "此期间没有可显示的内容。"
+        },
+        "labelNamesInline": {
+          "answer_status": "回答状态",
+          "gap_type": "未完全回答的原因",
+          "topic_effective": "主题",
+          "reaction": "隐性反馈"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "完整回答",
+            "partiallyAnswered": "部分回答",
+            "declined": "表示不知道",
+            "clarifying": "追问细节"
+          },
+          "gapType": {
+            "docsMissing": "文档缺失或未找到",
+            "docsMissingOnly": "文档缺失",
+            "notRetrieved": "搜索未找到页面",
+            "answerMissed": "回答未用上页面",
+            "outOfScope": "超出范围",
+            "featureNotSupported": "不支持的功能",
+            "needsAccountData": "需要账户权限或人工",
+            "ambiguous": "问题不清楚",
+            "confidentlyUngrounded": "回答缺少文档依据",
+            "other": "其他"
+          },
+          "reaction": {
+            "thanks": "致谢或确认",
+            "reAsk": "再次提问",
+            "pushbackOrComplaint": "反驳或投诉"
+          },
+          "requestType": {
+            "troubleshooting": "故障排查",
+            "howTo": "操作方法",
+            "lookup": "查询信息",
+            "concept": "概念解释",
+            "comparison": "比较",
+            "featureRequest": "功能需求",
+            "accountBilling": "账户或账单",
+            "chitChat": "闲聊",
+            "other": "其他"
+          }
+        }
+      },
+      "gaps": {
+        "heading": "文档缺口",
+        "description": {
+          "page": "文档无法回答的问题，按搜索找到的最接近页面分组。",
+          "source": "文档无法回答的问题，按最接近页面所属的来源分组。",
+          "topic": "文档无法回答的问题，按主题分组。"
+        },
+        "groupBy": "文档缺口分组方式",
+        "groups": {
+          "page": "页面",
+          "source": "来源",
+          "topic": "主题"
+        },
+        "columns": {
+          "gaps": "缺口",
+          "share": "占问题的比例",
+          "change": "变化",
+          "example": "示例问题",
+          "open": "示例"
+        },
+        "share_one": "{{formatted}} 个中的 {{percent}}",
+        "share_other": "{{formatted}} 个中的 {{percent}}",
+        "gapsCount_one": "{{formatted}} 个缺口（{{range}}）",
+        "gapsCount_other": "{{formatted}} 个缺口（{{range}}）",
+        "change": {
+          "new": "新增",
+          "none": "无变化",
+          "upLabel": "比上一周期增加 {{formatted}} 个",
+          "downLabel": "比上一周期减少 {{formatted}} 个"
+        },
+        "noPage": "未找到页面",
+        "openRow": "查看 {{name}} 的示例",
+        "export": "导出 CSV",
+        "empty": "此期间没有文档缺口。",
+        "emptyDescription": "文档无法回答的问题会显示在这里。",
+        "loadError": "无法加载文档缺口。",
+        "panel": {
+          "gaps": "缺口",
+          "gapsValue": "{{value}}（{{range}}）",
+          "share": "占问题的比例",
+          "shareValue_one": "{{formatted}} 个中的 {{percent}}（{{range}}）",
+          "shareValue_other": "{{formatted}} 个中的 {{percent}}（{{range}}）",
+          "previous": "上一周期",
+          "examples": "示例问题",
+          "allInLogs": "在日志中查看全部文档缺口"
+        }
       }
     },
     "logs": {
@@ -824,6 +983,20 @@
       "feedback": {
         "like": "赞",
         "dislike": "踩"
+      },
+      "labels": {
+        "filterAll": "全部标注",
+        "notAnswered": "未完全回答",
+        "docsGap": "文档缺口",
+        "frustrated": "不满",
+        "asksHuman": "要求人工",
+        "negativeReaction": "负面反应",
+        "tags": "自定义标签",
+        "hint": "标注是估算结果，可能有误。",
+        "conversation": "对话",
+        "clearConversation": "显示全部对话",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "没有符合这些筛选条件的消息。"
       }
     },
     "teams": {
@@ -2556,7 +2729,8 @@
         "preview": "预览",
         "basics": "基本信息",
         "knowledge": "知识与行为",
-        "model": "模型"
+        "model": "模型",
+        "analytics": "分析"
       },
       "placeholders": {
         "agentName": "智能体名称",
@@ -2776,6 +2950,76 @@
         "audienceTitle_other": "谁可以通过此智能体使用它们",
         "stopNote_one": "如果你失去编辑权限，它将停止运行。",
         "stopNote_other": "如果你失去编辑权限，它们将停止运行。"
+      },
+      "analytics": {
+        "on": "已开启",
+        "enable": "标注此智能体的对话",
+        "enableDescription": "在后台估算回答是否有帮助、用户在问什么，以及文档哪里不足。结果显示在此智能体的日志中。",
+        "learnMore": "了解更多",
+        "serverOff": "此服务器已关闭分析，因此这些设置暂不生效。请让管理员设置 DECISION_ANALYTICS_ENABLED=true。",
+        "topics": "主题",
+        "topicModes": {
+          "auto": "来自来源",
+          "custom": "自定义",
+          "off": "关闭"
+        },
+        "topicHints": {
+          "auto": "根据此智能体来源中的文件夹生成，用于在分析中为问题分组。按主题分组仍处于实验阶段。",
+          "custom": "你自己的列表。问题会根据名称和描述归入其中。",
+          "off": "问题不按主题分组。文档缺口仍可按页面或来源分组。"
+        },
+        "customTopics": "自定义主题",
+        "countOf": "{{count}}/{{max}}",
+        "addTopic": "添加主题",
+        "suggest": "从来源中推荐",
+        "suggestNone": "此智能体的来源中没有可用于推荐主题的文件夹。",
+        "suggestNoNew": "这些主题已在列表中。",
+        "suggestFull": "列表已满，因此部分推荐未加入。",
+        "suggestFailed": "无法加载主题推荐。",
+        "topicsEmpty": "还没有主题",
+        "topicsFew": "请至少添加两个主题，否则问题不会分组。",
+        "tags": "标签",
+        "tagsDescription": "你为整段对话编写的“是/否”标签，例如“价格问题”或“想要退款”。每个标签会在对话平静下来后检查一次，新标签也会应用到最近的对话。",
+        "addTag": "添加标签",
+        "tagsEmpty": "还没有标签",
+        "itemActions": "{{name}} 的操作",
+        "edit": "编辑",
+        "remove": "移除",
+        "modal": {
+          "addTopic": "添加主题",
+          "editTopic": "编辑主题",
+          "topicDescription": "问题会根据主题的名称和描述归入你的主题。",
+          "addTag": "添加标签",
+          "editTag": "编辑标签",
+          "tagDescription": "模型会读取名称和描述，判断该标签是否适用于某段对话。",
+          "name": "名称",
+          "description": "描述",
+          "topicNamePlaceholder": "安装",
+          "topicDescriptionStart": "包含的页面例如：",
+          "topicDescriptionHint": "列出几个属于这里的页面。{{used}}/{{max}}",
+          "tagNamePlaceholder": "价格问题",
+          "tagDescriptionPlaceholder": "用户询问价格、套餐或某样东西的费用。",
+          "tagDescriptionHint": "模型会拿这句话与对话对照。",
+          "submitAddTopic": "添加主题",
+          "submitUpdateTopic": "更新主题",
+          "submitAddTag": "添加标签",
+          "submitUpdateTag": "更新标签"
+        },
+        "errors": {
+          "nameRequired": "请输入名称。",
+          "topicNameTaken": "已有其他主题使用此名称。",
+          "topicNameReserved": "此名称保留给不属于任何主题的问题。",
+          "tagNameTaken": "已有其他标签使用此名称。",
+          "descriptionRequired": "请输入描述。",
+          "topicDescriptionTooLong": "太长了。请缩短到 {{max}} 以内（中文、日文和韩文字符按三个计算）。"
+        },
+        "removeTag": {
+          "title": "移除“{{name}}”？",
+          "description": "它过去的标注将不再显示在分析中。重新添加该标签会开始新的记录。",
+          "submit": "移除"
+        },
+        "digest": "每周文档缺口通知",
+        "digestDescription": "每周一次，智能体的所有者会在应用内收到一条通知，列出主要的文档缺口及其变化。"
       }
     },
     "logs": {

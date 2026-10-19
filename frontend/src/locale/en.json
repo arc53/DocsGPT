@@ -73,7 +73,8 @@
         "monitor_paused": "Monitor paused",
         "monitor_expired": "Monitor expired",
         "schedule": "Scheduled task finished",
-        "default": "New reply"
+        "default": "New reply",
+        "docs_gaps": "Weekly docs gaps"
       },
       "open": "Open",
       "fallbackTitle": "Your assistant has an update"
@@ -658,6 +659,164 @@
           "direct": "Chat without an agent",
           "agent": "Through agents"
         }
+      },
+      "insights": {
+        "heading": "Conversation insights",
+        "description": "Estimated by the decision model from each conversation. Each figure comes with the range it most likely falls in.",
+        "learnMore": "Learn more",
+        "coverage": "{{labelled}} of {{total}} answers labelled",
+        "serverOff": "Conversation insights are off on this server. Set DECISION_ANALYTICS_ENABLED=true in the server's settings to turn them on.",
+        "agentOff": "Conversation insights are off for this agent.",
+        "agentOffLink": "Turn them on in the agent's settings",
+        "noTraffic": "No conversations in this period.",
+        "starting": "Labelling has started",
+        "startingDescription": "Insights appear a few minutes after each conversation. The newest are labelled first.",
+        "loadError": "Could not load conversation insights.",
+        "notEnough": "Not enough data yet ({{formatted}} so far)",
+        "notEnoughShort": "Not enough data yet",
+        "notEnoughReplies": "Not enough replies yet",
+        "languageNote": "{{share}} of these messages are in {{languages}}, which the model reads less accurately. {{labels}} may be less reliable.",
+        "otherLanguages": "other languages",
+        "tiers": {
+          "estimated": "Estimated",
+          "estimatedHint": "Less certain than the headline figures: about ±{{points}} points. Shown as a range, never as an exact count.",
+          "estimatedHintPlain": "Less certain than the headline figures. Shown as a range, never as an exact count.",
+          "experimental": "Experimental",
+          "experimentalHint": "Often wrong on short follow-up messages. Use it to spot trends, not for exact numbers."
+        },
+        "stats": {
+          "fullyAnswered": "Fully answered",
+          "fullyAnsweredHint": "Questions the answer fully addressed. Greetings and small talk are not counted.",
+          "goalMet": "Goal met",
+          "goalMetHint": "Conversations where the user got what they asked for, judged from the whole conversation once it has gone quiet.",
+          "frustrated": "Frustrated",
+          "frustratedHint": "Replies that show clear frustration. Only messages sent after an answer count, so a conversation's first message never does.",
+          "asksHuman": "Asked for a person",
+          "asksHumanHint": "Replies that ask for a person, a ticket or another way to reach you. A first message that asks for one is not counted.",
+          "docsGaps": "Docs gaps",
+          "docsGapsHint": "Answers that fell short because the docs don't cover the question or the search didn't find the page. Grouped below."
+        },
+        "sub": {
+          "ofQuestions_one": "{{range}} · of {{formatted}} question",
+          "ofQuestions_other": "{{range}} · of {{formatted}} questions",
+          "ofReplies_one": "{{range}} · of {{formatted}} reply",
+          "ofReplies_other": "{{range}} · of {{formatted}} replies",
+          "ofConversations_one": "{{range}} · of {{formatted}} conversation",
+          "ofConversations_other": "{{range}} · of {{formatted}} conversations",
+          "inAnswers_one": "{{range}} · in {{formatted}} answer",
+          "inAnswers_other": "{{range}} · in {{formatted}} answers"
+        },
+        "panels": {
+          "answerStatus": "Answer status over time",
+          "whyNot": "Why not fully answered",
+          "requestType": "Request type",
+          "topic": "Topic",
+          "tags": "Tags",
+          "implicitFeedback": "Implicit feedback",
+          "shareOfAnswers_one": "Share of {{formatted}} answer",
+          "shareOfAnswers_other": "Share of {{formatted}} answers",
+          "shareOfMessages_one": "Share of {{formatted}} message",
+          "shareOfMessages_other": "Share of {{formatted}} messages",
+          "shareOfConversations_one": "Share of {{formatted}} conversation",
+          "shareOfConversations_other": "Share of {{formatted}} conversations",
+          "ofReplies_one": "Of {{formatted}} reply",
+          "ofReplies_other": "Of {{formatted}} replies",
+          "barLabel": "{{name}}: {{value}}, likely {{low}} to {{high}}",
+          "barLabelNone": "{{name}}: not enough data yet",
+          "noneOfThese": "None of these topics",
+          "tooltipValue": "{{name}}: {{value}} ({{share}})",
+          "tooltipCount": "{{name}}: {{value}}",
+          "empty": "Nothing to show for this period."
+        },
+        "labelNamesInline": {
+          "answer_status": "answer status",
+          "gap_type": "why not fully answered",
+          "topic_effective": "topic",
+          "reaction": "implicit feedback"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Fully answered",
+            "partiallyAnswered": "Partially answered",
+            "declined": "Said it didn't know",
+            "clarifying": "Asked for details"
+          },
+          "gapType": {
+            "docsMissing": "Docs missing or not found",
+            "docsMissingOnly": "Docs missing",
+            "notRetrieved": "Search missed the page",
+            "answerMissed": "Answer missed the page",
+            "outOfScope": "Out of scope",
+            "featureNotSupported": "Unsupported feature",
+            "needsAccountData": "Needs account access or staff",
+            "ambiguous": "Unclear question",
+            "confidentlyUngrounded": "Answer not backed by the docs",
+            "other": "Other"
+          },
+          "reaction": {
+            "thanks": "Thanks or confirmed",
+            "reAsk": "Asked again",
+            "pushbackOrComplaint": "Pushback or complaint"
+          },
+          "requestType": {
+            "troubleshooting": "Troubleshooting",
+            "howTo": "How-to",
+            "lookup": "Fact lookup",
+            "concept": "Explanation",
+            "comparison": "Comparison",
+            "featureRequest": "Feature request",
+            "accountBilling": "Account or billing",
+            "chitChat": "Small talk",
+            "other": "Other"
+          }
+        }
+      },
+      "gaps": {
+        "heading": "Docs gaps",
+        "description": {
+          "page": "Questions the docs could not answer, grouped by the page the search found closest.",
+          "source": "Questions the docs could not answer, grouped by the source of the closest page.",
+          "topic": "Questions the docs could not answer, grouped by topic."
+        },
+        "groupBy": "Group docs gaps by",
+        "groups": {
+          "page": "Page",
+          "source": "Source",
+          "topic": "Topic"
+        },
+        "columns": {
+          "gaps": "Gaps",
+          "share": "Share of questions",
+          "change": "Change",
+          "example": "Example question",
+          "open": "Examples"
+        },
+        "share_one": "{{percent}} of {{formatted}}",
+        "share_other": "{{percent}} of {{formatted}}",
+        "gapsCount_one": "{{formatted}} gap ({{range}})",
+        "gapsCount_other": "{{formatted}} gaps ({{range}})",
+        "change": {
+          "new": "New",
+          "none": "No change",
+          "upLabel": "Up {{formatted}} from the previous period",
+          "downLabel": "Down {{formatted}} from the previous period"
+        },
+        "noPage": "No page retrieved",
+        "openRow": "Show examples for {{name}}",
+        "export": "Export CSV",
+        "empty": "No docs gaps in this period.",
+        "emptyDescription": "Questions the docs could not answer show here.",
+        "loadError": "Could not load docs gaps.",
+        "panel": {
+          "gaps": "Gaps",
+          "gapsValue": "{{value}} ({{range}})",
+          "share": "Share of questions",
+          "shareValue_one": "{{percent}} ({{range}}) of {{formatted}}",
+          "shareValue_other": "{{percent}} ({{range}}) of {{formatted}}",
+          "previous": "Previous period",
+          "examples": "Example questions",
+          "allInLogs": "See every docs gap in Logs"
+        }
       }
     },
     "logs": {
@@ -826,6 +985,20 @@
       "feedback": {
         "like": "Liked",
         "dislike": "Disliked"
+      },
+      "labels": {
+        "filterAll": "All labels",
+        "notAnswered": "Not fully answered",
+        "docsGap": "Docs gap",
+        "frustrated": "Frustrated",
+        "asksHuman": "Asked for a person",
+        "negativeReaction": "Negative reaction",
+        "tags": "Tags",
+        "hint": "Labels are estimates and can be wrong.",
+        "conversation": "Conversation",
+        "clearConversation": "Show all conversations",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "No messages match these filters."
       }
     },
     "teams": {
@@ -2572,7 +2745,8 @@
         "preview": "Preview",
         "basics": "Basics",
         "knowledge": "Knowledge and behaviour",
-        "model": "Model"
+        "model": "Model",
+        "analytics": "Analytics"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -2793,6 +2967,76 @@
         "audienceTitle_other": "Who can use them through this agent",
         "stopNote_one": "It stops running if you lose edit access.",
         "stopNote_other": "They stop running if you lose edit access."
+      },
+      "analytics": {
+        "on": "On",
+        "enable": "Label this agent's conversations",
+        "enableDescription": "Estimates in the background whether answers helped, what users ask about and where the docs fall short. Results show in this agent's Logs.",
+        "learnMore": "Learn more",
+        "serverOff": "Analytics are off on this server, so these settings don't run yet. Ask your administrator to set DECISION_ANALYTICS_ENABLED=true.",
+        "topics": "Topics",
+        "topicModes": {
+          "auto": "From sources",
+          "custom": "Custom",
+          "off": "Off"
+        },
+        "topicHints": {
+          "auto": "Built from the folders in this agent's sources and used to group questions in Analytics. Topic grouping is experimental.",
+          "custom": "Your own list. Questions are sorted into these by name and description.",
+          "off": "Questions are not grouped by topic. Docs gaps can still be grouped by page or source."
+        },
+        "customTopics": "Custom topics",
+        "countOf": "{{count}} of {{max}}",
+        "addTopic": "Add topic",
+        "suggest": "Suggest from sources",
+        "suggestNone": "This agent's sources have no folders to suggest topics from.",
+        "suggestNoNew": "These topics are already in the list.",
+        "suggestFull": "The list is full, so some suggestions were left out.",
+        "suggestFailed": "Could not load topic suggestions.",
+        "topicsEmpty": "No topics yet",
+        "topicsFew": "Add at least two topics, or questions are not grouped.",
+        "tags": "Tags",
+        "tagsDescription": "Yes/no labels you write for whole conversations, such as \"Pricing question\" or \"Wants a refund\". Each is checked once a conversation goes quiet, and a new tag is also applied to recent conversations.",
+        "addTag": "Add tag",
+        "tagsEmpty": "No tags yet",
+        "itemActions": "Actions for {{name}}",
+        "edit": "Edit",
+        "remove": "Remove",
+        "modal": {
+          "addTopic": "Add topic",
+          "editTopic": "Edit topic",
+          "topicDescription": "Questions are sorted into your topics by their name and description.",
+          "addTag": "Add tag",
+          "editTag": "Edit tag",
+          "tagDescription": "The model reads the name and description to decide whether the tag applies to a conversation.",
+          "name": "Name",
+          "description": "Description",
+          "topicNamePlaceholder": "Installation",
+          "topicDescriptionStart": "Pages such as:",
+          "topicDescriptionHint": "Name a few pages that belong here. {{used}}/{{max}}",
+          "tagNamePlaceholder": "Pricing question",
+          "tagDescriptionPlaceholder": "The user asks about prices, plans or what something costs.",
+          "tagDescriptionHint": "One sentence the model checks against the conversation.",
+          "submitAddTopic": "Add topic",
+          "submitUpdateTopic": "Update topic",
+          "submitAddTag": "Add tag",
+          "submitUpdateTag": "Update tag"
+        },
+        "errors": {
+          "nameRequired": "Enter a name.",
+          "topicNameTaken": "Another topic already has this name.",
+          "topicNameReserved": "This name is kept for questions that fit no topic.",
+          "tagNameTaken": "Another tag already has this name.",
+          "descriptionRequired": "Enter a description.",
+          "topicDescriptionTooLong": "Too long. Shorten it to fit {{max}} (Chinese, Japanese and Korean characters count three times)."
+        },
+        "removeTag": {
+          "title": "Remove \"{{name}}\"?",
+          "description": "Its past labels stop showing in Analytics. Adding the tag again starts a new history.",
+          "submit": "Remove"
+        },
+        "digest": "Weekly docs-gaps notification",
+        "digestDescription": "Once a week, the agent's owner gets an in-app notification with the top docs gaps and how they changed."
       }
     },
     "logs": {
