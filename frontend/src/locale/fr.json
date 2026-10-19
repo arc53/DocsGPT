@@ -3048,7 +3048,6 @@
         "stopNote_many": "Ils cessent de s’exécuter si vous perdez l’accès en modification."
       },
       "analytics": {
-        "on": "Activé",
         "enable": "Analyser les conversations de cet agent",
         "enableDescription": "Estime en arrière-plan si les réponses ont aidé, ce que demandent les utilisateurs et où la doc est insuffisante. Les résultats apparaissent dans les journaux de cet agent.",
         "learnMore": "En savoir plus",

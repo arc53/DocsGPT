@@ -434,6 +434,29 @@ describe('ConversationInsights', () => {
     ).toBe('true');
   });
 
+  it('pairs the short lists and gives an odd last panel the whole row', () => {
+    const response = data({ tags: [{ id: 'a1b2c3d4', name: 'Pricing' }] });
+    response.totals.topic_effective = {
+      tier: 'experimental',
+      n: 118,
+      options: { installation: option(36, 0.31, 0.23, 0.39) },
+    };
+    render(response, { agentProp: agent(['view', 'edit']) });
+    const lists = Array.from(section()!.querySelectorAll('[role="list"]'));
+    const names = lists.map((list) =>
+      list.getAttribute('aria-label')!.split('.').pop(),
+    );
+    expect(names.slice(-4)).toEqual(['requestType', 'whyNot', 'tags', 'topic']);
+    const topics = lists[lists.length - 1];
+    expect(topics.className).toContain('xl:grid-cols-2');
+    expect(topics.closest('.xl\\:col-span-2')).not.toBeNull();
+    expect(lists[lists.length - 2].closest('.xl\\:col-span-2')).toBeNull();
+
+    delete response.totals.topic_effective;
+    render(response, { agentProp: agent(['view', 'edit']) });
+    expect(section()!.querySelector('.xl\\:col-span-2')).toBeNull();
+  });
+
   it('says once when weaker languages make some labels less reliable', () => {
     render(data({ language_warnings: ['answer_status', 'topic_effective'] }));
     const notes = section()!.querySelectorAll('[role="note"]');

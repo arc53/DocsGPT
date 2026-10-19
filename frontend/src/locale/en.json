@@ -2969,7 +2969,6 @@
         "stopNote_other": "They stop running if you lose edit access."
       },
       "analytics": {
-        "on": "On",
         "enable": "Label this agent's conversations",
         "enableDescription": "Estimates in the background whether answers helped, what users ask about and where the docs fall short. Results show in this agent's Logs.",
         "learnMore": "Learn more",

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SectionHeader } from '@/components/ui/section-header';
+import { cn } from '@/lib/utils';
 
 import { canAgent } from '../../agents/agentAccess';
 import { agentEditPathFor } from '../../agents/paths';
@@ -429,47 +430,58 @@ function InsightPanels({ data }: { data: Insights }) {
     };
   });
 
-  // Bar panels keep their own height (the chart keeps its fixed one);
-  // request type's nine rows come closest to the chart beside it.
+  const panels: Omit<BarsPanelProps, 'wide'>[] = [
+    {
+      title: t('settings.analytics.insights.panels.requestType'),
+      tier: 'estimated',
+      n: totals.request_type?.n ?? 0,
+      denominatorKey: 'shareOfMessages',
+      rows: requestRows,
+      points: rangePoints(drawnOptions(totals.request_type, requestRows)),
+    },
+    {
+      title: t('settings.analytics.insights.panels.whyNot'),
+      tier: 'estimated',
+      n: gapType?.n ?? 0,
+      denominatorKey: 'shareOfAnswers',
+      rows: gapRows,
+      points: rangePoints(drawnOptions(gapType, gapRows)),
+    },
+  ];
+  if (data.tags.length > 0)
+    panels.push({
+      title: t('settings.analytics.insights.panels.tags'),
+      n: tagN,
+      denominatorKey: 'shareOfConversations',
+      rows: tagRows,
+      // A tag's own sample is checked per row: a new tag shows "—"
+      // beside older ones.
+      alwaysRows: true,
+    });
+  if (topic && topic.n > 0)
+    panels.push({
+      title: t('settings.analytics.insights.panels.topic'),
+      tier: 'experimental',
+      n: topic.n,
+      denominatorKey: 'shareOfMessages',
+      rows: topicRows,
+    });
+
+  // Panels sit in rows of two with equal heights, paired by length: the
+  // chart with request type's nine rows, then the two short lists (why
+  // not, tags). An odd one out, usually topics, takes the whole row and
+  // lays its bars in two columns.
+  const odd = (panels.length + 1) % 2 === 1;
   return (
-    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
       <AnswerStatusPanel data={data} />
-      <BarsPanel
-        title={t('settings.analytics.insights.panels.requestType')}
-        tier="estimated"
-        n={totals.request_type?.n ?? 0}
-        denominatorKey="shareOfMessages"
-        rows={requestRows}
-        points={rangePoints(drawnOptions(totals.request_type, requestRows))}
-      />
-      <BarsPanel
-        title={t('settings.analytics.insights.panels.whyNot')}
-        tier="estimated"
-        n={gapType?.n ?? 0}
-        denominatorKey="shareOfAnswers"
-        rows={gapRows}
-        points={rangePoints(drawnOptions(gapType, gapRows))}
-      />
-      {topic && topic.n > 0 && (
+      {panels.map((panel, index) => (
         <BarsPanel
-          title={t('settings.analytics.insights.panels.topic')}
-          tier="experimental"
-          n={topic.n}
-          denominatorKey="shareOfMessages"
-          rows={topicRows}
+          key={panel.title}
+          {...panel}
+          wide={odd && index === panels.length - 1}
         />
-      )}
-      {data.tags.length > 0 && (
-        <BarsPanel
-          title={t('settings.analytics.insights.panels.tags')}
-          n={tagN}
-          denominatorKey="shareOfConversations"
-          rows={tagRows}
-          // A tag's own sample is checked per row: a new tag shows "—"
-          // beside older ones.
-          alwaysRows
-        />
-      )}
+      ))}
     </div>
   );
 }
@@ -496,11 +508,11 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
     <Card
       variant="subtle"
       padding="lg"
-      className="h-[345px] w-full overflow-hidden"
+      className="h-full min-h-[345px] w-full overflow-hidden"
       data-testid="insight-answer-status"
     >
       <SectionHeader as="h3" size="xs" title={title} />
-      <div className="relative h-[245px] w-full">
+      <div className="relative min-h-[245px] w-full flex-1">
         {enough ? (
           <>
             <div
@@ -560,6 +572,8 @@ type BarsPanelProps = {
   points?: number;
   /** Draw the rows even under the sample floor (they check their own). */
   alwaysRows?: boolean;
+  /** Span both grid columns, with the bars in two columns. */
+  wide?: boolean;
 };
 
 function BarsPanel({
@@ -570,12 +584,17 @@ function BarsPanel({
   rows,
   points,
   alwaysRows = false,
+  wide = false,
 }: BarsPanelProps) {
   const { t } = useTranslation();
   const enough = alwaysRows || n >= MIN_SAMPLE;
   const heading = <SectionHeader as="h3" size="xs" title={title} />;
   return (
-    <Card variant="subtle" padding="lg" className="w-full">
+    <Card
+      variant="subtle"
+      padding="lg"
+      className={cn('w-full', wide && 'xl:col-span-2')}
+    >
       {tier ? (
         <div className="flex flex-wrap items-center gap-2">
           {heading}
@@ -609,7 +628,7 @@ function BarsPanel({
               })}
             </p>
           )}
-          <IntervalBars rows={rows} ariaLabel={title} />
+          <IntervalBars rows={rows} ariaLabel={title} columns={wide ? 2 : 1} />
         </>
       )}
     </Card>

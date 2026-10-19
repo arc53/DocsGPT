@@ -162,16 +162,10 @@ describe('AnalyticsSection', () => {
     expect(section.querySelector('[role="note"]')!.textContent).toBe(
       'agents.form.analytics.serverOff',
     );
-    expect(
-      section.querySelector('[data-testid="analytics-on-badge"]'),
-    ).toBeNull();
   });
 
-  it('shows On while labelling, and hides the rest when switched off', async () => {
+  it('hides the rest when switched off', async () => {
     await render();
-    expect(
-      container.querySelector('[data-testid="analytics-on-badge"]'),
-    ).not.toBeNull();
     const enabled = container.querySelector<HTMLButtonElement>(
       '[data-testid="analytics-enabled"]',
     )!;
@@ -179,9 +173,6 @@ describe('AnalyticsSection', () => {
     expect(latest!.enabled).toBe(false);
     expect(
       container.querySelector('[data-testid="analytics-tags"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('[data-testid="analytics-on-badge"]'),
     ).toBeNull();
   });
 

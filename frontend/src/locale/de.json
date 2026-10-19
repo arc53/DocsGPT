@@ -2969,7 +2969,6 @@
         "stopNote_other": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff verlierst."
       },
       "analytics": {
-        "on": "An",
         "enable": "Gespräche dieses Agenten auswerten",
         "enableDescription": "Schätzt im Hintergrund, ob Antworten geholfen haben, wonach Nutzer fragen und wo die Doku Lücken hat. Die Ergebnisse erscheinen in den Protokollen dieses Agenten.",
         "learnMore": "Mehr erfahren",

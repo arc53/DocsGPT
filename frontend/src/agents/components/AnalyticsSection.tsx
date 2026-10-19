@@ -243,24 +243,17 @@ export default function AnalyticsSection({
       data-testid="analytics-section"
     >
       <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h2>
-            <CollapsibleTrigger
-              look="section"
-              open={expanded}
-              onOpenChange={setExpanded}
-              controls={bodyId}
-              data-testid="analytics-toggle"
-            >
-              {t('agents.form.sections.analytics')}
-            </CollapsibleTrigger>
-          </h2>
-          {available && config.enabled && (
-            <Badge variant="success" data-testid="analytics-on-badge">
-              {t('agents.form.analytics.on')}
-            </Badge>
-          )}
-        </div>
+        <h2>
+          <CollapsibleTrigger
+            look="section"
+            open={expanded}
+            onOpenChange={setExpanded}
+            controls={bodyId}
+            data-testid="analytics-toggle"
+          >
+            {t('agents.form.sections.analytics')}
+          </CollapsibleTrigger>
+        </h2>
 
         <Collapsible open={expanded} id={bodyId}>
           <div className="flex flex-col gap-5 pt-5">

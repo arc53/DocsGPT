@@ -3048,7 +3048,6 @@
         "stopNote_many": "Dejan de ejecutarse si pierdes el acceso de edición."
       },
       "analytics": {
-        "on": "Activada",
         "enable": "Etiquetar las conversaciones de este agente",
         "enableDescription": "Estima en segundo plano si las respuestas ayudaron, sobre qué preguntan los usuarios y dónde se queda corta la documentación. Los resultados aparecen en los registros de este agente.",
         "learnMore": "Más información",

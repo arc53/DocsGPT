@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { cn } from '@/lib/utils';
+
 import { EMPTY_VALUE } from '../../utils/dateTimeUtils';
 import { formatShare, formatShareRange, type BarRow } from './format';
 
@@ -12,6 +14,8 @@ type IntervalBarsProps = {
   rows: BarRow[];
   /** The list's accessible name (the panel title). */
   ariaLabel: string;
+  /** 2: from xl the rows fill a left column, then a right one. */
+  columns?: 1 | 2;
 };
 
 /**
@@ -20,10 +24,27 @@ type IntervalBarsProps = {
  * run for assistive tech ("How-to: 38%, likely 31% to 45%"); the drawing is
  * hidden from it.
  */
-export default function IntervalBars({ rows, ariaLabel }: IntervalBarsProps) {
+export default function IntervalBars({
+  rows,
+  ariaLabel,
+  columns = 1,
+}: IntervalBarsProps) {
   const { t } = useTranslation();
   return (
-    <ul role="list" aria-label={ariaLabel} className="flex flex-col gap-1.5">
+    <ul
+      role="list"
+      aria-label={ariaLabel}
+      className={cn(
+        'flex flex-col gap-1.5',
+        columns === 2 &&
+          'xl:grid xl:grid-flow-col xl:grid-cols-2 xl:grid-rows-[repeat(var(--rows),auto)] xl:gap-x-12',
+      )}
+      style={
+        columns === 2
+          ? ({ '--rows': Math.ceil(rows.length / 2) } as CSSProperties)
+          : undefined
+      }
+    >
       {rows.map((row) => {
         const { value } = row;
         const rowLabel = value
