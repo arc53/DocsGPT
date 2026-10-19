@@ -175,7 +175,7 @@ These apply to the release after 1.0.0.
 
 #### Ingests move to an `ingest` queue
 
-Uploads, remote and connector ingests, re-ingests, source syncs, graph builds and wiki conversion now go to their own Celery queue, `ingest` (`INGEST_QUEUE`). A worker started without `-Q` consumes it automatically. **If you start your worker with an explicit `-Q`, add `ingest`:**
+Source uploads, remote and connector ingests, re-ingests, source syncs, graph builds and wiki conversion now go to their own Celery queue, `ingest` (`INGEST_QUEUE`). Chat attachments stay on `docsgpt`. A worker started without `-Q` consumes it automatically. **If you start your worker with an explicit `-Q`, add `ingest`:**
 
 ```diff
 - celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings
