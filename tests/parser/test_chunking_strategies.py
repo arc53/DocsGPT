@@ -271,6 +271,25 @@ class TestRecursive:
         chunks = chunker._merge_fragments(["f1", "f2", "f3", "f4"])
         assert chunks == ["f1f2f3", "f3f4"]
 
+    def test_merge_fragments_empty_list(self):
+        """Empty fragments list returns empty chunks."""
+        chunker = RecursiveChunker(max_tokens=10)
+        assert chunker._merge_fragments([]) == []
+
+    def test_merge_fragments_oversized_single_fragment(self):
+        """Oversized single fragment exceeding max_tokens is emitted as its own chunk."""
+        chunker = RecursiveChunker(max_tokens=5)
+        token_map = {"oversized": 10, "small": 2}
+        chunker._token_count = lambda text: token_map.get(text, len(text))
+        chunks = chunker._merge_fragments(["oversized", "small"])
+        assert chunks == ["oversized", "small"]
+
+    def test_chunk_empty_and_whitespace_documents_skipped(self):
+        """Empty or whitespace-only documents produce no chunks."""
+        chunker = RecursiveChunker(max_tokens=10)
+        docs = [Document(text="", doc_id="d1"), Document(text="   \n\t  ", doc_id="d2")]
+        assert chunker.chunk(docs) == []
+
 
 @pytest.mark.unit
 class TestMarkdown:
