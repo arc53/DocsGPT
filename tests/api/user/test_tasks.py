@@ -1143,6 +1143,77 @@ def test_bare_worker_consumes_app_and_parsing_queues():
     assert settings.DOCUMENT_PARSE_QUEUE in names
 
 
+# Whole-source jobs: each can hold a worker slot for minutes to hours.
+INGEST_LANE_TASKS = (
+    "docsgpt.api.user.tasks.ingest",
+    "docsgpt.api.user.tasks.ingest_remote",
+    "docsgpt.api.user.tasks.ingest_connector_task",
+    "docsgpt.api.user.tasks.reingest_source_task",
+    "docsgpt.api.user.tasks.sync_source",
+    "docsgpt.api.user.tasks.sync_connector_source",
+    "docsgpt.api.user.tasks.extract_graph",
+    "docsgpt.api.user.tasks.convert_source_to_wiki",
+)
+
+# Work a user or the scheduler is waiting on; it must never queue behind an ingest.
+CONTROL_LANE_TASKS = (
+    "docsgpt.api.user.tasks.reconciliation_task",
+    "docsgpt.api.user.tasks.dispatch_scheduled_runs",
+    "docsgpt.api.user.tasks.schedule_syncs",
+    "docsgpt.api.user.tasks.store_attachment",
+    "docsgpt.api.user.tasks.store_archive_member",
+    "docsgpt.api.user.tasks.reembed_wiki_page",
+    "docsgpt.api.user.tasks.sweep_background_jobs",
+)
+
+
+def _routed_queue(task_name):
+    """Return the queue name Celery's router picks for ``task_name``."""
+    from docsgpt.celery_init import celery
+
+    return celery.amqp.router.route({}, task_name)["queue"].name
+
+
+@pytest.mark.unit
+def test_bare_worker_consumes_ingest_queue():
+    """A -Q-less worker must still run ingests, or a default install strands every upload."""
+    import docsgpt.celeryconfig as celeryconfig
+    from docsgpt.core.settings import settings
+
+    names = {queue.name for queue in celeryconfig.task_queues}
+    assert settings.INGEST_QUEUE in names
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("task_name", INGEST_LANE_TASKS)
+def test_whole_source_tasks_route_to_ingest_queue(task_name):
+    from docsgpt.core.settings import settings
+
+    assert _routed_queue(task_name) == settings.INGEST_QUEUE
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("task_name", CONTROL_LANE_TASKS)
+def test_interactive_and_beat_tasks_stay_on_default_queue(task_name):
+    assert _routed_queue(task_name) == "docsgpt"
+
+
+@pytest.mark.unit
+def test_every_ingest_route_names_a_registered_task():
+    """A typo in a route key silently leaves that task on the default queue."""
+    import docsgpt.api.user.tasks  # noqa: F401  (registers the tasks)
+    import docsgpt.celeryconfig as celeryconfig
+    from docsgpt.celery_init import celery
+    from docsgpt.core.settings import settings
+
+    ingest_routes = [
+        name for name, route in celeryconfig.task_routes.items()
+        if route["queue"] == settings.INGEST_QUEUE
+    ]
+    assert sorted(ingest_routes) == sorted(INGEST_LANE_TASKS)
+    assert set(ingest_routes) <= set(celery.tasks)
+
+
 class TestParseTimeoutForSize:
     """The awaited parse window is floored at the base timeout, scales with size, and is capped."""
 

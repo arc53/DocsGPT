@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-18
+lastUpdated: 2026-10-19
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1180,6 +1180,12 @@ Skip GitHub repo blobs larger than this (0 = no cap).
 Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
+
+### `INGEST_QUEUE`
+
+Type `str`, default `ingest`.
+
+Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest worker so a long ingest cannot hold the slots that beat tasks and attachments need.
 
 ### `DOCUMENT_PARSE_QUEUE`
 

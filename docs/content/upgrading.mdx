@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-17
+lastUpdated: 2026-10-19
 ---
 
 import { Callout } from 'nextra/components'
@@ -172,6 +172,17 @@ Newest first. Each note says what an existing deployment has to do.
 ### Upgrading from 1.0.0
 
 These apply to the release after 1.0.0.
+
+#### Ingests move to an `ingest` queue
+
+Uploads, remote and connector ingests, re-ingests, source syncs, graph builds and wiki conversion now go to their own Celery queue, `ingest` (`INGEST_QUEUE`). A worker started without `-Q` consumes it automatically. **If you start your worker with an explicit `-Q`, add `ingest`:**
+
+```diff
+- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings
++ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
+```
+
+The bundled Compose and Kubernetes manifests already include it, so pull them along with the code. Without it, new sources stay in "processing" forever, because nothing picks the task up, and no error is logged. Tasks queued before the upgrade are still on `docsgpt` and finish there. To keep long ingests from delaying scheduled runs and cleanups, run a second worker with `-Q ingest`; see [Scaling and scheduled tasks](/Deploying/Kubernetes-Deploying#scaling-and-scheduled-tasks).
 
 #### GUARDRAILS_FLOOR moves to Admin → Guardrails
 
