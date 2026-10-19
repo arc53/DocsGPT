@@ -1,7 +1,7 @@
 ---
 title: Setting Up a Development Environment
 description: Guide to setting up a development environment for DocsGPT, including backend and frontend setup.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-19
 ---
 
 import { Callout } from 'nextra/components'
@@ -332,6 +332,8 @@ Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and 
 
 - **Searches hang for up to a minute or fail at once, and answers ignore your documents.** No worker is consuming the `embeddings`
   queue. Start one as in step 5. A worker started with an explicit `-Q` must list `embeddings`.
+- **A new source stays in "processing" and the worker log shows nothing.** The worker was started with an explicit `-Q`
+  list that leaves out `ingest`. Add it, or start the worker without `-Q`.
 - **Scheduled agent runs and source syncs never fire.** No beat scheduler is running. Start the worker with
   `docsgpt worker` or add `-B` to the `celery` command. On Windows, also run `docsgpt beat`.
 - **Notifications never appear, a dropped answer doesn't resume, a paired device never receives commands, or
