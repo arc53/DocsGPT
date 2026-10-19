@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { useParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigationType,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
+import { revealElement } from '../settings/logsLinks';
 import SectionShell from '../navigation/SectionShell';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import GuardrailEvents from './components/GuardrailEvents';
@@ -16,6 +22,10 @@ export default function AgentLogs() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const token = useSelector(selectToken);
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const [searchParams] = useSearchParams();
+  const logsRef = useRef<HTMLDivElement>(null);
 
   const [agent, setAgent] = useState<Agent>();
   const [loadingAgent, setLoadingAgent] = useState<boolean>(true);
@@ -38,6 +48,19 @@ export default function AgentLogs() {
     if (agentId) fetchAgent(agentId);
   }, [agentId, token]);
 
+  // A drill-down (a docs-gap example, "See every docs gap") lands on Logs
+  // further down this page: bring it into view. The label select replaces
+  // the entry instead, so changing the filter in place doesn't scroll.
+  const label = searchParams.get('label');
+  const conversation = searchParams.get('conversation');
+  useEffect(() => {
+    if (navigationType === 'REPLACE') return;
+    if (!label && !conversation) return;
+    revealElement(logsRef.current, 'start');
+  }, [location.key, label, conversation, navigationType]);
+
+  const analytics = agent?.config?.analytics;
+
   return (
     <SectionShell>
       {agent && (
@@ -48,12 +71,20 @@ export default function AgentLogs() {
       )}
       {agentId && (
         <>
-          <Analytics agentId={agentId} />
+          <Analytics agentId={agentId} agent={agent} />
           <GuardrailEvents agentId={agentId} />
-          <div className="mt-8">
+          <div ref={logsRef} id="logs" className="mt-8 scroll-mt-4">
             <Logs
               agentId={agentId}
               tableHeader={t('agents.logs.tableHeader')}
+              analytics={
+                agent
+                  ? {
+                      enabled: analytics?.enabled !== false,
+                      tags: analytics?.tags ?? [],
+                    }
+                  : undefined
+              }
             />
           </div>
         </>

@@ -72,17 +72,25 @@ function Badge({
       )}
       {...props}
     >
-      {children}
-      {onRemove && (
-        <button
-          type="button"
-          data-slot="badge-remove"
-          aria-label={removeLabel}
-          onClick={onRemove}
-          className={`${focusRing} hover:bg-primary/15 relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none after:absolute after:-inset-1`}
-        >
-          <X className="size-3" aria-hidden="true" />
-        </button>
+      {/* asChild slots onto one element (a tooltip's button), so the X,
+          which needs a span to sit in, is only drawn without it. */}
+      {asChild ? (
+        children
+      ) : (
+        <>
+          {children}
+          {onRemove && (
+            <button
+              type="button"
+              data-slot="badge-remove"
+              aria-label={removeLabel}
+              onClick={onRemove}
+              className={`${focusRing} hover:bg-primary/15 relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none after:absolute after:-inset-1`}
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          )}
+        </>
       )}
     </Comp>
   );

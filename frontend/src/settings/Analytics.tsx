@@ -1,19 +1,10 @@
-import {
-  BarElement,
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LinearScale,
-  Title,
-  Tooltip,
-} from 'chart.js';
 import { useEffect, useRef, useState } from 'react';
-import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { foldSeries, OTHER_SERIES_KEY } from './foldSeries';
 
 import userService from '../api/services/userService';
+import type { Agent } from '../agents/types';
 import SkeletonLoader from '../components/SkeletonLoader';
 import StatCard from '../components/StatCard';
 import { Card } from '../components/ui/card';
@@ -27,32 +18,26 @@ import {
 } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { useLoaderState } from '../hooks';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
-import {
-  hoverColor,
-  htmlLegendPlugin,
-  useChartPalette,
-} from '../utils/chartUtils';
+import { useChartPalette } from '../utils/chartUtils';
 import { formatCount, formatDate } from '../utils/dateTimeUtils';
+import AnalyticsChart from './AnalyticsChart';
 import UsageQuota from './components/UsageQuota';
-
-import type { ChartData } from 'chart.js';
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-);
+import ConversationInsights from './insights/ConversationInsights';
+import { insightsState, showsImplicitFeedback } from './insights/format';
+import ImplicitFeedbackPanel from './insights/ImplicitFeedbackPanel';
+import { useConversationInsights } from './insights/useConversationInsights';
 
 type TokenGroupBy = 'none' | 'model' | 'agent' | 'source';
 
 type AnalyticsProps = {
   agentId?: string;
+  /** The agent whose page this is, once loaded: insights link to its settings. */
+  agent?: Agent;
 };
 
-export default function Analytics({ agentId }: AnalyticsProps) {
+export default function Analytics({ agentId, agent }: AnalyticsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
 
@@ -123,6 +108,10 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     value: 'last_30_days',
   });
   const [tokenGroupBy, setTokenGroupBy] = useState<TokenGroupBy>('none');
+  // One fetch for the implicit-feedback panel and the insights section.
+  const insights = useConversationInsights(agentId, timeFilter.value);
+  const insightsView = insightsState(insights.status, insights.data);
+  const twoUpFeedback = showsImplicitFeedback(insightsView) && insights.data;
   // Side-channel = tokens spent outside a user request (title generation,
   // history compression, RAG condensing).
   const [includeSideChannel, setIncludeSideChannel] = useState(false);
@@ -607,12 +596,21 @@ export default function Analytics({ agentId }: AnalyticsProps) {
         </Card>
       </div>
 
-      {/* Feedback Analytics */}
-      <div className="mt-4 flex w-full flex-col gap-3">
+      {/* Feedback Analytics: two-up with the implicit feedback while
+          insights show, else full width as before. */}
+      <div
+        className={cn(
+          'mt-4 flex w-full flex-col gap-3',
+          twoUpFeedback && 'xl:flex-row',
+        )}
+      >
         <Card
           variant="subtle"
           padding="lg"
-          className="h-[345px] w-full overflow-hidden"
+          className={cn(
+            'h-[345px] w-full overflow-hidden',
+            twoUpFeedback && 'xl:w-1/2',
+          )}
         >
           <SectionHeader
             as="h3"
@@ -658,89 +656,17 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             )}
           </div>
         </Card>
+        {twoUpFeedback && <ImplicitFeedbackPanel data={twoUpFeedback} />}
       </div>
+
+      <ConversationInsights
+        state={insightsView}
+        data={insights.data}
+        agentId={agentId}
+        agent={agent}
+        filterOption={timeFilter.value}
+        onRetry={insights.retry}
+      />
     </div>
-  );
-}
-
-type AnalyticsChartProps = {
-  data: ChartData<'bar'>;
-  legendID: string;
-  maxTicksLimitInX: number;
-  isStacked: boolean;
-  /** Grid lines and axis borders (`--border`). */
-  gridColor: string;
-  /** Axis tick labels and legend text (`--muted-foreground`). */
-  tickColor: string;
-};
-
-function AnalyticsChart({
-  data,
-  legendID,
-  maxTicksLimitInX,
-  isStacked,
-  gridColor,
-  tickColor,
-}: AnalyticsChartProps) {
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-        // The HTML legend copies each item's fontColor, which is this.
-        labels: { color: tickColor },
-      },
-      htmlLegend: {
-        containerID: legendID,
-      },
-    },
-    scales: {
-      x: {
-        grid: {
-          lineWidth: 0.2,
-          color: gridColor,
-        },
-        border: {
-          width: 0.2,
-          color: gridColor,
-        },
-        ticks: {
-          maxTicksLimit: maxTicksLimitInX,
-          color: tickColor,
-        },
-        stacked: isStacked,
-      },
-      y: {
-        grid: {
-          lineWidth: 0.2,
-          color: gridColor,
-        },
-        border: {
-          width: 0.2,
-          color: gridColor,
-        },
-        ticks: {
-          color: tickColor,
-        },
-        stacked: isStacked,
-      },
-    },
-  };
-  return (
-    <Bar
-      options={options}
-      plugins={[htmlLegendPlugin]}
-      data={{
-        ...data,
-        datasets: data.datasets.map((dataset) => ({
-          ...dataset,
-          hoverBackgroundColor:
-            typeof dataset.backgroundColor === 'string'
-              ? hoverColor(dataset.backgroundColor)
-              : dataset.backgroundColor,
-        })),
-      }}
-    />
   );
 }

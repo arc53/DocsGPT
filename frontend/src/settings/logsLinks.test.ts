@@ -1,0 +1,36 @@
+import { describe, expect, it } from 'vitest';
+
+import { isLogLabel, logsDrilldownPath } from './logsLinks';
+
+describe('logsDrilldownPath', () => {
+  it("lands on the agent's Logs section with the filters in the URL", () => {
+    expect(
+      logsDrilldownPath({
+        agentId: 'a1',
+        conversationId: 'c 1',
+        messageId: 'm1',
+      }),
+    ).toBe('/agents/manage/logs/a1?conversation=c+1&message=m1#logs');
+    expect(logsDrilldownPath({ agentId: 'a1', label: 'docs_gap' })).toBe(
+      '/agents/manage/logs/a1?label=docs_gap#logs',
+    );
+  });
+
+  it("opens the account's Logs without an agent", () => {
+    expect(logsDrilldownPath({ label: 'tag:a1b2c3d4' })).toBe(
+      '/settings/logs?label=tag%3Aa1b2c3d4',
+    );
+    expect(logsDrilldownPath({})).toBe('/settings/logs');
+  });
+});
+
+describe('isLogLabel', () => {
+  it('accepts the filter labels and tag ids, nothing else', () => {
+    expect(isLogLabel('docs_gap')).toBe(true);
+    expect(isLogLabel('negative_reaction')).toBe(true);
+    expect(isLogLabel('tag:a1b2c3d4')).toBe(true);
+    expect(isLogLabel('tag:short')).toBe(false);
+    expect(isLogLabel('sentiment')).toBe(false);
+    expect(isLogLabel(null)).toBe(false);
+  });
+});

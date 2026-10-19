@@ -36,6 +36,12 @@ vi.mock('../hooks/useLoadMore', () => ({
     return vi.fn();
   },
 }));
+// The drill-down filters are URL state; these tests run without them
+// (Logs.labels.test.tsx covers them under a real router).
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+}));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 

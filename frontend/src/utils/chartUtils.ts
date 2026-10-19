@@ -58,6 +58,7 @@ export type ChartPalette = {
   success: string;
   warning: string;
   destructive: string;
+  info: string;
   /** Grid lines and axis borders. */
   border: string;
   /** Tick labels and legend text. */
@@ -77,6 +78,7 @@ export function readChartPalette(): ChartPalette {
     success: readCssVar('--success', '#079455'),
     warning: readCssVar('--warning', '#ca8a04'),
     destructive: readCssVar('--destructive', '#ef4444'),
+    info: readCssVar('--info', '#2563eb'),
     border: readCssVar('--border', '#d9d9d9'),
     mutedForeground: readCssVar('--muted-foreground', '#6b6b6b'),
   };

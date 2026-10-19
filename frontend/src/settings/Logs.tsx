@@ -2,6 +2,7 @@ import { Activity, ChevronRight, ThumbsDown, ThumbsUp } from 'lucide-react';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 
 import {
   selectActivityRevision,
@@ -14,6 +15,7 @@ import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useClock } from '../hooks/useClock';
 import { useScrollSentinel } from '../hooks/useLoadMore';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';
 import { Collapsible } from '../components/ui/collapsible';
@@ -26,15 +28,21 @@ import { LoadMoreStatus } from '../components/ui/load-more-status';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
 import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
+import { useAnalyticsAvailability } from './insights/useAnalyticsAvailability';
+import LabelChips from './LabelChips';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
+import { isLogLabel, LOG_LABELS, revealElement } from './logsLinks';
 import { mergeLoadedPages, newestFirst, uniqueLogs } from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
 import { LogData, TraceRef } from './types';
@@ -49,14 +57,52 @@ const PAGE_SIZE = 10;
 /** The most rows one request reads: the endpoint's largest page. */
 const MAX_REQUEST_ROWS = 100;
 
+/** The label filter's keys under `settings.logs.labels`. */
+const LABEL_KEYS: Record<(typeof LOG_LABELS)[number], string> = {
+  not_answered: 'notAnswered',
+  docs_gap: 'docsGap',
+  frustrated: 'frustrated',
+  asks_human: 'asksHuman',
+  negative_reaction: 'negativeReaction',
+};
+
 type LogsProps = {
   agentId?: string;
   tableHeader?: string;
+  /**
+   * An agent's analytics: whether its conversations are labelled (the label
+   * filter shows only then) and its tags, offered as filters and named on
+   * the rows' chips. Left out on the account's Logs.
+   */
+  analytics?: { enabled: boolean; tags: { id: string; name: string }[] };
 };
 
-export default function Logs({ agentId, tableHeader }: LogsProps) {
+export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  // The drill-down filters live in the URL, so a docs-gap example or a
+  // shared link opens Logs already narrowed: `label`, `conversation` and the
+  // `message` to open.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawLabel = searchParams.get('label');
+  const labelFilter = isLogLabel(rawLabel) ? rawLabel : null;
+  const conversationFilter = searchParams.get('conversation') || null;
+  const messageTarget = searchParams.get('message') || null;
+  const availability = useAnalyticsAvailability();
+  // On an agent's page the agent must label its conversations too; until it
+  // has loaded the filter stays hidden. A link that carries a label keeps it
+  // shown, so the filter can be cleared.
+  const labelsOn =
+    availability.enabled && (agentId ? Boolean(analytics?.enabled) : true);
+  const showLabelFilter = labelsOn || labelFilter !== null;
+  // Tag names from the agent's settings, then from each page's `tag_names`.
+  const [pageTagNames, setPageTagNames] = useState<Record<string, string>>({});
+  const tagNames = {
+    ...pageTagNames,
+    ...Object.fromEntries(
+      (analytics?.tags ?? []).map((tag) => [tag.id, tag.name]),
+    ),
+  };
   const [logsByPage, setLogsByPage] = useState<Record<number, LogData[]>>({});
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -77,7 +123,14 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // Identifies the filter combination a request was issued under, so a
   // slow response from a previous combination is discarded instead of
   // landing in the freshly reset cache.
-  const filterKey = [agentId ?? '', levelFilter, typeFilter, search].join('|');
+  const filterKey = [
+    agentId ?? '',
+    levelFilter,
+    typeFilter,
+    search,
+    labelFilter ?? '',
+    conversationFilter ?? '',
+  ].join('|');
   const filterKeyRef = useRef(filterKey);
   filterKeyRef.current = filterKey;
   const isFirstRender = useRef(true);
@@ -107,7 +160,56 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     setLogsByPage({});
     setPage(1);
     setHasMore(true);
-  }, [levelFilter, typeFilter, search, agentId]);
+  }, [
+    levelFilter,
+    typeFilter,
+    search,
+    agentId,
+    labelFilter,
+    conversationFilter,
+  ]);
+
+  // A new drill-down starts from every level, type and text, so a filter
+  // left from earlier can't hide the conversation it points at.
+  const shownConversation = useRef(conversationFilter);
+  useEffect(() => {
+    if (shownConversation.current === conversationFilter) return;
+    shownConversation.current = conversationFilter;
+    if (!conversationFilter) return;
+    setLevelFilter('all');
+    setTypeFilter('all');
+    setSearchInput('');
+    setSearch('');
+  }, [conversationFilter]);
+
+  const setLabelFilter = (value: string) =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (value === 'all') params.delete('label');
+        else params.set('label', value);
+        return params;
+      },
+      { replace: true },
+    );
+  const clearConversation = () =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.delete('conversation');
+        params.delete('message');
+        return params;
+      },
+      { replace: true },
+    );
+  const addTagNames = (names: unknown) => {
+    if (!names || typeof names !== 'object') return;
+    const entries = Object.entries(names as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    );
+    if (entries.length)
+      setPageTagNames((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+  };
 
   const requestPage = (pageNumber: number, pageSize = PAGE_SIZE) =>
     userService.getLogs(
@@ -118,6 +220,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         level: levelFilter === 'all' ? undefined : levelFilter,
         ...typeFilterParams(typeFilter),
         search: search || undefined,
+        label: labelFilter ?? undefined,
+        conversation_id: conversationFilter ?? undefined,
       },
       token,
     );
@@ -146,6 +250,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         [issuedPage]: data.logs,
       }));
       setHasMore(data.has_more);
+      addTagNames(data.tag_names);
     } catch (error) {
       console.error(error);
       if (
@@ -169,7 +274,16 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       return;
     }
     if (hasMore) fetchLogs();
-  }, [page, agentId, levelFilter, typeFilter, search, logsByPage]);
+  }, [
+    page,
+    agentId,
+    levelFilter,
+    typeFilter,
+    search,
+    labelFilter,
+    conversationFilter,
+    logsByPage,
+  ]);
 
   // Reloads the loaded pages in place: new rows come in on top and runs that
   // ended give way to their finished rows. Only page 1 while no loaded page
@@ -223,6 +337,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
         has_more: last.has_more || last.logs.length > keep,
       };
       if (issuedKey !== filterKeyRef.current) return;
+      parts.forEach((part) => addTagNames(part.tag_names));
       if (seq !== refreshSeqRef.current) return;
       const previous = logsByPageRef.current;
       if (!previous[1]) return;
@@ -296,43 +411,116 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.feedback.dislike'), value: 'dislike' },
   ];
 
+  // The agent's tags, and the one in the URL even if it isn't one of them.
+  const tagOptions = [...(analytics?.tags ?? [])];
+  if (
+    labelFilter?.startsWith('tag:') &&
+    !tagOptions.some((tag) => `tag:${tag.id}` === labelFilter)
+  ) {
+    const id = labelFilter.slice(4);
+    tagOptions.push({ id, name: tagNames[id] ?? id });
+  }
+  const selectedTagName = labelFilter?.startsWith('tag:')
+    ? tagOptions.find((tag) => `tag:${tag.id}` === labelFilter)?.name
+    : undefined;
+  const drilledDown = labelFilter !== null || conversationFilter !== null;
+
   return (
     <div>
       <p className="text-muted-foreground mb-5 text-sm leading-6">
         {t('settings.logs.subtitle')}
       </p>
-      <div className="mb-3 flex flex-row flex-wrap items-center gap-3">
-        <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger className="w-[125px]" size="field" shape="pill">
-            <SelectValue placeholder={t('settings.logs.levels.all')} />
-          </SelectTrigger>
-          <SelectContent>
-            {levelOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[140px]" size="field" shape="pill">
-            <SelectValue placeholder={t('settings.logs.types.all')} />
-          </SelectTrigger>
-          <SelectContent>
-            {typeOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="w-56">
-          <SearchInput
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            label={t('settings.logs.searchPlaceholder')}
-          />
+      <div className="mb-3">
+        <div className="flex flex-row flex-wrap items-center gap-3">
+          <Select value={levelFilter} onValueChange={setLevelFilter}>
+            <SelectTrigger className="w-[125px]" size="field" shape="pill">
+              <SelectValue placeholder={t('settings.logs.levels.all')} />
+            </SelectTrigger>
+            <SelectContent>
+              {levelOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[140px]" size="field" shape="pill">
+              <SelectValue placeholder={t('settings.logs.types.all')} />
+            </SelectTrigger>
+            <SelectContent>
+              {typeOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {showLabelFilter && (
+            <Select value={labelFilter ?? 'all'} onValueChange={setLabelFilter}>
+              <SelectTrigger
+                className="w-[170px]"
+                size="field"
+                shape="pill"
+                title={selectedTagName}
+                data-testid="logs-label-filter"
+              >
+                <SelectValue
+                  placeholder={t('settings.logs.labels.filterAll')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {t('settings.logs.labels.filterAll')}
+                </SelectItem>
+                {LOG_LABELS.map((label) => (
+                  <SelectItem key={label} value={label}>
+                    {t(`settings.logs.labels.${LABEL_KEYS[label]}`)}
+                  </SelectItem>
+                ))}
+                {tagOptions.length > 0 && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>
+                        {t('settings.logs.labels.tags')}
+                      </SelectLabel>
+                      {tagOptions.map((tag) => (
+                        <SelectItem key={tag.id} value={`tag:${tag.id}`}>
+                          {tag.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="w-56">
+            <SearchInput
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              label={t('settings.logs.searchPlaceholder')}
+            />
+          </div>
+          {conversationFilter && (
+            <Badge
+              onRemove={clearConversation}
+              removeLabel={t('settings.logs.labels.clearConversation')}
+              data-testid="logs-conversation-chip"
+            >
+              {t('settings.logs.labels.conversation')}
+              <span className="font-mono" title={conversationFilter}>
+                {conversationFilter.slice(0, 8)}
+              </span>
+            </Badge>
+          )}
         </div>
+        {drilledDown && (
+          <p className="text-muted-foreground mt-1.5 text-xs">
+            {t('settings.logs.labels.hint')}
+          </p>
+        )}
       </div>
       <div>
         <LogsTable
@@ -344,6 +532,13 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           onRetry={fetchLogs}
           tableHeader={tableHeader}
           onViewTrace={setOpenTrace}
+          emptyTitle={
+            drilledDown
+              ? t('settings.logs.labels.emptyForFilter')
+              : t('settings.logs.noLogs')
+          }
+          targetMessageId={messageTarget}
+          tagNames={tagNames}
         />
       </div>
       <TraceSheet
@@ -378,6 +573,11 @@ type LogsTableProps = {
   onRetry: () => void;
   tableHeader?: string;
   onViewTrace: (ref: TraceRef) => void;
+  /** The empty list's message: none at all, or none for the drill-down. */
+  emptyTitle: string;
+  /** A message to open and bring into view once its row has loaded. */
+  targetMessageId: string | null;
+  tagNames: Record<string, string>;
 };
 function LogsTable({
   logs,
@@ -388,9 +588,28 @@ function LogsTable({
   onRetry,
   tableHeader,
   onViewTrace,
+  emptyTitle,
+  targetMessageId,
+  tagNames,
 }: LogsTableProps) {
   const { t } = useTranslation();
   const [openLogId, setOpenLogId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Opens the linked message once, when its row arrives; collapsing it
+  // afterwards is the user's choice and sticks.
+  const openedTarget = useRef<string | null>(null);
+  useEffect(() => {
+    if (!targetMessageId || openedTarget.current === targetMessageId) return;
+    const target = logs.find((log) => log.message_id === targetMessageId);
+    if (!target) return;
+    openedTarget.current = targetMessageId;
+    setOpenLogId(target.id);
+    const row = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>('[data-log-id]') ?? [],
+    ).find((element) => element.dataset.logId === target.id);
+    revealElement(row, 'nearest');
+  }, [logs, targetMessageId]);
 
   const handleLogToggle = (logId: string) => {
     if (openLogId === logId) {
@@ -414,7 +633,10 @@ function LogsTable({
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
+      <div
+        ref={listRef}
+        className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4"
+      >
         {!loading && failed && logs.length === 0 && (
           <EmptyState
             tone="destructive"
@@ -429,7 +651,7 @@ function LogsTable({
           <EmptyState
             size="xs"
             illustration="none"
-            title={t('settings.logs.noLogs')}
+            title={emptyTitle}
             className="w-full"
           />
         )}
@@ -440,6 +662,7 @@ function LogsTable({
             isOpen={openLogId === log.id}
             onToggle={handleLogToggle}
             onViewTrace={onViewTrace}
+            tagNames={tagNames}
           />
         ))}
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
@@ -470,11 +693,13 @@ function Log({
   isOpen,
   onToggle,
   onViewTrace,
+  tagNames,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
   onViewTrace: (ref: TraceRef) => void;
+  tagNames: Record<string, string>;
 }) {
   const { t } = useTranslation();
   const bodyId = useId();
@@ -620,6 +845,7 @@ function Log({
 
   return (
     <div
+      data-log-id={log.id}
       className={cn(
         'group w-full rounded-xl bg-transparent',
         !isOpen && 'hover:bg-accent',
@@ -711,6 +937,7 @@ function Log({
               aria-label={t('settings.logs.feedback.dislike')}
             />
           )}
+          <LabelChips labels={log.labels} tagNames={tagNames} />
           {log.trace && (
             <span className="text-muted-foreground text-xs tabular-nums">
               {formatDurationMs(log.trace.duration_ms)}

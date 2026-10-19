@@ -185,10 +185,28 @@ export type GuardrailsConfig = {
   controls: GuardrailControl[];
 };
 
+/** A documentation section a message can be about; keyed by name. */
+export type AnalyticsTopic = { name: string; description: string };
+
+/** An owner's yes/no conversation label; the id keeps its history across renames. */
+export type AnalyticsTag = { id: string; name: string; description: string };
+
+export type AnalyticsTopicMode = 'auto' | 'custom' | 'off';
+
+/** `agents.config.analytics`: whether and how the agent's conversations are labelled. */
+export type AnalyticsConfig = {
+  enabled: boolean;
+  topics: { mode: AnalyticsTopicMode; items: AnalyticsTopic[] };
+  tags: AnalyticsTag[];
+  /** The owner's weekly in-app docs-gap notification. */
+  digest: boolean;
+};
+
 export type AgentConfig = {
   guardrails?: GuardrailsConfig;
   /** `tool_id:action` writes on the owner's accounts API-key callers may run. */
   api_write_allowlist?: string[];
+  analytics?: AnalyticsConfig;
 };
 
 export type GuardrailCheckInfo = {

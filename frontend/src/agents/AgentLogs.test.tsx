@@ -16,15 +16,35 @@ vi.mock('../api/services/userService', () => ({
             id: 'a1',
             name: 'Carrier FAQ',
             last_used_at: null,
+            config: {
+              analytics: {
+                enabled: true,
+                topics: { mode: 'auto', items: [] },
+                tags: [
+                  { id: 'a1b2c3d4', name: 'Pricing', description: 'Prices' },
+                ],
+                digest: false,
+              },
+            },
           }),
       }),
   },
 }));
+const seen = vi.hoisted(() => ({
+  analytics: [] as unknown[],
+  logs: [] as unknown[],
+}));
 vi.mock('../settings/Analytics', () => ({
-  default: () => <div data-testid="analytics" />,
+  default: (props: { agent?: unknown }) => {
+    seen.analytics.push(props.agent);
+    return <div data-testid="analytics" />;
+  },
 }));
 vi.mock('../settings/Logs', () => ({
-  default: () => <div data-testid="logs" />,
+  default: (props: { analytics?: unknown }) => {
+    seen.logs.push(props.analytics);
+    return <div data-testid="logs" />;
+  },
 }));
 vi.mock('./components/GuardrailEvents', () => ({ default: () => null }));
 vi.mock('../navigation/SectionPageHeader', () => ({
@@ -69,5 +89,30 @@ describe('AgentLogs', () => {
     expect(toolbar.textContent).toContain('Carrier FAQ');
     expect(toolbar.textContent).toContain('agents.logs.noUsageHistory');
     expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
+  });
+
+  // Insights link to the agent's settings; Logs filters by its labels and
+  // tags, and is the `#logs` target of a drill-down.
+  it('hands the agent to insights and its analytics to Logs', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/logs/a1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/logs/:agentId"
+              element={<AgentLogs />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    expect(seen.analytics.at(-1)).toMatchObject({ id: 'a1' });
+    expect(seen.logs.at(-1)).toEqual({
+      enabled: true,
+      tags: [{ id: 'a1b2c3d4', name: 'Pricing', description: 'Prices' }],
+    });
+    expect(
+      container.querySelector('#logs [data-testid="logs"]'),
+    ).not.toBeNull();
   });
 });

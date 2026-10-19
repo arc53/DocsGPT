@@ -154,6 +154,12 @@ export type LogData = {
   // A run still going: listed at its start time until its finished row
   // replaces it (answers, scheduled, workflow and webhook runs).
   running?: boolean;
+  /**
+   * A chat row's conversation labels that clear the filter threshold:
+   * `docs_gap`, `not_answered`, `frustrated`, `asks_human`,
+   * `negative_reaction`, `tag:<id>`.
+   */
+  labels?: string[];
   /** A running answer: who asked (`api`, `shared` or the owner's own `chat`). */
   origin?: 'api' | 'shared' | 'chat';
   workflow_progress?: WorkflowProgress | null;
@@ -281,4 +287,81 @@ export type APIToolType = {
   allowed_actions?: string[];
   ownership?: 'user' | 'team';
   team_access?: 'viewer' | 'editor' | null;
+};
+
+/** One option of an insights label: its expected count and rate with a 95% range. */
+export type InsightOption = {
+  expected: number;
+  rate: number;
+  low: number;
+  high: number;
+};
+
+export type InsightTier = 'dashboard' | 'estimated' | 'experimental';
+
+/** A label's totals over the window: `n` is what each rate is a share of. */
+export type InsightLabelTotals = {
+  tier: InsightTier;
+  n: number;
+  options: Record<string, InsightOption>;
+  /**
+   * `answer_status` only: its `n` and rates are over requests (labelled
+   * turns less their "not a request" mass, `n_requests`), out of `n_turns`.
+   */
+  n_requests?: number;
+  n_turns?: number;
+};
+
+/** One time bucket of the insights series: expected counts per option. */
+export type InsightSeriesBucket = {
+  bucket: string;
+  labels: Record<string, { n: number; options: Record<string, number> }>;
+};
+
+/** POST /api/get_conversation_insights. */
+export type ConversationInsights = {
+  success: boolean;
+  /** The server switch is on and, on an agent's page, the agent's analytics too. */
+  enabled: boolean;
+  /** The server switch alone. */
+  available: boolean;
+  coverage: {
+    turns: number;
+    labelled_turns: number;
+    replies: number;
+    labelled_replies: number;
+    conversations: number;
+    labelled_conversations: number;
+  };
+  /** Message counts by language code, plus `other`. */
+  languages: Record<string, number>;
+  /** Labels whose share of weaker languages is high enough to say so. */
+  language_warnings: string[];
+  tags: { id: string; name: string }[];
+  totals: Record<string, InsightLabelTotals>;
+  series: InsightSeriesBucket[];
+};
+
+export type DocsGapsGroup = 'page' | 'source' | 'topic';
+
+export type DocsGapExample = {
+  message_id: string;
+  conversation_id: string;
+  /** The question's first 200 characters. */
+  prompt: string;
+  p: number;
+  timestamp: string;
+};
+
+/** One group of POST /api/get_docs_gaps: expected gaps and the share of its questions. */
+export type DocsGapRow = {
+  key: string | null;
+  name: string | null;
+  expected_gaps: number;
+  turns: number;
+  rate: number;
+  low: number;
+  high: number;
+  previous_expected: number;
+  examples: DocsGapExample[];
 };

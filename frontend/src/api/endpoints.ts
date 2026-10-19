@@ -72,6 +72,10 @@ const endpoints = {
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     TOOL_ANALYTICS: '/api/get_tool_analytics',
     SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
+    CONVERSATION_INSIGHTS: '/api/get_conversation_insights',
+    DOCS_GAPS: '/api/get_docs_gaps',
+    TOPIC_SUGGESTIONS: (agentId: string) =>
+      `/api/analytics/topic_suggestions?agent_id=${encodeURIComponent(agentId)}`,
     LOGS: `/api/get_user_logs`,
     TRACES: (params: string) => `/api/traces?${params}`,
     MANAGE_SYNC: '/api/manage_sync',
