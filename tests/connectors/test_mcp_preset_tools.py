@@ -16,6 +16,7 @@ from docsgpt.security.encryption import encrypt_json
 
 NOTION_MCP = "https://mcp.notion.com/mcp"
 COINGECKO_MCP = "https://mcp.api.coingecko.com/mcp"
+MS_LEARN_MCP = "https://learn.microsoft.com/api/mcp"
 ACTIONS = [
     {"name": "notion-search", "description": "Search", "annotations": {"readOnlyHint": True},
      "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
@@ -105,6 +106,7 @@ class TestPresetConfig:
     @pytest.mark.parametrize("key, url", [
         ("mcp:coingecko", COINGECKO_MCP),
         ("mcp:drawio", "https://mcp.draw.io/mcp"),
+        ("mcp:microsoftlearn", MS_LEARN_MCP),
     ])
     def test_keyless_presets_connect_without_oauth(self, key, url):
         config = service.connection_mcp_config(catalog.get_definition(key))

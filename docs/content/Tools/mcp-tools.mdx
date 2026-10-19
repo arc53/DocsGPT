@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
-lastUpdated: 2026-10-17
+lastUpdated: 2026-10-18
 ---
 
 import { Callout } from 'nextra/components'
@@ -27,7 +27,7 @@ If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then f
 
 ### Step 2: Add an MCP Server
 
-Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Alpha Vantage, draw.io, or CoinGecko). OAuth presets open the service's sign-in: **Sign in to ClickUp**, for example, opens ClickUp's sign-in, and its tools are ready when you return. draw.io and CoinGecko need no sign-in: click **Connect** and their tools are ready. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Alpha Vantage, draw.io, CoinGecko, or Microsoft Learn). OAuth presets open the service's sign-in: **Sign in to ClickUp**, for example, opens ClickUp's sign-in, and its tools are ready when you return. draw.io, CoinGecko and Microsoft Learn need no sign-in: click **Connect** and their tools are ready. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
 
 Alpha Vantage's sign-in works on DocsGPT cloud and on `localhost` only. On a self-hosted instance with its own domain, add it as a custom MCP server with your API key in the URL, `https://mcp.alphavantage.co/mcp?apikey=<KEY>`, and choose no authentication.
 
@@ -37,7 +37,7 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
-Presets need no URL entry. Most sign in with OAuth; draw.io connects with one click and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. CoinGecko works the same way and gives agents live crypto market data through two tools: CoinGecko's `search_docs` looks up its SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. Its keyless server shares rate limits across all users. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+Presets need no URL entry. Most sign in with OAuth; draw.io connects with one click and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. CoinGecko works the same way and gives agents live crypto market data through two tools: CoinGecko's `search_docs` looks up its SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. Its keyless server shares rate limits across all users. Microsoft Learn connects with one click and needs no credentials, letting agents search and reference official Microsoft and Azure documentation, architecture guides and code samples. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
 
 A server's tool descriptions reach the model verbatim, so a hostile server can plant instructions in them. While an admin has turned on **Warn about tool descriptions that look like prompt injection** in **Admin > Guardrails**, and the operator has turned the decision model on, each action is scored when the server is saved or refreshed, and an action that reads like a prompt injection is marked in the tool's permissions. Nothing is turned off; check the action under **Customize** before you allow it. See [MCP tool descriptions](/Agents/guardrails#mcp-tool-descriptions).
 

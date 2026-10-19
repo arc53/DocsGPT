@@ -126,6 +126,19 @@ class TestPresets:
         assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
         assert definition.configured
 
+    def test_microsoftlearn_preset_connects_without_oauth(self: TestPresets) -> None:
+        definition = catalog.get_definition("mcp:microsoftlearn")
+
+        assert definition.name == "Microsoft Learn"
+        assert definition.publisher == "preset"
+        assert definition.icon == "microsoftlearn"
+        assert definition.category == "knowledge"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://learn.microsoft.com/api/mcp"
+        assert definition.capabilities == ("read",)
+        assert definition.docs_url == "https://learn.microsoft.com/docs"
+        assert definition.configured
+
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 
