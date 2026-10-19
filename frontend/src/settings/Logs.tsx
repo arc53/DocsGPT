@@ -868,91 +868,101 @@ function Log({
             isOpen && 'rotate-90',
           )}
         />
-        <span className="flex flex-row flex-wrap gap-2">
-          <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
-          {log.event_type && (
-            <span className="text-muted-foreground text-xs">
-              {t(`settings.logs.types.${log.event_type}`)}
-            </span>
-          )}
-          {log.origin && (
-            <span className="text-muted-foreground text-xs">
-              {t(`settings.logs.origin.${log.origin}`)}
-            </span>
-          )}
-          <span className="text-warning text-xs">{`[${log.action}]`}</span>
-          {log.running && (
-            <>
-              <span className="text-info text-xs">
-                {t('settings.logs.running')}
+        <span className="flex min-w-0 flex-col">
+          <span className="flex flex-row flex-wrap gap-2">
+            <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
+            {log.event_type && (
+              <span className="text-muted-foreground text-xs">
+                {t(`settings.logs.types.${log.event_type}`)}
               </span>
-              {log.started_at && (
-                <span className="text-muted-foreground text-xs tabular-nums">
-                  {formatElapsed(log.started_at, clock)}
-                </span>
-              )}
-              {step && (
-                <span className="text-muted-foreground text-xs">
-                  {[
-                    step.total
-                      ? t('activity.now.stepOf', {
-                          step: step.step,
-                          total: step.total,
-                        })
-                      : t('activity.now.step', { step: step.step }),
-                    step.title,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              )}
-            </>
-          )}
-          {failedStep && (
-            <>
-              <span className="text-destructive text-xs">
-                {failedStep.total
-                  ? t('settings.logs.failedAtStepOf', {
-                      step: failedStep.step,
-                      total: failedStep.total,
-                    })
-                  : t('settings.logs.failedAtStep', { step: failedStep.step })}
-              </span>
-              {failedStep.title && (
-                <span className="text-muted-foreground text-xs">
-                  {failedStep.title}
-                </span>
-              )}
-            </>
-          )}
-          {log.feedback?.text === 'like' && (
-            <ThumbsUp
-              className="text-success mt-[2px] size-3"
-              aria-label={t('settings.logs.feedback.like')}
-            />
-          )}
-          {log.feedback?.text === 'dislike' && (
-            <ThumbsDown
-              className="text-destructive mt-[2px] size-3"
-              aria-label={t('settings.logs.feedback.dislike')}
-            />
-          )}
-          <LabelChips labels={log.labels} tagNames={tagNames} />
-          {log.trace && (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {formatDurationMs(log.trace.duration_ms)}
-            </span>
-          )}
-          <span
-            className={cn(
-              'max-w-72 text-xs wrap-break-word',
-              logLevelColor[log.level],
             )}
-          >
-            {`${log.question}`.length > 250
-              ? `${log.question.substring(0, 250)}...`
-              : log.question}
+            {log.origin && (
+              <span className="text-muted-foreground text-xs">
+                {t(`settings.logs.origin.${log.origin}`)}
+              </span>
+            )}
+            <span className="text-warning text-xs">{`[${log.action}]`}</span>
+            {log.running && (
+              <>
+                <span className="text-info text-xs">
+                  {t('settings.logs.running')}
+                </span>
+                {log.started_at && (
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    {formatElapsed(log.started_at, clock)}
+                  </span>
+                )}
+                {step && (
+                  <span className="text-muted-foreground text-xs">
+                    {[
+                      step.total
+                        ? t('activity.now.stepOf', {
+                            step: step.step,
+                            total: step.total,
+                          })
+                        : t('activity.now.step', { step: step.step }),
+                      step.title,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                )}
+              </>
+            )}
+            {failedStep && (
+              <>
+                <span className="text-destructive text-xs">
+                  {failedStep.total
+                    ? t('settings.logs.failedAtStepOf', {
+                        step: failedStep.step,
+                        total: failedStep.total,
+                      })
+                    : t('settings.logs.failedAtStep', {
+                        step: failedStep.step,
+                      })}
+                </span>
+                {failedStep.title && (
+                  <span className="text-muted-foreground text-xs">
+                    {failedStep.title}
+                  </span>
+                )}
+              </>
+            )}
+            {log.feedback?.text === 'like' && (
+              <ThumbsUp
+                className="text-success mt-[2px] size-3"
+                aria-label={t('settings.logs.feedback.like')}
+              />
+            )}
+            {log.feedback?.text === 'dislike' && (
+              <ThumbsDown
+                className="text-destructive mt-[2px] size-3"
+                aria-label={t('settings.logs.feedback.dislike')}
+              />
+            )}
+            {log.trace && (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {formatDurationMs(log.trace.duration_ms)}
+              </span>
+            )}
+            <span
+              className={cn(
+                'max-w-72 text-xs wrap-break-word',
+                logLevelColor[log.level],
+              )}
+            >
+              {`${log.question}`.length > 250
+                ? `${log.question.substring(0, 250)}...`
+                : log.question}
+            </span>
           </span>
+          {/* The labels on a line of their own, so the header stays one line
+            and the chips read in the UI font, not the row's monospace. */}
+          <LabelChips
+            labels={log.labels}
+            tagNames={tagNames}
+            className="mt-1 font-sans"
+          />
         </span>
       </button>
       <Collapsible open={isOpen} id={bodyId}>

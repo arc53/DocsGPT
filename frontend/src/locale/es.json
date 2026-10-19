@@ -3064,6 +3064,8 @@
           "custom": "Tu propia lista. Las preguntas se clasifican en ellos por nombre y descripción.",
           "off": "Las preguntas no se agrupan por tema. Los huecos en la documentación se pueden seguir agrupando por página o fuente."
         },
+        "autoTopics": "Temas:",
+        "autoTopicsNone": "Las fuentes de este agente no tienen carpetas, así que las preguntas no se agrupan por tema.",
         "customTopics": "Temas personalizados",
         "countOf": "{{count}} de {{max}}",
         "addTopic": "Añadir tema",
@@ -3073,7 +3075,6 @@
         "suggestFull": "La lista está llena, así que algunas sugerencias se quedaron fuera.",
         "suggestFailed": "No se pudieron cargar las sugerencias de temas.",
         "topicsEmpty": "Aún no hay temas",
-        "topicsFew": "Añade al menos dos temas o las preguntas no se agruparán.",
         "tags": "Etiquetas",
         "tagsDescription": "Etiquetas de sí o no que escribes para conversaciones completas, como \"Pregunta sobre precios\" o \"Quiere un reembolso\". Cada una se comprueba cuando una conversación deja de tener actividad, y una etiqueta nueva también se aplica a las conversaciones recientes.",
         "addTag": "Añadir etiqueta",

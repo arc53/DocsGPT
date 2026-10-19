@@ -3064,6 +3064,8 @@
           "custom": "Votre propre liste. Les questions y sont classées selon le nom et la description.",
           "off": "Les questions ne sont pas regroupées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source."
         },
+        "autoTopics": "Sujets :",
+        "autoTopicsNone": "Les sources de cet agent n’ont aucun dossier, les questions ne sont donc pas regroupées par sujet.",
         "customTopics": "Sujets personnalisés",
         "countOf": "{{count}} sur {{max}}",
         "addTopic": "Ajouter un sujet",
@@ -3073,7 +3075,6 @@
         "suggestFull": "La liste est pleine, certaines suggestions ont donc été écartées.",
         "suggestFailed": "Impossible de charger les suggestions de sujets.",
         "topicsEmpty": "Aucun sujet pour l’instant",
-        "topicsFew": "Ajoutez au moins deux sujets, sinon les questions ne sont pas regroupées.",
         "tags": "Étiquettes",
         "tagsDescription": "Étiquettes oui/non que vous rédigez pour des conversations entières, comme « Question sur les prix » ou « Veut un remboursement ». Chacune est vérifiée une fois la conversation retombée, et une nouvelle étiquette s’applique aussi aux conversations récentes.",
         "addTag": "Ajouter une étiquette",

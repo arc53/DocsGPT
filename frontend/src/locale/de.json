@@ -2985,6 +2985,8 @@
           "custom": "Deine eigene Liste. Fragen werden anhand von Name und Beschreibung zugeordnet.",
           "off": "Fragen werden nicht nach Thema gruppiert. Lücken in der Doku lassen sich weiterhin nach Seite oder Quelle gruppieren."
         },
+        "autoTopics": "Themen:",
+        "autoTopicsNone": "Die Quellen dieses Agenten haben keine Ordner, daher werden Fragen nicht nach Thema gruppiert.",
         "customTopics": "Eigene Themen",
         "countOf": "{{count}} von {{max}}",
         "addTopic": "Thema hinzufügen",
@@ -2994,7 +2996,6 @@
         "suggestFull": "Die Liste ist voll, daher wurden einige Vorschläge ausgelassen.",
         "suggestFailed": "Die Themenvorschläge konnten nicht geladen werden.",
         "topicsEmpty": "Noch keine Themen",
-        "topicsFew": "Füge mindestens zwei Themen hinzu, sonst werden Fragen nicht gruppiert.",
         "tags": "Tags",
         "tagsDescription": "Ja/Nein-Labels, die du für ganze Gespräche schreibst, etwa \"Frage zum Preis\" oder \"Möchte eine Erstattung\". Jedes wird geprüft, sobald ein Gespräch ruht, und ein neues Tag wird auch auf jüngere Gespräche angewendet.",
         "addTag": "Tag hinzufügen",

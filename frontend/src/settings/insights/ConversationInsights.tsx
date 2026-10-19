@@ -429,17 +429,11 @@ function InsightPanels({ data }: { data: Insights }) {
     };
   });
 
+  // Bar panels keep their own height (the chart keeps its fixed one);
+  // request type's nine rows come closest to the chart beside it.
   return (
-    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
       <AnswerStatusPanel data={data} />
-      <BarsPanel
-        title={t('settings.analytics.insights.panels.whyNot')}
-        tier="estimated"
-        n={gapType?.n ?? 0}
-        denominatorKey="shareOfAnswers"
-        rows={gapRows}
-        points={rangePoints(drawnOptions(gapType, gapRows))}
-      />
       <BarsPanel
         title={t('settings.analytics.insights.panels.requestType')}
         tier="estimated"
@@ -447,6 +441,14 @@ function InsightPanels({ data }: { data: Insights }) {
         denominatorKey="shareOfMessages"
         rows={requestRows}
         points={rangePoints(drawnOptions(totals.request_type, requestRows))}
+      />
+      <BarsPanel
+        title={t('settings.analytics.insights.panels.whyNot')}
+        tier="estimated"
+        n={gapType?.n ?? 0}
+        denominatorKey="shareOfAnswers"
+        rows={gapRows}
+        points={rangePoints(drawnOptions(gapType, gapRows))}
       />
       {topic && topic.n > 0 && (
         <BarsPanel

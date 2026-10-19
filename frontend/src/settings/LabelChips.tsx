@@ -10,6 +10,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 
@@ -74,13 +75,19 @@ type LabelChipsProps = {
   labels?: string[];
   /** Tag id to the owner's tag name. */
   tagNames?: Record<string, string>;
+  /** Layout only. */
+  className?: string;
 };
 
 /**
  * A Logs row's conversation labels, in its header so they can be scanned
  * without opening rows. Badges only: they sit inside the row's button.
  */
-export default function LabelChips({ labels, tagNames = {} }: LabelChipsProps) {
+export default function LabelChips({
+  labels,
+  tagNames = {},
+  className,
+}: LabelChipsProps) {
   const { t, i18n } = useTranslation();
   if (!labels?.length) return null;
   const chips = labelChips(labels, tagNames, (key) =>
@@ -93,7 +100,10 @@ export default function LabelChips({ labels, tagNames = {} }: LabelChipsProps) {
     type: 'conjunction',
   }).format(rest.map((chip) => chip.label));
   return (
-    <span className="flex flex-wrap gap-1.5" data-testid="label-chips">
+    <span
+      className={cn('flex flex-wrap gap-1.5', className)}
+      data-testid="label-chips"
+    >
       {shown.map((chip) => {
         const Icon = chip.spec?.icon ?? Tag;
         return (

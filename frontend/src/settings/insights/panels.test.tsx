@@ -154,9 +154,7 @@ describe('insight panels', () => {
     const list = container.querySelector('[role="list"]')!;
     expect(list.getAttribute('aria-label')).toBe('Request type');
     const [howTo, tag] = Array.from(list.querySelectorAll('li'));
-    const track = howTo.querySelectorAll<HTMLElement>(
-      '[aria-hidden="true"]',
-    )[1];
+    const track = howTo.querySelector<HTMLElement>('.bg-muted')!;
     expect(track.style.getPropertyValue('--rate')).toBe('38%');
     expect(track.style.getPropertyValue('--low')).toBe('31%');
     expect(track.style.getPropertyValue('--high')).toBe('45%');
@@ -168,5 +166,30 @@ describe('insight panels', () => {
     expect(tag.textContent).toContain('—');
     expect(tag.querySelector('.bg-chart-1')).toBeNull();
     expect(tag.querySelector('[title="Pricing question"]')).not.toBeNull();
+  });
+
+  it('puts the label on its own line on a phone and beside the track from sm', () => {
+    act(() =>
+      root.render(
+        <IntervalBars
+          ariaLabel="Request type"
+          rows={[
+            {
+              key: 'how-to',
+              label: 'How-to',
+              value: { rate: 0.38, low: 0.31, high: 0.45 },
+            },
+          ]}
+        />,
+      ),
+    );
+    const row = container.querySelector('li')!;
+    expect(row.className.split(' ')).toEqual(
+      expect.arrayContaining(['flex-col', 'sm:flex-row', 'sm:h-7']),
+    );
+    const label = row.firstElementChild as HTMLElement;
+    expect(label.className).toContain('truncate');
+    expect(label.className).toContain('sm:w-40');
+    expect(label.className).not.toMatch(/(^|\s)w-28/);
   });
 });

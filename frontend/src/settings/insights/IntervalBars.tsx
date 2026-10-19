@@ -39,52 +39,52 @@ export default function IntervalBars({ rows, ariaLabel }: IntervalBarsProps) {
               interpolation: { escapeValue: false },
             });
         return (
+          // Below sm the label takes its own line, so the track keeps
+          // the row's width; from sm it is a column beside the track.
           <li
             key={row.key}
             aria-label={rowLabel}
-            className="flex h-7 items-center gap-3"
+            className="flex flex-col gap-1 sm:h-7 sm:flex-row sm:items-center sm:gap-3"
           >
             <span
               aria-hidden="true"
-              className="w-28 shrink-0 truncate text-xs sm:w-40"
+              className="truncate text-xs sm:w-40 sm:shrink-0"
               title={row.ownerText ? row.label : undefined}
             >
               {row.label}
             </span>
             <span
               aria-hidden="true"
-              className="bg-muted relative h-2 min-w-0 flex-1 rounded-full"
-              style={
-                value
-                  ? ({
-                      '--rate': percent(value.rate),
-                      '--low': percent(value.low),
-                      '--high': percent(value.high),
-                      '--span': percent(value.high - value.low),
-                    } as CSSProperties)
-                  : undefined
-              }
+              className="flex h-5 min-w-0 flex-1 items-center gap-3 sm:h-auto"
             >
-              {value && (
-                <>
-                  <span className="bg-chart-1 absolute inset-y-0 left-0 w-(--rate) rounded-full" />
-                  <span className="bg-foreground/70 absolute top-1/2 left-(--low) h-px w-(--span) -translate-y-1/2" />
-                  <span className="bg-foreground/70 absolute top-1/2 left-(--low) h-2.5 w-px -translate-1/2" />
-                  <span className="bg-foreground/70 absolute top-1/2 left-(--high) h-2.5 w-px -translate-1/2" />
-                </>
-              )}
-            </span>
-            <span
-              aria-hidden="true"
-              className="w-10 shrink-0 text-right text-xs tabular-nums"
-            >
-              {value ? formatShare(value.rate) : EMPTY_VALUE}
-            </span>
-            <span
-              aria-hidden="true"
-              className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums"
-            >
-              {value ? formatShareRange(value.low, value.high) : null}
+              <span
+                className="bg-muted relative h-2 min-w-0 flex-1 rounded-full"
+                style={
+                  value
+                    ? ({
+                        '--rate': percent(value.rate),
+                        '--low': percent(value.low),
+                        '--high': percent(value.high),
+                        '--span': percent(value.high - value.low),
+                      } as CSSProperties)
+                    : undefined
+                }
+              >
+                {value && (
+                  <>
+                    <span className="bg-chart-1 absolute inset-y-0 left-0 w-(--rate) rounded-full" />
+                    <span className="bg-foreground/70 absolute top-1/2 left-(--low) h-px w-(--span) -translate-y-1/2" />
+                    <span className="bg-foreground/70 absolute top-1/2 left-(--low) h-2.5 w-px -translate-1/2" />
+                    <span className="bg-foreground/70 absolute top-1/2 left-(--high) h-2.5 w-px -translate-1/2" />
+                  </>
+                )}
+              </span>
+              <span className="w-10 shrink-0 text-right text-xs tabular-nums">
+                {value ? formatShare(value.rate) : EMPTY_VALUE}
+              </span>
+              <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
+                {value ? formatShareRange(value.low, value.high) : null}
+              </span>
             </span>
           </li>
         );

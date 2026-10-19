@@ -193,6 +193,13 @@ describe('Logs label filter and drill-down', () => {
       'settings.logs.labels.morePricing question',
     );
     expect(chips[3].title).toBe('Pricing question');
+    // Their own line under the one-line header, in the UI font.
+    const line = header.querySelector<HTMLElement>(
+      '[data-testid="label-chips"]',
+    )!;
+    expect(line.className).toContain('font-sans');
+    expect(line.parentElement!.className).toContain('flex-col');
+    expect(line.previousElementSibling!.textContent).toContain('q');
   });
 
   it('says no message matches instead of no logs while drilled down', async () => {

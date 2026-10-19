@@ -131,6 +131,11 @@ const getOrCreateLegendList = (
     listContainer = document.createElement('ul');
     listContainer.style.display = 'flex';
     listContainer.style.flexDirection = 'row';
+    // Several long labels wrap as whole items onto the next line, kept at the
+    // end like a single row.
+    listContainer.style.flexWrap = 'wrap';
+    listContainer.style.justifyContent = 'flex-end';
+    listContainer.style.rowGap = '4px';
     listContainer.style.margin = '0';
     listContainer.style.padding = '0';
 
@@ -159,6 +164,8 @@ export const htmlLegendPlugin = {
       li.style.display = 'flex';
       li.style.flexDirection = 'row';
       li.style.marginLeft = '10px';
+      // A label never breaks inside itself ("Fully / answered").
+      li.style.whiteSpace = 'nowrap';
 
       li.onclick = () => {
         chart.setDatasetVisibility(

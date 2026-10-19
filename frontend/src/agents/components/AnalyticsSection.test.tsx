@@ -38,6 +38,15 @@ const TAG = {
 
 let latest: AnalyticsConfig | undefined;
 
+const suggestions = (names: string[]) => ({
+  ok: true,
+  json: () =>
+    Promise.resolve({
+      success: true,
+      topics: names.map((name) => ({ name, description: '' })),
+    }),
+});
+
 function Harness({
   initial,
   available = true,
@@ -87,6 +96,7 @@ describe('AnalyticsSection', () => {
     latest = undefined;
     dispatch.mockReset();
     getTopicSuggestions.mockReset();
+    getTopicSuggestions.mockResolvedValue(suggestions([]));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -185,7 +195,8 @@ describe('AnalyticsSection', () => {
     expect(
       container.querySelector('[data-testid="analytics-topics"]'),
     ).not.toBeNull();
-    expect(container.textContent).toContain('agents.form.analytics.topicsFew');
+    // One custom topic is enough: the server asks it beside "none of these".
+    expect(container.textContent).not.toContain('topicsFew');
     await act(async () => modeItem('off').click());
     expect(latest!.topics).toEqual({ mode: 'off', items });
     expect(
@@ -406,5 +417,64 @@ describe('AnalyticsSection', () => {
     expect(button('agents.form.analytics.addTopic')).toBeUndefined();
     expect(container.querySelector('[aria-haspopup="menu"]')).toBeNull();
     expect(container.textContent).toContain('Pricing question');
+  });
+
+  it('shows what "From sources" will group by for a saved agent', async () => {
+    getTopicSuggestions.mockResolvedValue(
+      suggestions(['billing', 'data', 'integrations']),
+    );
+    await render();
+    expect(getTopicSuggestions).toHaveBeenCalledWith('a1', 'token');
+    const list = container.querySelector(
+      '[data-testid="analytics-auto-topics"]',
+    )!;
+    expect(
+      Array.from(list.querySelectorAll<HTMLElement>('[data-slot="badge"]')).map(
+        (badge) => [badge.textContent, badge.dataset.variant],
+      ),
+    ).toEqual([
+      ['billing', 'neutral'],
+      ['data', 'neutral'],
+      ['integrations', 'neutral'],
+    ]);
+    expect(list.textContent).toContain('agents.form.analytics.autoTopics');
+    // Another mode hides it.
+    await act(async () => modeItem('off').click());
+    expect(
+      container.querySelector('[data-testid="analytics-auto-topics"]'),
+    ).toBeNull();
+  });
+
+  it('says when the sources give too few folders to group by', async () => {
+    getTopicSuggestions.mockResolvedValue(suggestions(['billing']));
+    await render();
+    expect(container.textContent).toContain(
+      'agents.form.analytics.autoTopicsNone',
+    );
+    expect(
+      container.querySelector('[data-testid="analytics-auto-topics"]'),
+    ).toBeNull();
+  });
+
+  it('asks for no preview before the agent is saved', async () => {
+    await render({ agentId: '' });
+    expect(getTopicSuggestions).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain(
+      'agents.form.analytics.autoTopicsNone',
+    );
+  });
+
+  it('puts Add tag beside the Tags title and the description as a hint line', async () => {
+    await render();
+    const tags = container.querySelector('[data-testid="analytics-tags"]')!;
+    const header = tags.querySelector('[data-slot="section-header"]')!;
+    expect(header.textContent).toContain('agents.form.analytics.addTag');
+    expect(header.textContent).not.toContain(
+      'agents.form.analytics.tagsDescription',
+    );
+    const hint = Array.from(tags.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.analytics.tagsDescription',
+    )!;
+    expect(hint.className).toContain('text-xs');
   });
 });

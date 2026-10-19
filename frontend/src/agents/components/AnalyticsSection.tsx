@@ -27,7 +27,6 @@ import {
   analyticsOf,
   appendSuggestions,
   isDefaultAnalytics,
-  MIN_CUSTOM_TOPICS,
   newTagId,
 } from '../analyticsConfig';
 import type {
@@ -42,6 +41,9 @@ const DOCS_URL =
   'https://docs.docsgpt.cloud/Using/analytics-and-logs#per-agent-settings';
 
 const TOPIC_MODES: AnalyticsTopicMode[] = ['auto', 'custom', 'off'];
+
+/** Fewer folders than this and the server asks no topic question. */
+const MIN_AUTO_TOPICS = 2;
 
 type SuggestNote = 'none' | 'noNew' | 'full';
 
@@ -98,6 +100,39 @@ export default function AnalyticsSection({
   const [suggestNote, setSuggestNote] = React.useState<SuggestNote | null>(
     null,
   );
+  // What "From sources" groups by, for a saved agent: the same rule the
+  // server applies.
+  const [autoTopics, setAutoTopics] = React.useState<AnalyticsTopic[] | null>(
+    null,
+  );
+  const autoMode =
+    available &&
+    analyticsOf(value).enabled &&
+    analyticsOf(value).topics.mode === 'auto';
+  React.useEffect(() => {
+    if (!autoMode || !agentId) {
+      setAutoTopics(null);
+      return;
+    }
+    let cancelled = false;
+    userService
+      .getTopicSuggestions(agentId, token)
+      .then((response) => {
+        if (!response.ok) throw new Error('topic suggestions');
+        return response.json();
+      })
+      .then((body: { success?: boolean; topics?: AnalyticsTopic[] }) => {
+        if (!cancelled)
+          setAutoTopics(body?.success ? (body.topics ?? []) : null);
+      })
+      .catch(() => {
+        // A preview only: without it the mode's hint still says what it does.
+        if (!cancelled) setAutoTopics(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [autoMode, agentId, token]);
   const bodyId = React.useId();
   const enabledId = React.useId();
   const digestId = React.useId();
@@ -268,39 +303,44 @@ export default function AnalyticsSection({
 
             {config.enabled && (
               <>
-                <FormField
-                  float={false}
-                  label={t('agents.form.analytics.topics')}
-                  hint={t(`agents.form.analytics.topicHints.${mode}`)}
-                  disabled={disabled}
-                >
-                  <ToggleGroup
-                    type="single"
-                    fill
-                    value={mode}
+                <div className="flex flex-col gap-2">
+                  <FormField
+                    float={false}
+                    label={t('agents.form.analytics.topics')}
+                    hint={t(`agents.form.analytics.topicHints.${mode}`)}
                     disabled={disabled}
-                    aria-label={t('agents.form.analytics.topics')}
-                    data-testid="analytics-topic-mode"
-                    onValueChange={(next) => {
-                      if (!next) return;
-                      setSuggestNote(null);
-                      // The custom list is kept while another mode is on, so
-                      // it comes back when Custom is picked again.
-                      patch({
-                        topics: {
-                          ...config.topics,
-                          mode: next as AnalyticsTopicMode,
-                        },
-                      });
-                    }}
                   >
-                    {TOPIC_MODES.map((topicMode) => (
-                      <ToggleGroupItem key={topicMode} value={topicMode}>
-                        {t(`agents.form.analytics.topicModes.${topicMode}`)}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </FormField>
+                    <ToggleGroup
+                      type="single"
+                      fill
+                      value={mode}
+                      disabled={disabled}
+                      aria-label={t('agents.form.analytics.topics')}
+                      data-testid="analytics-topic-mode"
+                      onValueChange={(next) => {
+                        if (!next) return;
+                        setSuggestNote(null);
+                        // The custom list is kept while another mode is on, so
+                        // it comes back when Custom is picked again.
+                        patch({
+                          topics: {
+                            ...config.topics,
+                            mode: next as AnalyticsTopicMode,
+                          },
+                        });
+                      }}
+                    >
+                      {TOPIC_MODES.map((topicMode) => (
+                        <ToggleGroupItem key={topicMode} value={topicMode}>
+                          {t(`agents.form.analytics.topicModes.${topicMode}`)}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </FormField>
+                  {mode === 'auto' && autoTopics && (
+                    <AutoTopics topics={autoTopics} />
+                  )}
+                </div>
 
                 {mode === 'custom' && (
                   <div
@@ -381,11 +421,6 @@ export default function AnalyticsSection({
                         />
                       )}
                     </Card>
-                    {topics.length < MIN_CUSTOM_TOPICS && (
-                      <p className="text-muted-foreground text-xs">
-                        {t('agents.form.analytics.topicsFew')}
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -393,28 +428,32 @@ export default function AnalyticsSection({
                   className="flex flex-col gap-3"
                   data-testid="analytics-tags"
                 >
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={t('agents.form.analytics.tags')}
-                    count={countOf(tags.length, maxTags)}
-                    description={t('agents.form.analytics.tagsDescription')}
-                    actions={
-                      !disabled && tags.length < maxTags ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setEditing({ kind: 'tag', index: null })
-                          }
-                        >
-                          <Plus />
-                          {t('agents.form.analytics.addTag')}
-                        </Button>
-                      ) : undefined
-                    }
-                  />
+                  <div className="flex flex-col gap-1.5">
+                    <SectionHeader
+                      as="h3"
+                      size="xs"
+                      title={t('agents.form.analytics.tags')}
+                      count={countOf(tags.length, maxTags)}
+                      actions={
+                        !disabled && tags.length < maxTags ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setEditing({ kind: 'tag', index: null })
+                            }
+                          >
+                            <Plus />
+                            {t('agents.form.analytics.addTag')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {t('agents.form.analytics.tagsDescription')}
+                    </p>
+                  </div>
                   <Card
                     variant="subtle"
                     padding="none"
@@ -493,5 +532,34 @@ export default function AnalyticsSection({
         variant="destructive"
       />
     </Card>
+  );
+}
+
+/**
+ * The topics "From sources" will ask about, as the owner's folder names; with
+ * fewer than two there is nothing to sort questions into.
+ */
+function AutoTopics({ topics }: { topics: AnalyticsTopic[] }) {
+  const { t } = useTranslation();
+  if (topics.length < MIN_AUTO_TOPICS)
+    return (
+      <p className="text-muted-foreground text-xs">
+        {t('agents.form.analytics.autoTopicsNone')}
+      </p>
+    );
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1.5"
+      data-testid="analytics-auto-topics"
+    >
+      <span className="text-muted-foreground text-xs">
+        {t('agents.form.analytics.autoTopics')}
+      </span>
+      {topics.map((topic) => (
+        <Badge key={topic.name} variant="neutral">
+          {topic.name}
+        </Badge>
+      ))}
+    </div>
   );
 }

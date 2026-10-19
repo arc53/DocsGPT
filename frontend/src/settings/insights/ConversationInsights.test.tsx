@@ -333,7 +333,11 @@ describe('ConversationInsights', () => {
       true,
     );
     const lists = section()!.querySelectorAll('[role="list"]');
-    const whyNot = lists[0];
+    // Request type sits beside the chart, then why not fully answered.
+    expect(lists[0].getAttribute('aria-label')).toBe(
+      'settings.analytics.insights.panels.requestType',
+    );
+    const whyNot = lists[1];
     expect(whyNot.getAttribute('aria-label')).toBe(
       'settings.analytics.insights.panels.whyNot',
     );
@@ -347,7 +351,7 @@ describe('ConversationInsights', () => {
       'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.docsMissing|10%|7%|14%)',
       'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.outOfScope|5%|2%|9%)',
     ]);
-    const requests = Array.from(lists[1].querySelectorAll('li')).map((li) =>
+    const requests = Array.from(lists[0].querySelectorAll('li')).map((li) =>
       li.getAttribute('aria-label'),
     );
     expect(requests[0]).toContain('requestType.howTo');

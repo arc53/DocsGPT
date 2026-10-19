@@ -15,9 +15,6 @@ export const TOPIC_DESCRIPTION_UNITS = 150;
 export const TAG_NAME_MAX = 60;
 export const TAG_DESCRIPTION_MAX = 300;
 
-/** Topics below this count are not asked: one topic sorts nothing. */
-export const MIN_CUSTOM_TOPICS = 2;
-
 /** The topic question's catch-all, always offered; no topic may take its name. */
 export const RESERVED_TOPIC_NAME = 'none of these';
 
