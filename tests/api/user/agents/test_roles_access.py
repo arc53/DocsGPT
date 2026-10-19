@@ -671,6 +671,8 @@ class TestAnalytics:
             ("GetToolAnalytics", "/api/get_tool_analytics"),
             ("GetScheduleAnalytics", "/api/get_schedule_analytics"),
             ("GetUserLogs", "/api/get_user_logs"),
+            ("GetConversationInsights", "/api/get_conversation_insights"),
+            ("GetDocsGaps", "/api/get_docs_gaps"),
         ],
     )
     def test_other_endpoints_gate_viewer(self, app, pg_conn, cls_name, path):
@@ -681,6 +683,17 @@ class TestAnalytics:
         body = {"api_key_id": agent_id}
         assert _status(_call(app, pg_conn, cls, "post", path, VIEWER, json=body)) == 403
         assert _status(_call(app, pg_conn, cls, "post", path, EDITOR, json=body)) == 200
+
+    def test_topic_suggestions_need_edit(self, app, pg_conn):
+        from docsgpt.api.user.analytics.routes import GetTopicSuggestions
+
+        agent_id = _agent(pg_conn)
+        path = f"/api/analytics/topic_suggestions?agent_id={agent_id}"
+        assert _status(_call(app, pg_conn, GetTopicSuggestions, "get", path, VIEWER)) == 403
+        assert _status(_call(app, pg_conn, GetTopicSuggestions, "get", path, STRANGER)) == 404
+        resp = _call(app, pg_conn, GetTopicSuggestions, "get", path, EDITOR)
+        assert _status(resp) == 200
+        assert _json(resp) == {"success": True, "topics": []}
 
     def test_logs_editor_sees_owner_chats(self, app, pg_conn):
         from docsgpt.api.user.analytics.routes import GetUserLogs

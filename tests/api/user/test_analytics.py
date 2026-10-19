@@ -1277,3 +1277,439 @@ class TestSharedAgentVisibility:
         assert response.status_code == 200
         assert len(response.json["logs"]) == 1
         assert response.json["logs"][0]["level"] == "error"
+
+
+# ---- conversation insights, docs gaps and Logs labels (issue 004) -------------------------------------------
+
+
+_TAG = "a1b2c3d4"
+_TURN = {"fully answered": 0.5, "partially answered": 0.1, "declined, no information": 0.2,
+         "asked a clarifying question": 0.0, "not a request": 0.2}
+_GAP = {"docs missing": 0.24, "other": 0.06, "none": 0.7}
+
+
+@pytest.fixture
+def analytics_on(monkeypatch):
+    """The operator switch on and the model available, without loading one."""
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+    monkeypatch.setattr("docsgpt.decisions.available", lambda: True)
+
+
+def _model_version():
+    from docsgpt.decisions.models import V02, version
+
+    return version(V02)
+
+
+def _insert_message(conn, cid, position, prompt, response="Here is how.", *, ago_minutes=120, sources=None):
+    import json
+
+    from sqlalchemy import text
+
+    return conn.execute(
+        text(
+            """
+            INSERT INTO conversation_messages
+                (conversation_id, position, prompt, response, status, sources, timestamp, updated_at)
+            VALUES (CAST(:cid AS uuid), :position, :prompt, :response, 'complete', CAST(:sources AS jsonb),
+                    now() - make_interval(mins => :ago), now() - make_interval(mins => :ago))
+            RETURNING CAST(id AS text)
+            """
+        ),
+        {"cid": cid, "position": position, "prompt": prompt, "response": response, "ago": ago_minutes,
+         "sources": json.dumps(sources if sources is not None else
+                               [{"title": "Install", "source": "docs/install.md", "source_id": None,
+                                 "text": "pip install docsgpt"}])},
+    ).scalar()
+
+
+def _analytics_agent(conn, owner="owner", **analytics):
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    analytics.setdefault("tags", [{"id": _TAG, "name": "Pricing question", "description": "Asks about price."}])
+    return AgentsRepository(conn).create(
+        owner, "Docs bot", "published", key=f"key-{owner}", config={"analytics": analytics},
+    )
+
+
+def _labelled_conversation(conn, user, *, agent_id=None, ago_minutes=120, schema_hash=None, lang="en",
+                           sources=None, frustrated=0.8, gap=None, topics=None, turn=None):
+    """Two turns and their labels, as the sweep writes them: turn rows on each answer, the reaction to the first
+    answer on it (pointing at the reply), the request type and effective topic of each message, goal met and a
+    tag on the conversation."""
+    from docsgpt.analytics import schema
+    from docsgpt.storage.db.repositories.conversation_labels import ConversationLabelsRepository
+    from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+    cid = str(ConversationsRepository(conn).create(user, "c", agent_id=agent_id)["id"])
+    first = _insert_message(conn, cid, 0, "How do I install it?", ago_minutes=ago_minutes, sources=sources)
+    second = _insert_message(conn, cid, 1, "that did not work at all!", ago_minutes=ago_minutes - 1,
+                             sources=sources)
+    base = {"conversation_id": cid, "user_id": user, "agent_id": agent_id, "lang": lang,
+            "schema_hash": schema_hash or schema.SCHEMA_HASH, "model_version": _model_version()}
+
+    def at(minutes):
+        return datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes)
+
+    rows = []
+    for message, minutes in ((first, ago_minutes), (second, ago_minutes - 1)):
+        rows += [
+            {**base, "message_id": message, "level": "turn", "label": "answer_status",
+             "probabilities": turn or _TURN, "occurred_at": at(minutes)},
+            {**base, "message_id": message, "level": "turn", "label": "gap_type", "derived": True,
+             "probabilities": gap or _GAP, "occurred_at": at(minutes)},
+            {**base, "message_id": message, "level": "message", "label": "request_type",
+             "probabilities": {"how-to": 0.7, "troubleshooting": 0.3}, "occurred_at": at(minutes)},
+        ]
+        if topics is not None:
+            rows.append({**base, "message_id": message, "level": "message", "label": "topic_effective",
+                         "derived": True, "top": max(topics, key=topics.get), "probabilities": topics,
+                         "occurred_at": at(minutes)})
+    reply = {**base, "message_id": first, "reply_message_id": second, "level": "reaction",
+             "occurred_at": at(ago_minutes - 1)}
+    rows += [
+        {**reply, "label": "reaction", "probabilities": {"correction or pushback": 0.6, "follow-up": 0.4}},
+        {**reply, "label": "frustrated", "probabilities": {"yes": frustrated, "no": 1 - frustrated}},
+        {**reply, "label": "asks_human", "probabilities": {"yes": 0.1, "no": 0.9}},
+        {**reply, "label": "sentiment", "probabilities": {"0": 0.7, "1": 0.2, "2": 0.1}},
+        {**base, "level": "conversation", "label": "goal_met", "probabilities": {"yes": 0.3, "no": 0.7},
+         "occurred_at": at(ago_minutes - 1)},
+        {**base, "level": "conversation", "label": f"tag:{_TAG}", "probabilities": {"yes": 0.9, "no": 0.1},
+         "occurred_at": at(ago_minutes - 1)},
+    ]
+    ConversationLabelsRepository(conn).upsert_many(rows)
+    return cid, first, second
+
+
+def _insights(app, pg_conn, user, body):
+    from docsgpt.api.user.analytics.routes import GetConversationInsights
+
+    return _post_resource(app, pg_conn, GetConversationInsights, "/api/get_conversation_insights", user, body)
+
+
+def _gaps(app, pg_conn, user, body):
+    from docsgpt.api.user.analytics.routes import GetDocsGaps
+
+    return _post_resource(app, pg_conn, GetDocsGaps, "/api/get_docs_gaps", user, body)
+
+
+class TestConversationInsights:
+    def test_totals_series_coverage_and_shape(self, app, pg_conn, analytics_on):
+        from docsgpt.analytics import calibration, derive
+
+        agent = _analytics_agent(pg_conn)
+        agent_id = str(agent["id"])
+        _labelled_conversation(pg_conn, "owner", agent_id=agent_id)
+        _labelled_conversation(pg_conn, "owner", agent_id=agent_id, ago_minutes=60 * 30)
+
+        response = _insights(app, pg_conn, "owner", {"api_key_id": agent_id, "filter_option": "last_7_days"})
+        assert response.status_code == 200
+        data = response.json
+        assert data["success"] and data["enabled"] and data["available"]
+        assert data["tags"] == [{"id": _TAG, "name": "Pricing question"}]
+        assert data["coverage"] == {"turns": 4, "labelled_turns": 4, "replies": 2, "labelled_replies": 2,
+                                    "conversations": 2, "labelled_conversations": 2}
+        assert data["languages"] == {"en": 4}
+        assert data["language_warnings"] == []
+
+        totals = data["totals"]
+        assert set(totals) == {"answer_status", "gap_type", "reaction", "request_type", "sentiment", "frustrated",
+                               "asks_human", "goal_met", f"tag:{_TAG}"}
+        assert {label: entry["tier"] for label, entry in totals.items()} == {
+            "answer_status": "dashboard", "gap_type": "estimated", "reaction": "estimated",
+            "request_type": "estimated", "sentiment": "dashboard", "frustrated": "dashboard",
+            "asks_human": "dashboard", "goal_met": "dashboard", f"tag:{_TAG}": "dashboard",
+        }
+        assert set(totals["sentiment"]["options"]) == {"negative", "neutral", "positive"}
+        assert set(totals["goal_met"]["options"]) == {"yes"}
+        assert set(totals[f"tag:{_TAG}"]["options"]) == {"yes"}
+
+        # The interval is derive.rate's, widened by the label's calibration error.
+        frustrated = totals["frustrated"]
+        assert frustrated["n"] == 2
+        rate, low, high = derive.rate([0.8, 0.8], calibration.ece("frustrated", _model_version()))
+        assert frustrated["options"]["yes"] == {
+            "expected": 1.6, "rate": pytest.approx(rate, abs=1e-4), "low": pytest.approx(low, abs=1e-4),
+            "high": pytest.approx(high, abs=1e-4),
+        }
+        gap = totals["gap_type"]["options"]["docs missing"]
+        rate, low, high = derive.rate([0.24] * 4, calibration.ece("gap_type", _model_version()))
+        assert gap["expected"] == pytest.approx(0.96)
+        assert (gap["rate"], gap["low"], gap["high"]) == (
+            pytest.approx(rate, abs=1e-4), pytest.approx(low, abs=1e-4), pytest.approx(high, abs=1e-4))
+        assert totals["gap_type"]["n"] == 4
+
+        # Two buckets with one conversation each; the series sum to the totals.
+        series = {entry["bucket"]: entry["labels"] for entry in data["series"]}
+        assert len(data["series"]) == 7
+        filled = [labels for labels in series.values() if labels["answer_status"]["n"]]
+        assert len(filled) == 2
+        assert all(labels["answer_status"]["n"] == 2 for labels in filled)
+        assert set(filled[0]) == {"answer_status", "reaction", "request_type", "sentiment", "frustrated",
+                                  "asks_human", "goal_met"}
+        assert sum(labels["frustrated"]["options"]["yes"] for labels in series.values()) == pytest.approx(1.6)
+        assert sum(labels["sentiment"]["options"]["negative"] for labels in series.values()) == pytest.approx(1.4)
+        empty = next(labels for labels in series.values() if not labels["answer_status"]["n"])
+        assert empty["answer_status"]["options"]["fully answered"] == 0
+
+    def test_answer_status_rates_are_over_requests(self, app, pg_conn, analytics_on):
+        from docsgpt.analytics import calibration
+
+        _labelled_conversation(pg_conn, "u-req")
+        _labelled_conversation(pg_conn, "u-req")
+        data = _insights(app, pg_conn, "u-req", {"filter_option": "last_24_hour"}).json
+        status = data["totals"]["answer_status"]
+        # four turns, each 0.2 a greeting: 3.2 requests
+        assert status["n_turns"] == 4
+        assert status["n_requests"] == pytest.approx(3.2)
+        assert status["n"] == 3
+        fully = status["options"]["fully answered"]
+        assert fully["rate"] == pytest.approx(2.0 / 3.2, abs=1e-4)
+        assert (fully["rate"], fully["low"], fully["high"]) == tuple(
+            pytest.approx(v, abs=1e-4)
+            for v in calibration.interval("answer_status", 2.0, 3.2, _model_version())
+        )
+        greeting = status["options"]["not a request"]
+        assert greeting["rate"] == pytest.approx(0.2, abs=1e-4)
+        # gap_type stays over every labelled turn
+        assert data["totals"]["gap_type"]["n"] == 4
+
+    def test_owner_sees_shared_agent_traffic(self, app, pg_conn, analytics_on):
+        agent = _analytics_agent(pg_conn, owner="owner-a")
+        _labelled_conversation(pg_conn, "caller-b", agent_id=str(agent["id"]))
+        data = _insights(app, pg_conn, "owner-a", {"api_key_id": str(agent["id"])}).json
+        assert data["totals"]["frustrated"]["n"] == 1
+        assert data["coverage"]["turns"] == 2
+        # The owner's own (global) view holds only their own conversations.
+        mine = _insights(app, pg_conn, "owner-a", {}).json
+        assert mine["coverage"]["turns"] == 0
+        assert mine["totals"]["frustrated"]["n"] == 0
+        assert mine["tags"] == []
+
+    def test_unknown_agent_is_empty(self, app, pg_conn, analytics_on):
+        import uuid as _uuid
+
+        _labelled_conversation(pg_conn, "u-unknown")
+        data = _insights(app, pg_conn, "u-unknown", {"api_key_id": str(_uuid.uuid4())}).json
+        assert data["success"] is True
+        assert data["enabled"] is False
+        assert data["totals"] == {} and data["series"] == []
+        assert data["coverage"]["turns"] == 0
+
+    def test_other_schema_hash_is_ignored(self, app, pg_conn, analytics_on):
+        _labelled_conversation(pg_conn, "u-hash")
+        _labelled_conversation(pg_conn, "u-hash", schema_hash="000000000000")
+        data = _insights(app, pg_conn, "u-hash", {}).json
+        assert data["totals"]["frustrated"]["n"] == 1
+        assert data["coverage"]["turns"] == 4
+        assert data["coverage"]["labelled_turns"] == 2
+
+    def test_off_switch_and_agent_opt_out(self, app, pg_conn, analytics_on, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        agent = _analytics_agent(pg_conn, enabled=False)
+        _labelled_conversation(pg_conn, "owner", agent_id=str(agent["id"]))
+        data = _insights(app, pg_conn, "owner", {"api_key_id": str(agent["id"])}).json
+        assert (data["available"], data["enabled"], data["totals"]) == (True, False, {})
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+        data = _insights(app, pg_conn, "owner", {}).json
+        assert (data["available"], data["enabled"]) == (False, False)
+
+    def test_language_mix_and_warnings(self, app, pg_conn, analytics_on):
+        _labelled_conversation(pg_conn, "u-lang")
+        _labelled_conversation(pg_conn, "u-lang", lang="ru")
+        _labelled_conversation(pg_conn, "u-lang", lang="ko")
+        data = _insights(app, pg_conn, "u-lang", {}).json
+        assert data["languages"] == {"en": 2, "ru": 2, "other": 2}
+        assert data["language_warnings"] == ["answer_status", "gap_type", "reaction"]
+
+    def test_topic_effective_appears_with_rows(self, app, pg_conn, analytics_on):
+        _labelled_conversation(pg_conn, "u-topic", topics={"install": 0.75, "none of these": 0.25})
+        data = _insights(app, pg_conn, "u-topic", {}).json
+        topic = data["totals"]["topic_effective"]
+        assert topic["tier"] == "experimental"
+        assert topic["options"]["install"]["expected"] == 1.5
+        assert "topic_effective" in data["series"][-1]["labels"]
+
+    def test_invalid_filter_is_400(self, app, pg_conn, analytics_on):
+        assert _insights(app, pg_conn, "u", {"filter_option": "bogus"}).status_code == 400
+
+
+class TestDocsGaps:
+    def test_groups_by_page_with_trend_and_examples(self, app, pg_conn, analytics_on):
+        install = [{"title": "Install", "source": "docs/install.md", "text": "x"}]
+        auth = [{"title": "Auth", "source": "docs/auth.md", "text": "x"}]
+        sure = {"docs missing": 0.9, "none": 0.1}
+        cid, first, _second = _labelled_conversation(pg_conn, "u-gap", sources=install, gap=sure)
+        # 0.3 a turn: a group, but no turn clears the example threshold
+        _labelled_conversation(pg_conn, "u-gap", sources=auth, gap={"docs missing": 0.3})
+        _labelled_conversation(pg_conn, "u-gap", sources=[{"title": "Rare", "source": "docs/rare.md"}])  # 0.48
+        _labelled_conversation(pg_conn, "u-gap", sources=install, gap=sure, ago_minutes=60 * 24 * 9)
+        _labelled_conversation(pg_conn, "u-gap", sources=[], gap=sure)
+
+        response = _gaps(app, pg_conn, "u-gap", {"filter_option": "last_7_days", "group_by": "page"})
+        assert response.status_code == 200
+        data = response.json
+        assert data["enabled"] is True and data["group_by"] == "page"
+        rows = {row["key"]: row for row in data["rows"]}
+        assert set(rows) == {"docs/install.md", "docs/auth.md", None}
+        top = data["rows"][0]
+        assert top["key"] in ("docs/install.md", None)
+        page = rows["docs/install.md"]
+        assert page["name"] == "Install"
+        assert page["expected_gaps"] == pytest.approx(1.8)
+        assert page["turns"] == 2
+        assert page["previous_expected"] == pytest.approx(1.8)
+        assert page["rate"] == pytest.approx(0.9, abs=1e-4)
+        assert 0 <= page["low"] < page["rate"] < page["high"] <= 1
+        assert [example["message_id"] for example in page["examples"]][0] in (first, _second)
+        example = page["examples"][0]
+        assert example["conversation_id"] == cid
+        assert example["p"] == pytest.approx(0.9)
+        assert example["prompt"] in ("How do I install it?", "that did not work at all!")
+        assert example["timestamp"].endswith("Z")
+        assert rows["docs/auth.md"]["examples"] == []
+        assert rows[None]["name"] is None
+
+    def test_groups_by_source_name(self, app, pg_conn, analytics_on):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        source = SourcesRepository(pg_conn).create("Product docs", user_id="u-src")
+        stored = [{"title": "Install", "source": "docs/install.md", "source_id": str(source["id"]), "text": "x"}]
+        _labelled_conversation(pg_conn, "u-src", sources=stored, gap={"docs missing": 0.5})
+        rows = _gaps(app, pg_conn, "u-src", {"group_by": "source"}).json["rows"]
+        assert [(row["key"], row["name"], row["turns"]) for row in rows] == [
+            (str(source["id"]), "Product docs", 2)]
+
+    def test_groups_by_topic_weighted(self, app, pg_conn, analytics_on):
+        _labelled_conversation(pg_conn, "u-tg", topics={"install": 0.75, "auth": 0.25},
+                               gap={"docs missing": 0.8})
+        rows = {row["key"]: row for row in _gaps(app, pg_conn, "u-tg", {"group_by": "topic"}).json["rows"]}
+        # under half an expected gap: auth's 2 x 0.8 x 0.25 = 0.4 is left out
+        assert set(rows) == {"install"}
+        assert rows["install"]["expected_gaps"] == pytest.approx(1.2)
+        assert rows["install"]["turns"] == 2  # 1.5 turns, rounded
+        assert rows["install"]["rate"] == pytest.approx(0.8, abs=1e-4)
+        assert len(rows["install"]["examples"]) == 2
+        assert rows["install"]["examples"][0]["p"] == pytest.approx(0.6)
+
+    def test_scoping_and_validation(self, app, pg_conn, analytics_on):
+        import uuid as _uuid
+
+        agent = _analytics_agent(pg_conn, owner="owner-a")
+        _labelled_conversation(pg_conn, "caller-b", agent_id=str(agent["id"]), gap={"docs missing": 0.9})
+        shared = _gaps(app, pg_conn, "owner-a", {"api_key_id": str(agent["id"])}).json
+        assert len(shared["rows"]) == 1
+        assert _gaps(app, pg_conn, "owner-a", {}).json["rows"] == []
+        unknown = _gaps(app, pg_conn, "owner-a", {"api_key_id": str(_uuid.uuid4())}).json
+        assert unknown == {"success": True, "enabled": False, "group_by": "page", "rows": []}
+        _labelled_conversation(pg_conn, "u-other-hash", schema_hash="000000000000", gap={"docs missing": 0.9})
+        assert _gaps(app, pg_conn, "u-other-hash", {}).json["rows"] == []
+        for body in ({"group_by": "folder"}, {"limit": 51}, {"limit": "x"}, {"filter_option": "bogus"}):
+            assert _gaps(app, pg_conn, "owner-a", body).status_code == 400
+
+
+def _chat_log(conn, user, message_id, conversation_id, agent_id=None):
+    from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
+
+    UserLogsRepository(conn).insert(
+        user_id=user, endpoint="stream",
+        data={"action": "stream_answer", "question": "q", "level": "info", "message_id": message_id,
+              "conversation_id": conversation_id, "agent_id": agent_id},
+    )
+
+
+class TestLogsLabels:
+    def _seed(self, pg_conn):
+        agent = _analytics_agent(pg_conn)
+        agent_id = str(agent["id"])
+        declined = {"fully answered": 0.2, "declined, no information": 0.7, "not a request": 0.1}
+        cid, first, second = _labelled_conversation(pg_conn, "owner", agent_id=agent_id,
+                                                    gap={"docs missing": 0.6}, turn=declined)
+        calm_cid, calm_first, calm_second = _labelled_conversation(pg_conn, "owner", agent_id=agent_id,
+                                                                   frustrated=0.1)
+        for message, conversation in ((first, cid), (second, cid), (calm_first, calm_cid),
+                                      (calm_second, calm_cid)):
+            _chat_log(pg_conn, "owner", message, conversation, agent_id)
+        return agent_id, cid, first, second, calm_second
+
+    def test_rows_carry_labels_and_tag_names(self, app, pg_conn):
+        agent_id, _cid, first, second, calm_second = self._seed(pg_conn)
+        data = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, "event_type": "chat"}).json
+        labels = {row["message_id"]: row["labels"] for row in data["logs"]}
+        # docs gap and not fully answered on the turns; frustration on the reply that showed it; tags everywhere
+        assert labels[first] == ["docs_gap", "not_answered", f"tag:{_TAG}"]
+        assert labels[second] == ["docs_gap", "not_answered", "negative_reaction", "frustrated", f"tag:{_TAG}"]
+        assert labels[calm_second] == ["negative_reaction", f"tag:{_TAG}"]
+        assert data["tag_names"] == {_TAG: "Pricing question"}
+
+    def test_label_filters(self, app, pg_conn):
+        agent_id, cid, first, second, _calm_second = self._seed(pg_conn)
+
+        def ids(body):
+            response = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, **body})
+            assert response.status_code == 200
+            return {row["message_id"] for row in response.json["logs"]}
+
+        assert ids({"label": "frustrated"}) == {second}
+        assert ids({"label": "docs_gap"}) == {first, second}
+        assert ids({"label": "not_answered"}) == {first, second}
+        assert len(ids({"label": "negative_reaction"})) == 2
+        assert len(ids({"label": f"tag:{_TAG}"})) == 4
+        assert ids({"label": "asks_human"}) == set()
+        assert ids({"label": "frustrated", "conversation_id": cid}) == {second}
+        assert ids({"label": "docs_gap", "conversation_id": cid}) == {first, second}
+        assert ids({"conversation_id": cid}) == {first, second}
+        assert ids({"label": "frustrated", "event_type": "schedule"}) == set()
+
+    def test_invalid_label_is_400(self, app, pg_conn):
+        for label in ("bogus", "tag:UPPER123", "tag:", 5):
+            response = _post_logs(app, pg_conn, "owner", {"label": label})
+            assert response.status_code == 400
+
+    def test_rows_without_labels_get_an_empty_list(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        cid = str(ConversationsRepository(pg_conn).create("u-none", "c")["id"])
+        message = _insert_message(pg_conn, cid, 0, "hi")
+        _chat_log(pg_conn, "u-none", message, cid)
+        data = _post_logs(app, pg_conn, "u-none", {}).json
+        assert data["logs"][0]["labels"] == []
+        assert data["tag_names"] == {}
+
+
+class TestTopicSuggestions:
+    def _get(self, app, pg_conn, user, agent_id):
+        from docsgpt.api.user.analytics.routes import GetTopicSuggestions
+
+        query = f"?agent_id={agent_id}" if agent_id else ""
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            f"/api/analytics/topic_suggestions{query}", method="GET"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return GetTopicSuggestions().get()
+
+    def test_returns_the_auto_list(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        structure = {"guides": {"setup.md": {"token_count": 10}, "deploy.md": {"token_count": 5}},
+                     "api": {"auth.md": {"token_count": 3}}}
+        source = SourcesRepository(pg_conn).create("Docs", user_id="owner", directory_structure=structure)
+        agent = AgentsRepository(pg_conn).create("owner", "a", "published", source_id=str(source["id"]))
+        response = self._get(app, pg_conn, "owner", str(agent["id"]))
+        assert response.status_code == 200
+        assert response.json == {"success": True, "topics": [
+            {"name": "api", "description": "Pages such as: Auth"},
+            {"name": "guides", "description": "Pages such as: Deploy; Setup"},
+        ]}
+
+    def test_needs_an_agent_the_caller_can_edit(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create("owner", "a", "published")
+        assert self._get(app, pg_conn, "stranger", str(agent["id"])).status_code == 404
+        assert self._get(app, pg_conn, "owner", None).status_code == 400

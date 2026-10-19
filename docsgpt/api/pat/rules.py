@@ -176,6 +176,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/defaults", "GET"): _rule("agents:read", open=True),
     ("/api/guardrails/events", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/guardrails/summary", "GET"): _rule("agents:read", (QUERY, "agent_id")),
+    ("/api/analytics/topic_suggestions", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),
@@ -328,6 +329,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_tool_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_schedule_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_user_logs", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/get_conversation_insights", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/get_docs_gaps", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/traces", "GET"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     # Teams (read only)
     ("/api/teams", "GET"): _rule("teams:read"),
