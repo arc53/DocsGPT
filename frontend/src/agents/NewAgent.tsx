@@ -87,6 +87,8 @@ import { agentsListPath } from './paths';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
+import AnalyticsSection from './components/AnalyticsSection';
+import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
@@ -143,6 +145,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
+  const analyticsAvailability = useAnalyticsAvailability();
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
@@ -1878,6 +1881,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               ...agent,
               config: { ...(agent.config ?? {}), guardrails },
             })
+          }
+        />
+        <AnalyticsSection
+          value={agent.config?.analytics}
+          token={token}
+          agentId={agent.id || undefined}
+          available={analyticsAvailability.enabled}
+          maxTopics={analyticsAvailability.maxTopics}
+          maxTags={analyticsAvailability.maxTags}
+          // Not policy: anyone who can save the agent changes it.
+          disabled={!canSubmit}
+          onChange={(analytics) =>
+            setAgent((prev) => ({
+              ...prev,
+              config: { ...(prev.config ?? {}), analytics },
+            }))
           }
         />
         {modeConfig[effectiveMode].showDelete &&

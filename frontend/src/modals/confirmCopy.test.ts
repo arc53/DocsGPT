@@ -94,6 +94,7 @@ describe('confirm dialog copy', () => {
     'settings.teams.share.removeConfirm',
     'settings.connectors.disconnect.title',
     'settings.connectors.remove.title',
+    'agents.form.analytics.removeTag.title',
   ])('%s is the verb and the quoted name as a question', (key) => {
     expect(get(key)).toMatch(/^[A-Z][a-z]+ (.* )?"\{\{\w+\}\}"( .*)?\?$/);
   });
