@@ -949,6 +949,62 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# What the decision model said about stored conversations: one row per
+# conversation, message (NULL: the conversation itself) and label, written by
+# the analytics sweep. Reaction rows sit on the answer reacted to and name the
+# reply they read; both sides cascade. No user text. Migration 0057.
+conversation_labels_table = Table(
+    "conversation_labels",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False,
+    ),
+    Column("message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("reply_message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("user_id", Text, nullable=False),
+    Column("agent_id", UUID(as_uuid=True)),
+    # turn | reaction | message | conversation
+    Column("level", Text, nullable=False),
+    # a question key (answer_status, ..., tag:<id>), a derived label or _error
+    Column("label", Text, nullable=False),
+    Column("top", Text),
+    Column("p_top", Float),
+    Column("probabilities", JSONB, nullable=False),
+    Column("derived", Boolean, nullable=False, server_default="false"),
+    Column("lang", Text),
+    Column("options_hash", Text),
+    Column("schema_hash", Text, nullable=False),
+    Column("model_version", Text, nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index(
+    "conversation_labels_target_uidx",
+    conversation_labels_table.c.conversation_id,
+    func.coalesce(conversation_labels_table.c.message_id, text("'00000000-0000-0000-0000-000000000000'::uuid")),
+    conversation_labels_table.c.label,
+    unique=True,
+)
+Index(
+    "conversation_labels_agent_time_idx",
+    conversation_labels_table.c.agent_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index(
+    "conversation_labels_user_time_idx",
+    conversation_labels_table.c.user_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index("conversation_labels_message_idx", conversation_labels_table.c.message_id)
+Index("conversation_labels_reply_idx", conversation_labels_table.c.reply_message_id)
+Index(
+    "conversation_labels_resolution_idx",
+    conversation_labels_table.c.occurred_at,
+    postgresql_where=text("label = 'resolution'"),
+)
+
 # Calls to the decision model per day, feature, mode, model version and status:
 # counters only, the denominators of the guardrail journal. Each process
 # upserts increments once a minute. Migration 0053.
