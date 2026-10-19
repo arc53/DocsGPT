@@ -1228,11 +1228,10 @@ def _log_filters(data: dict) -> dict:
         raise _BadLogFilter("conversation_id must be a UUID")
     label = data.get("label") or None
     if label is not None and not (
-        label in LOG_LABELS
-        or (
-            isinstance(label, str)
-            and label.startswith(TAG_PREFIX)
-            and TAG_ID.match(label[len(TAG_PREFIX):])
+        isinstance(label, str)
+        and (
+            label in LOG_LABELS
+            or (label.startswith(TAG_PREFIX) and TAG_ID.match(label[len(TAG_PREFIX):]))
         )
     ):
         raise _BadLogFilter(

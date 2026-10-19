@@ -878,20 +878,27 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
     # Conversation analytics (``docsgpt.analytics.tasks``): each task returns at
-    # once while DECISION_ANALYTICS_ENABLED is off.
+    # once while DECISION_ANALYTICS_ENABLED is off. Their queue is optional, so a
+    # message no worker takes within its interval expires instead of piling up
+    # (and a backlog of digests would notify owners once per stale message).
     from docsgpt.analytics.tasks import analytics_gap_digest, analytics_sweep, cleanup_conversation_labels
 
+    sweep_every = max(60, settings.ANALYTICS_SWEEP_SECONDS)
     sender.add_periodic_task(
-        timedelta(seconds=max(60, settings.ANALYTICS_SWEEP_SECONDS)),
+        timedelta(seconds=sweep_every),
         analytics_sweep.s(),
         name="analytics-sweep",
+        expires=sweep_every,
     )
     sender.add_periodic_task(
         timedelta(hours=24),
         cleanup_conversation_labels.s(),
         name="cleanup-conversation-labels",
+        expires=24 * 3600,
     )
-    sender.add_periodic_task(timedelta(weeks=1), analytics_gap_digest.s(), name="analytics-gap-digest")
+    sender.add_periodic_task(
+        timedelta(weeks=1), analytics_gap_digest.s(), name="analytics-gap-digest", expires=6 * 3600
+    )
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the

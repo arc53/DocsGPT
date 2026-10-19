@@ -261,8 +261,14 @@ class AgentConfig(BaseModel):
         try:
             return cls.model_validate(raw)
         except Exception:
-            # A bad allowlist falls back to none: the safe side.
+            # Each block is salvaged on its own; a bad allowlist falls back to
+            # none: the safe side.
+            try:
+                allowlist = cls.model_validate({"api_write_allowlist": raw.get("api_write_allowlist") or []})
+            except Exception:
+                allowlist = cls()
             return cls(
                 guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
+                api_write_allowlist=allowlist.api_write_allowlist,
                 analytics=AnalyticsConfig.parse(raw.get("analytics")),
             )

@@ -85,6 +85,12 @@ class TestLenientRead:
         assert (parsed.enabled, parsed.digest, parsed.tags) == (False, True, [])
         assert AnalyticsConfig.parse(None) == AnalyticsConfig()
 
+    def test_analytics_past_a_lowered_limit_keeps_a_valid_allowlist(self, monkeypatch):
+        raw = {"api_write_allowlist": ["tool1:send"], "analytics": {"tags": [_tag(i) for i in range(5)]}}
+        monkeypatch.setattr(settings, "ANALYTICS_MAX_TAGS", 3)
+        parsed = AgentConfig.parse(raw)
+        assert parsed.api_write_allowlist == ["tool1:send"] and len(parsed.analytics.tags) == 3
+
     def test_a_bad_allowlist_keeps_the_analytics_block(self):
         raw = {"api_write_allowlist": ["no-colon"], "analytics": {"enabled": False}}
         parsed = AgentConfig.parse(raw)

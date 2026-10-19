@@ -406,6 +406,10 @@ class TestSetupPeriodicTasks:
         assert calls[21][1].get("name") == "cleanup-conversation-labels"
         assert calls[22][0][0] == timedelta(weeks=1)
         assert calls[22][1].get("name") == "analytics-gap-digest"
+        # The analytics queue is optional: a message no worker takes within its interval is dropped, not queued up.
+        assert calls[20][1].get("expires") == 300
+        assert calls[21][1].get("expires") == 24 * 3600
+        assert calls[22][1].get("expires") == 6 * 3600
 
 
 class TestMcpOauthTask:

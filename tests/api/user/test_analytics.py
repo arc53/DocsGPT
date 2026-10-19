@@ -1665,7 +1665,7 @@ class TestLogsLabels:
         assert ids({"label": "frustrated", "event_type": "schedule"}) == set()
 
     def test_invalid_label_is_400(self, app, pg_conn):
-        for label in ("bogus", "tag:UPPER123", "tag:", 5):
+        for label in ("bogus", "tag:UPPER123", "tag:", 5, ["frustrated"], {"a": 1}):
             response = _post_logs(app, pg_conn, "owner", {"label": label})
             assert response.status_code == 400
 
