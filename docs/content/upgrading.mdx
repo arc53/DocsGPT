@@ -182,7 +182,7 @@ Uploads, remote and connector ingests, re-ingests, source syncs, graph builds an
 + celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
 ```
 
-The bundled Compose and Kubernetes manifests already include it, so pull them along with the code. Without it, new sources stay in "processing" forever, because nothing picks the task up, and no error is logged. Tasks queued before the upgrade are still on `docsgpt` and finish there. To keep long ingests from delaying scheduled runs and cleanups, run a second worker with `-Q ingest`; see [Scaling and scheduled tasks](/Deploying/Kubernetes-Deploying#scaling-and-scheduled-tasks).
+The bundled Compose and Kubernetes manifests already include it, so pull them along with the code. Without it, new sources stay in "processing" forever, because nothing picks the task up, and no error is logged. Tasks queued before the upgrade are still on `docsgpt` and finish there. If you set `INGEST_QUEUE` to another name, use that name in every `-Q` list instead. To keep long ingests from delaying scheduled runs and cleanups, run a second worker with `-Q ingest`; see [Scaling and scheduled tasks](/Deploying/Kubernetes-Deploying#scaling-and-scheduled-tasks).
 
 #### GUARDRAILS_FLOOR moves to Admin → Guardrails
 

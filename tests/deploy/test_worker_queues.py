@@ -9,6 +9,7 @@ with nothing to run it, and nothing would report it.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ SHIPPED = sorted(
 QUEUE_LIST = re.compile(r"""-Q["']?\s*,?\s*["']?([\w.-]+(?:,[\w.-]+)*)""")
 
 
-def _queue_lists():
+def _queue_lists() -> Iterator:
     for path in SHIPPED:
         if not path.is_file():
             continue
@@ -41,14 +42,14 @@ def _queue_lists():
 
 
 @pytest.mark.unit
-def test_shipped_files_name_their_queues():
+def test_shipped_files_name_their_queues() -> None:
     """Guard the guard: if the pattern stops matching, the test below checks nothing."""
     assert len(list(_queue_lists())) >= 5
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("queues", list(_queue_lists()))
-def test_a_worker_on_the_default_queue_also_takes_ingests(queues):
+def test_a_worker_on_the_default_queue_also_takes_ingests(queues: list[str]) -> None:
     from docsgpt.core.settings import settings
 
     assert settings.INGEST_QUEUE in queues

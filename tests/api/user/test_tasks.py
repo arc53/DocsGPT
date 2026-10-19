@@ -1206,12 +1206,12 @@ def test_every_ingest_route_names_a_registered_task():
     from docsgpt.celery_init import celery
     from docsgpt.core.settings import settings
 
-    ingest_routes = [
-        name for name, route in celeryconfig.task_routes.items()
-        if route["queue"] == settings.INGEST_QUEUE
-    ]
-    assert sorted(ingest_routes) == sorted(INGEST_LANE_TASKS)
-    assert set(ingest_routes) <= set(celery.tasks)
+    # Select by task name, not by destination queue: INGEST_QUEUE may share a
+    # name with another queue (e.g. parsing), which is a valid configuration.
+    assert sorted(celeryconfig.INGEST_TASKS) == sorted(INGEST_LANE_TASKS)
+    for name in INGEST_LANE_TASKS:
+        assert celeryconfig.task_routes[name] == {"queue": settings.INGEST_QUEUE}
+    assert set(INGEST_LANE_TASKS) <= set(celery.tasks)
 
 
 class TestParseTimeoutForSize:

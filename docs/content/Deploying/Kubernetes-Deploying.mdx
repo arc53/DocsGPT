@@ -195,7 +195,7 @@ You can raise `replicas` on `docsgpt-api` and `docsgpt-worker`. At least one wor
 
 For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the resources it needs.
 
-Uploads, remote and connector ingests, source syncs and graph builds go to the `ingest` queue (`INGEST_QUEUE`). A large one can hold a worker slot for hours, and while every slot is busy the scheduler's tasks wait too: scheduled runs, reconciliation and cleanups. To keep them apart, run a second worker Deployment with `-Q ingest`, and drop `ingest` from the first worker's `-Q` list. Every queue still needs at least one worker consuming it.
+Uploads, remote and connector ingests, source syncs and graph builds go to the `ingest` queue (`INGEST_QUEUE`). A large one can hold a worker slot for hours, and while every slot is busy the scheduler's tasks wait too: scheduled runs, reconciliation and cleanups. To keep them apart, run a second worker Deployment with `-Q ingest`, and drop `ingest` from the first worker's `-Q` list. Every queue still needs at least one worker consuming it. If you change `INGEST_QUEUE`, use the new name in both workers' `-Q` lists.
 
 ## The decision model
 
