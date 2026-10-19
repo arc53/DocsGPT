@@ -2,10 +2,11 @@
 
 import json
 import os
+import posixpath
 import tempfile
 import uuid
 import zipfile
-from typing import Optional
+from typing import Container, Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -184,6 +185,92 @@ def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
     enforce_audio_file_size_limit(os.path.getsize(file_path))
 
 
+def _safe_relative_upload_path(filename: str, folder_names: dict[str, str]) -> str:
+    """Return the safe storage path of an uploaded file, keeping its folders.
+
+    A folder upload sends each file with its path inside the folder
+    (``docs/guide/a.md``). Keeping it gives the source the same tree a ZIP of
+    that folder would. Backslashes count as separators, and empty, ``.`` and
+    ``..`` parts are dropped, so the path can never leave the source
+    directory. Every part goes through ``safe_filename``.
+
+    Args:
+        filename: The name the client sent, possibly with folders in it.
+        folder_names: Safe path already chosen for each folder path in this
+            upload; new folders are added as they appear. ``safe_filename``
+            makes up a random name for a part it cannot keep (one written
+            only in non-Latin letters), so reusing the choice keeps every file
+            of such a folder together. Two folders whose names clean up to
+            the same name (``my docs`` and ``my_docs``) get different safe
+            paths, so their files never mix.
+
+    Returns:
+        The ``/``-joined relative path, or a single name for a plain file.
+    """
+    parts = [
+        part
+        for part in filename.replace("\\", "/").split("/")
+        if part not in ("", ".", "..")
+    ] or [""]
+    safe_folder = ""
+    for depth, part in enumerate(parts[:-1], start=1):
+        folder = "/".join(parts[:depth])
+        if folder not in folder_names:
+            folder_names[folder] = _unique_upload_path(
+                posixpath.join(safe_folder, safe_filename(part)),
+                folder_names.values(),
+            )
+        safe_folder = folder_names[folder]
+    return posixpath.join(safe_folder, safe_filename(parts[-1]))
+
+
+def _unique_upload_path(path: str, taken: Container[str]) -> str:
+    """Return ``path``, or ``name_2.ext`` (``_3``, ...) if it is already taken.
+
+    Used so two uploaded files, or two folders, never end up at the same
+    place in the source.
+    """
+    if path not in taken:
+        return path
+    stem, ext = posixpath.splitext(path)
+    count = 2
+    while f"{stem}_{count}{ext}" in taken:
+        count += 1
+    return f"{stem}_{count}{ext}"
+
+
+def _unique_file_path(path: str, taken: set[str]) -> str:
+    """Like ``_unique_upload_path``, for files that must also fit a folder tree.
+
+    A file cannot share a place with a folder, so ``docs`` clashes with an
+    already staged ``docs/a.md`` and ``docs/a.md`` clashes with a staged file
+    ``docs``. The part that clashes gets the ``_2`` (``_3``, ...) suffix, so
+    ``docs/a.md`` next to a file ``docs`` is stored as ``docs_2/a.md``. Without
+    this the local storage fails part way through writing the files.
+    """
+    parts = path.split("/")
+
+    def clashes(candidate: str, is_leaf: bool) -> bool:
+        if candidate in taken:
+            return True
+        return is_leaf and any(t.startswith(f"{candidate}/") for t in taken)
+
+    for depth in range(1, len(parts) + 1):
+        is_leaf = depth == len(parts)
+        parent = parts[: depth - 1]
+        if not clashes("/".join(parts[:depth]), is_leaf):
+            continue
+        stem, ext = posixpath.splitext(parts[depth - 1]) if is_leaf else (
+            parts[depth - 1],
+            "",
+        )
+        count = 2
+        while clashes("/".join([*parent, f"{stem}_{count}{ext}"]), is_leaf):
+            count += 1
+        parts[depth - 1] = f"{stem}_{count}{ext}"
+    return "/".join(parts)
+
+
 def _source_archive_limits() -> ZipExtractionLimits:
     """Return configured limits shared by all archives in one upload."""
     return ZipExtractionLimits(
@@ -308,15 +395,24 @@ class UploadFile(Resource):
                 pending_files: list[tuple[str, str]] = []
                 archive_budget = ZipExtractionBudget()
                 archive_limits = _source_archive_limits()
+                folder_names: dict[str, str] = {}
+                # Paths (relative to the source) already given to a staged
+                # file. A loose file and a ZIP member, or two names that clean
+                # up the same, would otherwise overwrite each other.
+                claimed_paths: set[str] = set()
 
                 for index, file in enumerate(files):
-                    original_filename = os.path.basename(file.filename)
-                    safe_file = safe_filename(original_filename)
+                    # A folder upload names each file by its path inside the
+                    # folder; keep that tree under the source, as a ZIP does.
+                    original_path = (file.filename or "").replace("\\", "/")
+                    original_filename = os.path.basename(original_path)
+                    safe_path = _safe_relative_upload_path(
+                        original_path, folder_names
+                    )
+                    safe_file = posixpath.basename(safe_path)
                     active_upload_name = safe_zip_error_message(
                         original_filename or safe_file, max_chars=200
                     )
-                    if original_filename:
-                        file_name_map[safe_file] = original_filename
 
                     upload_dir = os.path.join(temp_dir, str(index))
                     os.makedirs(upload_dir, exist_ok=True)
@@ -351,21 +447,34 @@ class UploadFile(Resource):
                             archive_limits,
                             archive_budget,
                         )
+                        # A ZIP inside an uploaded folder unpacks where it sat.
+                        archive_dir = posixpath.dirname(safe_path)
                         for root, _, extracted_files in os.walk(extract_dir):
                             for extracted_file in extracted_files:
                                 local_path = os.path.join(root, extracted_file)
                                 _enforce_audio_path_size_limit(
                                     local_path, extracted_file
                                 )
-                                rel_path = os.path.relpath(
-                                    local_path, extract_dir
-                                ).replace(os.sep, "/")
+                                rel_path = _unique_file_path(
+                                    posixpath.join(
+                                        archive_dir,
+                                        os.path.relpath(
+                                            local_path, extract_dir
+                                        ).replace(os.sep, "/"),
+                                    ),
+                                    claimed_paths,
+                                )
+                                claimed_paths.add(rel_path)
                                 pending_files.append(
                                     (local_path, f"{base_path}/{rel_path}")
                                 )
                     else:
+                        rel_path = _unique_file_path(safe_path, claimed_paths)
+                        claimed_paths.add(rel_path)
+                        if original_filename:
+                            file_name_map[rel_path] = original_filename
                         pending_files.append(
-                            (temp_file_path, f"{base_path}/{safe_file}")
+                            (temp_file_path, f"{base_path}/{rel_path}")
                         )
 
                 for local_path, storage_path in pending_files:
