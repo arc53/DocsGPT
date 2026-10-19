@@ -208,6 +208,54 @@ def _decisions_off(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_active_decision_record():
+    """Start every test with no decision record active.
+
+    A stream generator a test leaves half-consumed keeps the record it
+    activated set in this thread until it is collected, which a later test on
+    the same worker would otherwise see.
+    """
+    from docsgpt.decisions import record
+
+    token = record._current.set(None)
+    yield
+    try:
+        record._current.reset(token)
+    except ValueError:
+        record._current.set(None)
+
+
+@pytest.fixture(autouse=True)
+def _no_stored_floor(monkeypatch):
+    """Run with no guardrails floor, and without reading one from a database.
+
+    Every agent turn reads the floor through a per-process cache, so an unset
+    cache would read whatever database the developer's ``.env`` points at.
+    Here it holds "no floor" until a test sets ``_floor`` itself or calls
+    ``floor.invalidate()`` to read the floor it stored.
+    """
+    monkeypatch.setattr("docsgpt.guardrails.floor._floor", None)
+    monkeypatch.setattr("docsgpt.guardrails.floor._expires", float("inf"))
+
+
+@pytest.fixture(autouse=True)
+def _no_content_score_store(monkeypatch):
+    """Keep prompt-injection scoring off any database and broker.
+
+    The scorer caches scores in ``content_scores``, reads the sources' owner
+    allowlists and queues background scoring; here the cache is empty, writes
+    and queued texts go nowhere and no text is allowed. Tests of those paths
+    patch them back themselves.
+    """
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._load", lambda hashes, scorer: {})
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._store", lambda rows: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._touch", lambda hashes, scorer: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._touch_later", lambda hashes, scorer: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring._queue", lambda texts: None)
+    monkeypatch.setattr("docsgpt.guardrails.injection_scoring.allowed_hashes", lambda source_ids: {})
+
+
+@pytest.fixture(autouse=True)
 def _graphrag_off_by_default(monkeypatch):
     """Run with GraphRAG at its shipped default (off), as CI does.
 

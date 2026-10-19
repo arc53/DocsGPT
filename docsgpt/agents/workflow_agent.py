@@ -46,10 +46,14 @@ class WorkflowAgent(BaseAgent):
         workflow_id: Optional[str] = None,
         workflow: Optional[Dict[str, Any]] = None,
         workflow_owner: Optional[str] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.workflow_id = workflow_id
+        # The request's passthrough values, seeded as ``state.passthrough`` so
+        # node prompts can read ``{{ passthrough.* }}``.
+        self.passthrough = passthrough if isinstance(passthrough, dict) else None
         self.workflow_row: Optional[Dict[str, Any]] = None
         self.workflow_owner = workflow_owner
         self._workflow_data = workflow
@@ -122,7 +126,7 @@ class WorkflowAgent(BaseAgent):
         interrupted = True
         try:
             yield from self._with_progress(
-                self._engine.execute({"input_documents": input_documents}, query), run_user_id
+                self._engine.execute(self._initial_inputs(input_documents), query), run_user_id
             )
             interrupted = False
         finally:
@@ -133,6 +137,13 @@ class WorkflowAgent(BaseAgent):
                 query,
                 interrupted=interrupted,
             )
+
+    def _initial_inputs(self, input_documents: Any) -> Dict[str, Any]:
+        """The run's starting state: its documents, plus the request's passthrough values."""
+        inputs: Dict[str, Any] = {"input_documents": input_documents}
+        if self.passthrough:
+            inputs["passthrough"] = dict(self.passthrough)
+        return inputs
 
     def _with_progress(
         self, events: Iterable[Dict[str, Any]], run_user_id: Optional[str]

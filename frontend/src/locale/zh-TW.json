@@ -352,10 +352,11 @@
         "queryPlaceholder": "輸入此來源應能回答的問題...",
         "run": "執行",
         "notSavedHint": "這些設定僅用於此次測試，不會儲存到來源。若要永久生效，請至來源設定中修改。",
+        "notSavedHintEditor": "這些設定在儲存到來源之前僅用於此次測試。",
         "resultSummary": "檢索到 {{count}} 個區塊 · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "此查詢未檢索到任何區塊。",
-        "emptyWithThreshold": "沒有區塊的分數達到分數門檻（{{threshold}}）。調低門檻可查看接近的結果。",
+        "emptyWithThreshold": "沒有區塊的分數達到相似度門檻（{{threshold}}）。調低門檻可查看接近的結果。",
         "showMore": "顯示完整區塊",
         "showLess": "收合",
         "noScore": "無分數",
@@ -367,7 +368,31 @@
         },
         "errors": {
           "failed": "檢索測試失敗。請再試一次。"
-        }
+        },
+        "relevance": "相關度",
+        "compare": "與檢索器順序比較",
+        "compareHint": "同時依檢索器順序列出所有候選，顯示其相關度，以及相關度模型是保留、提升還是捨棄了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 內依相關度排序",
+          "fallback": "未使用相關度模型（{{reason}}），保留檢索器順序"
+        },
+        "compareTitle": "檢索器順序",
+        "compareDescription": "相關度階段收到的所有候選，依檢索器的排名順序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "區塊",
+          "relevance": "相關度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留為 #{{rank}}",
+          "dropped": "已捨棄",
+          "notKept": "未保留"
+        },
+        "strictness": "此次測試的相關度",
+        "saveToSource": "儲存到來源",
+        "savedToSource": "已儲存。此來源現在使用你測試過的設定。"
       },
       "editConfig": "來源設定",
       "shareWithTeam": "與團隊分享",
@@ -396,14 +421,15 @@
       "searchAlt": "搜尋",
       "retrievalOptions": {
         "title": "進階設定",
+        "advanced": "進階",
         "retrieval": {
           "title": "檢索",
           "note": "這些變更立即生效，無需重新索引。",
           "tag": "無需重新索引",
           "chunks": "檢索區塊數（top-k）",
-          "scoreThreshold": "分數門檻",
-          "scoreThresholdPlaceholder": "無",
-          "scoreThresholdHint": "僅回傳相關性分數高於此值（0–1）的區塊；數值越高越嚴格。",
+          "similarityThreshold": "相似度門檻",
+          "similarityThresholdPlaceholder": "無",
+          "similarityThresholdHint": "捨棄檢索器相似度分數低於此值（0–1）的區塊。依檢索器的分數篩選，而非相關度模型。",
           "rephraseQuery": "搜尋前改寫查詢",
           "retriever": "檢索器",
           "retrievers": {
@@ -433,13 +459,14 @@
           "agentToolHint": "當此來源的搜尋提供方式為「隨選搜尋工具」，或由自主型（agentic）代理使用時，代理也可以自行沿著這些關係查找。"
         },
         "prescreen": {
-          "enable": "啟用 LLM 預篩選",
-          "warning": "會擷取較大的候選集合並使用 LLM 篩選。這將增加查詢延遲與成本。",
+          "enable": "LLM 篩選",
+          "warning": "由 LLM 審查較大的候選集合，只保留能回答查詢的區塊。這會增加每次查詢的延遲與成本。",
           "candidateK": "擷取候選數",
           "maxKeep": "保留區塊上限",
           "batchSize": "批次大小",
           "model": "模型（選填）",
-          "modelPlaceholder": "預設使用請求模型"
+          "modelPlaceholder": "預設使用請求模型",
+          "exclusiveHint": "它可取代相關度：開啟其中一項會關閉另一項。"
         },
         "graph": {
           "title": "圖譜擷取",
@@ -467,6 +494,29 @@
           "maxTokensHint": "最多 4,096 個 Token。",
           "minTokens": "每區塊最小 Token 數",
           "duplicateHeaders": "在各區塊間重複標頭"
+        },
+        "relevance": {
+          "title": "相關度",
+          "tag": "無需重新索引",
+          "mode": "相關度模型",
+          "modeHint": "根據查詢為擷取到的每個區塊評分。「重新排序」把最相關的排在前面；「重新排序並篩選」還會捨棄相關度低的。",
+          "modes": {
+            "off": "關閉",
+            "reorder": "重新排序",
+            "filter": "重新排序並篩選"
+          },
+          "strictness": "篩選嚴格度",
+          "strictnessHint": "越嚴格保留的區塊越少：每個回答用的 token 更少，但更可能捨棄有用的區塊。",
+          "presets": {
+            "loose": "寬鬆",
+            "balanced": "均衡",
+            "strict": "嚴格",
+            "custom": "自訂（{{value}}）"
+          },
+          "minRelevance": "最低相關度",
+          "minRelevanceHint": "區塊被保留所需的確切相關度（0–1）。寬鬆為 0.1，均衡為 0.3，嚴格為 0.5。",
+          "candidates": "評分候選數",
+          "candidatesHint": "檢索器為相關度模型擷取並評分的區塊數量，最多 {{max}} 個。預設 {{default}} 個。"
         }
       },
       "configModal": {
@@ -475,7 +525,7 @@
         "subtitleGeneric": "設定此來源的分塊與檢索方式。",
         "save": "儲存",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
-        "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
+        "prescreenInvalidHint": "請檢查 LLM 篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
         "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
         "reingestLater": "稍後",
         "errors": {
@@ -538,7 +588,19 @@
       "deleteFileConsequence": "其區塊也會一併刪除。此操作無法復原。",
       "deleteDirectoryConsequence": "其中的所有內容也會一併刪除。此操作無法復原。",
       "syncConsequence": "其內容會從您的雲端儲存空間更新，可能會覆寫您對個別區塊所做的編輯。",
-      "deleteItemFailed": "無法刪除「{{name}}」。"
+      "deleteItemFailed": "無法刪除「{{name}}」。",
+      "injection": {
+        "flaggedOnly": "僅顯示已標記",
+        "high": "很可能是提示詞注入",
+        "suspected": "疑似提示詞注入",
+        "markedSafe": "已標為安全",
+        "markSafe": "標為安全",
+        "undo": "復原",
+        "flaggedNotice": "此文本塊看起來像提示詞注入（分數 {{percent}}%）。檢查檢索來源的代理會標記它，或在回答中略去它。",
+        "safeNotice": "已標為安全：使用此來源的代理會將此文本塊視為正常內容。編輯其文字會移除該標記。",
+        "reviewFailed": "無法更新此文本塊，請再試一次。",
+        "noFlagged": "此來源中沒有被標記的文本塊。文本塊會在對話首次檢索到它時評分。"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -640,7 +702,9 @@
         "activity": "活動",
         "steps": "步驟",
         "result": "結果",
-        "source": "來源"
+        "source": "來源",
+        "feedback": "回饋",
+        "passthrough": "透傳參數"
       },
       "trace": {
         "view": "檢視追蹤",
@@ -756,6 +820,10 @@
         "api": "API",
         "shared": "共用",
         "chat": "聊天"
+      },
+      "feedback": {
+        "like": "讚",
+        "dislike": "倒讚"
       }
     },
     "teams": {
@@ -1447,7 +1515,10 @@
         "tokenLabel": "您的權杖",
         "usageTitle": "使用方式",
         "usageHint": "將其匯出為環境變數，然後在 Authorization 標頭中作為 Bearer 權杖傳送。",
-        "done": "完成"
+        "done": "完成",
+        "createTool": "為智慧體建立工具",
+        "toolCreated": "工具已建立。可在 設定 › 工具 中找到，並加入智慧體。",
+        "toolFailed": "無法建立工具。"
       },
       "regenerate": {
         "action": "重新產生",
@@ -1763,6 +1834,11 @@
       "capabilityChip": {
         "sync": "同步到知識庫",
         "tools": "為代理提供工具"
+      },
+      "injection": {
+        "flagged": "疑似提示詞注入",
+        "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
+        "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       }
     }
   },
@@ -1782,6 +1858,7 @@
       "dropzoneText": "點擊上傳或拖放檔案",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、圖片、音訊、EPUB、JSON 或 ZIP，每個最大 25 MB",
       "filesRejected": "未新增（超過 25 MB 或不支援的類型）：{{files}}",
+      "selectFolder": "選擇資料夾",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "新增到知識庫",
@@ -2122,8 +2199,17 @@
         "forbidden": "此來源已被刪除，或你已無權存取。以下顯示的是隨回答儲存的摘錄。",
         "loadFailed": "無法載入這段內容。",
         "openLink": "開啟連結",
-        "openInKnowledge": "在知識庫中開啟"
-      }
+        "openInKnowledge": "在知識庫中開啟",
+        "withheld": "此來源可能含有提示詞注入，因此此代理的防護規則將其排除在回答之外。AI 沒有讀取這段內容。"
+      },
+      "relevance": {
+        "strong": "高度相關",
+        "possible": "可能相關",
+        "weak": "相關性低",
+        "tooltip": "相關度 {{percent}}%"
+      },
+      "withheld": "已扣下",
+      "withheldNote": "此代理的防護規則將其排除在回答之外：其中可能含有提示詞注入。"
     },
     "attachments": {
       "attach": "附件",
@@ -2596,7 +2682,8 @@
           "input": "使用者輸入",
           "retrieval": "檢索到的來源",
           "toolResult": "工具結果",
-          "output": "回答"
+          "output": "回答",
+          "attachment": "附件"
         },
         "actions": {
           "flag": "僅標記",
@@ -2606,7 +2693,13 @@
         "modes": {
           "monitorOnly": "僅監控",
           "scanAll": "全面強制執行"
-        }
+        },
+        "itemLevelHint": "封鎖只會扣下被標記的來源或檔案。",
+        "advanced": "進階",
+        "threshold": "執行門檻",
+        "thresholdHint": "分數達到此值時執行該規則的動作（0 到 1，預設 0.9）。",
+        "flagThreshold": "標記門檻",
+        "flagThresholdHint": "分數達到此值時標記並記錄該文字，但不封鎖任何內容（預設 0.5）。"
       },
       "byline": {
         "new": "設定好代理後發佈，即可與它對話。"
@@ -2938,7 +3031,11 @@
       "detail": "詳細資訊",
       "empty": "此代理尚未觸發任何防護機制。",
       "emptyForFilter": "沒有符合此篩選條件的決策。",
-      "loadError": "無法載入防護機制活動"
+      "loadError": "無法載入防護機制活動",
+      "score": "分數",
+      "openChunk": "開啟文本塊",
+      "attachedFile": "附件",
+      "chunkUnavailable": "此文本塊已不在其來源中，或您無法開啟該來源。"
     },
     "workflow": {
       "expressionRow": "運算式 {{index}}",

@@ -28,6 +28,7 @@ const mcpApi = vi.hoisted(() => ({
   testMCPConnection: vi.fn(),
   saveMCPServer: vi.fn(),
   getConfig: vi.fn(),
+  getSourceDefaults: vi.fn(),
 }));
 vi.mock('../api/services/userService', async (importOriginal) => {
   const original = await importOriginal<{ default: object }>();
@@ -238,6 +239,7 @@ describe('ConnectWizard', () => {
       connections: [],
     });
     mcpApi.getConfig.mockResolvedValue({ json: async () => ({}) });
+    mcpApi.getSourceDefaults.mockResolvedValue({ ok: false });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);

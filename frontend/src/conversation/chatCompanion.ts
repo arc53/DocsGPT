@@ -23,6 +23,13 @@ export type AnswerSource = {
   // A chunk synced from a connection names the service, never the account.
   connector_key?: string | null;
   connector_name?: string | null;
+  // The decision model's p(relevant) against the searched query, when a
+  // relevance stage ordered the answer's sources; absent otherwise.
+  relevance?: number | null;
+  // Left out of the answer by the agent's guardrails (a retrieval control
+  // that blocks, such as the prompt-injection model): `text` is then a
+  // placeholder, never the passage.
+  withheld?: 'policy' | null;
 };
 
 /**
@@ -62,4 +69,17 @@ export function sourceHref(source: AnswerSource): string | null {
  */
 export function sourceExcerpt(source: AnswerSource): string {
   return (source.text ?? '').replace(/\.\.\.$/, '').trim();
+}
+
+export type RelevanceBand = 'strong' | 'possible' | 'weak';
+
+/**
+ * The coarse label a relevance score earns: strong from 0.7, possible from
+ * 0.3, weak below. `null` for a source without a score, which shows no label.
+ */
+export function relevanceBand(relevance: unknown): RelevanceBand | null {
+  if (typeof relevance !== 'number' || !Number.isFinite(relevance)) return null;
+  if (relevance >= 0.7) return 'strong';
+  if (relevance >= 0.3) return 'possible';
+  return 'weak';
 }

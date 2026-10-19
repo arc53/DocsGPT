@@ -39,6 +39,7 @@ from docsgpt.storage.db.bootstrap import (  # noqa: E402
     ensure_database_ready,
     ensure_vector_schema,
 )
+from docsgpt.guardrails.floor import import_env_floor  # noqa: E402
 from docsgpt.storage.db.embeddings_pin import (  # noqa: E402
     resolve_embeddings_pin,
     warn_on_source_model_mismatch,
@@ -75,6 +76,9 @@ ensure_database_ready(
 # table from EMBEDDINGS_NAME, and before anything embeds.
 resolve_embeddings_pin(logging.getLogger("docsgpt.app"))
 warn_on_source_model_mismatch(logging.getLogger("docsgpt.app"))
+# GUARDRAILS_FLOOR (deprecated) becomes the stored floor on the first start
+# that has it and none stored; the floor is edited in Admin > Guardrails.
+import_env_floor(logging.getLogger("docsgpt.app"))
 
 # Own the vector DB's schema here too, so the retrieval hot path is pure reads
 # instead of re-running DDL for every source of every request.
@@ -245,6 +249,7 @@ def get_config():
     from docsgpt.stt.stt_creator import STTCreator
     from docsgpt.tts.tts_creator import TTSCreator
 
+    decision_available = decisions.available()
     response = {
         "auth_type": settings.AUTH_TYPE,
         "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"],
@@ -261,7 +266,15 @@ def get_config():
         # Whether the decision model can answer here; never loads it. The
         # details (status, speed, feature verdicts) are admin-only:
         # /api/admin/decisions.
-        "decision_available": decisions.available(),
+        "decision_available": decision_available,
+        # Whether sources may turn relevance on (DECISION_RELEVANCE_ENABLED,
+        # with the model available); the source settings show its controls
+        # only then. Read from settings and the client's own state, so this
+        # route never loads, warms or times the model.
+        "decision_relevance_enabled": bool(settings.DECISION_RELEVANCE_ENABLED and decision_available),
+        # Whether the model may score text for prompt injection
+        # (DECISION_INJECTION_ENABLED, with the model available).
+        "decision_injection_enabled": bool(settings.DECISION_INJECTION_ENABLED and decision_available),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

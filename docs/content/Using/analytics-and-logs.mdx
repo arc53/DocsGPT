@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, filter the Logs list and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-10-14
+lastUpdated: 2026-10-18
 ---
 
 import { Callout } from 'nextra/components'
@@ -55,12 +55,12 @@ The charts below them:
 The Logs list shows the newest entries first and loads more as you scroll. Runs are placed at the time they started. A run that is still going (an answer being written, a scheduled, webhook or workflow run) is listed as **running**, with how long it has run and, for a workflow, the step it is on. The list updates on its own: when the run ends, its finished entry replaces it. An answer being written also says who asked: **API** for calls through the API, **Shared** for someone using a shared agent, **Chat** for a chat in the app. Narrow the list with:
 
 - the level: **All levels**, **Info**, **Warning** or **Error**;
-- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**;
+- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**, or **Liked** and **Disliked** for answers rated that way;
 - **Search logs...**, which matches the entry's summary, usually the question.
 
 Each row shows the time, the event type, the action, how long it took and the summary, colored by level. Click a row to expand it. What it holds depends on the type:
 
-- **Chat**: the agent, the answer, the tool calls and the sources used.
+- **Chat**: the agent, the visitor's like or dislike, the [passthrough](/Agents/prompts#3-passthrough---request-parameters) values the request carried (such as `user_id=emp-42`), the answer, the tool calls and the sources used. A rated answer also shows a thumb in its row.
 - **Scheduled**: the status, what triggered it, the error type, tokens, duration, the conversation the run wrote to, the instruction and the output.
 - **Workflow**: the workflow, its status, duration, steps and result.
 - **Webhook** and **System**: the endpoint and the error or activity details.
@@ -86,3 +86,22 @@ An agent's **Logs** tab also has **Guardrail activity**: every [guardrail](/Agen
 ## API
 
 The same data is available over the API, scoped the same way, with an agent's id as `api_key_id` to limit it to that agent: `POST /api/get_message_analytics`, `/api/get_token_analytics`, `/api/get_feedback_analytics`, `/api/get_tool_analytics`, `/api/get_schedule_analytics` and `/api/get_user_logs`, and `GET /api/traces`. A [personal access token](/API/personal-access-tokens) needs the `analytics:read` scope. See the [REST API reference](/API/reference).
+
+`/api/get_user_logs` takes the list's filters and a few more. Chat rows carry `conversation_id`, `passthrough` and `feedback` (`{"text": "like" | "dislike", "timestamp"}`):
+
+| Field | Filters to |
+| --- | --- |
+| `conversation_id` | The turns of one conversation, and the scheduled runs that wrote to it. |
+| `passthrough` | Chat turns whose passthrough values match every given key, compared as text: `{"user_id": "emp-42"}`. Up to 8 keys. |
+| `feedback` | `like` or `dislike`: chat turns rated that way. |
+| `date_from`, `date_to` | Entries at or after `date_from` and before `date_to`, as ISO 8601 moments. A moment without a time zone is UTC. |
+
+## Let an agent review the logs
+
+An agent can read these logs through an API tool, for example to report the most common complaints every morning:
+
+1. Create a [personal access token](/API/personal-access-tokens) with `analytics:read`, plus `conversations:read` if the agent should open whole conversations and `agents:read` if it should look up agent ids. Leave it unrestricted: a token limited to some agents can't read logs.
+2. In **Token created**, select **Create tool for agents**. This adds an API tool named **DocsGPT API (*token name*)** with the endpoints the token can read: `list_agents`, `get_logs`, `get_feedback_counts`, `get_message_counts`, `get_conversation` and `get_trace`. The token is stored, encrypted, as the tool's `Authorization` header.
+3. Add the tool to an agent, give it a [schedule](/Agents/schedules) such as "Read yesterday's disliked answers of the Support bot and list the three most common problems", and a tool to report through, such as Telegram or an MCP server for your issue tracker.
+
+The tool calls the API at the address this web app uses. Agent tools can't call `localhost` or private IP addresses, so on an instance reached at such an address the button reports that agents can't reach it and creates nothing. To avoid reporting the same problem twice, have the agent keep notes of what it reported with the memory tool.

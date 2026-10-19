@@ -112,7 +112,7 @@ class TestRefresh:
         with _db(pg_conn), patch.object(mcp, "_discover") as discover:
             result = mcp.refresh_mcp_tools("alice", connection)
         discover.assert_not_called()
-        assert result == {"added": [], "removed": [], "tools": []}
+        assert result == {"added": [], "removed": [], "tools": [], "injection": None}
 
     def test_a_tool_removed_while_its_server_is_read_is_reported(self, pg_conn):
         """Deleted from the Tools page during the re-scan: NoMcpTool, not a crash on the missing row."""

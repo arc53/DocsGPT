@@ -366,12 +366,13 @@
         "queryPlaceholder": "Posez une question à laquelle cette source devrait répondre…",
         "run": "Exécuter",
         "notSavedHint": "Ces paramètres ne servent qu’à ce test — ils ne sont pas enregistrés dans la source. Modifiez-les dans les paramètres de la source pour les rendre permanents.",
+        "notSavedHintEditor": "Ces paramètres ne servent qu’à ce test tant que vous ne les enregistrez pas dans la source.",
         "resultSummary_one": "{{count}} fragment récupéré · {{retriever}}",
         "resultSummary_other": "{{count}} fragments récupérés · {{retriever}}",
         "resultSummary_many": "{{count}} fragments récupérés · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "Aucun fragment récupéré pour cette requête.",
-        "emptyWithThreshold": "Aucun fragment n’atteint le seuil de score ({{threshold}}). Abaissez-le pour voir les résultats proches.",
+        "emptyWithThreshold": "Aucun fragment n’atteint le seuil de similarité ({{threshold}}). Abaissez-le pour voir les résultats proches.",
         "showMore": "Afficher le fragment entier",
         "showLess": "Afficher moins",
         "noScore": "aucun score",
@@ -383,7 +384,31 @@
         },
         "errors": {
           "failed": "Échec du test de récupération. Veuillez réessayer."
-        }
+        },
+        "relevance": "pertinence",
+        "compare": "Comparer avec l’ordre du moteur de récupération",
+        "compareHint": "Liste aussi chaque candidat dans l’ordre du moteur de récupération, avec sa pertinence et si le modèle de pertinence l’a gardé, remonté ou écarté.",
+        "relevanceRun": {
+          "applied": "ordonnés par pertinence en {{ms}} ms",
+          "fallback": "modèle de pertinence non utilisé ({{reason}}), ordre du moteur de récupération conservé"
+        },
+        "compareTitle": "Ordre du moteur de récupération",
+        "compareDescription": "Tous les candidats reçus par les étapes de pertinence, dans l’ordre où le moteur de récupération les a classés.",
+        "compareColumns": {
+          "before": "Rang",
+          "chunk": "Fragment",
+          "relevance": "Pertinence",
+          "outcome": "Résultat"
+        },
+        "compareStatus": {
+          "promoted": "Remonté en #{{rank}}",
+          "kept": "Gardé en #{{rank}}",
+          "dropped": "Écarté",
+          "notKept": "Non gardé"
+        },
+        "strictness": "Pertinence pour ce test",
+        "saveToSource": "Enregistrer dans la source",
+        "savedToSource": "Enregistré. La source utilise désormais les paramètres testés."
       },
       "editConfig": "Paramètres de la source",
       "shareWithTeam": "Partager avec l’équipe",
@@ -412,14 +437,15 @@
       "searchAlt": "Rechercher",
       "retrievalOptions": {
         "title": "Paramètres avancés",
+        "advanced": "Avancé",
         "retrieval": {
           "title": "Récupération",
           "note": "Ces modifications prennent effet immédiatement, sans réindexation.",
           "tag": "sans réindexation",
           "chunks": "Fragments à récupérer (top-k)",
-          "scoreThreshold": "Seuil de score",
-          "scoreThresholdPlaceholder": "Aucun",
-          "scoreThresholdHint": "Ne renvoyer que les fragments dont le score de pertinence dépasse ce seuil (0–1) ; plus il est élevé, plus le filtre est strict.",
+          "similarityThreshold": "Seuil de similarité",
+          "similarityThresholdPlaceholder": "Aucun",
+          "similarityThresholdHint": "Écarte les fragments dont le score de similarité du moteur de récupération est inférieur à cette valeur (0–1). Le filtre porte sur le score du moteur de récupération, pas sur le modèle de pertinence.",
           "rephraseQuery": "Reformuler la requête avant la recherche",
           "retriever": "Moteur de récupération",
           "retrievers": {
@@ -449,13 +475,14 @@
           "agentToolHint": "Les agents peuvent aussi suivre eux-mêmes ces relations lorsque l’exposition de cette source est « Outil de recherche à la demande », ou lorsqu’un agent agentique l’utilise."
         },
         "prescreen": {
-          "enable": "Activer la présélection LLM",
-          "warning": "Récupère un ensemble plus large de candidats et utilise un LLM pour le filtrer. Cela augmente la latence et le coût des requêtes.",
+          "enable": "Présélection par LLM",
+          "warning": "Un LLM examine un plus grand ensemble de candidats et garde ceux qui répondent à la requête. Cela augmente la latence et le coût de chaque requête.",
           "candidateK": "Candidats à récupérer",
           "maxKeep": "Fragments max. à conserver",
           "batchSize": "Taille de lot",
           "model": "Modèle (facultatif)",
-          "modelPlaceholder": "Par défaut, le modèle de la requête"
+          "modelPlaceholder": "Par défaut, le modèle de la requête",
+          "exclusiveHint": "Elle remplace la pertinence : activer l’une désactive l’autre."
         },
         "graph": {
           "title": "Extraction de graphe",
@@ -483,6 +510,29 @@
           "maxTokensHint": "4 096 jetons maximum.",
           "minTokens": "Jetons min. par fragment",
           "duplicateHeaders": "Dupliquer les en-têtes entre les fragments"
+        },
+        "relevance": {
+          "title": "Pertinence",
+          "tag": "sans réindexation",
+          "mode": "Modèle de pertinence",
+          "modeHint": "Note chaque fragment récupéré par rapport à la requête. Réordonner place les plus pertinents en premier ; Réordonner et filtrer écarte aussi les plus faibles.",
+          "modes": {
+            "off": "Désactivé",
+            "reorder": "Réordonner",
+            "filter": "Réordonner et filtrer"
+          },
+          "strictness": "Sévérité du filtre",
+          "strictnessHint": "Plus le filtre est strict, moins il garde de fragments : moins de tokens par réponse, mais plus de risque d’écarter un fragment utile.",
+          "presets": {
+            "loose": "Souple",
+            "balanced": "Équilibré",
+            "strict": "Strict",
+            "custom": "Personnalisé ({{value}})"
+          },
+          "minRelevance": "Pertinence minimale",
+          "minRelevanceHint": "La pertinence exacte (0–1) qu’un fragment doit atteindre pour être gardé. Souple vaut 0,1, Équilibré 0,3, Strict 0,5.",
+          "candidates": "Candidats à noter",
+          "candidatesHint": "Nombre de fragments que le moteur de récupération transmet au modèle de pertinence, jusqu’à {{max}}. Par défaut : {{default}}."
         }
       },
       "configModal": {
@@ -491,7 +541,7 @@
         "subtitleGeneric": "Configurez le découpage et la récupération de cette source.",
         "save": "Enregistrer",
         "chunkingChangeHint": "Vous avez modifié un paramètre de découpage. Après l’enregistrement, il faudra réindexer cette source pour qu’il prenne effet.",
-        "prescreenInvalidHint": "Vérifiez les valeurs de présélection : le nombre de candidats à récupérer doit être au moins égal au nombre de fragments, et le nombre de fragments à conserver ne doit pas dépasser celui des candidats.",
+        "prescreenInvalidHint": "Vérifiez les valeurs de la présélection par LLM : le nombre de candidats à récupérer doit être au moins égal au nombre de fragments, et le nombre de fragments à conserver ne doit pas dépasser celui des candidats.",
         "reingestRequired": "Vos modifications ont été enregistrées. Les paramètres de découpage modifiés ne prennent effet qu’après une réindexation. Réindexer maintenant ?",
         "reingestLater": "Plus tard",
         "errors": {
@@ -558,7 +608,19 @@
       "deleteFileConsequence": "Ses fragments sont également supprimés. Cette action est irréversible.",
       "deleteDirectoryConsequence": "Tout son contenu est également supprimé. Cette action est irréversible.",
       "syncConsequence": "Son contenu est mis à jour depuis votre stockage cloud, ce qui peut écraser les modifications apportées à certains fragments.",
-      "deleteItemFailed": "Impossible de supprimer « {{name}} »."
+      "deleteItemFailed": "Impossible de supprimer « {{name}} ».",
+      "injection": {
+        "flaggedOnly": "Signalés uniquement",
+        "high": "Injection de prompt probable",
+        "suspected": "Injection de prompt possible",
+        "markedSafe": "Marqué comme sûr",
+        "markSafe": "Marquer comme sûr",
+        "undo": "Annuler",
+        "flaggedNotice": "Ce fragment ressemble à une injection de prompt (score {{percent}} %). Les agents qui contrôlent les sources récupérées le signalent ou l’écartent de leurs réponses.",
+        "safeNotice": "Marqué comme sûr : les agents qui utilisent cette source traitent ce fragment comme sain. Modifier son texte retire la marque.",
+        "reviewFailed": "Impossible de mettre à jour ce fragment. Veuillez réessayer.",
+        "noFlagged": "Aucun fragment de cette source n’a été signalé. Un fragment est noté dès qu’une conversation le récupère."
+      }
     },
     "analytics": {
       "label": "Statistiques",
@@ -660,7 +722,9 @@
         "activity": "Activité",
         "steps": "Étapes",
         "result": "Résultat",
-        "source": "Source"
+        "source": "Source",
+        "feedback": "Avis",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Voir la trace",
@@ -783,6 +847,10 @@
         "api": "API",
         "shared": "Partagé",
         "chat": "Conversation"
+      },
+      "feedback": {
+        "like": "Aimé",
+        "dislike": "Pas aimé"
       }
     },
     "teams": {
@@ -1492,7 +1560,10 @@
         "tokenLabel": "Votre jeton",
         "usageTitle": "Utilisation",
         "usageHint": "Exportez-le comme variable d’environnement, puis envoyez-le comme jeton Bearer dans l’en-tête Authorization.",
-        "done": "Terminé"
+        "done": "Terminé",
+        "createTool": "Créer un outil pour les agents",
+        "toolCreated": "Outil créé. Retrouvez-le dans Paramètres › Outils et ajoutez-le à un agent.",
+        "toolFailed": "Impossible de créer l'outil."
       },
       "regenerate": {
         "action": "Régénérer",
@@ -1821,6 +1892,12 @@
       "capabilityChip": {
         "sync": "Se synchronise dans Connaissances",
         "tools": "Fournit des outils aux agents"
+      },
+      "injection": {
+        "flagged": "Injection de prompt possible",
+        "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
+        "notice_many": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser.",
+        "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       }
     }
   },
@@ -1840,6 +1917,7 @@
       "dropzoneText": "Cliquez pour importer ou glissez-déposez",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON ou ZIP, jusqu’à 25 Mo chacun",
       "filesRejected": "Non ajoutés (plus de 25 Mo ou type non pris en charge) : {{files}}",
+      "selectFolder": "Sélectionner un dossier",
       "uploadedFiles": "Fichiers importés",
       "cancel": "Annuler",
       "train": "Ajouter aux connaissances",
@@ -2188,8 +2266,17 @@
         "forbidden": "Cette source a été supprimée ou vous n’y avez plus accès. Affichage de l’extrait enregistré avec la réponse.",
         "loadFailed": "Impossible de charger ce passage.",
         "openLink": "Ouvrir le lien",
-        "openInKnowledge": "Ouvrir dans Connaissances"
-      }
+        "openInKnowledge": "Ouvrir dans Connaissances",
+        "withheld": "Les garde-fous de cet agent ont écarté cette source de la réponse, car elle peut contenir une injection de prompt. L’IA n’a pas lu ce passage."
+      },
+      "relevance": {
+        "strong": "Forte correspondance",
+        "possible": "Correspondance possible",
+        "weak": "Faible correspondance",
+        "tooltip": "Pertinence {{percent}} %"
+      },
+      "withheld": "Retenue",
+      "withheldNote": "Écartée de la réponse par les garde-fous de cet agent : elle peut contenir une injection de prompt."
     },
     "attachments": {
       "attach": "Joindre",
@@ -2673,7 +2760,8 @@
           "input": "Saisie de l’utilisateur",
           "retrieval": "Sources récupérées",
           "toolResult": "Résultat de l’outil",
-          "output": "Réponse"
+          "output": "Réponse",
+          "attachment": "Fichiers joints"
         },
         "actions": {
           "flag": "Signaler uniquement",
@@ -2683,7 +2771,13 @@
         "modes": {
           "monitorOnly": "Surveillance uniquement",
           "scanAll": "Appliquer partout"
-        }
+        },
+        "itemLevelHint": "Bloquer retient uniquement la source ou le fichier signalé.",
+        "advanced": "Avancé",
+        "threshold": "Seuil d’action",
+        "thresholdHint": "L’action du contrôle s’applique à partir de ce score (de 0 à 1, 0,9 par défaut).",
+        "flagThreshold": "Seuil de signalement",
+        "flagThresholdHint": "À partir de ce score, le texte est signalé et enregistré, sans rien bloquer (0,5 par défaut)."
       },
       "byline": {
         "new": "Configurez l’agent, puis publiez-le pour converser avec lui."
@@ -3024,7 +3118,11 @@
       "detail": "Détail",
       "empty": "Aucun garde-fou ne s’est encore déclenché sur cet agent.",
       "emptyForFilter": "Aucune décision ne correspond à ce filtre.",
-      "loadError": "Impossible de charger l’activité des garde-fous"
+      "loadError": "Impossible de charger l’activité des garde-fous",
+      "score": "Score",
+      "openChunk": "Ouvrir le fragment",
+      "attachedFile": "Fichier joint",
+      "chunkUnavailable": "Ce fragment ne figure plus dans sa source, ou vous ne pouvez pas ouvrir cette source."
     },
     "workflow": {
       "expressionRow": "Expression {{index}}",

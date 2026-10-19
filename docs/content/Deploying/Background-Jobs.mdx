@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Data Retention
 description: The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
-lastUpdated: 2026-10-15
+lastUpdated: 2026-10-17
 ---
 
 import { Callout } from 'nextra/components'
@@ -46,6 +46,7 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 | `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. | None. |
 | `cleanup-message-events` | day | Deletes the per-chunk stream journal that lets a client reconnect to an answer, and the markers left by regenerated answers. Conversations themselves are kept. | `MESSAGE_EVENTS_RETENTION_DAYS` (`14`). |
 | `cleanup-guardrail-events` | day | Deletes [guardrail](/Agents/guardrails) events. | `GUARDRAILS_EVENTS_RETENTION_DAYS` (`30`). |
+| `cleanup-content-scores` | day | Deletes cached [prompt-injection scores](/Agents/guardrails#where-a-documents-score-comes-from) whose text was not scored or seen within the retention window. | `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` (`180`). |
 | `cleanup-decision-usage` | day | Deletes the per-day counts of [decision model](/Models/decision-model) calls. | `DECISION_USAGE_RETENTION_DAYS` (`90`). |
 | `cleanup-traces` | day | Deletes request traces (the trace viewer and per-agent logs). | `TRACES_RETENTION_DAYS` (`30`). |
 | `cleanup-orphan-memories` | day | Deletes memory entries whose tool was deleted. | None. |

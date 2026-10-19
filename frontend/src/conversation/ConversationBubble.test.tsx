@@ -743,6 +743,26 @@ describe('ConversationBubble', () => {
       expect(icon.classList.contains('lucide-file-text')).toBe(false);
     });
 
+    it('says a withheld source was left out instead of showing its placeholder', async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          message="Hi"
+          sources={[
+            {
+              title: 'Planted.md',
+              text: '[Withheld by a content policy.]...',
+              source: 'local',
+              withheld: 'policy',
+            },
+          ]}
+        />,
+      );
+      expect(cardButton(0).textContent).toBe(
+        tr('conversation.sources.withheldNote'),
+      );
+    });
+
     it('keeps the file glyph on a plain link', async () => {
       await render(
         <ConversationBubble type="ANSWER" message="Hi" sources={sources} />,

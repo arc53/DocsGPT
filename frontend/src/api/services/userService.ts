@@ -26,6 +26,9 @@ const userService = {
     throttledApiClient.get(endpoints.USER.AGENTS, token),
   getGuardrailCatalog: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.GUARDRAIL_CATALOG, token),
+  /** The guardrails a new agent starts with (Admin › Defaults). */
+  getAgentDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_DEFAULTS, token),
   getGuardrailEvents: (
     agentId: string,
     token: string | null,
@@ -143,6 +146,8 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  getSourceDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_DEFAULTS, token),
   testSourceRetrieval: (
     sourceId: string,
     data: { query: string; retrieval?: any },
@@ -283,9 +288,22 @@ const userService = {
     token: string | null,
     path?: string,
     search?: string,
+    injection?: 'flagged',
   ): Promise<any> =>
     throttledApiClient.get(
-      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
+      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search, injection),
+      token,
+    ),
+  /** Mark a chunk text safe from prompt-injection screening for its source (`allow`), or undo it (`clear`). */
+  reviewChunkInjection: (
+    sourceId: string,
+    contentHash: string,
+    decision: 'allow' | 'clear',
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.INJECTION_REVIEW(sourceId),
+      { content_hash: contentHash, decision },
       token,
     ),
   /** The chunk behind a citation, by the content key retrieval labelled it with. */

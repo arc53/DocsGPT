@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 Lane = Literal["hot", "background"]
 
@@ -186,15 +186,23 @@ class FeatureSpec:
 
     Attributes:
         name: The feature label callers pass as ``feature``.
-        mode_setting: The setting holding ``off``, ``monitor``, ``on`` or ``auto``.
-        budget_setting: The setting holding the latency budget, in seconds, that ``auto`` compares against.
+        mode_setting: The setting holding ``off``, ``monitor``, ``on`` or ``auto``, or a boolean switch (``on``
+            when true).
+        budget_setting: The setting holding the latency budget, in seconds, that ``auto`` compares against;
+            ``None`` for a feature whose budget is ``budget_s``.
         shape: The call the prediction is for.
         auto_mode: What ``auto`` turns into when the prediction fits: ``on``, or ``monitor`` for a feature that
             starts in shadow mode.
+        shape_for: For a feature whose call depends on settings or on where the model runs: ``(settings,
+            runtime)`` to the call's shape, ``runtime`` being ``ModelInfo.runtime`` or ``None`` when unknown;
+            ``shape`` is then the shape for the defaults (see ``features.shape_of``).
+        budget_s: The budget, in seconds, of a feature without a ``budget_setting``.
     """
 
     name: str
     mode_setting: str
-    budget_setting: str
+    budget_setting: Optional[str]
     shape: Shape
     auto_mode: Literal["on", "monitor"] = "on"
+    shape_for: Optional[Callable[[Any, Optional[str]], Shape]] = None
+    budget_s: Optional[float] = None

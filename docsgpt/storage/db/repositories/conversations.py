@@ -168,6 +168,7 @@ class ConversationsRepository:
         shared_token: str | None = None,
         visibility: str = "listed",
         legacy_mongo_id: str | None = None,
+        passthrough: dict | None = None,
     ) -> dict:
         """Create a new conversation.
 
@@ -195,6 +196,8 @@ class ConversationsRepository:
             values["shared_token"] = shared_token
         if legacy_mongo_id:
             values["legacy_mongo_id"] = legacy_mongo_id
+        if passthrough:
+            values["passthrough"] = passthrough
 
         stmt = pg_insert(conversations_table).values(**values).returning(conversations_table)
         result = self._conn.execute(stmt)
@@ -1426,6 +1429,19 @@ class ConversationsRepository:
             {"days": days},
         )
         return result.rowcount or 0
+
+    def set_passthrough(self, conversation_id: str, passthrough: dict | None) -> bool:
+        """Store the latest turn's ``passthrough`` values on a conversation; ``None`` clears them."""
+        if not looks_like_uuid(conversation_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE conversations SET passthrough = CAST(:passthrough AS jsonb) "
+                "WHERE id = CAST(:conv_id AS uuid)"
+            ),
+            {"conv_id": conversation_id, "passthrough": json.dumps(passthrough) if passthrough else None},
+        )
+        return result.rowcount > 0
 
     def set_feedback(
         self, conversation_id: str, position: int, feedback: dict | None,

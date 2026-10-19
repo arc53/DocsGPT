@@ -152,6 +152,16 @@ class TestVerdict:
         features.register(other)
         assert not features.nothing_fits(costing(5.0))
 
+    def test_a_boolean_switch_reads_as_on_or_off(self, feature):
+        switch = FeatureSpec("test_switch", "TEST_SWITCH", "TEST_FEATURE_BUDGET", Shape(0, (0,)))
+        features.register(switch)
+        feature.settings.TEST_SWITCH = False
+        assert features.configured(switch) == "off" and features.nothing_fits(costing(5.0))
+        feature.settings.TEST_SWITCH = True
+        assert features.configured(switch) == "on"
+        # A switch that is on uses the model, so the model was not loaded for nothing.
+        assert not features.nothing_fits(costing(5.0))
+
     def test_without_an_auto_feature_nothing_is_judged(self, feature):
         feature.settings.TEST_FEATURE_MODE = "off"
         assert not features.nothing_fits(costing(5.0))

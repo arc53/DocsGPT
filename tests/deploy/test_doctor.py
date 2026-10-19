@@ -1,6 +1,7 @@
 """`docsgpt doctor`, `restart`, following native logs, and settings that apply themselves."""
 
 import argparse
+import re
 import socket
 
 import pytest
@@ -717,19 +718,27 @@ class TestDoctorDecisions:
         check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=False)
         assert str(folder) in check.detail
 
+    def test_relevance_is_listed_as_rag_rerank_and_counts_as_a_feature_on(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(commands.sys, "platform", "darwin")
+        check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=True)
+        assert check.level == "ok" and "rag_rerank off" in check.detail
+        check = commands._check_decisions({"DECISION_RELEVANCE_ENABLED": "true"}, docker=True)
+        assert "rag_rerank on" in check.detail
+        assert check.level == "warn" and "--device mps" in check.detail
+
     def test_mode_none(self):
         assert commands._check_decisions({"DECISION_MODE": "none"}, docker=False).detail == "off (DECISION_MODE=none)"
 
     def test_a_docker_stack_holds_the_model_in_its_backend(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        check = commands._check_decisions({"DECISION_INJECTION_ENABLED": "true"}, docker=True)
         assert check.level == "ok" and "backend container" in check.detail
-        assert "injection_input monitor" in check.detail
+        assert "injection_input on" in check.detail
 
     def test_a_docker_stack_with_the_decider_points_at_it(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
         env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095", "DECISION_KEY": "d",
-               "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+               "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok" and "decider container" in check.detail
 
@@ -743,17 +752,17 @@ class TestDoctorDecisions:
 
     def test_a_decider_url_without_its_profile_is_a_warning(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        env = {"DECISION_BASE_URL": "http://decider:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        env = {"DECISION_BASE_URL": "http://decider:7095", "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "warn" and "docsgpt up --decider" in check.detail
 
     def test_on_a_mac_a_feature_in_docker_gets_the_mps_hint(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "darwin")
-        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        check = commands._check_decisions({"DECISION_INJECTION_ENABLED": "true"}, docker=True)
         assert check.level == "warn" and "--device mps" in check.detail
         assert commands._check_decisions({}, docker=True).level == "ok", "no hint while every feature is off"
 
-    def test_a_server_reports_its_model_and_the_auto_verdicts(self, server):
+    def test_a_server_reports_its_model_and_each_feature_against_its_budget(self, server):
         from docsgpt.decisions.latency import SpeedProfile
 
         seen, reply = server
@@ -762,14 +771,39 @@ class TestDoctorDecisions:
                                      "calibration": "c3bc72ff6907", "runtime": "torch-mps-fp16",
                                      "status": "ready", "speed": speed}]}
         env = {"DECISION_BASE_URL": "http://host.docker.internal:7095", "DECISION_KEY": "k",
-               "GUARDRAILS_INJECTION_INPUT_MODE": "auto"}
+               "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok"
         assert "torch-mps-fp16" in check.detail and "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907" in check.detail
-        assert "injection_input auto, on at" in check.detail
+        assert re.search(r"injection_input on at \d+\.\d\ds of 2s", check.detail)
+        assert "rag_rerank off" in check.detail
         (request,) = seen
         assert str(request.url) == "http://127.0.0.1:7095/v1/models"
         assert request.headers["authorization"] == "Bearer k"
+
+    @pytest.mark.parametrize("plan, tokens", [("onnx", 320), ("torch", 1220)])
+    def test_relevance_on_shows_its_call_against_the_timeout(self, server, monkeypatch, plan, tokens):
+        from docsgpt.decisions.latency import SpeedProfile
+
+        _, reply = server
+        speed = SpeedProfile(0.05, 0.0005, 0.0, overhead=60, threads=0, plan=plan).wire()
+        reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2", "prompt_hash": "78cfb276f93a",
+                                     "calibration": "c3bc72ff6907", "runtime": "onnx-int8", "status": "ready",
+                                     "speed": speed}]}
+        shapes = []
+        real = SpeedProfile.predict_s
+
+        def predict(self, shape):
+            shapes.append(shape)
+            return real(self, shape)
+
+        monkeypatch.setattr(SpeedProfile, "predict_s", predict)
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_KEY": "k", "DECISION_RELEVANCE_ENABLED": "true"}
+        check = commands._check_decisions(env, docker=False)
+        assert re.search(r"rag_rerank on at \d+\.\d\ds of 2s", check.detail)
+        # A CPU (ONNX) server scores best-window passages; a GPU one whole chunks.
+        (shape,) = shapes
+        assert shape.states == 20 and shape.state_tokens == tokens
 
     @pytest.mark.parametrize("models", [{"name": "x"}, "arc53/arc-decide-0.4b-v0.2", [], ["x"]])
     def test_a_wrong_shaped_model_list_is_reported_not_raised(self, server, models):
@@ -795,10 +829,10 @@ class TestDoctorDecisions:
         _, reply = server
         reply["status"] = status
         reply["error"] = httpx2.ConnectError("refused") if error else None
-        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "on"}
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=False)
         assert check.level == "warn" and said in check.detail
-        env["GUARDRAILS_INJECTION_INPUT_MODE"] = "off"
+        env["DECISION_INJECTION_ENABLED"] = "false"
         assert commands._check_decisions(env, docker=False).level == "ok"
 
     def test_vllm(self, server):

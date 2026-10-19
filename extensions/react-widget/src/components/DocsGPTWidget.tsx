@@ -1555,6 +1555,7 @@ export const WidgetCore = ({
   allowedFileExtensions,
   showMicButton = false,
   poweredBy = true,
+  passthrough,
 }: WidgetCoreProps) => {
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
@@ -1790,6 +1791,7 @@ export const WidgetCore = ({
         history: queries,
         conversationId: conversationId,
         attachments: attachmentIds,
+        passthrough,
         onEvent: (event: MessageEvent) => {
           let data: StreamEvent;
           try {

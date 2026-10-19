@@ -3,11 +3,17 @@ import { useEffect, useState } from 'react';
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
 import type { Model } from '../../models/types';
+import {
+  type DecisionFeatures,
+  NO_DECISION_FEATURES,
+  decisionFeatures,
+} from './RetrievalOptions';
 
 /**
  * What RetrievalOptions may offer on this instance: the hybrid and graphrag
- * retrievers (from /api/config) and, when graphrag is on, the models for its
- * extraction-model picker. Nothing is fetched until `enabled`.
+ * retrievers and the decision-model controls (from /api/config) and, when
+ * graphrag is on, the models for its extraction-model picker. Nothing is
+ * fetched until `enabled`.
  */
 export default function useRetrievalAvailability(
   token: string | null,
@@ -15,6 +21,8 @@ export default function useRetrievalAvailability(
 ) {
   const [graphRAGAvailable, setGraphRAGAvailable] = useState(false);
   const [hybridAvailable, setHybridAvailable] = useState(false);
+  const [decision, setDecision] =
+    useState<DecisionFeatures>(NO_DECISION_FEATURES);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
 
   useEffect(() => {
@@ -27,6 +35,7 @@ export default function useRetrievalAvailability(
         if (!cancelled) {
           setGraphRAGAvailable(!!config?.graphrag_available);
           setHybridAvailable(!!config?.hybrid_available);
+          setDecision(decisionFeatures(config));
         }
       })
       .catch(() => undefined);
@@ -53,5 +62,5 @@ export default function useRetrievalAvailability(
     };
   }, [enabled, graphRAGAvailable, token]);
 
-  return { graphRAGAvailable, hybridAvailable, availableModels };
+  return { graphRAGAvailable, hybridAvailable, availableModels, decision };
 }

@@ -21,6 +21,7 @@ from docsgpt.api.user.tools.routes import (
 from docsgpt.cache import get_redis_instance
 from docsgpt.connectors.resolve import REMOVED_CONNECTION_KEY
 from docsgpt.core.url_validation import SSRFError, validate_url
+from docsgpt.guardrails import tool_descriptions
 from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
@@ -407,7 +408,14 @@ class MCPServerSave(Resource):
             },
         )
     )
-    @api.doc(description="Create or update MCP server with automatic tool discovery")
+    @api.doc(
+        description=(
+            "Create or update MCP server with automatic tool discovery. While Admin > Guardrails warns on tool "
+            "descriptions, each discovered action is scored for prompt injection and stored with "
+            "`injection: {p, scorer}`; the response's `injection` is `{flagged: [names], unscored: [names]}` "
+            "(null while the warnings are off). Nothing is deactivated."
+        )
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -507,6 +515,8 @@ class MCPServerSave(Resource):
             from docsgpt.connectors import catalog
             from docsgpt.connectors.permissions import apply_default_permissions
 
+            # Scored as read, so a re-save of an unchanged server is a cache hit; warn only.
+            description_scan = tool_descriptions.score_actions(actions_metadata)
             # A preset with more tools than a model takes at once starts with its core ones on.
             preset = catalog.preset_for_url(storage_config.get("server_url"))
             transformed_actions = apply_default_permissions(
@@ -606,6 +616,7 @@ class MCPServerSave(Resource):
                             "tools_count": len(transformed_actions),
                             "connection_id": connection_id,
                         }
+            response_data["injection"] = description_scan
             return make_response(jsonify(response_data), 200)
         except AccessDenied as e:
             return denied_response(e)

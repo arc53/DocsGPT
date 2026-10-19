@@ -38,11 +38,10 @@ import {
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
 import RetrievalOptions, {
-  DEFAULT_RETRIEVAL_OPTIONS,
   isPrescreenConfigValid,
   optionsToConfig,
-  type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import type { AppDispatch } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
@@ -197,9 +196,9 @@ export default function ConnectWizard({
   const askSync = canSync && mode === 'connect';
   const [syncOn, setSyncOn] = useState(purpose === 'knowledge');
   const syncing = canSync && (mode === 'sync' || syncOn);
-  const [retrievalOptions, setRetrievalOptions] =
-    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const { graphRAGAvailable, hybridAvailable, availableModels } =
+  const { value: retrievalOptions, setValue: setRetrievalOptions } =
+    useNewSourceOptions(token, step === 'setup' && syncing);
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token, step === 'setup' && syncing);
   // Tools the user opts into while choosing what to sync, not on sign-in.
   const offerTools =
@@ -906,6 +905,7 @@ export default function ConnectWizard({
             hybridAvailable={hybridAvailable}
             graphRAGAvailable={graphRAGAvailable}
             availableModels={availableModels}
+            decision={decision}
           />
         </>
       )}

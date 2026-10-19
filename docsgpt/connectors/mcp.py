@@ -18,6 +18,7 @@ from docsgpt.agents.tool_pins import carry_pins
 from docsgpt.connectors import catalog, service
 from docsgpt.connectors.catalog import ConnectorDefinition
 from docsgpt.connectors.permissions import ACCESS_READ, ACCESS_WRITE, apply_default_permissions
+from docsgpt.guardrails import tool_descriptions
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -76,7 +77,9 @@ def discover_connection_actions(user_id: str, connection: dict, writes: bool = F
     Read with the connection's own sign-in: its pasted key or token, or for
     an MCP preset (Notion, Linear…) its stored OAuth tokens, renewed when
     they expired. A sign-in the server rejects and that cannot be renewed
-    flags the connection for reconnecting.
+    flags the connection for reconnecting. While Admin > Guardrails warns on
+    tool descriptions, each action carries its prompt-injection score
+    (``tool_descriptions``).
 
     Args:
         user_id: The connection's owner.
@@ -95,7 +98,7 @@ def discover_connection_actions(user_id: str, connection: dict, writes: bool = F
     if config is None:
         raise ValueError("This connector has no MCP server")
     try:
-        return _classified(connection, config, _discover(user_id, connection, {"config": config}))
+        actions = _classified(connection, config, _discover(user_id, connection, {"config": config}))
     except service.ConnectionUnavailable:
         raise
     except Exception as exc:
@@ -103,23 +106,28 @@ def discover_connection_actions(user_id: str, connection: dict, writes: bool = F
             service.mark_reconnect_needed(str(connection["id"]), SIGN_IN_EXPIRED)
             raise service.ConnectionUnavailable(SIGN_IN_EXPIRED, connection_id=str(connection["id"])) from exc
         raise
+    tool_descriptions.score_actions(actions)
+    return actions
 
 
-def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tuple[set, set, dict]:
+def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tuple[set, set, dict, Optional[dict]]:
     """Re-read one MCP tool's actions from ``config``'s server and store both.
 
     Actions that still exist keep the permissions the user chose and the
     fixed values of parameters they still have; new ones get the defaults
     from their annotations (reads always allowed, writes need approval);
-    removed ones disappear.
+    removed ones disappear. Each carries its prompt-injection score while
+    Admin > Guardrails warns on tool descriptions.
 
     Returns:
-        ``(added, removed, tool)``: action names, and the serialized tool.
+        ``(added, removed, tool, scan)``: action names, the serialized tool,
+        and ``tool_descriptions.score_actions``'s flagged and unscored names.
 
     Raises:
         NoMcpTool: The tool was deleted while its server was read.
     """
     discovered = _classified(connection, config, _discover(user_id, connection, {**tool, "config": config}))
+    scan = tool_descriptions.score_actions(discovered)
     definition = catalog.get_definition(catalog.connector_key_for_row(connection))
     fresh = apply_default_permissions(
         "mcp_tool", service._transform_actions(discovered), definition.default_actions if definition else (),
@@ -146,7 +154,15 @@ def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tup
         if updated is None:
             raise NoMcpTool("This connection's tool was removed; add its tools again")
         serialized = service.serialize_tool(updated)
-    return names - set(previous), set(previous) - names, serialized
+    return names - set(previous), set(previous) - names, serialized, scan
+
+
+def _merge_scans(scans: list) -> Optional[dict]:
+    """The flagged and unscored action names across a connection's tools; ``None`` while warnings are off."""
+    scans = [scan for scan in scans if scan is not None]
+    if not scans:
+        return None
+    return {key: sorted({name for scan in scans for name in scan[key]}) for key in ("flagged", "unscored")}
 
 
 def refresh_mcp_tools(user_id: str, connection: dict) -> dict:
@@ -157,7 +173,9 @@ def refresh_mcp_tools(user_id: str, connection: dict) -> dict:
     one otherwise, which it then keeps.
 
     Returns:
-        ``{"added": [...], "removed": [...], "tools": [...]}``.
+        ``{"added": [...], "removed": [...], "tools": [...], "injection"}``;
+        ``injection`` is ``{"flagged", "unscored"}`` action names while
+        Admin > Guardrails warns on tool descriptions, else ``None``.
 
     Raises:
         NoMcpTool: A tool was deleted while its server was read.
@@ -170,17 +188,19 @@ def refresh_mcp_tools(user_id: str, connection: dict) -> dict:
     added: set[str] = set()
     removed: set[str] = set()
     refreshed = []
+    scans: list = []
     for tool in tools:
         config = dict(tool.get("config") or {})
         if definition is not None:
             config["server_url"] = service.builtin_mcp_url(
                 definition, config.get("server_url"), service.writes_allowed(policies, definition.key),
             )
-        tool_added, tool_removed, serialized = _rediscover(user_id, connection, tool, config)
+        tool_added, tool_removed, serialized, scan = _rediscover(user_id, connection, tool, config)
         added |= tool_added
         removed |= tool_removed
         refreshed.append(serialized)
-    return {"added": sorted(added), "removed": sorted(removed), "tools": refreshed}
+        scans.append(scan)
+    return {"added": sorted(added), "removed": sorted(removed), "tools": refreshed, "injection": _merge_scans(scans)}
 
 
 def set_builtin_writes(user_id: str, connection: dict, allow: bool) -> dict:
@@ -195,7 +215,8 @@ def set_builtin_writes(user_id: str, connection: dict, allow: bool) -> dict:
         allow: Let agents make changes (the write endpoint) or only read.
 
     Returns:
-        ``{"added", "removed", "tools", "writes"}``.
+        ``{"added", "removed", "tools", "writes", "injection"}``, as
+        :func:`refresh_mcp_tools`.
 
     Raises:
         ValueError: The connector offers no write access.
@@ -219,13 +240,18 @@ def set_builtin_writes(user_id: str, connection: dict, allow: bool) -> dict:
     added: set[str] = set()
     removed: set[str] = set()
     refreshed = []
+    scans: list = []
     for tool in tools:
         config = {**(tool.get("config") or {}), **endpoint}
-        tool_added, tool_removed, serialized = _rediscover(user_id, connection, tool, config)
+        tool_added, tool_removed, serialized, scan = _rediscover(user_id, connection, tool, config)
         added |= tool_added
         removed |= tool_removed
         refreshed.append(serialized)
-    return {"added": sorted(added), "removed": sorted(removed), "tools": refreshed, "writes": allow}
+        scans.append(scan)
+    return {
+        "added": sorted(added), "removed": sorted(removed), "tools": refreshed, "writes": allow,
+        "injection": _merge_scans(scans),
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 ---
 title: Access Control, Roles & Teams
 description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
-lastUpdated: 2026-10-15
+lastUpdated: 2026-10-18
 ---
 
 import { Callout } from 'nextra/components'
@@ -122,7 +122,10 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/...` | [Usage quotas](/Deploying/Usage-Quotas) for the instance, teams and users. |
 | `GET` `PUT` | `/api/admin/connectors` | Turn [connectors](/Sources/Connectors#admin-setup) on or off and set their sharing mode, write access and the custom MCP server switch. |
-| `GET` | `/api/admin/decisions` | The decision model as the API process sees it: mode, load status, model version, this machine's measured speed and each decision feature's verdict. Nothing loads; the public `/api/config` reports only `decision_available`. |
+| `GET` | `/api/admin/decisions` | The decision model as the API process sees it: mode, load status, model version, this machine's measured speed and each decision feature's verdict. Nothing loads; the public `/api/config` reports only whether the model is available and whether it may be used for relevance and for prompt-injection checks. |
+| `GET` `PUT` | `/api/admin/guardrails` | **Admin → Guardrails**: the [rules every agent follows](/Agents/guardrails#the-instance-floor) (the instance floor, existing agents included), the [MCP tool-description warnings](/Agents/guardrails#mcp-tool-descriptions) toggle, and what the prompt-injection model costs on this server. |
+| `GET` `PUT` | `/api/admin/defaults/sources` | **Admin → Defaults**, new sources: the [retrieval settings new sources start with](/Sources/Per-source-configuration#defaults-for-new-sources), relevance included, and what the relevance model costs per answer on this server. Saving never changes an existing source. |
+| `GET` `PUT` | `/api/admin/defaults/agents` | **Admin → Defaults**, new agents: the [guardrails new agents start with](/Agents/guardrails#defaults-for-new-agents). Saving never changes an existing agent. |
 
 <Callout type="info" emoji="ℹ️">
 Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.
@@ -271,6 +274,9 @@ Admin, team, token and data-plane actions are appended to the `auth_events` tabl
 | `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. |
 | `quota_policy_set` / `quota_policy_deleted` | `config` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
 | `connector_policy_set` | `config` | An admin changes connector policies under **Admin → Connectors**. |
+| `source_defaults_set` | `config` | An admin changes the default retrieval settings for new sources under **Admin → Defaults**. The metadata lists each changed field as `[old, new]`. |
+| `agent_defaults_set` | `config` | An admin changes the default guardrails for new agents under **Admin → Defaults**, each changed field as `[old, new]`. |
+| `guardrails_settings_set` | `config` | An admin changes the floor or the MCP tool-description warnings under **Admin → Guardrails**, each changed field as `[old, new]`. |
 | `source.created`, `source.deleted`, `source.reingested`, `source.wiki_settings_updated` | `data` | Knowledge source changes. |
 | `agent.created`, `agent.updated`, `agent.deleted`, `agent.key_regenerated` | `data` | Agent changes. `agent.updated` records the names of the fields that changed, never their values. |
 | `conversation.deleted`, `conversation.deleted_all` | `data` | Conversations are deleted. |

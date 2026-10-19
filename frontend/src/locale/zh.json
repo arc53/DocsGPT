@@ -352,10 +352,11 @@
         "queryPlaceholder": "输入一个此来源应能回答的问题...",
         "run": "运行",
         "notSavedHint": "这些设置仅用于本次测试，不会保存到来源。如需永久生效，请在来源设置中修改。",
+        "notSavedHintEditor": "这些设置在保存到来源之前仅用于本次测试。",
         "resultSummary": "检索到 {{count}} 个文本块 · {{retriever}}",
         "latency": "{{ms}} 毫秒",
         "empty": "此查询未检索到任何文本块。",
-        "emptyWithThreshold": "没有文本块的得分达到分数阈值（{{threshold}}）。降低阈值可查看接近的结果。",
+        "emptyWithThreshold": "没有文本块的得分达到相似度阈值（{{threshold}}）。降低阈值可查看接近的结果。",
         "showMore": "显示完整文本块",
         "showLess": "收起",
         "noScore": "无得分",
@@ -367,7 +368,31 @@
         },
         "errors": {
           "failed": "检索测试失败，请重试。"
-        }
+        },
+        "relevance": "相关度",
+        "compare": "与检索器顺序比较",
+        "compareHint": "同时按检索器顺序列出所有候选，显示其相关度，以及相关度模型是保留、提升还是丢弃了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 内按相关度排序",
+          "fallback": "未使用相关度模型（{{reason}}），保留检索器顺序"
+        },
+        "compareTitle": "检索器顺序",
+        "compareDescription": "相关度阶段收到的所有候选，按检索器的排名顺序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "文本块",
+          "relevance": "相关度",
+          "outcome": "结果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留为 #{{rank}}",
+          "dropped": "已丢弃",
+          "notKept": "未保留"
+        },
+        "strictness": "本次测试的相关度",
+        "saveToSource": "保存到来源",
+        "savedToSource": "已保存。该来源现在使用你测试过的设置。"
       },
       "editConfig": "来源设置",
       "shareWithTeam": "与团队共享",
@@ -396,14 +421,15 @@
       "searchAlt": "搜索",
       "retrievalOptions": {
         "title": "高级设置",
+        "advanced": "高级",
         "retrieval": {
           "title": "检索",
           "note": "这些更改立即生效，无需重新索引。",
           "tag": "无需重新索引",
           "chunks": "检索的文本块数（top-k）",
-          "scoreThreshold": "分数阈值",
-          "scoreThresholdPlaceholder": "无",
-          "scoreThresholdHint": "仅返回相关性得分高于此值（0–1）的文本块；数值越高越严格。",
+          "similarityThreshold": "相似度阈值",
+          "similarityThresholdPlaceholder": "无",
+          "similarityThresholdHint": "丢弃检索器相似度得分低于此值（0–1）的文本块。按检索器的得分过滤，而不是按相关度模型。",
           "rephraseQuery": "搜索前改写查询",
           "retriever": "检索器",
           "retrievers": {
@@ -433,13 +459,14 @@
           "agentToolHint": "当此来源的搜索接入方式为“按需搜索工具”，或由自主型智能体使用时，智能体也可以自行沿这些关系查找。"
         },
         "prescreen": {
-          "enable": "启用 LLM 预筛选",
-          "warning": "会获取更大的候选集并使用 LLM 进行过滤。这会增加查询时的延迟和成本。",
+          "enable": "LLM 筛选",
+          "warning": "由 LLM 审查更大的候选集，只保留能回答查询的文本块。这会增加每次查询的延迟和成本。",
           "candidateK": "获取的候选数量",
           "maxKeep": "最多保留的文本块数",
           "batchSize": "批处理大小",
           "model": "模型（可选）",
-          "modelPlaceholder": "默认使用请求所用的模型"
+          "modelPlaceholder": "默认使用请求所用的模型",
+          "exclusiveHint": "它可替代相关度：开启其中一项会关闭另一项。"
         },
         "graph": {
           "title": "图谱提取",
@@ -467,6 +494,29 @@
           "maxTokensHint": "最多 4,096 个令牌。",
           "minTokens": "每块最小令牌数",
           "duplicateHeaders": "跨块重复标题"
+        },
+        "relevance": {
+          "title": "相关度",
+          "tag": "无需重新索引",
+          "mode": "相关度模型",
+          "modeHint": "根据查询为检索到的每个文本块打分。“重新排序”把最相关的排在前面；“重新排序并过滤”还会丢弃相关度低的。",
+          "modes": {
+            "off": "关闭",
+            "reorder": "重新排序",
+            "filter": "重新排序并过滤"
+          },
+          "strictness": "过滤严格度",
+          "strictnessHint": "越严格保留的文本块越少：每个回答用的 token 更少，但更可能丢掉有用的文本块。",
+          "presets": {
+            "loose": "宽松",
+            "balanced": "均衡",
+            "strict": "严格",
+            "custom": "自定义（{{value}}）"
+          },
+          "minRelevance": "最低相关度",
+          "minRelevanceHint": "文本块被保留所需的确切相关度（0–1）。宽松为 0.1，均衡为 0.3，严格为 0.5。",
+          "candidates": "评分候选数",
+          "candidatesHint": "检索器为相关度模型获取并评分的文本块数量，最多 {{max}} 个。默认 {{default}} 个。"
         }
       },
       "configModal": {
@@ -475,7 +525,7 @@
         "subtitleGeneric": "配置此来源的分块与检索方式。",
         "save": "保存",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
-        "prescreenInvalidHint": "请检查预筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
+        "prescreenInvalidHint": "请检查 LLM 筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
         "reingestRequired": "您的更改已保存。修改的分块设置需重新索引后才会生效。立即重新索引？",
         "reingestLater": "稍后",
         "errors": {
@@ -538,7 +588,19 @@
       "deleteFileConsequence": "其分块也会一并删除。此操作无法撤销。",
       "deleteDirectoryConsequence": "其中的所有内容也会一并删除。此操作无法撤销。",
       "syncConsequence": "其内容会从您的云存储更新，可能会覆盖您对单个分块所做的编辑。",
-      "deleteItemFailed": "无法删除“{{name}}”。"
+      "deleteItemFailed": "无法删除“{{name}}”。",
+      "injection": {
+        "flaggedOnly": "仅显示已标记",
+        "high": "很可能是提示词注入",
+        "suspected": "疑似提示词注入",
+        "markedSafe": "已标为安全",
+        "markSafe": "标为安全",
+        "undo": "撤销",
+        "flaggedNotice": "此文本块看起来像提示词注入（分数 {{percent}}%）。检查检索来源的智能体会标记它，或在回答中略去它。",
+        "safeNotice": "已标为安全：使用此来源的智能体会将此文本块视为正常内容。编辑其文本会移除该标记。",
+        "reviewFailed": "无法更新此文本块，请重试。",
+        "noFlagged": "此来源中没有被标记的文本块。文本块会在对话首次检索到它时评分。"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -640,7 +702,9 @@
         "activity": "活动",
         "steps": "步骤",
         "result": "结果",
-        "source": "来源"
+        "source": "来源",
+        "feedback": "反馈",
+        "passthrough": "透传参数"
       },
       "trace": {
         "view": "查看追踪",
@@ -756,6 +820,10 @@
         "api": "API",
         "shared": "共享",
         "chat": "聊天"
+      },
+      "feedback": {
+        "like": "赞",
+        "dislike": "踩"
       }
     },
     "teams": {
@@ -1447,7 +1515,10 @@
         "tokenLabel": "您的令牌",
         "usageTitle": "使用方法",
         "usageHint": "将其导出为环境变量，然后在 Authorization 请求头中作为 Bearer 令牌发送。",
-        "done": "完成"
+        "done": "完成",
+        "createTool": "为智能体创建工具",
+        "toolCreated": "工具已创建。可在 设置 › 工具 中找到，并添加到智能体。",
+        "toolFailed": "无法创建工具。"
       },
       "regenerate": {
         "action": "重新生成",
@@ -1763,6 +1834,10 @@
       "capabilityChip": {
         "sync": "同步到知识库",
         "tools": "为智能体提供工具"
+      },
+      "injection": {
+        "flagged": "疑似提示词注入",
+        "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
       }
     }
   },
@@ -1782,6 +1857,7 @@
       "dropzoneText": "点击上传或拖放文件",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、图片、音频、EPUB、JSON 或 ZIP，每个最大 25 MB",
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
+      "selectFolder": "选择文件夹",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "添加到知识库",
@@ -2121,8 +2197,17 @@
         "forbidden": "此来源已被删除，或你已无权访问。下面显示的是随回答保存的摘录。",
         "loadFailed": "无法加载这段内容。",
         "openLink": "打开链接",
-        "openInKnowledge": "在知识库中打开"
-      }
+        "openInKnowledge": "在知识库中打开",
+        "withheld": "此来源可能含有提示词注入，因此此智能体的防护规则将其排除在回答之外。AI 没有读取这段内容。"
+      },
+      "relevance": {
+        "strong": "高度相关",
+        "possible": "可能相关",
+        "weak": "相关性低",
+        "tooltip": "相关度 {{percent}}%"
+      },
+      "withheld": "已扣下",
+      "withheldNote": "此智能体的防护规则将其排除在回答之外：其中可能含有提示词注入。"
     },
     "attachments": {
       "attach": "附件",
@@ -2595,7 +2680,8 @@
           "input": "用户输入",
           "retrieval": "检索到的来源",
           "toolResult": "工具结果",
-          "output": "回答"
+          "output": "回答",
+          "attachment": "附件"
         },
         "actions": {
           "flag": "仅标记",
@@ -2605,7 +2691,13 @@
         "modes": {
           "monitorOnly": "仅监控",
           "scanAll": "全面强制执行"
-        }
+        },
+        "itemLevelHint": "拦截只会扣下被标记的来源或文件。",
+        "advanced": "高级",
+        "threshold": "执行阈值",
+        "thresholdHint": "分数达到此值时执行该规则的操作（0 到 1，默认 0.9）。",
+        "flagThreshold": "标记阈值",
+        "flagThresholdHint": "分数达到此值时标记并记录该文本，但不拦截任何内容（默认 0.5）。"
       },
       "byline": {
         "new": "设置好智能体后发布，即可与它对话。"
@@ -2937,7 +3029,11 @@
       "detail": "详情",
       "empty": "此智能体尚未触发任何防护栏。",
       "emptyForFilter": "没有符合此筛选条件的决策。",
-      "loadError": "无法加载防护栏活动"
+      "loadError": "无法加载防护栏活动",
+      "score": "分数",
+      "openChunk": "打开文本块",
+      "attachedFile": "附件",
+      "chunkUnavailable": "此文本块已不在其来源中，或您无法打开该来源。"
     },
     "workflow": {
       "expressionRow": "表达式 {{index}}",

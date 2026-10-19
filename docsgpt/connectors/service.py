@@ -281,6 +281,8 @@ def serialize_tool(
                 "access": access,
                 "permission": action_permission(action),
                 "parameters": serialize_parameters(action, account_parameters),
+                # ``{p, scorer}`` while Admin > Guardrails warns on tool descriptions.
+                "injection": action.get("injection") if isinstance(action.get("injection"), dict) else None,
             }
         )
     return {

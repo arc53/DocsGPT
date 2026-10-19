@@ -477,6 +477,21 @@ def extract_response_schema(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def extract_passthrough(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The request's ``passthrough`` values: ``docsgpt.passthrough`` plus OpenAI's ``user``.
+
+    ``user`` (the caller's end-user id) lands as ``passthrough.user`` unless
+    ``docsgpt.passthrough`` already sets that key.
+    """
+    docsgpt_ext = data.get("docsgpt")
+    raw = docsgpt_ext.get("passthrough") if isinstance(docsgpt_ext, dict) else None
+    passthrough = dict(raw) if isinstance(raw, dict) else {}
+    end_user = data.get("user")
+    if isinstance(end_user, str) and end_user.strip() and "user" not in passthrough:
+        passthrough["user"] = end_user
+    return passthrough or None
+
+
 def translate_request(
     data: Dict[str, Any], api_key: str
 ) -> Dict[str, Any]:
@@ -560,6 +575,9 @@ def translate_request(
         # A resent round plans its files again; it keeps the turn's mode.
         if docsgpt_ext.get("attachments_mode"):
             result["attachments_mode"] = docsgpt_ext["attachments_mode"]
+        passthrough = extract_passthrough(data)
+        if passthrough:
+            result["passthrough"] = passthrough
         return result
 
     # Normal request — extract the question (text) from the last user message,
@@ -604,6 +622,9 @@ def translate_request(
     # sandbox, never inlined (``attachment_budget.plan_attachments``).
     if docsgpt.get("attachments_mode"):
         result["attachments_mode"] = docsgpt["attachments_mode"]
+    passthrough = extract_passthrough(data)
+    if passthrough:
+        result["passthrough"] = passthrough
 
     if response_schema is not None:
         result["json_schema"] = response_schema

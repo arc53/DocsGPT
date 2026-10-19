@@ -11,6 +11,7 @@ from docsgpt.guardrails.config import DEFAULT_BLOCK_MESSAGE, MODES
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
 from docsgpt.guardrails import runtime as guardrails_runtime
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Stage
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.guardrail_events import (
     EVENT_OUTCOMES,
@@ -69,6 +70,21 @@ class GuardrailCatalog(Resource):
             ),
             200,
         )
+
+
+@agents_guardrails_ns.route("/agents/defaults")
+class AgentDefaults(Resource):
+    @api.doc(
+        description="The guardrails a new agent starts with (set by an admin "
+        "under Admin > Defaults), for prefilling the new-agent form: "
+        "`{guardrails: {...}}`, the built-in defaults when none are set."
+    )
+    def get(self):
+        if not request.decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        with db_readonly() as conn:
+            guardrails = agent_defaults.load(conn)
+        return make_response(jsonify({"success": True, "guardrails": guardrails}), 200)
 
 
 def _logs_access(conn, agent_id: str, user: str) -> tuple[dict, ResourceAccess]:

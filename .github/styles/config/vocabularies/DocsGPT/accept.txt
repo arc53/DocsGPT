@@ -16,6 +16,7 @@ Chatwoot
 config
 configs
 CSVs
+deepset
 dev
 diarization
 Docling
@@ -40,6 +41,7 @@ Lightsail
 llama_cpp
 llm
 LLM
+LLMail
 LLMs
 LMDeploy
 Milvus
@@ -50,6 +52,7 @@ needs_auth
 Nextra
 Novita
 npm
+nullable
 OAuth
 Ollama
 opencode
@@ -73,7 +76,10 @@ Signup
 Supabase
 systemd
 UIs
+uncached
+Uncached
 uncomment
+unscored
 URl
 vectorstore
 Vite
