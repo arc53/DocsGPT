@@ -258,6 +258,6 @@ class StreamResource(Resource, BaseAnswerResource):
             )
             return Response(
                 self.error_stream_generate("Unknown error occurred"),
-                status=400,
+                status=500,
                 mimetype="text/event-stream",
             )
