@@ -434,3 +434,76 @@ class TestAccounts:
         broken = _rewrite(archive, tmp_path / "broken.tar.gz", drop=(backup_module.database_member("keycloak"),))
         with pytest.raises(DeployError, match="missing"):
             _run(["restore", str(broken), "--dir", str(tmp_path), "--yes"], _context())
+
+
+class TestRestoreIsAllOrNothing:
+    """A restore that fails partway puts the databases and the volumes back as they were."""
+
+    def _backup(self, tmp_path, *extra):
+        _installed(tmp_path, *extra)
+        out = tmp_path / "backups"
+        assert _run(["backup", "--dir", str(tmp_path), "--out", str(out)], _context()) == 0
+        return next(out.glob("*.tar.gz"))
+
+    def test_the_current_volumes_are_copied_aside_first(self, tmp_path):
+        archive = self._backup(tmp_path)
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker)) == 0
+        ops = [(op, volume) for op, volume, _ in docker.volume_ops]
+        for name in backup_module.DATA_VOLUMES:
+            assert ops.index(("export", f"docsgpt_{name}")) < ops.index(("import", f"docsgpt_{name}")), ops
+
+    def test_a_failed_load_puts_the_volumes_back(self, tmp_path):
+        """Otherwise the database would be the current one and the files the backup's."""
+        archive = self._backup(tmp_path)
+        docker = RecordingPsql(volumes={"docsgpt_postgres_data"}, fail_on_stdin=True)
+        with pytest.raises(DeployError, match="psql failed"):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        imports = [volume for op, volume, _ in docker.volume_ops if op == "import"]
+        for name in backup_module.DATA_VOLUMES:
+            assert imports.count(f"docsgpt_{name}") == 2, "the backup's copy, then the current one again"
+
+    def test_a_failed_keycloak_load_puts_the_main_database_back_too(self, tmp_path):
+        archive = self._backup(tmp_path, "--ip", "8.8.8.8", "--accounts")
+
+        class FailsOnKeycloak(KeycloakDatabase):
+            def compose(self, directory, *args, **kwargs):
+                if kwargs.get("stdin") is not None and "keycloak" in args:
+                    self.psql.append((list(args), True))
+                    raise DeployError("keycloak load failed")
+                return super().compose(directory, *args, **kwargs)
+
+        docker = FailsOnKeycloak(volumes={"docsgpt_postgres_data"})
+        with pytest.raises(DeployError, match="keycloak load failed"):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        calls = [" ".join(args) for args, _ in docker.psql]
+        assert any("ALTER DATABASE docsgpt_before_restore RENAME TO docsgpt" in call for call in calls), calls
+        assert any("ALTER DATABASE keycloak_before_restore RENAME TO keycloak" in call for call in calls), calls
+        assert not any("DROP DATABASE docsgpt_before_restore" in call for call in calls), (
+            "the main database's previous copy is only dropped once every database has loaded"
+        )
+
+    def test_a_successful_restore_drops_the_copies_only_at_the_end(self, tmp_path):
+        archive = self._backup(tmp_path, "--ip", "8.8.8.8", "--accounts")
+        docker = KeycloakDatabase(volumes={"docsgpt_postgres_data"})
+        assert _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker)) == 0
+        calls = [(" ".join(args), stdin) for args, stdin in docker.psql]
+        last_load = max(index for index, (_, stdin) in enumerate(calls) if stdin)
+        drops = [index for index, (call, _) in enumerate(calls) if "DROP DATABASE" in call and "_before_restore" in call]
+        assert len(drops) == 2 and min(drops) > last_load, calls
+
+    def test_a_database_the_restore_created_goes_again_on_failure(self, tmp_path):
+        archive = self._backup(tmp_path, "--ip", "8.8.8.8", "--accounts")
+
+        class FailsOnNewKeycloak(KeycloakDatabase):
+            def compose(self, directory, *args, **kwargs):
+                if kwargs.get("stdin") is not None and "keycloak" in args:
+                    self.psql.append((list(args), True))
+                    raise DeployError("keycloak load failed")
+                return super().compose(directory, *args, **kwargs)
+
+        docker = FailsOnNewKeycloak(volumes={"docsgpt_postgres_data"}, keycloak_exists=False)
+        with pytest.raises(DeployError):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        calls = [" ".join(args) for args, _ in docker.psql]
+        assert any("DROP DATABASE IF EXISTS keycloak WITH (FORCE)" in call for call in calls), calls

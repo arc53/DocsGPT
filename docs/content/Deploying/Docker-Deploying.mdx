@@ -122,8 +122,11 @@ docsgpt restore ~/.docsgpt/server/backups/docsgpt-20260916-120000.tar.gz
 
 It asks first, then stops the stack, puts the volumes and the database back, and
 starts DocsGPT again. The backup loads into an empty database, so tables a newer
-release added go too; the current database is kept as `docsgpt_before_restore`
-until the load succeeds, and put back if it fails. `--yes` skips the question for scripts. A backup taken
+release added go too. The restore is all or nothing: the current database is kept
+as `docsgpt_before_restore` and the current volumes are copied to a temporary
+folder until everything has loaded, and if any step fails the databases and the
+volumes go back to what they were, so the files never disagree with the database.
+That copy needs free disk space about the size of the data volumes. `--yes` skips the question for scripts. A backup taken
 with a newer DocsGPT is refused, since its data may not fit this version's
 schema; upgrade first, or pass `--force` if you know the two match.
 

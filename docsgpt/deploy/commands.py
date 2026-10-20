@@ -1549,12 +1549,17 @@ def _database_exists(context: Context, directory: Path, database: str) -> bool:
 def _restore_data(
     context: Context, directory: Path, archive: Path, volumes: list, image: str, databases: Optional[list] = None
 ) -> None:
-    """Put the archive's volumes and database back, with the stack stopped."""
+    """Put the archive's volumes and databases back, with the stack stopped, all or nothing.
+
+    The current volumes are copied aside and every database replaced keeps its previous copy until
+    the whole restore has succeeded. When any step fails, the databases and the volumes go back to
+    what they were, so the files and the rows always describe the same moment.
+    """
     with tempfile.TemporaryDirectory() as workspace:
         work = Path(workspace)
         backup_format.extract(archive, work)
-        # Read every volume tar through before replacing any of them: a damaged third tar must not
-        # be discovered with the first two already swapped in.
+        # Read every volume tar through, and find every dump, before replacing anything: a damaged
+        # third tar must not be discovered with the first two already swapped in.
         tars = {}
         for name in volumes:
             tar_path = work / backup_format.volume_member(name)
@@ -1562,15 +1567,20 @@ def _restore_data(
                 raise DeployError(f"{archive} is missing the {name} volume it says it contains")
             backup_format.check_volume_tar(name, tar_path)
             tars[name] = tar_path
-        for name, tar_path in tars.items():
-            print(f"Restoring the {name} volume ...")
-            context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
-
         dump = work / backup_format.DUMP
         if not dump.is_file():
             raise DeployError(f"{archive} is missing its database dump")
-        print("Starting the database ...")
-        context.docker.compose(directory, "up", "-d", "--wait", "postgres")
+        extra_dumps = {}
+        for name in databases or []:
+            extra_dumps[name] = work / backup_format.database_member(name)
+            if not extra_dumps[name].is_file():
+                raise DeployError(f"{archive} is missing the {name} database it says it contains")
+
+        saved = {}
+        for name in tars:
+            print(f"Keeping a copy of the current {name} volume until the restore succeeds ...")
+            saved[name] = work / "current" / f"{name}.tar"
+            context.docker.export_volume(f"{PROJECT}_{name}", saved[name], image)
 
         def run(database: str, statements: list) -> None:
             _stack_psql(context, directory, database, statements)
@@ -1582,17 +1592,42 @@ def _restore_data(
 
             return load
 
-        replace_database(run, loader(STACK_DATABASE, dump), STACK_DATABASE, STACK_DATABASE_OWNER)
-        for name in databases or []:
-            extra = work / backup_format.database_member(name)
-            if not extra.is_file():
-                raise DeployError(f"{archive} is missing the {name} database it says it contains")
-            if _database_exists(context, directory, name):
-                replace_database(run, loader(name, extra), name, STACK_DATABASE_OWNER)
-            else:
-                print(f"Creating the {name} database and restoring it ...")
-                run("postgres", [f"CREATE DATABASE {name} OWNER {STACK_DATABASE_OWNER}"])
-                loader(name, extra)()
+        swapped: list[str] = []  # replaced, with the previous copy kept aside
+        created: list[str] = []  # did not exist before the restore
+        try:
+            for name, tar_path in tars.items():
+                print(f"Restoring the {name} volume ...")
+                context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
+            print("Starting the database ...")
+            context.docker.compose(directory, "up", "-d", "--wait", "postgres")
+            _swap_in_database(run, loader(STACK_DATABASE, dump), STACK_DATABASE, STACK_DATABASE_OWNER)
+            swapped.append(STACK_DATABASE)
+            for name, extra in extra_dumps.items():
+                if _database_exists(context, directory, name):
+                    _swap_in_database(run, loader(name, extra), name, STACK_DATABASE_OWNER)
+                    swapped.append(name)
+                else:
+                    print(f"Creating the {name} database and restoring it ...")
+                    run("postgres", [f"CREATE DATABASE {name} OWNER {STACK_DATABASE_OWNER}"])
+                    created.append(name)
+                    loader(name, extra)()
+        except BaseException:
+            print("The restore did not finish. Putting the databases and the volumes back ...", file=sys.stderr)
+            for name in reversed(swapped):
+                _put_previous_database_back(run, name)
+            for name in created:
+                try:
+                    run("postgres", [f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"])
+                except DeployError:
+                    print(f"Could not drop the {name} database the restore created.", file=sys.stderr)
+            for name, tar_path in saved.items():
+                try:
+                    context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
+                except DeployError:
+                    print(f"Could not put the {name} volume back as it was.", file=sys.stderr)
+            raise
+        for name in swapped:
+            _drop_previous_database(run, name)
 
 
 STACK_DATABASE = "docsgpt"
@@ -1630,10 +1665,25 @@ def replace_database(
         DeployError: When a copy from an unfinished restore is in the way, or the load fails (after the
             previous database has been put back).
     """
+    _swap_in_database(run, load, database, owner)
+    _drop_previous_database(run, database)
+
+
+def _previous_name(database: str) -> str:
+    return f"{database}_before_restore"
+
+
+def _swap_in_database(
+    run: Callable[[str, list], None], load: Callable[[], None], database: str, owner: str
+) -> None:
+    """The first half of :func:`replace_database`: the dump is loaded and the previous copy kept aside.
+
+    A failed load puts the previous copy back before the error goes on.
+    """
     for name in (database, owner):
         if not _IDENTIFIER.match(name):
             raise ValueError(f"not a plain SQL identifier: {name!r}")
-    previous = f"{database}_before_restore"
+    previous = _previous_name(database)
     # On its own, so refusing here never reaches the undo below, which would drop the live database.
     run("postgres", [
         f"DO $$ BEGIN IF EXISTS (SELECT FROM pg_database WHERE datname = '{previous}') THEN "
@@ -1651,18 +1701,29 @@ def replace_database(
         load()
     except BaseException:
         print("The database did not restore. Putting the previous database back ...", file=sys.stderr)
-        try:
-            run("postgres", [
-                f"DROP DATABASE IF EXISTS {database} WITH (FORCE)",
-                f"ALTER DATABASE {previous} RENAME TO {database}",
-            ])
-        except DeployError:
-            print(
-                f"Could not put it back: the data is in the database {previous}. Rename it to {database} "
-                f"(ALTER DATABASE {previous} RENAME TO {database}) before starting DocsGPT.",
-                file=sys.stderr,
-            )
+        _put_previous_database_back(run, database)
         raise
+
+
+def _put_previous_database_back(run: Callable[[str, list], None], database: str) -> None:
+    """Drop the restored ``database`` and give its name back to the copy kept aside."""
+    previous = _previous_name(database)
+    try:
+        run("postgres", [
+            f"DROP DATABASE IF EXISTS {database} WITH (FORCE)",
+            f"ALTER DATABASE {previous} RENAME TO {database}",
+        ])
+    except DeployError:
+        print(
+            f"Could not put it back: the data is in the database {previous}. Rename it to {database} "
+            f"(ALTER DATABASE {previous} RENAME TO {database}) before starting DocsGPT.",
+            file=sys.stderr,
+        )
+
+
+def _drop_previous_database(run: Callable[[str, list], None], database: str) -> None:
+    """Drop the copy of ``database`` kept aside, once the restore no longer needs it."""
+    previous = _previous_name(database)
     try:
         run("postgres", [f"DROP DATABASE {previous}"])
     except DeployError:
