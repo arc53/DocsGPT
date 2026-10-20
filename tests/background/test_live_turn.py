@@ -1,0 +1,213 @@
+"""A continuation turn's message is written as it runs, so the chat can show, resume and stop it."""
+
+from __future__ import annotations
+
+import time
+
+import pytest
+from sqlalchemy import text
+
+from docsgpt.background import continuation, live_turn, wake
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+
+@pytest.fixture()
+def quiet(monkeypatch):
+    """No Celery, notifications or Redis: record what would go out instead."""
+    sent = {"events": [], "notified": [], "continued": []}
+    monkeypatch.setattr(wake, "schedule_continuation", lambda *a, **kw: None)
+    monkeypatch.setattr(continuation, "publish_conversation_continued", lambda *a: sent["continued"].append(a))
+    monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: sent["notified"].append(kw))
+    monkeypatch.setattr(
+        "docsgpt.events.publisher.publish_user_event",
+        lambda user, kind, payload, **kw: sent["events"].append((kind, payload["message_id"])),
+    )
+    monkeypatch.setattr(live_turn, "stop_requested", lambda message_id: False)
+    monkeypatch.setattr(live_turn, "clear_stop", lambda message_id: None)
+    return sent
+
+
+def _queue(conversation_id):
+    wake.wake_conversation(user_id="u1", conversation_id=conversation_id, source="monitor", ref_id="m",
+                           title="page changed", body="b", payload=None, dedupe_key="k1")
+
+
+def _row(engine, message_id):
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT status, response, message_metadata FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+            {"id": message_id},
+        ).fetchone()
+    return row._mapping if row is not None else None
+
+
+def _journal(engine, message_id):
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT event_type, payload FROM message_events WHERE message_id = CAST(:id AS uuid) "
+                 "ORDER BY sequence_no"),
+            {"id": message_id},
+        ).fetchall()
+    return [(r.event_type, r.payload) for r in rows]
+
+
+def _outcome(answer, **extra):
+    return {"answer": answer, "thought": "", "sources": [], "tool_calls": [], "model_id": "m-1", **extra}
+
+
+def _install(monkeypatch, body):
+    seen = {}
+
+    def fake_run(conversation, messages, wakes, *, message_id, live=None, **kwargs):
+        seen["message_id"] = message_id
+        seen["live"] = live
+        return body(message_id, live)
+
+    monkeypatch.setattr(continuation, "_run_turn", fake_run)
+    return seen
+
+
+class TestLiveContinuation:
+    def test_the_message_streams_while_the_turn_runs(self, bg_db, conversation, quiet, monkeypatch):
+        conversation_id, _ = conversation
+        during = {}
+
+        def body(message_id, live):
+            live.event({"thought": "reading"})
+            live.event({"answer": "The page "})
+            live.event({"answer": "changed."})
+            live._journal.flush()
+            during["row"] = _row(bg_db, message_id)
+            during["journal"] = _journal(bg_db, message_id)
+            return _outcome("The page changed.")
+
+        seen = _install(monkeypatch, body)
+        _queue(conversation_id)
+        summary = continuation.continue_conversation_body(conversation_id, 0)
+
+        assert summary["state"] == "delivered"
+        message_id = seen["message_id"]
+        assert during["row"]["status"] == "streaming"
+        # The chat shows the event it answers from the start, never as the user's words.
+        assert during["row"]["message_metadata"]["wake"]["dedupe_key"] == "k1"
+        assert [t for t, _ in during["journal"]] == ["thought", "answer", "answer"]
+        final = _row(bg_db, message_id)
+        assert final["status"] == "complete" and final["response"] == "The page changed."
+        assert _journal(bg_db, message_id)[-1][0] == "end"
+        assert quiet["events"] == [("message.started", message_id), ("message.finished", message_id)]
+        assert quiet["notified"] and quiet["continued"]
+
+    def test_a_silent_turn_never_shows_its_no_reply_and_leaves_no_message(self, bg_db, conversation, quiet,
+                                                                         monkeypatch):
+        conversation_id, _ = conversation
+        during = {}
+
+        def body(message_id, live):
+            for chunk in ("NO", "_RE", "PLY", "."):
+                live.event({"answer": chunk})
+            live._journal.flush()
+            during["journal"] = _journal(bg_db, message_id)
+            return _outcome("NO_REPLY.")
+
+        seen = _install(monkeypatch, body)
+        _queue(conversation_id)
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "suppressed"
+        assert during["journal"] == []
+        assert _row(bg_db, seen["message_id"]) is None
+        assert quiet["notified"] == [] and quiet["continued"] == []
+
+    def test_text_that_only_starts_like_no_reply_is_sent(self, bg_db, conversation, quiet, monkeypatch):
+        conversation_id, _ = conversation
+        during = {}
+
+        def body(message_id, live):
+            live.event({"answer": "No"})
+            live.event({"answer": "thing changed"})
+            live._journal.flush()
+            during["journal"] = _journal(bg_db, message_id)
+            return _outcome("Nothing changed")
+
+        _install(monkeypatch, body)
+        _queue(conversation_id)
+        continuation.continue_conversation_body(conversation_id, 0)
+        # Held while it could have been NO_REPLY, then sent as one chunk.
+        assert [p["answer"] for t, p in during["journal"] if t == "answer"] == ["Nothing changed"]
+
+    def test_a_failed_turn_takes_its_message_back_out(self, bg_db, conversation, quiet, monkeypatch):
+        conversation_id, _ = conversation
+
+        def body(message_id, live):
+            raise RuntimeError("provider down")
+
+        seen = _install(monkeypatch, body)
+        _queue(conversation_id)
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "failed"
+        assert _row(bg_db, seen["message_id"]) is None
+        assert quiet["events"][-1][0] == "message.finished"
+
+    def test_the_users_stop_reaches_the_turn(self, bg_db, conversation, quiet, monkeypatch):
+        monkeypatch.setattr(live_turn, "STOP_POLL_SECONDS", 0.01)
+        requested = set()
+        monkeypatch.setattr(live_turn, "stop_requested", lambda message_id: message_id in requested)
+        stopped_jobs = []
+        monkeypatch.setattr("docsgpt.background.service.stop_turn_jobs", lambda *a: stopped_jobs.append(a))
+        conversation_id, _ = conversation
+
+        def body(message_id, live):
+            live.event({"answer": "Half an "})
+            requested.add(message_id)
+            deadline = time.monotonic() + 5
+            while not live.stopped() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert live.stopped()
+            return _outcome("Half an ", stopped=True)
+
+        seen = _install(monkeypatch, body)
+        _queue(conversation_id)
+        summary = continuation.continue_conversation_body(conversation_id, 0)
+
+        message_id = seen["message_id"]
+        assert summary["state"] == "stopped"
+        assert _row(bg_db, message_id)["status"] == "complete"
+        assert _row(bg_db, message_id)["response"] == "Half an "
+        assert stopped_jobs == [(conversation_id, message_id, "u1")]
+        # Stopped by the user, who is looking at it: no notification, no further turn.
+        assert quiet["notified"] == []
+
+    def test_a_stop_before_any_text_is_saved_as_stopped(self, bg_db, conversation, quiet, monkeypatch):
+        monkeypatch.setattr("docsgpt.background.service.stop_turn_jobs", lambda *a: None)
+        conversation_id, _ = conversation
+        seen = _install(monkeypatch, lambda message_id, live: _outcome("", stopped=True))
+        _queue(conversation_id)
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "stopped"
+        row = _row(bg_db, seen["message_id"])
+        assert row["status"] == "failed"
+        assert row["message_metadata"]["error_code"] == "stopped"
+        assert _journal(bg_db, seen["message_id"])[-1] == (
+            "error", {"type": "error", "error": "Stopped before any response was produced.", "code": "stopped"}
+        )
+
+    def test_a_message_removed_by_the_user_keeps_the_results_for_them(self, bg_db, conversation, quiet,
+                                                                     monkeypatch):
+        conversation_id, _ = conversation
+
+        def body(message_id, live):
+            with bg_db.begin() as conn:
+                ConversationsRepository(conn).delete_in_flight_message(message_id)
+            return _outcome("Too late.")
+
+        _install(monkeypatch, body)
+        _queue(conversation_id)
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "superseded_by_user"
+        with bg_db.connect() as conn:
+            status = conn.execute(text("SELECT status FROM conversation_wakes WHERE dedupe_key = 'k1'")).scalar()
+        assert status == "failed"
+
+    def test_without_a_row_the_message_is_appended_at_the_end(self, bg_db, conversation, quiet, monkeypatch):
+        monkeypatch.setattr(live_turn.LiveTurn, "open", classmethod(lambda cls, *a, **kw: None))
+        conversation_id, _ = conversation
+        seen = _install(monkeypatch, lambda message_id, live: _outcome("Appended."))
+        _queue(conversation_id)
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "delivered"
+        assert seen["live"] is None
+        assert _row(bg_db, seen["message_id"])["response"] == "Appended."

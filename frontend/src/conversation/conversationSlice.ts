@@ -775,6 +775,9 @@ export function isWaitingOnUser(toolCalls: unknown): boolean {
   );
 }
 
+/** Messages whose tail found them deleted and reloaded their chat for it. */
+const reloadedForGoneMessage = new Set<string>();
+
 export const tailInFlightMessage = createAsyncThunk<
   void,
   { messageId: string; index: number; conversationId: string }
@@ -798,9 +801,20 @@ export const tailInFlightMessage = createAsyncThunk<
         continue;
       }
 
-      // 404 → row deleted (e.g. conversation wiped); bail quietly.
+      // 404 → row deleted: the conversation was wiped, or a continuation
+      // ended silent or failed and took its message back out. Reload the
+      // chat if it is still open, so the message does not linger.
       if (resp.status === 404) {
         dispatch(conversationSlice.actions.setStatus('idle'));
+        // Once per message: a reload that still lists it must not tail it again and again.
+        if (
+          !reloadedForGoneMessage.has(messageId) &&
+          (getState() as RootState).conversation.conversationId ===
+            conversationId
+        ) {
+          reloadedForGoneMessage.add(messageId);
+          dispatch(loadConversation({ id: conversationId, force: true }));
+        }
         return;
       }
 
@@ -1591,6 +1605,24 @@ conversationListenerMiddleware.startListening({
     const conversationId = String(payload.conversation_id ?? '');
     if (!conversationId) return;
     if (envelope.type === 'message.started') {
+      // An answer this tab is not streaming started in the chat it shows: a
+      // continuation after a background job, or a turn from another tab.
+      // Loading the chat picks its in-flight message up and tails it, so it
+      // streams here and can be stopped. Never mid-stream (see above).
+      const state = listenerApi.getState() as RootState;
+      const messageId = String(payload.message_id ?? '');
+      if (
+        messageId &&
+        state.conversation.conversationId === conversationId &&
+        state.conversation.status !== 'loading' &&
+        !state.conversation.queries.some(
+          (query) => query.messageId === messageId,
+        )
+      ) {
+        listenerApi.dispatch(
+          loadConversation({ id: conversationId, force: true }),
+        );
+      }
       await listNewConversation(
         conversationId,
         listenerApi.getState,

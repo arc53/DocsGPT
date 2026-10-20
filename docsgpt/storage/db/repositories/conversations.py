@@ -956,6 +956,29 @@ class ConversationsRepository:
         )
         return _message_row_to_dict(result.fetchone())
 
+    def delete_in_flight_message(self, message_id: str) -> bool:
+        """Delete a message that is still being written; a finished one is left alone.
+
+        A continuation reserves its row before it runs and takes it back out
+        when it ends silent or fails; its journal goes with it (cascade).
+
+        Args:
+            message_id: The message.
+
+        Returns:
+            True when a row was deleted.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid) "
+                "AND status IN ('pending', 'streaming')"
+            ),
+            {"id": message_id},
+        )
+        return (result.rowcount or 0) > 0
+
     def update_message_by_id(
         self, message_id: str, fields: dict,
         *, only_if_non_terminal: bool = False,
