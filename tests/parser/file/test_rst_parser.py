@@ -517,6 +517,25 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
     assert "This is a note." in joined_result
 
 
+def test_parse_file_keeps_numbers_blank_lines_and_code_indent():
+    """Default cleanup must not rewrite amounts, blank lines, or code indent."""
+    parser = RstParser()
+    content = """Title
+=====
+
+The budget is 100000.
+
+    def add(a, b):
+        return a + b
+
+Paragraph two.
+"""
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("budget.rst"))
+
+    joined = "\n".join(result)
+    assert "100000" in joined
+    assert "The budget is 100000.\n\n    def add(a, b):\n        return a + b" in joined
 def test_chunk_by_token_count_keeps_all_words():
     """Chunking must not drop or split any word of the input."""
     parser = RstParser()
