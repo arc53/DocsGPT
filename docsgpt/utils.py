@@ -90,6 +90,49 @@ def safe_filename(filename):
     return safe_name
 
 
+_DISPLAY_NAME_RESERVED = re.compile(r'[<>:"|?*]')
+_DISPLAY_NAME_EXTENSION = re.compile(r"^\.[^\s.]{1,16}$")
+_DISPLAY_NAME_MAX_BYTES = 200
+
+
+def _clean_display_part(part: str) -> str:
+    """Drop control and reserved characters from one filename part and collapse its whitespace."""
+    part = "".join(" " if unicodedata.category(c).startswith("C") else c for c in part)
+    part = _DISPLAY_NAME_RESERVED.sub("", part)
+    return " ".join(part.split())
+
+
+def display_filename(filename: Optional[str], fallback: str = "file") -> str:
+    """Make a filename safe to show and to use as one path component, keeping its script.
+
+    ``safe_filename`` drops every non-ASCII character, so a Cyrillic or CJK name
+    comes back as a random UUID. This keeps the name readable: it removes any
+    directory part, control characters, the characters Windows rejects
+    (``<>:"|?*``) and leading or trailing dots and spaces, NFC-normalizes the
+    text, and caps it at 200 UTF-8 bytes. It never returns a value containing a
+    slash or starting with a dot.
+
+    Args:
+        filename: The name to clean; may be None.
+        fallback: The stem used when nothing readable is left.
+
+    Returns:
+        The cleaned name, with the original extension when it had a valid one.
+    """
+    name = unicodedata.normalize("NFC", str(filename or ""))
+    name = re.split(r"[/\\]", name)[-1]
+    # The "x" keeps splitext from reading a bare ".docx" as a hidden stem.
+    extension = os.path.splitext("x" + name)[1]
+    stem = name[: len(name) - len(extension)] if extension else name
+    extension = _clean_display_part(extension)
+    if not _DISPLAY_NAME_EXTENSION.match(extension):
+        extension = ""
+    stem = _clean_display_part(stem).strip(". ")
+    budget = _DISPLAY_NAME_MAX_BYTES - len(extension.encode("utf-8"))
+    stem = stem.encode("utf-8")[:budget].decode("utf-8", "ignore").rstrip(". ")
+    return f"{stem or fallback}{extension}"
+
+
 def strip_null_bytes(value):
     """Recursively strip ``\\x00`` from string keys/values in ``value``.
 

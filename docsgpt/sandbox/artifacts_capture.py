@@ -24,7 +24,7 @@ from docsgpt.sandbox.base import FileTooLargeError, SandboxGoneError
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
-from docsgpt.utils import safe_filename
+from docsgpt.utils import display_filename, safe_filename
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ def persist_artifact(
     # The sandbox filename is display-only; mime/kind are inferred from it, and
     # the storage key is derived from server-controlled values downstream.
     display_name = rel_path.rsplit("/", 1)[-1]
-    filename = safe_filename(display_name)
+    filename = display_filename(display_name)
     mime_type = infer_mime(filename)
     tool = produced_by.get("tool") if isinstance(produced_by, dict) else None
     if tool and user_id and (conversation_id or workflow_run_id):
@@ -348,7 +348,7 @@ def _find_same_name_artifact(
     """Find the artifact a re-saved file belongs to.
 
     Args:
-        filename: The sanitized filename the current version must carry.
+        filename: The cleaned display filename the current version must carry.
         user_id: The owner the artifact must belong to.
         tool: The ``produced_by.tool`` the current version must carry.
         conversation_id: Conversation parent.
@@ -389,10 +389,13 @@ def _find_same_name_artifact(
 
 
 def _storage_key(user_id: str, artifact_id: str, version: int, filename: str) -> str:
-    """Build the server-controlled storage key (``inputs/{user}/artifacts/{id}/v{n}/{file}``)."""
+    """Build the server-controlled storage key (``inputs/{user}/artifacts/{id}/v{n}/{file}``).
+
+    The key's filename is ASCII (``safe_filename``) whatever script the display name uses.
+    """
     # ``inputs/{user}/artifacts/...`` is the project storage-namespace convention
     # (matches attachments + spec §4); ``inputs/`` is the user's namespace root.
-    return f"inputs/{user_id}/artifacts/{artifact_id}/v{version}/{filename}"
+    return f"inputs/{user_id}/artifacts/{artifact_id}/v{version}/{safe_filename(filename)}"
 
 
 def _set_version_storage_path(conn: Any, artifact_id: str, version: int, storage_path: str) -> None:
@@ -502,7 +505,7 @@ def persist_new_artifact(
     the row back (bytes are never orphaned). The only remaining window is a commit
     that fails after a successful write; that key is deleted best-effort.
     """
-    safe_name = safe_filename(filename)
+    safe_name = display_filename(filename)
     size = len(data)
     sha256 = hashlib.sha256(data).hexdigest()
     storage = StorageCreator.get_storage()
@@ -575,7 +578,7 @@ def append_artifact_version(
     workflow_run_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Append a new version (new spec + new bytes) to an existing artifact; return its reference."""
-    safe_name = safe_filename(filename)
+    safe_name = display_filename(filename)
     size = len(data)
     sha256 = hashlib.sha256(data).hexdigest()
     storage = StorageCreator.get_storage()
