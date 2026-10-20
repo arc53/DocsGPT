@@ -1410,7 +1410,8 @@ class TestConversationInsights:
         assert data["success"] and data["enabled"] and data["available"]
         assert data["tags"] == [{"id": _TAG, "name": "Pricing question"}]
         assert data["coverage"] == {"turns": 4, "labelled_turns": 4, "replies": 2, "labelled_replies": 2,
-                                    "conversations": 2, "labelled_conversations": 2}
+                                    "conversations": 2, "labelled_conversations": 2,
+                                    "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0}
         assert data["languages"] == {"en": 4}
         assert data["language_warnings"] == []
 
@@ -1535,6 +1536,33 @@ class TestConversationInsights:
 
     def test_invalid_filter_is_400(self, app, pg_conn, analytics_on):
         assert _insights(app, pg_conn, "u", {"filter_option": "bogus"}).status_code == 400
+
+    def test_coverage_splits_unlabelled_turns_at_the_labelling_window(self, app, pg_conn, analytics_on,
+                                                                       monkeypatch):
+        """Unlabelled answers inside the sweep's window are still to come; older ones never are."""
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        monkeypatch.setattr(settings, "ANALYTICS_BACKFILL_DAYS", 7)
+        _labelled_conversation(pg_conn, "u-window")
+        for days_ago in (2, 10, 20):
+            cid = str(ConversationsRepository(pg_conn).create("u-window", "c")["id"])
+            _insert_message(pg_conn, cid, 0, "How do I install it?", ago_minutes=days_ago * 24 * 60)
+        before = datetime.datetime.now(datetime.timezone.utc)
+        data = _insights(app, pg_conn, "u-window", {"filter_option": "last_30_days"}).json
+        coverage = data["coverage"]
+        assert (coverage["turns"], coverage["labelled_turns"]) == (5, 2)
+        assert (coverage["unlabelled_recent_turns"], coverage["unlabelled_older_turns"]) == (1, 2)
+        assert data["backfill_days"] == 7
+        labelling_from = datetime.datetime.fromisoformat(data["labelling_from"].replace("Z", "+00:00"))
+        assert abs((before - datetime.timedelta(days=7) - labelling_from).total_seconds()) < 60
+
+    def test_off_agent_still_says_the_labelling_window(self, app, pg_conn, analytics_on):
+        agent = _analytics_agent(pg_conn, enabled=False)
+        data = _insights(app, pg_conn, "owner", {"api_key_id": str(agent["id"])}).json
+        assert data["enabled"] is False
+        assert data["coverage"]["unlabelled_recent_turns"] == 0
+        assert data["backfill_days"] >= 1 and data["labelling_from"]
 
 
 class TestDocsGaps:

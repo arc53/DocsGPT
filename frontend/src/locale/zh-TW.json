@@ -664,11 +664,6 @@
         "description": "由 AI 模型根據每段對話估算。",
         "learnMore": "了解更多",
         "coverage": "已分析 {{labelled}}/{{total}} 則回答",
-        "agentOff": "此代理已關閉洞察。",
-        "agentOffLink": "在代理設定中開啟",
-        "noTraffic": "此期間沒有對話。",
-        "starting": "已開始分析",
-        "startingDescription": "洞察會在每段對話結束幾分鐘後出現。最新的對話會最先分析。",
         "loadError": "無法載入洞察。",
         "notEnough": "資料還不夠（目前 {{formatted}} 則）",
         "notEnoughShort": "資料還不夠",
@@ -766,6 +761,28 @@
             "neutral": "中性",
             "negative": "負面"
           }
+        },
+        "off": {
+          "title": "此代理已關閉洞察",
+          "description": "開啟後可估算回答是否有幫助，以及文件哪裡有不足。",
+          "turnOn": "開啟"
+        },
+        "noConversations": {
+          "hour": "過去 1 小時沒有對話",
+          "last24Hours": "過去 24 小時沒有對話",
+          "last7Days": "過去 7 天沒有對話",
+          "last15Days": "過去 15 天沒有對話",
+          "last30Days": "過去 30 天沒有對話"
+        },
+        "noConversationsDescription": "洞察會在每段對話結束幾分鐘後出現。",
+        "analyzing": {
+          "title": "正在分析對話",
+          "progress_one": "已分析 {{labelled}}/{{formatted}} 則回答 · 最新優先",
+          "progress_other": "已分析 {{labelled}}/{{formatted}} 則回答 · 最新優先"
+        },
+        "olderOnly": {
+          "title": "沒有可分析的近期對話",
+          "description": "洞察涵蓋 {{date}} 起的對話。更早的對話不會分析；管理員可以補做分析。"
         }
       },
       "gaps": {

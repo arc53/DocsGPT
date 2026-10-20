@@ -664,11 +664,6 @@
         "description": "由 AI 模型根据每段对话估算。",
         "learnMore": "了解更多",
         "coverage": "已分析 {{labelled}}/{{total}} 条回答",
-        "agentOff": "此智能体已关闭洞察。",
-        "agentOffLink": "在智能体设置中开启",
-        "noTraffic": "此期间没有对话。",
-        "starting": "已开始分析",
-        "startingDescription": "洞察会在每段对话结束几分钟后出现。最新的对话最先分析。",
         "loadError": "无法加载洞察。",
         "notEnough": "数据还不够（目前 {{formatted}} 条）",
         "notEnoughShort": "数据还不够",
@@ -766,6 +761,28 @@
             "neutral": "中性",
             "negative": "负面"
           }
+        },
+        "off": {
+          "title": "此智能体已关闭洞察",
+          "description": "开启后可估算回答是否有帮助，以及文档哪里有欠缺。",
+          "turnOn": "开启"
+        },
+        "noConversations": {
+          "hour": "过去 1 小时没有对话",
+          "last24Hours": "过去 24 小时没有对话",
+          "last7Days": "过去 7 天没有对话",
+          "last15Days": "过去 15 天没有对话",
+          "last30Days": "过去 30 天没有对话"
+        },
+        "noConversationsDescription": "洞察会在每段对话结束几分钟后出现。",
+        "analyzing": {
+          "title": "正在分析对话",
+          "progress_one": "已分析 {{labelled}}/{{formatted}} 条回答 · 最新优先",
+          "progress_other": "已分析 {{labelled}}/{{formatted}} 条回答 · 最新优先"
+        },
+        "olderOnly": {
+          "title": "没有可分析的近期对话",
+          "description": "洞察涵盖 {{date}} 起的对话。更早的对话不会分析；管理员可以补充分析。"
         }
       },
       "gaps": {

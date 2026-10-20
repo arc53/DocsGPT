@@ -903,7 +903,7 @@ def _utc_iso(value) -> Optional[str]:
 
 _EMPTY_COVERAGE = {
     "turns": 0, "labelled_turns": 0, "replies": 0, "labelled_replies": 0,
-    "conversations": 0, "labelled_conversations": 0,
+    "conversations": 0, "labelled_conversations": 0, "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0,
 }
 
 
@@ -930,7 +930,9 @@ class GetConversationInsights(Resource):
             "error, each label's tier, the same per time bucket, label coverage and the language "
             "mix. answer_status rates are over requests (not over greetings). 'available' is the "
             "operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is "
-            "that and the agent's own analytics switch."
+            "that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' "
+            "(from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' "
+            "(still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill)."
         )
     )
     def post(self):
@@ -949,10 +951,14 @@ class GetConversationInsights(Resource):
             )
         start_date, end_date, _bucket_unit, pg_fmt = window
         available = _analytics_available()
+        backfill_days = settings.ANALYTICS_BACKFILL_DAYS
+        labelling_from = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=backfill_days)
         result = {
             "success": True,
             "enabled": False,
             "available": available,
+            "backfill_days": backfill_days,
+            "labelling_from": _utc_iso(labelling_from),
             "coverage": dict(_EMPTY_COVERAGE),
             "languages": {},
             "language_warnings": [],
@@ -977,7 +983,7 @@ class GetConversationInsights(Resource):
                 repo = ConversationLabelsRepository(conn)
                 schema_hash = analytics_schema.SCHEMA_HASH
                 labels = [*insights.TOTAL_LABELS, *(f"{TAG_PREFIX}{tag['id']}" for tag in result["tags"])]
-                result["coverage"] = repo.coverage(scope, schema_hash, start_date, end_date)
+                result["coverage"] = repo.coverage(scope, schema_hash, start_date, end_date, labelling_from)
                 counts = repo.label_counts(scope, schema_hash, start_date, end_date, labels)
                 sums = repo.label_sums(scope, schema_hash, start_date, end_date, labels)
                 bucket_counts = repo.bucket_counts(

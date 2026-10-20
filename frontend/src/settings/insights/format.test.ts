@@ -27,7 +27,11 @@ const insights = (
     labelled_replies: 40,
     conversations: 70,
     labelled_conversations: 61,
+    unlabelled_recent_turns: 2,
+    unlabelled_older_turns: 0,
   },
+  backfill_days: 7,
+  labelling_from: '2026-10-13T12:00:00Z',
   languages: { en: 100 },
   language_warnings: [],
   tags: [],
@@ -36,10 +40,16 @@ const insights = (
   ...overrides,
 });
 
-const coverage = (turns: number, labelled: number) => ({
+const coverage = (
+  turns: number,
+  labelled: number,
+  { recent = turns - labelled, older = 0 } = {},
+) => ({
   ...insights().coverage,
   turns,
   labelled_turns: labelled,
+  unlabelled_recent_turns: recent,
+  unlabelled_older_turns: older,
 });
 
 describe('insightsState', () => {
@@ -58,13 +68,10 @@ describe('insightsState', () => {
     );
   });
 
-  it('reads coverage: no traffic, starting, partial, ready', () => {
+  it('reads coverage: no traffic, partial, ready', () => {
     expect(insightsState('ready', insights({ coverage: coverage(0, 0) }))).toBe(
       'noTraffic',
     );
-    expect(
-      insightsState('ready', insights({ coverage: coverage(12, 0) })),
-    ).toBe('starting');
     expect(
       insightsState('ready', insights({ coverage: coverage(120, 118) })),
     ).toBe('partial');
@@ -73,10 +80,67 @@ describe('insightsState', () => {
     ).toBe('ready');
   });
 
+  // IN-20: "analyzing" only while the sweep still has answers to label;
+  // answers older than its window are never labelled, so they say so.
+  it('analyzes while unlabelled answers sit inside the labelling window', () => {
+    expect(
+      insightsState('ready', insights({ coverage: coverage(40, 0) })),
+    ).toBe('analyzing');
+    // Too few labels for a figure yet, with more on the way.
+    expect(
+      insightsState('ready', insights({ coverage: coverage(40, 9) })),
+    ).toBe('analyzing');
+    // Enough for figures: they show, with the coverage count.
+    expect(
+      insightsState('ready', insights({ coverage: coverage(40, 12) })),
+    ).toBe('partial');
+  });
+
+  it('tells answers older than the labelling window from ones still to come', () => {
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(12, 0, { recent: 0, older: 12 }) }),
+      ),
+    ).toBe('olderOnly');
+    // Some still to come: analyzing, whatever is older.
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(12, 0, { recent: 2, older: 10 }) }),
+      ),
+    ).toBe('analyzing');
+    // Labels from before, nothing more to come: figures, complete.
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(12, 3, { recent: 0, older: 9 }) }),
+      ),
+    ).toBe('ready');
+  });
+
+  // Coverage counts only what the sweep can still label: older answers
+  // never complete it.
+  it('is ready once nothing inside the labelling window is left', () => {
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(120, 100, { recent: 0, older: 20 }) }),
+      ),
+    ).toBe('ready');
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(120, 100, { recent: 5, older: 15 }) }),
+      ),
+    ).toBe('partial');
+  });
+
   it('shows figures only with labels', () => {
     expect(showsFigures('partial')).toBe(true);
     expect(showsFigures('ready')).toBe(true);
-    expect(showsFigures('starting')).toBe(false);
+    expect(showsFigures('analyzing')).toBe(false);
+    expect(showsFigures('olderOnly')).toBe(false);
   });
 });
 

@@ -1,11 +1,12 @@
 import { type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Progress } from '@/components/ui/progress';
 import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 
@@ -19,17 +20,18 @@ import {
   EMPTY_VALUE,
   formatCount,
   formatDate,
+  headingLocale,
   intlLocale,
 } from '../../utils/dateTimeUtils';
 import AnalyticsChart from '../AnalyticsChart';
 import DocsGaps from '../DocsGaps';
+import { timeFilterKey } from '../TimeFilterSelect';
 import type { ConversationInsights as Insights } from '../types';
 import {
   ANSWER_STATUS_SERIES,
   capitalize,
   formatEstimate,
   formatShare,
-  insightsState,
   joinList,
   languageName,
   MIN_SAMPLE,
@@ -46,7 +48,6 @@ import ChartPanel from './ChartPanel';
 import ImplicitFeedbackPanel from './ImplicitFeedbackPanel';
 import SentimentPanel from './SentimentPanel';
 import ShareBars from './ShareBars';
-import { useConversationInsights } from './useConversationInsights';
 
 const DOCS_URL =
   'https://docs.docsgpt.cloud/Using/analytics-and-logs#conversation-insights';
@@ -88,7 +89,11 @@ type ConversationInsightsProps = {
   intro?: boolean;
 };
 
-/** The insights description and, while labelling is partial, its coverage. */
+/**
+ * The insights description and, while labelling is partial, its coverage:
+ * labelled of what the sweep will label, so answers older than its window
+ * (never labelled) leave the count out.
+ */
 function useInsightsCopy(state: InsightsState, data: Insights | null) {
   const { t } = useTranslation();
   const coverage = data?.coverage;
@@ -96,7 +101,9 @@ function useInsightsCopy(state: InsightsState, data: Insights | null) {
     state === 'partial' && coverage
       ? t('settings.analytics.insights.coverage', {
           labelled: formatCount(coverage.labelled_turns),
-          total: formatCount(coverage.turns),
+          total: formatCount(
+            coverage.labelled_turns + coverage.unlabelled_recent_turns,
+          ),
         })
       : undefined;
   const description = (
@@ -162,17 +169,20 @@ export default function ConversationInsights({
   // Off on the server: nothing to show, and nothing the page can change.
   if (state === 'serverOff') return null;
 
-  const header = !intro ? null : standalone ? (
-    <p className="text-muted-foreground text-sm leading-6">
-      <InsightsIntro state={state} data={data} />
-    </p>
-  ) : (
-    <SectionHeader
-      title={t('settings.analytics.insights.heading')}
-      count={count}
-      description={description}
-    />
-  );
+  // The intro (what the figures are, how many answers are in) only sits
+  // above figures: every other state says what it is itself.
+  const header =
+    !intro || !showsFigures(state) ? null : standalone ? (
+      <p className="text-muted-foreground text-sm leading-6">
+        <InsightsIntro state={state} data={data} />
+      </p>
+    ) : (
+      <SectionHeader
+        title={t('settings.analytics.insights.heading')}
+        count={count}
+        description={description}
+      />
+    );
 
   let body: ReactNode = null;
   if (state === 'loading') body = <InsightsSkeleton />;
@@ -188,39 +198,29 @@ export default function ConversationInsights({
     );
   else if (state === 'agentOff')
     body = (
-      <Alert variant="info" role="note">
-        <AlertDescription>
-          {t('settings.analytics.insights.agentOff')}
-          {agent && canEditAgent && (
-            <>
-              {' '}
-              <Button variant="link" size="text" asChild>
-                <Link to={agentEditPathFor(agent)}>
-                  {t('settings.analytics.insights.agentOffLink')}
-                </Link>
-              </Button>
-            </>
-          )}
-        </AlertDescription>
-      </Alert>
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={t('settings.analytics.insights.off.title')}
+        description={t('settings.analytics.insights.off.description')}
+        action={agent && canEditAgent && <TurnOnInsights agent={agent} />}
+      />
     );
   else if (state === 'noTraffic')
     body = (
       <EmptyState
         size="sm"
         illustration="none"
-        title={t('settings.analytics.insights.noTraffic')}
+        title={t(
+          `settings.analytics.insights.noConversations.${timeFilterKey(filterOption)}`,
+        )}
+        description={t(
+          'settings.analytics.insights.noConversationsDescription',
+        )}
       />
     );
-  else if (state === 'starting')
-    body = (
-      <EmptyState
-        size="sm"
-        illustration="none"
-        title={t('settings.analytics.insights.starting')}
-        description={t('settings.analytics.insights.startingDescription')}
-      />
-    );
+  else if (state === 'analyzing' && data) body = <AnalyzingState data={data} />;
+  else if (state === 'olderOnly' && data) body = <OlderOnlyState data={data} />;
   else if (showsFigures(state) && data)
     body = (
       <>
@@ -252,6 +252,86 @@ export default function ConversationInsights({
         />
       )}
     </>
+  );
+}
+
+/**
+ * "Turn on" for an agent with insights off: opens the agent's Overview at its
+ * Insights section. The one place that decides where turning on happens.
+ */
+function TurnOnInsights({ agent }: { agent: Agent }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="field"
+      shape="pill"
+      onClick={() => navigate(`${agentEditPathFor(agent)}#insights`)}
+    >
+      {t('settings.analytics.insights.off.turnOn')}
+    </Button>
+  );
+}
+
+/**
+ * The sweep is still labelling the window's answers, newest first: how many
+ * are done of those it will label (older ones it never does).
+ */
+function AnalyzingState({ data }: { data: Insights }) {
+  const { t } = useTranslation();
+  const { labelled_turns: done, unlabelled_recent_turns: waiting } =
+    data.coverage;
+  const total = done + waiting;
+  const title = t('settings.analytics.insights.analyzing.title');
+  return (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      title={title}
+      description={
+        <span className="tabular-nums">
+          {t('settings.analytics.insights.analyzing.progress', {
+            count: total,
+            labelled: formatCount(done),
+            formatted: formatCount(total),
+          })}
+        </span>
+      }
+      action={
+        // The action slot sizes to its content: a fixed width that fits a
+        // phone's column, the description's width above it.
+        <Progress
+          className="w-64 sm:w-96"
+          value={total > 0 ? (done / total) * 100 : 0}
+          aria-label={title}
+        />
+      }
+    />
+  );
+}
+
+/** Every answer in the window is older than the labelling window: none will be labelled. */
+function OlderOnlyState({ data }: { data: Insights }) {
+  const { t, i18n } = useTranslation();
+  const from = new Date(data.labelling_from);
+  const date = Number.isNaN(from.getTime())
+    ? EMPTY_VALUE
+    : new Intl.DateTimeFormat(headingLocale(i18n.language), {
+        day: 'numeric',
+        month: 'short',
+      }).format(from);
+  return (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      title={t('settings.analytics.insights.olderOnly.title')}
+      description={t('settings.analytics.insights.olderOnly.description', {
+        date,
+        interpolation: { escapeValue: false },
+      })}
+    />
   );
 }
 
@@ -656,23 +736,5 @@ function BarsPanel({
         </>
       )}
     </Card>
-  );
-}
-
-type InsightsSectionProps = Omit<
-  ConversationInsightsProps,
-  'state' | 'data' | 'onRetry'
->;
-
-/** `ConversationInsights` with its own fetch, for the window it is given. */
-export function InsightsSection(props: InsightsSectionProps) {
-  const insights = useConversationInsights(props.agentId, props.filterOption);
-  return (
-    <ConversationInsights
-      {...props}
-      state={insightsState(insights.status, insights.data)}
-      data={insights.data}
-      onRetry={insights.retry}
-    />
   );
 }

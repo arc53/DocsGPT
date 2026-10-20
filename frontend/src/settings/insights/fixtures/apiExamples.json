@@ -7,9 +7,13 @@
       "labelled_replies": 2,
       "labelled_turns": 4,
       "replies": 2,
-      "turns": 4
+      "turns": 4,
+      "unlabelled_older_turns": 0,
+      "unlabelled_recent_turns": 0
     },
+    "backfill_days": 7,
     "enabled": true,
+    "labelling_from": "2026-10-12T21:00:00Z",
     "language_warnings": ["answer_status", "gap_type", "topic_effective"],
     "languages": {
       "en": 2,

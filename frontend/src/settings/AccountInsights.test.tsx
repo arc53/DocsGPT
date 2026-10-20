@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import examples from './insights/fixtures/apiExamples.json';
 
@@ -51,8 +51,14 @@ describe('Settings Insights', () => {
   const render = async () => {
     await act(async () =>
       root.render(
-        <MemoryRouter>
-          <AccountInsights />
+        <MemoryRouter initialEntries={['/settings/insights']}>
+          <Routes>
+            <Route path="/settings/insights" element={<AccountInsights />} />
+            <Route
+              path="/settings/analytics"
+              element={<p data-testid="analytics">analytics</p>}
+            />
+          </Routes>
         </MemoryRouter>,
       ),
     );
@@ -82,10 +88,28 @@ describe('Settings Insights', () => {
     );
   });
 
-  it('draws nothing while the server has insights off', async () => {
+  // FX-5: a deep link while the server has insights off goes to Analytics.
+  it('sends a deep link to Settings › Analytics while the server has insights off', async () => {
     insights.body = { ...examples.insights, available: false, enabled: false };
     await render();
     expect(container.querySelector('[data-slot="page-toolbar"]')).toBeNull();
     expect(container.querySelector('[data-testid="insights"]')).toBeNull();
+    expect(container.querySelector('[data-testid="analytics"]')).not.toBeNull();
+  });
+
+  // IN-20: the description only above figures.
+  it('keeps the window but drops the description when there are no figures', async () => {
+    insights.body = {
+      ...examples.insights,
+      coverage: { ...examples.insights.coverage, turns: 0, labelled_turns: 0 },
+    };
+    await render();
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(
+      toolbar.querySelector('[data-slot="select-trigger"]'),
+    ).not.toBeNull();
+    expect(toolbar.textContent).not.toContain(
+      'settings.analytics.insights.description',
+    );
   });
 });

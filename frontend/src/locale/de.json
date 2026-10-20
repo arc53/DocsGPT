@@ -666,11 +666,6 @@
         "description": "Von einem KI-Modell aus jedem Gespräch geschätzt.",
         "learnMore": "Mehr erfahren",
         "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
-        "agentOff": "Einblicke sind für diesen Agenten ausgeschaltet.",
-        "agentOffLink": "In den Einstellungen des Agenten einschalten",
-        "noTraffic": "Keine Gespräche in diesem Zeitraum.",
-        "starting": "Die Auswertung hat begonnen",
-        "startingDescription": "Einblicke erscheinen einige Minuten nach jedem Gespräch. Die neuesten werden zuerst ausgewertet.",
         "loadError": "Die Einblicke konnten nicht geladen werden.",
         "notEnough": "Noch nicht genug Daten (bisher {{formatted}})",
         "notEnoughShort": "Noch nicht genug Daten",
@@ -768,6 +763,28 @@
             "neutral": "Neutral",
             "negative": "Negativ"
           }
+        },
+        "off": {
+          "title": "Einblicke sind für diesen Agenten ausgeschaltet",
+          "description": "Schalte sie ein, um abzuschätzen, ob Antworten geholfen haben und wo die Dokumentation Lücken hat.",
+          "turnOn": "Einschalten"
+        },
+        "noConversations": {
+          "hour": "Keine Gespräche in der letzten Stunde",
+          "last24Hours": "Keine Gespräche in den letzten 24 Stunden",
+          "last7Days": "Keine Gespräche in den letzten 7 Tagen",
+          "last15Days": "Keine Gespräche in den letzten 15 Tagen",
+          "last30Days": "Keine Gespräche in den letzten 30 Tagen"
+        },
+        "noConversationsDescription": "Einblicke erscheinen einige Minuten nach jedem Gespräch.",
+        "analyzing": {
+          "title": "Gespräche werden ausgewertet",
+          "progress_one": "{{labelled}} von {{formatted}} Antwort ausgewertet · neueste zuerst",
+          "progress_other": "{{labelled}} von {{formatted}} Antworten ausgewertet · neueste zuerst"
+        },
+        "olderOnly": {
+          "title": "Keine aktuellen Gespräche zum Auswerten",
+          "description": "Einblicke umfassen Gespräche ab dem {{date}}. Ältere werden nicht ausgewertet; ein Administrator kann sie nachträglich auswerten lassen."
         }
       },
       "gaps": {

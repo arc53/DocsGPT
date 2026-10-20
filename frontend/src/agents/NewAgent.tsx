@@ -10,7 +10,12 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -137,6 +142,7 @@ const extractApiError = async (
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch();
   const { agentId } = useParams();
 
@@ -1892,6 +1898,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           maxTags={analyticsAvailability.maxTags}
           // Not policy: anyone who can save the agent changes it.
           disabled={!canSubmit}
+          // Insights' "Turn on" links here at `#insights`.
+          reveal={location.hash === '#insights'}
           onChange={(analytics) =>
             setAgent((prev) => ({
               ...prev,

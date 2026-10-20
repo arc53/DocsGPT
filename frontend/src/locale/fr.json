@@ -684,11 +684,6 @@
         "description": "Estimé par un modèle d’IA à partir de chaque conversation.",
         "learnMore": "En savoir plus",
         "coverage": "{{labelled}} réponses analysées sur {{total}}",
-        "agentOff": "Les analyses sont désactivées pour cet agent.",
-        "agentOffLink": "Activez-les dans les paramètres de l’agent",
-        "noTraffic": "Aucune conversation sur cette période.",
-        "starting": "L’analyse a commencé",
-        "startingDescription": "L’aperçu apparaît quelques minutes après chaque conversation. Les plus récentes sont analysées en premier.",
         "loadError": "Impossible de charger les analyses.",
         "notEnough": "Pas encore assez de données ({{formatted}} pour l’instant)",
         "notEnoughShort": "Pas encore assez de données",
@@ -795,6 +790,29 @@
             "neutral": "Neutre",
             "negative": "Négatif"
           }
+        },
+        "off": {
+          "title": "Les analyses sont désactivées pour cet agent",
+          "description": "Activez-les pour estimer si les réponses ont aidé et où la documentation est insuffisante.",
+          "turnOn": "Activer"
+        },
+        "noConversations": {
+          "hour": "Aucune conversation au cours de la dernière heure",
+          "last24Hours": "Aucune conversation au cours des dernières 24 heures",
+          "last7Days": "Aucune conversation au cours des 7 derniers jours",
+          "last15Days": "Aucune conversation au cours des 15 derniers jours",
+          "last30Days": "Aucune conversation au cours des 30 derniers jours"
+        },
+        "noConversationsDescription": "Les analyses apparaissent quelques minutes après chaque conversation.",
+        "analyzing": {
+          "title": "Analyse des conversations en cours",
+          "progress_one": "{{labelled}} réponse analysée sur {{formatted}} · les plus récentes d’abord",
+          "progress_other": "{{labelled}} réponses analysées sur {{formatted}} · les plus récentes d’abord",
+          "progress_many": "{{labelled}} réponses analysées sur {{formatted}} · les plus récentes d’abord"
+        },
+        "olderOnly": {
+          "title": "Aucune conversation récente à analyser",
+          "description": "Les analyses couvrent les conversations à partir du {{date}}. Les plus anciennes ne sont pas analysées ; un administrateur peut les rattraper."
         }
       },
       "gaps": {

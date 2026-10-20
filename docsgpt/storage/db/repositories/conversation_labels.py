@@ -553,7 +553,8 @@ class ConversationLabelsRepository:
     # ---- dashboard reads ----------------------------------------------------------------------------------------
 
     def coverage(
-        self, scope: Scope, schema_hash: str, start: datetime.datetime, end: datetime.datetime
+        self, scope: Scope, schema_hash: str, start: datetime.datetime, end: datetime.datetime,
+        labelling_from: datetime.datetime,
     ) -> Dict[str, int]:
         """Turns, replies and conversations in ``[start, end]``, against how many carry labels.
 
@@ -562,11 +563,22 @@ class ConversationLabelsRepository:
         with analytics off count only where they carry labels from before, so coverage never stays short of
         what the sweep would label.
 
+        Args:
+            scope: Whose conversations.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end.
+            labelling_from: The sweep's window start (``ANALYTICS_BACKFILL_DAYS`` back): unlabelled turns from
+                then on are still to be labelled, older ones never are.
+
         Returns:
             ``turns``, ``labelled_turns`` (with ``answer_status``), ``replies``, ``labelled_replies`` (with
-            ``reaction``), ``conversations`` and ``labelled_conversations`` (with ``goal_met``).
+            ``reaction``), ``conversations``, ``labelled_conversations`` (with ``goal_met``), and the unlabelled
+            turns of an enabled agent split at ``labelling_from``: ``unlabelled_recent_turns`` and
+            ``unlabelled_older_turns``.
         """
         params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end,
+                                  "labelling_from": labelling_from,
                                   "placeholder": TERMINATED_RESPONSE_PLACEHOLDER}
         where = scope.conversations("c", params)
         row = self._conn.execute(
@@ -579,6 +591,7 @@ class ConversationLabelsRepository:
                 ),
                 seq AS (
                     SELECT m.id, m.conversation_id, m.timestamp >= :start AND m.timestamp <= :end AS in_window,
+                           m.timestamp >= :labelling_from AS recent,
                            {_is_turn("m")} AS is_turn,
                            LAG({_is_turn("m")}) OVER (PARTITION BY m.conversation_id ORDER BY m.position) AS after_turn,
                            ROW_NUMBER() OVER (PARTITION BY m.conversation_id ORDER BY m.position DESC) = 1 AS is_last,
@@ -597,7 +610,11 @@ class ConversationLabelsRepository:
                     COUNT(r.id) FILTER (WHERE s.in_window AND s.after_turn) AS labelled_replies,
                     COUNT(*) FILTER (WHERE s.in_window AND s.is_last AND (s.enabled OR g.id IS NOT NULL))
                         AS conversations,
-                    COUNT(g.id) FILTER (WHERE s.in_window AND s.is_last) AS labelled_conversations
+                    COUNT(g.id) FILTER (WHERE s.in_window AND s.is_last) AS labelled_conversations,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND s.recent)
+                        AS unlabelled_recent_turns,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL
+                                     AND NOT s.recent) AS unlabelled_older_turns
                 FROM seq s
                 LEFT JOIN conversation_labels a
                     ON a.message_id = s.id AND a.label = 'answer_status' AND a.schema_hash = :schema_hash

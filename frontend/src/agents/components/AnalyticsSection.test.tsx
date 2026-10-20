@@ -53,12 +53,14 @@ function Harness({
   disabled = false,
   agentId = 'a1',
   maxTags = 20,
+  reveal = false,
 }: {
   initial?: AnalyticsConfig;
   available?: boolean;
   disabled?: boolean;
   agentId?: string;
   maxTags?: number;
+  reveal?: boolean;
 }) {
   const [value, setValue] = useState<AnalyticsConfig | undefined>(initial);
   return (
@@ -73,6 +75,7 @@ function Harness({
       maxTopics={3}
       maxTags={maxTags}
       disabled={disabled}
+      reveal={reveal}
       token="token"
     />
   );
@@ -145,6 +148,21 @@ describe('AnalyticsSection', () => {
     Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ).find((el) => el.textContent === text)!;
+
+  // IN-20: Insights' "Turn on" opens the agent's Overview at `#insights`.
+  it('opens and scrolls to itself when revealed', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    await act(async () => root.render(<Harness reveal />));
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="analytics-toggle"]',
+    )!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const card = container.querySelector('[data-testid="analytics-section"]')!;
+    expect(card.id).toBe('insights');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toBe(card);
+  });
 
   it('is hidden while the server has labelling off and the agent has nothing set', async () => {
     await render({ available: false });

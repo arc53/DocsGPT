@@ -22,6 +22,7 @@ import userService from '../../api/services/userService';
 import { ActiveState } from '../../models/misc';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { showActionToast } from '../../notifications/actionToastSlice';
+import { revealElement } from '../../settings/logsLinks';
 import { formatCount } from '../../utils/dateTimeUtils';
 import {
   analyticsOf,
@@ -69,6 +70,11 @@ type AnalyticsSectionProps = {
   maxTags: number;
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
+  /**
+   * Open the section and bring it into view, once: the page was opened at
+   * `#insights` (Insights' "Turn on").
+   */
+  reveal?: boolean;
   token: string | null;
 };
 
@@ -87,11 +93,20 @@ export default function AnalyticsSection({
   maxTopics,
   maxTags,
   disabled = false,
+  reveal = false,
   token,
 }: AnalyticsSectionProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(reveal);
+  const cardRef = React.useRef<HTMLDivElement>(null);
+  const revealed = React.useRef(false);
+  React.useEffect(() => {
+    if (!reveal || revealed.current || !cardRef.current) return;
+    revealed.current = true;
+    setExpanded(true);
+    revealElement(cardRef.current, 'start');
+  });
   const [editing, setEditing] = React.useState<Editing>(null);
   const [removingTag, setRemovingTag] = React.useState<AnalyticsTag | null>(
     null,
@@ -237,6 +252,8 @@ export default function AnalyticsSection({
 
   return (
     <Card
+      ref={cardRef}
+      id="insights"
       variant="subtle"
       padding="lg"
       className="gap-5"

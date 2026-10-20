@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import type { Agent } from '../../agents/types';
 import type { ConversationInsights as Insights } from '../types';
@@ -85,7 +85,11 @@ const data = (overrides: Partial<Insights> = {}): Insights => ({
     labelled_replies: 40,
     conversations: 70,
     labelled_conversations: 61,
+    unlabelled_recent_turns: 2,
+    unlabelled_older_turns: 0,
   },
+  backfill_days: 7,
+  labelling_from: '2026-10-13T12:00:00Z',
   languages: { en: 100, ru: 12, other: 6 },
   language_warnings: [],
   tags: [],
@@ -179,34 +183,65 @@ describe('ConversationInsights', () => {
     container.remove();
   });
 
+  function LocationProbe() {
+    const location = useLocation();
+    return (
+      <span data-testid="location">{location.pathname + location.hash}</span>
+    );
+  }
+
   const render = (
     response: Insights | null,
     {
       status = 'ready',
       agentProp,
       onRetry = () => undefined,
+      filterOption = 'last_30_days',
+      standalone = false,
     }: {
       status?: 'loading' | 'error' | 'ready';
       agentProp?: Agent;
       onRetry?: () => void;
+      filterOption?: string;
+      standalone?: boolean;
     } = {},
   ) => {
     const state: InsightsState = insightsState(status, response);
     act(() =>
       root.render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={['/agents/manage/insights/a1']}>
           <ConversationInsights
             state={state}
             data={response}
             agentId={agentProp?.id}
             agent={agentProp}
-            filterOption="last_30_days"
+            filterOption={filterOption}
             onRetry={onRetry}
+            standalone={standalone}
           />
+          <LocationProbe />
         </MemoryRouter>,
       ),
     );
   };
+
+  const emptyState = () =>
+    section()!.querySelector<HTMLElement>('[data-slot="empty-state"]');
+  const unlabelled = (
+    turns: number,
+    labelled: number,
+    recent: number,
+    older: number,
+  ) =>
+    data({
+      coverage: {
+        ...data().coverage,
+        turns,
+        labelled_turns: labelled,
+        unlabelled_recent_turns: recent,
+        unlabelled_older_turns: older,
+      },
+    });
 
   const section = () => container.querySelector('[data-testid="insights"]');
   const tile = (key: string) =>
@@ -214,42 +249,85 @@ describe('ConversationInsights', () => {
 
   it('shows nothing at all while the server has it off, to an administrator too', () => {
     render(data({ available: false, enabled: false }));
-    expect(container.innerHTML).toBe('');
+    // Only the test's location probe is drawn.
+    expect(container.children).toHaveLength(1);
+    expect(section()).toBeNull();
   });
 
-  it("links an agent's editors to its settings when the agent has it off", () => {
-    render(data({ enabled: false }), { agentProp: agent(['view', 'edit']) });
-    const note = section()!.querySelector('[role="note"]')!;
-    expect(note.textContent).toContain('settings.analytics.insights.agentOff');
-    const link = note.querySelector('a')!;
-    expect(link.getAttribute('href')).toBe('/agents/manage/edit/a1');
+  // IN-20: one honest state each, with its next step, and the intro only
+  // above figures.
+  it("offers an agent's editors Turn on when the agent has it off", () => {
+    render(data({ enabled: false }), {
+      agentProp: agent(['view', 'edit']),
+      standalone: true,
+    });
+    const empty = emptyState()!;
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.off.title',
+    );
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.off.description',
+    );
+    expect(section()!.textContent).not.toContain(
+      'settings.analytics.insights.description',
+    );
+    const turnOn = empty.querySelector('button')!;
+    expect(turnOn.textContent).toBe('settings.analytics.insights.off.turnOn');
+    act(() => turnOn.click());
+    // The agent's Overview, its Insights section opened.
+    expect(
+      container.querySelector('[data-testid="location"]')!.textContent,
+    ).toBe('/agents/manage/edit/a1#insights');
   });
 
-  it("says the agent has it off, with no link, to someone who can't change it", () => {
+  it("says the agent has it off, with no button, to someone who can't change it", () => {
     render(data({ enabled: false }), { agentProp: agent(['view']) });
-    const note = section()!.querySelector('[role="note"]')!;
-    expect(note.textContent).toBe('settings.analytics.insights.agentOff');
-    expect(note.querySelector('a')).toBeNull();
+    const empty = emptyState()!;
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.off.title',
+    );
+    expect(empty.querySelector('button')).toBeNull();
   });
 
-  it('says when there was no traffic, and when labelling has only started', () => {
-    render(
-      data({
-        coverage: { ...data().coverage, turns: 0, labelled_turns: 0 },
-      }),
+  it('names the window when it had no conversations', () => {
+    render(unlabelled(0, 0, 0, 0), { filterOption: 'last_7_days' });
+    expect(emptyState()!.textContent).toContain(
+      'settings.analytics.insights.noConversations.last7Days',
     );
-    expect(section()!.textContent).toContain(
-      'settings.analytics.insights.noTraffic',
-    );
-    render(
-      data({
-        coverage: { ...data().coverage, turns: 12, labelled_turns: 0 },
-      }),
-    );
-    expect(section()!.textContent).toContain(
-      'settings.analytics.insights.startingDescription',
+    expect(emptyState()!.textContent).toContain(
+      'settings.analytics.insights.noConversationsDescription',
     );
     expect(container.querySelector('[data-testid="insight-tiles"]')).toBeNull();
+  });
+
+  it('shows how far analysis has come while answers are still to be labelled', () => {
+    render(unlabelled(40, 6, 30, 4), { standalone: true });
+    const empty = emptyState()!;
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.analyzing.title',
+    );
+    // Done of what will be done: older answers are never labelled.
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.analyzing.progress(6|36)',
+    );
+    const bar = empty.querySelector('[data-slot="progress"]')!;
+    expect(bar.getAttribute('aria-valuenow')).toBe(String((6 / 36) * 100));
+    expect(section()!.textContent).not.toContain(
+      'settings.analytics.insights.description',
+    );
+    expect(container.querySelector('[data-testid="insight-tiles"]')).toBeNull();
+  });
+
+  it('says where insights start when every answer is older than the labelling window', () => {
+    render(unlabelled(12, 0, 0, 12), { standalone: true });
+    const empty = emptyState()!;
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.olderOnly.title',
+    );
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.olderOnly.description(13 Oct)',
+    );
+    expect(empty.querySelector('[data-slot="progress"]')).toBeNull();
   });
 
   it('shows the error with Retry instead of an empty message', () => {
@@ -292,10 +370,28 @@ describe('ConversationInsights', () => {
     );
     render(
       data({
-        coverage: { ...data().coverage, turns: 118, labelled_turns: 118 },
+        coverage: {
+          ...data().coverage,
+          turns: 118,
+          labelled_turns: 118,
+          unlabelled_recent_turns: 0,
+        },
       }),
     );
     expect(section()!.querySelector('[data-slot="count"]')).toBeNull();
+  });
+
+  // Only answers the sweep can still label count: older ones never would.
+  it('leaves answers older than the labelling window out of the count', () => {
+    render(unlabelled(120, 100, 5, 15));
+    expect(section()!.querySelector('[data-slot="count"]')!.textContent).toBe(
+      'settings.analytics.insights.coverage(100|105)',
+    );
+    render(unlabelled(120, 100, 0, 20));
+    expect(section()!.querySelector('[data-slot="count"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="insight-tiles"]'),
+    ).not.toBeNull();
   });
 
   it('gives every headline tile a rate and its own denominator, no range', () => {

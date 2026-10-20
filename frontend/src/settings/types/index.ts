@@ -332,7 +332,15 @@ export type ConversationInsights = {
     labelled_replies: number;
     conversations: number;
     labelled_conversations: number;
+    /** Unlabelled answers inside the labelling window: the sweep still labels them. */
+    unlabelled_recent_turns: number;
+    /** Unlabelled answers older than the labelling window: never labelled without a backfill. */
+    unlabelled_older_turns: number;
   };
+  /** How many days back the sweep labels (`ANALYTICS_BACKFILL_DAYS`). */
+  backfill_days: number;
+  /** The labelling window's start, as an ISO time. */
+  labelling_from: string;
   /** Message counts by language code, plus `other`. */
   languages: Record<string, number>;
   /** Labels whose share of weaker languages is high enough to say so. */

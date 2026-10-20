@@ -664,11 +664,6 @@
         "description": "AI モデルが各会話から推定した値です。",
         "learnMore": "詳細",
         "coverage": "{{total}} 件中 {{labelled}} 件の回答を分析済み",
-        "agentOff": "このエージェントではインサイトがオフになっています。",
-        "agentOffLink": "エージェントの設定でオンにする",
-        "noTraffic": "この期間の会話はありません。",
-        "starting": "分析を開始しました",
-        "startingDescription": "インサイトは各会話の数分後に表示されます。新しい会話から順に分析されます。",
         "loadError": "インサイトを読み込めませんでした。",
         "notEnough": "データがまだ足りません（現在 {{formatted}} 件）",
         "notEnoughShort": "データがまだ足りません",
@@ -766,6 +761,28 @@
             "neutral": "中立",
             "negative": "否定的"
           }
+        },
+        "off": {
+          "title": "このエージェントではインサイトがオフです",
+          "description": "オンにすると、回答が役に立ったか、ドキュメントのどこが不足しているかを推定します。",
+          "turnOn": "オンにする"
+        },
+        "noConversations": {
+          "hour": "過去1時間の会話はありません",
+          "last24Hours": "過去24時間の会話はありません",
+          "last7Days": "過去7日間の会話はありません",
+          "last15Days": "過去15日間の会話はありません",
+          "last30Days": "過去30日間の会話はありません"
+        },
+        "noConversationsDescription": "インサイトは各会話の数分後に表示されます。",
+        "analyzing": {
+          "title": "会話を分析しています",
+          "progress_one": "{{formatted}} 件中 {{labelled}} 件の回答を分析済み · 新しい順",
+          "progress_other": "{{formatted}} 件中 {{labelled}} 件の回答を分析済み · 新しい順"
+        },
+        "olderOnly": {
+          "title": "分析する最近の会話はありません",
+          "description": "インサイトの対象は {{date}} 以降の会話です。それより古い会話は分析されません。管理者がさかのぼって分析できます。"
         }
       },
       "gaps": {

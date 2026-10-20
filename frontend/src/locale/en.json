@@ -666,11 +666,6 @@
         "description": "Estimated by an AI model from each conversation.",
         "learnMore": "Learn more",
         "coverage": "{{labelled}} of {{total}} answers analyzed",
-        "agentOff": "Insights are off for this agent.",
-        "agentOffLink": "Turn them on in the agent's settings",
-        "noTraffic": "No conversations in this period.",
-        "starting": "Analysis has started",
-        "startingDescription": "Insights appear a few minutes after each conversation. The newest are analyzed first.",
         "loadError": "Could not load insights.",
         "notEnough": "Not enough data yet ({{formatted}} so far)",
         "notEnoughShort": "Not enough data yet",
@@ -768,6 +763,28 @@
             "neutral": "Neutral",
             "negative": "Negative"
           }
+        },
+        "off": {
+          "title": "Insights are off for this agent",
+          "description": "Turn them on to estimate whether answers helped and where the docs fall short.",
+          "turnOn": "Turn on"
+        },
+        "noConversations": {
+          "hour": "No conversations in the last hour",
+          "last24Hours": "No conversations in the last 24 hours",
+          "last7Days": "No conversations in the last 7 days",
+          "last15Days": "No conversations in the last 15 days",
+          "last30Days": "No conversations in the last 30 days"
+        },
+        "noConversationsDescription": "Insights appear a few minutes after each conversation.",
+        "analyzing": {
+          "title": "Analyzing conversations",
+          "progress_one": "{{labelled}} of {{formatted}} answer analyzed · newest first",
+          "progress_other": "{{labelled}} of {{formatted}} answers analyzed · newest first"
+        },
+        "olderOnly": {
+          "title": "No recent conversations to analyze",
+          "description": "Insights cover conversations from {{date}} onwards. Older ones aren't analyzed; an admin can backfill them."
         }
       },
       "gaps": {
