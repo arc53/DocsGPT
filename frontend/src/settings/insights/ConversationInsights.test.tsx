@@ -357,8 +357,7 @@ describe('ConversationInsights', () => {
     expect(whyNot.getAttribute('aria-label')).toBe(
       'settings.analytics.insights.panels.whyNot',
     );
-    // "none" and zero-mass deferred types are not drawn; docs missing reads
-    // as "or not found" while search misses carry no mass.
+    // "none" and zero-mass deferred types are not drawn.
     expect(
       Array.from(whyNot.querySelectorAll('li .sr-only')).map(
         (text) => text.textContent,
@@ -375,6 +374,27 @@ describe('ConversationInsights', () => {
     expect(
       container.querySelector('[data-testid="docs-gaps-stub"]'),
     ).not.toBeNull();
+  });
+
+  it('names docs missing "Docs gap" beside search misses too, as Logs does', () => {
+    const response = data();
+    response.totals.gap_type!.options['not retrieved'] = option(
+      4,
+      0.03,
+      0.01,
+      0.07,
+    );
+    render(response);
+    const whyNot = section()!.querySelectorAll('[role="list"]')[1];
+    expect(
+      Array.from(whyNot.querySelectorAll('li .sr-only')).map(
+        (text) => text.textContent,
+      ),
+    ).toEqual([
+      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.docsMissing|10%)',
+      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.outOfScope|5%)',
+      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.notRetrieved|3%)',
+    ]);
   });
 
   it('charts answer status, sentiment and implicit feedback first, in that order', () => {

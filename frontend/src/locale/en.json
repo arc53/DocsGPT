@@ -619,12 +619,12 @@
         "last90Days": "90 days"
       },
       "messages": "Messages",
-      "tokenUsage": "Token Usage",
-      "userFeedback": "User Feedback",
+      "tokenUsage": "Token usage",
+      "userFeedback": "User feedback",
       "filterPlaceholder": "Filter",
       "none": "None",
-      "positiveFeedback": "Positive Feedback",
-      "negativeFeedback": "Negative Feedback",
+      "positiveFeedback": "Positive feedback",
+      "negativeFeedback": "Negative feedback",
       "groupBy": "Group by",
       "groupOptions": {
         "total": "Total",
@@ -633,10 +633,10 @@
         "source": "By flow"
       },
       "includeSideChannel": "Background tokens",
-      "promptTokens": "Prompt Tokens",
-      "generatedTokens": "Generated Tokens",
-      "scheduledRuns": "Scheduled Runs",
-      "toolUsage": "Tool Usage",
+      "promptTokens": "Prompt tokens",
+      "generatedTokens": "Generated tokens",
+      "scheduledRuns": "Scheduled runs",
+      "toolUsage": "Tool usage",
       "completed": "Completed",
       "failed": "Failed",
       "skipped": "Skipped",
@@ -646,8 +646,8 @@
         "messages": "Messages",
         "tokens": "Tokens",
         "tokensHint": "All LLM-billed tokens. Agents re-send the conversation context on every tool step, so tool-heavy chats use many times more tokens than the visible messages suggest.",
-        "toolCalls": "Tool Calls",
-        "runSuccess": "Run Success",
+        "toolCalls": "Tool calls",
+        "runSuccess": "Run success",
         "feedback": "Feedback"
       },
       "quota": {
@@ -665,12 +665,12 @@
         "heading": "Insights",
         "description": "Estimated by an AI model from each conversation.",
         "learnMore": "Learn more",
-        "coverage": "{{labelled}} of {{total}} answers labelled",
+        "coverage": "{{labelled}} of {{total}} answers analyzed",
         "agentOff": "Insights are off for this agent.",
         "agentOffLink": "Turn them on in the agent's settings",
         "noTraffic": "No conversations in this period.",
-        "starting": "Labelling has started",
-        "startingDescription": "Insights appear a few minutes after each conversation. The newest are labelled first.",
+        "starting": "Analysis has started",
+        "startingDescription": "Insights appear a few minutes after each conversation. The newest are analyzed first.",
         "loadError": "Could not load insights.",
         "notEnough": "Not enough data yet ({{formatted}} so far)",
         "notEnoughShort": "Not enough data yet",
@@ -706,7 +706,7 @@
           "requestType": "Request type",
           "topic": "Topic",
           "tags": "Tags",
-          "implicitFeedback": "Implicit feedback",
+          "implicitFeedback": "Replies to answers",
           "shareOfAnswers_one": "Share of {{formatted}} answer",
           "shareOfAnswers_other": "Share of {{formatted}} answers",
           "shareOfMessages_one": "Share of {{formatted}} message",
@@ -727,7 +727,7 @@
           "answer_status": "answer status",
           "gap_type": "why not fully answered",
           "topic_effective": "topic",
-          "reaction": "implicit feedback"
+          "reaction": "replies to answers"
         },
         "options": {
           "answerStatus": {
@@ -737,8 +737,7 @@
             "clarifying": "Asked for details"
           },
           "gapType": {
-            "docsMissing": "Docs missing or not found",
-            "docsMissingOnly": "Docs missing",
+            "docsMissing": "Docs gap",
             "notRetrieved": "Search missed the page",
             "answerMissed": "Answer missed the page",
             "outOfScope": "Out of scope",
@@ -989,7 +988,7 @@
         "docsGap": "Docs gap",
         "frustrated": "Frustrated",
         "asksHuman": "Asked for a person",
-        "negativeReaction": "Negative reaction",
+        "negativeReaction": "Asked again or pushed back",
         "negativeSentiment": "Negative sentiment",
         "tags": "Tags",
         "hint": "Labels are estimates and can be wrong.",

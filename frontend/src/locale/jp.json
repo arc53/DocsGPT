@@ -704,7 +704,7 @@
           "requestType": "依頼の種類",
           "topic": "トピック",
           "tags": "タグ",
-          "implicitFeedback": "暗黙のフィードバック",
+          "implicitFeedback": "回答への返信",
           "shareOfAnswers_one": "回答 {{formatted}} 件に占める割合",
           "shareOfAnswers_other": "回答 {{formatted}} 件に占める割合",
           "shareOfMessages_one": "メッセージ {{formatted}} 件に占める割合",
@@ -725,7 +725,7 @@
           "answer_status": "回答状況",
           "gap_type": "完全に回答されなかった理由",
           "topic_effective": "トピック",
-          "reaction": "暗黙のフィードバック"
+          "reaction": "回答への返信"
         },
         "options": {
           "answerStatus": {
@@ -735,8 +735,7 @@
             "clarifying": "詳細を確認"
           },
           "gapType": {
-            "docsMissing": "ドキュメントがない、または見つからない",
-            "docsMissingOnly": "ドキュメントがない",
+            "docsMissing": "ドキュメントの不足",
             "notRetrieved": "検索がページを見逃した",
             "answerMissed": "回答がページを活かせなかった",
             "outOfScope": "対象外",
@@ -987,7 +986,7 @@
         "docsGap": "ドキュメントの不足",
         "frustrated": "不満",
         "asksHuman": "担当者を希望",
-        "negativeReaction": "否定的な反応",
+        "negativeReaction": "再質問・反論",
         "negativeSentiment": "否定的な感情",
         "tags": "タグ",
         "hint": "ラベルは推定であり、誤っていることがあります。",

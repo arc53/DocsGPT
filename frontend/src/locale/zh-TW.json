@@ -663,12 +663,12 @@
         "heading": "洞察",
         "description": "由 AI 模型根據每段對話估算。",
         "learnMore": "了解更多",
-        "coverage": "已標註 {{labelled}}/{{total}} 則回答",
+        "coverage": "已分析 {{labelled}}/{{total}} 則回答",
         "agentOff": "此代理已關閉洞察。",
         "agentOffLink": "在代理設定中開啟",
         "noTraffic": "此期間沒有對話。",
-        "starting": "已開始標註",
-        "startingDescription": "洞察會在每段對話結束幾分鐘後出現。最新的對話會最先標註。",
+        "starting": "已開始分析",
+        "startingDescription": "洞察會在每段對話結束幾分鐘後出現。最新的對話會最先分析。",
         "loadError": "無法載入洞察。",
         "notEnough": "資料還不夠（目前 {{formatted}} 則）",
         "notEnoughShort": "資料還不夠",
@@ -704,7 +704,7 @@
           "requestType": "請求類型",
           "topic": "主題",
           "tags": "標籤",
-          "implicitFeedback": "隱性反饋",
+          "implicitFeedback": "對回答的回覆",
           "shareOfAnswers_one": "佔 {{formatted}} 則回答的比例",
           "shareOfAnswers_other": "佔 {{formatted}} 則回答的比例",
           "shareOfMessages_one": "佔 {{formatted}} 則訊息的比例",
@@ -725,7 +725,7 @@
           "answer_status": "回答狀態",
           "gap_type": "未完整回答的原因",
           "topic_effective": "主題",
-          "reaction": "隱性反饋"
+          "reaction": "對回答的回覆"
         },
         "options": {
           "answerStatus": {
@@ -735,8 +735,7 @@
             "clarifying": "追問細節"
           },
           "gapType": {
-            "docsMissing": "文件缺漏或找不到",
-            "docsMissingOnly": "文件缺漏",
+            "docsMissing": "文件缺口",
             "notRetrieved": "搜尋找不到頁面",
             "answerMissed": "回答未用上頁面",
             "outOfScope": "超出範圍",
@@ -987,7 +986,7 @@
         "docsGap": "文件缺口",
         "frustrated": "不滿",
         "asksHuman": "要求真人",
-        "negativeReaction": "負面反應",
+        "negativeReaction": "再次提問或反駁",
         "negativeSentiment": "負面情緒",
         "tags": "自訂標籤",
         "hint": "標註是估算結果，可能有誤。",

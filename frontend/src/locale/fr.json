@@ -728,7 +728,7 @@
           "requestType": "Type de demande",
           "topic": "Sujet",
           "tags": "Étiquettes",
-          "implicitFeedback": "Retours implicites",
+          "implicitFeedback": "Réactions aux réponses",
           "shareOfAnswers_one": "Part de {{formatted}} réponse",
           "shareOfAnswers_other": "Part de {{formatted}} réponses",
           "shareOfAnswers_many": "Part de {{formatted}} réponses",
@@ -754,7 +754,7 @@
           "answer_status": "le statut des réponses",
           "gap_type": "la raison d’une réponse incomplète",
           "topic_effective": "le sujet",
-          "reaction": "les retours implicites"
+          "reaction": "les réactions aux réponses"
         },
         "options": {
           "answerStatus": {
@@ -764,8 +764,7 @@
             "clarifying": "A demandé des précisions"
           },
           "gapType": {
-            "docsMissing": "Doc manquante ou introuvable",
-            "docsMissingOnly": "Doc manquante",
+            "docsMissing": "Lacune de la doc",
             "notRetrieved": "La recherche a manqué la page",
             "answerMissed": "La réponse a ignoré la page",
             "outOfScope": "Hors sujet",
@@ -1025,7 +1024,7 @@
         "docsGap": "Lacune de la doc",
         "frustrated": "Frustration",
         "asksHuman": "Demande d’un humain",
-        "negativeReaction": "Réaction négative",
+        "negativeReaction": "Question reposée ou contestation",
         "negativeSentiment": "Sentiment négatif",
         "tags": "Étiquettes personnalisées",
         "hint": "Les étiquettes sont des estimations et peuvent être fausses.",

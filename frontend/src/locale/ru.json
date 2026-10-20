@@ -655,8 +655,8 @@
         "last90Days": "Последние 90 дней"
       },
       "messages": "Сообщения",
-      "tokenUsage": "Использование токена",
-      "userFeedback": "Обратная Связь Пользователя",
+      "tokenUsage": "Использование токенов",
+      "userFeedback": "Обратная связь от пользователей",
       "filterPlaceholder": "Фильтр",
       "none": "Нет",
       "positiveFeedback": "Положительная обратная связь",
@@ -701,12 +701,12 @@
         "heading": "Инсайты",
         "description": "Оценка ИИ-модели по каждому разговору.",
         "learnMore": "Подробнее",
-        "coverage": "Размечено ответов: {{labelled}} из {{total}}",
+        "coverage": "Проанализировано ответов: {{labelled}} из {{total}}",
         "agentOff": "Инсайты отключены для этого агента.",
         "agentOffLink": "Включить в настройках агента",
         "noTraffic": "За этот период разговоров нет.",
-        "starting": "Разметка началась",
-        "startingDescription": "Данные появляются через несколько минут после каждого разговора. Самые новые размечаются первыми.",
+        "starting": "Анализ начался",
+        "startingDescription": "Данные появляются через несколько минут после каждого разговора. Самые новые анализируются первыми.",
         "loadError": "Не удалось загрузить инсайты.",
         "notEnough": "Пока мало данных (сейчас {{formatted}})",
         "notEnoughShort": "Пока мало данных",
@@ -750,7 +750,7 @@
           "requestType": "Тип запроса",
           "topic": "Тема",
           "tags": "Теги",
-          "implicitFeedback": "Неявная обратная связь",
+          "implicitFeedback": "Реплики на ответы",
           "shareOfAnswers_one": "Доля от {{formatted}} ответа",
           "shareOfAnswers_other": "Доля от {{formatted}} ответа",
           "shareOfAnswers_few": "Доля от {{formatted}} ответов",
@@ -781,7 +781,7 @@
           "answer_status": "статус ответов",
           "gap_type": "причина неполного ответа",
           "topic_effective": "тема",
-          "reaction": "неявная обратная связь"
+          "reaction": "реплики на ответы"
         },
         "options": {
           "answerStatus": {
@@ -791,8 +791,7 @@
             "clarifying": "Попросил уточнить"
           },
           "gapType": {
-            "docsMissing": "Нет в документации или не найдено",
-            "docsMissingOnly": "Нет в документации",
+            "docsMissing": "Пробел в документации",
             "notRetrieved": "Поиск не нашёл страницу",
             "answerMissed": "Ответ не учёл страницу",
             "outOfScope": "Не по теме",
@@ -1061,7 +1060,7 @@
         "docsGap": "Пробел в документации",
         "frustrated": "Раздражение",
         "asksHuman": "Просил человека",
-        "negativeReaction": "Негативная реакция",
+        "negativeReaction": "Переспросил или возразил",
         "negativeSentiment": "Негативное настроение",
         "tags": "Теги",
         "hint": "Метки — это оценки, и они могут ошибаться.",

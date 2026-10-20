@@ -637,12 +637,12 @@
         "last90Days": "90 días"
       },
       "messages": "Mensajes",
-      "tokenUsage": "Uso de Tokens",
-      "userFeedback": "Retroalimentación del Usuario",
+      "tokenUsage": "Uso de tokens",
+      "userFeedback": "Retroalimentación del usuario",
       "filterPlaceholder": "Filtrar",
       "none": "Ninguno",
-      "positiveFeedback": "Retroalimentación Positiva",
-      "negativeFeedback": "Retroalimentación Negativa",
+      "positiveFeedback": "Retroalimentación positiva",
+      "negativeFeedback": "Retroalimentación negativa",
       "groupBy": "Agrupar por",
       "groupOptions": {
         "total": "Total",
@@ -651,10 +651,10 @@
         "source": "Por flujo"
       },
       "includeSideChannel": "Tokens en segundo plano",
-      "promptTokens": "Tokens de Prompt",
-      "generatedTokens": "Tokens Generados",
-      "scheduledRuns": "Ejecuciones Programadas",
-      "toolUsage": "Uso de Herramientas",
+      "promptTokens": "Tokens de prompt",
+      "generatedTokens": "Tokens generados",
+      "scheduledRuns": "Ejecuciones programadas",
+      "toolUsage": "Uso de herramientas",
       "completed": "Completadas",
       "failed": "Fallidas",
       "skipped": "Omitidas",
@@ -664,8 +664,8 @@
         "messages": "Mensajes",
         "tokens": "Tokens",
         "tokensHint": "Todos los tokens facturados por el LLM. Los agentes reenvían el contexto de la conversación en cada paso de herramienta, así que los chats que usan muchas herramientas consumen muchos más tokens de los que sugieren los mensajes visibles.",
-        "toolCalls": "Llamadas a Herramientas",
-        "runSuccess": "Éxito de Ejecución",
+        "toolCalls": "Llamadas a herramientas",
+        "runSuccess": "Éxito de ejecución",
         "feedback": "Retroalimentación"
       },
       "quota": {
@@ -683,12 +683,12 @@
         "heading": "Información",
         "description": "Estimado por un modelo de IA a partir de cada conversación.",
         "learnMore": "Más información",
-        "coverage": "{{labelled}} de {{total}} respuestas etiquetadas",
+        "coverage": "{{labelled}} de {{total}} respuestas analizadas",
         "agentOff": "La recopilación de información está desactivada para este agente.",
         "agentOffLink": "Actívala en los ajustes del agente",
         "noTraffic": "No hay conversaciones en este periodo.",
-        "starting": "El etiquetado ha empezado",
-        "startingDescription": "La información aparece unos minutos después de cada conversación. Las más recientes se etiquetan primero.",
+        "starting": "El análisis ha empezado",
+        "startingDescription": "La información aparece unos minutos después de cada conversación. Las más recientes se analizan primero.",
         "loadError": "No se pudo cargar la información.",
         "notEnough": "Aún no hay datos suficientes ({{formatted}} por ahora)",
         "notEnoughShort": "Aún no hay datos suficientes",
@@ -728,7 +728,7 @@
           "requestType": "Tipo de solicitud",
           "topic": "Tema",
           "tags": "Etiquetas",
-          "implicitFeedback": "Comentarios implícitos",
+          "implicitFeedback": "Réplicas a las respuestas",
           "shareOfAnswers_one": "Porcentaje de {{formatted}} respuesta",
           "shareOfAnswers_other": "Porcentaje de {{formatted}} respuestas",
           "shareOfAnswers_many": "Porcentaje de {{formatted}} respuestas",
@@ -754,7 +754,7 @@
           "answer_status": "el estado de las respuestas",
           "gap_type": "el motivo de no responder del todo",
           "topic_effective": "el tema",
-          "reaction": "los comentarios implícitos"
+          "reaction": "las réplicas a las respuestas"
         },
         "options": {
           "answerStatus": {
@@ -764,8 +764,7 @@
             "clarifying": "Pidió más detalles"
           },
           "gapType": {
-            "docsMissing": "Falta documentación o no se encontró",
-            "docsMissingOnly": "Falta documentación",
+            "docsMissing": "Hueco en la documentación",
             "notRetrieved": "La búsqueda no encontró la página",
             "answerMissed": "La respuesta no usó la página",
             "outOfScope": "Fuera de alcance",
@@ -1025,7 +1024,7 @@
         "docsGap": "Hueco en la documentación",
         "frustrated": "Frustración",
         "asksHuman": "Pidió una persona",
-        "negativeReaction": "Reacción negativa",
+        "negativeReaction": "Volvió a preguntar u objetó",
         "negativeSentiment": "Sentimiento negativo",
         "tags": "Etiquetas propias",
         "hint": "Las etiquetas son estimaciones y pueden equivocarse.",

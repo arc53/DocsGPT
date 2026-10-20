@@ -663,12 +663,12 @@
         "heading": "洞察",
         "description": "由 AI 模型根据每段对话估算。",
         "learnMore": "了解更多",
-        "coverage": "已标注 {{labelled}}/{{total}} 条回答",
+        "coverage": "已分析 {{labelled}}/{{total}} 条回答",
         "agentOff": "此智能体已关闭洞察。",
         "agentOffLink": "在智能体设置中开启",
         "noTraffic": "此期间没有对话。",
-        "starting": "已开始标注",
-        "startingDescription": "洞察会在每段对话结束几分钟后出现。最新的对话最先标注。",
+        "starting": "已开始分析",
+        "startingDescription": "洞察会在每段对话结束几分钟后出现。最新的对话最先分析。",
         "loadError": "无法加载洞察。",
         "notEnough": "数据还不够（目前 {{formatted}} 条）",
         "notEnoughShort": "数据还不够",
@@ -704,7 +704,7 @@
           "requestType": "请求类型",
           "topic": "主题",
           "tags": "标签",
-          "implicitFeedback": "隐性反馈",
+          "implicitFeedback": "对回答的回复",
           "shareOfAnswers_one": "占 {{formatted}} 条回答的比例",
           "shareOfAnswers_other": "占 {{formatted}} 条回答的比例",
           "shareOfMessages_one": "占 {{formatted}} 条消息的比例",
@@ -725,7 +725,7 @@
           "answer_status": "回答状态",
           "gap_type": "未完全回答的原因",
           "topic_effective": "主题",
-          "reaction": "隐性反馈"
+          "reaction": "对回答的回复"
         },
         "options": {
           "answerStatus": {
@@ -735,8 +735,7 @@
             "clarifying": "追问细节"
           },
           "gapType": {
-            "docsMissing": "文档缺失或未找到",
-            "docsMissingOnly": "文档缺失",
+            "docsMissing": "文档缺口",
             "notRetrieved": "搜索未找到页面",
             "answerMissed": "回答未用上页面",
             "outOfScope": "超出范围",
@@ -987,7 +986,7 @@
         "docsGap": "文档缺口",
         "frustrated": "不满",
         "asksHuman": "要求人工",
-        "negativeReaction": "负面反应",
+        "negativeReaction": "再次提问或反驳",
         "negativeSentiment": "负面情绪",
         "tags": "自定义标签",
         "hint": "标注是估算结果，可能有误。",

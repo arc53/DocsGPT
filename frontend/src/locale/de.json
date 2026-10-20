@@ -706,7 +706,7 @@
           "requestType": "Art der Anfrage",
           "topic": "Thema",
           "tags": "Tags",
-          "implicitFeedback": "Implizites Feedback",
+          "implicitFeedback": "Reaktionen auf Antworten",
           "shareOfAnswers_one": "Anteil an {{formatted}} Antwort",
           "shareOfAnswers_other": "Anteil an {{formatted}} Antworten",
           "shareOfMessages_one": "Anteil an {{formatted}} Nachricht",
@@ -727,7 +727,7 @@
           "answer_status": "Antwortstatus",
           "gap_type": "Grund für unvollständige Antworten",
           "topic_effective": "Thema",
-          "reaction": "implizites Feedback"
+          "reaction": "Reaktionen auf Antworten"
         },
         "options": {
           "answerStatus": {
@@ -737,8 +737,7 @@
             "clarifying": "Nach Details gefragt"
           },
           "gapType": {
-            "docsMissing": "Doku fehlt oder nicht gefunden",
-            "docsMissingOnly": "Doku fehlt",
+            "docsMissing": "Lücke in der Doku",
             "notRetrieved": "Suche fand die Seite nicht",
             "answerMissed": "Antwort übersah die Seite",
             "outOfScope": "Außerhalb des Themas",
@@ -989,7 +988,7 @@
         "docsGap": "Lücke in der Doku",
         "frustrated": "Frustriert",
         "asksHuman": "Nach einem Menschen gefragt",
-        "negativeReaction": "Negative Reaktion",
+        "negativeReaction": "Erneut gefragt oder widersprochen",
         "negativeSentiment": "Negative Stimmung",
         "tags": "Tags",
         "hint": "Labels sind Schätzungen und können falsch sein.",

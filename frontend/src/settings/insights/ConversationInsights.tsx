@@ -441,14 +441,9 @@ function InsightPanels({ data }: { data: Insights }) {
   const { totals } = data;
 
   const gapType = totals.gap_type;
-  const notRetrievedShown =
-    Math.round(gapType?.options['not retrieved']?.expected ?? 0) > 0;
   const gapRows = optionBars(
     gapType,
-    (option) =>
-      option === 'docs missing' && notRetrievedShown
-        ? t('settings.analytics.insights.options.gapType.docsMissingOnly')
-        : optionName(t, 'gap_type', option),
+    (option) => optionName(t, 'gap_type', option),
     { skip: GAP_SKIP, last: ['other'] },
   );
   const requestRows = optionBars(

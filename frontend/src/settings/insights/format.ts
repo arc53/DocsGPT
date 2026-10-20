@@ -111,7 +111,7 @@ export const ANSWER_STATUS_SERIES = [
 /** Sentiment drawn over time, in order: green, grey, red from the bottom. */
 export const SENTIMENT_SERIES = ['positive', 'neutral', 'negative'] as const;
 
-/** Implicit feedback's three series and the reaction options each sums. */
+/** Replies to answers (the reaction label): three series and the options each sums. */
 export const REACTION_SERIES = {
   thanks: ['thanks or confirmation'],
   reAsk: ['re-ask'],
