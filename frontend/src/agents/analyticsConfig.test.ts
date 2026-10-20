@@ -8,6 +8,7 @@ import {
   nameTaken,
   newTagId,
   units,
+  withAnalytics,
 } from './analyticsConfig';
 
 describe('units', () => {
@@ -103,5 +104,26 @@ describe('appendSuggestions', () => {
     );
     expect(full.items.map((item) => item.name)).toEqual(['Installation', 'A']);
     expect(full.note).toBe('full');
+  });
+});
+
+describe('withAnalytics', () => {
+  it('replaces only analytics in the saved config', () => {
+    const saved = {
+      api_write_allowlist: ['t1:write'],
+      analytics: { ...DEFAULT_ANALYTICS, digest: true },
+    };
+    const next = { ...DEFAULT_ANALYTICS, enabled: false };
+    expect(withAnalytics(saved, next)).toEqual({
+      api_write_allowlist: ['t1:write'],
+      analytics: next,
+    });
+    expect(saved.analytics.digest).toBe(true);
+  });
+
+  it('starts from nothing when nothing is saved', () => {
+    expect(withAnalytics(undefined, DEFAULT_ANALYTICS)).toEqual({
+      analytics: DEFAULT_ANALYTICS,
+    });
   });
 });

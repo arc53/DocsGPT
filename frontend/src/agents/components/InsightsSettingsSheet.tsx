@@ -14,7 +14,7 @@ import {
 import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
-import { analyticsOf } from '../analyticsConfig';
+import { analyticsOf, withAnalytics } from '../analyticsConfig';
 import { isWorkflowAgent } from '../paths';
 import type { Agent, AgentConfig, AnalyticsConfig } from '../types';
 import InsightsSettingsBody from './InsightsSettingsBody';
@@ -88,7 +88,7 @@ function SheetContents({
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
 
   const save = async () => {
-    const config: AgentConfig = { ...(agent.config ?? {}), analytics: draft };
+    const config = withAnalytics(agent.config, draft);
     const form = new FormData();
     form.append('config', JSON.stringify(config));
     setSaving(true);

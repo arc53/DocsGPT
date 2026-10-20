@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 
-import { revealElement } from '../../settings/logsLinks';
 import { analyticsOf, isDefaultAnalytics } from '../analyticsConfig';
 import type { AnalyticsConfig } from '../types';
 import InsightsSettingsBody from './InsightsSettingsBody';
@@ -23,11 +22,6 @@ type AnalyticsSectionProps = {
   maxTags: number;
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
-  /**
-   * Open the section and bring it into view, once: the page was opened at
-   * `#insights`.
-   */
-  reveal?: boolean;
   token: string | null;
 };
 
@@ -47,19 +41,10 @@ export default function AnalyticsSection({
   maxTopics,
   maxTags,
   disabled = false,
-  reveal = false,
   token,
 }: AnalyticsSectionProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = React.useState(reveal);
-  const cardRef = React.useRef<HTMLDivElement>(null);
-  const revealed = React.useRef(false);
-  React.useEffect(() => {
-    if (!reveal || revealed.current || !cardRef.current) return;
-    revealed.current = true;
-    setExpanded(true);
-    revealElement(cardRef.current, 'start');
-  });
+  const [expanded, setExpanded] = React.useState(false);
   const bodyId = React.useId();
 
   if (!available && isDefaultAnalytics(value)) return null;
@@ -67,8 +52,6 @@ export default function AnalyticsSection({
 
   return (
     <Card
-      ref={cardRef}
-      id="insights"
       variant="subtle"
       padding="lg"
       className="gap-5"

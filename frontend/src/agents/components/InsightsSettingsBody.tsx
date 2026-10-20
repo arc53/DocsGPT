@@ -376,7 +376,11 @@ export default function InsightsSettingsBody({
               as={headingLevel}
               size="xs"
               title={k('topics')}
-              count={ownList ? countOf(topics.length, maxTopics) : undefined}
+              count={
+                ownList && topics.length > 0
+                  ? countOf(topics.length, maxTopics)
+                  : undefined
+              }
               description={k('topicsDescription')}
               actions={topicActions}
             />

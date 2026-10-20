@@ -3,7 +3,7 @@
  * the server enforces, and the checks the editor runs before Save so a typo
  * never comes back as a 400 naming a list index.
  */
-import type { AnalyticsConfig, AnalyticsTopic } from './types';
+import type { AgentConfig, AnalyticsConfig, AnalyticsTopic } from './types';
 
 /** The server's defaults for `ANALYTICS_MAX_TOPICS` and `ANALYTICS_MAX_TAGS`. */
 export const MAX_TOPICS = 15;
@@ -33,6 +33,18 @@ export function analyticsOf(value?: AnalyticsConfig | null): AnalyticsConfig {
     topics: { ...DEFAULT_ANALYTICS.topics, ...(value?.topics ?? {}) },
     tags: value?.tags ?? [],
   };
+}
+
+/**
+ * The config to save when only the insights settings change: the saved
+ * config with `analytics` replaced, so guardrails, the API write allowlist
+ * and anything else stored are sent back as they are.
+ */
+export function withAnalytics(
+  saved: AgentConfig | null | undefined,
+  analytics: AnalyticsConfig,
+): AgentConfig {
+  return { ...(saved ?? {}), analytics };
 }
 
 /** True when nothing differs from the defaults (no topics, tags or digest, and on). */

@@ -372,6 +372,8 @@ describe('InsightsSettingsBody', () => {
       const empty = topicsBlock().querySelector('[data-slot="empty-state"]')!;
       expect(empty.textContent).toBe(`${K}.topicsEmpty`);
       expect(empty.getAttribute('data-size')).toBe('sm');
+      // No "0" beside the title, as for tags.
+      expect(topicsBlock().querySelector('[data-slot="count"]')).toBeNull();
     });
 
     it('Reset to sources goes straight back while the list is the folders', async () => {

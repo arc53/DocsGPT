@@ -57,7 +57,14 @@ import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
 } from './components/WorkflowDetailsSheet';
 import type { SponsorAudience } from '../sponsorConsent';
-import { Agent, ResourceSponsor, ResourceState } from '../types';
+import {
+  Agent,
+  AnalyticsConfig,
+  ResourceSponsor,
+  ResourceState,
+} from '../types';
+import { analyticsOf, withAnalytics } from '../analyticsConfig';
+import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
   createDefaultCodeConfig,
@@ -275,6 +282,11 @@ function WorkflowBuilderInner() {
     createEmptyWorkflowAgent(),
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
+  // Insights settings changed in Workflow details, sent as `config` with the
+  // next save; null when they match the saved ones.
+  const [pendingAnalytics, setPendingAnalytics] =
+    useState<AnalyticsConfig | null>(null);
+  const analyticsAvailability = useAnalyticsAvailability();
   const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
     string | null
   >(null);
@@ -1485,6 +1497,12 @@ function WorkflowBuilderInner() {
             if (imageFile) {
               agentFormData.append('image', imageFile);
             }
+            // Only the insights: the rest of the saved config goes back as is.
+            const savedConfig = pendingAnalytics
+              ? withAnalytics(currentAgent.config, pendingAnalytics)
+              : null;
+            if (savedConfig)
+              agentFormData.append('config', JSON.stringify(savedConfig));
             const agentUpdateResponse = await userService.updateAgent(
               effectiveAgentId,
               agentFormData,
@@ -1504,7 +1522,11 @@ function WorkflowBuilderInner() {
               description:
                 workflowDescription || `Workflow agent: ${workflowName}`,
               image: updatedAgent?.image || prev.image || '',
+              ...(savedConfig
+                ? { config: updatedAgent?.config ?? savedConfig }
+                : {}),
             }));
+            setPendingAnalytics(null);
           }
           setImageFile(null);
           setSavedWorkflowSignature(JSON.stringify(workflowPayload));
@@ -1556,6 +1578,11 @@ function WorkflowBuilderInner() {
           agentFormData.append('image', imageFile);
         }
         if (folderId) agentFormData.append('folder_id', folderId);
+        const createdConfig = pendingAnalytics
+          ? withAnalytics(currentAgent.config, pendingAnalytics)
+          : null;
+        if (createdConfig)
+          agentFormData.append('config', JSON.stringify(createdConfig));
 
         const agentResponse = await userService.createAgent(
           agentFormData,
@@ -1581,7 +1608,11 @@ function WorkflowBuilderInner() {
             workflow: savedWorkflowId || undefined,
             agent_type: 'workflow',
             status: 'published',
+            ...(createdConfig
+              ? { config: agentData.config ?? createdConfig }
+              : {}),
           });
+          setPendingAnalytics(null);
         }
 
         setImageFile(null);
@@ -1628,6 +1659,8 @@ function WorkflowBuilderInner() {
       workflowDescription,
       imageFile,
       currentAgent.allow_system_prompt_override,
+      currentAgent.config,
+      pendingAnalytics,
       folderId,
       navigateBackToAgents,
       t,
@@ -1645,16 +1678,28 @@ function WorkflowBuilderInner() {
 
   // Save from the details sheet: put its values into the builder, then save
   // once they are in state (the effect below), so the request carries them.
-  const handleDetailsSave = useCallback((values: WorkflowDetailsSave) => {
-    setWorkflowName(values.name);
-    setWorkflowDescription(values.description);
-    setCurrentAgent((prev) => ({
-      ...prev,
-      allow_system_prompt_override: values.allowPromptOverride,
-    }));
-    if (values.imageFile) setImageFile(values.imageFile);
-    setDetailsSaveRequested(true);
-  }, []);
+  const handleDetailsSave = useCallback(
+    (values: WorkflowDetailsSave) => {
+      setWorkflowName(values.name);
+      setWorkflowDescription(values.description);
+      setCurrentAgent((prev) => ({
+        ...prev,
+        allow_system_prompt_override: values.allowPromptOverride,
+      }));
+      if (values.imageFile) setImageFile(values.imageFile);
+      // Unchanged insights send no config, so a stale copy never overwrites
+      // a save made meanwhile from the Insights page.
+      setPendingAnalytics(
+        values.analytics &&
+          JSON.stringify(analyticsOf(values.analytics)) !==
+            JSON.stringify(analyticsOf(currentAgent.config?.analytics))
+          ? values.analytics
+          : null,
+      );
+      setDetailsSaveRequested(true);
+    },
+    [currentAgent.config?.analytics],
+  );
 
   useEffect(() => {
     if (!detailsSaveRequested) return;
@@ -2120,6 +2165,14 @@ function WorkflowBuilderInner() {
             allowPromptOverride: Boolean(
               currentAgent.allow_system_prompt_override,
             ),
+            analytics: pendingAnalytics ?? currentAgent.config?.analytics,
+          }}
+          insights={{
+            available: analyticsAvailability.enabled,
+            maxTopics: analyticsAvailability.maxTopics,
+            maxTags: analyticsAvailability.maxTags,
+            agentId: effectiveAgentId || undefined,
+            token,
           }}
           currentImage={currentAgentImage}
           saving={detailsSaving}

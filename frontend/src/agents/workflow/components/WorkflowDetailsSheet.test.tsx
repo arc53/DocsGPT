@@ -4,7 +4,14 @@ import { createRoot, type Root } from 'react-dom/client';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock('react-redux', () => ({ useDispatch: () => vi.fn() }));
+const getTopicSuggestions = vi.hoisted(() => vi.fn());
+vi.mock('../../../api/services/userService', () => ({
+  default: { getTopicSuggestions },
+}));
 
+import { DEFAULT_ANALYTICS } from '../../analyticsConfig';
+import type { AnalyticsConfig } from '../../types';
 import WorkflowDetailsSheet from './WorkflowDetailsSheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -31,13 +38,27 @@ describe('WorkflowDetailsSheet', () => {
     document.body.innerHTML = '';
   });
 
-  const render = (props: { errors?: string[]; saving?: boolean } = {}) => {
+  const render = (
+    props: {
+      errors?: string[];
+      saving?: boolean;
+      analytics?: AnalyticsConfig;
+      available?: boolean;
+    } = {},
+  ) => {
     const handlers = { onOpenChange: vi.fn(), onSave: vi.fn() };
     act(() => {
       root.render(
         <WorkflowDetailsSheet
           open
-          details={details}
+          details={{ ...details, analytics: props.analytics }}
+          insights={{
+            available: props.available ?? true,
+            maxTopics: 15,
+            maxTags: 20,
+            agentId: 'wf-agent',
+            token: 'token',
+          }}
           currentImage=""
           saving={props.saving ?? false}
           errors={props.errors ?? []}
@@ -104,6 +125,7 @@ describe('WorkflowDetailsSheet', () => {
       name: 'Helpdesk Router',
       description: 'Routes internal requests',
       allowPromptOverride: false,
+      analytics: DEFAULT_ANALYTICS,
       imageFile: null,
     });
   });
@@ -140,5 +162,60 @@ describe('WorkflowDetailsSheet', () => {
         .click(),
     );
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  const insightsCard = () =>
+    Array.from(document.querySelectorAll('[data-slot="card"]')).find(
+      (card) =>
+        card.querySelector('h3')?.textContent ===
+        'agents.form.sections.analytics',
+    );
+
+  // IN-21: a workflow's insights, in a third card after Basics and Advanced.
+  it('holds an Insights card after Advanced, its sub-headings one level down', () => {
+    render();
+    const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
+    const card = insightsCard()!;
+    expect(cards.indexOf(card)).toBe(2);
+    expect(
+      card.querySelector('[data-testid="analytics-topics"] h4'),
+    ).not.toBeNull();
+    // A workflow has no sources of its own: its topics are its own list.
+    expect(card.textContent).toContain(
+      'agents.form.analytics.topicHints.workflowOff',
+    );
+    expect(card.textContent).not.toContain('agents.form.analytics.customize');
+    expect(getTopicSuggestions).not.toHaveBeenCalled();
+  });
+
+  it('counts an insights change as an edit and saves it with the rest', () => {
+    const { onSave } = render();
+    const save = button('agents.form.buttons.save');
+    const digest = document.querySelector<HTMLButtonElement>(
+      '[data-testid="analytics-digest"]',
+    )!;
+    act(() => digest.click());
+    expect(save.disabled).toBe(false);
+    act(() => digest.click());
+    expect(save.disabled).toBe(true);
+    act(() => digest.click());
+    act(() => save.click());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        analytics: { ...DEFAULT_ANALYTICS, digest: true },
+      }),
+    );
+  });
+
+  it('hides the card while the server has insights off, unless the workflow has settings of its own', () => {
+    render({ available: false });
+    expect(insightsCard()).toBeUndefined();
+    render({
+      available: false,
+      analytics: { ...DEFAULT_ANALYTICS, digest: true },
+    });
+    expect(insightsCard()!.textContent).toContain(
+      'agents.form.analytics.serverOff',
+    );
   });
 });

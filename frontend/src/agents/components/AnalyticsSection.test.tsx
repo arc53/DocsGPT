@@ -31,12 +31,10 @@ function Harness({
   initial,
   available = true,
   disabled = false,
-  reveal = false,
 }: {
   initial?: AnalyticsConfig;
   available?: boolean;
   disabled?: boolean;
-  reveal?: boolean;
 }) {
   const [value, setValue] = useState<AnalyticsConfig | undefined>(initial);
   return (
@@ -48,7 +46,6 @@ function Harness({
       maxTopics={3}
       maxTags={20}
       disabled={disabled}
-      reveal={reveal}
       token="token"
     />
   );
@@ -84,17 +81,6 @@ describe('AnalyticsSection', () => {
     container.querySelector<HTMLElement>('[data-testid="analytics-section"]');
   const offBadge = () =>
     container.querySelector('[data-testid="analytics-off-badge"]');
-
-  // IN-20: Insights' "Turn on" opens the agent's Overview at `#insights`.
-  it('opens and scrolls to itself when revealed', async () => {
-    const scrollIntoView = vi.fn();
-    Element.prototype.scrollIntoView = scrollIntoView;
-    await render({ reveal: true });
-    expect(toggle().getAttribute('aria-expanded')).toBe('true');
-    expect(section()!.id).toBe('insights');
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(scrollIntoView.mock.contexts[0]).toBe(section());
-  });
 
   it('is titled Insights and holds the settings body', async () => {
     await render();
