@@ -161,14 +161,25 @@ def language_warnings(counts: dict[str, dict]) -> list[str]:
     return out
 
 
-def gap_row(group: dict, examples: list[dict], name: Optional[str]) -> dict:
-    """One docs-gap table row from ``ConversationLabelsRepository.gap_groups`` and its examples."""
+def gap_row(group: dict, examples: list[dict], name: Optional[str], source: Optional[str] = None) -> dict:
+    """One docs-gap table row from ``ConversationLabelsRepository.gap_groups`` and its examples.
+
+    Args:
+        group: The group's ``gap_groups`` row.
+        examples: Its example questions, as the route sends them.
+        name: The group's display name.
+        source: The name of the source a page group came from; ``None`` for other groupings or an unknown source.
+
+    Returns:
+        The row as the API sends it.
+    """
     turns = float(group["turns"] or 0)
     expected = float(group["expected"] or 0)
     version = widest_version("gap_type", group.get("versions") or [])
     rate, low, high = calibration.interval("gap_type", expected, turns, version)
     return {
-        "key": group["key"], "name": name, "expected_gaps": round(expected, 2), "turns": round(turns),
+        "key": group["key"], "name": name, "source": source, "expected_gaps": round(expected, 2),
+        "turns": round(turns),
         "rate": round(rate, 4), "low": round(low, 4), "high": round(high, 4),
         "previous_expected": round(float(group["previous"] or 0), 2),
         "examples": examples,

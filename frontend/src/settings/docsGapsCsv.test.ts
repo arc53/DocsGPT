@@ -11,6 +11,7 @@ import type { DocsGapRow } from './types';
 const row = (overrides: Partial<DocsGapRow> = {}): DocsGapRow => ({
   key: '/install/docker',
   name: 'Installing on Docker',
+  source: 'Core docs',
   expected_gaps: 6.2,
   turns: 31,
   rate: 0.2,
@@ -46,11 +47,11 @@ describe('docsGapsCsv', () => {
     const [header, line] = parse(csv);
     expect(header).toBe(DOCS_GAPS_CSV_HEADER.join(','));
     expect(header).toBe(
-      'group,key,gaps,gaps_low,gaps_high,questions,share,share_low,share_high,previous_gaps,example_questions',
+      'group,key,name,source,gaps,gaps_low,gaps_high,questions,share,share_low,share_high,previous_gaps,example_questions',
     );
     // Unformatted numbers; the ranges are the share's bounds times questions.
     expect(line).toBe(
-      'page,/install/docker,6.2,3.41,10.23,31,0.2,0.11,0.33,4,"How do I set the port? | Port, please"',
+      'page,/install/docker,Installing on Docker,Core docs,6.2,3.41,10.23,31,0.2,0.11,0.33,4,"How do I set the port? | Port, please"',
     );
   });
 

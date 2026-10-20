@@ -4082,7 +4082,7 @@
     },
     "/api/get_docs_gaps": {
       "post": {
-        "description": "Docs gaps: answers that fell short because the docs do not cover the question, as expected counts (sums of the decision model's probabilities) per group, with the group's rate over its answers and a 95% interval, the window just before for the trend, and up to five example questions (gaps at even odds or better). Groups with under half an expected gap are left out; key null means no source was retrieved.",
+        "description": "Docs gaps: answers that fell short because the docs do not cover the question, as expected counts (sums of the decision model's probabilities) per group, with the group's rate over its answers and a 95% interval, the window just before for the trend, and up to five example questions (gaps at even odds or better). Groups with under half an expected gap are left out; key null means no source was retrieved. previous_labelled counts the labelled answers in the window before, so a group with no earlier gaps can be told from a window that was never labelled; by page, each row's source names the source most of its answers retrieved the page from (null if unknown).",
         "operationId": "post_get_docs_gaps",
         "parameters": [
           {

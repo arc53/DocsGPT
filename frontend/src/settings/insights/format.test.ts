@@ -9,6 +9,7 @@ import {
   insightsState,
   optionBars,
   optionName,
+  pageNames,
   shareOfDay,
   showsFigures,
   weakLanguages,
@@ -241,5 +242,69 @@ describe('gapChange', () => {
     expect(gapChange(6.2, 4)).toEqual({ kind: 'up', delta: 2 });
     expect(gapChange(2, 3.4)).toEqual({ kind: 'down', delta: 1 });
     expect(gapChange(0.2, 0)).toEqual({ kind: 'none' });
+  });
+
+  it('has no change while the previous period was not labelled', () => {
+    expect(gapChange(3.2, 0, false)).toEqual({ kind: 'noEarlier' });
+    expect(gapChange(6.2, 4, false)).toEqual({ kind: 'noEarlier' });
+    expect(gapChange(3.2, 0, true)).toEqual({ kind: 'new' });
+  });
+});
+
+describe('pageNames', () => {
+  const page = (name: string | null, source: string | null = 'Docs') => ({
+    key: name ? `https://x/${name.length}` : null,
+    name,
+    source,
+  });
+
+  it('strips the site tail every named row shares', () => {
+    expect(
+      pageNames([
+        page('App Configuration | DocsGPT Docs'),
+        page('Chat Widget | DocsGPT Docs', 'Other'),
+        page(null, null),
+      ]),
+    ).toEqual(['App Configuration', 'Chat Widget', null]);
+  });
+
+  it('takes the longest shared tail, by any of the separators', () => {
+    expect(
+      pageNames([page('Install | Guide · Docs'), page('Run | Guide · Docs')]),
+    ).toEqual(['Install', 'Run']);
+    expect(
+      pageNames([page('A | Setup — Docs'), page('B | Usage — Docs')]),
+    ).toEqual(['A | Setup', 'B | Usage']);
+    expect(pageNames([page('A – Docs'), page('B – Docs')])).toEqual(['A', 'B']);
+  });
+
+  it('needs at least two rows, and never strips a name to nothing', () => {
+    expect(pageNames([page('Upgrading | DocsGPT Docs')])).toEqual([
+      'Upgrading | DocsGPT Docs',
+    ]);
+    expect(pageNames([page('Docs | Site'), page('Site')])).toEqual([
+      'Docs | Site',
+      'Site',
+    ]);
+  });
+
+  it('falls back to each source when the rows share no tail', () => {
+    expect(
+      pageNames([
+        page('Install | Core', 'Core'),
+        page('Deploy | Core', 'Core'),
+        page('Upgrade — Old site', 'Old'),
+        page('Lone · Third', 'Third'),
+      ]),
+    ).toEqual(['Install', 'Deploy', 'Upgrade — Old site', 'Lone · Third']);
+  });
+
+  it('leaves a page named by its URL alone, and does not count it', () => {
+    const url = { key: 'https://x/a', name: 'https://x/a', source: 'Docs' };
+    expect(pageNames([page('A | Docs'), page('B | Docs'), url])).toEqual([
+      'A',
+      'B',
+      'https://x/a',
+    ]);
   });
 });

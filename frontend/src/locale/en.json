@@ -815,7 +815,8 @@
           "new": "New",
           "none": "No change",
           "upLabel": "Up {{formatted}} from the previous period",
-          "downLabel": "Down {{formatted}} from the previous period"
+          "downLabel": "Down {{formatted}} from the previous period",
+          "noEarlier": "No earlier data"
         },
         "noPage": "No page retrieved",
         "openRow": "Show examples for {{name}}",

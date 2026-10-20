@@ -813,7 +813,8 @@
           "new": "新增",
           "none": "沒有變化",
           "upLabel": "比上一期增加 {{formatted}} 個",
-          "downLabel": "比上一期減少 {{formatted}} 個"
+          "downLabel": "比上一期減少 {{formatted}} 個",
+          "noEarlier": "暫無先前資料"
         },
         "noPage": "找不到頁面",
         "openRow": "查看 {{name}} 的範例",

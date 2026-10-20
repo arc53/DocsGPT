@@ -845,7 +845,8 @@
           "new": "Nouveau",
           "none": "Aucune évolution",
           "upLabel": "{{formatted}} de plus que la période précédente",
-          "downLabel": "{{formatted}} de moins que la période précédente"
+          "downLabel": "{{formatted}} de moins que la période précédente",
+          "noEarlier": "Aucune donnée antérieure"
         },
         "noPage": "Aucune page trouvée",
         "openRow": "Voir les exemples pour {{name}}",

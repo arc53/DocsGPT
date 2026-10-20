@@ -1059,7 +1059,10 @@ class GetDocsGaps(Resource):
             "expected counts (sums of the decision model's probabilities) per group, with the "
             "group's rate over its answers and a 95% interval, the window just before for the "
             "trend, and up to five example questions (gaps at even odds or better). Groups with "
-            "under half an expected gap are left out; key null means no source was retrieved."
+            "under half an expected gap are left out; key null means no source was retrieved. "
+            "previous_labelled counts the labelled answers in the window before, so a group with no "
+            "earlier gaps can be told from a window that was never labelled; by page, each row's "
+            "source names the source most of its answers retrieved the page from (null if unknown)."
         )
     )
     def post(self):
@@ -1081,7 +1084,7 @@ class GetDocsGaps(Resource):
                 jsonify({"success": False, "message": "Invalid option"}), 400
             )
         start_date, end_date, _bucket_unit, _pg_fmt = window
-        result = {"success": True, "enabled": False, "group_by": group_by, "rows": []}
+        result = {"success": True, "enabled": False, "group_by": group_by, "previous_labelled": 0, "rows": []}
 
         try:
             with db_readonly() as conn:
@@ -1096,18 +1099,23 @@ class GetDocsGaps(Resource):
                 scope = _label_scope(user, api_key, agent_pg_id)
                 repo = ConversationLabelsRepository(conn)
                 schema_hash = analytics_schema.SCHEMA_HASH
+                previous_start = _previous_start(start_date, end_date)
                 groups = repo.gap_groups(
                     group_by, scope, schema_hash, start_date, end_date,
-                    _previous_start(start_date, end_date), limit, _MIN_GROUP_GAPS,
+                    previous_start, limit, _MIN_GROUP_GAPS,
+                )
+                result["previous_labelled"] = repo.gap_labelled(
+                    scope, schema_hash, previous_start, start_date
                 )
                 examples = repo.gap_examples(
                     group_by, scope, schema_hash, start_date, end_date,
                     [group["key"] for group in groups],
                     settings.ANALYTICS_FILTER_MIN_PROBABILITY, _GAP_EXAMPLES,
                 ) if groups else []
+                source_ids = {"source": "key", "page": "source_id"}.get(group_by)
                 names = (
-                    repo.source_names(group["key"] for group in groups)
-                    if group_by == "source" else {}
+                    repo.source_names(group[source_ids] for group in groups)
+                    if source_ids else {}
                 )
 
             by_key: dict = {}
@@ -1126,6 +1134,7 @@ class GetDocsGaps(Resource):
                     group,
                     by_key.get(group["key"], []),
                     names.get(group["key"], group["key"]) if group_by == "source" else group["name"],
+                    names.get(group["source_id"]) if group_by == "page" else None,
                 )
                 for group in groups
             ]

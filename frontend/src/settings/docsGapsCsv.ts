@@ -8,6 +8,8 @@ import type { DocsGapRow, DocsGapsGroup } from './types';
 export const DOCS_GAPS_CSV_HEADER = [
   'group',
   'key',
+  'name',
+  'source',
   'gaps',
   'gaps_low',
   'gaps_high',
@@ -49,6 +51,8 @@ export function docsGapsCsv(
     ...rows.map((row) => [
       groupBy,
       row.key ?? '',
+      row.name ?? '',
+      row.source ?? '',
       plain(row.expected_gaps),
       plain(row.low * row.turns),
       plain(row.high * row.turns),

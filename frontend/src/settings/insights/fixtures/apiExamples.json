@@ -500,6 +500,7 @@
   "gaps": {
     "enabled": true,
     "group_by": "topic",
+    "previous_labelled": 4,
     "rows": [
       {
         "examples": [
@@ -525,6 +526,7 @@
         "name": "installation",
         "previous_expected": 0.0,
         "rate": 0.72,
+        "source": null,
         "turns": 2
       }
     ],

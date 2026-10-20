@@ -365,6 +365,8 @@ export type DocsGapExample = {
 export type DocsGapRow = {
   key: string | null;
   name: string | null;
+  /** By page: the source the page came from; null otherwise or when unknown. */
+  source: string | null;
   expected_gaps: number;
   turns: number;
   rate: number;

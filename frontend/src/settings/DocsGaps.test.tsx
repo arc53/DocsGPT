@@ -43,6 +43,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const row = (overrides: Partial<DocsGapRow> = {}): DocsGapRow => ({
   key: '/install/docker',
   name: 'Installing on Docker',
+  source: null,
   expected_gaps: 6.2,
   turns: 31,
   rate: 0.2,
@@ -64,7 +65,13 @@ const row = (overrides: Partial<DocsGapRow> = {}): DocsGapRow => ({
 const respond = (body: object) =>
   getDocsGaps.mockResolvedValue({
     ok: true,
-    json: () => Promise.resolve({ success: true, enabled: true, ...body }),
+    json: () =>
+      Promise.resolve({
+        success: true,
+        enabled: true,
+        previous_labelled: 40,
+        ...body,
+      }),
   });
 
 describe('DocsGaps', () => {
@@ -197,6 +204,132 @@ describe('DocsGaps', () => {
     expect(tiles[0].textContent).not.toContain('–');
   });
 
+  it('colours only the arrows; New, numbers and no change stay plain', async () => {
+    respond({
+      rows: [
+        row(),
+        row({ key: '/b', expected_gaps: 2, previous_expected: 4 }),
+        row({ key: '/c', expected_gaps: 3, previous_expected: 0 }),
+        row({ key: '/d', expected_gaps: 3, previous_expected: 3 }),
+      ],
+    });
+    await render();
+    const change = (index: number) =>
+      container.querySelectorAll('tbody tr')[index].querySelectorAll('td')[3];
+    expect(change(0).querySelector('svg')!.getAttribute('class')).toContain(
+      'text-destructive',
+    );
+    expect(change(1).querySelector('svg')!.getAttribute('class')).toContain(
+      'text-success',
+    );
+    for (const index of [0, 1]) {
+      const label = change(index).firstElementChild!;
+      expect(label.className).not.toMatch(/text-(destructive|success)/);
+    }
+    expect(change(2).textContent).toBe('settings.analytics.gaps.change.new');
+    expect(change(2).firstElementChild!.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(change(2).innerHTML).not.toContain('text-warning');
+    expect(change(3).firstElementChild!.className).toContain(
+      'text-muted-foreground',
+    );
+  });
+
+  it('shows a muted dash while the previous period has no labelled data', async () => {
+    respond({ previous_labelled: 0, rows: [row()] });
+    await render();
+    const cell = container.querySelectorAll('tbody tr td')[3];
+    expect(cell.textContent).toBe('—settings.analytics.gaps.change.noEarlier');
+    expect(cell.querySelector('[aria-hidden="true"]')!.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(cell.querySelector('.sr-only')!.textContent).toBe(
+      'settings.analytics.gaps.change.noEarlier',
+    );
+    // The phone tile drops the segment; the panel's previous period is a dash.
+    const tile = container.querySelector('ul.lg\\:hidden > li')!;
+    expect(tile.textContent).not.toContain('noEarlier');
+    expect(tile.textContent).not.toContain('upLabel');
+    await act(async () =>
+      container.querySelector<HTMLTableRowElement>('tbody tr')!.click(),
+    );
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(
+      Array.from(dialog.querySelectorAll('dd')).map((dd) => dd.textContent)[2],
+    ).toBe('—');
+  });
+
+  const siteRows = (sources: (string | null)[]) =>
+    sources.map((source, index) =>
+      row({
+        key: `https://docs.example/p${index}`,
+        name: `Page ${index} | Example Docs`,
+        source,
+      }),
+    );
+
+  it('strips the shared site tail and titles a row with its shown name', async () => {
+    respond({ rows: siteRows(['Core', 'Core']) });
+    await render();
+    const name = container.querySelector('tbody tr td span')!;
+    expect(name.textContent).toBe('Page 0');
+    expect(name.getAttribute('title')).toBe('Page 0');
+    // One source on an agent: no source line.
+    expect(container.querySelector('tbody tr td')!.textContent).toBe('Page 0');
+    const tile = container.querySelector('ul.lg\\:hidden > li')!;
+    expect(tile.querySelector('[title]')!.getAttribute('title')).toBe('Page 0');
+    expect(tile.textContent).not.toContain('Core');
+  });
+
+  it("names the source under the page when an agent's rows name several", async () => {
+    respond({ rows: siteRows(['Core', 'Old docs']) });
+    await render();
+    const cell = container.querySelectorAll('tbody tr')[1].querySelector('td')!;
+    const lines = cell.querySelectorAll('span');
+    expect(lines[0].textContent).toBe('Page 1');
+    expect(lines[1].textContent).toBe('Old docs');
+    expect(lines[1].className).toContain('text-muted-foreground');
+    expect(lines[1].className).toContain('text-xs');
+    // The phone tile ends its meta line with the source.
+    const meta = container
+      .querySelectorAll('ul.lg\\:hidden > li')[1]
+      .querySelectorAll('button > div')[1];
+    expect(meta.lastElementChild!.textContent).toBe('·Old docs');
+  });
+
+  it('always names the source in Settings, and opens a page with its source and URL', async () => {
+    respond({ rows: siteRows(['Core', 'Core']) });
+    await render({ agentId: undefined });
+    const cell = container.querySelector('tbody tr td')!;
+    expect(cell.textContent).toBe('Page 0Core');
+    await act(async () =>
+      container.querySelector<HTMLTableRowElement>('tbody tr')!.click(),
+    );
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('h2')!.textContent).toBe('Page 0');
+    const description = dialog.querySelector(
+      '[data-slot="sheet-description"]',
+    )!;
+    expect(description.textContent).toBe('Corehttps://docs.example/p0');
+    expect(description.querySelector('.font-mono')!.textContent).toBe(
+      'https://docs.example/p0',
+    );
+  });
+
+  it('keeps the group name as the panel description by source', async () => {
+    localStorage.setItem('DocsGPTDocsGapsGroup', 'source');
+    respond({ rows: [row({ key: 's1', name: 'Core', source: null })] });
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLTableRowElement>('tbody tr')!.click(),
+    );
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(
+      dialog.querySelector('[data-slot="sheet-description"]')!.textContent,
+    ).toBe('settings.analytics.gaps.groups.source');
+  });
+
   it('opens a group in a side panel whose examples link into Logs', async () => {
     respond({ rows: [row()] });
     await render();
@@ -229,7 +362,7 @@ describe('DocsGaps', () => {
     )!;
     await act(async () => exportButton.click());
     const [text, fileName] = downloadCsv.mock.calls[0];
-    expect(text).toContain('page,/install/docker,6.2');
+    expect(text).toContain('page,/install/docker,Installing on Docker,,6.2');
     expect(fileName).toMatch(
       /^docs-gaps-fintech-bot-page-last_30_days-\d{4}-\d{2}-\d{2}\.csv$/,
     );

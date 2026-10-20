@@ -721,10 +721,11 @@ class ConversationLabelsRepository:
     def _gaps_cte(self, group_by: str, scope: Scope, schema_hash: str, params: Dict[str, Any]) -> str:
         """SQL: one row per gap turn and group in ``[:prev_start, :end]``, with its share of the group.
 
-        Columns: ``key``, ``name``, ``message_id``, ``conversation_id``, ``occurred_at``, ``model_version``,
-        ``current`` (in ``[:start, :end]``), ``gap`` (the turn's ``docs missing`` probability), ``weight`` (its
-        share of the group: its effective-topic probability, else 1), ``p`` (``gap * weight``) and ``usual``
-        (the group is the turn's most likely one).
+        Columns: ``key``, ``name``, ``source_id`` (the turn's first stored source; ``NULL`` by topic),
+        ``message_id``, ``conversation_id``, ``occurred_at``, ``model_version``, ``current`` (in
+        ``[:start, :end]``), ``gap`` (the turn's ``docs missing`` probability), ``weight`` (its share of the group:
+        its effective-topic probability, else 1), ``p`` (``gap * weight``) and ``usual`` (the group is the turn's
+        most likely one).
         """
         params["schema_hash"] = schema_hash
         where = (f"{scope.labels('g', params)} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash"
@@ -733,7 +734,7 @@ class ConversationLabelsRepository:
                   " (g.probabilities->>'docs missing')::float8 AS gap")
         if group_by == "topic":
             return f"""
-                SELECT t.key, t.key AS name, {common}, t.value::float8 AS weight,
+                SELECT t.key, t.key AS name, NULL::text AS source_id, {common}, t.value::float8 AS weight,
                        (g.probabilities->>'docs missing')::float8 * t.value::float8 AS p, te.top = t.key AS usual
                 FROM conversation_labels g
                 JOIN conversation_labels te
@@ -744,7 +745,8 @@ class ConversationLabelsRepository:
             """
         key, name = _GAP_KEYS[group_by]
         return f"""
-            SELECT {key} AS key, {name} AS name, {common}, 1.0::float8 AS weight,
+            SELECT {key} AS key, {name} AS name, {_GAP_KEYS["source"][0]} AS source_id, {common},
+                   1.0::float8 AS weight,
                    (g.probabilities->>'docs missing')::float8 AS p, true AS usual
             FROM conversation_labels g
             LEFT JOIN conversation_messages m ON m.id = g.message_id
@@ -764,8 +766,9 @@ class ConversationLabelsRepository:
             min_expected: Groups with fewer expected gaps are left out.
 
         Returns:
-            ``key`` (``None``: no source retrieved), ``name``, ``expected``, ``turns`` (the group's summed
-            weights), ``previous`` and ``versions`` (the models of its rows).
+            ``key`` (``None``: no source retrieved), ``name``, ``source_id`` (the source most of its turns in the
+            window retrieved it from; ``None`` by topic or when none was stored), ``expected``, ``turns`` (the
+            group's summed weights), ``previous`` and ``versions`` (the models of its rows).
         """
         params: Dict[str, Any] = {"start": start, "end": end, "prev_start": previous_start, "limit": int(limit),
                                   "min_expected": float(min_expected)}
@@ -775,6 +778,7 @@ class ConversationLabelsRepository:
                 f"""
                 WITH g AS ({cte})
                 SELECT key, MAX(name) AS name,
+                       MODE() WITHIN GROUP (ORDER BY source_id) FILTER (WHERE current) AS source_id,
                        COALESCE(SUM(p) FILTER (WHERE current), 0) AS expected,
                        COALESCE(SUM(weight) FILTER (WHERE current), 0) AS turns,
                        COALESCE(SUM(p) FILTER (WHERE NOT current), 0) AS previous,
@@ -789,6 +793,35 @@ class ConversationLabelsRepository:
             params,
         )
         return [dict(row._mapping) for row in result.fetchall()]
+
+    def gap_labelled(self, scope: Scope, schema_hash: str, start: datetime.datetime,
+                     end: datetime.datetime) -> int:
+        """Labelled turns (``gap_type`` rows) in ``[start, end)``.
+
+        Tells a window with no docs gaps from one that was never labelled, so a group's trend against it can
+        read "no earlier data" instead of "new".
+
+        Args:
+            scope: Whose labels.
+            schema_hash: The running label schema.
+            start: The window's start.
+            end: The window's end, left out (the next window's start).
+
+        Returns:
+            The count of the window's ``gap_type`` rows.
+        """
+        params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end}
+        where = scope.labels("g", params)
+        return int(self._conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*) FROM conversation_labels g
+                WHERE {where} AND g.label = 'gap_type' AND g.schema_hash = :schema_hash
+                  AND g.occurred_at >= :start AND g.occurred_at < :end
+                """
+            ),
+            params,
+        ).scalar() or 0)
 
     def gap_examples(
         self, group_by: str, scope: Scope, schema_hash: str, start, end, keys: Iterable[Optional[str]],
@@ -831,7 +864,7 @@ class ConversationLabelsRepository:
         return [dict(row._mapping) for row in result.fetchall()]
 
     def source_names(self, source_ids: Iterable[str]) -> Dict[str, str]:
-        """``{id: name}`` of the given sources (UUIDs only), for the docs-gap source groups."""
+        """``{id: name}`` of the given sources (UUIDs only), for the docs-gap source and page groups."""
         from docsgpt.storage.db.base_repository import looks_like_uuid
 
         ids = sorted({str(i) for i in source_ids if i and looks_like_uuid(str(i))})

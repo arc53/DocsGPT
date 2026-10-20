@@ -815,7 +815,8 @@
           "new": "Neu",
           "none": "Keine Änderung",
           "upLabel": "{{formatted}} mehr als im vorigen Zeitraum",
-          "downLabel": "{{formatted}} weniger als im vorigen Zeitraum"
+          "downLabel": "{{formatted}} weniger als im vorigen Zeitraum",
+          "noEarlier": "Keine früheren Daten"
         },
         "noPage": "Keine Seite gefunden",
         "openRow": "Beispiele für {{name}} anzeigen",

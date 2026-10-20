@@ -260,13 +260,86 @@ export function capitalize(text: string, locale = intlLocale()): string {
 }
 
 export type GapChange =
-  { kind: 'new' } | { kind: 'none' } | { kind: 'up' | 'down'; delta: number };
+  | { kind: 'noEarlier' }
+  | { kind: 'new' }
+  | { kind: 'none' }
+  | { kind: 'up' | 'down'; delta: number };
 
-/** How a docs-gap group moved against the previous period of the same length. */
-export function gapChange(expected: number, previous: number): GapChange {
+/**
+ * How a docs-gap group moved against the previous period of the same length.
+ * While that period has no labelled answers there is nothing to compare
+ * with (`noEarlier`), so no group reads as new.
+ */
+export function gapChange(
+  expected: number,
+  previous: number,
+  previousLabelled = true,
+): GapChange {
+  if (!previousLabelled) return { kind: 'noEarlier' };
   if (Math.round(previous) === 0 && Math.round(expected) >= 1)
     return { kind: 'new' };
   const delta = Math.round(expected - previous);
   if (delta === 0) return { kind: 'none' };
   return { kind: delta > 0 ? 'up' : 'down', delta: Math.abs(delta) };
+}
+
+/** What a page title's site tail starts with ("Install | DocsGPT Docs"). */
+const TAIL_SEPARATORS = [' | ', ' – ', ' — ', ' · '];
+
+/**
+ * The longest separator-led tail every name ends with, leaving each name
+ * some text; '' for fewer than two names or none shared.
+ */
+function sharedTail(names: string[]): string {
+  if (names.length < 2) return '';
+  const [first] = names;
+  let best = '';
+  for (const separator of TAIL_SEPARATORS) {
+    for (
+      let at = first.indexOf(separator);
+      at > 0;
+      at = first.indexOf(separator, at + 1)
+    ) {
+      const tail = first.slice(at);
+      if (
+        tail.length > best.length &&
+        names.every((name) => name.length > tail.length && name.endsWith(tail))
+      )
+        best = tail;
+    }
+  }
+  return best;
+}
+
+type PageRow = {
+  key: string | null;
+  name: string | null;
+  source: string | null;
+};
+
+/**
+ * Docs-gap page names without the site tail they all repeat
+ * (" | DocsGPT Docs"): the tail every titled row shares, else the tail the
+ * titled rows of each source share. A page named by its URL (no title) is
+ * left as it is and does not count.
+ */
+export function pageNames(rows: PageRow[]): (string | null)[] {
+  const titled = (row: PageRow) => Boolean(row.name) && row.name !== row.key;
+  const names = rows.map((row) => row.name);
+  const strip = (indexes: number[]) => {
+    const tail = sharedTail(indexes.map((index) => names[index] as string));
+    if (!tail) return false;
+    for (const index of indexes)
+      names[index] = (names[index] as string).slice(0, -tail.length);
+    return true;
+  };
+  const all = rows.flatMap((row, index) => (titled(row) ? [index] : []));
+  if (strip(all)) return names;
+  const bySource = new Map<string | null, number[]>();
+  for (const index of all) {
+    const source = rows[index].source;
+    bySource.set(source, [...(bySource.get(source) ?? []), index]);
+  }
+  for (const indexes of bySource.values()) strip(indexes);
+  return names;
 }

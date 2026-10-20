@@ -813,7 +813,8 @@
           "new": "新增",
           "none": "无变化",
           "upLabel": "比上一周期增加 {{formatted}} 个",
-          "downLabel": "比上一周期减少 {{formatted}} 个"
+          "downLabel": "比上一周期减少 {{formatted}} 个",
+          "noEarlier": "暂无先前数据"
         },
         "noPage": "未找到页面",
         "openRow": "查看 {{name}} 的示例",

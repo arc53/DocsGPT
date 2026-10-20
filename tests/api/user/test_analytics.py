@@ -1600,6 +1600,56 @@ class TestDocsGaps:
         assert example["timestamp"].endswith("Z")
         assert rows["docs/auth.md"]["examples"] == []
         assert rows[None]["name"] is None
+        # no stored source_id: no source name
+        assert page["source"] is None
+        # the window before holds the 9-day-old conversation's two labelled turns
+        assert data["previous_labelled"] == 2
+
+    def test_page_groups_name_their_majority_source(self, app, pg_conn, analytics_on):
+        import uuid
+
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        core = SourcesRepository(pg_conn).create("Core pages", user_id="u-ps")
+        other = SourcesRepository(pg_conn).create("Old docs", user_id="u-ps")
+
+        def page(source_id, url="https://docs.example/install"):
+            return [{"title": "Install | Example Docs", "source": url, "source_id": source_id, "text": "x"}]
+
+        # one URL indexed by two sources is one row; the source most of its turns came from names it
+        _labelled_conversation(pg_conn, "u-ps", sources=page(str(core["id"])), gap={"docs missing": 0.9})
+        _labelled_conversation(pg_conn, "u-ps", sources=page(str(core["id"])), gap={"docs missing": 0.9})
+        _labelled_conversation(pg_conn, "u-ps", sources=page(str(other["id"])), gap={"docs missing": 0.9})
+        # a deleted source has no name back
+        _labelled_conversation(pg_conn, "u-ps", sources=page(str(uuid.uuid4()), "https://docs.example/gone"),
+                               gap={"docs missing": 0.9})
+        data = _gaps(app, pg_conn, "u-ps", {"group_by": "page"}).json
+        rows = {row["key"]: row for row in data["rows"]}
+        assert rows["https://docs.example/install"]["source"] == "Core pages"
+        assert rows["https://docs.example/install"]["name"] == "Install | Example Docs"
+        assert rows["https://docs.example/gone"]["source"] is None
+        # nothing labelled in the window before
+        assert data["previous_labelled"] == 0
+        # the other groupings carry no source line
+        assert all(row["source"] is None for row in _gaps(app, pg_conn, "u-ps", {"group_by": "source"}).json["rows"])
+
+    def test_gap_groups_select_the_page_source_id(self, pg_conn):
+        import uuid
+
+        from docsgpt.analytics import schema
+        from docsgpt.storage.db.repositories.conversation_labels import ConversationLabelsRepository, Scope
+
+        a, b = str(uuid.uuid4()), str(uuid.uuid4())
+        for source_id in (a, b, a):
+            _labelled_conversation(pg_conn, "u-sid", gap={"docs missing": 0.9}, sources=[
+                {"title": "Install", "source": "docs/install.md", "source_id": source_id, "text": "x"}])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        repo = ConversationLabelsRepository(pg_conn)
+        args = (Scope(user_id="u-sid"), schema.SCHEMA_HASH, now - datetime.timedelta(days=7), now,
+                now - datetime.timedelta(days=14), 10, 0.5)
+        assert [(g["key"], g["source_id"]) for g in repo.gap_groups("page", *args)] == [("docs/install.md", a)]
+        assert repo.gap_labelled(Scope(user_id="u-sid"), schema.SCHEMA_HASH, now - datetime.timedelta(days=7),
+                                 now) == 6
 
     def test_groups_by_source_name(self, app, pg_conn, analytics_on):
         from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -1632,7 +1682,8 @@ class TestDocsGaps:
         assert len(shared["rows"]) == 1
         assert _gaps(app, pg_conn, "owner-a", {}).json["rows"] == []
         unknown = _gaps(app, pg_conn, "owner-a", {"api_key_id": str(_uuid.uuid4())}).json
-        assert unknown == {"success": True, "enabled": False, "group_by": "page", "rows": []}
+        assert unknown == {"success": True, "enabled": False, "group_by": "page", "previous_labelled": 0,
+                           "rows": []}
         _labelled_conversation(pg_conn, "u-other-hash", schema_hash="000000000000", gap={"docs missing": 0.9})
         assert _gaps(app, pg_conn, "u-other-hash", {}).json["rows"] == []
         for body in ({"group_by": "folder"}, {"limit": 51}, {"limit": "x"}, {"filter_option": "bogus"}):

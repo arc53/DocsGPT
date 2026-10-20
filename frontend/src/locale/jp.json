@@ -813,7 +813,8 @@
           "new": "新規",
           "none": "変化なし",
           "upLabel": "前の期間から {{formatted}} 件増加",
-          "downLabel": "前の期間から {{formatted}} 件減少"
+          "downLabel": "前の期間から {{formatted}} 件減少",
+          "noEarlier": "以前のデータなし"
         },
         "noPage": "ページが見つかりませんでした",
         "openRow": "{{name}} の例を表示",

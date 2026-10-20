@@ -6,7 +6,7 @@ import {
   Download,
   Minus,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Link, useLocation } from 'react-router-dom';
@@ -47,6 +47,7 @@ import {
   formatShare,
   gapChange,
   NONE_OF_THESE,
+  pageNames,
 } from './insights/format';
 import { logsDrilldownPath, revealElement } from './logsLinks';
 import type { DocsGapRow, DocsGapsGroup } from './types';
@@ -108,7 +109,9 @@ export default function DocsGaps({
     status: 'loading' | 'error' | 'ready';
     enabled: boolean;
     rows: DocsGapRow[];
-  }>({ status: 'loading', enabled: true, rows: [] });
+    /** The previous period has labelled answers to compare with. */
+    previousLabelled: boolean;
+  }>({ status: 'loading', enabled: true, rows: [], previousLabelled: false });
   const [reloadKey, setReloadKey] = useState(0);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const requestId = useRef(0);
@@ -138,6 +141,7 @@ export default function DocsGaps({
           success?: boolean;
           enabled?: boolean;
           rows?: DocsGapRow[];
+          previous_labelled?: number;
         }) => {
           if (id !== requestId.current) return;
           if (!body?.success) throw new Error('docs gaps');
@@ -145,12 +149,18 @@ export default function DocsGaps({
             status: 'ready',
             enabled: body.enabled !== false,
             rows: body.rows ?? [],
+            previousLabelled: (body.previous_labelled ?? 0) > 0,
           });
         },
       )
       .catch(() => {
         if (id === requestId.current)
-          setState({ status: 'error', enabled: true, rows: [] });
+          setState({
+            status: 'error',
+            enabled: true,
+            rows: [],
+            previousLabelled: false,
+          });
       });
   }, [agentId, filterOption, groupBy, token, reloadKey]);
 
@@ -165,19 +175,32 @@ export default function DocsGaps({
 
   if (state.status === 'ready' && !state.enabled) return null;
 
-  const { rows } = state;
+  const { rows, previousLabelled } = state;
   const openRow = openIndex !== null ? rows[openIndex] : undefined;
   const groupLabel = t(`settings.analytics.gaps.groups.${groupBy}`);
+  const byPage = groupBy === 'page';
+  // Page titles without the site tail they all repeat (" | DocsGPT Docs").
+  const pages = byPage ? pageNames(rows) : [];
+  // The page's source as a second line: always across agents, where a page
+  // alone does not say where it is from; on an agent only once its rows
+  // come from more than one source.
+  const showSource =
+    byPage &&
+    (!agentId ||
+      new Set(rows.flatMap((row) => (row.source ? [row.source] : []))).size >
+        1);
+  const sourceOf = (row: DocsGapRow) => (showSource ? row.source : null);
 
-  const nameOf = (row: DocsGapRow): string | null => {
-    const name = row.name || row.key;
+  const nameOf = (index: number): string | null => {
+    const row = rows[index];
+    const name = (byPage ? pages[index] : row.name) || row.key;
     if (!name) return null;
     return groupBy === 'topic' && name === NONE_OF_THESE
       ? t('settings.analytics.insights.panels.noneOfThese')
       : name;
   };
-  const displayName = (row: DocsGapRow) =>
-    nameOf(row) ?? t('settings.analytics.gaps.noPage');
+  const displayName = (index: number) =>
+    nameOf(index) ?? t('settings.analytics.gaps.noPage');
 
   const exportCsv = () =>
     downloadCsv(
@@ -289,7 +312,9 @@ export default function DocsGaps({
               </TableHead>
               <TableBody>
                 {rows.map((row, index) => {
-                  const name = nameOf(row);
+                  const name = nameOf(index);
+                  const shown = displayName(index);
+                  const source = sourceOf(row);
                   const prompt = row.examples[0]?.prompt;
                   return (
                     <TableRow
@@ -297,7 +322,7 @@ export default function DocsGaps({
                       selected={openIndex === index}
                       onClick={() => setOpenIndex(index)}
                       aria-label={t('settings.analytics.gaps.openRow', {
-                        name: displayName(row),
+                        name: shown,
                         interpolation: { escapeValue: false },
                       })}
                     >
@@ -307,10 +332,15 @@ export default function DocsGaps({
                             'block max-w-64 truncate',
                             name ? 'font-medium' : 'text-muted-foreground',
                           )}
-                          title={row.key ?? undefined}
+                          title={shown}
                         >
-                          {displayName(row)}
+                          {shown}
                         </span>
+                        {source && (
+                          <span className="text-muted-foreground block max-w-64 text-xs wrap-break-word">
+                            {source}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell
                         align="right"
@@ -328,6 +358,7 @@ export default function DocsGaps({
                         <GapChangeLabel
                           expected={row.expected_gaps}
                           previous={row.previous_expected}
+                          previousLabelled={previousLabelled}
                         />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -358,6 +389,8 @@ export default function DocsGaps({
           <ul className="flex flex-col gap-3 lg:hidden">
             {rows.map((row, index) => {
               const prompt = row.examples[0]?.prompt;
+              const shown = displayName(index);
+              const source = sourceOf(row);
               return (
                 <li key={`${row.key ?? ''}:${index}`}>
                   <Card variant="filled" interactive asChild className="w-full">
@@ -365,9 +398,9 @@ export default function DocsGaps({
                       <div className="flex w-full items-center gap-3">
                         <CardTitle
                           className="min-w-0 flex-1 truncate"
-                          title={row.key ?? undefined}
+                          title={shown}
                         >
-                          {displayName(row)}
+                          {shown}
                         </CardTitle>
                         <ChevronRight
                           aria-hidden
@@ -381,13 +414,17 @@ export default function DocsGaps({
                             formatted: formatEstimate(row.expected_gaps),
                           })}
                         </span>
-                        <span aria-hidden>·</span>
-                        <span>{shareText(row)}</span>
-                        <span aria-hidden>·</span>
-                        <GapChangeLabel
-                          expected={row.expected_gaps}
-                          previous={row.previous_expected}
-                        />
+                        <MetaSegment>{shareText(row)}</MetaSegment>
+                        {previousLabelled && (
+                          <MetaSegment>
+                            <GapChangeLabel
+                              expected={row.expected_gaps}
+                              previous={row.previous_expected}
+                              previousLabelled
+                            />
+                          </MetaSegment>
+                        )}
+                        {source && <MetaSegment>{source}</MetaSegment>}
                       </div>
                       {prompt && (
                         <CardDescription size="xs" className="line-clamp-2">
@@ -410,8 +447,19 @@ export default function DocsGaps({
         {openRow && (
           <>
             <PanelHeader
-              title={displayName(openRow)}
-              description={groupLabel}
+              title={displayName(openIndex as number)}
+              description={
+                byPage && openRow.key ? (
+                  <span className="flex flex-col gap-0.5">
+                    {openRow.source && <span>{openRow.source}</span>}
+                    <span className="font-mono text-xs wrap-anywhere">
+                      {openRow.key}
+                    </span>
+                  </span>
+                ) : (
+                  groupLabel
+                )
+              }
             />
             <PanelBody>
               <DescriptionList size="sm">
@@ -428,7 +476,9 @@ export default function DocsGaps({
                 <DescriptionItem
                   label={t('settings.analytics.gaps.panel.previous')}
                 >
-                  {formatEstimate(openRow.previous_expected)}
+                  {previousLabelled
+                    ? formatEstimate(openRow.previous_expected)
+                    : EMPTY_VALUE}
                 </DescriptionItem>
               </DescriptionList>
               {openRow.examples.length > 0 && (
@@ -486,22 +536,49 @@ export default function DocsGaps({
 }
 
 /**
- * The change from the previous period: "New", no change, or up / down by a
- * rounded count. More gaps is worse, so up is red and down is green; the
- * colour is only on the short label and its icon.
+ * One segment of a phone tile's meta line, with its own leading dot, so a
+ * wrap never leaves a dot at the end of a line.
+ */
+function MetaSegment({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-x-1.5">
+      <span aria-hidden>·</span>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The change from the previous period: a dash while that period has no
+ * labelled answers, "New", no change, or up / down by a rounded count. More
+ * gaps is worse, so the up arrow is red and the down arrow green; the text
+ * stays plain, so the number reads the same in every state.
  */
 function GapChangeLabel({
   expected,
   previous,
+  previousLabelled,
 }: {
   expected: number;
   previous: number;
+  previousLabelled: boolean;
 }) {
   const { t } = useTranslation();
-  const change = gapChange(expected, previous);
+  const change = gapChange(expected, previous, previousLabelled);
+  if (change.kind === 'noEarlier')
+    return (
+      <>
+        <span className="text-muted-foreground" aria-hidden>
+          {EMPTY_VALUE}
+        </span>
+        <span className="sr-only">
+          {t('settings.analytics.gaps.change.noEarlier')}
+        </span>
+      </>
+    );
   if (change.kind === 'new')
     return (
-      <span className="text-warning text-xs font-medium">
+      <span className="text-muted-foreground text-xs font-medium">
         {t('settings.analytics.gaps.change.new')}
       </span>
     );
@@ -518,13 +595,11 @@ function GapChangeLabel({
   const up = change.kind === 'up';
   const Icon = up ? ArrowUp : ArrowDown;
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-0.5 text-xs tabular-nums',
-        up ? 'text-destructive' : 'text-success',
-      )}
-    >
-      <Icon aria-hidden className="size-3" />
+    <span className="inline-flex items-center gap-0.5 text-xs tabular-nums">
+      <Icon
+        aria-hidden
+        className={cn('size-3', up ? 'text-destructive' : 'text-success')}
+      />
       <span aria-hidden>{up ? `+${formatted}` : `−${formatted}`}</span>
       <span className="sr-only">
         {t(
