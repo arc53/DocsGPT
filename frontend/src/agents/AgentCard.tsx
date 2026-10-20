@@ -40,6 +40,7 @@ import {
   sharedAgentPath,
 } from './paths';
 import { can } from '../utils/accessUtils';
+import { downloadBlob } from '../utils/browserUtils';
 import { canAgent } from './agentAccess';
 import { Agent } from './types';
 
@@ -233,15 +234,10 @@ export default function AgentCard({
         throw error;
       }
       const yamlText = await response.text();
-      const blob = new Blob([yamlText], { type: 'application/x-yaml' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${agent.slug || agent.name || 'agent'}.agent.yaml`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(
+        new Blob([yamlText], { type: 'application/x-yaml' }),
+        `${agent.slug || agent.name || 'agent'}.agent.yaml`,
+      );
     } catch (error) {
       console.error('Error:', error);
       setExportError(

@@ -29,6 +29,7 @@ import { Pagination } from '../components/ui/pagination';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { EmptyState } from '../components/ui/empty-state';
 import { selectToken } from '../preferences/preferenceSlice';
+import { downloadBlob } from '../utils/browserUtils';
 import {
   LoadError,
   UserIdentity,
@@ -233,15 +234,7 @@ export default function Activity() {
     try {
       const res = await adminService.exportActivity(filters, format, token);
       if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `docsgpt-activity.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(await res.blob(), `docsgpt-activity.${format}`);
     } finally {
       setExporting(false);
     }

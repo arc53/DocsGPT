@@ -3,6 +3,7 @@
  * are user text, so a cell that a spreadsheet would read as a formula is
  * defused with a leading apostrophe.
  */
+import { downloadBlob } from '../utils/browserUtils';
 import type { DocsGapRow, DocsGapsGroup } from './types';
 
 export const DOCS_GAPS_CSV_HEADER = [
@@ -99,14 +100,5 @@ export function docsGapsFileName({
 
 /** Hands the text to the browser as a file download. */
 export function downloadCsv(text: string, fileName: string): void {
-  const url = URL.createObjectURL(
-    new Blob([text], { type: 'text/csv;charset=utf-8' }),
-  );
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([text], { type: 'text/csv;charset=utf-8' }), fileName);
 }
