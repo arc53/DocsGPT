@@ -1,5 +1,6 @@
 import { envVar } from '@/env';
 import {
+  AsyncThunkPayloadCreator,
   createAsyncThunk,
   createListenerMiddleware,
   createSlice,
@@ -167,6 +168,25 @@ export function handleAbort() {
     abortController.abort();
     abortController = null;
   }
+}
+
+/**
+ * A thunk that streams into the chat. It gets the stream's signal; once it
+ * settles there is no stream left for Stop to close.
+ */
+function streamed<Arg, Result, Api>(
+  body: (arg: Arg, api: Api, signal: AbortSignal) => Promise<Result>,
+): (arg: Arg, api: Api) => Promise<Result> {
+  return async (arg, api) => {
+    if (abortController) abortController.abort();
+    const controller = new AbortController();
+    abortController = controller;
+    try {
+      return await body(arg, api, controller.signal);
+    } finally {
+      if (abortController === controller) abortController = null;
+    }
+  };
 }
 
 /** How long the chat's Stop waits for the server to take it before closing. */
@@ -339,14 +359,26 @@ export const loadConversation = createAsyncThunk<
   return { data, stale: false };
 });
 
-export const fetchAnswer = createAsyncThunk<
-  Answer,
-  { question: string; indx?: number; attachmentIds?: string[] }
->('fetchAnswer', async (arg, { dispatch, getState }) => {
+type FetchAnswerArgs = {
+  question: string;
+  indx?: number;
+  attachmentIds?: string[];
+};
+
+export const fetchAnswer = createAsyncThunk<Answer, FetchAnswerArgs>(
+  'fetchAnswer',
+  streamed(answerQuestion),
+);
+
+async function answerQuestion(
+  arg: FetchAnswerArgs,
+  {
+    dispatch,
+    getState,
+  }: Parameters<AsyncThunkPayloadCreator<Answer, FetchAnswerArgs>>[1],
+  signal: AbortSignal,
+): Promise<Answer> {
   const { question, indx } = arg;
-  if (abortController) abortController.abort();
-  abortController = new AbortController();
-  const { signal } = abortController;
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
@@ -768,7 +800,7 @@ export const fetchAnswer = createAsyncThunk<
     sources: [],
     tool_calls: [],
   };
-});
+}
 
 // Tail-polls the placeholder until terminal status, navigation away,
 // or hard timeout. First poll fires immediately so rows that are
@@ -883,21 +915,28 @@ export const tailInFlightMessage = createAsyncThunk<
   },
 );
 
-export const submitToolActions = createAsyncThunk<
-  void,
-  {
-    toolActions: {
-      call_id: string;
-      decision?: 'approved' | 'denied';
-      comment?: string;
-      result?: Record<string, any>;
-    }[];
-  }
->('submitToolActions', async ({ toolActions }, { dispatch, getState }) => {
-  if (abortController) abortController.abort();
-  abortController = new AbortController();
-  const { signal } = abortController;
+type SubmitToolActionsArgs = {
+  toolActions: {
+    call_id: string;
+    decision?: 'approved' | 'denied';
+    comment?: string;
+    result?: Record<string, any>;
+  }[];
+};
 
+export const submitToolActions = createAsyncThunk<void, SubmitToolActionsArgs>(
+  'submitToolActions',
+  streamed(sendToolActions),
+);
+
+async function sendToolActions(
+  { toolActions }: SubmitToolActionsArgs,
+  {
+    dispatch,
+    getState,
+  }: Parameters<AsyncThunkPayloadCreator<void, SubmitToolActionsArgs>>[1],
+  signal: AbortSignal,
+): Promise<void> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
   if (!conversationId) {
@@ -1015,7 +1054,7 @@ export const submitToolActions = createAsyncThunk<
     },
     idempotencyKey,
   );
-});
+}
 
 export const conversationSlice = createSlice({
   name: 'conversation',

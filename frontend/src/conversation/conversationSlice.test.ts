@@ -1044,6 +1044,19 @@ describe('stopAnswer', () => {
     expect(store.getState().conversation.status).toBe('loading');
   });
 
+  it('leaves a later polled answer loading when an earlier stream has ended', async () => {
+    vi.mocked(handleFetchAnswer).mockResolvedValue(null as never);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockRejectedValue(new Error('Stop failed: 409'));
+    const { store, answer } = running();
+    await answer;
+    // A continuation then streams in, followed by polling.
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
   it('leaves the status to a stream started while the stop was out', async () => {
     streamUntilClosed([]);
     let answer: () => void = () => undefined;
