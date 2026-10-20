@@ -400,6 +400,14 @@ def test_a_non_latin_name_is_kept_and_versions_on_resave(pg_engine, tmp_path, mo
     assert all(v["storage_path"].endswith(".docx") for v in versions)
 
 
+@pytest.mark.parametrize("name", ["report.docx", "Отчёт.docx", "Отчёт.док", "\u6587\u4ef6", "a.b.\u6587"])
+def test_storage_keys_are_ascii_whatever_the_name(name):
+    key = ac._storage_key("u", "a", 1, name)
+    assert key.isascii() and key.startswith("inputs/u/artifacts/a/v1/")
+    if name == "report.docx":
+        assert key.endswith("/report.docx")
+
+
 class _BigFileMgr(_FakeMgr):
     """A workspace where some files are over the backend's file cap."""
 

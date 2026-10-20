@@ -391,11 +391,21 @@ def _find_same_name_artifact(
 def _storage_key(user_id: str, artifact_id: str, version: int, filename: str) -> str:
     """Build the server-controlled storage key (``inputs/{user}/artifacts/{id}/v{n}/{file}``).
 
-    The key's filename is ASCII (``safe_filename``) whatever script the display name uses.
+    The key's filename is ASCII whatever script the display name uses.
     """
     # ``inputs/{user}/artifacts/...`` is the project storage-namespace convention
     # (matches attachments + spec §4); ``inputs/`` is the user's namespace root.
-    return f"inputs/{user_id}/artifacts/{artifact_id}/v{version}/{safe_filename(filename)}"
+    return f"inputs/{user_id}/artifacts/{artifact_id}/v{version}/{_storage_filename(filename)}"
+
+
+def _storage_filename(filename: str) -> str:
+    """An ASCII filename for a storage key; a non-ASCII extension is dropped."""
+    name = safe_filename(filename)
+    if name.isascii():
+        return name
+    # ``safe_filename`` keeps the original extension after its UUID stem.
+    stem, extension = os.path.splitext(name)
+    return stem if stem.isascii() and stem else safe_filename(None)
 
 
 def _set_version_storage_path(conn: Any, artifact_id: str, version: int, storage_path: str) -> None:
