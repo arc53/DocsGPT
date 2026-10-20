@@ -465,19 +465,16 @@ def _run_agent_headless(
                 # retract from, so the stored result is all there is.
                 answer_full = ""
                 thought = ""
-            continue
         # A workflow's work is its nodes: its tool calls stay in the engine's
         # execution log and its node agents own their LLMs, so neither
         # ``tool_calls`` nor the token tally below sees them. Counting
         # completed steps is the only evidence a quiet workflow ran at all.
-        if event.get("type") == "workflow_step":
+        elif event.get("type") == "workflow_step":
             if event.get("status") == "completed":
                 steps_completed += 1
-            continue
-        if event.get("type") == "tool_call":
+        elif event.get("type") == "tool_call":
             tool_since_text = True
-            continue
-        if "answer" in event:
+        elif "answer" in event:
             chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
             if chunk.strip():
                 tool_since_text = False
@@ -490,6 +487,7 @@ def _run_agent_headless(
             thought += str(event["thought"])
         elif isinstance(event.get("metadata"), dict):
             message_metadata.update(event["metadata"])
+        # After every event, a tool call's included: the next one may start another LLM round.
         if should_stop is not None and should_stop():
             stopped = True
             break

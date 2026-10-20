@@ -404,6 +404,28 @@ describe('conversation listener — a continuation starts in the open chat', () 
     expect(conversationService.getConversation).not.toHaveBeenCalled();
   });
 
+  it('drops the reload when the user starts an answer while it loads', async () => {
+    let release: (value: unknown) => void = () => {};
+    (conversationService.getConversation as unknown as Mock).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const store = makeStore('conv-1');
+    store.dispatch(
+      setConversation([{ prompt: 'new question', messageId: 'msg-local' }]),
+    );
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    store.dispatch(conversationSlice.actions.setStatus('loading'));
+    release({ ok: true, json: async () => LOADED });
+    await settle();
+    const state = store.getState().conversation;
+    expect(state.status).toBe('loading');
+    expect(state.queries).toHaveLength(1);
+    expect(state.queries[0].prompt).toBe('new question');
+  });
+
   it('leaves an answer the chat already shows alone', async () => {
     const store = makeStore('conv-1');
     store.dispatch(

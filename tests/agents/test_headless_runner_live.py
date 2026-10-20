@@ -62,3 +62,10 @@ class TestLiveHeadlessRun:
         assert outcome["stopped"] is True
         assert closed == [True]
         assert outcome["tool_calls"] == [{"call_id": "c1", "job_id": "j1"}]
+
+    def test_a_stop_after_a_tool_call_ends_the_run_before_the_next_round(self, monkeypatch):
+        events = [{"type": "tool_call", "data": {"call_id": "c1"}}, {"answer": "next round"}]
+        outcome, closed = _run(monkeypatch, events, should_stop=lambda: True)
+        assert outcome["stopped"] is True
+        assert outcome["answer"] == ""
+        assert closed == [True]

@@ -259,6 +259,9 @@ export type LoadConversationArgs = {
   // so its messages and agent card change in one render. Without it the
   // selected agent is left alone.
   resolveAgent?: (data: ConversationAgentFields) => Promise<Agent | null>;
+  // A refresh nobody asked for (an event): dropped when this tab starts
+  // streaming an answer before it lands, which it would otherwise overwrite.
+  unlessStreaming?: boolean;
 };
 
 let loadSeq = 0;
@@ -267,7 +270,7 @@ export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
 >('loadConversation', async (args, { dispatch, getState }) => {
-  const { id, force, resolveAgent } = args;
+  const { id, force, resolveAgent, unlessStreaming } = args;
   const seq = ++loadSeq;
   const state = getState() as RootState;
   const token = state.preference.token;
@@ -293,6 +296,12 @@ export const loadConversation = createAsyncThunk<
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.
   if (seq !== loadSeq) {
+    return { data: null, stale: true };
+  }
+  if (
+    unlessStreaming &&
+    (getState() as RootState).conversation.status === 'loading'
+  ) {
     return { data: null, stale: true };
   }
 
@@ -813,7 +822,13 @@ export const tailInFlightMessage = createAsyncThunk<
             conversationId
         ) {
           reloadedForGoneMessage.add(messageId);
-          dispatch(loadConversation({ id: conversationId, force: true }));
+          dispatch(
+            loadConversation({
+              id: conversationId,
+              force: true,
+              unlessStreaming: true,
+            }),
+          );
         }
         return;
       }
@@ -1620,7 +1635,11 @@ conversationListenerMiddleware.startListening({
         )
       ) {
         listenerApi.dispatch(
-          loadConversation({ id: conversationId, force: true }),
+          loadConversation({
+            id: conversationId,
+            force: true,
+            unlessStreaming: true,
+          }),
         );
       }
       await listNewConversation(
