@@ -41,10 +41,13 @@ class _RecordingEncoding:
 
 
 def _spy_encoding(monkeypatch):
+    """Record every cl100k encode, whether it goes through utils or the windowed counter."""
+    import docsgpt.parser.tokenization as tokenization_module
     import docsgpt.utils as utils_module
 
     encoding = _RecordingEncoding(get_encoding())
     monkeypatch.setattr(utils_module, "get_encoding", lambda: encoding)
+    monkeypatch.setattr(tokenization_module, "get_encoding", lambda: encoding)
     return encoding
 
 
@@ -301,13 +304,34 @@ class TestCountTokensDocs:
             doc = MagicMock()
             doc.page_content = content
             docs.append(doc)
-        expected = sum(num_tokens_from_string(content) for content in contents)
+        from docsgpt.parser.tokenization import count_tokens_windowed
+
+        expected = sum(count_tokens_windowed(content) for content in contents)
+        # Each doc is within one window, so the windowed count is the one-shot count.
+        assert expected == sum(num_tokens_from_string(content) for content in contents)
         encoding = _spy_encoding(monkeypatch)
         total = count_tokens_docs(docs)
         assert max(encoding.encode_lengths) == max(len(content) for content in contents)
         # Seams between docs can shift the total by a token each against a
         # joined count; that is fine for a display metric.
         assert total == expected
+
+    @pytest.mark.unit
+    def test_long_doc_is_counted_in_bounded_windows(self, monkeypatch):
+        # #3130: a chunk can hold many characters but few embedding tokens (a
+        # whitespace run the embedding tokenizer drops), so one doc can far
+        # exceed the window. Counting it in one encode is the unbounded cost.
+        import docsgpt.parser.tokenization as tokenization_module
+        from docsgpt.utils import count_tokens_docs
+
+        window = 256
+        monkeypatch.setattr(tokenization_module, "_WINDOW_CHARS", window)
+        doc = MagicMock()
+        doc.page_content = "a" + " \n\t" * 1_000 + "b"
+        encoding = _spy_encoding(monkeypatch)
+        total = count_tokens_docs([doc])
+        assert total > 0
+        assert max(encoding.encode_lengths) <= 2 * window
 
     @pytest.mark.unit
     def test_no_docs_is_zero(self):

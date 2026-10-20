@@ -510,3 +510,70 @@ class TestSyncUsesTheSourcesConfig:
         assert result == {"status": "success"}
         assert captured["max_tokens"] == 400
         assert captured["min_tokens"] == 50
+
+
+@pytest.mark.unit
+class TestRemoteWorkerFileTokenCount:
+    """#3130: the per-file ``token_count`` of a remote ingest is counted in bounded windows."""
+
+    def test_long_chunk_is_counted_in_bounded_windows(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        remote_pipeline,
+    ):
+        import docsgpt.parser.tokenization as tokenization_module
+        import docsgpt.utils as utils_module
+        from docsgpt.parser.tokenization import count_tokens_windowed
+
+        # Mostly whitespace: an embedding tokenizer drops it, so the chunker
+        # can leave the whole text as one chunk far longer than a window.
+        text = "a" + " \n\t" * 1_000 + "b"
+        remote_pipeline.loader.load_data.return_value = [
+            Document(text=text, extra_info={"file_path": "big.txt"}, doc_id="d1")
+        ]
+        identity_chunker = MagicMock(name="chunker")
+        identity_chunker.chunk.side_effect = lambda documents: documents
+        monkeypatch.setattr(
+            worker.ChunkerCreator, "create_chunker", lambda *args, **kwargs: identity_chunker
+        )
+
+        window = 256
+        monkeypatch.setattr(tokenization_module, "_WINDOW_CHARS", window)
+        expected = count_tokens_windowed(text)
+
+        real_encoding = utils_module.get_encoding()
+        encode_lengths: list[int] = []
+
+        class _Recording:
+            def encode_ordinary(self, value):
+                encode_lengths.append(len(value))
+                return real_encoding.encode_ordinary(value)
+
+        recording = _Recording()
+        monkeypatch.setattr(utils_module, "get_encoding", lambda: recording)
+        monkeypatch.setattr(tokenization_module, "get_encoding", lambda: recording)
+
+        token_counts: list[int] = []
+        real_add = worker.add_file_to_structure
+
+        def _spy_add(*args, **kwargs):
+            token_counts.append(kwargs["token_count"])
+            return real_add(*args, **kwargs)
+
+        monkeypatch.setattr(worker, "add_file_to_structure", _spy_add)
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            "feed",
+            "bob",
+            "crawler",
+            directory=str(tmp_path / "temp"),
+            operation_mode="upload",
+        )
+
+        assert token_counts == [expected]
+        assert encode_lengths, "the cl100k counts should have run"
+        assert max(encode_lengths) <= 2 * window

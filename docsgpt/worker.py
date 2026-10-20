@@ -53,6 +53,7 @@ from docsgpt.parser.remote.website_tree import (
     tree_leaves as _tree_leaves,
 )
 from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import count_tokens_windowed
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
     safe_zip_error_message,
@@ -92,7 +93,6 @@ from docsgpt.vectorstore.index_lock import (
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
-    num_tokens_from_string,
     safe_filename,
     strip_null_bytes,
     truncate_to_line_boundary,
@@ -1694,7 +1694,7 @@ def remote_worker(
 
             if file_path:
                 # Calculate token count
-                token_count = num_tokens_from_string(doc.text) if doc.text else 0
+                token_count = count_tokens_windowed(doc.text) if doc.text else 0
 
                 # Estimate size in bytes from text content
                 size_bytes = len(doc.text.encode("utf-8")) if doc.text else 0
@@ -5383,7 +5383,7 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
         text = sanitize_content(chunk.text)
         texts.append(text)
         metadatas.append(metadata)
-        token_count += num_tokens_from_string(text)
+        token_count += count_tokens_windowed(text)
         size_bytes += len(text.encode("utf-8"))
     # One batch per page: FAISS saves the whole index once, not once per chunk.
     added = store.add_chunks(texts, metadatas) if texts else []

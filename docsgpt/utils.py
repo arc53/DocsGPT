@@ -205,10 +205,12 @@ def num_tokens_from_object_or_list(thing):
 def count_tokens_docs(docs: list) -> int:
     """Count the cl100k tokens of a list of documents.
 
-    Each document is counted on its own and the counts are summed (#3130).
-    Joining every chunk into one string first built a corpus-sized string and
-    encoded it in a single call, which made this display metric the ingest's
-    memory peak. Each doc is a chunk, well under the chunking window.
+    Each document is counted on its own, in bounded windows, and the counts
+    are summed (#3130). Joining every chunk into one string first built a
+    corpus-sized string and encoded it in a single call, which made this
+    display metric the ingest's memory peak. A chunk is usually small, but one
+    can hold far more characters than embedding tokens (a whitespace run the
+    embedding tokenizer drops), so a single doc is windowed too.
 
     Args:
         docs: Documents with a ``page_content`` string.
@@ -217,7 +219,10 @@ def count_tokens_docs(docs: list) -> int:
         The summed token count. It can differ from a count of the joined text
         by about a token at each document seam, which is fine for a metric.
     """
-    return sum(num_tokens_from_string(doc.page_content) for doc in docs)
+    # Function-local: docsgpt.parser.tokenization imports this module.
+    from docsgpt.parser.tokenization import count_tokens_windowed
+
+    return sum(count_tokens_windowed(doc.page_content) for doc in docs)
 
 
 def calculate_doc_token_budget(
