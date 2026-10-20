@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-18
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -71,7 +71,7 @@ Common request body fields:
 | `model_id` | `string` | No | `/api/answer`, `/stream` | Override model for this request. |
 | `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Deprecated, no effect. Conversations are always persisted; use `visibility` to control sidebar listing. |
 | `visibility` | `string` | No | `/api/answer`, `/stream` | `"listed"` shows the conversation in the owner's sidebar. Any other value (or omitting it) persists it hidden. Default `hidden`. |
-| `passthrough` | `object` | No | `/api/answer`, `/stream` | Dynamic values injected into prompt templates. |
+| `passthrough` | `object` | No | `/api/answer`, `/stream` | Values for the prompt's `{{ passthrough.* }}` variables, such as the end user's id. Strings, numbers, booleans and `null` are kept with the conversation and on each turn's [Logs](/Using/analytics-and-logs) row. |
 | `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
 | `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). Ignored when `api_key` or `agent_id` selects an agent: the agent's retriever is used. |
@@ -198,7 +198,7 @@ Each `data:` frame is JSON with `type`:
 | `workflow_step` | `node_id`, `node_type`, `node_title`, `status`, and `output`/`state_delta` or `error` | A workflow node is `running`, `completed` or `failed`. |
 | `notice` | `notice` | A non-fatal message for the user (for example, some input documents were skipped). |
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
-| `error` | `error` | Error message. |
+| `error` | `error`, `code` | Error message. `code`, when present, names the cause; `stopped` means the answer was stopped (from **Activity → Now** or with `POST /api/messages/<message_id>/cancel`) before it wrote anything. |
 | `id` | `id` | The conversation ID. |
 | `end` | `artifacts`, `attachments` | The stream is complete. `artifacts` lists every artifact the turn created or changed; `attachments` lists the conversation's files with their `F` refs and attachment ids. Each is present only when there is something to list. |
 

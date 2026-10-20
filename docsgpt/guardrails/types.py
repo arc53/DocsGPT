@@ -14,6 +14,7 @@ class Stage(str, Enum):
     RETRIEVAL = "retrieval"
     TOOL_RESULT = "tool_result"
     OUTPUT = "output"
+    ATTACHMENT = "attachment"
 
 
 class Action(str, Enum):
@@ -24,12 +25,35 @@ class Action(str, Enum):
     BLOCK = "block"
 
 
+# Higher is more restrictive: the floor keeps the stricter of two actions, and an outcome's ``at_most`` caps one.
+ACTION_RANK = {
+    Action.FLAG: 0,
+    Action.REDACT: 1,
+    Action.BLOCK: 2,
+}
+
+
+def capped(action: Action, at_most: Optional[Action]) -> Action:
+    """``action``, lowered to ``at_most`` when that is less restrictive."""
+    if at_most is not None and ACTION_RANK[at_most] < ACTION_RANK[action]:
+        return at_most
+    return action
+
+
 ACTIONS_BY_STAGE = {
     Stage.INPUT: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.RETRIEVAL: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.TOOL_RESULT: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.OUTPUT: {Action.FLAG, Action.REDACT, Action.BLOCK},
+    # A chat attachment is screened as a whole file: ``block`` withholds that
+    # file, and there is nothing to redact it with.
+    Stage.ATTACHMENT: {Action.FLAG, Action.BLOCK},
 }
+
+#: Stages whose text is a list of items (retrieved documents, attached files):
+#: item-level checks score each item on its own, so ``block`` withholds one
+#: item, and the whole-text pass over the joined items leaves them out.
+ITEM_STAGES = frozenset({Stage.RETRIEVAL, Stage.ATTACHMENT})
 
 
 @dataclass(frozen=True)
@@ -62,6 +86,10 @@ class CheckOutcome:
     score: Optional[float] = None
     detail: str = ""
     error: Optional[str] = None
+    # The most restrictive action this outcome may carry, whatever the
+    # control is set to: one control can then record a low-confidence band
+    # it never enforces.
+    at_most: Optional[Action] = None
 
     @classmethod
     def clean(cls) -> "CheckOutcome":
@@ -78,6 +106,7 @@ class CheckOutcome:
         spans: Optional[List[Span]] = None,
         score: Optional[float] = None,
         detail: str = "",
+        at_most: Optional[Action] = None,
     ) -> "CheckOutcome":
         return cls(
             triggered=True,
@@ -85,6 +114,7 @@ class CheckOutcome:
             spans=spans or [],
             score=score,
             detail=detail,
+            at_most=at_most,
         )
 
 
@@ -96,6 +126,9 @@ class ControlVerdict:
     stage: Stage
     action: Action
     outcome: CheckOutcome
+    #: The item an item-level verdict is about (``chunk:<source>:<key>``,
+    #: ``attachment:<id>``); ``None`` for a whole-text verdict.
+    item_ref: Optional[str] = None
 
     @property
     def blocking(self) -> bool:
@@ -113,6 +146,7 @@ class ControlVerdict:
             "detail": self.outcome.detail,
             "error": self.outcome.error,
             "match_count": len(self.outcome.spans),
+            "item_ref": self.item_ref,
         }
 
 

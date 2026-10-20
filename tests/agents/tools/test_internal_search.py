@@ -436,3 +436,143 @@ class TestSourcesHaveDirectoryStructure:
 
     def test_no_active_docs(self):
         assert sources_have_directory_structure({}) is False
+
+
+# =====================================================================
+# Search through the Dispatcher: the path pre-stage and relevance
+# =====================================================================
+
+
+def _hits(paths):
+    hits = []
+    for i, path in enumerate(paths):
+        doc = Mock()
+        doc.page_content = f"{path} chunk {i}"
+        doc.metadata = {"title": path, "source": path}
+        hits.append(doc)
+    return hits
+
+
+@pytest.fixture
+def store(monkeypatch):
+    """One source whose store ranks ``store.hits`` in order; tokens are the text's length."""
+    from docsgpt.core.settings import settings
+
+    vector = Mock()
+    vector.hits = []
+    vector.search.side_effect = lambda question, k, **kwargs: vector.hits[:k]
+    monkeypatch.setattr(settings, "PER_SOURCE_RETRIEVAL_ENABLED", True)
+    monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", False)
+    with patch("docsgpt.retriever.classic_rag.VectorCreator") as vc, patch(
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm", return_value=Mock()
+    ), patch("docsgpt.retriever.classic_rag.num_tokens_from_string", side_effect=len), patch(
+        "docsgpt.retriever.dispatcher.num_tokens_from_string", side_effect=len
+    ):
+        vc.create_vectorstore.return_value = vector
+        yield vector
+
+
+def _dispatched_tool(registry=None, reranker=None):
+    """The tool over one source whose relevance is on (reorder, unless ``reranker`` says otherwise)."""
+    return InternalSearchTool(
+        {
+            "source": {"active_docs": ["s1"]},
+            "retriever_name": "classic",
+            "chunks": 2,
+            "sources": [{"id": "s1", "retrieval": {"reranker": reranker or {}}}],
+            "decoded_token": {"sub": "u"},
+            "citation_registry": registry,
+        }
+    )
+
+
+def _by_text(scores):
+    """Relevance scripted by the passage's path; anything unlisted scores 0.5."""
+    return lambda state, question: next((p for path, p in scores.items() if path in state["passage"]), 0.5)
+
+
+# The store's own top two are outside src/; the src/ chunks rank below them.
+PATHS = ["docs/a.md", "docs/b.md", "src/low.py", "docs/c.md", "src/mid.py", "src/top.py"]
+
+
+@pytest.mark.unit
+class TestDispatchedSearch:
+    def test_the_tool_scores_nothing_itself(self, store, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        store.hits = _hits(PATHS)
+        fake = FakeDecider({"relevant": 0.5})
+        with installed(fake):
+            _dispatched_tool().execute_action("search", query="q")
+        assert fake.calls == [], "with the switch off nothing asks the model"
+
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        with installed(fake):
+            _dispatched_tool().execute_action("search", query="q")
+        assert [call.feature for call in fake.calls] == ["rag_rerank"], "one call, the Dispatcher's rerank"
+
+    def test_the_path_filter_runs_before_the_rerank(self, store, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        store.hits = _hits(PATHS)
+        # Relevance off: the retrieval's two chunks are both outside the path, as today.
+        out = _dispatched_tool().execute_action("search", query="q", path_filter="src/")
+        assert out == "No documents found matching query 'q' in path 'src/'."
+
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        fake = FakeDecider({"relevant": _by_text({"src/top.py": 0.9, "src/mid.py": 0.7, "src/low.py": 0.1})})
+        tool = _dispatched_tool()
+        with installed(fake):
+            out = tool.execute_action("search", query="q", path_filter="src/")
+        (call,) = fake.calls
+        assert all("src/" in request.state["passage"] for request in call.requests), "only in-path chunks scored"
+        # As many chunks as the retrieval keeps, the most relevant inside the path.
+        assert [d["source"] for d in tool.retrieved_docs] == ["src/top.py", "src/mid.py"]
+        assert out.index("src/top.py") < out.index("src/mid.py") and "docs/" not in out
+
+    def test_a_failed_rerank_answers_as_the_path_filter_did(self, store, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        store.hits = _hits(["src/a.py", "docs/b.md", "src/c.py"])
+        baseline = _dispatched_tool().execute_action("search", query="q", path_filter="src/")
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        fake = FakeDecider(reasons={"*": "unavailable"})
+        with installed(fake):
+            out = _dispatched_tool().execute_action("search", query="q", path_filter="src/")
+        assert fake.calls and out == baseline
+        assert "[1] a.py (source: src/a.py)" in out and "src/c.py" not in out
+
+    def test_no_relevant_documents_is_not_no_documents(self, store, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_MIN_KEEP", 0)
+        strict = {"min_relevance": 0.5}
+        fake = FakeDecider({"relevant": 0.1})
+        with installed(fake):
+            out = _dispatched_tool(reranker=strict).execute_action("search", query="q")
+            assert out == "No documents found matching your query."
+            store.hits = _hits(PATHS)
+            tool = _dispatched_tool(reranker=strict)
+            assert tool.execute_action("search", query="q") == "No relevant documents found for 'q'."
+            store.hits = _hits(["src/a.py", "docs/b.md", "src/c.py"])
+            out = tool.execute_action("search", query="q", path_filter="src/")
+        assert out == "No relevant documents found for 'q'."
+        assert tool.retrieved_docs == []
+
+    def test_survivors_are_numbered_from_the_registry(self, store, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        store.hits = _hits(PATHS)
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        registry = [{"title": "pre.md", "source": "pre.md", "text": "prefetched"}]
+        fake = FakeDecider({"relevant": _by_text({"src/top.py": 0.9, "docs/c.md": 0.8})})
+        with installed(fake):
+            out = _dispatched_tool(registry).execute_action("search", query="q")
+        assert "[2] top.py (source: src/top.py)" in out and "[3] c.md (source: docs/c.md)" in out
+        assert [d["source"] for d in registry] == ["pre.md", "src/top.py", "docs/c.md"]

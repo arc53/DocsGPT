@@ -1,7 +1,7 @@
 ---
 title: docsgpt CLI Reference
 description: Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-16
 ---
 
 import { Callout } from 'nextra/components'
@@ -59,6 +59,7 @@ directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
 | `--port N` | Host port for the UI and API (default `7091`). |
 | `--provider NAME`, `--api-key KEY`, `--model NAME`, `--base-url URL` | The model provider: `docsgpt` (default), `openai`, `anthropic`, `google`, `openrouter`, `groq` or `openai-compatible`. `DOCSGPT_API_KEY` can carry the key instead. |
 | `--docling` / `--no-docling` | Switch to the image with the docling parser engine and OCR, or back. |
+| `--decider` / `--no-decider` | Serve the [decision model](/Models/decision-model#the-decider) from a `decider` container of its own instead of the API process, or go back. Kept for later runs. `--decider` also writes a random `DECISION_KEY` when `.env` has none; `--no-decider` keeps it. |
 | `--image-tag TAG` | Run another image tag than the package's version, for example `develop`. |
 | `--native`, `--postgres-uri URI`, `--redis-url URL` | Run the API and the worker as services on this machine, against your own Postgres and Redis. See [Install with pip](/Deploying/Pip-Install#run-it-as-services-without-docker). |
 | `-y`, `--yes` | Ask nothing: use the flags, then the defaults. |
@@ -78,6 +79,7 @@ and print the data home and env file they use.
 | `docsgpt api [--host H] [--port P] [--workers N] [--reload]` | Serve the API and the web UI (gunicorn; uvicorn with auto-reload under `--reload`). Listens on `127.0.0.1:7091` by default. |
 | `docsgpt worker [-Q QUEUES] [--concurrency N] [--pool POOL] [-l LEVEL] [--no-beat]` | Run the Celery worker with the beat scheduler embedded. The worker is required: query embedding runs on it. |
 | `docsgpt beat [-l LEVEL]` | Run the scheduler on its own, on Windows or next to workers started with `--no-beat`. |
+| `docsgpt decide-server [--host H] [--port P] [--device cpu\|mps\|cuda]` | Serve the decision model over `/v1/decide` for the API and the worker, as the Docker stacks' opt-in `decider` does. Listens on `127.0.0.1:7095`; any other interface needs `DECISION_KEY`. Loads nothing until a decision feature calls. `mps` and `cuda` need the `decisions-torch` extra. See [The Decision Model](/Models/decision-model#the-decider). |
 | `docsgpt dev [--ui] [--mock-llm] [--no-worker] [--no-reload]` | Run a checkout's API, worker and, with `--ui`, the frontend dev server, with reload. See [Development Environment](/Deploying/Development-Environment). |
 
 ## Database and maintenance commands
@@ -94,6 +96,8 @@ container from the stack directory, for example
 | `docsgpt connectors reencrypt` | Rewrite stored connections, tool secrets and custom-model keys with the current `ENCRYPTION_SECRET_KEY` after a key rotation. |
 | `docsgpt reembed [--dry-run] [--sources IDS] [--batch-size N]` | Re-embed every index after changing `EMBEDDINGS_NAME`. See [Upgrading](/upgrading). |
 | `docsgpt prefetch-models [MODEL ...]` | Download the embedding models and their tokenizers ahead of time. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
+| `docsgpt decisions prefetch [--runtime onnx\|torch]` | Download the decision model's pinned files into `DECISION_CACHE_DIR` ahead of time (`torch`: the weights `decide-server --device mps\|cuda` reads). Every decision feature ships off, and nothing downloads until one is turned on. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
+| `docsgpt decisions status` | Show the decision model settings, each feature's mode and whether the model files are downloaded, without loading it. In API mode it asks the decision server what it runs. A running server's load state and measured speed are at `GET /api/admin/decisions` (admins only). |
 | `docsgpt verify-offline [MODEL ...]` | Check that a prepared install serves its defaults with networking off. |
 | `docsgpt ocr-check [--engine tesseract\|deepseek] [--file PATH]` | Send one page to the configured OCR engine and report the endpoint, time, text and token usage. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |
 

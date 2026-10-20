@@ -32,6 +32,15 @@ def _reason(exc: Exception) -> str:
 MODES = ("monitor_only", "scan_all")
 
 
+def _item_level(check: str) -> bool:
+    from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+
+    try:
+        return bool(GuardrailCreator.get(check).item_level)
+    except ValueError:
+        return False
+
+
 class GuardrailControl(BaseModel):
     """One detector bound to one intervention point with one action."""
 
@@ -136,16 +145,24 @@ class GuardrailsConfig(BaseModel):
             seen.add(key)
         return value
 
-    def controls_for(self, stage: Stage) -> List[GuardrailControl]:
+    def controls_for(self, stage: Stage, item_level: Optional[bool] = None) -> List[GuardrailControl]:
         """Enabled controls for ``stage``, honouring ``mode``.
 
         ``monitor_only`` degrades every action to a log-only flag, which is the
         supported rollout path: turn checks on, watch what they would have
         done, then promote.
+
+        Args:
+            stage: The stage.
+            item_level: ``True`` for only the checks that score items one by
+                one (``GuardrailCheck.item_level``), ``False`` for only the
+                others, ``None`` for both.
         """
         if not self.enabled:
             return []
         selected = [c for c in self.controls if c.enabled and c.stage == stage]
+        if item_level is not None:
+            selected = [c for c in selected if _item_level(c.check) is item_level]
         if self.mode != "scan_all":
             return [c.model_copy(update={"action": Action.FLAG}) for c in selected]
         return selected

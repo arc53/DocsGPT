@@ -1,9 +1,25 @@
+import type { WorkflowProgress } from '../../activity/types';
 import { ConfigRequirements } from '../../modals/types';
 import type { Access } from '../../utils/accessUtils';
+
+/**
+ * A chunk's prompt-injection review state (`get_chunks`): the sha256 of its
+ * text (what a review is keyed by), the cached score (null before it was
+ * scored), `high` (p ≥ 0.9), `suspected` (p ≥ 0.5) or null, and whether the
+ * source's owner marked it safe.
+ */
+export type ChunkInjection = {
+  content_hash: string;
+  p: number | null;
+  level: 'high' | 'suspected' | null;
+  allowed: boolean;
+};
 
 export type ChunkType = {
   doc_id: string;
   text: string;
+  /** Null while the operator has the prompt-injection model off. */
+  injection?: ChunkInjection | null;
   /**
    * Chunk metadata as the vector store recorded it. Values are strings for
    * most backends, but numbers (`token_count`) survive the round trip on the
@@ -56,6 +72,7 @@ export type TraceSpanKind =
   | 'embedding'
   | 'rerank'
   | 'guardrail'
+  | 'decision'
   | 'step';
 
 export type TraceSpan = {
@@ -103,6 +120,10 @@ export type LogData = {
   attachments?: string[];
   request_id?: string;
   message_id?: string;
+  /** The request's passthrough values (an embedding page's user id, say). */
+  passthrough?: Record<string, string | number | boolean | null> | null;
+  /** The answer's rating, read from its message. */
+  feedback?: { text: string; timestamp?: string } | null;
   // system + webhook events (stack_logs)
   endpoint?: string;
   stacks?: Record<string, any>[];
@@ -130,6 +151,12 @@ export type LogData = {
   scheduled_for?: string;
   started_at?: string;
   finished_at?: string;
+  // A run still going: listed at its start time until its finished row
+  // replaces it (answers, scheduled, workflow and webhook runs).
+  running?: boolean;
+  /** A running answer: who asked (`api`, `shared` or the owner's own `chat`). */
+  origin?: 'api' | 'shared' | 'chat';
+  workflow_progress?: WorkflowProgress | null;
 };
 
 export type ParameterGroupType = {
@@ -211,6 +238,8 @@ export type UserToolType = {
     require_approval?: boolean;
     // Read or write, set on tools that come from a connection.
     access?: 'read' | 'write';
+    // An MCP action's description score, while Admin › Guardrails warns on them.
+    injection?: { p: number; scorer: string } | null;
   }[];
 };
 

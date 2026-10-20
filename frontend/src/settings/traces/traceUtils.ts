@@ -107,7 +107,8 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 /**
  * A short, kind-specific summary shown next to a span's name, e.g.
- * `1.2k → 80 tok` for an LLM call or `4 chunks` for a retrieval.
+ * `1.2k → 80 tok` for an LLM call, `4 chunks` for a retrieval or
+ * `2/3 answered` for a decision-model call.
  */
 export function spanHeadline(span: TraceSpan, t: Translate): string {
   const a = span.attributes || {};
@@ -135,6 +136,17 @@ export function spanHeadline(span: TraceSpan, t: Translate): string {
       return hits === undefined
         ? ''
         : t('settings.logs.trace.headline.hits', { count: hits });
+    }
+    case 'decision': {
+      const states = num(a['docsgpt.decision.states']);
+      const answered = num(a['docsgpt.decision.answered']);
+      if (states === undefined || answered === undefined) return '';
+      if (answered > 0 && num(a['docsgpt.decision.cached']) === answered)
+        return t('settings.logs.trace.headline.cached');
+      return t('settings.logs.trace.headline.answered', {
+        answered,
+        total: states,
+      });
     }
     default:
       return '';

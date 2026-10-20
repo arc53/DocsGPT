@@ -35,6 +35,10 @@ import {
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { actionTitle } from '../connectors/i18n';
+import {
+  InjectionFlagBadge,
+  injectionFlagged,
+} from '../connectors/injectionWarning';
 import PermissionGroup, {
   PermissionSelect,
 } from '../connectors/PermissionGroup';
@@ -722,6 +726,9 @@ export default function ToolConfig({
                                     >
                                       {actionTitle(action.name)}
                                     </span>
+                                    {injectionFlagged(action) && (
+                                      <InjectionFlagBadge />
+                                    )}
                                     {action.description && (
                                       <span
                                         className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md"
@@ -1021,7 +1028,18 @@ function APIToolConfig({
   tool: APIToolType;
   setTool: (tool: APIToolType) => void;
 }) {
-  const [apiTool, setApiTool] = React.useState<APIToolType>(tool);
+  // Controlled by `tool`: a local copy mirrored both ways through effects
+  // swapped values with the page forever when two edits landed in one commit.
+  // Updates chain through the ref so each one builds on the one before it.
+  const apiTool = tool;
+  const latestTool = React.useRef(tool);
+  React.useLayoutEffect(() => {
+    latestTool.current = tool;
+  }, [tool]);
+  const setApiTool = (update: (prevApiTool: APIToolType) => APIToolType) => {
+    latestTool.current = update(latestTool.current);
+    setTool(latestTool.current);
+  };
   const { t } = useTranslation();
   const { canEdit, canEditCredentials } = React.useContext(ToolAccessContext);
   const [actionToDelete, setActionToDelete] = React.useState<string | null>(
@@ -1084,13 +1102,14 @@ function APIToolConfig({
     }
   };
 
+  /** Applies an update to one action, read from the latest tool state. */
   const handleActionChange = (
     actionName: string,
-    updatedAction: APIActionType,
+    update: (action: APIActionType) => APIActionType,
   ) => {
     setApiTool((prevApiTool) => {
       const updatedActions = { ...prevApiTool.config.actions };
-      updatedActions[actionName] = updatedAction;
+      updatedActions[actionName] = update(updatedActions[actionName]);
       return {
         ...prevApiTool,
         config: { ...prevApiTool.config, actions: updatedActions },
@@ -1115,14 +1134,6 @@ function APIToolConfig({
     Object.entries(apiTool.config.actions ?? {}),
     ([, action]) => apiActionAccess(action),
   );
-
-  React.useEffect(() => {
-    setApiTool(tool);
-  }, [tool]);
-
-  React.useEffect(() => {
-    setTool(apiTool);
-  }, [apiTool]);
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
@@ -1419,7 +1430,9 @@ function APIToolConfig({
                           <div className="mt-4 px-5 py-2">
                             <APIActionTable
                               apiAction={action}
-                              handleActionChange={handleActionChange}
+                              onChange={(update) =>
+                                handleActionChange(actionName, update)
+                              }
                             />
                           </div>
                         </fieldset>
@@ -1455,21 +1468,26 @@ function APIToolConfig({
   );
 }
 
+/**
+ * The headers, query parameters and body of one API action.
+ *
+ * Controlled: it renders `apiAction` and sends every edit up as an update
+ * function. A local copy synced both ways through effects could swap values
+ * with the parent forever when two edits landed in one commit.
+ */
 function APIActionTable({
   apiAction,
-  handleActionChange,
+  onChange,
 }: {
   apiAction: APIActionType;
-  handleActionChange: (
-    actionName: string,
-    updatedAction: APIActionType,
-  ) => void;
+  onChange: (update: (action: APIActionType) => APIActionType) => void;
 }) {
   const { t } = useTranslation();
   const { canEditCredentials, canFixValues } =
     React.useContext(ToolAccessContext);
 
-  const [action, setAction] = React.useState<APIActionType>(apiAction);
+  const action = apiAction;
+  const setAction = onChange;
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
   const [newPropertyType, setNewPropertyType] = React.useState<
     'string' | 'integer'
@@ -1636,13 +1654,6 @@ function APIActionTable({
     });
   };
 
-  React.useEffect(() => {
-    setAction(apiAction);
-  }, [apiAction]);
-
-  React.useEffect(() => {
-    handleActionChange(action.name, action);
-  }, [action]);
   const renderPropertiesTable = (
     section: 'headers' | 'query_params' | 'body',
   ) => {

@@ -398,6 +398,29 @@ describe('Teams page', () => {
     expect(body().textContent).not.toContain('Team 48');
   });
 
+  // An optional field left empty is left out, as on agent and source cards.
+  it('draws no placeholder line for a team without a description', async () => {
+    mockState.teams.teams = [
+      {
+        id: 't1',
+        name: 'Logistics ops',
+        slug: 'logistics-ops',
+        owner_id: 'me',
+        member_role: 'member',
+      },
+    ];
+    act(() => {
+      root.render(
+        <MemoryRouter initialEntries={['/teams']}>
+          <Teams />
+        </MemoryRouter>,
+      );
+    });
+    await flush();
+    expect(body().textContent).toContain('Logistics ops');
+    expect(body().textContent).not.toContain('settings.teams.noDescription');
+  });
+
   // The verb says "add": page actions carry no plus.
   it('puts no plus on the New team page action', async () => {
     await render();

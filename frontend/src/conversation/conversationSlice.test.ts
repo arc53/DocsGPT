@@ -7,7 +7,13 @@ vi.mock('./conversationHandlers', () => ({
   handleV1ChatCompletionStreaming: vi.fn(),
 }));
 
+vi.mock('../api/services/activityService', () => ({
+  default: { stopMessage: vi.fn() },
+}));
+
 import { configureStore } from '@reduxjs/toolkit';
+
+import activityService from '../api/services/activityService';
 
 import conversationService from '../api/services/conversationService';
 import type { Agent } from '../agents/types';
@@ -23,11 +29,14 @@ import reducer, {
   addQuery,
   applyMessageTail,
   fetchAnswer,
+  handleAbort,
   loadConversation,
   mapServerQueryToClient,
   raiseError,
   raiseNotice,
   resendQuery,
+  stopAnswer,
+  updateQuery,
   retractResponse,
   setConversation,
   setConversationId,
@@ -398,6 +407,18 @@ describe('resendQuery', () => {
     ]);
     expect(state.queries[0].response).toBeUndefined();
     expect(state.queries[0].error).toBeUndefined();
+  });
+
+  // The re-asked turn gets a new run; the old one's files are not its own.
+  it('drops the previous workflow run', () => {
+    let state = reducer(
+      undefined,
+      setConversation([
+        { prompt: 'p', response: 'r', workflow_run_id: 'run-1' },
+      ]),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].workflow_run_id).toBeUndefined();
   });
 });
 
@@ -911,5 +932,110 @@ describe('a turn left waiting on an approval', () => {
     expect(state.status).toBe('idle');
     expect(state.queries[0].error).toBeUndefined();
     expect(state.queries[0].tool_calls?.[0].not_run).toBe('moved_on');
+  });
+});
+
+describe('stopAnswer', () => {
+  // A stream that runs until it is closed, as the real one does.
+  const streamUntilClosed = (events: string[]) =>
+    vi.mocked(handleFetchAnswer).mockImplementation(
+      (_question, signal) =>
+        new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            events.push('closed');
+            resolve(null as never);
+          }),
+        ),
+    );
+
+  const running = () => {
+    const store = makeStore();
+    store.dispatch(addQuery({ prompt: 'q' }));
+    store.dispatch(updateQuery({ index: 0, query: { messageId: 'm1' } }));
+    const answer = store.dispatch(fetchAnswer({ question: 'q' }));
+    return { store, answer };
+  };
+
+  it('tells the server before closing the stream, and says it stopped', async () => {
+    const events: string[] = [];
+    streamUntilClosed(events);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(async () => {
+        events.push('stop');
+      });
+    const { store, answer } = running();
+    await store.dispatch(stopAnswer());
+    await answer;
+    expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
+    // Stored first, so the server saves a stop, not a dropped connection.
+    expect(events).toEqual(['stop', 'closed']);
+    expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+  });
+
+  it('leaves another chat alone when the stop returns after a switch', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    store.dispatch(setConversationId('chat-a'));
+    const stopping = store.dispatch(stopAnswer());
+    // The user opens chat B, whose question has no answer yet, then the
+    // server takes A's stop.
+    store.dispatch(setConversation([{ prompt: 'b', messageId: 'm2' }]));
+    store.dispatch(setConversationId('chat-b'));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+  });
+
+  it('sends one stop however often Stop is pressed while it is out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const first = store.dispatch(stopAnswer());
+    const second = store.dispatch(stopAnswer());
+    answer();
+    await Promise.all([first, second]);
+    expect(activityService.stopMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('still closes the stream when the server could not take the stop', async () => {
+    const events: string[] = [];
+    streamUntilClosed(events);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockRejectedValue(new Error('Stop failed: 409'));
+    const { store, answer } = running();
+    await store.dispatch(stopAnswer());
+    await answer;
+    expect(events).toEqual(['closed']);
+    expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+  });
+
+  it('stops an answer the chat picked back up, which has no stream of its own', async () => {
+    handleAbort();
+    vi.mocked(activityService.stopMessage).mockReset().mockResolvedValue();
+    const store = makeStore();
+    // After a reload the chat follows the answer by polling, not a stream.
+    store.dispatch(
+      setConversation([
+        { prompt: 'q', messageId: 'm1', messageStatus: 'streaming' },
+      ]),
+    );
+    store.dispatch(setConversationId('chat-a'));
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
+    expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
   });
 });

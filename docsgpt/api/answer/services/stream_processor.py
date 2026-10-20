@@ -14,6 +14,8 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.api.answer.services.passthrough import stored_passthrough
+from docsgpt.decisions.record import DecisionRecord, activate as activate_decision_record
 from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -451,11 +453,12 @@ T = TypeVar("T")
 
 
 def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
-    """Run a request-setup method inside the request's execution trace.
+    """Run a request-setup method inside the request's execution trace and decision record.
 
     Agent setup does real work worth seeing in the trace -- pre-fetch
     retrieval, history compression -- before ``complete_stream`` runs, so
-    the trace is started here, in the request thread, and handed on.
+    the trace is started here, in the request thread, and handed on. The
+    decision record goes to the stream on the agent (``decision_record``).
     """
 
     @functools.wraps(method)
@@ -464,7 +467,7 @@ def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
         if trace is None:
             trace = tracing.start_trace(source=getattr(self, "trace_source", "stream"))
             self.trace = trace
-        with tracing.activate(trace):
+        with tracing.activate(trace), activate_decision_record(self.decision_record):
             try:
                 return method(self, *args, **kwargs)
             finally:
@@ -528,6 +531,9 @@ class StreamProcessor:
             self.decoded_token.get("sub") if self.decoded_token is not None else None
         )
         self.conversation_id = self.data.get("conversation_id")
+        # Kept on the conversation and the turn's Logs row; prompt rendering
+        # reads the raw request field.
+        self.passthrough = stored_passthrough(self.data.get("passthrough"))
         self.source = {}
         self.all_sources = []
         self.attachments = []
@@ -573,6 +579,15 @@ class StreamProcessor:
         # one made this turn); the agent stamps it on the turn's metadata.
         self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
+
+    @functools.cached_property
+    def decision_record(self) -> DecisionRecord:
+        """The turn's decision record.
+
+        Setup records into it, the agent carries it to ``complete_stream``
+        (``agent.decision_record``), and a resume continues the paused turn's.
+        """
+        return DecisionRecord()
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -1820,6 +1835,7 @@ class StreamProcessor:
         return build_dispatcher(
             _legacy_classic,
             sources=per_source,
+            conversation_id=getattr(self, "conversation_id", None),
             **retriever_kwargs,
         )
 
@@ -2422,8 +2438,11 @@ class StreamProcessor:
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        # The paused rounds' decisions, continued in the next round.
+        self.decision_record.resume(agent_config.get("decisions"))
+        agent.decision_record = self.decision_record
         if isinstance(saved_files, dict):
-            agent.resume_paused_attachments(saved_listing)
+            agent.resume_paused_attachments(saved_listing, withheld=saved_files.get("withheld") or [])
 
         # Store config for the route layer
         self.model_id = model_id
@@ -2445,6 +2464,10 @@ class StreamProcessor:
         self.request_id = agent_config.get("request_id")
         # The turn's calls from its earlier approval rounds, kept on the message.
         self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
+        # The paused turn's values: a resume request does not resend them.
+        self.passthrough = stored_passthrough(agent_config.get("passthrough")) or stored_passthrough(
+            self.data.get("passthrough")
+        )
 
         reasoning_content = agent_config.get("reasoning_content", "")
         return (
@@ -2713,10 +2736,14 @@ class StreamProcessor:
             workflow_owner = self.agent_config.get("workflow_owner")
             if workflow_owner:
                 agent_kwargs["workflow_owner"] = workflow_owner
+            # The bounded values: the run's state is stored with the run.
+            if self.passthrough:
+                agent_kwargs["passthrough"] = self.passthrough
 
         agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
+        agent.decision_record = self.decision_record
 
         return agent

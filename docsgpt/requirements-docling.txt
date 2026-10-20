@@ -349,6 +349,7 @@ huggingface-hub==1.16.1
     #   accelerate
     #   docling-ibm-models
     #   docling-slim
+    #   docsgpt
     #   fastembed
     #   tokenizers
     #   transformers

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.background import guard, jobs, sandbox_runner, wake
 from docsgpt.background.context import BackgroundContext
+from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.guardrails.types import TOOL_RESULT_BLOCKED_NOTE
 from docsgpt.sandbox.base import DetachedState, ExecResult
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -30,16 +31,20 @@ def _guardrails(*controls):
     return {"enabled": True, "mode": "scan_all", "controls": list(controls)}
 
 
+def _floor(monkeypatch, *controls):
+    monkeypatch.setattr("docsgpt.guardrails.floor._floor", GuardrailsConfig.model_validate(_guardrails(*controls)))
+
+
 @pytest.fixture()
 def block_floor(monkeypatch):
     """An instance floor that withholds any tool result naming "raven"."""
-    monkeypatch.setattr("docsgpt.core.settings.settings.GUARDRAILS_FLOOR", _guardrails(_BLOCK_RAVEN))
+    _floor(monkeypatch, _BLOCK_RAVEN)
 
 
 @pytest.fixture()
 def redact_floor(monkeypatch):
     """An instance floor that masks credentials in tool results."""
-    monkeypatch.setattr("docsgpt.core.settings.settings.GUARDRAILS_FLOOR", _guardrails(_REDACT_SECRETS))
+    _floor(monkeypatch, _REDACT_SECRETS)
 
 
 @pytest.fixture()

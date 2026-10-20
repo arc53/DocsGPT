@@ -1,6 +1,19 @@
 import copy from 'copy-to-clipboard';
-import { ChevronLeft, ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
-import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Pencil,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
+import React, {
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -11,7 +24,7 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { ChunkType } from '../settings/types';
+import { ChunkInjection, ChunkType } from '../settings/types';
 import {
   abbreviateCount,
   chunkPreviewText,
@@ -25,6 +38,7 @@ import PathHeader from './tree/PathHeader';
 import ReaderPanel from './tree/ReaderPanel';
 import SourceEditSheet from './tree/SourceEditSheet';
 import { Alert, AlertDescription } from './ui/alert';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardFooter } from './ui/card';
 import { FormField } from './ui/form-field';
@@ -32,7 +46,9 @@ import { Input } from './ui/input';
 import { ActionMenu } from './ui/dropdown-menu';
 import { EmptyState } from './ui/empty-state';
 import { IconButton } from './ui/icon-button';
+import { Label } from './ui/label';
 import { Pagination, pageRangeParams } from './ui/pagination';
+import { Switch } from './ui/switch';
 
 /** Chunks per page: divisible by 2, 3 and 4 columns, so a page fills the grid. */
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
@@ -110,6 +126,34 @@ interface ChunksProps {
 
 type SheetMode = 'edit' | 'add';
 
+/** Whether the chunk's cached prompt-injection score is flagged (suspected or high). */
+const isFlagged = (injection?: ChunkInjection | null): boolean =>
+  Boolean(injection?.level);
+
+/**
+ * A flagged chunk's badge: likely or possible prompt injection, or marked
+ * safe once its source's owner allowed it. Nothing for a clean chunk.
+ */
+function InjectionBadge({ injection }: { injection?: ChunkInjection | null }) {
+  const { t } = useTranslation();
+  if (!injection?.level) return null;
+  if (injection.allowed)
+    return (
+      <Badge variant="neutral">
+        {t('settings.sources.injection.markedSafe')}
+      </Badge>
+    );
+  return (
+    <Badge variant="warning">
+      {t(
+        injection.level === 'high'
+          ? 'settings.sources.injection.high'
+          : 'settings.sources.injection.suspected',
+      )}
+    </Badge>
+  );
+}
+
 const Chunks: React.FC<ChunksProps> = ({
   documentId,
   documentName,
@@ -165,6 +209,12 @@ const Chunks: React.FC<ChunksProps> = ({
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
+  // Only the chunks whose cached prompt-injection score is flagged
+  // (`injection=flagged`); a chunk is scored once a chat retrieves it.
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const flaggedOnlyId = useId();
+  const injection = flaggedOnly ? 'flagged' : undefined;
 
   const showError = (message: string) =>
     dispatch(showActionToast({ variant: 'destructive', message }));
@@ -185,6 +235,7 @@ const Chunks: React.FC<ChunksProps> = ({
         token,
         path,
         debouncedSearchTerm,
+        injection,
       );
 
       if (!response.ok) {
@@ -249,6 +300,7 @@ const Chunks: React.FC<ChunksProps> = ({
         token,
         path,
         debouncedSearchTerm,
+        injection,
       );
       if (!response.ok) throw new Error('Failed to fetch chunk');
       const data = await response.json();
@@ -293,6 +345,7 @@ const Chunks: React.FC<ChunksProps> = ({
         token,
         path,
         debouncedSearchTerm,
+        injection,
       );
       if (!response.ok) return null;
       const data = await response.json();
@@ -511,19 +564,59 @@ const Chunks: React.FC<ChunksProps> = ({
     setChunkToDelete(null);
   };
 
-  // One fetch per page, page size, file or search; a new search starts on
-  // page 1 (that page change then fetches).
+  /**
+   * Mark the chunk's text safe from prompt-injection screening for this
+   * source (`allow`), or undo it (`clear`); the reader and its tile show the
+   * new state.
+   */
+  const reviewInjection = async (
+    chunk: ChunkType,
+    decision: 'allow' | 'clear',
+  ) => {
+    const hash = chunk.injection?.content_hash;
+    if (!hash) return;
+    setReviewing(true);
+    try {
+      const response = await userService.reviewChunkInjection(
+        documentId,
+        hash,
+        decision,
+        token,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) throw new Error('review failed');
+      const reviewed = (item: ChunkType): ChunkType =>
+        item.injection?.content_hash === hash
+          ? { ...item, injection: { ...item.injection, allowed: data.allowed } }
+          : item;
+      setOpenChunk((current) => (current ? reviewed(current) : current));
+      setPaginatedChunks((current) => current.map(reviewed));
+    } catch (error) {
+      console.error(error);
+      showError(t('settings.sources.injection.reviewFailed'));
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  // One fetch per page, page size, file, search or flagged filter; a new
+  // search or filter starts on page 1 (that page change then fetches).
   const fetchedSearchRef = useRef(debouncedSearchTerm);
+  const fetchedFlaggedRef = useRef(flaggedOnly);
   useEffect(() => {
-    if (fetchedSearchRef.current !== debouncedSearchTerm) {
+    if (
+      fetchedSearchRef.current !== debouncedSearchTerm ||
+      fetchedFlaggedRef.current !== flaggedOnly
+    ) {
       fetchedSearchRef.current = debouncedSearchTerm;
+      fetchedFlaggedRef.current = flaggedOnly;
       if (page !== 1) {
         setPage(1);
         return;
       }
     }
     fetchChunks();
-  }, [page, perPage, path, debouncedSearchTerm]);
+  }, [page, perPage, path, debouncedSearchTerm, flaggedOnly]);
 
   // Another file starts unsearched on page 1; the first render keeps the
   // linked chunk's search.
@@ -598,6 +691,20 @@ const Chunks: React.FC<ChunksProps> = ({
           onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
+      {/* Offered while the chunks carry scores (the operator has the model on). */}
+      {flaggedOnly || paginatedChunks.some((chunk) => chunk.injection) ? (
+        <div className="flex items-center gap-2">
+          <Switch
+            id={flaggedOnlyId}
+            checked={flaggedOnly}
+            data-testid="chunks-flagged-only"
+            onCheckedChange={setFlaggedOnly}
+          />
+          <Label htmlFor={flaggedOnlyId} className="whitespace-nowrap">
+            {t('settings.sources.injection.flaggedOnly')}
+          </Label>
+        </div>
+      ) : null}
       {/* Standalone, the header's byline already shows the count. */}
       {embedded && !(loading && totalChunks === 0) ? (
         <p className="text-muted-foreground text-sm whitespace-nowrap">
@@ -644,7 +751,11 @@ const Chunks: React.FC<ChunksProps> = ({
         {paginatedChunks.length === 0 ? (
           <EmptyState
             size="sm"
-            title={t('settings.sources.noChunks')}
+            title={
+              flaggedOnly
+                ? t('settings.sources.injection.noFlagged')
+                : t('settings.sources.noChunks')
+            }
             className="col-span-full min-h-[50svh] w-full"
           />
         ) : (
@@ -666,11 +777,12 @@ const Chunks: React.FC<ChunksProps> = ({
                   <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
                     {chunkPreviewText(chunk.text)}
                   </p>
-                  <CardFooter>
+                  <CardFooter className="flex-wrap">
                     {t('settings.sources.chunkTileMeta', {
                       n: position,
                       tokens: formatChunkTokens(chunk.metadata),
                     })}
+                    <InjectionBadge injection={chunk.injection} />
                   </CardFooter>
                 </button>
               </Card>
@@ -718,6 +830,22 @@ const Chunks: React.FC<ChunksProps> = ({
             disabled={!canGoNext}
             onClick={() => goToChunk(openPosition + 1)}
           />
+          {canEdit &&
+          isFlagged(chunk.injection) &&
+          !chunk.injection?.allowed ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              loading={reviewing}
+              data-testid="chunk-mark-safe"
+              onClick={() => reviewInjection(chunk, 'allow')}
+            >
+              <ShieldCheck />
+              {t('settings.sources.injection.markSafe')}
+            </Button>
+          ) : null}
           {canEdit ? (
             <Button
               type="button"
@@ -762,6 +890,14 @@ const Chunks: React.FC<ChunksProps> = ({
         </>
       }
     >
+      {chunk.injection ? (
+        <InjectionNotice
+          injection={chunk.injection}
+          canUndo={canEdit}
+          busy={reviewing}
+          onUndo={() => reviewInjection(chunk, 'clear')}
+        />
+      ) : null}
       <SourceMarkdown content={chunk.text || ''} />
     </ReaderPanel>
   );
@@ -875,5 +1011,59 @@ const Chunks: React.FC<ChunksProps> = ({
     </div>
   );
 };
+
+/**
+ * Above a flagged chunk in the reader: what the scan found and what agents
+ * do with it, or, once it is marked safe, that agents treat it as clean, with
+ * an Undo for whoever may edit the source.
+ */
+function InjectionNotice({
+  injection,
+  canUndo,
+  busy,
+  onUndo,
+}: {
+  injection: ChunkInjection;
+  canUndo: boolean;
+  busy: boolean;
+  onUndo: () => void;
+}) {
+  const { t } = useTranslation();
+  if (!injection.level) return null;
+  if (injection.allowed)
+    return (
+      <Alert
+        variant="info"
+        role="status"
+        className="mb-4"
+        data-testid="chunk-injection-safe"
+      >
+        <AlertDescription>
+          {t('settings.sources.injection.safeNotice')}{' '}
+          {canUndo ? (
+            <Button
+              type="button"
+              variant="link"
+              size="text"
+              tone="current"
+              loading={busy}
+              onClick={onUndo}
+            >
+              {t('settings.sources.injection.undo')}
+            </Button>
+          ) : null}
+        </AlertDescription>
+      </Alert>
+    );
+  return (
+    <Alert variant="warning" className="mb-4" data-testid="chunk-injection">
+      <AlertDescription>
+        {t('settings.sources.injection.flaggedNotice', {
+          percent: Math.round((injection.p ?? 0) * 100),
+        })}
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 export default Chunks;

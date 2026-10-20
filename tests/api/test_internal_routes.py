@@ -65,6 +65,23 @@ class TestVerifyInternalKey:
         assert r.status_code == 401
 
 
+    def test_compares_the_key_in_constant_time(self):
+        app = _make_app()
+        seen = []
+
+        def compare(given, expected):
+            seen.append((given, expected))
+            return False
+
+        with patch(
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+        ), patch("docsgpt.api.internal.routes.hmac.compare_digest", compare):
+            with app.test_client() as c:
+                r = c.get("/api/download", headers=_AUTH)
+        assert r.status_code == 401
+        assert seen == [(_TEST_KEY.encode(), _TEST_KEY.encode())]
+
+
 class TestDownloadFile:
     def test_returns_404_for_missing_file(self, tmp_path):
         app = _make_app()

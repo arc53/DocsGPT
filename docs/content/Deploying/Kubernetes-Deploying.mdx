@@ -1,7 +1,7 @@
 ---
 title: Deploying DocsGPT on Kubernetes
 description: Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-19
 ---
 
 import { Callout } from 'nextra/components'
@@ -41,6 +41,7 @@ Uploaded files go to an S3-compatible bucket that you provide.
 | `deployments/qdrant-deploy.yaml`, `services/qdrant-service.yaml` | No | An in-cluster Qdrant, if you prefer it to pgvector. |
 | `deployments/sandbox-deploy.yaml`, `network-policies/` | No | The [code-execution sandbox](#optional-code-execution-sandbox). |
 | `optional-mongo/` | No | MongoDB, for `VECTOR_STORE=mongodb`. |
+| `optional-decider/` | No | The [decider](#the-decision-model), a kustomize component: the decision model in a Deployment of its own. |
 
 The manifests pin every image. `arc53/docsgpt` is pinned to the release the manifests were written for; the `image:` lines in `deployments/docsgpt-deploy.yaml` show which, and [Upgrading](#upgrading) covers moving to another.
 
@@ -172,7 +173,7 @@ Keep `VECTOR_STORE: pgvector` with a shared volume.
 With no `AUTH_TYPE`, anyone who can reach DocsGPT uses it as the same user, with access to every conversation, source and connected service. Before you publish it:
 
 1. Set `AUTH_TYPE` in `docsgpt-secrets.yaml`. Use `oidc` for separate accounts, with `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_FRONTEND_URL` set to your public `https://` address; see [SSO with OIDC](/Deploying/OIDC-SSO) and the [Security checklist](/Deploying/Security).
-2. Set `API_URL` in `docsgpt-secrets.yaml` to the same public address, for example `https://docsgpt.example.com`. The API builds agent image URLs, agent webhook URLs, the device pairing address and the MCP OAuth callback from it. Unset, they point at `http://localhost:7091`, which works only through `port-forward`. The worker keeps its own in-cluster `API_URL` from `docsgpt-deploy.yaml`.
+2. Set `API_URL` in `docsgpt-secrets.yaml` to the same public address, for example `https://docsgpt.example.com`. The API builds agent image URLs, agent webhook URLs, the device pairing address and the MCP OAuth callback from it. Unset, they point at `http://localhost:7091`, which works only through `port-forward`. Both the API and worker inherit this public address. The worker uses `WORKER_API_URL: http://docsgpt-api-service` from `docsgpt-deploy.yaml` for internal index handoff, so its OAuth callbacks still use the public `API_URL`.
 3. Apply the secret and restart the pods, which read it only when they start:
 
    ```sh
@@ -194,6 +195,42 @@ You can raise `replicas` on `docsgpt-api` and `docsgpt-worker`. At least one wor
 
 For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the resources it needs.
 
+Source uploads, remote and connector ingests, source syncs and graph builds go to the `ingest` queue (`INGEST_QUEUE`); chat attachments stay on `docsgpt`. A large one can hold a worker slot for hours, and while every slot is busy the scheduler's tasks wait too: scheduled runs, reconciliation and cleanups. To keep them apart, run a second worker Deployment with `-Q ingest`, and drop `ingest` from the first worker's `-Q` list. Every queue still needs at least one worker consuming it. If you change `INGEST_QUEUE`, use the new name in both workers' `-Q` lists.
+
+## The decision model
+
+The [decision model](/Models/decision-model) runs inside the API pod, and the worker calls it there through
+`WORKER_API_URL` (`http://docsgpt-api-service`) with `INTERNAL_KEY`. It downloads and loads nothing until a decision
+feature is turned on in `docsgpt-secrets.yaml`. The first one downloads the model (about 0.5 GB) into the API's
+`emptyDir` at `/app/models/decision` (limited to 1Gi), and the API then holds up to 1 GB more memory, within its 4Gi
+limit. The download is repeated whenever the API pod is recreated, and each API replica loads its own copy. The worker
+keeps only the model's tokenizer, in an `emptyDir` of its own.
+
+With several API replicas, or to keep the model's memory apart from the API's, turn on the decider: uncomment the
+component in `kustomization.yaml` and apply it again.
+
+```yaml
+components:
+  - optional-decider
+```
+
+```sh
+kubectl apply -k deployment/k8s/
+```
+
+It runs `docsgpt-decider`, which serves the model to the API and the worker at `docsgpt-decider-service:7095`, and
+sets `DECISION_BASE_URL` and `DECISION_KEY` on both. The model is downloaded into the `docsgpt-decision-models` PersistentVolumeClaim
+(2Gi, `ReadWriteOnce`, written as the image's user through `fsGroup: 999`), where it survives restarts. The decider
+requests 1Gi and 500m and is limited to 2Gi and 4 CPUs. Its key, `DECISION_KEY`, comes from `INTERNAL_KEY` in the
+secret, for the decider and its callers alike; only the component sends it, so a server you set in the secret gets
+the `DECISION_KEY` you set there and never `INTERNAL_KEY`. The API's readiness never depends on it: decisions fail open. To turn it off,
+comment the component out, apply again, and delete what it created, which `kubectl apply` leaves running:
+`kubectl delete deployment/docsgpt-decider service/docsgpt-decider-service pvc/docsgpt-decision-models`.
+
+To serve the model from vLLM on a GPU node instead, add `DECISION_BASE_URL` (the vLLM Service's address) and
+`DECISION_PROTOCOL: vllm` to the secret, without the decider component; the vLLM flags it needs are in
+[API mode](/Models/decision-model#api-mode).
+
 ## Upgrading
 
 1. Back up the database. Migrations can't be undone without a backup:
@@ -202,7 +239,7 @@ For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the r
    kubectl exec deploy/postgres -- pg_dump -U docsgpt docsgpt > docsgpt-backup.sql
    ```
 
-2. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml` and `jobs/postgres-init-job.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
+2. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml`, `jobs/postgres-init-job.yaml` and, with the decider on, `optional-decider/decider-deploy.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
 3. Run the migration and roll the pods:
 
    ```sh

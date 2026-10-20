@@ -25,6 +25,7 @@ import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
+import type { OpenArtifactRequest } from './artifactCards';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 import { curatedErrorText } from './curatedError';
@@ -47,7 +48,7 @@ type ConversationMessagesProps = {
   status: Status;
   showHeroOnEmpty?: boolean;
   headerContent?: ReactNode;
-  onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+  onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
   onToolAction?: (
     callId: string,
     decision: 'approved' | 'denied',

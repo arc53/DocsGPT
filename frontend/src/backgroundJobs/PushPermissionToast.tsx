@@ -1,6 +1,5 @@
 import { BellRing } from 'lucide-react';
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -29,10 +28,8 @@ import { enablePush, savePushChoice } from './webPush';
  * the first time a job goes to the background or a monitor is set up (see
  * `backgroundListener`), never on page load; the browser's permission dialog
  * comes only from Enable. Either answer is remembered in this browser.
- *
- * It opens while the user is at the composer, so it sits at the top right,
- * under the page header, rather than in the bottom-right stack where it
- * covered the send button. It is its own polite live region there.
+ * Like every toast, it returns only its card for the shared bottom-right
+ * `ToastViewport`.
  */
 export default function PushPermissionToast() {
   const { t } = useTranslation();
@@ -80,47 +77,38 @@ export default function PushPermissionToast() {
     }
   };
 
-  return createPortal(
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid="push-permission-anchor"
-      className="fixed top-20 right-4 z-50"
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      <Toast data-testid="push-permission-prompt">
-        <ToastHeader variant="info">
-          <ToastTitle wrap>{t('backgroundJobs.push.promptTitle')}</ToastTitle>
-          <BellRing aria-hidden className="text-info size-4 shrink-0" />
-        </ToastHeader>
-        <ToastContent>
-          <ToastMessage size="sm">
-            {t('backgroundJobs.push.promptBody')}
-          </ToastMessage>
-        </ToastContent>
-        <ToastFooter>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            shape="pill"
-            onClick={notNow}
-            disabled={busy}
-          >
-            {t('backgroundJobs.push.notNow')}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            shape="pill"
-            onClick={() => void enable()}
-            disabled={busy}
-          >
-            {t('backgroundJobs.push.enable')}
-          </Button>
-        </ToastFooter>
-      </Toast>
-    </div>,
-    document.body,
+  return (
+    <Toast data-testid="push-permission-prompt">
+      <ToastHeader variant="info">
+        <ToastTitle wrap>{t('backgroundJobs.push.promptTitle')}</ToastTitle>
+        <BellRing aria-hidden className="text-info size-4 shrink-0" />
+      </ToastHeader>
+      <ToastContent>
+        <ToastMessage size="sm">
+          {t('backgroundJobs.push.promptBody')}
+        </ToastMessage>
+      </ToastContent>
+      <ToastFooter>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          shape="pill"
+          onClick={notNow}
+          disabled={busy}
+        >
+          {t('backgroundJobs.push.notNow')}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          shape="pill"
+          onClick={() => void enable()}
+          disabled={busy}
+        >
+          {t('backgroundJobs.push.enable')}
+        </Button>
+      </ToastFooter>
+    </Toast>
   );
 }

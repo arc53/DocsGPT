@@ -1015,6 +1015,44 @@ class TestSourceConfigResource:
         assert got["config"]["retrieval"]["chunks"] == 7
         assert got["config"]["retrieval"]["rephrase_query"] is False
 
+    def test_relevance_and_llm_screening_together_say_why(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.source_config import RELEVANCE_OR_PRESCREEN
+
+        user = "u-cfg-both"
+        src = _seed_source(pg_conn, user, name="cfg-both", type="file")
+        body = {"retrieval": {"reranker": {"min_relevance": 0.3}, "prescreen": {"candidate_k": 40}}}
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config", method="PATCH", json=body
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+        assert response.status_code == 400
+        assert response.json["message"] == RELEVANCE_OR_PRESCREEN
+
+    def test_retrieval_alone_keeps_the_saved_chunking(self, app, pg_conn):
+        # The retrieval test's "Save to source" sends only the retrieval settings.
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-keep"
+        src = _seed_source(pg_conn, user, name="cfg-keep", type="file")
+        SourcesRepository(pg_conn).update(
+            str(src["id"]), user, {"config": {"chunking": {"max_tokens": 800}, "graph": {"gleanings": 1}}}
+        )
+        reranker = {"type": "decision", "min_relevance": 0.3, "candidate_k": None}
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config", method="PATCH", json={"retrieval": {"reranker": reranker}}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+        assert response.status_code == 200 and response.json["requires_reingest"] is False
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)["config"]
+        assert got["chunking"]["max_tokens"] == 800 and got["graph"]["gleanings"] == 1
+        assert got["retrieval"]["reranker"] == reranker
+
     def test_chunking_change_requires_reingest(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SourceConfigResource
 

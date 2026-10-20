@@ -1,7 +1,7 @@
 ---
 title: Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-19
 ---
 import { Callout, Tabs } from 'nextra/components'
 
@@ -84,10 +84,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
 ```
 
-The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.8.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
+The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.10.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
 
 ### Usage
 
@@ -102,7 +102,7 @@ Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidge
 ```html filename="html"
 <!DOCTYPE html>
 <div id="app"></div>
-<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
 <script>
   window.onload = function() {
     renderDocsGPTWidget('app', {
@@ -183,6 +183,7 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`allowedFileExtensions`** | `string[]` | _unset_                                        | File extensions the composer accepts, e.g. `['.pdf', '.docx', '.md', '.png']`. Setting it turns on attachments: an Attach button, drag-and-drop onto the panel, and paste-to-attach. Leave it unset to keep attachments off. |
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
 | **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT", `false` hides it, and an object replaces it. See [Branding](#branding). |
+| **`passthrough`**  | `Record<string, string \| number \| boolean \| null>` | _unset_                 | Values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}`, and they appear on each turn in Logs. See [Passing who is asking](#passing-who-is-asking). |
 
 ---
 
@@ -207,6 +208,27 @@ Browser support is uneven, and the microphone hides itself where it cannot work.
   showMicButton
 />
 ```
+
+---
+
+## Passing who is asking
+
+`passthrough` sends values from your page with every question. A typical use is an internal site that passes the signed-in employee:
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  passthrough={{ user_id: currentUser.id, office: currentUser.office }}
+/>
+```
+
+The values do three things:
+
+- The agent's prompt can read them, e.g. `{{ passthrough.office }}`. See [`passthrough`](/Agents/prompts#3-passthrough---request-parameters) in Customizing Prompts.
+- Each turn's row in the agent's [Logs](/Using/analytics-and-logs) shows them next to the question, the answer and the visitor's like or dislike. The Logs API can filter by them.
+- They are stored with the conversation, so `GET /api/get_single_conversation` returns them.
+
+Only strings, numbers, booleans and `null` are kept. The page that embeds the widget sets them, so anyone who can open that page can send other values: treat them as a label for who is asking, not as proof of identity, and don't let the prompt grant access based on them.
 
 ---
 
