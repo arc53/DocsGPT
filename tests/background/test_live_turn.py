@@ -203,6 +203,19 @@ class TestLiveContinuation:
             status = conn.execute(text("SELECT status FROM conversation_wakes WHERE dedupe_key = 'k1'")).scalar()
         assert status == "failed"
 
+    def test_a_failed_save_takes_the_row_out_and_keeps_the_results(self, bg_db, conversation, quiet, monkeypatch):
+        monkeypatch.setattr(
+            live_turn.LiveTurn, "finish", lambda self, *a, **kw: live_turn.MessageUpdateOutcome.INVALID
+        )
+        conversation_id, _ = conversation
+        seen = _install(monkeypatch, lambda message_id, live: _outcome("Lost."))
+        _queue(conversation_id)
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "failed"
+        assert _row(bg_db, seen["message_id"]) is None
+        with bg_db.connect() as conn:
+            status = conn.execute(text("SELECT status FROM conversation_wakes WHERE dedupe_key = 'k1'")).scalar()
+        assert status == "failed"
+
     def test_without_a_row_the_message_is_appended_at_the_end(self, bg_db, conversation, quiet, monkeypatch):
         monkeypatch.setattr(live_turn.LiveTurn, "open", classmethod(lambda cls, *a, **kw: None))
         conversation_id, _ = conversation
@@ -252,7 +265,7 @@ class TestLiveTurnUnit:
         assert journal[2][1]["source"][1] == "raw"
 
     def test_a_row_it_cannot_reserve_leaves_the_append_to_the_caller(self, bg_db, conversation, quiet, monkeypatch):
-        monkeypatch.setattr(live_turn, "db_session", lambda: _Broken())
+        monkeypatch.setattr(live_turn, "db_session", _Broken)
         conversation_id, _ = conversation
         assert live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), "m", prompt="p", metadata={}) is None
         assert quiet["events"] == []
@@ -263,10 +276,16 @@ class TestLiveTurnUnit:
         conversation_id, _ = conversation
         message_id = str(uuid.uuid4())
         turn = live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), message_id, prompt="p", metadata={})
-        monkeypatch.setattr(live_turn, "db_session", lambda: _Broken())
-        assert turn.finish(_outcome("x"), metadata={}) is live_turn.MessageUpdateOutcome.INVALID
-        turn.discard()
+        real_session = live_turn.db_session
+        database = {"down": True}
+        monkeypatch.setattr(live_turn, "db_session", lambda: _Broken() if database["down"] else real_session())
+        result = turn.finish(_outcome("x"), metadata={})
+        assert result is live_turn.MessageUpdateOutcome.INVALID
         assert quiet["events"] == [("message.started", message_id), ("message.finished", message_id)]
+        # Once the database is back, discarding takes the half-written row out.
+        database["down"] = False
+        turn.discard()
+        assert _row(bg_db, message_id) is None
 
     def test_the_ticker_keeps_the_row_alive(self, bg_db, conversation, quiet, monkeypatch):
         import uuid

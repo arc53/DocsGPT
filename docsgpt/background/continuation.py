@@ -374,11 +374,14 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
         message_id = str(_append(conversation, wakes, outcome, message_id=message_id)["id"])
     else:
         metadata = {**_responses_metadata(outcome), **_wake_metadata(wakes)}
-        if live.finish(outcome, metadata=metadata, stopped=stopped) is not MessageUpdateOutcome.UPDATED:
-            # The row is gone (the user retried or edited an earlier message):
-            # the results stay deliverable to the user's next message.
-            _settle(wakes, "failed", job_state="pending", error="the continuation's message was removed")
-            return {"state": "superseded_by_user"}
+        saved = live.finish(outcome, metadata=metadata, stopped=stopped)
+        if saved is not MessageUpdateOutcome.UPDATED:
+            if saved is not MessageUpdateOutcome.NOT_FOUND:
+                # The save failed: take the half-written row out (the reconciler fails it if this can't).
+                live.discard()
+            # The results stay deliverable to the user's next message.
+            _settle(wakes, "failed", job_state="pending", error="the continuation's message could not be saved")
+            return {"state": "superseded_by_user" if saved is MessageUpdateOutcome.NOT_FOUND else "failed"}
     _link_turn(message_id, outcome)
     _settle(wakes, "delivered", message_id=message_id)
     publish_conversation_continued(user_id, conversation_id, message_id, wakes[0].get("source") or "job")
