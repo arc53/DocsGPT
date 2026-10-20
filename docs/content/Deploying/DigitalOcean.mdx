@@ -1,0 +1,203 @@
+---
+title: DigitalOcean 1-Click App
+description: Run DocsGPT on a DigitalOcean Droplet from the Marketplace 1-Click App, with HTTPS on the Droplet's IP address, an access token or user accounts, and backed-up upgrades.
+lastUpdated: 2026-10-20
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# DigitalOcean 1-Click App
+
+The DocsGPT 1-Click App starts a Droplet that sets DocsGPT up on its first boot.
+A minute or two after you create it, DocsGPT answers at `https://<Droplet IP>`
+with a valid certificate, asks for an access token that only you can see, and
+can chat right away through the DocsGPT public API. No domain, SSH session or
+API key is needed to start.
+
+It runs the same stack as [`docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up):
+the API and the worker from the release's Docker image, PostgreSQL, Redis and
+Caddy, managed by the `docsgpt` command.
+
+## Create the Droplet
+
+<Steps>
+
+### Pick the app
+
+Open the DocsGPT listing on the [DigitalOcean Marketplace](https://marketplace.digitalocean.com/)
+and select **Create DocsGPT Droplet**.
+
+### Pick a size
+
+Choose a plan with at least **4 GB of memory**. The image needs an 80 GB disk,
+so smaller plans aren't offered. 8 GB leaves room for user accounts, larger
+documents and more people at once.
+
+### Add your SSH key
+
+Add an SSH key, or a password, so you can log in later. You don't need to log in
+to start using DocsGPT, only to read the access token, which the Droplet
+Console in the DigitalOcean control panel also shows.
+
+### Create it
+
+Select **Create Droplet** and wait for it to become active.
+
+</Steps>
+
+## First sign-in
+
+Log in as root, with SSH or with the Droplet Console:
+
+```bash
+ssh root@<Droplet IP>
+```
+
+The login message shows where DocsGPT is and its access token:
+
+```text
+  Open DocsGPT:  https://203.0.113.10
+  Access token:  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+Open the address and paste the token when the page asks for it. Each browser
+asks once. `docsgpt token` prints the token again.
+
+If the login message says DocsGPT is still being set up, the first boot hasn't
+finished; follow it with `tail -f /var/log/docsgpt-onboot.log`.
+
+<Callout type="info">
+The certificate is a [Let's Encrypt certificate for the IP address](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability).
+These last six days and Caddy renews them by itself. Until the first one is
+issued, usually within a minute of the first boot, Caddy serves a self-signed
+certificate and the browser warns about it; reload once it's issued.
+</Callout>
+
+The first login also asks two optional questions: whether to move DocsGPT to
+your own domain, and whether to turn on user accounts. You can answer no and
+come back to either later with the commands below.
+
+## Use your own domain
+
+Point an `A` record for the domain at the Droplet's IP address, then:
+
+```bash
+docsgpt up --domain docs.example.com
+```
+
+Caddy gets a certificate for the domain, and DocsGPT, its links and, with
+accounts on, the sign-in page move to `https://docs.example.com`. A
+[reserved IP](https://docs.digitalocean.com/products/networking/reserved-ips/)
+keeps the address stable if you later replace the Droplet.
+
+## User accounts
+
+By default everyone who has the access token shares one DocsGPT user. To give
+each person their own account, with their own conversations, sources and agents:
+
+```bash
+docsgpt up --accounts
+```
+
+This starts [Keycloak](https://www.keycloak.org/) in the stack and turns on
+[OIDC sign-in](/Deploying/OIDC-SSO), on the same address under `/auth`. It
+prints the first administrator's user name and initial password:
+
+```text
+Sign in as admin, initial password 3vX9... (the first sign-in sets a new one)
+Add people at https://203.0.113.10/auth/admin/docsgpt/console (Users, then Add user).
+```
+
+- **Sign in** at the DocsGPT address as `admin` with that password. Keycloak
+  asks you to choose a new one, then sends you back to DocsGPT.
+- **Add people** in the Keycloak console at `/auth/admin/docsgpt/console`
+  (Users, then Add user, then a temporary password on the Credentials tab). Sign
+  in there with the same `admin` account.
+- **Make someone an admin** by adding them to the `docsgpt-admins` group. DocsGPT
+  checks the group at each sign-in and gives its members the admin role, which
+  opens the admin dashboard.
+
+Keycloak keeps its data in the stack's PostgreSQL, so `docsgpt backup` includes
+it. `docsgpt up --no-accounts` goes back to the access token; the accounts stay
+in the database for when you turn them on again.
+
+<Callout type="warning">
+Turn accounts on before people start using DocsGPT. What was made with the
+access token belongs to its shared user and doesn't move to anyone's account.
+</Callout>
+
+Keycloak adds about 600 MB of memory use. On a 4 GB Droplet with large uploads,
+consider the 8 GB plan once accounts are on.
+
+## Upgrade
+
+```bash
+docsgpt upgrade
+```
+
+It backs up the database and the uploaded data first (into
+`/opt/docsgpt/backups/pre-upgrade`, keeping the last two), installs the latest
+release of the `docsgpt` command and moves the stack to that release's images.
+If the new version misbehaves, go back:
+
+```bash
+docsgpt upgrade --rollback
+```
+
+That restores the backup taken before the upgrade and returns to the previous
+version. Anything changed since the upgrade is lost, and the command asks
+before it starts. `docsgpt upgrade --no-backup` skips the backup and with it
+the way back.
+
+Ubuntu's security updates install by themselves. Run `apt upgrade` now and then
+for the rest, including Docker.
+
+## Backups
+
+```bash
+docsgpt backup                      # into /opt/docsgpt/backups
+docsgpt restore /opt/docsgpt/backups/docsgpt-20261020-120000.tar.gz
+```
+
+See [Backups](/Deploying/Docker-Deploying#backups) for what the archive holds.
+Copy archives off the Droplet, for example to
+[Spaces](https://docs.digitalocean.com/products/spaces/), or turn on Droplet
+backups in the control panel as well.
+
+## Models
+
+The Droplet starts on the DocsGPT public API, which needs no key. To use your
+own provider:
+
+```bash
+docsgpt up --reconfigure
+```
+
+It asks which provider to use and for its key. Signed-in users can also add
+their own models under **Settings → Custom Models**, including any
+OpenAI-compatible endpoint.
+
+## What's on the Droplet
+
+| What | Where |
+| --- | --- |
+| Settings and secrets | `/opt/docsgpt/.env` (read by `docsgpt env get KEY`) |
+| Compose file and install record | `/opt/docsgpt` |
+| Data | Docker volumes `docsgpt_postgres_data`, `docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors` |
+| First-boot log | `/var/log/docsgpt-onboot.log` |
+| The `docsgpt` command | `/usr/local/bin/docsgpt`, a uv tool in `/opt/docsgpt-cli` |
+
+Only ports 22, 80 and 443 are open (ufw), and fail2ban watches SSH. The API's
+own port, PostgreSQL, Redis and Keycloak listen on the Droplet only.
+[Cloud Firewalls](https://docs.digitalocean.com/products/networking/firewalls/)
+can narrow SSH down to your own address.
+
+## Troubleshooting
+
+- **The browser warns about the certificate.** Let's Encrypt hasn't issued it
+  yet, or can't reach the Droplet on port 80 or 443. `docsgpt logs caddy` says
+  which.
+- **The page says DocsGPT is starting.** The first start sets up the database;
+  give it a minute. `docsgpt status` and `docsgpt logs backend` show progress.
+- **Something else.** `docsgpt doctor` checks the database, Redis and the model
+  provider. See [Troubleshooting](/Deploying/Troubleshooting).

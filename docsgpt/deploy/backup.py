@@ -6,7 +6,9 @@ is left out unless it is asked for: it holds the secrets.
 
 ``postgres_data`` is not tarred, because the dump is the database backup and a
 copy of a running data directory would be a torn one. Caddy's volumes are left
-out too: they hold certificates it obtains again on the next start.
+out too: they hold certificates it obtains again on the next start. When user
+accounts are on, the Keycloak database in the same Postgres is dumped beside
+the main one (``databases/keycloak.sql``), and the manifest lists it.
 """
 
 from __future__ import annotations
@@ -29,6 +31,8 @@ DUMP = "database.sql"
 SETTINGS = "settings.env"
 VOLUME_DIR = "volumes"
 DATA_VOLUMES = ("indexes", "inputs", "vectors")
+# Databases besides the main one that a backup may hold, each dumped on its own.
+EXTRA_DATABASES = ("keycloak",)
 
 
 def archive_name(when: datetime) -> str:
@@ -41,6 +45,11 @@ def volume_member(name: str) -> str:
     return f"{VOLUME_DIR}/{name}.tar"
 
 
+def database_member(name: str) -> str:
+    """Where the dump of one of the :data:`EXTRA_DATABASES` sits inside the archive."""
+    return f"databases/{name}.sql"
+
+
 def write_archive(
     path: Path,
     *,
@@ -48,6 +57,7 @@ def write_archive(
     volume_tars: Mapping[str, Path],
     manifest: Mapping[str, object],
     settings: Optional[Path] = None,
+    databases: Optional[Mapping[str, Path]] = None,
 ) -> None:
     """Write the backup archive; the manifest is added last so a truncated file has none."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,6 +68,8 @@ def write_archive(
         archive.add(dump, arcname=DUMP)
         for name, tar_path in sorted(volume_tars.items()):
             archive.add(tar_path, arcname=volume_member(name))
+        for name, dump_path in sorted((databases or {}).items()):
+            archive.add(dump_path, arcname=database_member(name))
         if settings is not None:
             archive.add(settings, arcname=SETTINGS)
         body = json.dumps(dict(manifest), indent=2).encode("utf-8")
@@ -101,7 +113,8 @@ def validate(path: Path, manifest: Mapping[str, object]) -> list[str]:
             f"{path} names volumes that are not part of a backup: {', '.join(unsupported)}. "
             f"A DocsGPT backup holds {', '.join(DATA_VOLUMES)}."
         )
-    required = [DUMP, *(volume_member(name) for name in volumes)]
+    databases = extra_databases(path, manifest)
+    required = [DUMP, *(volume_member(name) for name in volumes), *(database_member(name) for name in databases)]
     try:
         with tarfile.open(path, "r:gz") as archive:
             present = {member.name for member in archive.getmembers() if member.isfile()}
@@ -111,6 +124,25 @@ def validate(path: Path, manifest: Mapping[str, object]) -> list[str]:
     if missing:
         raise DeployError(f"{path} is missing {', '.join(missing)}, so there is nothing to restore from")
     return list(volumes)
+
+
+def extra_databases(path: Path, manifest: Mapping[str, object]) -> list[str]:
+    """The databases besides the main one that the archive holds, as its manifest lists them.
+
+    Only the :data:`EXTRA_DATABASES` are accepted, so a manifest cannot name the main database
+    (or ``postgres``) and have it replaced on the way in. Backups from before these existed list
+    none.
+    """
+    databases = manifest.get("databases", [])
+    if not isinstance(databases, list) or not all(isinstance(name, str) for name in databases):
+        raise DeployError(f"{path} is not a DocsGPT backup: its manifest does not list the databases it holds")
+    unsupported = sorted(set(databases) - set(EXTRA_DATABASES))
+    if unsupported:
+        raise DeployError(
+            f"{path} names databases that are not part of a backup: {', '.join(unsupported)}. "
+            f"Besides the main one, a DocsGPT backup may hold {', '.join(EXTRA_DATABASES)}."
+        )
+    return list(databases)
 
 
 def check_volume_tar(name: str, path: Path) -> None:

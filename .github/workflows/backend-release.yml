@@ -145,3 +145,16 @@ jobs:
     permissions:
       contents: read
       id-token: write
+
+  # The 1-Click image runs the release's package and its backend image, so it waits for both.
+  digitalocean:
+    needs: [release, docker, pypi]
+    if: needs.release.outputs.created == 'true'
+    uses: $/.github/workflows/digitalocean-image.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets:
+      DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      DIGITALOCEAN_MARKETPLACE_APP_ID: ${{ secrets.DIGITALOCEAN_MARKETPLACE_APP_ID }}
+    permissions:
+      contents: read

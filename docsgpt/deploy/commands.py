@@ -33,11 +33,18 @@ _MOVING_TAGS = ("latest", "develop")
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Commands that stop or remove services name every profile, so Caddy and the
 # decider go too even when COMPOSE_PROFILES no longer enables them.
-_EVERY_PROFILE = ("--profile", "https", "--profile", stack.DECIDER_PROFILE)
+_EVERY_PROFILE = (
+    "--profile", "https", "--profile", stack.DECIDER_PROFILE, "--profile", stack.ACCOUNTS_PROFILE,
+)
+# Keycloak and the one-off service that creates its database, both in the accounts profile.
+_ACCOUNT_SERVICES = ("keycloak", "keycloak-db")
+# The exposures Caddy serves over HTTPS.
+_HTTPS = ("ip", "domain")
 
 EXPOSURE_CHOICES = [
     ("local", "Only this computer"),
     ("network", "Other machines on the network (plain HTTP, access token)"),
+    ("ip", "This machine's public IP address with HTTPS, no domain needed (Let's Encrypt, access token)"),
     ("domain", "A domain name with HTTPS (Caddy certificate, access token)"),
 ]
 
@@ -163,6 +170,36 @@ def _current_provider(env: Mapping[str, str]) -> str:
     return name if name in stack.PROVIDERS else "docsgpt"
 
 
+def _public_ip(context: Context, existing: Mapping[str, str]) -> str:
+    """The address ``--expose ip`` serves on when ``--ip`` is not given.
+
+    The one the install already serves on, else this machine's own address when it is a
+    public one (a cloud server's usually is), else the answer to a question.
+
+    Args:
+        context: What the command talks to.
+        existing: The settings before this ``up``.
+
+    Returns:
+        A public IPv4 address.
+
+    Raises:
+        DeployError: When there is none to find and no terminal to ask on.
+    """
+    if stack.exposure(existing) == "ip" and existing.get("DOCSGPT_DOMAIN"):
+        return existing["DOCSGPT_DOMAIN"]
+    address = context.lan_ip()
+    try:
+        return stack.public_ipv4(address)
+    except ValueError:
+        if not context.interactive:
+            raise DeployError(
+                f"this machine's address ({address}) is not a public IPv4 address, which --expose ip needs: "
+                "pass the address the internet reaches it at with --ip"
+            ) from None
+        return context.prompter.text("This machine's public IPv4 address")
+
+
 def _check_other_stacks(args, context: Context, directory: Path) -> bool:
     """True when containers of the project were started from another folder and ``up`` takes them over."""
     others = {path for path in context.docker.project_dirs(PROJECT) if path.resolve() != directory.resolve()}
@@ -284,11 +321,21 @@ def _docsgpt_launcher() -> list[str]:
 
 def _refuse_docker_only_options(args) -> None:
     """Options that only mean something to the Docker stack, refused rather than quietly ignored."""
-    if getattr(args, "domain", None) or getattr(args, "expose", None) in ("network", "domain"):
+    if (
+        getattr(args, "domain", None)
+        or getattr(args, "ip", None)
+        or getattr(args, "expose", None) in ("network", "ip", "domain")
+    ):
         raise DeployError(
-            "a native install serves on 127.0.0.1 only, so --domain, --expose network and "
-            "--expose domain have nothing to act on here. Put a reverse proxy in front of it, or run "
-            "the Docker stack with `docsgpt up --expose ...`, which brings its own Caddy for a domain."
+            "a native install serves on 127.0.0.1 only, so --domain, --ip and --expose network, ip or "
+            "domain have nothing to act on here. Put a reverse proxy in front of it, or run the Docker "
+            "stack with `docsgpt up --expose ...`, which brings its own Caddy for a domain or an IP address."
+        )
+    if getattr(args, "accounts", None):
+        raise DeployError(
+            "--accounts starts Keycloak in a container, which a native install does not run. Point "
+            "AUTH_TYPE=oidc at an identity provider of your own instead: "
+            "https://docs.docsgpt.cloud/Deploying/OIDC-SSO"
         )
     if getattr(args, "docling", None):
         raise DeployError(
@@ -519,29 +566,35 @@ def up(args, context: Optional[Context] = None) -> int:
     recreate = ["--force-recreate"] if _check_other_stacks(args, context, directory) else []
 
     ask = context.interactive and (not configured or args.reconfigure)
-    expose, domain = args.expose, args.domain
-    if ask and expose is None and domain is None:
+    expose, domain, ip = args.expose, args.domain, getattr(args, "ip", None)
+    if ask and expose is None and domain is None and ip is None:
         expose = context.prompter.choose("Who should reach DocsGPT?", EXPOSURE_CHOICES, stack.exposure(existing))
     if expose == "domain" and not domain:
         if not context.interactive:
             raise DeployError("--expose domain needs --domain")
         domain = context.prompter.text("Domain name (its DNS must point at this machine)", existing.get("DOCSGPT_DOMAIN"))
+    if (expose == "ip" or (expose is None and ip is None and domain is None and stack.exposure(existing) == "ip")) \
+            and not ip:
+        ip = _public_ip(context, existing)
     provider = _choose_provider(args, context, existing, ask)
 
     image_tag = args.image_tag or context.version
+    fresh_database = not context.docker.volume_exists(DATABASE_VOLUME)
     lan_address = context.lan_ip()
     owned_api_url = stack.owns_api_url(existing, _record(directory).get("api_url"), lan_address)
     try:
         updates = stack.plan(
             existing,
             image_tag=image_tag,
-            fresh_database=not context.docker.volume_exists(DATABASE_VOLUME),
+            fresh_database=fresh_database,
             expose=expose,
             domain=domain,
             port=args.port,
             provider=provider,
             docling=args.docling,
             decider=args.decider,
+            ip=ip,
+            accounts=getattr(args, "accounts", None),
             lan_ip=lan_address,
             written_api_url=_record(directory).get("api_url"),
         )
@@ -553,9 +606,20 @@ def up(args, context: Optional[Context] = None) -> int:
     envfile.update(env_path, updates)
     env = envfile.read(env_path)
 
-    if stack.exposure(existing) == "domain" and stack.exposure(env) != "domain":
+    if stack.exposure(existing) in _HTTPS and stack.exposure(env) not in _HTTPS:
         # With the https profile off, `up --remove-orphans` would leave Caddy running on ports 80 and 443.
         context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "caddy", check=False)
+    if stack.runs_accounts(existing) and not stack.runs_accounts(env):
+        # Keycloak's database stays in Postgres, so turning accounts on again finds everyone.
+        context.docker.compose(
+            directory, *_EVERY_PROFILE, "rm", "--stop", "--force", *_ACCOUNT_SERVICES, check=False
+        )
+    if stack.runs_accounts(env) and not stack.runs_accounts(existing) and not fresh_database:
+        print(
+            "User accounts start empty: conversations, sources and agents made so far belong to the shared "
+            "access-token user and are not moved to anyone's account.",
+            file=sys.stderr,
+        )
     if stack.runs_decider(existing) and not stack.runs_decider(env):
         # The same for the decider: the backend and worker go back to the model in the API process.
         context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "decider", check=False)
@@ -594,6 +658,18 @@ def up(args, context: Optional[Context] = None) -> int:
             file=sys.stderr,
         )
         return 1
+    if stack.runs_accounts(env):
+        print("Waiting for Keycloak (its first start imports the docsgpt realm) ...")
+        waited = context.docker.compose(
+            directory, "up", "-d", "--wait", "--wait-timeout", str(args.timeout), "keycloak", check=False
+        )
+        if waited.returncode != 0:
+            print(
+                f"Keycloak was not ready within {args.timeout} seconds, so signing in fails until it is. "
+                "See what happened with `docsgpt logs keycloak`.",
+                file=sys.stderr,
+            )
+            return 1
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     record = json.loads(record_path.read_text(encoding="utf-8")) if configured else {"installed_at": now}
@@ -609,8 +685,20 @@ def up(args, context: Optional[Context] = None) -> int:
     if env.get("AUTH_TYPE") == "simple_jwt" and env.get("JWT_SECRET_KEY"):
         print("Access token (the page asks for it; `docsgpt token` prints it again):")
         print(f"  {stack.simple_jwt_token(env['JWT_SECRET_KEY'])}")
+    if stack.runs_accounts(env):
+        print(
+            f"Sign in as {stack.KEYCLOAK_ADMIN_USER}, initial password {env.get('KEYCLOAK_ADMIN_PASSWORD')} "
+            "(the first sign-in sets a new one; `docsgpt token` prints this again)."
+        )
+        print(f"Add people at {address}/auth/admin/{stack.KEYCLOAK_REALM}/console (Users, then Add user).")
     if mode == "domain":
         print("Caddy gets the certificate when it starts: DNS must point at this machine and ports 80 and 443 be open.")
+    elif mode == "ip":
+        print(
+            "Caddy gets a Let's Encrypt certificate for this IP address when it starts (ports 80 and 443 must be "
+            "open); until then the browser warns about a self-signed one. Move to a domain with "
+            "`docsgpt up --domain <name>`."
+        )
     print(f"Settings: {env_path}  (change the model provider or access with `docsgpt up --reconfigure`)")
     print("Manage it with: docsgpt status | logs | upgrade | down | uninstall")
     if context.interactive and not configured and not args.no_open and mode == "local":
@@ -727,6 +815,13 @@ def token(args, context: Optional[Context] = None) -> int:
     directory = stack.stack_dir(args.dir)
     env = _installed(directory)
     if env is None:
+        return 1
+    if stack.runs_accounts(env) and env.get("KEYCLOAK_ADMIN_PASSWORD"):
+        print(
+            f"This install signs people in with accounts. The first administrator is {stack.KEYCLOAK_ADMIN_USER}, "
+            f"with the initial password {env['KEYCLOAK_ADMIN_PASSWORD']} (changed at the first sign-in).",
+            file=sys.stderr,
+        )
         return 1
     if env.get("AUTH_TYPE") != "simple_jwt" or not env.get("JWT_SECRET_KEY"):
         print(f"This install has no access token (AUTH_TYPE={env.get('AUTH_TYPE') or 'none'}).", file=sys.stderr)
@@ -1336,17 +1431,7 @@ def backup(args, context: Optional[Context] = None) -> int:
         )
 
     out_dir = Path(args.out).expanduser() if args.out else directory / "backups"
-    taken_at = datetime.now(timezone.utc)
-    target = out_dir / backup_format.archive_name(taken_at)
-    image = _stack_image(env)
-
-    try:
-        print("Pausing the backend and the worker so the database and the files match ...")
-        context.docker.compose(directory, "stop", "backend", "worker")
-        _write_backup(args, context, directory, env, target, image, taken_at)
-    finally:
-        print("Starting the backend and the worker again ...")
-        context.docker.compose(directory, "up", "-d", "backend", "worker")
+    target = _take_backup(context, directory, env, out_dir, args.with_settings)
 
     size = target.stat().st_size / 1_000_000
     print(f"\nBackup written to {target} ({size:.1f} MB)")
@@ -1358,18 +1443,50 @@ def backup(args, context: Optional[Context] = None) -> int:
     return 0
 
 
-def _write_backup(args, context: Context, directory: Path, env, target: Path, image: str, taken_at) -> None:
-    """Dump the database and the data volumes into ``target``, with the writers stopped."""
+def _take_backup(
+    context: Context, directory: Path, env: Mapping[str, str], out_dir: Path, with_settings: bool
+) -> Path:
+    """Write a backup archive into ``out_dir`` with the writers paused, and return its path.
+
+    Args:
+        context: What the command talks to.
+        directory: The stack directory.
+        env: The stack's settings.
+        out_dir: Where the archive goes.
+        with_settings: Whether ``.env`` goes into the archive.
+
+    Returns:
+        The archive written.
+    """
+    taken_at = datetime.now(timezone.utc)
+    target = out_dir / backup_format.archive_name(taken_at)
+    # Keycloak writes its own database (sessions, sign-in events), so it pauses with the others.
+    writers = ["backend", "worker", *(["keycloak"] if stack.runs_accounts(env) else [])]
+    try:
+        print(f"Pausing {', '.join(writers)} so the databases and the files match ...")
+        context.docker.compose(directory, "stop", *writers)
+        _write_backup(context, directory, env, target, _stack_image(env), taken_at, with_settings)
+    finally:
+        print("Starting them again ...")
+        context.docker.compose(directory, "up", "-d", *writers)
+    return target
+
+
+def _write_backup(
+    context: Context, directory: Path, env, target: Path, image: str, taken_at, with_settings: bool
+) -> None:
+    """Dump the databases and the data volumes into ``target``, with the writers stopped."""
     with tempfile.TemporaryDirectory() as workspace:
         work = Path(workspace)
         dump = work / backup_format.DUMP
         print("Dumping the database ...")
-        with dump.open("w", encoding="utf-8") as handle:
-            context.docker.compose(
-                directory, "exec", "-T", "postgres",
-                "pg_dump", "--clean", "--if-exists", "-U", "docsgpt", "-d", "docsgpt",
-                stdout=handle,
-            )
+        _dump_database(context, directory, STACK_DATABASE, dump)
+        databases = {}
+        if stack.runs_accounts(env):
+            for name in backup_format.EXTRA_DATABASES:
+                print(f"Dumping the {name} database ...")
+                databases[name] = work / f"{name}.sql"
+                _dump_database(context, directory, name, databases[name])
         volume_tars = {}
         for name in backup_format.DATA_VOLUMES:
             print(f"Archiving the {name} volume ...")
@@ -1382,13 +1499,41 @@ def _write_backup(args, context: Context, directory: Path, env, target: Path, im
             "version": context.version,
             "image_tag": env.get("DOCSGPT_IMAGE_TAG", ""),
             "volumes": list(backup_format.DATA_VOLUMES),
-            "settings_included": bool(args.with_settings),
+            "databases": sorted(databases),
+            "settings_included": bool(with_settings),
         }
-        settings = directory / ".env" if args.with_settings else None
-        backup_format.write_archive(target, dump=dump, volume_tars=volume_tars, manifest=manifest, settings=settings)
+        settings = directory / ".env" if with_settings else None
+        backup_format.write_archive(
+            target, dump=dump, volume_tars=volume_tars, manifest=manifest, settings=settings, databases=databases
+        )
 
 
-def _restore_data(context: Context, directory: Path, archive: Path, volumes: list, image: str) -> None:
+def _dump_database(context: Context, directory: Path, database: str, target: Path) -> None:
+    """``pg_dump`` one database of the stack's Postgres into ``target``."""
+    with target.open("w", encoding="utf-8") as handle:
+        context.docker.compose(
+            directory, "exec", "-T", "postgres",
+            "pg_dump", "--clean", "--if-exists", "-U", STACK_DATABASE_OWNER, "-d", database,
+            stdout=handle,
+        )
+
+
+def _database_exists(context: Context, directory: Path, database: str) -> bool:
+    """Whether the stack's Postgres has ``database``."""
+    if not _IDENTIFIER.match(database):
+        raise ValueError(f"not a plain SQL identifier: {database!r}")
+    result = context.docker.compose(
+        directory, "exec", "-T", "postgres",
+        "psql", "-U", STACK_DATABASE_OWNER, "-d", "postgres", "-tAc",
+        f"SELECT 1 FROM pg_database WHERE datname = '{database}'",
+        capture=True,
+    )
+    return (result.stdout or "").strip() == "1"
+
+
+def _restore_data(
+    context: Context, directory: Path, archive: Path, volumes: list, image: str, databases: Optional[list] = None
+) -> None:
     """Put the archive's volumes and database back, with the stack stopped."""
     with tempfile.TemporaryDirectory() as workspace:
         work = Path(workspace)
@@ -1415,11 +1560,24 @@ def _restore_data(context: Context, directory: Path, archive: Path, volumes: lis
         def run(database: str, statements: list) -> None:
             _stack_psql(context, directory, database, statements)
 
-        def load() -> None:
-            with dump.open("r", encoding="utf-8") as handle:
-                _stack_psql(context, directory, STACK_DATABASE, [], stdin=handle)
+        def loader(database: str, path: Path) -> Callable[[], None]:
+            def load() -> None:
+                with path.open("r", encoding="utf-8") as handle:
+                    _stack_psql(context, directory, database, [], stdin=handle)
 
-        replace_database(run, load, STACK_DATABASE, STACK_DATABASE_OWNER)
+            return load
+
+        replace_database(run, loader(STACK_DATABASE, dump), STACK_DATABASE, STACK_DATABASE_OWNER)
+        for name in databases or []:
+            extra = work / backup_format.database_member(name)
+            if not extra.is_file():
+                raise DeployError(f"{archive} is missing the {name} database it says it contains")
+            if _database_exists(context, directory, name):
+                replace_database(run, loader(name, extra), name, STACK_DATABASE_OWNER)
+            else:
+                print(f"Creating the {name} database and restoring it ...")
+                run("postgres", [f"CREATE DATABASE {name} OWNER {STACK_DATABASE_OWNER}"])
+                loader(name, extra)()
 
 
 STACK_DATABASE = "docsgpt"
@@ -1512,7 +1670,7 @@ def restore(args, context: Optional[Context] = None) -> int:
     manifest = backup_format.read_manifest(archive)
     backup_format.check_version(manifest, context.version, args.force)
     # Everything the archive declares is checked here, while DocsGPT is still up.
-    volumes = backup_format.validate(archive, manifest)
+    backup_format.validate(archive, manifest)
 
     env = _installed(directory)
     if env is None:
@@ -1527,11 +1685,36 @@ def restore(args, context: Optional[Context] = None) -> int:
             print("Nothing restored.")
             return 1
 
+    if not _restore_archive(context, directory, archive, manifest, env, args.timeout):
+        return 1
+    print(f"\nRestored the backup from {taken_at}. DocsGPT is running at {stack.url(env, context.lan_ip())}")
+    return 0
+
+
+def _restore_archive(
+    context: Context, directory: Path, archive: Path, manifest: Mapping[str, object], env: Mapping[str, str],
+    timeout: int,
+) -> bool:
+    """Stop the stack, put a checked archive's data back, and start it again on the image ``env`` names.
+
+    Args:
+        context: What the command talks to.
+        directory: The stack directory.
+        archive: A backup archive whose manifest has been read and checked.
+        manifest: Its manifest.
+        env: The stack's settings.
+        timeout: Seconds to wait for the API afterwards.
+
+    Returns:
+        Whether the API answered after the restore.
+    """
+    volumes = backup_format.validate(archive, manifest)
+    databases = backup_format.extra_databases(archive, manifest)
     image = _stack_image(env)
     try:
         print("Stopping the stack ...")
         context.docker.compose(directory, *_EVERY_PROFILE, "down")
-        _restore_data(context, directory, archive, volumes, image)
+        _restore_data(context, directory, archive, volumes, image, databases)
     except BaseException:
         # The stack is down by now. A corrupt payload inside an otherwise well-formed archive, or a
         # statement psql refuses, must not leave DocsGPT stopped: start it again, then report.
@@ -1541,30 +1724,133 @@ def restore(args, context: Optional[Context] = None) -> int:
 
     print("Starting DocsGPT ...")
     context.docker.compose(directory, "up", "-d", "--remove-orphans")
-    if not context.wait(stack.health_url(env), args.timeout):
+    if not context.wait(stack.health_url(env), timeout):
         print("DocsGPT did not answer after the restore. See `docsgpt logs backend`.", file=sys.stderr)
-        return 1
-    print(f"\nRestored the backup from {taken_at}. DocsGPT is running at {stack.url(env, context.lan_ip())}")
-    return 0
+        return False
+    return True
 
 
 def _uninstall_hint(installer: str) -> str:
     return {"uv": "uv tool uninstall docsgpt", "pipx": "pipx uninstall docsgpt"}.get(installer, "pip uninstall docsgpt")
 
 
+PRE_UPGRADE_BACKUPS = "pre-upgrade"
+# How many backups taken before upgrades are kept; older ones are deleted when a new one is taken.
+PRE_UPGRADE_KEEP = 2
+
+
 def upgrade(args, context: Optional[Context] = None) -> int:
-    """Upgrade the package, then run the new version's ``docsgpt up``."""
+    """Back up, upgrade the package, then run the new version's ``docsgpt up``; or roll the last one back."""
     context = context or Context.default(args)
+    directory = stack.stack_dir(args.dir)
+    if getattr(args, "rollback", False):
+        return _rollback(args, context, directory)
     spec = f"docsgpt=={args.version}" if args.version else "docsgpt"
     installer = context.installer()
     if installer == "uv":
+        if getattr(args, "backup", True):
+            _backup_before_upgrade(context, directory)
         if context.run(["uv", "tool", "install", "--force", spec]) != 0:
             raise DeployError(f"uv could not install {spec}")
         # The same launcher the service units get: a bare name is not always on PATH to exec.
-        return context.exec_up([*_docsgpt_launcher(), "up", "--dir", str(stack.stack_dir(args.dir))])
+        return context.exec_up([*_docsgpt_launcher(), "up", "--dir", str(directory)])
     command = f"pipx install --force {spec}" if installer == "pipx" else f"pip install -U {spec}"
     print(f"Upgrade the package with `{command}`, then run `docsgpt up` to move the stack to it.", file=sys.stderr)
     return 1
+
+
+def _backup_before_upgrade(context: Context, directory: Path) -> None:
+    """Back up a Docker install and record what ``upgrade --rollback`` goes back to.
+
+    Nothing is done for a native install (its data is not in the stack) or where there is no
+    install yet. Only the newest :data:`PRE_UPGRADE_KEEP` of these backups are kept.
+
+    Args:
+        context: What the command talks to.
+        directory: The stack directory.
+    """
+    if _mode(directory) == "native" or not (directory / stack.COMPOSE_FILE).is_file():
+        return
+    env = envfile.read(directory / ".env")
+    out_dir = directory / "backups" / PRE_UPGRADE_BACKUPS
+    print("Backing up before the upgrade (`docsgpt upgrade --rollback` restores it; --no-backup skips it) ...")
+    target = _take_backup(context, directory, env, out_dir, with_settings=False)
+    record_path = directory / stack.RECORD_FILE
+    record = _record(directory)
+    record["rollback"] = {
+        "version": context.version,
+        "image_tag": env.get("DOCSGPT_IMAGE_TAG") or context.version,
+        "backup": str(target),
+    }
+    record_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    for stale in sorted(out_dir.glob("docsgpt-*.tar.gz"))[:-PRE_UPGRADE_KEEP]:
+        stale.unlink(missing_ok=True)
+    print(f"Backup written to {target}")
+
+
+def _rollback(args, context: Context, directory: Path) -> int:
+    """Go back to the version the last ``upgrade`` left, with the data backed up just before it.
+
+    The data comes back first, on the earlier image and with this version's restore, then the
+    earlier package is installed and its ``docsgpt up`` finishes the move (its Compose file and
+    its settings). Changes made since the upgrade are lost; the confirmation says so.
+
+    Args:
+        args: The parsed command line.
+        context: What the command talks to.
+        directory: The stack directory.
+
+    Returns:
+        The exit status.
+    """
+    if _mode(directory) == "native":
+        raise DeployError("--rollback restores a Docker install's backup; a native install has none to restore")
+    if _installed(directory) is None:
+        return 1
+    previous = _record(directory).get("rollback")
+    if not isinstance(previous, dict) or not previous.get("version") or not previous.get("backup"):
+        raise DeployError(
+            "there is no upgrade to roll back: `docsgpt upgrade` records one when it backs up first. "
+            "To go back by hand, restore a backup with `docsgpt restore`."
+        )
+    archive = Path(previous["backup"])
+    manifest = backup_format.read_manifest(archive)
+    backup_format.validate(archive, manifest)
+    installer = context.installer()
+    spec = f"docsgpt=={previous['version']}"
+    if installer != "uv":
+        print(
+            f"Roll back by hand: install {spec} ({'pipx install --force' if installer == 'pipx' else 'pip install'} "
+            f"{spec}), then run `docsgpt restore {archive}` and `docsgpt up`.",
+            file=sys.stderr,
+        )
+        return 1
+    if not args.yes:
+        if not context.interactive:
+            raise DeployError("--rollback needs --yes when there is no terminal to confirm on")
+        question = (
+            f"Go back to DocsGPT {previous['version']} and the data backed up before the upgrade "
+            f"({manifest.get('created_at', 'unknown time')})? What changed since then is lost."
+        )
+        if not context.prompter.confirm(question, default=False):
+            print("Nothing rolled back.")
+            return 1
+
+    env_path = directory / ".env"
+    envfile.update(env_path, {"DOCSGPT_IMAGE_TAG": previous["image_tag"]})
+    if not _restore_archive(context, directory, archive, manifest, envfile.read(env_path), args.timeout):
+        return 1
+    record = _record(directory)
+    record.pop("rollback", None)
+    (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    if context.run(["uv", "tool", "install", "--force", spec]) != 0:
+        raise DeployError(
+            f"the data and the image are back on {previous['version']}, but uv could not install {spec}: "
+            f"install it with `uv tool install --force {spec}`, then run `docsgpt up`"
+        )
+    return context.exec_up(
+        [*_docsgpt_launcher(), "up", "--dir", str(directory), "--yes", "--image-tag", previous["image_tag"]]
+    )
 
 
 def uninstall(args, context: Optional[Context] = None) -> int:

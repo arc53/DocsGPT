@@ -215,6 +215,8 @@ def _fetch(instance_id: str) -> Optional[Dict[str, Any]]:
         "platform": sys.platform,
         "client": CLIENT_NAME,
     }
+    if settings.DOCSGPT_DISTRIBUTION:
+        payload["distribution"] = settings.DOCSGPT_DISTRIBUTION
     try:
         resp = requests.post(
             ENDPOINT_URL,

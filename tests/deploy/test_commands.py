@@ -13,7 +13,7 @@ from docsgpt import cli
 from docsgpt.deploy import commands, envfile, stack
 from docsgpt.deploy.docker import DeployError
 
-EVERY_PROFILE = ["--profile", "https", "--profile", "decider"]
+EVERY_PROFILE = ["--profile", "https", "--profile", "decider", "--profile", "accounts"]
 
 
 class FakeDocker:
@@ -418,6 +418,203 @@ class TestUpgrade:
         assert _run(["upgrade", "--dir", str(tmp_path)], context) == 1
         err = capsys.readouterr().err
         assert "pip install -U docsgpt" in err and "docsgpt up" in err
+
+
+class TestIpAndAccounts:
+    def test_ip_serves_https_on_the_given_address(self, tmp_path, capsys):
+        docker = FakeDocker()
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8"], _context(docker)) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["DOCSGPT_DOMAIN"] == "8.8.8.8" and env["DOCSGPT_TLS"] == "ip"
+        assert env["COMPOSE_PROFILES"] == "https" and env["AUTH_TYPE"] == "simple_jwt"
+        out = capsys.readouterr().out
+        assert "https://8.8.8.8" in out and "Access token" in out and "Let's Encrypt" in out
+
+    def test_expose_ip_uses_this_machines_address_when_it_is_public(self, tmp_path):
+        context = _context(lan_ip=lambda: "8.8.4.4")
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "ip"], context) == 0
+        assert envfile.read(tmp_path / ".env")["DOCSGPT_DOMAIN"] == "8.8.4.4"
+
+    def test_a_private_address_needs_ip_without_a_terminal(self, tmp_path):
+        with pytest.raises(DeployError, match="--ip"):
+            _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "ip"], _context())
+
+    def test_a_private_address_is_asked_for_on_a_terminal(self, tmp_path):
+        prompter = FakePrompter(["8.8.8.8"])
+        context = _context(prompter=prompter, interactive=True)
+        argv = ["up", "--dir", str(tmp_path), "--expose", "ip", "--provider", "docsgpt", "--no-open"]
+        assert _run(argv, context) == 0
+        assert envfile.read(tmp_path / ".env")["DOCSGPT_DOMAIN"] == "8.8.8.8"
+
+    def test_a_rerun_keeps_the_address(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8"], _context()) == 0
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(lan_ip=lambda: "1.1.1.1")) == 0
+        assert envfile.read(tmp_path / ".env")["DOCSGPT_DOMAIN"] == "8.8.8.8"
+
+    def test_leaving_the_ip_removes_caddy(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8"], _context()) == 0
+        docker = FakeDocker(volumes={commands.DATABASE_VOLUME})
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "local"], _context(docker)) == 0
+        assert docker.calls[0] == (tmp_path, [*EVERY_PROFILE, "rm", "--stop", "--force", "caddy"])
+
+    def test_accounts_wait_for_keycloak_and_print_the_first_admin(self, tmp_path, capsys):
+        docker = FakeDocker()
+        argv = ["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8", "--accounts"]
+        assert _run(argv, _context(docker)) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["AUTH_TYPE"] == "oidc" and env["COMPOSE_PROFILES"] == "accounts,https"
+        assert (tmp_path, ["up", "-d", "--wait", "--wait-timeout", "300", "keycloak"]) in docker.calls
+        out = capsys.readouterr().out
+        assert env["KEYCLOAK_ADMIN_PASSWORD"] in out
+        assert "https://8.8.8.8/auth/admin/docsgpt/console" in out
+        assert "Access token" not in out
+
+    def test_keycloak_that_never_gets_ready_fails_the_up(self, tmp_path, capsys):
+        class SlowKeycloak(FakeDocker):
+            def compose(self, directory, *args, **kwargs):
+                result = super().compose(directory, *args, **kwargs)
+                if "--wait" in args and "keycloak" in args:
+                    result.returncode = 1
+                return result
+
+        argv = ["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8", "--accounts"]
+        assert _run(argv, _context(SlowKeycloak())) == 1
+        assert "docsgpt logs keycloak" in capsys.readouterr().err
+
+    def test_turning_accounts_on_over_existing_data_says_they_start_empty(self, tmp_path, capsys):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8"], _context()) == 0
+        docker = FakeDocker(volumes={commands.DATABASE_VOLUME})
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--accounts"], _context(docker)) == 0
+        assert "start empty" in capsys.readouterr().err
+
+    def test_turning_accounts_off_removes_keycloak_and_brings_the_token_back(self, tmp_path, capsys):
+        argv = ["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8", "--accounts"]
+        assert _run(argv, _context()) == 0
+        docker = FakeDocker(volumes={commands.DATABASE_VOLUME})
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--no-accounts"], _context(docker)) == 0
+        assert docker.calls[0] == (tmp_path, [*EVERY_PROFILE, "rm", "--stop", "--force", "keycloak", "keycloak-db"])
+        env = envfile.read(tmp_path / ".env")
+        assert env["AUTH_TYPE"] == "simple_jwt" and "OIDC_ISSUER" not in env
+        assert "Access token" in capsys.readouterr().out
+
+    def test_accounts_need_https(self, tmp_path):
+        with pytest.raises(DeployError, match="over HTTPS"):
+            _run(["up", "--yes", "--dir", str(tmp_path), "--accounts"], _context())
+
+    def test_token_names_the_first_admin_when_accounts_are_on(self, tmp_path, capsys):
+        argv = ["up", "--yes", "--dir", str(tmp_path), "--ip", "8.8.8.8", "--accounts"]
+        assert _run(argv, _context()) == 0
+        capsys.readouterr()
+        assert _run(["token", "--dir", str(tmp_path)], _context()) == 1
+        password = envfile.read(tmp_path / ".env")["KEYCLOAK_ADMIN_PASSWORD"]
+        assert password in capsys.readouterr().err
+
+    @pytest.mark.parametrize("flag", [["--ip", "8.8.8.8"], ["--expose", "ip"], ["--accounts"]])
+    def test_a_native_install_refuses_them(self, tmp_path, flag):
+        with pytest.raises(DeployError):
+            _run(["up", "--native", "--yes", "--dir", str(tmp_path), *flag], _context())
+
+
+def _installed_stack(tmp_path, *extra):
+    assert _run(["up", "--yes", "--dir", str(tmp_path), *extra], _context()) == 0
+
+
+def _uv(calls, **overrides):
+    return _context(
+        installer=lambda: "uv",
+        run=lambda args: calls.append(args) or 0,
+        exec_up=lambda argv: calls.append(["exec", *argv]) or 0,
+        **overrides,
+    )
+
+
+class TestUpgradeBackup:
+    def test_it_backs_up_first_and_records_the_rollback(self, tmp_path):
+        _installed_stack(tmp_path)
+        calls = []
+        assert _run(["upgrade", "--dir", str(tmp_path), "--version", "0.22.0"], _uv(calls)) == 0
+        archives = list((tmp_path / "backups" / "pre-upgrade").glob("docsgpt-*.tar.gz"))
+        assert len(archives) == 1
+        rollback = json.loads((tmp_path / "install.json").read_text())["rollback"]
+        assert rollback == {"version": "0.21.0", "image_tag": "0.21.0", "backup": str(archives[0])}
+        assert calls[0] == ["uv", "tool", "install", "--force", "docsgpt==0.22.0"]
+
+    def test_no_backup_skips_it(self, tmp_path):
+        _installed_stack(tmp_path)
+        assert _run(["upgrade", "--dir", str(tmp_path), "--no-backup"], _uv([])) == 0
+        assert not (tmp_path / "backups").exists()
+        assert "rollback" not in json.loads((tmp_path / "install.json").read_text())
+
+    def test_nothing_to_back_up_without_an_install(self, tmp_path):
+        assert _run(["upgrade", "--dir", str(tmp_path)], _uv([])) == 0
+        assert not (tmp_path / "backups").exists()
+
+    def test_a_failed_backup_stops_the_upgrade(self, tmp_path):
+        _installed_stack(tmp_path)
+
+        class NoPostgres(FakeDocker):
+            def compose(self, directory, *args, **kwargs):
+                if "pg_dump" in args:
+                    raise DeployError("service postgres is not running")
+                return super().compose(directory, *args, **kwargs)
+
+        calls = []
+        with pytest.raises(DeployError, match="not running"):
+            _run(["upgrade", "--dir", str(tmp_path)], _uv(calls, docker=NoPostgres()))
+        assert calls == [], "nothing is installed when the backup fails"
+
+    def test_only_the_newest_backups_are_kept(self, tmp_path):
+        _installed_stack(tmp_path)
+        old = tmp_path / "backups" / "pre-upgrade"
+        old.mkdir(parents=True)
+        for stamp in ("20200101-000000", "20200102-000000", "20200103-000000"):
+            (old / f"docsgpt-{stamp}.tar.gz").write_bytes(b"old")
+        assert _run(["upgrade", "--dir", str(tmp_path)], _uv([])) == 0
+        kept = sorted(path.name for path in old.glob("docsgpt-*.tar.gz"))
+        assert len(kept) == commands.PRE_UPGRADE_KEEP
+        assert kept[0] == "docsgpt-20200103-000000.tar.gz"
+
+
+class TestRollback:
+    def _upgraded(self, tmp_path):
+        _installed_stack(tmp_path)
+        assert _run(["upgrade", "--dir", str(tmp_path), "--version", "0.22.0"], _uv([])) == 0
+        envfile.update(tmp_path / ".env", {"DOCSGPT_IMAGE_TAG": "0.22.0"})  # what the new `up` writes
+
+    def test_restores_the_backup_on_the_old_image_then_reinstalls_the_old_version(self, tmp_path):
+        self._upgraded(tmp_path)
+        calls = []
+        docker = FakeDocker(volumes={commands.DATABASE_VOLUME})
+        context = _uv(calls, docker=docker, version="0.22.0")
+        assert _run(["upgrade", "--dir", str(tmp_path), "--rollback", "--yes"], context) == 0
+        assert ("import", "docsgpt_indexes", "arc53/docsgpt:0.21.0") in docker.volume_ops
+        assert envfile.read(tmp_path / ".env")["DOCSGPT_IMAGE_TAG"] == "0.21.0"
+        assert calls[0] == ["uv", "tool", "install", "--force", "docsgpt==0.21.0"]
+        assert calls[1][0] == "exec" and calls[1][-6:] == [
+            "up", "--dir", str(tmp_path), "--yes", "--image-tag", "0.21.0"
+        ]
+        assert "rollback" not in json.loads((tmp_path / "install.json").read_text())
+
+    def test_without_an_upgrade_there_is_nothing_to_roll_back(self, tmp_path):
+        _installed_stack(tmp_path)
+        with pytest.raises(DeployError, match="no upgrade to roll back"):
+            _run(["upgrade", "--dir", str(tmp_path), "--rollback", "--yes"], _uv([]))
+
+    def test_it_asks_first(self, tmp_path):
+        self._upgraded(tmp_path)
+        docker = FakeDocker()
+        context = _uv([], docker=docker, prompter=FakePrompter([False]), interactive=True)
+        assert _run(["upgrade", "--dir", str(tmp_path), "--rollback"], context) == 1
+        assert docker.calls == []
+        with pytest.raises(DeployError, match="--yes"):
+            _run(["upgrade", "--dir", str(tmp_path), "--rollback"], _uv([]))
+
+    def test_a_pip_install_is_told_what_to_do(self, tmp_path, capsys):
+        self._upgraded(tmp_path)
+        context = _context(installer=lambda: "pip", run=lambda args: pytest.fail("must not run"))
+        assert _run(["upgrade", "--dir", str(tmp_path), "--rollback", "--yes"], context) == 1
+        err = capsys.readouterr().err
+        assert "docsgpt==0.21.0" in err and "docsgpt restore" in err
 
 
 class TestImports:

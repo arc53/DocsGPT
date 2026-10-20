@@ -1,0 +1,47 @@
+#!/bin/bash
+# DocsGPT 1-Click: set this Droplet's DocsGPT up on its first boot.
+#
+# cloud-init runs this once per Droplet. `docsgpt up` generates the secrets (the database
+# password, INTERNAL_KEY, JWT_SECRET_KEY, ENCRYPTION_SECRET_KEY), turns the access token
+# on, and serves https://<public IP> through Caddy with a Let's Encrypt IP certificate.
+# Its output goes to /var/log/docsgpt-onboot.log.
+set -uo pipefail
+exec >>/var/log/docsgpt-onboot.log 2>&1
+echo "== DocsGPT first boot, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# shellcheck disable=SC2317  # called by the EXIT trap
+unlock_ssh() {
+  # Undo the "Please wait" login from the image build, whatever happened above.
+  sed -i '/^Match User root$/,/ForceCommand echo "Please wait while we get your droplet ready..."/d' \
+    /etc/ssh/sshd_config
+  systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+}
+trap unlock_ssh EXIT
+
+set -a
+# shellcheck disable=SC1091
+. /etc/environment
+set +a
+export PATH="/usr/local/bin:$PATH"
+
+metadata="http://169.254.169.254/metadata/v1"
+address="$(curl -fsS --retry 10 --retry-connrefused --max-time 5 "$metadata/interfaces/public/0/ipv4/address" || true)"
+
+install -d -m 0700 "$DOCSGPT_HOME"
+env_file="$DOCSGPT_HOME/.env"
+if ! grep -q '^DOCSGPT_DISTRIBUTION=' "$env_file" 2>/dev/null; then
+  echo "DOCSGPT_DISTRIBUTION=digitalocean" >>"$env_file"
+fi
+chmod 600 "$env_file"
+
+if [ -n "$address" ]; then
+  docsgpt up --yes --ip "$address" --timeout 900
+else
+  # A Droplet without a public interface (a VPC-only one) has no address to certify: serve
+  # its private network over plain HTTP with the access token instead.
+  echo "No public IPv4 address in the metadata; serving the private network over HTTP."
+  docsgpt up --yes --expose network --timeout 900
+fi
+status=$?
+echo "== docsgpt up exited with $status"
+exit "$status"

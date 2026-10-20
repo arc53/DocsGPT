@@ -1,0 +1,69 @@
+#!/bin/bash
+# DocsGPT 1-Click: where DocsGPT is and how to sign in, shown at each login.
+set -a
+# shellcheck disable=SC1091
+. /etc/environment
+set +a
+home="${DOCSGPT_HOME:-/opt/docsgpt}"
+env_file="$home/.env"
+
+setting() {
+  grep -E "^$1=" "$env_file" 2>/dev/null | tail -n 1 | cut -d= -f2-
+}
+
+cat <<'EOF'
+********************************************************************************
+
+Welcome to DocsGPT on DigitalOcean.
+
+EOF
+
+if [ ! -f "$home/install.json" ]; then
+  cat <<'EOF'
+DocsGPT is still being set up, or the setup failed. Follow it with:
+  tail -f /var/log/docsgpt-onboot.log
+
+EOF
+else
+  site="$(setting DOCSGPT_DOMAIN)"
+  if [ -n "$site" ]; then
+    url="https://$site"
+  else
+    url="http://$(hostname -I | awk '{print $1}'):$(setting DOCSGPT_PORT | grep . || echo 7091)"
+  fi
+  echo "  Open DocsGPT:  $url"
+  if [ "$(setting DOCSGPT_ACCOUNTS)" = "on" ]; then
+    echo "  Sign in as:    admin, initial password $(setting KEYCLOAK_ADMIN_PASSWORD)"
+    echo "                 (the first sign-in sets your own; add people at $url/auth/admin/docsgpt/console)"
+  elif [ "$(setting AUTH_TYPE)" = "simple_jwt" ]; then
+    echo "  Access token:  $(docsgpt token 2>/dev/null)"
+    echo "                 (the page asks for it once per browser)"
+  fi
+  if [ "$(setting DOCSGPT_TLS)" = "ip" ]; then
+    cat <<'EOF'
+
+  The certificate is for this IP address. If the browser warns about it, Let's
+  Encrypt has not issued it yet: give it a minute, then reload.
+EOF
+  fi
+  cat <<EOF
+
+  Manage it:
+    docsgpt status                status, version and address
+    docsgpt up --domain NAME      serve it on your domain (point its DNS here first)
+    docsgpt up --accounts         sign people in with their own accounts (Keycloak)
+    docsgpt upgrade               back up, then move to the latest release
+    docsgpt upgrade --rollback    go back to the version (and data) before the last upgrade
+    docsgpt backup                write a backup to $home/backups
+    docsgpt logs -f               follow the logs
+
+  Settings: $env_file
+  Guide:    https://docs.docsgpt.cloud/Deploying/DigitalOcean
+EOF
+fi
+
+cat <<EOF
+
+To delete this message of the day: rm -f $(readlink -f "$0")
+********************************************************************************
+EOF

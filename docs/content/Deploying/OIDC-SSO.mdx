@@ -1,12 +1,14 @@
 ---
 title: SSO with OIDC
 description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Microsoft Entra ID, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
-lastUpdated: 2026-10-13
+lastUpdated: 2026-10-20
 ---
 
 # SSO with OIDC
 
 Setting `AUTH_TYPE=oidc` makes DocsGPT delegate sign-in to an external OpenID Connect identity provider (IdP). Any spec-compliant IdP with a discovery document works; this guide uses [Authentik](https://goauthentik.io/) as the reference provider and includes setup notes for [Keycloak](#keycloak-and-other-idps) and [Microsoft Entra ID](#entra-id).
+
+No identity provider yet? On a stack run by `docsgpt up` with HTTPS, `docsgpt up --accounts` starts Keycloak next to DocsGPT and configures everything on this page for you: see [User accounts with Keycloak](/Deploying/Docker-Deploying#user-accounts-with-keycloak).
 
 Beyond basic sign-in, this page covers the optional access controls: [group allowlists](#restricting-sign-in-by-group), [silent session renewal](#silent-session-renewal), [back-channel logout](#back-channel-logout), [SCIM user provisioning](#scim-user-provisioning), and [login auditing](#login-auditing).
 

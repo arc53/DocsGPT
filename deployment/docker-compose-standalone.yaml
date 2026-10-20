@@ -170,6 +170,47 @@ services:
     profiles: [https]
     environment:
       - DOCSGPT_DOMAIN=${DOCSGPT_DOMAIN:-}
+      - DOCSGPT_TLS=${DOCSGPT_TLS:-domain}
+      - DOCSGPT_ACCOUNTS=${DOCSGPT_ACCOUNTS:-off}
+      # The site Caddy serves. DOCSGPT_TLS=ip makes DOCSGPT_DOMAIN a public IPv4
+      # address: Let's Encrypt certifies it on its six-day `shortlived` profile
+      # (the only one it issues IP certificates on, renewed by Caddy), and a
+      # self-signed certificate stands in until that works. DOCSGPT_ACCOUNTS=on
+      # sends /auth to Keycloak (the accounts profile, below) and keeps its
+      # master realm unreachable from outside. While the backend starts, a page
+      # that reloads itself stands in for its answers.
+      - |
+        CADDYFILE=(tls-domain) {
+        }
+        (tls-ip) {
+        	tls {
+        		issuer acme {
+        			profile shortlived
+        		}
+        		issuer internal
+        	}
+        }
+        (accounts-off) {
+        }
+        (accounts-on) {
+        	handle /auth/* {
+        		@master path /auth/admin/master /auth/admin/master/* /auth/realms/master /auth/realms/master/*
+        		respond @master 404
+        		reverse_proxy keycloak:8080
+        	}
+        }
+        {$$DOCSGPT_DOMAIN} {
+        	import tls-{$$DOCSGPT_TLS}
+        	import accounts-{$$DOCSGPT_ACCOUNTS}
+        	handle {
+        		reverse_proxy backend:7091
+        	}
+        	handle_errors 502 504 {
+        		header Content-Type "text/html; charset=utf-8"
+        		header Retry-After 5
+        		respond `<!doctype html><meta http-equiv="refresh" content="5"><title>DocsGPT is starting</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem"><h1>DocsGPT is starting</h1><p>The first start sets up the database and takes a minute or two. This page reloads by itself.</p></body>` 503
+        	}
+        }
     # The domain is checked here rather than with ${DOCSGPT_DOMAIN:?}: compose
     # interpolates every service, so a required variable would break the stack
     # for everyone who does not use this profile.
@@ -179,7 +220,8 @@ services:
         if [ -z "$$DOCSGPT_DOMAIN" ]; then
         echo "caddy: set DOCSGPT_DOMAIN to the public domain" >&2; exit 1;
         fi;
-        exec caddy reverse-proxy --from "$$DOCSGPT_DOMAIN" --to backend:7091
+        printf '%s\n' "$$CADDYFILE" > /etc/caddy/Caddyfile &&
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports:
       - "80:80"
       - "443:443"
@@ -189,6 +231,121 @@ services:
       - caddy_config:/config
     depends_on:
       - backend
+    restart: unless-stopped
+
+  # User accounts (`docsgpt up --accounts`, the accounts profile next to https):
+  # Keycloak at https://DOCSGPT_DOMAIN/auth signs people in to DocsGPT over
+  # OIDC. Its data is the keycloak database in the stack's Postgres, which
+  # keycloak-db creates. On the first start it imports the docsgpt realm below:
+  # the docsgpt client (a confidential client with PKCE whose redirect is
+  # relative, so it follows DOCSGPT_DOMAIN to a new address), the
+  # docsgpt-admins group that DocsGPT makes admins, and an `admin` user who
+  # manages the realm and must change KEYCLOAK_ADMIN_PASSWORD at first sign-in.
+  # A realm that exists is never imported over. `docsgpt up --accounts` writes
+  # the settings it needs (OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_PASSWORD and the
+  # backend's OIDC_* settings) into .env.
+  keycloak-db:
+    profiles: [accounts]
+    image: postgres:16-alpine
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD:-docsgpt}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        psql -h postgres -U docsgpt -d docsgpt -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1
+        || psql -h postgres -U docsgpt -d docsgpt -c "CREATE DATABASE keycloak"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  keycloak:
+    profiles: [accounts]
+    image: quay.io/keycloak/keycloak:26.8.1
+    environment:
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=docsgpt
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD:-docsgpt}
+      - KC_HTTP_ENABLED=true
+      - KC_HTTP_RELATIVE_PATH=/auth
+      - KC_HOSTNAME=https://${DOCSGPT_DOMAIN:-localhost}/auth
+      - KC_PROXY_HEADERS=xforwarded
+      - KC_HEALTH_ENABLED=true
+      - JAVA_OPTS_KC_HEAP=-Xms64m -Xmx512m
+      - DOCSGPT_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - DOCSGPT_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-}
+      # Keycloak fills ${...} from the environment when it imports the realm.
+      - |
+        DOCSGPT_REALM={
+          "realm": "docsgpt",
+          "displayName": "DocsGPT",
+          "enabled": true,
+          "registrationAllowed": false,
+          "loginWithEmailAllowed": true,
+          "bruteForceProtected": true,
+          "passwordPolicy": "length(12)",
+          "groups": [{"name": "docsgpt-admins"}],
+          "clients": [
+            {
+              "clientId": "docsgpt",
+              "name": "DocsGPT",
+              "enabled": true,
+              "protocol": "openid-connect",
+              "publicClient": false,
+              "clientAuthenticatorType": "client-secret",
+              "secret": "$${DOCSGPT_OIDC_CLIENT_SECRET}",
+              "standardFlowEnabled": true,
+              "directAccessGrantsEnabled": false,
+              "implicitFlowEnabled": false,
+              "rootUrl": "",
+              "baseUrl": "/",
+              "redirectUris": ["/api/auth/oidc/callback"],
+              "webOrigins": ["+"],
+              "attributes": {"pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "/*"},
+              "protocolMappers": [
+                {
+                  "name": "groups",
+                  "protocol": "openid-connect",
+                  "protocolMapper": "oidc-group-membership-mapper",
+                  "config": {"claim.name": "groups", "full.path": "false", "id.token.claim": "true",
+                             "access.token.claim": "true", "userinfo.token.claim": "true"}
+                }
+              ]
+            }
+          ],
+          "users": [
+            {
+              "username": "admin",
+              "enabled": true,
+              "firstName": "DocsGPT",
+              "lastName": "Admin",
+              "credentials": [{"type": "password", "value": "$${DOCSGPT_ADMIN_PASSWORD}", "temporary": true}],
+              "groups": ["docsgpt-admins"],
+              "clientRoles": {"realm-management": ["realm-admin"]}
+            }
+          ]
+        }
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        if [ -z "$$DOCSGPT_OIDC_CLIENT_SECRET" ] || [ -z "$$DOCSGPT_ADMIN_PASSWORD" ]; then
+        echo "keycloak: set OIDC_CLIENT_SECRET and KEYCLOAK_ADMIN_PASSWORD (docsgpt up --accounts does)" >&2; exit 1;
+        fi;
+        mkdir -p /opt/keycloak/data/import &&
+        printf '%s\n' "$$DOCSGPT_REALM" > /opt/keycloak/data/import/docsgpt-realm.json &&
+        exec /opt/keycloak/bin/kc.sh start --import-realm
+    healthcheck:
+      # The image has no curl: bash's /dev/tcp asks the management port.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    mem_limit: ${KEYCLOAK_MEMORY:-1g}
+    depends_on:
+      keycloak-db:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
