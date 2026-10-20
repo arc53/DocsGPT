@@ -217,7 +217,17 @@ async function stop(
       ),
     ]);
   }
-  if (abortController === controller) handleAbort();
+  if (abortController === controller) {
+    handleAbort();
+    // A closed stream never gets its terminal event, which is what ends
+    // loading. An answer picked back up is left to its tail, which ends it
+    // once the server has saved the stop.
+    if (
+      controller &&
+      (getState() as RootState).conversation.conversationId === conversationId
+    )
+      dispatch(conversationSlice.actions.setStatus('idle'));
+  }
   // The user may have opened another chat while the request was out: mark
   // only the answer that was stopped, in the chat it belongs to.
   const after = (getState() as RootState).conversation;

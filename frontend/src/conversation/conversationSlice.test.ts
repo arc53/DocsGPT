@@ -971,6 +971,8 @@ describe('stopAnswer', () => {
     // Stored first, so the server saves a stop, not a dropped connection.
     expect(events).toEqual(['stop', 'closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // The closed stream sends no terminal event: the chat must not stay busy.
+    expect(store.getState().conversation.status).toBe('idle');
   });
 
   it('leaves another chat alone when the stop returns after a switch', async () => {
@@ -1020,6 +1022,7 @@ describe('stopAnswer', () => {
     await answer;
     expect(events).toEqual(['closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+    expect(store.getState().conversation.status).toBe('idle');
   });
 
   it('stops an answer the chat picked back up, which has no stream of its own', async () => {
@@ -1037,5 +1040,25 @@ describe('stopAnswer', () => {
     await store.dispatch(stopAnswer());
     expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // Its tail settles the status once the server has saved the stop.
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves the status to a stream started while the stop was out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const stopping = store.dispatch(stopAnswer());
+    store.dispatch(addQuery({ prompt: 'next' }));
+    void store.dispatch(fetchAnswer({ question: 'next' }));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.status).toBe('loading');
+    handleAbort();
   });
 });
