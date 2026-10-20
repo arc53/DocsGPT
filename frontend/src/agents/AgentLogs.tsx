@@ -10,7 +10,6 @@ import {
 
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
-import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
 import { revealElement } from '../settings/logsLinks';
 import SectionShell from '../navigation/SectionShell';
@@ -18,6 +17,10 @@ import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import GuardrailEvents from './components/GuardrailEvents';
 import { Agent } from './types';
 
+/**
+ * An agent's Logs: its guardrail activity and its log list. The usage charts
+ * are its Analytics page (`AgentAnalytics`).
+ */
 export default function AgentLogs() {
   const { t } = useTranslation();
   const { agentId } = useParams();
@@ -71,7 +74,6 @@ export default function AgentLogs() {
       )}
       {agentId && (
         <>
-          <Analytics agentId={agentId} />
           <GuardrailEvents agentId={agentId} />
           <div ref={logsRef} id="logs" className="mt-8 scroll-mt-4">
             <Logs

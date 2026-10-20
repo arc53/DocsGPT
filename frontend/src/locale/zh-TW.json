@@ -2018,6 +2018,9 @@
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       }
+    },
+    "insights": {
+      "label": "洞察"
     }
   },
   "modals": {
@@ -2673,7 +2676,8 @@
         "overview": "總覽",
         "logs": "日誌",
         "insights": "洞察",
-        "schedules": "排程"
+        "schedules": "排程",
+        "analytics": "分析"
       },
       "fallbackName": "未命名代理",
       "subnavAriaLabel": "代理子導覽"
@@ -3602,9 +3606,9 @@
       "groups": {
         "personal": "個人",
         "workspace": "工作區",
-        "insights": "洞察",
         "administration": "管理",
-        "automations": "自動化"
+        "automations": "自動化",
+        "monitoring": "監控"
       }
     },
     "openSidebar": "開啟側邊欄",

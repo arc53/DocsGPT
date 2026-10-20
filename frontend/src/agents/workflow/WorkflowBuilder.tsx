@@ -36,7 +36,7 @@ import {
   selectSourceDocs,
   selectToken,
 } from '../../preferences/preferenceSlice';
-import { agentEditPath, agentsListPath } from '../paths';
+import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
@@ -1869,7 +1869,6 @@ function WorkflowBuilderInner() {
           <AgentPageHeader
             agentId={canManageAgent ? effectiveAgentId : undefined}
             agentName={workflowName || t('agents.workflow.builder.newWorkflow')}
-            agentEditPath={agentEditPath(effectiveAgentId, true)}
             agentImage={currentAgentImage}
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}

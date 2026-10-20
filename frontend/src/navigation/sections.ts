@@ -39,6 +39,7 @@ import {
 } from '../activity/paths';
 import {
   AGENTS_MANAGE_ROOT,
+  agentAnalyticsPath,
   agentEditPath,
   agentInsightsPath,
   agentLogsPath,
@@ -164,14 +165,21 @@ export const SETTINGS_SECTION: Section = {
       ],
     },
     {
-      key: 'insights',
-      labelKey: 'navigation.sections.groups.insights',
+      key: 'monitoring',
+      labelKey: 'navigation.sections.groups.monitoring',
       items: [
         {
           key: 'analytics',
           path: '/settings/analytics',
           labelKey: 'settings.analytics.label',
           icon: ChartNoAxesColumn,
+        },
+        {
+          key: 'insights',
+          path: '/settings/insights',
+          labelKey: 'settings.insights.label',
+          icon: Lightbulb,
+          feature: 'analytics',
         },
         {
           key: 'logs',
@@ -373,21 +381,28 @@ export const AGENTS_SECTION: Section = {
 /** The action each agent tab's page needs. */
 const TAB_ACTIONS: Record<string, string> = {
   overview: 'view',
-  logs: 'view_logs',
-  insights: 'view_logs',
   schedules: 'manage_schedules',
+  analytics: 'view_logs',
+  insights: 'view_logs',
+  logs: 'view_logs',
 };
 
 /**
  * The nav for a single agent. Built per route rather than declared, because
  * its title is the agent's name and its paths carry the agent's id.
  *
+ * Two groups: the agent itself (Overview, Schedules), then Monitoring
+ * (Analytics, Insights, Logs), the same three pages Settings has for the
+ * whole account. The workflow builder's toolbar and its phone stand-in
+ * draw their tabs from this too, so the list lives in one place.
+ *
  * `access` is the agent's record once loaded: each tab shows only when the
- * caller's role allows its page (Overview `view`, Logs and Insights
- * `view_logs`, Schedules `manage_schedules`); Insights
- * also only while the server labels conversations. Until the record arrives every tab shows,
- * and the route guard sends a caller who may not open a page back to the
- * list.
+ * caller's role allows its page (Overview `view`, Schedules
+ * `manage_schedules`, the Monitoring pages `view_logs`); a group left
+ * empty is dropped. Insights also only shows while the server labels
+ * conversations (`feature`, applied by `getVisibleGroups`). Until the
+ * record arrives every tab shows, and the route guard sends a caller who
+ * may not open a page back to the list.
  */
 export function buildAgentSection(
   agentId: string,
@@ -395,49 +410,70 @@ export function buildAgentSection(
   workflow: boolean,
   access?: (AccessFields & { status?: string }) | null,
 ): Section {
-  const allows = (action: string) => !access || canAgent(access, action);
-  const items: SectionItem[] = [
+  const allows = (item: SectionItem) =>
+    !access || canAgent(access, TAB_ACTIONS[item.key]);
+  const groups: SectionGroup[] = [
     {
-      key: 'overview',
-      path: agentEditPath(agentId, workflow),
-      labelKey: 'agents.pageHeader.tabs.overview',
-      icon: SquarePen,
+      key: 'agent',
+      items: [
+        {
+          key: 'overview',
+          path: agentEditPath(agentId, workflow),
+          labelKey: 'agents.pageHeader.tabs.overview',
+          icon: SquarePen,
+        },
+        {
+          key: 'schedules',
+          path: agentSchedulesPath(agentId),
+          labelKey: 'agents.pageHeader.tabs.schedules',
+          icon: CalendarClock,
+        },
+      ],
     },
     {
-      key: 'logs',
-      path: agentLogsPath(agentId),
-      labelKey: 'agents.pageHeader.tabs.logs',
-      icon: ScrollText,
-    },
-    {
-      key: 'insights',
-      path: agentInsightsPath(agentId),
-      labelKey: 'agents.pageHeader.tabs.insights',
-      icon: Lightbulb,
-      feature: 'analytics',
-    },
-    {
-      key: 'schedules',
-      path: agentSchedulesPath(agentId),
-      labelKey: 'agents.pageHeader.tabs.schedules',
-      icon: CalendarClock,
+      key: 'monitoring',
+      labelKey: 'navigation.sections.groups.monitoring',
+      items: [
+        {
+          key: 'analytics',
+          path: agentAnalyticsPath(agentId),
+          labelKey: 'agents.pageHeader.tabs.analytics',
+          icon: ChartNoAxesColumn,
+        },
+        {
+          key: 'insights',
+          path: agentInsightsPath(agentId),
+          labelKey: 'agents.pageHeader.tabs.insights',
+          icon: Lightbulb,
+          feature: 'analytics',
+        },
+        {
+          key: 'logs',
+          path: agentLogsPath(agentId),
+          labelKey: 'agents.pageHeader.tabs.logs',
+          icon: ScrollText,
+        },
+      ],
     },
   ];
-  const visible = items.filter((item) => allows(TAB_ACTIONS[item.key]));
+  const visible = groups
+    .map((group) => ({ ...group, items: group.items.filter(allows) }))
+    .filter((group) => group.items.length > 0);
   return {
     key: `agent:${agentId}`,
-    rootPath: visible[0]?.path ?? agentEditPath(agentId, workflow),
+    rootPath: visible[0]?.items[0]?.path ?? agentEditPath(agentId, workflow),
     titleKey: 'agents.pageHeader.fallbackName',
     title: agentName?.trim() || undefined,
     matches: [
       agentEditPath(agentId, workflow),
-      agentLogsPath(agentId),
-      agentInsightsPath(agentId),
       agentSchedulesPath(agentId),
+      agentAnalyticsPath(agentId),
+      agentInsightsPath(agentId),
+      agentLogsPath(agentId),
     ],
     parentPath: AGENTS_MANAGE_ROOT,
     parentLabelKey: 'navigation.backToAgents',
-    groups: [{ key: 'agent', items: visible }],
+    groups: visible,
   };
 }
 

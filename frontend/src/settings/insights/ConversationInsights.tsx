@@ -82,6 +82,11 @@ type ConversationInsightsProps = {
    * names it: the section opens with its description, not a heading.
    */
   standalone?: boolean;
+  /**
+   * A page control at the end of a standalone page's description row
+   * (Settings › Insights' time window, which has no toolbar to sit in).
+   */
+  actions?: ReactNode;
 };
 
 /**
@@ -99,6 +104,7 @@ export default function ConversationInsights({
   filterOption,
   onRetry,
   standalone = false,
+  actions,
 }: ConversationInsightsProps) {
   const { t } = useTranslation();
   const canEditAgent = Boolean(agent) && canAgent(agent, 'edit');
@@ -124,7 +130,7 @@ export default function ConversationInsights({
       </Button>
     </>
   );
-  const header = standalone ? (
+  const intro = (
     <p className="text-muted-foreground text-sm leading-6">
       {description}
       {count && (
@@ -134,6 +140,19 @@ export default function ConversationInsights({
         </>
       )}
     </p>
+  );
+  const header = standalone ? (
+    actions ? (
+      // Analytics' description row: the text, then the control at the end.
+      // The text takes the free width, so the control wraps under it only
+      // where the two don't fit side by side (a phone).
+      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-xs">{intro}</div>
+        {actions}
+      </div>
+    ) : (
+      intro
+    )
   ) : (
     <SectionHeader
       title={t('settings.analytics.insights.heading')}

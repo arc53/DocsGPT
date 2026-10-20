@@ -2017,6 +2017,9 @@
         "flagged": "疑似提示词注入",
         "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
       }
+    },
+    "insights": {
+      "label": "洞察"
     }
   },
   "modals": {
@@ -2671,7 +2674,8 @@
         "overview": "概览",
         "logs": "日志",
         "insights": "洞察",
-        "schedules": "计划"
+        "schedules": "计划",
+        "analytics": "分析"
       },
       "fallbackName": "未命名智能体",
       "subnavAriaLabel": "智能体子导航"
@@ -3600,9 +3604,9 @@
       "groups": {
         "personal": "个人",
         "workspace": "工作区",
-        "insights": "洞察",
         "administration": "管理",
-        "automations": "自动化"
+        "automations": "自动化",
+        "monitoring": "监控"
       }
     },
     "openSidebar": "打开侧边栏",

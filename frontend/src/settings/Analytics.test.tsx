@@ -46,7 +46,7 @@ import Analytics from './Analytics';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe('Analytics with insights', () => {
+describe('Analytics without insights', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -78,28 +78,15 @@ describe('Analytics with insights', () => {
       .find((h) => h.textContent === 'settings.analytics.userFeedback')!
       .closest('[data-slot="card"]')!.parentElement!;
 
-  it("shows the account's insights under the thumbs, which keep the full width", async () => {
+  // Settings › Insights is its own page now.
+  it("leaves the account's insights to their own page", async () => {
+    vi.mocked(userService.getConversationInsights).mockClear();
     insights.body = examples.insights;
     await render();
-    expect(userService.getConversationInsights).toHaveBeenCalledWith(
-      { api_key_id: undefined, filter_option: 'last_30_days' },
-      'token',
-    );
-    expect(feedbackRow().className).not.toContain('xl:flex-row');
-    expect(
-      feedbackRow().querySelector('[data-testid="implicit-feedback"]'),
-    ).toBeNull();
-    const section = container.querySelector('[data-testid="insights"]')!;
-    expect(
-      section.querySelector('[data-testid="implicit-feedback"]'),
-    ).not.toBeNull();
-  });
-
-  it('shows no section, and no note, while the server has it off', async () => {
-    insights.body = { ...examples.insights, available: false, enabled: false };
-    await render();
+    expect(userService.getConversationInsights).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="insights"]')).toBeNull();
-    expect(container.querySelector('[role="note"]')).toBeNull();
+    // The thumbs keep the full width with nothing beside them.
+    expect(feedbackRow().className).not.toContain('xl:flex-row');
   });
 
   it("leaves an agent's insights to its own page", async () => {

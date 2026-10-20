@@ -6,6 +6,7 @@ import {
   useParams,
 } from 'react-router-dom';
 
+import AgentAnalytics from './AgentAnalytics';
 import AgentInsights from './AgentInsights';
 import AgentLogs from './AgentLogs';
 import AgentRouteGuard from './AgentRouteGuard';
@@ -64,6 +65,14 @@ export default function Agents() {
         element={
           <AgentRouteGuard action="view_logs">
             <AgentLogs />
+          </AgentRouteGuard>
+        }
+      />
+      <Route
+        path="manage/analytics/:agentId"
+        element={
+          <AgentRouteGuard action="view_logs">
+            <AgentAnalytics />
           </AgentRouteGuard>
         }
       />

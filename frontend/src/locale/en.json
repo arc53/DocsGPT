@@ -2025,6 +2025,9 @@
         "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
         "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
       }
+    },
+    "insights": {
+      "label": "Insights"
     }
   },
   "modals": {
@@ -2687,7 +2690,8 @@
         "overview": "Overview",
         "logs": "Logs",
         "insights": "Insights",
-        "schedules": "Schedules"
+        "schedules": "Schedules",
+        "analytics": "Analytics"
       },
       "fallbackName": "Untitled agent",
       "subnavAriaLabel": "Agent sub-navigation"
@@ -3617,9 +3621,9 @@
       "groups": {
         "personal": "Personal",
         "workspace": "Workspace",
-        "insights": "Insights",
         "administration": "Administration",
-        "automations": "Automations"
+        "automations": "Automations",
+        "monitoring": "Monitoring"
       }
     },
     "openSidebar": "Open sidebar",

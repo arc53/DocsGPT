@@ -413,6 +413,30 @@ describe('ConversationInsights', () => {
     );
   });
 
+  // Settings › Insights has no toolbar: its window select sits at the end of
+  // the description row, as Analytics' does.
+  it('puts a page action at the end of its description row', () => {
+    act(() =>
+      root.render(
+        <MemoryRouter>
+          <ConversationInsights
+            state="ready"
+            data={data()}
+            filterOption="last_30_days"
+            onRetry={() => undefined}
+            standalone
+            actions={<button type="button">window</button>}
+          />
+        </MemoryRouter>,
+      ),
+    );
+    const row = section()!.firstElementChild!;
+    expect(row.textContent).toContain(
+      'settings.analytics.insights.description',
+    );
+    expect(row.querySelector('button')?.textContent).toBe('window');
+  });
+
   it('draws answer status as four outcomes, greetings left out', () => {
     render(data());
     expect(

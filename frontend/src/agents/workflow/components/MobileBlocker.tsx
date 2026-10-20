@@ -1,4 +1,4 @@
-import { CalendarClock, Lightbulb, Monitor, ScrollText } from 'lucide-react';
+import { Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
@@ -10,25 +10,24 @@ import { LoadingState } from '@/components/ui/loading-state';
 
 import { BackLink } from '../../../navigation/SectionPageHeader';
 import SectionShell from '../../../navigation/SectionShell';
+import {
+  buildAgentSection,
+  getVisibleGroups,
+} from '../../../navigation/sections';
 import { selectAnalyticsEnabled } from '../../../preferences/preferenceSlice';
-import { canAgent } from '../../agentAccess';
 import AgentPageToolbar, {
   LastUsedMeta,
 } from '../../components/AgentPageToolbar';
-import {
-  AGENTS_MANAGE_ROOT,
-  agentInsightsPath,
-  agentLogsPath,
-  agentSchedulesPath,
-} from '../../paths';
+import { AGENTS_MANAGE_ROOT } from '../../paths';
 import type { Agent } from '../../types';
 
 /**
  * Stands in for the builder below ``lg``, where it has no layout.
  *
  * A saved workflow gets its agent page's frame (back link, Overview title,
- * the name byline and links to the Logs and Schedules tabs, which do work
- * on a phone) so the screen isn't a dead end. A new one only has the way
+ * the name byline and links to its other pages, which do work on a phone)
+ * so the screen isn't a dead end. The links are the agent sidebar's
+ * (`buildAgentSection`) after Overview, in its order. A new one only has the way
  * back to the agent list.
  *
  * Args:
@@ -75,30 +74,13 @@ export default function MobileBlocker({
     );
   }
 
-  const tabs = [
-    {
-      action: 'view_logs',
-      to: agentLogsPath(agent.id),
-      icon: ScrollText,
-      label: t('agents.pageHeader.tabs.logs'),
-    },
-    ...(analyticsEnabled
-      ? [
-          {
-            action: 'view_logs',
-            to: agentInsightsPath(agent.id),
-            icon: Lightbulb,
-            label: t('agents.pageHeader.tabs.insights'),
-          },
-        ]
-      : []),
-    {
-      action: 'manage_schedules',
-      to: agentSchedulesPath(agent.id),
-      icon: CalendarClock,
-      label: t('agents.pageHeader.tabs.schedules'),
-    },
-  ].filter((tab) => canAgent(agent, tab.action));
+  // Overview is this page, so it gets no link.
+  const tabs = getVisibleGroups(
+    buildAgentSection(agent.id, agent.name, true, agent),
+    { features: { analytics: analyticsEnabled === true } },
+  )
+    .flatMap((group) => group.items)
+    .filter((item) => item.key !== 'overview');
 
   return (
     <div className="h-full lg:hidden">
@@ -117,20 +99,22 @@ export default function MobileBlocker({
           meta={<LastUsedMeta lastUsedAt={agent.last_used_at} />}
           actions={
             tabs.length > 0 ? (
-              <div className="flex gap-2">
-                {tabs.map(({ to, icon: Icon, label }) => (
-                  // flex-1 shares the phone row, as Preview and Save do.
+              // Four links don't fit one phone row: they wrap, two by two,
+              // and share a tablet's row.
+              <div className="flex flex-wrap gap-2">
+                {tabs.map(({ key, path, icon: Icon, labelKey }) => (
+                  // flex-1 shares the row, as Preview and Save do.
                   <Button
-                    key={to}
+                    key={key}
                     asChild
                     variant="outline"
                     size="field"
                     shape="pill"
                     className="flex-1"
                   >
-                    <Link to={to}>
+                    <Link to={path}>
                       <Icon />
-                      {label}
+                      {t(labelKey)}
                     </Link>
                   </Button>
                 ))}

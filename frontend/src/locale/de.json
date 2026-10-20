@@ -2025,6 +2025,9 @@
         "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
         "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
       }
+    },
+    "insights": {
+      "label": "Einblicke"
     }
   },
   "modals": {
@@ -2687,7 +2690,8 @@
         "overview": "Übersicht",
         "logs": "Protokolle",
         "insights": "Einblicke",
-        "schedules": "Zeitpläne"
+        "schedules": "Zeitpläne",
+        "analytics": "Analytik"
       },
       "fallbackName": "Unbenannter Agent",
       "subnavAriaLabel": "Agenten-Unternavigation"
@@ -3617,9 +3621,9 @@
       "groups": {
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich",
-        "insights": "Auswertungen",
         "administration": "Administration",
-        "automations": "Automatisierungen"
+        "automations": "Automatisierungen",
+        "monitoring": "Überwachung"
       }
     },
     "openSidebar": "Seitenleiste öffnen",

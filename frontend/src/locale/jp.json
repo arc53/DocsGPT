@@ -2018,6 +2018,9 @@
         "notice_one": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。",
         "notice_other": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。"
       }
+    },
+    "insights": {
+      "label": "インサイト"
     }
   },
   "modals": {
@@ -2673,7 +2676,8 @@
         "overview": "概要",
         "logs": "ログ",
         "insights": "インサイト",
-        "schedules": "スケジュール"
+        "schedules": "スケジュール",
+        "analytics": "分析"
       },
       "fallbackName": "無題のエージェント",
       "subnavAriaLabel": "エージェントのサブナビゲーション"
@@ -3602,9 +3606,9 @@
       "groups": {
         "personal": "個人",
         "workspace": "ワークスペース",
-        "insights": "インサイト",
         "administration": "管理",
-        "automations": "オートメーション"
+        "automations": "オートメーション",
+        "monitoring": "モニタリング"
       }
     },
     "openSidebar": "サイドバーを開く",

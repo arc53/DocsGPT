@@ -2089,6 +2089,9 @@
         "notice_many": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas.",
         "notice_other": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas."
       }
+    },
+    "insights": {
+      "label": "Información"
     }
   },
   "modals": {
@@ -2761,7 +2764,8 @@
         "overview": "Resumen",
         "logs": "Registros",
         "insights": "Información",
-        "schedules": "Programaciones"
+        "schedules": "Programaciones",
+        "analytics": "Analítica"
       },
       "fallbackName": "Agente sin título",
       "subnavAriaLabel": "Subnavegación del agente"
@@ -3708,9 +3712,9 @@
       "groups": {
         "personal": "Personal",
         "workspace": "Espacio de trabajo",
-        "insights": "Estadísticas",
         "administration": "Administración",
-        "automations": "Automatizaciones"
+        "automations": "Automatizaciones",
+        "monitoring": "Supervisión"
       }
     },
     "openSidebar": "Abrir barra lateral",

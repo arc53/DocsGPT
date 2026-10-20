@@ -2089,6 +2089,9 @@
         "notice_many": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser.",
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       }
+    },
+    "insights": {
+      "label": "Analyses"
     }
   },
   "modals": {
@@ -2761,7 +2764,8 @@
         "overview": "Aperçu",
         "logs": "Journaux",
         "insights": "Analyses",
-        "schedules": "Planifications"
+        "schedules": "Planifications",
+        "analytics": "Statistiques"
       },
       "fallbackName": "Agent sans titre",
       "subnavAriaLabel": "Sous-navigation de l’agent"
@@ -3708,9 +3712,9 @@
       "groups": {
         "personal": "Personnel",
         "workspace": "Espace de travail",
-        "insights": "Analyses",
         "administration": "Administration",
-        "automations": "Automatisations"
+        "automations": "Automatisations",
+        "monitoring": "Supervision"
       }
     },
     "openSidebar": "Ouvrir la barre latérale",

@@ -108,4 +108,22 @@ describe('AgentLogs', () => {
       container.querySelector('#logs [data-testid="logs"]'),
     ).not.toBeNull();
   });
+
+  // The usage charts are the agent's Analytics page now.
+  it('leaves the usage charts to Analytics', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/logs/a1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/logs/:agentId"
+              element={<AgentLogs />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    expect(container.querySelector('[data-testid="analytics"]')).toBeNull();
+    expect(container.querySelector('[data-testid="logs"]')).not.toBeNull();
+  });
 });

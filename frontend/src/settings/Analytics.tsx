@@ -22,7 +22,6 @@ import { useChartPalette } from '../utils/chartUtils';
 import { formatCount, formatDate } from '../utils/dateTimeUtils';
 import AnalyticsChart from './AnalyticsChart';
 import UsageQuota from './components/UsageQuota';
-import { InsightsSection } from './insights/ConversationInsights';
 import TimeFilterSelect, {
   DEFAULT_TIME_FILTER,
   type TimeFilter,
@@ -596,9 +595,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
           </div>
         </Card>
       </div>
-
-      {/* An agent's insights are its own page. */}
-      {!agentId && <InsightsSection filterOption={timeFilter} />}
     </div>
   );
 }
