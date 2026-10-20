@@ -9,7 +9,7 @@ It creates a throwaway SSH key and Droplet, waits for the first boot to finish, 
 
 * https://<IP> answers with a certificate the system trusts (Let's Encrypt's IP certificate);
 * only ports 22, 80 and 443 answer from outside;
-* the login message shows the address and the access token, and the token opens the API;
+* the login message shows the address but no secret, and the token from ``docsgpt token`` opens the API;
 * a document uploaded with the token is ingested and an answer cites it;
 * after ``docsgpt up --accounts``, the first admin signs in through Keycloak (setting a new
   password, as the first sign-in asks) and DocsGPT gives them the admin role;
@@ -261,8 +261,11 @@ def check_droplet(key: Path, address: str, accounts: bool = True) -> None:
     check_ports(address)
     motd = remote(key, address, "run-parts /etc/update-motd.d/ 2>/dev/null | sed -n '/DocsGPT on/,$p'")
     access_token = remote(key, address, "docsgpt token").strip()
-    assert base in motd and access_token in motd, motd
-    log("the login message shows the address and the access token")
+    assert base in motd and "docsgpt token" in motd, motd
+    # pam_motd keeps the message in a file anyone can read, and the first-boot log holds the token.
+    assert access_token not in motd, "the login message must not carry the access token"
+    assert remote(key, address, "stat -c %a /var/log/docsgpt-onboot.log").strip() == "600"
+    log("the login message shows the address and how to get the token, and no secret")
     assert Browser().open(f"{base}/api/user/me")[0] == 401, "the API must refuse a request without the token"
     check_ingest_and_answer(base, access_token)
 

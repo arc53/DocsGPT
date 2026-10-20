@@ -8,8 +8,9 @@ What a customer gets, a minute or two after creating the Droplet:
 
 - DocsGPT at `https://<Droplet IP>`, with a Let's Encrypt certificate for the IP address
   (six-day `shortlived` profile, renewed by Caddy), no domain needed;
-- the access token in the login message (`docsgpt token` prints it again), so nobody who
-  merely finds the address can use the instance;
+- the access token, shown to root at the first login and by `docsgpt token`, so nobody who
+  merely finds the address can use the instance (the login message, which every user can
+  read, carries no secret);
 - chat that works before any key is entered, through the DocsGPT public API;
 - only ports 22, 80 and 443 open (ufw), fail2ban, and unattended security updates;
 - on the first SSH login, two optional questions: move to a domain
@@ -27,8 +28,8 @@ returns to the previous version and that backup. The customer guide is
 | `scripts/10-system.sh` | Patches, Docker, ufw, fail2ban, unattended upgrades, the SSH "please wait" lock |
 | `scripts/20-docsgpt.sh` | uv and the `docsgpt` tool under `/opt/docsgpt-cli`, image pre-pull, `application.info` |
 | `files/var/lib/cloud/scripts/per-instance/001_onboot` | First boot: `docsgpt up --ip <public IP>`, then unlock SSH |
-| `files/etc/update-motd.d/99-docsgpt` | Login message: address, token or first admin, commands |
-| `files/usr/local/lib/docsgpt/first-login` | The optional domain and accounts questions |
+| `files/etc/update-motd.d/99-docsgpt` | Login message: address, where the token is, commands (no secrets) |
+| `files/usr/local/lib/docsgpt/first-login` | Root's first login: the access token, then the optional domain and accounts questions |
 | `smoke_test.py` | Boots a Droplet from a snapshot and checks it end to end |
 | `listing.md` | Copy for the Marketplace listing |
 

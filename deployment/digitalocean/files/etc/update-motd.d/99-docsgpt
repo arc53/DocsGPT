@@ -1,5 +1,9 @@
 #!/bin/bash
 # DocsGPT 1-Click: where DocsGPT is and how to sign in, shown at each login.
+#
+# No secret goes in here: pam_motd runs this for every user's login and keeps the output in
+# /run/motd.dynamic, which anyone on the machine can read. `docsgpt token` prints them, and
+# needs root to read the settings it takes them from.
 set -a
 # shellcheck disable=SC1091
 . /etc/environment
@@ -33,11 +37,10 @@ else
   fi
   echo "  Open DocsGPT:  $url"
   if [ "$(setting DOCSGPT_ACCOUNTS)" = "on" ]; then
-    echo "  Sign in as:    admin, initial password $(setting KEYCLOAK_ADMIN_PASSWORD)"
+    echo "  Sign in as:    admin; \`docsgpt token\` prints the initial password"
     echo "                 (the first sign-in sets your own; add people at $url/auth/admin/docsgpt/console)"
   elif [ "$(setting AUTH_TYPE)" = "simple_jwt" ]; then
-    echo "  Access token:  $(docsgpt token 2>/dev/null)"
-    echo "                 (the page asks for it once per browser)"
+    echo "  Access token:  run \`docsgpt token\` as root; the page asks for it once per browser"
   fi
   if [ "$(setting DOCSGPT_TLS)" = "ip" ]; then
     cat <<'EOF'

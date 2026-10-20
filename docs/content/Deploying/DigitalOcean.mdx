@@ -53,15 +53,18 @@ Log in as root, with SSH or with the Droplet Console:
 ssh root@<Droplet IP>
 ```
 
-The login message shows where DocsGPT is and its access token:
+The first login shows where DocsGPT is and its access token:
 
 ```text
-  Open DocsGPT:  https://203.0.113.10
-  Access token:  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+DocsGPT is running at https://203.0.113.10. The page asks for this access token once per browser:
+
+  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 Open the address and paste the token when the page asks for it. Each browser
-asks once. `docsgpt token` prints the token again.
+asks once. `docsgpt token` prints the token again. The login message shown at
+every login has the address but never the token, since any user on the Droplet
+can read it.
 
 If the login message says DocsGPT is still being set up, the first boot hasn't
 finished; follow it with `tail -f /var/log/docsgpt-onboot.log`.

@@ -1460,16 +1460,31 @@ def _take_backup(
     """
     taken_at = datetime.now(timezone.utc)
     target = out_dir / backup_format.archive_name(taken_at)
+    running = _running_services(context, directory)
     # Keycloak writes its own database (sessions, sign-in events), so it pauses with the others.
-    writers = ["backend", "worker", *(["keycloak"] if stack.runs_accounts(env) else [])]
+    # Only what was running is paused and started again: a stack stopped with `docsgpt down`
+    # stays stopped, Postgres included, once the backup is written.
+    writers = [name for name in ("backend", "worker", "keycloak") if name in running]
     try:
-        print(f"Pausing {', '.join(writers)} so the databases and the files match ...")
-        context.docker.compose(directory, "stop", *writers)
+        if writers:
+            print(f"Pausing {', '.join(writers)} so the databases and the files match ...")
+            context.docker.compose(directory, "stop", *writers)
+        # pg_dump runs in the Postgres container, which a stopped stack has to start first.
+        context.docker.compose(directory, "up", "-d", "--wait", "postgres")
         _write_backup(context, directory, env, target, _stack_image(env), taken_at, with_settings)
     finally:
-        print("Starting them again ...")
-        context.docker.compose(directory, "up", "-d", *writers)
+        if writers:
+            print(f"Starting {', '.join(writers)} again ...")
+            context.docker.compose(directory, "up", "-d", *writers)
+        if "postgres" not in running:
+            context.docker.compose(directory, "stop", "postgres", check=False)
     return target
+
+
+def _running_services(context: Context, directory: Path) -> set[str]:
+    """The stack's services that are running now."""
+    result = context.docker.compose(directory, "ps", "--services", "--status", "running", capture=True)
+    return set((result.stdout or "").split())
 
 
 def _write_backup(
@@ -1693,7 +1708,7 @@ def restore(args, context: Optional[Context] = None) -> int:
 
 def _restore_archive(
     context: Context, directory: Path, archive: Path, manifest: Mapping[str, object], env: Mapping[str, str],
-    timeout: int,
+    timeout: int, on_failure: Optional[Callable[[], None]] = None,
 ) -> bool:
     """Stop the stack, put a checked archive's data back, and start it again on the image ``env`` names.
 
@@ -1704,6 +1719,8 @@ def _restore_archive(
         manifest: Its manifest.
         env: The stack's settings.
         timeout: Seconds to wait for the API afterwards.
+        on_failure: Called when the restore fails, before the stack starts again (a rollback
+            puts the image it switched away from back here).
 
     Returns:
         Whether the API answered after the restore.
@@ -1719,6 +1736,8 @@ def _restore_archive(
         # The stack is down by now. A corrupt payload inside an otherwise well-formed archive, or a
         # statement psql refuses, must not leave DocsGPT stopped: start it again, then report.
         print("The restore failed. Starting DocsGPT again ...", file=sys.stderr)
+        if on_failure is not None:
+            on_failure()
         context.docker.compose(directory, "up", "-d", "--remove-orphans", check=False)
         raise
 
@@ -1837,8 +1856,19 @@ def _rollback(args, context: Context, directory: Path) -> int:
             return 1
 
     env_path = directory / ".env"
+    current_tag = envfile.read(env_path).get("DOCSGPT_IMAGE_TAG")
+
+    def back_to_the_current_image() -> None:
+        # A failed load leaves the database the newer release migrated, so the stack has to come
+        # back on that release's image; the record stays, for another try.
+        envfile.update(env_path, {"DOCSGPT_IMAGE_TAG": current_tag})
+        print(f"Staying on image {current_tag}; the rollback can be tried again.", file=sys.stderr)
+
     envfile.update(env_path, {"DOCSGPT_IMAGE_TAG": previous["image_tag"]})
-    if not _restore_archive(context, directory, archive, manifest, envfile.read(env_path), args.timeout):
+    if not _restore_archive(
+        context, directory, archive, manifest, envfile.read(env_path), args.timeout,
+        on_failure=back_to_the_current_image,
+    ):
         return 1
     record = _record(directory)
     record.pop("rollback", None)

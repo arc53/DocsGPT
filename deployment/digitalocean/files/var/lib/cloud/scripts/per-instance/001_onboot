@@ -6,6 +6,9 @@
 # on, and serves https://<public IP> through Caddy with a Let's Encrypt IP certificate.
 # Its output goes to /var/log/docsgpt-onboot.log.
 set -uo pipefail
+# `docsgpt up` prints the access token, so the log is root's alone.
+umask 077
+install -m 0600 /dev/null /var/log/docsgpt-onboot.log
 exec >>/var/log/docsgpt-onboot.log 2>&1
 echo "== DocsGPT first boot, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

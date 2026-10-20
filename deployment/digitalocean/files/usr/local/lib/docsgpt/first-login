@@ -31,8 +31,14 @@ ask_yes() {
 
 this_ip="$(grep -E '^DOCSGPT_DOMAIN=' "$home/.env" | tail -n 1 | cut -d= -f2-)"
 
+# The token is shown here, to root on a terminal, rather than in the login message, which any
+# user can read; `docsgpt token` prints it again.
 echo
-echo "DocsGPT is running. Two optional steps (both can be done later; see the message above):"
+echo "DocsGPT is running at https://$this_ip. The page asks for this access token once per browser:"
+echo
+echo "  $(docsgpt token 2>/dev/null)"
+echo
+echo "Two optional steps (both can be done later; see the message above):"
 echo
 
 if ask_yes "Serve DocsGPT on your own domain name instead of the IP address?"; then

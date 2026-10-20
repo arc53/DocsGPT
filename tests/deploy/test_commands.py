@@ -27,6 +27,9 @@ class FakeDocker:
     def preflight(self, interactive=False):
         self.preflights += 1
 
+    # What `compose ps --services --status running` reports: the whole stack, unless a test stops it.
+    running = ("backend", "worker", "keycloak", "postgres", "redis", "caddy")
+
     def compose(self, directory, *args, capture=False, check=True, stdout=None, stdin=None):
         self.calls.append((Path(directory), list(args)))
         if "down" in args and "-v" in args:
@@ -35,7 +38,8 @@ class FakeDocker:
             stdout.write("-- fake pg_dump\n")
         if stdin is not None:
             self.restored_sql = stdin.read()
-        return subprocess.CompletedProcess(["docker", "compose", *args], 0, stdout="", stderr="")
+        out = "\n".join(self.running) + "\n" if args[:2] == ("ps", "--services") else ""
+        return subprocess.CompletedProcess(["docker", "compose", *args], 0, stdout=out, stderr="")
 
     def export_volume(self, volume, dest, image):
         """Write a small tar, as the real one does with `docker run ... tar cf -`."""
@@ -594,6 +598,39 @@ class TestRollback:
             "up", "--dir", str(tmp_path), "--yes", "--image-tag", "0.21.0"
         ]
         assert "rollback" not in json.loads((tmp_path / "install.json").read_text())
+
+    def test_a_failed_restore_stays_on_the_current_image_and_keeps_the_record(self, tmp_path, capsys):
+        """The database a failed load leaves behind is the one the newer release migrated."""
+        self._upgraded(tmp_path)
+
+        class FailingLoad(FakeDocker):
+            def compose(self, directory, *args, **kwargs):
+                if kwargs.get("stdin") is not None:
+                    self.calls.append((Path(directory), list(args)))
+                    self.tag_at_failure = envfile.read(Path(directory) / ".env")["DOCSGPT_IMAGE_TAG"]
+                    raise DeployError("psql failed")
+                return super().compose(directory, *args, **kwargs)
+
+        calls = []
+        docker = FailingLoad(volumes={commands.DATABASE_VOLUME})
+        with pytest.raises(DeployError, match="psql failed"):
+            _run(["upgrade", "--dir", str(tmp_path), "--rollback", "--yes"], _uv(calls, docker=docker))
+        assert docker.tag_at_failure == "0.21.0", "the restore ran on the previous image"
+        assert envfile.read(tmp_path / ".env")["DOCSGPT_IMAGE_TAG"] == "0.22.0"
+        restart = docker.calls[-1][1]
+        assert restart[:2] == ["up", "-d"], "the stack starts again, on the current image"
+        assert "rollback" in json.loads((tmp_path / "install.json").read_text())
+        assert calls == [], "the previous package is not installed"
+        assert "tried again" in capsys.readouterr().err
+
+    def test_upgrading_a_stopped_stack_backs_it_up_and_leaves_it_stopped(self, tmp_path):
+        _installed_stack(tmp_path)
+        docker = FakeDocker(volumes={commands.DATABASE_VOLUME})
+        docker.running = ()
+        assert _run(["upgrade", "--dir", str(tmp_path)], _uv([], docker=docker)) == 0
+        assert list((tmp_path / "backups" / "pre-upgrade").glob("docsgpt-*.tar.gz"))
+        joined = [" ".join(args) for _, args in docker.calls]
+        assert "up -d --wait postgres" in joined and "stop postgres" in joined, joined
 
     def test_without_an_upgrade_there_is_nothing_to_roll_back(self, tmp_path):
         _installed_stack(tmp_path)

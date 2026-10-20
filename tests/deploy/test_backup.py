@@ -139,6 +139,27 @@ class TestBackup:
         started = next(index for index, call in enumerate(joined) if call.startswith("up -d backend worker"))
         assert stopped < dumped < started, joined
 
+    def test_a_stopped_stack_is_backed_up_and_stays_stopped(self, tmp_path):
+        """After `docsgpt down` there is no Postgres to dump from, and nothing to pause or start."""
+        _installed(tmp_path)
+        docker = FakeDocker()
+        docker.running = ()
+        assert _run(["backup", "--dir", str(tmp_path), "--out", str(tmp_path / "b")], _context(docker)) == 0
+        joined = [" ".join(args) for _, args in docker.calls]
+        started = joined.index("up -d --wait postgres")
+        dumped = next(index for index, call in enumerate(joined) if "pg_dump" in call)
+        assert started < dumped < joined.index("stop postgres"), joined
+        assert not [call for call in joined if call.startswith(("stop backend", "up -d backend"))], joined
+
+    def test_only_the_writers_that_ran_are_paused(self, tmp_path):
+        _installed(tmp_path)
+        docker = FakeDocker()
+        docker.running = ("backend", "postgres", "redis")
+        assert _run(["backup", "--dir", str(tmp_path), "--out", str(tmp_path / "b")], _context(docker)) == 0
+        joined = [" ".join(args) for _, args in docker.calls]
+        assert "stop backend" in joined and "up -d backend" in joined, joined
+        assert "stop postgres" not in joined, "a running Postgres keeps running"
+
     def test_the_writers_come_back_even_when_stopping_them_fails(self, tmp_path):
         """A stop that fails partway must not leave the backend or the worker down."""
         _installed(tmp_path)

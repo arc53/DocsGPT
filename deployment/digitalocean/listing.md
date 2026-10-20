@@ -23,8 +23,8 @@ This 1-Click App sets DocsGPT up on the Droplet's first boot:
 
 - **HTTPS straight away, no domain needed.** DocsGPT answers at `https://<Droplet IP>` with a
   Let's Encrypt certificate for the IP address. Move to your own domain with one command.
-- **Private by default.** An access token, shown only in the Droplet's login message, guards
-  the instance; only ports 22, 80 and 443 are open.
+- **Private by default.** An access token, shown only to root on the Droplet (`docsgpt token`),
+  guards the instance; only ports 22, 80 and 443 are open.
 - **Chat works immediately** through the DocsGPT public API, with no API key. Switch to
   OpenAI, Anthropic, Google, OpenRouter, Groq or any OpenAI-compatible server when you like.
 - **User accounts when your team joins.** `docsgpt up --accounts` adds Keycloak sign-in, with
@@ -50,7 +50,8 @@ DocsGPT is built and supported by Arc53, not by DigitalOcean.
 1. Create the Droplet on a plan with at least 4 GB of memory (8 GB with user accounts and
    heavy use).
 2. Wait a minute or two for the first boot, then log in as root with SSH or the Droplet
-   Console. The login message shows the address and the access token.
+   Console. The first login shows the address and the access token (`docsgpt token` prints it
+   again).
 3. Open `https://<Droplet IP>` and paste the token.
 4. Optional: point a domain at the Droplet and run `docsgpt up --domain docs.example.com`;
    run `docsgpt up --accounts` to give everyone their own account.
