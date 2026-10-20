@@ -98,15 +98,13 @@ def test_reversion_without_title_falls_back_to_generic(monkeypatch):
 
 def _patch_create(monkeypatch, tool):
     """Stub render + persist so _create runs without a sandbox or DB; capture kwargs."""
-    import docsgpt.agents.tools.artifact_generator as ag
-
     captured: dict = {}
 
     def _fake_persist(**kwargs):
         captured.update(kwargs)
         return {"artifact_id": "art-1", "version": 1, "filename": kwargs["filename"]}
 
-    monkeypatch.setattr(ag, "persist_new_artifact", _fake_persist)
+    monkeypatch.setattr("docsgpt.agents.tools.artifact_generator.persist_new_artifact", _fake_persist)
     monkeypatch.setattr(tool, "_render", lambda kind, spec: {"data": b"x"})
     return captured
 
