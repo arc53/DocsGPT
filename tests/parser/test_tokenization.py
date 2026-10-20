@@ -568,6 +568,13 @@ class TestZeroTokenRunsAreCarried:
         assert counter.count(text) == 4
         assert max(tokenizer.encode_lengths) <= 2 * _SMALL_WINDOW
 
+    def test_blank_run_within_budget_comes_back_whole(self):
+        """Within one window a text that fits is returned as is; the character
+        cap is only for pieces a split actually produced."""
+        counter = HuggingFaceCounter(_CharTokenizer(skip_whitespace=True), "spy")
+        text = "a" + " " * 200 + "b"
+        assert counter.split(text, 5) == [text]
+
 
 class TestTextWindows:
     """Where the windows fall decides whether a seam changes tokenization.
@@ -629,6 +636,12 @@ class TestTextWindows:
     def test_space_must_follow_text(self):
         text = "a" * 13 + "  " + "b" * 30
         assert self._windows(text, 20)[0] == (0, 13)
+
+    def test_space_exactly_at_half_is_not_a_cut(self):
+        """A cut at ``size // 2`` would leave a window no longer than half."""
+        text = "a" * 32 + " " + "a" * 100
+        (_, end), *_ = self._windows(text, 64)
+        assert end > 32
 
     @pytest.mark.parametrize("glue", ["́", "‍", "️", "\ud800"])
     def test_hard_cut_never_lands_before_glue(self, glue):
@@ -768,6 +781,37 @@ class TestFirstBudgetAcrossWindows:
         assert "".join(pieces) == text
         assert len(pieces[0]) <= self.FIRST
         assert all(len(piece) <= self.REST for piece in pieces)
+
+
+class TestWindowedPiecesStayFull:
+    """Bounded is not enough: streaming must not leave a short piece at every
+    seam, or a document splits into more chunks than a one-shot split gives."""
+
+    PROSE = "The quick brown fox jumps over the lazy dog.\n" * 400
+
+    # Budgets that don't divide the ~50 tokens a 256-char window holds, so a
+    # piece that should run across a seam is visibly cut short if it isn't.
+    @pytest.mark.parametrize("budget", [37, 60])
+    def test_piece_count_matches_one_shot(self, budget, monkeypatch):
+        _real_cl100k()
+        counter = TiktokenCounter()
+        one_shot = counter.split(self.PROSE, budget, first_max_tokens=10)
+        _shrink_window(monkeypatch, _SMALL_WINDOW)
+        windowed = counter.split(self.PROSE, budget, first_max_tokens=10)
+        assert "".join(windowed) == self.PROSE
+        assert len(windowed) <= len(one_shot) + 2
+
+    def test_tiktoken_pieces_are_not_character_capped(self, monkeypatch):
+        """The 16-chars-per-token cap is a WordPiece ``[UNK]`` guard; a cl100k
+        token can legitimately span a long whitespace run."""
+        _real_cl100k()
+        counter = TiktokenCounter()
+        text = ("x" + " " * 60 + "\n") * 40
+        _shrink_window(monkeypatch, _SMALL_WINDOW)
+        pieces = counter.split(text, 1)
+        assert "".join(pieces) == text
+        assert all(counter.count(piece) == 1 for piece in pieces)
+        assert any(len(piece) > 16 for piece in pieces)
 
 
 class TestHugeBudgetIsStillBounded:
