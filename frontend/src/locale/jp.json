@@ -716,9 +716,10 @@
           "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: データがまだ足りません",
           "noneOfThese": "どのトピックにも該当しない",
-          "tooltipValue": "{{name}}: {{value}}（{{share}}）",
-          "tooltipCount": "{{name}}: {{value}}",
-          "empty": "この期間に表示する内容はありません。"
+          "empty": "この期間に表示する内容はありません。",
+          "tooltipShare": "{{name}}: {{value}}",
+          "ofQuestions_one": "質問 {{formatted}} 件中",
+          "ofQuestions_other": "質問 {{formatted}} 件中"
         },
         "labelNamesInline": {
           "answer_status": "回答状況",

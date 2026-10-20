@@ -5,25 +5,45 @@ import type { ConversationInsights } from '../types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: Record<string, unknown>) =>
-      opts?.points !== undefined ? `${key}(${opts.points})` : key,
+    t: (key: string, opts?: Record<string, unknown>) => {
+      if (!opts) return key;
+      // The interpolation options and the plural count are not shown.
+      const shown = Object.entries(opts)
+        .filter(([name]) => name !== 'interpolation' && name !== 'count')
+        .map(([, value]) => value)
+        .join('|');
+      return shown ? `${key}(${shown})` : key;
+    },
     i18n: { language: 'en' },
   }),
 }));
 
+// The chart's props, so the figures each panel hands it can be checked.
+const chart = vi.hoisted(() => ({
+  props: null as null | {
+    data: {
+      datasets: { label: string; data: number[]; backgroundColor: string }[];
+    };
+    share?: boolean;
+    tooltipCallbacks: {
+      label: (item: unknown) => string;
+      footer: (items: unknown[]) => string;
+    };
+  },
+}));
 vi.mock('../AnalyticsChart', () => ({
-  default: (props: {
-    data: { datasets: { label: string; data: number[] }[] };
-  }) => (
-    <div data-testid="chart">
-      {props.data.datasets
-        .map((dataset) => `${dataset.label}=${dataset.data.join('+')}`)
-        .join(',')}
-    </div>
-  ),
+  default: (props: NonNullable<typeof chart.props>) => {
+    chart.props = props;
+    return (
+      <div data-testid="chart">
+        {props.data.datasets.map((dataset) => dataset.label).join(',')}
+      </div>
+    );
+  },
 }));
 
 import ImplicitFeedbackPanel from './ImplicitFeedbackPanel';
+import SentimentPanel from './SentimentPanel';
 import ShareBars from './ShareBars';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -72,16 +92,36 @@ const insights = (n: number): ConversationInsights => ({
             'new question': 3,
           },
         },
+        sentiment: {
+          n: 4,
+          options: { positive: 2.4, neutral: 1, negative: 0.6 },
+        },
+      },
+    },
+    // A day with no replies: nothing to share out.
+    {
+      bucket: '2026-10-19',
+      labels: {
+        reaction: { n: 0, options: {} },
+        sentiment: { n: 0, options: { positive: 0, neutral: 0, negative: 0 } },
       },
     },
   ],
 });
+
+/** Each dataset's label and its points, rounded to two places. */
+const drawn = () =>
+  chart.props!.data.datasets.map((dataset) => [
+    dataset.label,
+    dataset.data.map((value) => Math.round(value * 100) / 100),
+  ]);
 
 describe('insight panels', () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
+    chart.props = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -92,18 +132,58 @@ describe('insight panels', () => {
     container.remove();
   });
 
-  it('draws implicit feedback as three meaningful series, pushback and complaint summed', () => {
+  it("draws implicit feedback as each day's share of its replies, pushback and complaint summed", () => {
     act(() => root.render(<ImplicitFeedbackPanel data={insights(40)} />));
-    expect(container.querySelector('[data-testid="chart"]')!.textContent).toBe(
+    // Of the day's 6 replies; the neutral kinds (a new question) are the
+    // undrawn gap, and a day without replies stays an empty column.
+    expect(drawn()).toEqual([
+      ['settings.analytics.insights.options.reaction.thanks', [0.33, 0]],
+      ['settings.analytics.insights.options.reaction.reAsk', [0.17, 0]],
       [
-        'settings.analytics.insights.options.reaction.thanks=2',
-        'settings.analytics.insights.options.reaction.reAsk=1',
-        'settings.analytics.insights.options.reaction.pushbackOrComplaint=0.75',
-      ].join(','),
+        'settings.analytics.insights.options.reaction.pushbackOrComplaint',
+        [0.13, 0],
+      ],
+    ]);
+    expect(chart.props!.share).toBe(true);
+    // The tooltip reads the share, and the day's replies as a count.
+    const { label, footer } = chart.props!.tooltipCallbacks;
+    expect(
+      label({ dataset: { label: 'Thanks' }, raw: 2 / 6, dataIndex: 0 }),
+    ).toBe('settings.analytics.insights.panels.tooltipShare(Thanks|33%)');
+    expect(footer([{ dataIndex: 0 }])).toBe(
+      'settings.analytics.insights.panels.ofReplies(6)',
     );
     // Every figure is an estimate, said once in the intro: no badge.
     expect(container.querySelector('[data-slot="badge"]')).toBeNull();
     expect(container.querySelector('button')).toBeNull();
+  });
+
+  it("draws sentiment as each day's share of its replies, filling the column", () => {
+    act(() =>
+      root.render(
+        <SentimentPanel
+          data={{
+            ...insights(40),
+            totals: {
+              sentiment: { tier: 'estimated', n: 40, options: {} },
+            },
+          }}
+        />,
+      ),
+    );
+    expect(drawn()).toEqual([
+      ['settings.analytics.insights.options.sentiment.positive', [0.6, 0]],
+      ['settings.analytics.insights.options.sentiment.neutral', [0.25, 0]],
+      ['settings.analytics.insights.options.sentiment.negative', [0.15, 0]],
+    ]);
+    expect(chart.props!.share).toBe(true);
+    const { label, footer } = chart.props!.tooltipCallbacks;
+    expect(
+      label({ dataset: { label: 'Positive' }, raw: 0.6, dataIndex: 0 }),
+    ).toBe('settings.analytics.insights.panels.tooltipShare(Positive|60%)');
+    expect(footer([{ dataIndex: 0 }])).toBe(
+      'settings.analytics.insights.panels.ofReplies(4)',
+    );
   });
 
   it('waits for enough replies before drawing implicit feedback', () => {
@@ -146,7 +226,7 @@ describe('insight panels', () => {
     // Assistive tech reads one run per row: the label and the figure; the
     // drawing is hidden from it.
     expect(howTo.querySelector('.sr-only')!.textContent).toBe(
-      'settings.analytics.insights.panels.barLabel',
+      'settings.analytics.insights.panels.barLabel(How-to|38%)',
     );
     expect(bar.closest('[aria-hidden="true"]')).not.toBeNull();
     // A row with no figure yet: a dash and an empty track.
@@ -157,7 +237,7 @@ describe('insight panels', () => {
         .style.getPropertyValue('--progress'),
     ).toBe('0%');
     expect(tag.querySelector('.sr-only')!.textContent).toBe(
-      'settings.analytics.insights.panels.barLabelNone',
+      'settings.analytics.insights.panels.barLabelNone(Pricing question)',
     );
   });
 

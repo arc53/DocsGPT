@@ -716,9 +716,10 @@
           "barLabel": "{{name}}：{{value}}",
           "barLabelNone": "{{name}}：数据还不够",
           "noneOfThese": "不属于这些主题",
-          "tooltipValue": "{{name}}：{{value}}（{{share}}）",
-          "tooltipCount": "{{name}}：{{value}}",
-          "empty": "此期间没有可显示的内容。"
+          "empty": "此期间没有可显示的内容。",
+          "tooltipShare": "{{name}}：{{value}}",
+          "ofQuestions_one": "共 {{formatted}} 个问题",
+          "ofQuestions_other": "共 {{formatted}} 个问题"
         },
         "labelNamesInline": {
           "answer_status": "回答状态",

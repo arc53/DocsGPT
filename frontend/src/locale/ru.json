@@ -770,9 +770,12 @@
           "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: пока мало данных",
           "noneOfThese": "Ни одна из этих тем",
-          "tooltipValue": "{{name}}: {{value}} ({{share}})",
-          "tooltipCount": "{{name}}: {{value}}",
-          "empty": "За этот период показать нечего."
+          "empty": "За этот период показать нечего.",
+          "tooltipShare": "{{name}}: {{value}}",
+          "ofQuestions_one": "Из {{formatted}} вопроса",
+          "ofQuestions_other": "Из {{formatted}} вопроса",
+          "ofQuestions_many": "Из {{formatted}} вопросов",
+          "ofQuestions_few": "Из {{formatted}} вопросов"
         },
         "labelNamesInline": {
           "answer_status": "статус ответов",

@@ -36,6 +36,7 @@ import {
   NONE_OF_THESE,
   optionBars,
   optionName,
+  shareOfDay,
   showsFigures,
   weakLanguages,
   type BarRow,
@@ -266,9 +267,12 @@ function InsightsSkeleton() {
   return (
     <>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        {stats.map((key) => (
+        {stats.map((key, index) => (
           <StatCard
             key={key}
+            className={cn(
+              index === stats.length - 1 && 'col-span-2 md:col-span-1',
+            )}
             label={t(`settings.analytics.insights.stats.${key}`)}
             value={null}
             loading
@@ -413,9 +417,13 @@ function InsightTiles({ data }: { data: Insights }) {
       className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5"
       data-testid="insight-tiles"
     >
-      {tiles.map((tile) => (
+      {tiles.map((tile, index) => (
         <StatCard
           key={tile.key}
+          // The fifth spans the phone's two columns rather than sit alone.
+          className={cn(
+            index === tiles.length - 1 && 'col-span-2 md:col-span-1',
+          )}
           data-testid={`insight-${tile.key}`}
           label={tile.label}
           value={tile.value}
@@ -524,16 +532,25 @@ function InsightPanels({ data }: { data: Insights }) {
   );
 }
 
+/**
+ * How questions were answered over time, each day as its share of that
+ * day's four outcomes; greetings ("not a request") are left out.
+ */
 function AnswerStatusPanel({ data }: { data: Insights }) {
   const { t } = useTranslation();
   const palette = useChartPalette();
   const enough = (data.totals.answer_status?.n ?? 0) >= MIN_SAMPLE;
-  const colors = [
-    palette.success,
-    palette.warning,
-    palette.destructive,
-    palette.info,
-  ];
+  // Declining when the docs have nothing is "no answer", not a failure: the
+  // neutral grey Sentiment uses, so red stays for real negatives. The legend
+  // reads each dataset's colour, so it shows the same map.
+  const colors: Record<(typeof ANSWER_STATUS_SERIES)[number], string> = {
+    'fully answered': palette.success,
+    'partially answered': palette.warning,
+    'declined, no information': palette.mutedForeground,
+    'asked a clarifying question': palette.info,
+  };
+  const questions = (index: number) =>
+    data.series[index]?.labels.answer_status?.n ?? 0;
   const bucketTotal = (index: number) =>
     ANSWER_STATUS_SERIES.reduce(
       (sum, option) =>
@@ -551,12 +568,15 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
         <AnalyticsChart
           data={{
             labels: data.series.map((bucket) => formatDate(bucket.bucket)),
-            datasets: ANSWER_STATUS_SERIES.map((option, index) => ({
+            datasets: ANSWER_STATUS_SERIES.map((option) => ({
               label: optionName(t, 'answer_status', option),
-              data: data.series.map(
-                (bucket) => bucket.labels.answer_status?.options[option] ?? 0,
+              data: data.series.map((bucket, index) =>
+                shareOfDay(
+                  bucket.labels.answer_status?.options[option] ?? 0,
+                  bucketTotal(index),
+                ),
               ),
-              backgroundColor: colors[index],
+              backgroundColor: colors[option],
             })),
           }}
           legendID={legendId}
@@ -564,15 +584,19 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
           gridColor={palette.border}
           tickColor={palette.mutedForeground}
           isStacked
+          share
           tooltipCallbacks={{
-            label: (item) => {
-              const value = Number(item.raw);
-              const total = bucketTotal(item.dataIndex);
-              return t('settings.analytics.insights.panels.tooltipValue', {
+            label: (item) =>
+              t('settings.analytics.insights.panels.tooltipShare', {
                 name: item.dataset.label,
-                value: formatEstimate(value),
-                share: formatShare(total > 0 ? value / total : 0),
+                value: formatShare(Number(item.raw)),
                 interpolation: { escapeValue: false },
+              }),
+            footer: (items) => {
+              const n = questions(items[0]?.dataIndex ?? -1);
+              return t('settings.analytics.insights.panels.ofQuestions', {
+                count: n,
+                formatted: formatCount(n),
               });
             },
           }}

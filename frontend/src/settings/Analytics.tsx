@@ -17,6 +17,7 @@ import {
 } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { useLoaderState } from '../hooks';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { useChartPalette } from '../utils/chartUtils';
 import { formatCount, formatDate } from '../utils/dateTimeUtils';
@@ -319,9 +320,13 @@ export default function Analytics({
     <div>
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        {statCards.map((card) => (
+        {statCards.map((card, index) => (
           <StatCard
             key={card.label}
+            // The fifth spans the phone's two columns rather than sit alone.
+            className={cn(
+              index === statCards.length - 1 && 'col-span-2 md:col-span-1',
+            )}
             label={card.label}
             value={card.value}
             hint={card.hint}

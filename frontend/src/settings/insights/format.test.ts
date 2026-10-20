@@ -9,6 +9,7 @@ import {
   insightsState,
   optionBars,
   optionName,
+  shareOfDay,
   showsFigures,
   weakLanguages,
 } from './format';
@@ -92,6 +93,14 @@ describe('numbers', () => {
     expect(formatEstimate(1234.6, 'en')).toBe('1,235');
     expect(formatEstimate(0.3, 'en')).toBe('<1');
     expect(formatEstimate(0, 'en')).toBe('0');
+  });
+
+  it("reads a day's expected count as its share of the day, an empty day as 0", () => {
+    expect(shareOfDay(1.5, 6)).toBe(0.25);
+    expect(shareOfDay(0, 0)).toBe(0);
+    expect(shareOfDay(0.4, 0)).toBe(0);
+    // Rounding in the sums never draws a column past 100%.
+    expect(shareOfDay(3.0000001, 3)).toBe(1);
   });
 });
 

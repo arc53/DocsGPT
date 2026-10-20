@@ -29,13 +29,29 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// Chart.js needs a canvas; the panel around it is what is tested here.
+// Chart.js needs a canvas; the panel around it is what is tested here. The
+// last chart's props are kept, so the figures it is handed can be checked.
+const charts = vi.hoisted(() => ({
+  props: [] as {
+    data: {
+      datasets: { label: string; data: number[]; backgroundColor: string }[];
+    };
+    share?: boolean;
+    tooltipCallbacks: {
+      label: (item: unknown) => string;
+      footer?: (items: unknown[]) => string;
+    };
+  }[],
+}));
 vi.mock('../AnalyticsChart', () => ({
-  default: (props: { data: { datasets: { label: string }[] } }) => (
-    <div data-testid="chart">
-      {props.data.datasets.map((dataset) => dataset.label).join(',')}
-    </div>
-  ),
+  default: (props: (typeof charts.props)[number]) => {
+    charts.props.push(props);
+    return (
+      <div data-testid="chart">
+        {props.data.datasets.map((dataset) => dataset.label).join(',')}
+      </div>
+    );
+  },
 }));
 vi.mock('../DocsGaps', () => ({
   default: (props: { hasTopics: boolean; agentId?: string }) => (
@@ -152,6 +168,7 @@ describe('ConversationInsights', () => {
 
   beforeEach(() => {
     store.state.preference.roles = ['admin'];
+    charts.props = [];
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -258,6 +275,13 @@ describe('ConversationInsights', () => {
     expect(section()!.textContent).toContain(
       'settings.analytics.insights.stats.fullyAnswered',
     );
+    // The fifth tile spans the phone's two columns, as the loaded one does.
+    const tiles = section()!.querySelector('.grid')!.children;
+    expect(tiles).toHaveLength(5);
+    expect(tiles[4].className.split(' ')).toEqual(
+      expect.arrayContaining(['col-span-2', 'md:col-span-1']),
+    );
+    expect(tiles[3].className).not.toContain('col-span');
   });
 
   it('counts labelled answers beside the title while some are still waiting', () => {
@@ -288,6 +312,12 @@ describe('ConversationInsights', () => {
     );
     // Docs gaps: an expected count, never decimals.
     expect(tile('docsGaps').textContent).toContain('12');
+    // Five tiles: on the phone's two columns the last spans both rather
+    // than sit alone; from md it is one tile again.
+    expect(tile('docsGaps').className.split(' ')).toEqual(
+      expect.arrayContaining(['col-span-2', 'md:col-span-1']),
+    );
+    expect(tile('asksHuman').className).not.toContain('col-span');
     expect(tile('docsGaps').textContent).toContain(
       'settings.analytics.insights.sub.inAnswers(118)',
     );
@@ -430,8 +460,30 @@ describe('ConversationInsights', () => {
     ).not.toBeNull();
   });
 
-  it('draws answer status as four outcomes, greetings left out', () => {
-    render(data());
+  it("draws answer status as each day's share of four outcomes, greetings left out", () => {
+    render(
+      data({
+        series: [
+          {
+            bucket: '2026-10-18',
+            labels: {
+              answer_status: {
+                n: 5,
+                options: {
+                  'fully answered': 2,
+                  'partially answered': 1,
+                  'declined, no information': 0.5,
+                  'asked a clarifying question': 0.5,
+                  'not a request': 1,
+                },
+              },
+            },
+          },
+          // A day with no questions stays an empty column.
+          { bucket: '2026-10-19', labels: {} },
+        ],
+      }),
+    );
     expect(
       container
         .querySelector('[data-testid="insight-answer-status"]')!
@@ -443,6 +495,27 @@ describe('ConversationInsights', () => {
         'settings.analytics.insights.options.answerStatus.declined',
         'settings.analytics.insights.options.answerStatus.clarifying',
       ].join(','),
+    );
+    const chart = charts.props[0];
+    expect(chart.share).toBe(true);
+    expect(chart.data.datasets.map((dataset) => dataset.data)).toEqual([
+      [0.5, 0],
+      [0.25, 0],
+      [0.125, 0],
+      [0.125, 0],
+    ]);
+    // "Said it didn't know" is the neutral grey, not a failure's red.
+    expect(
+      chart.data.datasets.map((dataset) => dataset.backgroundColor),
+    ).toEqual(['#079455', '#ca8a04', '#6b6b6b', '#2563eb']);
+    const { label, footer } = chart.tooltipCallbacks;
+    expect(
+      label({ dataset: { label: 'Fully answered' }, raw: 0.5, dataIndex: 0 }),
+    ).toBe(
+      'settings.analytics.insights.panels.tooltipShare(Fully answered|50%)',
+    );
+    expect(footer!([{ dataIndex: 0 }])).toBe(
+      'settings.analytics.insights.panels.ofQuestions(5)',
     );
   });
 

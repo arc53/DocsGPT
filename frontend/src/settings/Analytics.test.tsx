@@ -111,4 +111,18 @@ describe('Analytics without insights', () => {
     expect(userService.getConversationInsights).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="insights"]')).toBeNull();
   });
+
+  // IN-8: the fifth tile spans the phone's two columns instead of sitting
+  // alone; from md it is one tile again.
+  it('lets the fifth stat tile span the phone row', async () => {
+    await render('a1');
+    const tiles = Array.from(
+      container.querySelector('.grid')!.children,
+    ) as HTMLElement[];
+    expect(tiles).toHaveLength(5);
+    expect(tiles[4].className.split(' ')).toEqual(
+      expect.arrayContaining(['col-span-2', 'md:col-span-1']),
+    );
+    expect(tiles[3].className).not.toContain('col-span');
+  });
 });

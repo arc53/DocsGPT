@@ -10,6 +10,7 @@ import {
 import { Bar } from 'react-chartjs-2';
 
 import { hoverColor, htmlLegendPlugin } from '../utils/chartUtils';
+import { formatShare } from './insights/format';
 
 import type { ChartData, TooltipOptions } from 'chart.js';
 
@@ -33,6 +34,11 @@ type AnalyticsChartProps = {
   tickColor: string;
   /** Chart.js tooltip callbacks, for a label or footer of the chart's own. */
   tooltipCallbacks?: Partial<TooltipOptions<'bar'>['callbacks']>;
+  /**
+   * The data are shares (0–1) of each column: the y axis reads 0–100% in
+   * steps of 20%, whatever the column holds.
+   */
+  share?: boolean;
 };
 
 /** The Analytics bar chart: theme colours, the HTML legend and hover tints. */
@@ -44,6 +50,7 @@ export default function AnalyticsChart({
   gridColor,
   tickColor,
   tooltipCallbacks,
+  share = false,
 }: AnalyticsChartProps) {
   const options = {
     responsive: true,
@@ -86,7 +93,15 @@ export default function AnalyticsChart({
         },
         ticks: {
           color: tickColor,
+          ...(share
+            ? {
+                stepSize: 0.2,
+                callback: (value: number | string) =>
+                  formatShare(Number(value)),
+              }
+            : {}),
         },
+        ...(share ? { min: 0, max: 1 } : {}),
         stacked: isStacked,
       },
     },

@@ -718,9 +718,10 @@
           "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: noch nicht genug Daten",
           "noneOfThese": "Keines dieser Themen",
-          "tooltipValue": "{{name}}: {{value}} ({{share}})",
-          "tooltipCount": "{{name}}: {{value}}",
-          "empty": "In diesem Zeitraum gibt es nichts anzuzeigen."
+          "empty": "In diesem Zeitraum gibt es nichts anzuzeigen.",
+          "tooltipShare": "{{name}}: {{value}}",
+          "ofQuestions_one": "Von {{formatted}} Frage",
+          "ofQuestions_other": "Von {{formatted}} Fragen"
         },
         "labelNamesInline": {
           "answer_status": "Antwortstatus",

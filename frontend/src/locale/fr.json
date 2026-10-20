@@ -744,9 +744,11 @@
           "barLabel": "{{name}} : {{value}}",
           "barLabelNone": "{{name}} : pas encore assez de données",
           "noneOfThese": "Aucun de ces sujets",
-          "tooltipValue": "{{name}} : {{value}} ({{share}})",
-          "tooltipCount": "{{name}} : {{value}}",
-          "empty": "Rien à afficher sur cette période."
+          "empty": "Rien à afficher sur cette période.",
+          "tooltipShare": "{{name}} : {{value}}",
+          "ofQuestions_one": "Sur {{formatted}} question",
+          "ofQuestions_other": "Sur {{formatted}} questions",
+          "ofQuestions_many": "Sur {{formatted}} questions"
         },
         "labelNamesInline": {
           "answer_status": "le statut des réponses",

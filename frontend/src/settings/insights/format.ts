@@ -138,6 +138,15 @@ export function formatShare(rate: number, locale = intlLocale()): string {
 }
 
 /**
+ * A day's expected count as its share of the day's total, for a 100%
+ * stacked chart: a column reads as a mix, never as "1.8 replies". A day with
+ * nothing to share out is 0, so its column stays empty.
+ */
+export function shareOfDay(value: number, total: number): number {
+  return total > 0 ? Math.min(1, value / total) : 0;
+}
+
+/**
  * An expected count (a sum of probabilities) as a whole number: "6.2 gaps"
  * would claim a precision the estimate does not have. Under one half reads
  * "<1", so a small but real mass is not shown as nothing.

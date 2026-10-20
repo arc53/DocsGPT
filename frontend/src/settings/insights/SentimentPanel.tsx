@@ -5,18 +5,19 @@ import { formatCount, formatDate } from '../../utils/dateTimeUtils';
 import AnalyticsChart from '../AnalyticsChart';
 import type { ConversationInsights } from '../types';
 import {
-  formatEstimate,
   formatShare,
   MIN_SAMPLE,
   optionName,
   SENTIMENT_SERIES,
+  shareOfDay,
 } from './format';
 import ChartPanel from './ChartPanel';
 
 /**
- * The tone of users' replies over time: positive, neutral and negative.
- * Like frustration, only messages sent after an answer are read, so a
- * conversation's first message never counts.
+ * The tone of users' replies over time: positive, neutral and negative,
+ * each day as its share of that day's replies. Like frustration, only
+ * messages sent after an answer are read, so a conversation's first message
+ * never counts.
  */
 export default function SentimentPanel({
   data,
@@ -47,8 +48,11 @@ export default function SentimentPanel({
             labels: data.series.map((bucket) => formatDate(bucket.bucket)),
             datasets: SENTIMENT_SERIES.map((option) => ({
               label: optionName(t, 'sentiment', option),
-              data: data.series.map(
-                (bucket) => bucket.labels.sentiment?.options[option] ?? 0,
+              data: data.series.map((bucket) =>
+                shareOfDay(
+                  bucket.labels.sentiment?.options[option] ?? 0,
+                  bucket.labels.sentiment?.n ?? 0,
+                ),
               ),
               backgroundColor: colors[option],
             })),
@@ -58,17 +62,14 @@ export default function SentimentPanel({
           gridColor={palette.border}
           tickColor={palette.mutedForeground}
           isStacked
+          share
           tooltipCallbacks={{
-            label: (item) => {
-              const value = Number(item.raw);
-              const n = replies(item.dataIndex);
-              return t('settings.analytics.insights.panels.tooltipValue', {
+            label: (item) =>
+              t('settings.analytics.insights.panels.tooltipShare', {
                 name: item.dataset.label,
-                value: formatEstimate(value),
-                share: formatShare(n > 0 ? value / n : 0),
+                value: formatShare(Number(item.raw)),
                 interpolation: { escapeValue: false },
-              });
-            },
+              }),
             footer: (items) => {
               const n = replies(items[0]?.dataIndex ?? -1);
               return t('settings.analytics.insights.panels.ofReplies', {
