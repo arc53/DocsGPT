@@ -82,6 +82,7 @@ def _run(
     agent_calls=None,
     background=None,
     stop_jobs=None,
+    show_jobs=None,
 ):
     from docsgpt.api.answer.routes import base as base_mod
     from docsgpt.api.answer.routes.base import BaseAnswerResource
@@ -103,6 +104,8 @@ def _run(
         agent._get_truncated_tool_calls.return_value = list(agent_calls or [])
         with patch.object(base_mod, "bind_background_turn", return_value=background), patch(
             "docsgpt.background.service.stop_turn_jobs", side_effect=stop_jobs
+        ), patch(
+            "docsgpt.background.service.show_finished_jobs", side_effect=show_jobs
         ), patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
             base_mod, "STREAM_STOP_POLL_SECONDS", 0.02
         ), patch.object(base_mod, "stop_requested", side_effect=requested or _requested), patch.object(
@@ -402,6 +405,51 @@ class TestStartFinishEvents:
             flask_app, _chatty(chunks=3, gap=0.0), stop_after=None, visibility="hidden"
         )
         assert [kind for _, kind, _ in published if kind.startswith("message.")] == []
+
+
+@pytest.mark.unit
+class TestFinishedJobsOnTheSavedMessage:
+    def _gen(self, calls):
+        def _g(*args, **kwargs):
+            yield {"answer": "Working on it."}
+            yield {"tool_calls": calls}
+
+        return _g
+
+    def test_a_finished_turn_with_a_job_shows_jobs_that_already_ended(self, mock_mongo_db, flask_app):
+        seen = []
+        _run(flask_app, self._gen([HANDED_OFF]), stop_after=None, background=_background(),
+             show_jobs=lambda *a: seen.append(a))
+        assert seen == [(CONVERSATION_ID, MESSAGE_ID, "u")]
+
+    def test_a_turn_without_jobs_looks_nothing_up(self, mock_mongo_db, flask_app):
+        seen = []
+        _run(flask_app, self._gen([{"call_id": "c9", "status": "completed"}]), stop_after=None,
+             background=_background(), show_jobs=lambda *a: seen.append(a))
+        assert seen == []
+
+    def test_a_dropped_connection_shows_them_too(self, mock_mongo_db, flask_app):
+        gone = threading.Event()
+        seen = []
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"answer": f"c{i} "}
+
+        _run(flask_app, _gen, stop_after=None, client_gone=gone, background=_background(),
+             agent_calls=[HANDED_OFF], show_jobs=lambda *a: seen.append(a))
+        assert seen == [(CONVERSATION_ID, MESSAGE_ID, "u")]
+
+    def test_a_failure_to_show_them_never_fails_the_turn(self, mock_mongo_db, flask_app):
+        def _boom(*args):
+            raise RuntimeError("db down")
+
+        _, out, _, _ = _run(flask_app, self._gen([HANDED_OFF]), stop_after=None, background=_background(),
+                            show_jobs=_boom)
+        assert _frame_type(out[-1]) == "end"
 
 
 @pytest.mark.unit

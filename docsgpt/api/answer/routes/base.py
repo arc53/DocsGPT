@@ -196,6 +196,23 @@ def _stop_background_jobs(context: Any) -> None:
         logger.exception("stopping the background jobs of message %s failed", context.origin_message_id)
 
 
+def _show_finished_jobs(context: Any, tool_calls: List[Dict[str, Any]]) -> None:
+    """Put the outcome of jobs that ended mid-stream on the saved entries. Never raises.
+
+    Only a turn whose saved calls carry a job looks anything up.
+    """
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    if not any(isinstance(call, dict) and call.get("job_id") for call in tool_calls or []):
+        return
+    from docsgpt.background.service import show_finished_jobs
+
+    try:
+        show_finished_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("showing the finished jobs of message %s failed", context.origin_message_id)
+
+
 def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
     """Keep the models that answered on the message, once a fallback answered.
 
@@ -1570,6 +1587,8 @@ class BaseAnswerResource:
                         # It ran to the end: unread unless the user watches it.
                         mark_unread_when_away=True,
                     )
+                    if finalize_outcome is MessageUpdateOutcome.UPDATED:
+                        _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was
                     # deleted mid-stream (retry/edit truncation) the write
@@ -1954,6 +1973,8 @@ class BaseAnswerResource:
                 # After the message is saved, so a job that already ended
                 # can show its outcome on the message's entry.
                 _stop_background_jobs(background_turn)
+            else:
+                _show_finished_jobs(background_turn, tool_calls)
             # A Stop is the user's own end of the turn: it keeps its Logs
             # entry, as a turn that runs out or fails does. A dropped
             # connection writes none.

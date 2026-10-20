@@ -127,6 +127,34 @@ def cancel_job(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
     return row
 
 
+def show_finished_jobs(conversation_id: str, message_id: str, user_id: str) -> int:
+    """Show the outcome of the turn's jobs that ended before its message was saved.
+
+    A job that finishes while its turn is still streaming patches an entry
+    the message does not have yet, so the saved entry kept saying "running"
+    and lost the job's file. Called once the turn's message is saved.
+
+    Args:
+        conversation_id: The turn's conversation.
+        message_id: The turn's message.
+        user_id: Its owner.
+
+    Returns:
+        How many entries were updated.
+    """
+    from docsgpt.background.jobs import patch_origin_entry
+
+    with db_session() as conn:
+        finished = [
+            row
+            for row in BackgroundJobsRepository(conn).list_for_message(conversation_id, message_id, user_id)
+            if row.get("status") != "working"
+        ]
+        for row in finished:
+            patch_origin_entry(conn, row)
+    return len(finished)
+
+
 def stop_turn_jobs(conversation_id: str, message_id: str, user_id: str) -> int:
     """Stop the jobs a turn handed off, because its user pressed Stop.
 

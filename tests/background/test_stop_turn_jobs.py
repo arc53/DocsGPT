@@ -104,3 +104,22 @@ def test_jobs_of_other_turns_and_users_are_left_alone(bg_db, conversation, monke
     assert service.stop_turn_jobs(conversation_id, message_id, "u1") == 0
     assert service.stop_turn_jobs(conversation_id, str(other_message["id"]), "someone-else") == 0
     assert _row(bg_db, other["id"])["cancel_requested_at"] is None
+
+
+def test_a_job_that_ended_mid_stream_shows_on_the_saved_message(bg_db, conversation, monkeypatch):
+    """The job finished before its turn saved the entry; once saved, the entry takes the outcome."""
+    monkeypatch.setattr(jobs, "publish_job_updated", lambda row: None)
+    monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+    conversation_id, message_id = conversation
+    job = _job(conversation_id, message_id)
+    running = _job(conversation_id, message_id, call_id="c2")
+    jobs.finalize(job["id"], status="completed", result={"text": "done", "artifact_id": "art-1"})
+    _record_entry(bg_db, message_id, job["id"])
+
+    assert service.show_finished_jobs(conversation_id, message_id, "u1") == 1
+
+    entry = _entry(bg_db, message_id)
+    assert entry["job_status"] == "completed" and entry["artifact_id"] == "art-1"
+    # Showing an outcome is not delivering it: the wake still runs.
+    assert _row(bg_db, job["id"])["delivery_state"] == "pending"
+    assert _row(bg_db, running["id"])["status"] == "working"
