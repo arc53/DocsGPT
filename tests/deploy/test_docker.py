@@ -113,10 +113,10 @@ class TestVolumes:
         dest = tmp_path / "volumes" / "inputs.tar"
         _docker(runner).export_volume("docsgpt_inputs", dest, "arc53/docsgpt:0.21.0")
         args, _ = runner.calls[0]
-        assert args[:4] == ["docker", "run", "--rm", "-v"]
-        assert args[4] == "docsgpt_inputs:/data:ro"
-        assert args[5] == "arc53/docsgpt:0.21.0"
-        assert args[6:] == ["tar", "cf", "-", "-C", "/data", "."]
+        assert args[:6] == ["docker", "run", "--rm", "--user", "root", "-v"]
+        assert args[6] == "docsgpt_inputs:/data:ro"
+        assert args[7] == "arc53/docsgpt:0.21.0"
+        assert args[8:] == ["tar", "cf", "-", "-C", "/data", "."]
         assert dest.is_file(), "the tar is written to the destination"
         assert runner.streams[0][0] is not None, "stdout goes to the file, not through this process"
 
@@ -127,6 +127,9 @@ class TestVolumes:
         _docker(runner).import_volume("docsgpt_inputs", source, "arc53/docsgpt:0.21.0")
         args, _ = runner.calls[0]
         assert "docsgpt_inputs:/data" in args
+        # The backend and worker run as root (the Compose file), so the files in a used volume are
+        # root's: the image's own user could neither delete nor replace them.
+        assert args[args.index("--user") + 1] == "root"
         assert args[-2] == "-c"
         assert "tar xf - -C /data" in args[-1]
         command = args[-1]

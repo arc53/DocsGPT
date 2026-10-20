@@ -178,38 +178,42 @@ services:
       # self-signed certificate stands in until that works. DOCSGPT_ACCOUNTS=on
       # sends /auth to Keycloak (the accounts profile, below) and keeps its
       # master realm unreachable from outside. While the backend starts, a page
-      # that reloads itself stands in for its answers.
+      # that reloads itself stands in for its answers. Clients send no server name
+      # (SNI) to an IP address, so default_sni picks the site's certificate for them.
       - |
-        CADDYFILE=(tls-domain) {
+        CADDYFILE={
+          default_sni {$$DOCSGPT_DOMAIN}
+        }
+        (tls-domain) {
         }
         (tls-ip) {
-        	tls {
-        		issuer acme {
-        			profile shortlived
-        		}
-        		issuer internal
-        	}
+          tls {
+            issuer acme {
+              profile shortlived
+            }
+            issuer internal
+          }
         }
         (accounts-off) {
         }
         (accounts-on) {
-        	handle /auth/* {
-        		@master path /auth/admin/master /auth/admin/master/* /auth/realms/master /auth/realms/master/*
-        		respond @master 404
-        		reverse_proxy keycloak:8080
-        	}
+          handle /auth/* {
+            @master path /auth/admin/master /auth/admin/master/* /auth/realms/master /auth/realms/master/*
+            respond @master 404
+            reverse_proxy keycloak:8080
+          }
         }
         {$$DOCSGPT_DOMAIN} {
-        	import tls-{$$DOCSGPT_TLS}
-        	import accounts-{$$DOCSGPT_ACCOUNTS}
-        	handle {
-        		reverse_proxy backend:7091
-        	}
-        	handle_errors 502 504 {
-        		header Content-Type "text/html; charset=utf-8"
-        		header Retry-After 5
-        		respond `<!doctype html><meta http-equiv="refresh" content="5"><title>DocsGPT is starting</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem"><h1>DocsGPT is starting</h1><p>The first start sets up the database and takes a minute or two. This page reloads by itself.</p></body>` 503
-        	}
+          import tls-{$$DOCSGPT_TLS}
+          import accounts-{$$DOCSGPT_ACCOUNTS}
+          handle {
+            reverse_proxy backend:7091
+          }
+          handle_errors 502 504 {
+            header Content-Type "text/html; charset=utf-8"
+            header Retry-After 5
+            respond `<!doctype html><meta http-equiv="refresh" content="5"><title>DocsGPT is starting</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem"><h1>DocsGPT is starting</h1><p>The first start sets up the database and takes a minute or two. This page reloads by itself.</p></body>` 503
+          }
         }
     # The domain is checked here rather than with ${DOCSGPT_DOMAIN:?}: compose
     # interpolates every service, so a required variable would break the stack
@@ -336,8 +340,9 @@ services:
         printf '%s\n' "$$DOCSGPT_REALM" > /opt/keycloak/data/import/docsgpt-realm.json &&
         exec /opt/keycloak/bin/kc.sh start --import-realm
     healthcheck:
-      # The image has no curl: bash's /dev/tcp asks the management port.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      # The image has no curl: bash's /dev/tcp asks the management port. Only the status
+      # line counts: a "not ready" answer still lists sub-checks that are "UP".
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
       interval: 10s
       timeout: 5s
       retries: 30

@@ -89,6 +89,7 @@ class TestResolved:
         caddyfile = _unescape(caddy["CADDYFILE"])
         assert "profile shortlived" in caddyfile and "issuer internal" in caddyfile
         assert "import tls-{$DOCSGPT_TLS}" in caddyfile
+        assert "default_sni {$DOCSGPT_DOMAIN}" in caddyfile, "browsers send no SNI to an IP address"
 
     def test_accounts_put_keycloak_behind_auth_on_the_same_address(self, tmp_path):
         services = _resolved(tmp_path, STANDALONE, dotenv=ACCOUNTS_ENV)["services"]
@@ -129,6 +130,9 @@ class TestCaddyParses:
         )
         assert result.returncode == 0, result.stderr
         config = json.loads(result.stdout)
+        assert config["apps"]["http"]["servers"]["srv0"]["tls_connection_policies"][0]["default_sni"] == (
+            caddy["DOCSGPT_DOMAIN"]
+        )
         policies = config["apps"].get("tls", {}).get("automation", {}).get("policies", [])
         if caddy["DOCSGPT_TLS"] == "ip":
             assert policies[0]["issuers"] == [{"module": "acme", "profile": "shortlived"}, {"module": "internal"}]

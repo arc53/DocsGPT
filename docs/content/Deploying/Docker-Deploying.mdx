@@ -169,7 +169,8 @@ docsgpt up --accounts      # with --ip or --domain, now or from an earlier run
 - Its first start imports a `docsgpt` realm: the `docsgpt` client, a
   `docsgpt-admins` group whose members DocsGPT makes admins, and an `admin` user
   in that group. `docsgpt up` prints the admin's initial password, kept in
-  `KEYCLOAK_ADMIN_PASSWORD`; the first sign-in sets a new one.
+  `KEYCLOAK_ADMIN_PASSWORD`; the first sign-in sets a new one and asks for an
+  email address.
 - Add people in the Keycloak console at `/auth/admin/docsgpt/console`, signed in
   as `admin`. Keycloak's own `master` realm isn't reachable from outside.
 - `docsgpt up` writes `AUTH_TYPE=oidc` and the `OIDC_*` settings, and rewrites
@@ -181,7 +182,8 @@ docsgpt up --accounts      # with --ip or --domain, now or from an earlier run
 
 Turn accounts on before people start using DocsGPT: what was made with the access
 token belongs to its shared user and doesn't move to anyone's account. Keycloak
-needs about 600 MB of memory; its limit is `KEYCLOAK_MEMORY` (default `1g`).
+needs about 500 MB of memory; its limit is `KEYCLOAK_MEMORY` (default `1g`). Its
+first start, which imports the realm, takes a minute or two, and `docsgpt up` waits for it.
 
 More `docsgpt up` options: `--port`, `--docling` (the image with the docling
 parser engine and OCR), `--image-tag develop` (follow the `main` branch) and

@@ -107,6 +107,14 @@ build {
     environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
     inline = [
       "set -e",
+      # The base image's droplet-agent fails the image check; DigitalOcean installs it again
+      # on Droplets created with the console turned on.
+      "apt-get -qqy purge 'droplet-agent*' || true",
+      "rm -rf /opt/digitalocean",
+      # Quiet services that write logs, and the crash report of fail2ban's start during its
+      # install, so the cleanup leaves no log behind.
+      "systemctl stop fail2ban",
+      "rm -rf /var/crash/*",
       "cd /root",
       "curl -fsSL --retry 3 -o 90-cleanup.sh ${local.partners_base}/90-cleanup.sh",
       "curl -fsSL --retry 3 -o 99-img-check.sh ${local.partners_base}/99-img-check.sh",

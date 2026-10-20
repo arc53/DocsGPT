@@ -107,7 +107,8 @@ class Browser:
     ) -> tuple[int, dict, str]:
         request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
         try:
-            with self.opener.open(request, timeout=60) as response:
+            # The first answer on a fresh install loads the models, which takes a minute or more.
+            with self.opener.open(request, timeout=180) as response:
                 return response.status, dict(response.headers), response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as error:
             return error.code, dict(error.headers), error.read().decode("utf-8", "replace")
@@ -173,7 +174,7 @@ def check_ports(address: str) -> None:
 def check_ingest_and_answer(base: str, token: str) -> None:
     browser = Browser()
     name = f"smoke-{uuid.uuid4().hex[:8]}"
-    body, content_type = multipart({"name": name}, "smoke.txt", (MAGIC + "\n") * 3)
+    body, content_type = multipart({"user": "local", "name": name}, "smoke.txt", ((MAGIC + "\n") * 3).encode())
     status, _, text = browser.open(
         f"{base}/api/upload", body, {"Authorization": f"Bearer {token}", "Content-Type": content_type}
     )
@@ -218,7 +219,7 @@ def check_accounts(base: str, admin_password: str) -> None:
     assert status == 200, f"the Keycloak sign-in page answered {status}"
     new_password = f"Smoke-{uuid.uuid4().hex[:12]}"
     fields = {"username": "admin", "password": admin_password}
-    for _ in range(5):
+    for _ in range(8):
         action, hidden = _form(page)
         names = set(re.findall(r'name="([^"]+)"', page))
         values = {**hidden, **{k: v for k, v in fields.items() if k in names}}
@@ -230,6 +231,10 @@ def check_accounts(base: str, admin_password: str) -> None:
         status, headers, page = browser.open(
             action, urllib.parse.urlencode(values).encode(), {"Content-Type": "application/x-www-form-urlencoded"}
         )
+        # Keycloak redirects to its next required action (a new password, the email the user profile
+        # asks for) before it sends the browser back to DocsGPT.
+        while status == 302 and headers["Location"].startswith(f"{base}/auth/"):
+            status, headers, page = browser.open(headers["Location"])
         if status == 302:
             break
         assert status == 200, f"Keycloak answered {status}:\n{page[:2000]}"
@@ -249,14 +254,52 @@ def check_accounts(base: str, admin_password: str) -> None:
     log(f"the first admin signed in through Keycloak and is an admin in DocsGPT: {me}")
 
 
+def check_droplet(key: Path, address: str, accounts: bool = True) -> None:
+    """Every check, against a Droplet whose first boot has finished."""
+    base = f"https://{address}"
+    check_https(base)
+    check_ports(address)
+    motd = remote(key, address, "run-parts /etc/update-motd.d/ 2>/dev/null | sed -n '/DocsGPT on/,$p'")
+    access_token = remote(key, address, "docsgpt token").strip()
+    assert base in motd and access_token in motd, motd
+    log("the login message shows the address and the access token")
+    assert Browser().open(f"{base}/api/user/me")[0] == 401, "the API must refuse a request without the token"
+    check_ingest_and_answer(base, access_token)
+
+    if accounts:
+        log("turning user accounts on ...")
+        log(remote(key, address, "docsgpt up --yes --accounts --timeout 900 2>&1 | tail -n 8"))
+        env = remote(key, address, "cat /opt/docsgpt/.env")
+        password = re.search(r"^KEYCLOAK_ADMIN_PASSWORD=(.+)$", env, re.M).group(1)
+        check_https(base)
+        check_ports(address)
+        check_accounts(base, password)
+        log(remote(key, address, "docsgpt backup 2>&1 | tail -n 3"))
+        listing = remote(key, address, "tar tzf $(ls -t /opt/docsgpt/backups/*.tar.gz | head -n 1)")
+        assert "databases/keycloak.sql" in listing, listing
+        log("the backup holds the Keycloak database")
+
+    log(remote(key, address, "free -m; docker stats --no-stream --format '{{.Name}} {{.MemUsage}}'"))
+    log("all checks passed")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--snapshot", required=True, help="the snapshot (image) id to boot")
+    parser.add_argument("--snapshot", help="the snapshot (image) id to boot")
     parser.add_argument("--region", default="nyc3")
     parser.add_argument("--size", default="s-2vcpu-4gb")
     parser.add_argument("--keep", action="store_true", help="leave the Droplet running for a look around")
     parser.add_argument("--skip-accounts", action="store_true", help="skip the Keycloak checks")
+    parser.add_argument("--address", help="check this running Droplet instead of booting one (with --key)")
+    parser.add_argument("--key", help="the SSH private key for --address")
     args = parser.parse_args()
+    if args.address:
+        if not args.key:
+            parser.error("--address needs --key")
+        check_droplet(Path(args.key), args.address, accounts=not args.skip_accounts)
+        return 0
+    if not args.snapshot:
+        parser.error("pass --snapshot, or --address and --key")
     token = os.environ.get("DIGITALOCEAN_TOKEN") or os.environ.get("DIGITALOCEAN_ACCESS_TOKEN")
     if not token:
         parser.error("set DIGITALOCEAN_TOKEN")
@@ -282,7 +325,6 @@ def main() -> int:
                 return None
             return next((n["ip_address"] for n in droplet["networks"]["v4"] if n["type"] == "public"), None)
         address = wait_for("the Droplet to be active", public_address, timeout=600)
-        base = f"https://{address}"
         log(f"Droplet is active at {address}")
 
         def set_up() -> bool:
@@ -290,31 +332,7 @@ def main() -> int:
             return "installed" in result.stdout
         wait_for("the first boot to set DocsGPT up", set_up, timeout=1500, interval=15)
         log("the first boot finished:\n" + remote(key, address, "tail -n 25 /var/log/docsgpt-onboot.log"))
-
-        check_https(base)
-        check_ports(address)
-        motd = remote(key, address, "run-parts /etc/update-motd.d/ 2>/dev/null | sed -n '/DocsGPT on/,$p'")
-        access_token = remote(key, address, "docsgpt token").strip()
-        assert base in motd and access_token in motd, motd
-        log("the login message shows the address and the access token")
-        assert Browser().open(f"{base}/api/user/me")[0] == 401, "the API must refuse a request without the token"
-        check_ingest_and_answer(base, access_token)
-
-        if not args.skip_accounts:
-            log("turning user accounts on ...")
-            log(remote(key, address, "docsgpt up --yes --accounts --timeout 900 2>&1 | tail -n 8"))
-            env = remote(key, address, "cat /opt/docsgpt/.env")
-            password = re.search(r"^KEYCLOAK_ADMIN_PASSWORD=(.+)$", env, re.M).group(1)
-            check_https(base)
-            check_ports(address)
-            check_accounts(base, password)
-            log(remote(key, address, "docsgpt backup 2>&1 | tail -n 3"))
-            listing = remote(key, address, "tar tzf $(ls -t /opt/docsgpt/backups/*.tar.gz | head -n 1)")
-            assert "databases/keycloak.sql" in listing, listing
-            log("the backup holds the Keycloak database")
-
-        log(remote(key, address, "free -m; docker stats --no-stream --format '{{.Name}} {{.MemUsage}}'"))
-        log("all checks passed")
+        check_droplet(key, address, accounts=not args.skip_accounts)
         return 0
     finally:
         if args.keep and droplet_id:

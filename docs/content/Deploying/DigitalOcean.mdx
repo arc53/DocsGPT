@@ -109,7 +109,9 @@ Add people at https://203.0.113.10/auth/admin/docsgpt/console (Users, then Add u
 ```
 
 - **Sign in** at the DocsGPT address as `admin` with that password. Keycloak
-  asks you to choose a new one, then sends you back to DocsGPT.
+  asks you to choose a new one and for your email address, then sends you back
+  to DocsGPT. Keycloak's first start takes a minute or two; until then signing
+  in fails with `idp_unavailable`.
 - **Add people** in the Keycloak console at `/auth/admin/docsgpt/console`
   (Users, then Add user, then a temporary password on the Credentials tab). Sign
   in there with the same `admin` account.
@@ -126,8 +128,9 @@ Turn accounts on before people start using DocsGPT. What was made with the
 access token belongs to its shared user and doesn't move to anyone's account.
 </Callout>
 
-Keycloak adds about 600 MB of memory use. On a 4 GB Droplet with large uploads,
-consider the 8 GB plan once accounts are on.
+Keycloak adds about 500 MB of memory use: on a 4 GB Droplet the whole stack,
+accounts included, uses about 2 GB at rest. Large uploads and many people at once
+need more, so consider the 8 GB plan for heavy use.
 
 ## Upgrade
 
