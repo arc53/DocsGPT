@@ -221,7 +221,8 @@ def plan(
         wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=None, DOCSGPT_TLS=None)
         profiles.discard("https")
     elif expose == "network":
-        wanted.update(DOCSGPT_BIND="0.0.0.0", DOCSGPT_DOMAIN=None, DOCSGPT_TLS=None)
+        # `--expose network` publishes on every interface by request, with the access token on.
+        wanted.update(DOCSGPT_BIND="0.0.0.0", DOCSGPT_DOMAIN=None, DOCSGPT_TLS=None)  # nosec B104
         profiles.discard("https")
     elif expose == "ip":
         if not ip:
