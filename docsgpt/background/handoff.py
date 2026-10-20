@@ -395,7 +395,10 @@ def _wait_unless_stopped(context: BackgroundContext, future: Any, window: float)
         try:
             return True, future.result(timeout=max(0.0, step))
         except FuturesTimeout:
-            pass
+            # The tool itself may have raised TimeoutError (the same class on 3.12):
+            # a finished call hands back its own result or exception.
+            if future.done():
+                return True, future.result()
         if remaining <= step or (message_id and stop_requested(message_id)):
             return False, None
 

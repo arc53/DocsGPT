@@ -272,3 +272,17 @@ class TestStopDuringTheYieldWindow:
         outcome = handoff.run_call(ctx, _spec(), object(), quick, yield_seconds=5)
         assert outcome.handed_off is False and outcome.value == "done"
         assert fake_jobs.created == []
+
+    def test_a_tool_raising_timeout_error_fails_at_once(self, ctx, fake_jobs, monkeypatch):
+        """``TimeoutError`` from the tool is its result, not the wait running out."""
+        monkeypatch.setattr(handoff, "_STOP_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(handoff, "stop_requested", lambda message_id: False)
+
+        def times_out():
+            raise TimeoutError("upstream timed out")
+
+        started = time.monotonic()
+        with pytest.raises(TimeoutError, match="upstream"):
+            handoff.run_call(ctx, _spec(), object(), times_out, yield_seconds=5)
+        assert time.monotonic() - started < 1
+        assert fake_jobs.created == []
