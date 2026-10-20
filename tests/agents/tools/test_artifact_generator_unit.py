@@ -96,7 +96,7 @@ def test_reversion_without_title_falls_back_to_generic(monkeypatch):
     assert captured["filename"] == "artifact.pptx"
 
 
-def _patch_create(monkeypatch, tool):
+def _patch_create(monkeypatch: pytest.MonkeyPatch, tool: ArtifactGeneratorTool) -> dict:
     """Stub render + persist so _create runs without a sandbox or DB; capture kwargs."""
     captured: dict = {}
 
@@ -109,7 +109,7 @@ def _patch_create(monkeypatch, tool):
     return captured
 
 
-def test_create_names_the_file_from_the_spec_title(monkeypatch):
+def test_create_names_the_file_from_the_spec_title(monkeypatch: pytest.MonkeyPatch) -> None:
     """A model that puts the title only inside the spec still gets it as the file name."""
     tool = _tool()
     captured = _patch_create(monkeypatch, tool)
@@ -122,7 +122,7 @@ def test_create_names_the_file_from_the_spec_title(monkeypatch):
     assert captured["title"] == "Отчёт о продажах"
 
 
-def test_create_ignores_a_blank_spec_title(monkeypatch):
+def test_create_ignores_a_blank_spec_title(monkeypatch: pytest.MonkeyPatch) -> None:
     tool = _tool()
     captured = _patch_create(monkeypatch, tool)
 
@@ -132,7 +132,7 @@ def test_create_ignores_a_blank_spec_title(monkeypatch):
     assert captured["title"] is None
 
 
-def test_create_prefers_the_title_argument_over_the_spec_title(monkeypatch):
+def test_create_prefers_the_title_argument_over_the_spec_title(monkeypatch: pytest.MonkeyPatch) -> None:
     tool = _tool()
     captured = _patch_create(monkeypatch, tool)
 
