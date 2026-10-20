@@ -5,6 +5,7 @@ import pytest
 
 from docsgpt.parser.file.markdown_parser import MarkdownParser
 from docsgpt import utils
+from docsgpt.parser import tokenization
 
 
 class _Enc:
@@ -15,9 +16,31 @@ class _Enc:
         return list(s)
 
 
+class _RecordingEnc(_Enc):
+    """Character tokenizer that records the length of every encode input (#3130)."""
+
+    def __init__(self):
+        self.encode_lengths = []
+
+    def encode_ordinary(self, s: str):
+        self.encode_lengths.append(len(s))
+        return list(s)
+
+
 @pytest.fixture(autouse=True)
 def _patch_tokenizer(monkeypatch):
+    # The chunk check may count through either cl100k seam: the utils helper
+    # or the windowed counter in docsgpt.parser.tokenization (#3130).
     monkeypatch.setattr(utils, "get_encoding", lambda: _Enc())
+    monkeypatch.setattr(tokenization, "get_encoding", lambda: _Enc())
+
+
+def _spy_encoding(monkeypatch):
+    encoding = _RecordingEnc()
+    monkeypatch.setattr(utils, "get_encoding", lambda: encoding)
+    monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
+    return encoding
+
 
 def test_markdown_init_parser():
     parser = MarkdownParser()
@@ -164,3 +187,40 @@ def test_markdown_fence_closes_with_crlf_line_endings():
     assert [h.strip() for h, _ in tups] == ["Install", "Usage"]
     assert "# install dependencies" in tups[0][1]
     assert "run it" in tups[1][1]
+
+
+def test_tups_chunk_append_small_text_golden():
+    parser = MarkdownParser(max_tokens=4)
+    assert parser.tups_chunk_append([], None, "ab\n") == [(None, "ab\n")]
+    assert parser.tups_chunk_append([], None, "abcdefghij\n") == [
+        (None, "abcd"),
+        (None, "efgh"),
+        (None, "ij\n"),
+    ]
+    assert parser.tups_chunk_append([("h", "x")], "# H", "abcde") == [("h", "x"), ("# H", "abcd"), ("# H", "e")]
+
+
+def test_tups_chunk_append_counts_large_text_in_bounded_windows(monkeypatch):
+    # #3130: the chunk check used to encode a header-less file in one call,
+    # the whole document at once. It must count window by window.
+    window = 64
+    monkeypatch.setattr(tokenization, "_WINDOW_CHARS", window, raising=False)
+    encoding = _spy_encoding(monkeypatch)
+    text = "plain text line without any header\n" * 60
+    parser = MarkdownParser(max_tokens=10**6)
+
+    assert parser.tups_chunk_append([], None, text) == [(None, text)]
+    assert encoding.encode_lengths
+    assert max(encoding.encode_lengths) <= 2 * window
+
+
+def test_tups_chunk_append_windowed_count_still_chunks_over_budget(monkeypatch):
+    window = 64
+    monkeypatch.setattr(tokenization, "_WINDOW_CHARS", window, raising=False)
+    encoding = _spy_encoding(monkeypatch)
+    text = "x" * 1000
+    parser = MarkdownParser(max_tokens=300)
+
+    tups = parser.tups_chunk_append([], None, text)
+    assert [len(chunk) for _, chunk in tups] == [300, 300, 300, 100]
+    assert max(encoding.encode_lengths) <= 2 * window

@@ -508,6 +508,30 @@ def get_token_counter(embeddings_name: Optional[str] = None) -> TokenCounter:
     return counter
 
 
+def count_tokens_windowed(text: str) -> int:
+    """Count ``text`` in cl100k tokens, window by window.
+
+    For ingest's whole-file counts: the per-file ``token_count`` in
+    :mod:`docsgpt.parser.file.bulk` and the markdown parser's chunk check.
+    They always counted cl100k and still do, but one encode of a whole file
+    is the per-character memory cost #3130 removes, so they go through
+    :class:`TiktokenCounter`'s bounded windows instead.
+    :func:`docsgpt.utils.num_tokens_from_string` stays one-shot for its other
+    callers, which take offsets from a single encode.
+
+    A counter is built per call rather than cached here; ``get_encoding`` is
+    cached, so construction is cheap.
+
+    Args:
+        text: Text of any length.
+
+    Returns:
+        The token count. It equals a one-shot count on prose, and may differ
+        from one by about a token at each hard-cut seam.
+    """
+    return TiktokenCounter().count(text)
+
+
 def reset_cache() -> None:
     """Drop cached counters. For tests and for a settings change at runtime."""
     with _cache_lock:

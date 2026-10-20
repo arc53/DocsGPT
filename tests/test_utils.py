@@ -28,6 +28,26 @@ from docsgpt.utils import (
 )
 
 
+class _RecordingEncoding:
+    """Wraps the cl100k encoding and records the length of every encode input (#3130)."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.encode_lengths = []
+
+    def encode_ordinary(self, text):
+        self.encode_lengths.append(len(text))
+        return self._inner.encode_ordinary(text)
+
+
+def _spy_encoding(monkeypatch):
+    import docsgpt.utils as utils_module
+
+    encoding = _RecordingEncoding(get_encoding())
+    monkeypatch.setattr(utils_module, "get_encoding", lambda: encoding)
+    return encoding
+
+
 class TestGetEncoding:
 
     @pytest.mark.unit
@@ -215,6 +235,20 @@ class TestNumTokens:
         assert count > 100000
         assert elapsed < 10, f"pathological encode took {elapsed:.1f}s — tiktoken downgraded?"
 
+    @pytest.mark.unit
+    def test_stays_one_shot_beyond_the_chunking_window(self, monkeypatch):
+        # #3130 windows the chunking counters only. Attachment code takes
+        # offsets from one encode of the whole text, so this helper must keep
+        # counting in a single call however small the chunking window is.
+        from docsgpt.parser import tokenization
+
+        monkeypatch.setattr(tokenization, "_WINDOW_CHARS", 64, raising=False)
+        text = "Sentence explaining retrieval, ranking and citation.\n" * 40
+        expected = len(get_encoding().encode_ordinary(text))
+        encoding = _spy_encoding(monkeypatch)
+        assert num_tokens_from_string(text) == expected
+        assert encoding.encode_lengths == [len(text)]
+
 
 class TestNumTokensFromObjectOrList:
 
@@ -254,6 +288,32 @@ class TestCountTokensDocs:
         doc2.page_content = " foo bar"
         result = count_tokens_docs([doc1, doc2])
         assert result > 0
+
+    @pytest.mark.unit
+    def test_counts_each_doc_without_joining_them(self, monkeypatch):
+        # #3130: joining every chunk into one string and encoding it made the
+        # whole-corpus encode the peak. Each doc is counted on its own instead.
+        from docsgpt.utils import count_tokens_docs
+
+        contents = ["alpha beta gamma. " * 20, "delta epsilon zeta. " * 70, "eta theta iota. " * 35]
+        docs = []
+        for content in contents:
+            doc = MagicMock()
+            doc.page_content = content
+            docs.append(doc)
+        expected = sum(num_tokens_from_string(content) for content in contents)
+        encoding = _spy_encoding(monkeypatch)
+        total = count_tokens_docs(docs)
+        assert max(encoding.encode_lengths) == max(len(content) for content in contents)
+        # Seams between docs can shift the total by a token each against a
+        # joined count; that is fine for a display metric.
+        assert total == expected
+
+    @pytest.mark.unit
+    def test_no_docs_is_zero(self):
+        from docsgpt.utils import count_tokens_docs
+
+        assert count_tokens_docs([]) == 0
 
 
 class TestCalculateDocTokenBudget:

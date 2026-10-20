@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from docsgpt.parser.file.base_parser import BaseParser
-from docsgpt.utils import num_tokens_from_string
+from docsgpt.parser.tokenization import count_tokens_windowed
 
 # Only these names count as tags, so prose like "x < 10" or "List<String>" survives.
 _HTML_TAG_NAMES = """
@@ -90,7 +90,7 @@ class MarkdownParser(BaseParser):
     def tups_chunk_append(self, tups: List[Tuple[Optional[str], str]], current_header: Optional[str],
                           current_text: str):
         """Append to tups chunk."""
-        num_tokens = num_tokens_from_string(current_text)
+        num_tokens = count_tokens_windowed(current_text)
         if num_tokens > self._max_tokens:
             chunks = [current_text[i:i + self._max_tokens] for i in range(0, len(current_text), self._max_tokens)]
             for chunk in chunks:

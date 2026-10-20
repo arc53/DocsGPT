@@ -865,3 +865,27 @@ class TestSmallTextsAreUnchanged:
 
     def test_mpnet(self, hf_counter):
         self._check(hf_counter, "mpnet")
+
+
+class TestCountTokensWindowed:
+    """#3130 W2: ingest's whole-file counts (bulk ``token_count``, markdown's
+    chunk check) go through a windowed cl100k count, not one encode of the file."""
+
+    def test_prose_count_matches_one_shot_and_is_bounded(self, monkeypatch):
+        from docsgpt.parser.tokenization import count_tokens_windowed
+
+        text = TestWindowedCountIsExactOnProse.TEXT
+        inner = _real_cl100k()
+        expected = len(inner.encode_ordinary(text))
+        encoding = _RecordingEncoding(inner)
+        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
+        _shrink_window(monkeypatch, _SMALL_WINDOW)
+        assert len(text) > 4 * _SMALL_WINDOW
+
+        assert count_tokens_windowed(text) == expected
+        assert max(encoding.encode_lengths) <= 2 * _SMALL_WINDOW
+
+    def test_empty_text_is_zero(self):
+        from docsgpt.parser.tokenization import count_tokens_windowed
+
+        assert count_tokens_windowed("") == 0

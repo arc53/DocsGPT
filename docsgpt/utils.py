@@ -202,12 +202,22 @@ def num_tokens_from_object_or_list(thing):
         return 0
 
 
-def count_tokens_docs(docs):
-    docs_content = ""
-    for doc in docs:
-        docs_content += doc.page_content
-    tokens = num_tokens_from_string(docs_content)
-    return tokens
+def count_tokens_docs(docs: list) -> int:
+    """Count the cl100k tokens of a list of documents.
+
+    Each document is counted on its own and the counts are summed (#3130).
+    Joining every chunk into one string first built a corpus-sized string and
+    encoded it in a single call, which made this display metric the ingest's
+    memory peak. Each doc is a chunk, well under the chunking window.
+
+    Args:
+        docs: Documents with a ``page_content`` string.
+
+    Returns:
+        The summed token count. It can differ from a count of the joined text
+        by about a token at each document seam, which is fine for a metric.
+    """
+    return sum(num_tokens_from_string(doc.page_content) for doc in docs)
 
 
 def calculate_doc_token_budget(
