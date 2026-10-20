@@ -2982,29 +2982,19 @@
         "learnMore": "詳細",
         "serverOff": "このサーバーではインサイトがオフのため、これらの設定はまだ効果がありません。オンにするよう管理者に依頼してください。",
         "topics": "トピック",
-        "topicModes": {
-          "auto": "ソースから",
-          "custom": "カスタム",
-          "off": "オフ"
-        },
         "topicHints": {
-          "auto": "このエージェントのソースにあるフォルダーから作られ、「インサイト」タブで質問をまとめるために使われます。",
-          "custom": "独自のリストです。質問は名前と説明をもとに振り分けられます。",
-          "off": "質問をトピックでまとめません。ドキュメントの不足は、引き続きページまたはソースでまとめられます。"
+          "auto": "各質問は、このエージェントのソースにあるフォルダーの1つに振り分けられます。",
+          "custom": "各質問は、あなたのトピックの1つに振り分けられます。",
+          "off": "質問をトピックに振り分けません。ドキュメントの不足は、引き続きページまたはソースでまとめられます。",
+          "workflowOff": "ワークフローには独自のソースがないため、トピックは自分で名前を付けます。追加するにはオンにしてください。"
         },
-        "autoTopics": "トピック:",
         "autoTopicsNone": "このエージェントのソースにはフォルダーがないため、質問はトピックでまとめられません。",
-        "customTopics": "カスタムトピック",
         "countOf": "{{count}} / {{max}}",
         "addTopic": "トピックを追加",
-        "suggest": "ソースから提案",
-        "suggestNone": "このエージェントのソースには、トピックを提案できるフォルダーがありません。",
-        "suggestNoNew": "これらのトピックはすでにリストにあります。",
-        "suggestFull": "リストがいっぱいのため、一部の提案は追加されませんでした。",
-        "suggestFailed": "トピックの提案を読み込めませんでした。",
+        "suggestFailed": "このエージェントのソースのフォルダーを読み込めませんでした。",
         "topicsEmpty": "トピックはまだありません",
         "tags": "タグ",
-        "tagsDescription": "会話全体に付ける「はい／いいえ」のラベルです（例:「料金に関する質問」「返金を希望」）。各タグは会話が落ち着いた後に判定され、新しいタグは最近の会話にも適用されます。",
+        "tagsDescription": "会話全体に対する「はい／いいえ」の判定です。複数が当てはまることもあります。ログをタグで絞り込めます。",
         "addTag": "タグを追加",
         "tagsEmpty": "タグはまだありません",
         "itemActions": "{{name}} の操作",
@@ -3016,19 +3006,17 @@
           "topicDescription": "質問は名前と説明をもとにトピックに振り分けられます。",
           "addTag": "タグを追加",
           "editTag": "タグを編集",
-          "tagDescription": "モデルは名前と説明を読み、タグが会話に当てはまるかを判断します。",
+          "tagDescription": "名前と説明をもとに、タグが会話に当てはまるかが決まります。",
           "name": "名前",
           "description": "説明",
           "topicNamePlaceholder": "インストール",
-          "topicDescriptionStart": "含まれるページの例:",
-          "topicDescriptionHint": "ここに含まれるページをいくつか挙げてください。{{used}}/{{max}}",
+          "topicDescriptionHint": "ここに含まれるページをいくつか挙げてください。",
           "tagNamePlaceholder": "料金に関する質問",
           "tagDescriptionPlaceholder": "ユーザーが料金、プラン、または費用について尋ねている。",
           "tagDescriptionHint": "モデルが会話と照らし合わせる一文です。",
-          "submitAddTopic": "トピックを追加",
-          "submitUpdateTopic": "トピックを更新",
-          "submitAddTag": "タグを追加",
-          "submitUpdateTag": "タグを更新"
+          "topicDescriptionPlaceholder": "ページの例: Docker でのデプロイ、Kubernetes でのデプロイ",
+          "submitAdd": "追加",
+          "submitSave": "保存"
         },
         "errors": {
           "nameRequired": "名前を入力してください。",
@@ -3044,7 +3032,17 @@
           "submit": "削除"
         },
         "digest": "ドキュメントの不足の週次サマリー",
-        "digestDescription": "週に 1 回、エージェントの所有者に、主なドキュメントの不足を一覧にした通知が届きます。"
+        "digestDescription": "週に 1 回、エージェントの所有者に、主なドキュメントの不足を一覧にした通知が届きます。",
+        "off": "オフ",
+        "topicsDescription": "各質問は1つのトピックに入ります。ドキュメントの不足をまとめるのに使われます。",
+        "groupByTopic": "質問をトピックでまとめる",
+        "customize": "カスタマイズ",
+        "resetToSources": "ソースに戻す",
+        "resetTopics": {
+          "title": "トピックをソースに戻しますか？",
+          "description": "リストはこのエージェントのソースのフォルダーに置き換えられ、加えた変更は失われます。",
+          "submit": "戻す"
+        }
       }
     },
     "logs": {

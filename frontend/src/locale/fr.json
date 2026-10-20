@@ -3077,29 +3077,19 @@
         "learnMore": "En savoir plus",
         "serverOff": "Les analyses sont désactivées sur ce serveur, ces paramètres sont donc encore sans effet. Demandez à votre administrateur de les activer.",
         "topics": "Sujets",
-        "topicModes": {
-          "auto": "Depuis les sources",
-          "custom": "Personnalisés",
-          "off": "Désactivés"
-        },
         "topicHints": {
-          "auto": "Construits à partir des dossiers des sources de cet agent et utilisés pour regrouper les questions dans l’onglet Analyses.",
-          "custom": "Votre propre liste. Les questions y sont classées selon le nom et la description.",
-          "off": "Les questions ne sont pas regroupées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source."
+          "auto": "Chaque question est classée dans un dossier des sources de cet agent.",
+          "custom": "Chaque question est classée dans l’un de vos sujets.",
+          "off": "Les questions ne sont pas classées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source.",
+          "workflowOff": "Un workflow n’a pas de sources propres, c’est donc vous qui nommez les sujets. Activez cette option pour les ajouter."
         },
-        "autoTopics": "Sujets :",
         "autoTopicsNone": "Les sources de cet agent n’ont aucun dossier, les questions ne sont donc pas regroupées par sujet.",
-        "customTopics": "Sujets personnalisés",
         "countOf": "{{count}} sur {{max}}",
         "addTopic": "Ajouter un sujet",
-        "suggest": "Suggérer depuis les sources",
-        "suggestNone": "Les sources de cet agent n’ont aucun dossier à partir duquel suggérer des sujets.",
-        "suggestNoNew": "Ces sujets sont déjà dans la liste.",
-        "suggestFull": "La liste est pleine, certaines suggestions ont donc été écartées.",
-        "suggestFailed": "Impossible de charger les suggestions de sujets.",
+        "suggestFailed": "Impossible de charger les dossiers des sources de cet agent.",
         "topicsEmpty": "Aucun sujet pour l’instant",
         "tags": "Étiquettes",
-        "tagsDescription": "Étiquettes oui/non que vous rédigez pour des conversations entières, comme « Question sur les prix » ou « Veut un remboursement ». Chacune est vérifiée une fois la conversation retombée, et une nouvelle étiquette s’applique aussi aux conversations récentes.",
+        "tagsDescription": "Vérifications oui/non sur des conversations entières ; plusieurs peuvent s’appliquer. Elles servent de filtres dans les journaux.",
         "addTag": "Ajouter une étiquette",
         "tagsEmpty": "Aucune étiquette pour l’instant",
         "itemActions": "Actions pour {{name}}",
@@ -3111,19 +3101,17 @@
           "topicDescription": "Les questions sont classées dans vos sujets selon leur nom et leur description.",
           "addTag": "Ajouter une étiquette",
           "editTag": "Modifier l’étiquette",
-          "tagDescription": "Le modèle lit le nom et la description pour décider si l’étiquette s’applique à une conversation.",
+          "tagDescription": "Le nom et la description décident si l’étiquette correspond à une conversation.",
           "name": "Nom",
           "description": "Description",
           "topicNamePlaceholder": "Installation",
-          "topicDescriptionStart": "Pages comme :",
-          "topicDescriptionHint": "Citez quelques pages qui en font partie. {{used}}/{{max}}",
+          "topicDescriptionHint": "Citez quelques pages qui en font partie.",
           "tagNamePlaceholder": "Question sur les prix",
           "tagDescriptionPlaceholder": "L’utilisateur demande les prix, les offres ou combien coûte quelque chose.",
           "tagDescriptionHint": "Une phrase que le modèle compare à la conversation.",
-          "submitAddTopic": "Ajouter le sujet",
-          "submitUpdateTopic": "Mettre à jour le sujet",
-          "submitAddTag": "Ajouter l’étiquette",
-          "submitUpdateTag": "Mettre à jour l’étiquette"
+          "topicDescriptionPlaceholder": "Pages comme : Déploiement Docker ; Déploiement Kubernetes",
+          "submitAdd": "Ajouter",
+          "submitSave": "Enregistrer"
         },
         "errors": {
           "nameRequired": "Saisissez un nom.",
@@ -3139,7 +3127,17 @@
           "submit": "Retirer"
         },
         "digest": "Synthèse hebdomadaire des lacunes de la doc",
-        "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification listant les principales lacunes de la doc."
+        "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification listant les principales lacunes de la doc.",
+        "off": "Désactivées",
+        "topicsDescription": "Chaque question va dans un seul sujet. Sert à regrouper les lacunes de la doc.",
+        "groupByTopic": "Regrouper les questions par sujet",
+        "customize": "Personnaliser",
+        "resetToSources": "Rétablir les sources",
+        "resetTopics": {
+          "title": "Rétablir les sujets des sources ?",
+          "description": "Votre liste est remplacée par les dossiers des sources de cet agent, et vos modifications sont perdues.",
+          "submit": "Rétablir"
+        }
       }
     },
     "logs": {

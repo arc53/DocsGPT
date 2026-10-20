@@ -3077,29 +3077,19 @@
         "learnMore": "Más información",
         "serverOff": "La recopilación de información está desactivada en este servidor, así que estos ajustes aún no tienen efecto. Pide a tu administrador que la active.",
         "topics": "Temas",
-        "topicModes": {
-          "auto": "Desde las fuentes",
-          "custom": "Personalizados",
-          "off": "Desactivados"
-        },
         "topicHints": {
-          "auto": "Se crean a partir de las carpetas de las fuentes de este agente y sirven para agrupar las preguntas en la pestaña Información.",
-          "custom": "Tu propia lista. Las preguntas se clasifican en ellos por nombre y descripción.",
-          "off": "Las preguntas no se agrupan por tema. Los huecos en la documentación se pueden seguir agrupando por página o fuente."
+          "auto": "Cada pregunta se clasifica en una carpeta de las fuentes de este agente.",
+          "custom": "Cada pregunta se clasifica en uno de tus temas.",
+          "off": "Las preguntas no se clasifican en temas. Los huecos en la documentación se pueden seguir agrupando por página o fuente.",
+          "workflowOff": "Un flujo de trabajo no tiene fuentes propias, así que tú das nombre a los temas. Actívalo para añadirlos."
         },
-        "autoTopics": "Temas:",
         "autoTopicsNone": "Las fuentes de este agente no tienen carpetas, así que las preguntas no se agrupan por tema.",
-        "customTopics": "Temas personalizados",
         "countOf": "{{count}} de {{max}}",
         "addTopic": "Añadir tema",
-        "suggest": "Sugerir desde las fuentes",
-        "suggestNone": "Las fuentes de este agente no tienen carpetas de las que sugerir temas.",
-        "suggestNoNew": "Estos temas ya están en la lista.",
-        "suggestFull": "La lista está llena, así que algunas sugerencias se quedaron fuera.",
-        "suggestFailed": "No se pudieron cargar las sugerencias de temas.",
+        "suggestFailed": "No se pudieron cargar las carpetas de las fuentes de este agente.",
         "topicsEmpty": "Aún no hay temas",
         "tags": "Etiquetas",
-        "tagsDescription": "Etiquetas de sí o no que escribes para conversaciones completas, como \"Pregunta sobre precios\" o \"Quiere un reembolso\". Cada una se comprueba cuando una conversación deja de tener actividad, y una etiqueta nueva también se aplica a las conversaciones recientes.",
+        "tagsDescription": "Comprobaciones de sí o no sobre conversaciones completas; pueden aplicarse varias. Filtra los registros por ellas.",
         "addTag": "Añadir etiqueta",
         "tagsEmpty": "Aún no hay etiquetas",
         "itemActions": "Acciones de {{name}}",
@@ -3111,19 +3101,17 @@
           "topicDescription": "Las preguntas se clasifican en tus temas según su nombre y descripción.",
           "addTag": "Añadir etiqueta",
           "editTag": "Editar etiqueta",
-          "tagDescription": "El modelo lee el nombre y la descripción para decidir si la etiqueta se aplica a una conversación.",
+          "tagDescription": "El nombre y la descripción deciden si la etiqueta encaja con una conversación.",
           "name": "Nombre",
           "description": "Descripción",
           "topicNamePlaceholder": "Instalación",
-          "topicDescriptionStart": "Páginas como:",
-          "topicDescriptionHint": "Nombra algunas páginas que encajen aquí. {{used}}/{{max}}",
+          "topicDescriptionHint": "Nombra algunas páginas que encajen aquí.",
           "tagNamePlaceholder": "Pregunta sobre precios",
           "tagDescriptionPlaceholder": "El usuario pregunta por precios, planes o cuánto cuesta algo.",
           "tagDescriptionHint": "Una frase que el modelo compara con la conversación.",
-          "submitAddTopic": "Añadir tema",
-          "submitUpdateTopic": "Actualizar tema",
-          "submitAddTag": "Añadir etiqueta",
-          "submitUpdateTag": "Actualizar etiqueta"
+          "topicDescriptionPlaceholder": "Páginas como: Despliegue con Docker; Despliegue con Kubernetes",
+          "submitAdd": "Añadir",
+          "submitSave": "Guardar"
         },
         "errors": {
           "nameRequired": "Escribe un nombre.",
@@ -3139,7 +3127,17 @@
           "submit": "Quitar"
         },
         "digest": "Resumen semanal de huecos en la documentación",
-        "digestDescription": "Una vez a la semana, el propietario del agente recibe un aviso con los principales huecos en la documentación."
+        "digestDescription": "Una vez a la semana, el propietario del agente recibe un aviso con los principales huecos en la documentación.",
+        "off": "Desactivada",
+        "topicsDescription": "Cada pregunta va a un solo tema. Sirve para agrupar los huecos en la documentación.",
+        "groupByTopic": "Agrupar preguntas por tema",
+        "customize": "Personalizar",
+        "resetToSources": "Restablecer a las fuentes",
+        "resetTopics": {
+          "title": "¿Restablecer los temas a las fuentes?",
+          "description": "Tu lista se sustituye por las carpetas de las fuentes de este agente y se pierden tus cambios.",
+          "submit": "Restablecer"
+        }
       }
     },
     "logs": {

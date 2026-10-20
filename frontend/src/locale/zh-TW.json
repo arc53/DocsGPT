@@ -2982,29 +2982,19 @@
         "learnMore": "了解更多",
         "serverOff": "此伺服器已關閉洞察，因此這些設定暫不生效。請聯絡管理員開啟。",
         "topics": "主題",
-        "topicModes": {
-          "auto": "來自來源",
-          "custom": "自訂",
-          "off": "關閉"
-        },
         "topicHints": {
-          "auto": "根據此代理來源中的資料夾產生，用於在「洞察」分頁中為問題分組。",
-          "custom": "你自己的清單。問題會依名稱與描述歸入其中。",
-          "off": "問題不依主題分組。文件缺口仍可依頁面或來源分組。"
+          "auto": "每個問題會歸入此代理來源中的一個資料夾。",
+          "custom": "每個問題會歸入你的一個主題。",
+          "off": "問題不歸入主題。文件缺口仍可依頁面或來源分組。",
+          "workflowOff": "工作流程沒有自己的來源，因此由你為主題命名。開啟後即可新增。"
         },
-        "autoTopics": "主題：",
         "autoTopicsNone": "此代理的來源中沒有資料夾，因此問題不會依主題分組。",
-        "customTopics": "自訂主題",
         "countOf": "{{count}}/{{max}}",
         "addTopic": "新增主題",
-        "suggest": "從來源建議",
-        "suggestNone": "此代理的來源中沒有可用來建議主題的資料夾。",
-        "suggestNoNew": "這些主題已在清單中。",
-        "suggestFull": "清單已滿，因此部分建議未加入。",
-        "suggestFailed": "無法載入主題建議。",
+        "suggestFailed": "無法載入此代理來源中的資料夾。",
         "topicsEmpty": "還沒有主題",
         "tags": "標籤",
-        "tagsDescription": "你為整段對話撰寫的「是／否」標籤，例如「價格問題」或「想要退款」。每個標籤會在對話平靜下來後檢查一次，新標籤也會套用到最近的對話。",
+        "tagsDescription": "針對整段對話的「是／否」判斷；可同時適用多個。可用它們篩選日誌。",
         "addTag": "新增標籤",
         "tagsEmpty": "還沒有標籤",
         "itemActions": "{{name}} 的操作",
@@ -3016,19 +3006,17 @@
           "topicDescription": "問題會依主題的名稱與描述歸入你的主題。",
           "addTag": "新增標籤",
           "editTag": "編輯標籤",
-          "tagDescription": "模型會讀取名稱與描述，判斷此標籤是否適用於某段對話。",
+          "tagDescription": "名稱與描述決定此標籤是否符合某段對話。",
           "name": "名稱",
           "description": "描述",
           "topicNamePlaceholder": "安裝",
-          "topicDescriptionStart": "包含的頁面例如：",
-          "topicDescriptionHint": "列出幾個屬於這裡的頁面。{{used}}/{{max}}",
+          "topicDescriptionHint": "列出幾個屬於這裡的頁面。",
           "tagNamePlaceholder": "價格問題",
           "tagDescriptionPlaceholder": "使用者詢問價格、方案或某樣東西的費用。",
           "tagDescriptionHint": "模型會拿這句話與對話比對。",
-          "submitAddTopic": "新增主題",
-          "submitUpdateTopic": "更新主題",
-          "submitAddTag": "新增標籤",
-          "submitUpdateTag": "更新標籤"
+          "topicDescriptionPlaceholder": "頁面例如：Docker 部署；Kubernetes 部署",
+          "submitAdd": "新增",
+          "submitSave": "儲存"
         },
         "errors": {
           "nameRequired": "請輸入名稱。",
@@ -3044,7 +3032,17 @@
           "submit": "移除"
         },
         "digest": "每週文件缺口摘要",
-        "digestDescription": "每週一次，代理的擁有者會收到一則通知，列出主要的文件缺口。"
+        "digestDescription": "每週一次，代理的擁有者會收到一則通知，列出主要的文件缺口。",
+        "off": "關閉",
+        "topicsDescription": "每個問題歸入一個主題。用於為文件缺口分組。",
+        "groupByTopic": "依主題為問題分組",
+        "customize": "自訂",
+        "resetToSources": "重設為來源",
+        "resetTopics": {
+          "title": "要將主題重設為來源嗎？",
+          "description": "你的清單將由此代理來源中的資料夾取代，你對它的修改會遺失。",
+          "submit": "重設"
+        }
       }
     },
     "logs": {

@@ -2997,29 +2997,19 @@
         "learnMore": "Mehr erfahren",
         "serverOff": "Einblicke sind auf diesem Server ausgeschaltet, daher wirken diese Einstellungen noch nicht. Bitte deinen Administrator, sie einzuschalten.",
         "topics": "Themen",
-        "topicModes": {
-          "auto": "Aus Quellen",
-          "custom": "Eigene",
-          "off": "Aus"
-        },
         "topicHints": {
-          "auto": "Aus den Ordnern in den Quellen dieses Agenten gebildet und im Tab „Einblicke“ zum Gruppieren der Fragen genutzt.",
-          "custom": "Deine eigene Liste. Fragen werden anhand von Name und Beschreibung zugeordnet.",
-          "off": "Fragen werden nicht nach Thema gruppiert. Lücken in der Doku lassen sich weiterhin nach Seite oder Quelle gruppieren."
+          "auto": "Jede Frage wird einem Ordner aus den Quellen dieses Agenten zugeordnet.",
+          "custom": "Jede Frage wird einem deiner Themen zugeordnet.",
+          "off": "Fragen werden keinem Thema zugeordnet. Lücken in der Doku lassen sich weiterhin nach Seite oder Quelle gruppieren.",
+          "workflowOff": "Ein Workflow hat keine eigenen Quellen, daher legst du die Themen selbst fest. Schalte dies ein, um sie hinzuzufügen."
         },
-        "autoTopics": "Themen:",
         "autoTopicsNone": "Die Quellen dieses Agenten haben keine Ordner, daher werden Fragen nicht nach Thema gruppiert.",
-        "customTopics": "Eigene Themen",
         "countOf": "{{count}} von {{max}}",
         "addTopic": "Thema hinzufügen",
-        "suggest": "Aus Quellen vorschlagen",
-        "suggestNone": "Die Quellen dieses Agenten haben keine Ordner, aus denen sich Themen vorschlagen lassen.",
-        "suggestNoNew": "Diese Themen stehen schon in der Liste.",
-        "suggestFull": "Die Liste ist voll, daher wurden einige Vorschläge ausgelassen.",
-        "suggestFailed": "Die Themenvorschläge konnten nicht geladen werden.",
+        "suggestFailed": "Die Ordner aus den Quellen dieses Agenten konnten nicht geladen werden.",
         "topicsEmpty": "Noch keine Themen",
         "tags": "Tags",
-        "tagsDescription": "Ja/Nein-Labels, die du für ganze Gespräche schreibst, etwa \"Frage zum Preis\" oder \"Möchte eine Erstattung\". Jedes wird geprüft, sobald ein Gespräch ruht, und ein neues Tag wird auch auf jüngere Gespräche angewendet.",
+        "tagsDescription": "Ja/Nein-Prüfungen für ganze Gespräche; mehrere können zutreffen. Filtere die Protokolle danach.",
         "addTag": "Tag hinzufügen",
         "tagsEmpty": "Noch keine Tags",
         "itemActions": "Aktionen für {{name}}",
@@ -3031,19 +3021,17 @@
           "topicDescription": "Fragen werden anhand von Name und Beschreibung deinen Themen zugeordnet.",
           "addTag": "Tag hinzufügen",
           "editTag": "Tag bearbeiten",
-          "tagDescription": "Das Modell liest Name und Beschreibung, um zu entscheiden, ob das Tag auf ein Gespräch zutrifft.",
+          "tagDescription": "Name und Beschreibung entscheiden, ob das Tag zu einem Gespräch passt.",
           "name": "Name",
           "description": "Beschreibung",
           "topicNamePlaceholder": "Installation",
-          "topicDescriptionStart": "Seiten wie:",
-          "topicDescriptionHint": "Nenne ein paar Seiten, die hierher gehören. {{used}}/{{max}}",
+          "topicDescriptionHint": "Nenne ein paar Seiten, die hierher gehören.",
           "tagNamePlaceholder": "Frage zum Preis",
           "tagDescriptionPlaceholder": "Der Nutzer fragt nach Preisen, Tarifen oder was etwas kostet.",
           "tagDescriptionHint": "Ein Satz, den das Modell mit dem Gespräch abgleicht.",
-          "submitAddTopic": "Thema hinzufügen",
-          "submitUpdateTopic": "Thema aktualisieren",
-          "submitAddTag": "Tag hinzufügen",
-          "submitUpdateTag": "Tag aktualisieren"
+          "topicDescriptionPlaceholder": "Seiten wie: Docker-Bereitstellung; Kubernetes-Bereitstellung",
+          "submitAdd": "Hinzufügen",
+          "submitSave": "Speichern"
         },
         "errors": {
           "nameRequired": "Gib einen Namen ein.",
@@ -3059,7 +3047,17 @@
           "submit": "Entfernen"
         },
         "digest": "Wöchentliche Übersicht der Doku-Lücken",
-        "digestDescription": "Einmal pro Woche erhält der Eigentümer des Agenten eine Benachrichtigung mit den größten Lücken in der Doku."
+        "digestDescription": "Einmal pro Woche erhält der Eigentümer des Agenten eine Benachrichtigung mit den größten Lücken in der Doku.",
+        "off": "Aus",
+        "topicsDescription": "Jede Frage kommt in genau ein Thema. Damit werden Lücken in der Doku gruppiert.",
+        "groupByTopic": "Fragen nach Thema gruppieren",
+        "customize": "Anpassen",
+        "resetToSources": "Auf Quellen zurücksetzen",
+        "resetTopics": {
+          "title": "Themen auf die Quellen zurücksetzen?",
+          "description": "Deine Liste wird durch die Ordner aus den Quellen dieses Agenten ersetzt, und deine Änderungen daran gehen verloren.",
+          "submit": "Zurücksetzen"
+        }
       }
     },
     "logs": {

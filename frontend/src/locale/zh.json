@@ -2980,29 +2980,19 @@
         "learnMore": "了解更多",
         "serverOff": "此服务器已关闭洞察，因此这些设置暂不生效。请让管理员开启。",
         "topics": "主题",
-        "topicModes": {
-          "auto": "来自来源",
-          "custom": "自定义",
-          "off": "关闭"
-        },
         "topicHints": {
-          "auto": "根据此智能体来源中的文件夹生成，用于在“洞察”标签页中为问题分组。",
-          "custom": "你自己的列表。问题会根据名称和描述归入其中。",
-          "off": "问题不按主题分组。文档缺口仍可按页面或来源分组。"
+          "auto": "每个问题会归入此智能体来源中的一个文件夹。",
+          "custom": "每个问题会归入你的一个主题。",
+          "off": "问题不归入主题。文档缺口仍可按页面或来源分组。",
+          "workflowOff": "工作流没有自己的来源，因此由你来命名主题。开启后即可添加。"
         },
-        "autoTopics": "主题：",
         "autoTopicsNone": "此智能体的来源中没有文件夹，因此问题不会按主题分组。",
-        "customTopics": "自定义主题",
         "countOf": "{{count}}/{{max}}",
         "addTopic": "添加主题",
-        "suggest": "从来源中推荐",
-        "suggestNone": "此智能体的来源中没有可用于推荐主题的文件夹。",
-        "suggestNoNew": "这些主题已在列表中。",
-        "suggestFull": "列表已满，因此部分推荐未加入。",
-        "suggestFailed": "无法加载主题推荐。",
+        "suggestFailed": "无法加载此智能体来源中的文件夹。",
         "topicsEmpty": "还没有主题",
         "tags": "标签",
-        "tagsDescription": "你为整段对话编写的“是/否”标签，例如“价格问题”或“想要退款”。每个标签会在对话平静下来后检查一次，新标签也会应用到最近的对话。",
+        "tagsDescription": "针对整段对话的“是/否”判断；可同时适用多个。可用它们筛选日志。",
         "addTag": "添加标签",
         "tagsEmpty": "还没有标签",
         "itemActions": "{{name}} 的操作",
@@ -3014,19 +3004,17 @@
           "topicDescription": "问题会根据主题的名称和描述归入你的主题。",
           "addTag": "添加标签",
           "editTag": "编辑标签",
-          "tagDescription": "模型会读取名称和描述，判断该标签是否适用于某段对话。",
+          "tagDescription": "名称和描述决定该标签是否适合某段对话。",
           "name": "名称",
           "description": "描述",
           "topicNamePlaceholder": "安装",
-          "topicDescriptionStart": "包含的页面例如：",
-          "topicDescriptionHint": "列出几个属于这里的页面。{{used}}/{{max}}",
+          "topicDescriptionHint": "列出几个属于这里的页面。",
           "tagNamePlaceholder": "价格问题",
           "tagDescriptionPlaceholder": "用户询问价格、套餐或某样东西的费用。",
           "tagDescriptionHint": "模型会拿这句话与对话对照。",
-          "submitAddTopic": "添加主题",
-          "submitUpdateTopic": "更新主题",
-          "submitAddTag": "添加标签",
-          "submitUpdateTag": "更新标签"
+          "topicDescriptionPlaceholder": "页面例如：Docker 部署；Kubernetes 部署",
+          "submitAdd": "添加",
+          "submitSave": "保存"
         },
         "errors": {
           "nameRequired": "请输入名称。",
@@ -3042,7 +3030,17 @@
           "submit": "移除"
         },
         "digest": "每周文档缺口摘要",
-        "digestDescription": "每周一次，智能体的所有者会收到一条通知，列出主要的文档缺口。"
+        "digestDescription": "每周一次，智能体的所有者会收到一条通知，列出主要的文档缺口。",
+        "off": "关闭",
+        "topicsDescription": "每个问题归入一个主题。用于为文档缺口分组。",
+        "groupByTopic": "按主题为问题分组",
+        "customize": "自定义",
+        "resetToSources": "重置为来源",
+        "resetTopics": {
+          "title": "将主题重置为来源？",
+          "description": "你的列表将被此智能体来源中的文件夹替换，你对它的修改会丢失。",
+          "submit": "重置"
+        }
       }
     },
     "logs": {

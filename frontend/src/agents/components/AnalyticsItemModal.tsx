@@ -19,6 +19,9 @@ import {
 
 type Item = { name: string; description: string };
 
+/** The topic description's counter shows past this share of its budget. */
+const COUNTER_FROM = 0.8;
+
 type AnalyticsItemModalProps = {
   kind: 'topic' | 'tag';
   /** The item being edited; left out to add one. */
@@ -31,9 +34,10 @@ type AnalyticsItemModalProps = {
 };
 
 /**
- * Adds or edits one custom topic or tag. It edits the agent form's state
- * only; the agent's Save stores it. Errors show after the first submit, then
- * follow the typing.
+ * Adds or edits one custom topic or tag. It edits the host's draft only; the
+ * host's Save stores it. Errors show after the first submit, then follow the
+ * typing. The host keeps `kind` and `item` while it closes, so the title
+ * doesn't flip during the exit animation.
  */
 export default function AnalyticsItemModal({
   kind,
@@ -45,7 +49,6 @@ export default function AnalyticsItemModal({
 }: AnalyticsItemModalProps) {
   const { t } = useTranslation();
   const prefix = 'agents.form.analytics.modal';
-  const start = t(`${prefix}.topicDescriptionStart`);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -53,10 +56,9 @@ export default function AnalyticsItemModal({
   useEffect(() => {
     if (!open) return;
     setName(item?.name ?? '');
-    // A new topic's description starts the sentence the model reads best.
-    setDescription(item?.description ?? (kind === 'topic' ? `${start} ` : ''));
+    setDescription(item?.description ?? '');
     setSubmitted(false);
-  }, [open, item, kind, start]);
+  }, [open, item]);
 
   const trimmedName = name.trim();
   const trimmedDescription = description.trim();
@@ -73,14 +75,19 @@ export default function AnalyticsItemModal({
           )
         : null;
   const used = units(trimmedDescription);
-  const descriptionError =
-    !trimmedDescription || (isTopic && trimmedDescription === start.trim())
+  // A topic's description is optional, as on the server; a tag's is what the
+  // model checks, so it is required.
+  const descriptionError = isTopic
+    ? used > TOPIC_DESCRIPTION_UNITS
+      ? t('agents.form.analytics.errors.topicDescriptionTooLong', {
+          max: formatCount(TOPIC_DESCRIPTION_UNITS),
+        })
+      : null
+    : !trimmedDescription
       ? t('agents.form.analytics.errors.descriptionRequired')
-      : isTopic && used > TOPIC_DESCRIPTION_UNITS
-        ? t('agents.form.analytics.errors.topicDescriptionTooLong', {
-            max: formatCount(TOPIC_DESCRIPTION_UNITS),
-          })
-        : null;
+      : null;
+  // The budget shows only once it is close.
+  const showCount = isTopic && used > COUNTER_FROM * TOPIC_DESCRIPTION_UNITS;
 
   const submit = () => {
     setSubmitted(true);
@@ -92,9 +99,7 @@ export default function AnalyticsItemModal({
   const title = t(
     `${prefix}.${editing ? 'edit' : 'add'}${isTopic ? 'Topic' : 'Tag'}`,
   );
-  const submitLabel = t(
-    `${prefix}.submit${editing ? 'Update' : 'Add'}${isTopic ? 'Topic' : 'Tag'}`,
-  );
+  const submitLabel = t(`${prefix}.${editing ? 'submitSave' : 'submitAdd'}`);
 
   return (
     <Modal
@@ -141,14 +146,26 @@ export default function AnalyticsItemModal({
         </FormField>
         <FormField
           label={t(`${prefix}.description`)}
-          required
+          required={!isTopic}
           hint={
-            isTopic
-              ? t(`${prefix}.topicDescriptionHint`, {
-                  used: formatCount(Math.ceil(used)),
-                  max: formatCount(TOPIC_DESCRIPTION_UNITS),
-                })
-              : t(`${prefix}.tagDescriptionHint`)
+            isTopic ? (
+              <>
+                {t(`${prefix}.topicDescriptionHint`)}
+                {showCount && (
+                  <>
+                    {' '}
+                    <span className="tabular-nums">
+                      {t('agents.form.analytics.countOf', {
+                        count: formatCount(Math.ceil(used)),
+                        max: formatCount(TOPIC_DESCRIPTION_UNITS),
+                      })}
+                    </span>
+                  </>
+                )}
+              </>
+            ) : (
+              t(`${prefix}.tagDescriptionHint`)
+            )
           }
           error={submitted ? descriptionError : undefined}
         >
@@ -156,9 +173,11 @@ export default function AnalyticsItemModal({
             rows={3}
             value={description}
             maxLength={isTopic ? undefined : TAG_DESCRIPTION_MAX}
-            placeholder={
-              isTopic ? undefined : t(`${prefix}.tagDescriptionPlaceholder`)
-            }
+            placeholder={t(
+              isTopic
+                ? `${prefix}.topicDescriptionPlaceholder`
+                : `${prefix}.tagDescriptionPlaceholder`,
+            )}
             onChange={(event) => setDescription(event.target.value)}
           />
         </FormField>

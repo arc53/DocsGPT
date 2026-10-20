@@ -2997,29 +2997,19 @@
         "learnMore": "Learn more",
         "serverOff": "Insights are off on this server, so these settings have no effect yet. Ask your administrator to turn them on.",
         "topics": "Topics",
-        "topicModes": {
-          "auto": "From sources",
-          "custom": "Custom",
-          "off": "Off"
-        },
         "topicHints": {
-          "auto": "Built from the folders in this agent's sources and used to group questions on the Insights tab.",
-          "custom": "Your own list. Questions are sorted into these by name and description.",
-          "off": "Questions are not grouped by topic. Docs gaps can still be grouped by page or source."
+          "auto": "Each question is sorted into one folder of this agent's sources.",
+          "custom": "Each question is sorted into one of your topics.",
+          "off": "Questions aren't sorted into topics. Docs gaps can still be grouped by page or source.",
+          "workflowOff": "A workflow has no sources of its own, so you name the topics. Turn this on to add them."
         },
-        "autoTopics": "Topics:",
         "autoTopicsNone": "This agent's sources have no folders, so questions are not grouped by topic.",
-        "customTopics": "Custom topics",
         "countOf": "{{count}} of {{max}}",
         "addTopic": "Add topic",
-        "suggest": "Suggest from sources",
-        "suggestNone": "This agent's sources have no folders to suggest topics from.",
-        "suggestNoNew": "These topics are already in the list.",
-        "suggestFull": "The list is full, so some suggestions were left out.",
-        "suggestFailed": "Could not load topic suggestions.",
+        "suggestFailed": "Couldn't load the folders of this agent's sources.",
         "topicsEmpty": "No topics yet",
         "tags": "Tags",
-        "tagsDescription": "Yes/no labels you write for whole conversations, such as \"Pricing question\" or \"Wants a refund\". Each is checked once a conversation goes quiet, and a new tag is also applied to recent conversations.",
+        "tagsDescription": "Yes/no checks on whole conversations; several can apply. Filter Logs by them.",
         "addTag": "Add tag",
         "tagsEmpty": "No tags yet",
         "itemActions": "Actions for {{name}}",
@@ -3031,19 +3021,17 @@
           "topicDescription": "Questions are sorted into your topics by their name and description.",
           "addTag": "Add tag",
           "editTag": "Edit tag",
-          "tagDescription": "The model reads the name and description to decide whether the tag applies to a conversation.",
+          "tagDescription": "The name and description decide whether the tag fits a conversation.",
           "name": "Name",
           "description": "Description",
           "topicNamePlaceholder": "Installation",
-          "topicDescriptionStart": "Pages such as:",
-          "topicDescriptionHint": "Name a few pages that belong here. {{used}}/{{max}}",
+          "topicDescriptionHint": "Name a few pages that belong here.",
           "tagNamePlaceholder": "Pricing question",
           "tagDescriptionPlaceholder": "The user asks about prices, plans or what something costs.",
           "tagDescriptionHint": "One sentence the model checks against the conversation.",
-          "submitAddTopic": "Add topic",
-          "submitUpdateTopic": "Update topic",
-          "submitAddTag": "Add tag",
-          "submitUpdateTag": "Update tag"
+          "topicDescriptionPlaceholder": "Pages such as: Docker deploying; Kubernetes deploying",
+          "submitAdd": "Add",
+          "submitSave": "Save"
         },
         "errors": {
           "nameRequired": "Enter a name.",
@@ -3059,7 +3047,17 @@
           "submit": "Remove"
         },
         "digest": "Weekly docs-gap summary",
-        "digestDescription": "Once a week, the agent's owner gets a notification listing the top docs gaps."
+        "digestDescription": "Once a week, the agent's owner gets a notification listing the top docs gaps.",
+        "off": "Off",
+        "topicsDescription": "Each question goes into one topic. Used to group docs gaps.",
+        "groupByTopic": "Group questions by topic",
+        "customize": "Customize",
+        "resetToSources": "Reset to sources",
+        "resetTopics": {
+          "title": "Reset topics to sources?",
+          "description": "Your list is replaced by the folders of this agent's sources, and your changes to it are lost.",
+          "submit": "Reset"
+        }
       }
     },
     "logs": {
