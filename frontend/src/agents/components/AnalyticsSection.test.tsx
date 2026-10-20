@@ -52,11 +52,13 @@ function Harness({
   available = true,
   disabled = false,
   agentId = 'a1',
+  maxTags = 20,
 }: {
   initial?: AnalyticsConfig;
   available?: boolean;
   disabled?: boolean;
   agentId?: string;
+  maxTags?: number;
 }) {
   const [value, setValue] = useState<AnalyticsConfig | undefined>(initial);
   return (
@@ -69,7 +71,7 @@ function Harness({
       agentId={agentId}
       available={available}
       maxTopics={3}
-      maxTags={20}
+      maxTags={maxTags}
       disabled={disabled}
       token="token"
     />
@@ -161,6 +163,23 @@ describe('AnalyticsSection', () => {
     )!;
     expect(section.querySelector('[role="note"]')!.textContent).toBe(
       'agents.form.analytics.serverOff',
+    );
+  });
+
+  it('hides Tags when the server allows none', async () => {
+    await render({ initial: DEFAULT_ANALYTICS, maxTags: 0 });
+    expect(
+      container.querySelector('[data-testid="analytics-tags"]'),
+    ).toBeNull();
+  });
+
+  it('links Learn more to the agent settings heading of the docs', async () => {
+    await render({ initial: DEFAULT_ANALYTICS });
+    const link = container.querySelector<HTMLAnchorElement>(
+      'a[href*="analytics-and-logs"]',
+    );
+    expect(link?.getAttribute('href')).toBe(
+      'https://docs.docsgpt.cloud/Using/analytics-and-logs#analytics-settings-for-an-agent',
     );
   });
 

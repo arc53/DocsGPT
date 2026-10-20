@@ -19,8 +19,9 @@ export const NO_ANALYTICS: AnalyticsAvailability = {
   maxTags: MAX_TAGS,
 };
 
-const limit = (value: unknown, fallback: number): number =>
-  typeof value === 'number' && Number.isInteger(value) && value > 0
+// The server allows ANALYTICS_MAX_TAGS=0 (tags off), but never fewer than 2 topics.
+const limit = (value: unknown, fallback: number, min = 1): number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= min
     ? value
     : fallback;
 
@@ -30,7 +31,7 @@ export function analyticsAvailability(config: unknown): AnalyticsAvailability {
   return {
     enabled: c.decision_analytics_enabled === true,
     maxTopics: limit(c.analytics_max_topics, MAX_TOPICS),
-    maxTags: limit(c.analytics_max_tags, MAX_TAGS),
+    maxTags: limit(c.analytics_max_tags, MAX_TAGS, 0),
   };
 }
 

@@ -38,7 +38,7 @@ import type {
 import AnalyticsItemModal from './AnalyticsItemModal';
 
 const DOCS_URL =
-  'https://docs.docsgpt.cloud/Using/analytics-and-logs#per-agent-settings';
+  'https://docs.docsgpt.cloud/Using/analytics-and-logs#analytics-settings-for-an-agent';
 
 const TOPIC_MODES: AnalyticsTopicMode[] = ['auto', 'custom', 'off'];
 
@@ -417,65 +417,67 @@ export default function AnalyticsSection({
                   </div>
                 )}
 
-                <div
-                  className="flex flex-col gap-3"
-                  data-testid="analytics-tags"
-                >
-                  <div className="flex flex-col gap-1.5">
-                    <SectionHeader
-                      as="h3"
-                      size="xs"
-                      title={t('agents.form.analytics.tags')}
-                      count={countOf(tags.length, maxTags)}
-                      actions={
-                        !disabled && tags.length < maxTags ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setEditing({ kind: 'tag', index: null })
-                            }
-                          >
-                            <Plus />
-                            {t('agents.form.analytics.addTag')}
-                          </Button>
-                        ) : undefined
-                      }
-                    />
-                    <p className="text-muted-foreground text-xs">
-                      {t('agents.form.analytics.tagsDescription')}
-                    </p>
-                  </div>
-                  <Card
-                    variant="subtle"
-                    padding="none"
-                    className="overflow-hidden"
+                {maxTags > 0 && (
+                  <div
+                    className="flex flex-col gap-3"
+                    data-testid="analytics-tags"
                   >
-                    {tags.length > 0 ? (
-                      <ListRows>
-                        {tags.map((tag, index) => (
-                          <ListRow
-                            key={tag.id}
-                            title={tag.name}
-                            description={tag.description}
-                            trailing={itemMenu(
-                              tag.name,
-                              () => setEditing({ kind: 'tag', index }),
-                              () => setRemovingTag(tag),
-                            )}
-                          />
-                        ))}
-                      </ListRows>
-                    ) : (
-                      <EmptyState
+                    <div className="flex flex-col gap-1.5">
+                      <SectionHeader
+                        as="h3"
                         size="xs"
-                        illustration="none"
-                        title={t('agents.form.analytics.tagsEmpty')}
+                        title={t('agents.form.analytics.tags')}
+                        count={countOf(tags.length, maxTags)}
+                        actions={
+                          !disabled && tags.length < maxTags ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setEditing({ kind: 'tag', index: null })
+                              }
+                            >
+                              <Plus />
+                              {t('agents.form.analytics.addTag')}
+                            </Button>
+                          ) : undefined
+                        }
                       />
-                    )}
-                  </Card>
-                </div>
+                      <p className="text-muted-foreground text-xs">
+                        {t('agents.form.analytics.tagsDescription')}
+                      </p>
+                    </div>
+                    <Card
+                      variant="subtle"
+                      padding="none"
+                      className="overflow-hidden"
+                    >
+                      {tags.length > 0 ? (
+                        <ListRows>
+                          {tags.map((tag, index) => (
+                            <ListRow
+                              key={tag.id}
+                              title={tag.name}
+                              description={tag.description}
+                              trailing={itemMenu(
+                                tag.name,
+                                () => setEditing({ kind: 'tag', index }),
+                                () => setRemovingTag(tag),
+                              )}
+                            />
+                          ))}
+                        </ListRows>
+                      ) : (
+                        <EmptyState
+                          size="xs"
+                          illustration="none"
+                          title={t('agents.form.analytics.tagsEmpty')}
+                        />
+                      )}
+                    </Card>
+                  </div>
+                )}
 
                 <SettingRow
                   label={t('agents.form.analytics.digest')}
