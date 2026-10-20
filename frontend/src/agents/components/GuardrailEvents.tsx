@@ -39,7 +39,12 @@ import { ACTION_KEYS, STAGE_KEYS } from './GuardrailsSection';
 
 /** Decisions per request; older ones load as the table's end scrolls into view. */
 const PAGE_SIZE = 50;
-const WINDOWS = [7, 30, 90];
+/** The windows (days) and their labels, worded as the analytics select's. */
+const WINDOWS = [
+  [7, 'last7Days'],
+  [30, 'last30Days'],
+  [90, 'last90Days'],
+] as const;
 
 /** What an item-level verdict was about: a retrieved chunk, or an attached file. */
 type ItemRef =
@@ -164,7 +169,7 @@ export default function GuardrailEvents({ agentId }: Props) {
             onValueChange={(value) => setDays(Number(value))}
           >
             <SelectTrigger
-              className="w-[150px]"
+              className="min-w-[125px]"
               size="field"
               shape="pill"
               data-testid="guardrail-events-window"
@@ -172,9 +177,9 @@ export default function GuardrailEvents({ agentId }: Props) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {WINDOWS.map((window) => (
+              {WINDOWS.map(([window, labelKey]) => (
                 <SelectItem key={window} value={String(window)}>
-                  {t('agents.guardrailEvents.lastDays', { count: window })}
+                  {t(`settings.analytics.filterOptions.${labelKey}`)}
                 </SelectItem>
               ))}
             </SelectContent>

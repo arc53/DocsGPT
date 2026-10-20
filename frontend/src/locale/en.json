@@ -612,10 +612,11 @@
       "selectChatbot": "Select chatbot",
       "filterOptions": {
         "hour": "Hour",
-        "last24Hours": "24 Hours",
-        "last7Days": "7 Days",
-        "last15Days": "15 Days",
-        "last30Days": "30 Days"
+        "last24Hours": "24 hours",
+        "last7Days": "7 days",
+        "last15Days": "15 days",
+        "last30Days": "30 days",
+        "last90Days": "90 days"
       },
       "messages": "Messages",
       "tokenUsage": "Token Usage",
@@ -3054,7 +3055,8 @@
       "title": "Agent Logs",
       "lastUsedAt": "Last used at",
       "noUsageHistory": "No usage history",
-      "tableHeader": "Agent endpoint logs"
+      "tableHeader": "Agent endpoint logs",
+      "description": "API calls, scheduled runs and errors for this agent."
     },
     "schedules": {
       "title": "Agent Schedules",
@@ -3282,7 +3284,6 @@
     "guardrailEvents": {
       "heading": "Guardrail activity",
       "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
       "blocked": "Blocked",
       "redacted": "Redacted",
       "flagged": "Flagged",
@@ -3524,7 +3525,10 @@
     "showAll_other": "Show all {{formatted}}",
     "pageRange_one": "{{from}}–{{to}} of {{formatted}} agent",
     "pageRange_other": "{{from}}–{{to}} of {{formatted}} agents",
-    "deleteConsequence": "Its schedules and run history are deleted too. This can't be undone."
+    "deleteConsequence": "Its schedules and run history are deleted too. This can't be undone.",
+    "analytics": {
+      "subtitle": "Message volume, token usage and user feedback for this agent."
+    }
   },
   "components": {
     "fileUpload": {

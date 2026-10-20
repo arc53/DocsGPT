@@ -615,7 +615,8 @@
         "last24Hours": "24 Stunden",
         "last7Days": "7 Tage",
         "last15Days": "15 Tage",
-        "last30Days": "30 Tage"
+        "last30Days": "30 Tage",
+        "last90Days": "90 Tage"
       },
       "messages": "Nachrichten",
       "tokenUsage": "Token-Verbrauch",
@@ -3054,7 +3055,8 @@
       "title": "Agenten-Protokolle",
       "lastUsedAt": "Zuletzt verwendet am",
       "noUsageHistory": "Kein Nutzungsverlauf",
-      "tableHeader": "Agenten-Endpunkt-Protokolle"
+      "tableHeader": "Agenten-Endpunkt-Protokolle",
+      "description": "API-Aufrufe, geplante Ausführungen und Fehler dieses Agenten."
     },
     "schedules": {
       "title": "Agenten-Zeitpläne",
@@ -3282,7 +3284,6 @@
     "guardrailEvents": {
       "heading": "Guardrail-Aktivität",
       "description": "Jede Kontrolle, die bei diesem Agenten angeschlagen hat, und jede, die nicht ausgeführt werden konnte.",
-      "lastDays": "Letzte {{count}} Tage",
       "blocked": "Blockiert",
       "redacted": "Geschwärzt",
       "flagged": "Markiert",
@@ -3524,7 +3525,10 @@
     "showAll_other": "Alle {{formatted}} anzeigen",
     "pageRange_one": "{{from}}–{{to}} von {{formatted}} Agent",
     "pageRange_other": "{{from}}–{{to}} von {{formatted}} Agenten",
-    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "analytics": {
+      "subtitle": "Nachrichtenvolumen, Token-Verbrauch und Nutzerfeedback für diesen Agenten."
+    }
   },
   "components": {
     "fileUpload": {

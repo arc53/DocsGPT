@@ -126,4 +126,27 @@ describe('AgentLogs', () => {
     expect(container.querySelector('[data-testid="analytics"]')).toBeNull();
     expect(container.querySelector('[data-testid="logs"]')).not.toBeNull();
   });
+
+  // IN-17: the drill-down target is a named section, the peer of Guardrail
+  // activity, with copy about this agent.
+  it('names the log list in a Logs section that the #logs links land on', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/logs/a1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/logs/:agentId"
+              element={<AgentLogs />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const section = container.querySelector('section#logs')!;
+    expect(section).not.toBeNull();
+    const heading = section.querySelector('[data-slot="section-header"] h2');
+    expect(heading?.textContent).toBe('agents.pageHeader.tabs.logs');
+    expect(section.textContent).toContain('agents.logs.description');
+    expect(section.querySelector('[data-testid="logs"]')).not.toBeNull();
+  });
 });

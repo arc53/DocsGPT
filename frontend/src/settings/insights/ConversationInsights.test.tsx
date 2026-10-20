@@ -413,9 +413,8 @@ describe('ConversationInsights', () => {
     );
   });
 
-  // Settings › Insights has no toolbar: its window select sits at the end of
-  // the description row, as Analytics' does.
-  it('puts a page action at the end of its description row', () => {
+  // Settings › Insights draws the description in its page toolbar.
+  it('leaves the description to the page when told to', () => {
     act(() =>
       root.render(
         <MemoryRouter>
@@ -425,16 +424,17 @@ describe('ConversationInsights', () => {
             filterOption="last_30_days"
             onRetry={() => undefined}
             standalone
-            actions={<button type="button">window</button>}
+            intro={false}
           />
         </MemoryRouter>,
       ),
     );
-    const row = section()!.firstElementChild!;
-    expect(row.textContent).toContain(
+    expect(section()!.textContent).not.toContain(
       'settings.analytics.insights.description',
     );
-    expect(row.querySelector('button')?.textContent).toBe('window');
+    expect(
+      section()!.querySelector('[data-testid="implicit-feedback"]'),
+    ).not.toBeNull();
   });
 
   it('draws answer status as four outcomes, greetings left out', () => {

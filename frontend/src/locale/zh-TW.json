@@ -605,7 +605,7 @@
     },
     "analytics": {
       "label": "分析",
-      "subtitle": "追蹤您賃戶的訊息量、Token 使用量和使用者回饋",
+      "subtitle": "追蹤您帳戶的訊息量、Token 使用量和使用者回饋",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "filterOptions": {
@@ -613,7 +613,8 @@
         "last24Hours": "24 小時",
         "last7Days": "7 天",
         "last15Days": "15 天",
-        "last30Days": "30 天"
+        "last30Days": "30 天",
+        "last90Days": "90 天"
       },
       "messages": "訊息",
       "tokenUsage": "Token 使用量",
@@ -3039,7 +3040,8 @@
       "title": "代理日誌",
       "lastUsedAt": "最後使用時間",
       "noUsageHistory": "無使用歷史",
-      "tableHeader": "代理端點日誌"
+      "tableHeader": "代理端點日誌",
+      "description": "此代理的 API 呼叫、排程執行和錯誤。"
     },
     "schedules": {
       "title": "代理排程",
@@ -3267,7 +3269,6 @@
     "guardrailEvents": {
       "heading": "防護機制活動",
       "description": "此代理上觸發的每項控制，以及每項無法執行的控制。",
-      "lastDays": "最近 {{count}} 天",
       "blocked": "已封鎖",
       "redacted": "已遮蔽",
       "flagged": "已標記",
@@ -3509,7 +3510,10 @@
     "showAll_other": "查看全部 {{formatted}} 個",
     "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
     "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
-    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。"
+    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。",
+    "analytics": {
+      "subtitle": "此代理的訊息量、Token 使用量和使用者回饋。"
+    }
   },
   "components": {
     "fileUpload": {

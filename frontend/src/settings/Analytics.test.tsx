@@ -26,7 +26,7 @@ vi.mock('../api/services/userService', () => {
     Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   return {
     default: {
-      getMessageAnalytics: empty,
+      getMessageAnalytics: vi.fn(empty),
       getTokenAnalytics: empty,
       getFeedbackAnalytics: empty,
       getToolAnalytics: empty,
@@ -66,7 +66,7 @@ describe('Analytics without insights', () => {
     await act(async () =>
       root.render(
         <MemoryRouter>
-          <Analytics agentId={agentId} />
+          <Analytics agentId={agentId} filterOption="last_7_days" />
         </MemoryRouter>,
       ),
     );
@@ -87,6 +87,21 @@ describe('Analytics without insights', () => {
     expect(container.querySelector('[data-testid="insights"]')).toBeNull();
     // The thumbs keep the full width with nothing beside them.
     expect(feedbackRow().className).not.toContain('xl:flex-row');
+  });
+
+  // IN-16: the page puts the window select in its toolbar; the charts read
+  // the window they are given and draw no select, subtitle or quota.
+  it('charts the window it is given, with no select or subtitle of its own', async () => {
+    vi.mocked(userService.getMessageAnalytics).mockClear();
+    await render('a1');
+    expect(userService.getMessageAnalytics).toHaveBeenCalledWith(
+      { api_key_id: 'a1', filter_option: 'last_7_days' },
+      'token',
+    );
+    expect(container.textContent).not.toContain('settings.analytics.subtitle');
+    expect(container.textContent).not.toContain(
+      'settings.analytics.filterOptions',
+    );
   });
 
   it("leaves an agent's insights to its own page", async () => {

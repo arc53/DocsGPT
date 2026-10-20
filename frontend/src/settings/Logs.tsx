@@ -428,9 +428,12 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
 
   return (
     <div>
-      <p className="text-muted-foreground mb-5 text-sm leading-6">
-        {t('settings.logs.subtitle')}
-      </p>
+      {/* The account's copy; an agent's Logs page heads the list itself. */}
+      {!agentId && (
+        <p className="text-muted-foreground mb-5 text-sm leading-6">
+          {t('settings.logs.subtitle')}
+        </p>
+      )}
       <div className="mb-3">
         <div className="flex flex-row flex-wrap items-center gap-3">
           <Select value={levelFilter} onValueChange={setLevelFilter}>

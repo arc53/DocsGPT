@@ -16,8 +16,8 @@ import {
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
+import AccountAnalytics from './AccountAnalytics';
 import AccountInsights from './AccountInsights';
-import Analytics from './Analytics';
 import Connectors from './Connectors';
 import CustomModels from './CustomModels';
 import General from './General';
@@ -96,7 +96,7 @@ export default function Settings() {
             />
           }
         />
-        <Route path="analytics" element={<Analytics />} />
+        <Route path="analytics" element={<AccountAnalytics />} />
         <Route path="insights" element={<AccountInsights />} />
         <Route path="logs" element={<Logs />} />
         {/* Monitors moved to Activity; old links keep working. */}

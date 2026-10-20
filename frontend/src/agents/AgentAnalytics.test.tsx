@@ -67,6 +67,19 @@ describe('AgentAnalytics', () => {
     expect(toolbar.textContent).toContain('Carrier FAQ');
     expect(toolbar.textContent).toContain('agents.logs.noUsageHistory');
     expect(container.querySelector('[data-testid="analytics"]')).not.toBeNull();
-    expect(seen.props.at(-1)).toEqual({ agentId: 'a1' });
+    // IN-16: the window is the toolbar's action, as on Insights.
+    expect(
+      toolbar.querySelector('[data-slot="select-trigger"]'),
+    ).not.toBeNull();
+    expect(seen.props.at(-1)).toEqual({
+      agentId: 'a1',
+      filterOption: 'last_30_days',
+    });
+    // The agent's own subtitle, first under the rule.
+    const subtitle = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.analytics.subtitle',
+    );
+    expect(subtitle).toBeDefined();
+    expect(container.textContent).not.toContain('settings.analytics.subtitle');
   });
 });

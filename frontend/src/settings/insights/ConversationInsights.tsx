@@ -83,35 +83,15 @@ type ConversationInsightsProps = {
    */
   standalone?: boolean;
   /**
-   * A page control at the end of a standalone page's description row
-   * (Settings › Insights' time window, which has no toolbar to sit in).
+   * False when the page draws `InsightsIntro` in its own toolbar, beside the
+   * window select (Settings › Insights), so the section opens with figures.
    */
-  actions?: ReactNode;
+  intro?: boolean;
 };
 
-/**
- * Insights: what the decision model estimated about the
- * window's conversations, as rates with their ranges, then the docs-gap
- * report. A section of the account's Analytics, and an agent's own page. It
- * owns every off, empty and error message, so the panels and the report
- * render nothing in those states.
- */
-export default function ConversationInsights({
-  state,
-  data,
-  agentId,
-  agent,
-  filterOption,
-  onRetry,
-  standalone = false,
-  actions,
-}: ConversationInsightsProps) {
+/** The insights description and, while labelling is partial, its coverage. */
+function useInsightsCopy(state: InsightsState, data: Insights | null) {
   const { t } = useTranslation();
-  const canEditAgent = Boolean(agent) && canAgent(agent, 'edit');
-
-  // Off on the server: nothing to show, and nothing the page can change.
-  if (state === 'serverOff') return null;
-
   const coverage = data?.coverage;
   const count =
     state === 'partial' && coverage
@@ -130,8 +110,24 @@ export default function ConversationInsights({
       </Button>
     </>
   );
-  const intro = (
-    <p className="text-muted-foreground text-sm leading-6">
+  return { count, description };
+}
+
+/**
+ * The intro of insights as a page of its own: the description, its Learn
+ * more link and the coverage count, as inline content for a paragraph (the
+ * section's own, or a page toolbar's `intro`).
+ */
+export function InsightsIntro({
+  state,
+  data,
+}: {
+  state: InsightsState;
+  data: Insights | null;
+}) {
+  const { count, description } = useInsightsCopy(state, data);
+  return (
+    <>
       {description}
       {count && (
         <>
@@ -139,20 +135,38 @@ export default function ConversationInsights({
           <span className="tabular-nums">{count}</span>
         </>
       )}
-    </p>
+    </>
   );
-  const header = standalone ? (
-    actions ? (
-      // Analytics' description row: the text, then the control at the end.
-      // The text takes the free width, so the control wraps under it only
-      // where the two don't fit side by side (a phone).
-      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-xs">{intro}</div>
-        {actions}
-      </div>
-    ) : (
-      intro
-    )
+}
+
+/**
+ * Insights: what the decision model estimated about the
+ * window's conversations, as rates with their ranges, then the docs-gap
+ * report. The body of an agent's Insights page and of Settings › Insights. It
+ * owns every off, empty and error message, so the panels and the report
+ * render nothing in those states.
+ */
+export default function ConversationInsights({
+  state,
+  data,
+  agentId,
+  agent,
+  filterOption,
+  onRetry,
+  standalone = false,
+  intro = true,
+}: ConversationInsightsProps) {
+  const { t } = useTranslation();
+  const { count, description } = useInsightsCopy(state, data);
+  const canEditAgent = Boolean(agent) && canAgent(agent, 'edit');
+
+  // Off on the server: nothing to show, and nothing the page can change.
+  if (state === 'serverOff') return null;
+
+  const header = !intro ? null : standalone ? (
+    <p className="text-muted-foreground text-sm leading-6">
+      <InsightsIntro state={state} data={data} />
+    </p>
   ) : (
     <SectionHeader
       title={t('settings.analytics.insights.heading')}

@@ -613,7 +613,8 @@
         "last24Hours": "過去24時間",
         "last7Days": "過去7日間",
         "last15Days": "過去15日間",
-        "last30Days": "過去30日間"
+        "last30Days": "過去30日間",
+        "last90Days": "過去90日間"
       },
       "messages": "メッセージ",
       "tokenUsage": "トークン使用量",
@@ -3039,7 +3040,8 @@
       "title": "エージェントログ",
       "lastUsedAt": "最終使用日時",
       "noUsageHistory": "使用履歴がありません",
-      "tableHeader": "エージェントエンドポイントログ"
+      "tableHeader": "エージェントエンドポイントログ",
+      "description": "このエージェントのAPIコール、スケジュール実行、エラー。"
     },
     "schedules": {
       "title": "エージェントスケジュール",
@@ -3267,7 +3269,6 @@
     "guardrailEvents": {
       "heading": "ガードレールのアクティビティ",
       "description": "このエージェントで発動したすべてのコントロールと、実行できなかったすべてのコントロール。",
-      "lastDays": "過去 {{count}} 日間",
       "blocked": "ブロック",
       "redacted": "マスク済み",
       "flagged": "フラグ付き",
@@ -3509,7 +3510,10 @@
     "showAll_other": "すべて表示（{{formatted}}）",
     "pageRange_one": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
     "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
-    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。"
+    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。",
+    "analytics": {
+      "subtitle": "このエージェントのメッセージ量、トークン使用量、ユーザーフィードバック。"
+    }
   },
   "components": {
     "fileUpload": {

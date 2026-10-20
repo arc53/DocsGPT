@@ -659,6 +659,16 @@ describe('Logs running rows', () => {
     }
   });
 
+  // IN-17: the account's copy belongs to Settings › Logs; an agent's Logs
+  // page names its own block.
+  it("prints the account subtitle in Settings, not on an agent's page", async () => {
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+    expect(container.textContent).toContain('settings.logs.subtitle');
+    await act(async () => root.render(<Logs agentId="agent-1" />));
+    expect(container.textContent).not.toContain('settings.logs.subtitle');
+  });
+
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
     // Opening a chat patches the snapshot; the minute poll may replace it
     // with an equal one. Neither is news for the logs.

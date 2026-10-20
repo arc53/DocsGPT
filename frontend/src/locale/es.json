@@ -630,10 +630,11 @@
       "selectChatbot": "Seleccionar chatbot",
       "filterOptions": {
         "hour": "Hora",
-        "last24Hours": "24 Horas",
-        "last7Days": "7 Días",
-        "last15Days": "15 Días",
-        "last30Days": "30 Días"
+        "last24Hours": "24 horas",
+        "last7Days": "7 días",
+        "last15Days": "15 días",
+        "last30Days": "30 días",
+        "last90Days": "90 días"
       },
       "messages": "Mensajes",
       "tokenUsage": "Uso de Tokens",
@@ -3133,7 +3134,8 @@
       "title": "Registros del Agente",
       "lastUsedAt": "Último uso",
       "noUsageHistory": "Sin historial de uso",
-      "tableHeader": "Registros del endpoint del agente"
+      "tableHeader": "Registros del endpoint del agente",
+      "description": "Llamadas a la API, ejecuciones programadas y errores de este agente."
     },
     "schedules": {
       "title": "Programaciones del Agente",
@@ -3366,7 +3368,6 @@
     "guardrailEvents": {
       "heading": "Actividad de las barreras de protección",
       "description": "Cada control que se activó en este agente y cada uno que no pudo ejecutarse.",
-      "lastDays": "Últimos {{count}} días",
       "blocked": "Bloqueado",
       "redacted": "Censurado",
       "flagged": "Marcado",
@@ -3613,7 +3614,10 @@
     "pageRange_one": "{{from}}–{{to}} de {{formatted}} agente",
     "pageRange_other": "{{from}}–{{to}} de {{formatted}} agentes",
     "pageRange_many": "{{from}}–{{to}} de {{formatted}} agentes",
-    "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer."
+    "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer.",
+    "analytics": {
+      "subtitle": "Volumen de mensajes, uso de tokens y comentarios de usuarios de este agente."
+    }
   },
   "components": {
     "fileUpload": {

@@ -150,6 +150,19 @@ describe('GuardrailEvents tones', () => {
     ).not.toBeNull();
   });
 
+  // IN-16: one set of window labels with the analytics select, and a
+  // min width, so a phone doesn't cut "Last 30 days".
+  it("labels its window in the analytics select's words, at a min width", () => {
+    const trigger = container.querySelector(
+      '[data-testid="guardrail-events-window"]',
+    )!;
+    expect(trigger.textContent).toBe(
+      'settings.analytics.filterOptions.last30Days',
+    );
+    expect(trigger.className).toContain('min-w-[125px]');
+    expect(trigger.className).not.toContain('w-[150px]');
+  });
+
   it('renders ui/table named by the Guardrail decisions sub-heading', () => {
     const table = container.querySelector('table[data-slot="table"]');
     expect(table).not.toBeNull();

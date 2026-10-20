@@ -613,7 +613,8 @@
         "last24Hours": "24 小时",
         "last7Days": "7 天",
         "last15Days": "15 天",
-        "last30Days": "30 天"
+        "last30Days": "30 天",
+        "last90Days": "90 天"
       },
       "messages": "消息",
       "tokenUsage": "令牌使用",
@@ -3037,7 +3038,8 @@
       "title": "智能体日志",
       "lastUsedAt": "最后使用时间",
       "noUsageHistory": "无使用历史",
-      "tableHeader": "智能体端点日志"
+      "tableHeader": "智能体端点日志",
+      "description": "此智能体的 API 调用、计划运行和错误。"
     },
     "schedules": {
       "title": "智能体计划",
@@ -3265,7 +3267,6 @@
     "guardrailEvents": {
       "heading": "防护栏活动",
       "description": "此智能体上触发的每项控制，以及每项未能运行的控制。",
-      "lastDays": "最近 {{count}} 天",
       "blocked": "已拦截",
       "redacted": "已脱敏",
       "flagged": "已标记",
@@ -3507,7 +3508,10 @@
     "showAll_other": "查看全部 {{formatted}} 个",
     "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个智能体",
     "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个智能体",
-    "deleteConsequence": "其计划任务和运行历史也会一并删除。此操作无法撤销。"
+    "deleteConsequence": "其计划任务和运行历史也会一并删除。此操作无法撤销。",
+    "analytics": {
+      "subtitle": "此智能体的消息量、令牌使用情况和用户反馈。"
+    }
   },
   "components": {
     "fileUpload": {

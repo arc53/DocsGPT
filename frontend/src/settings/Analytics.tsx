@@ -21,19 +21,25 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { useChartPalette } from '../utils/chartUtils';
 import { formatCount, formatDate } from '../utils/dateTimeUtils';
 import AnalyticsChart from './AnalyticsChart';
-import UsageQuota from './components/UsageQuota';
-import TimeFilterSelect, {
-  DEFAULT_TIME_FILTER,
-  type TimeFilter,
-} from './TimeFilterSelect';
+import { type TimeFilter } from './TimeFilterSelect';
 
 type TokenGroupBy = 'none' | 'model' | 'agent' | 'source';
 
 type AnalyticsProps = {
   agentId?: string;
+  /** The window, picked in the page's toolbar. */
+  filterOption: TimeFilter;
 };
 
-export default function Analytics({ agentId }: AnalyticsProps) {
+/**
+ * The counted usage (stat cards, messages, tokens, scheduled runs, tools,
+ * feedback) for the account, or for one agent. The page around it owns the
+ * window select (its toolbar action) and, in Settings, the usage quota.
+ */
+export default function Analytics({
+  agentId,
+  filterOption: timeFilter,
+}: AnalyticsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
 
@@ -76,7 +82,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     { completed: number; failed: number; skipped: number }
   > | null>(null);
 
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
   const [tokenGroupBy, setTokenGroupBy] = useState<TokenGroupBy>('none');
   // Side-channel = tokens spent outside a user request (title generation,
   // history compression, RAG condensing).
@@ -312,14 +317,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
   return (
     <div>
-      {agentId ? null : <UsageQuota />}
-      <div className="mb-5 flex flex-row flex-wrap items-center justify-between gap-3">
-        <p className="text-muted-foreground text-sm leading-6">
-          {t('settings.analytics.subtitle')}
-        </p>
-        <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
-      </div>
-
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         {statCards.map((card) => (

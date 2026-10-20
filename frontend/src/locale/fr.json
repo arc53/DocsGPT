@@ -633,7 +633,8 @@
         "last24Hours": "24 heures",
         "last7Days": "7 jours",
         "last15Days": "15 jours",
-        "last30Days": "30 jours"
+        "last30Days": "30 jours",
+        "last90Days": "90 jours"
       },
       "messages": "Messages",
       "tokenUsage": "Consommation de jetons",
@@ -3133,7 +3134,8 @@
       "title": "Journaux de l’agent",
       "lastUsedAt": "Dernière utilisation",
       "noUsageHistory": "Aucun historique d’utilisation",
-      "tableHeader": "Journaux du point de terminaison de l’agent"
+      "tableHeader": "Journaux du point de terminaison de l’agent",
+      "description": "Appels API, exécutions planifiées et erreurs de cet agent."
     },
     "schedules": {
       "title": "Planifications de l’agent",
@@ -3366,7 +3368,6 @@
     "guardrailEvents": {
       "heading": "Activité des garde-fous",
       "description": "Chaque contrôle déclenché sur cet agent, et chaque contrôle qui n’a pas pu s’exécuter.",
-      "lastDays": "{{count}} derniers jours",
       "blocked": "Bloqué",
       "redacted": "Masqué",
       "flagged": "Signalé",
@@ -3613,7 +3614,10 @@
     "pageRange_one": "{{from}}–{{to}} sur {{formatted}} agent",
     "pageRange_other": "{{from}}–{{to}} sur {{formatted}} agents",
     "pageRange_many": "{{from}}–{{to}} sur {{formatted}} agents",
-    "deleteConsequence": "Ses planifications et son historique d’exécutions sont également supprimés. Cette action est irréversible."
+    "deleteConsequence": "Ses planifications et son historique d’exécutions sont également supprimés. Cette action est irréversible.",
+    "analytics": {
+      "subtitle": "Volume de messages, consommation de jetons et retours des utilisateurs pour cet agent."
+    }
   },
   "components": {
     "fileUpload": {
