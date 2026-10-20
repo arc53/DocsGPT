@@ -775,7 +775,8 @@ class ArtifactGeneratorTool(Tool):
             return valid
         if not (isinstance(title, str) and title.strip()):
             # Some models put the title only inside the spec; it still names the file.
-            title = spec.get("title") if isinstance(spec.get("title"), str) else None
+            spec_title = spec.get("title")
+            title = spec_title if isinstance(spec_title, str) and spec_title.strip() else None
 
         rendered = self._render(kind, spec)
         if rendered.get("error"):

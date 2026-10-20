@@ -122,6 +122,16 @@ def test_create_names_the_file_from_the_spec_title(monkeypatch):
     assert captured["title"] == "Отчёт о продажах"
 
 
+def test_create_ignores_a_blank_spec_title(monkeypatch):
+    tool = _tool()
+    captured = _patch_create(monkeypatch, tool)
+
+    tool._create(kind="document", spec={"title": "   ", "blocks": [{"type": "paragraph", "text": "x"}]})
+
+    assert captured["filename"] == "artifact.docx"
+    assert captured["title"] is None
+
+
 def test_create_prefers_the_title_argument_over_the_spec_title(monkeypatch):
     tool = _tool()
     captured = _patch_create(monkeypatch, tool)
