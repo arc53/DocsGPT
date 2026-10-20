@@ -402,3 +402,30 @@ class TestStartFinishEvents:
             flask_app, _chatty(chunks=3, gap=0.0), stop_after=None, visibility="hidden"
         )
         assert [kind for _, kind, _ in published if kind.startswith("message.")] == []
+
+
+@pytest.mark.unit
+class TestStopHelpers:
+    def test_an_agent_that_cannot_report_its_calls_keeps_what_was_read(self):
+        from docsgpt.api.answer.routes.base import _turn_tool_calls
+
+        agent = MagicMock()
+        agent._get_truncated_tool_calls.side_effect = RuntimeError("no executor")
+        assert _turn_tool_calls(agent, [HANDED_OFF]) == [HANDED_OFF]
+
+    def test_reported_and_unreported_calls_are_merged_by_call_id(self):
+        from docsgpt.api.answer.routes.base import _turn_tool_calls
+
+        agent = MagicMock()
+        later = {**HANDED_OFF, "status": "completed"}
+        agent._get_truncated_tool_calls.return_value = [later, {"call_id": "c2"}]
+        assert _turn_tool_calls(agent, [HANDED_OFF]) == [later, {"call_id": "c2"}]
+
+    def test_a_turn_without_a_message_has_no_jobs_to_stop(self):
+        from docsgpt.api.answer.routes.base import _stop_background_jobs
+        from docsgpt.background.context import BackgroundContext
+
+        with patch("docsgpt.background.service.stop_turn_jobs") as stop:
+            _stop_background_jobs(None)
+            _stop_background_jobs(BackgroundContext(user_id="u", conversation_id=CONVERSATION_ID))
+        stop.assert_not_called()

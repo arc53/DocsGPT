@@ -211,3 +211,99 @@ class TestLiveContinuation:
         assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "delivered"
         assert seen["live"] is None
         assert _row(bg_db, seen["message_id"])["response"] == "Appended."
+
+
+class _Broken:
+    def __enter__(self):
+        raise RuntimeError("db down")
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _conversation_row(bg_db, conversation_id):
+    with bg_db.connect() as conn:
+        return dict(conn.execute(
+            text("SELECT id, user_id FROM conversations WHERE id = CAST(:c AS uuid)"), {"c": conversation_id}
+        ).fetchone()._mapping)
+
+
+class TestLiveTurnUnit:
+    def test_it_journals_each_kind_of_event_as_the_chat_stream_sends_it(self, bg_db, conversation, quiet):
+        import uuid
+
+        conversation_id, _ = conversation
+        message_id = str(uuid.uuid4())
+        turn = live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), message_id, prompt="p",
+                                       metadata={"wake": {"source": "job"}})
+        turn.event({"answer": "N"})
+        turn.event({"type": "tool_call", "data": {"call_id": "c1", "status": "pending"}})
+        turn.event({"sources": [{"title": "t", "text": "x" * 300}, "raw"]})
+        turn.event({"tool_calls": [{"call_id": "c1", "status": "completed"}]})
+        turn.event({"metadata": {"ignored": True}})
+        result = turn.finish(_outcome("Nope", model_id="m-2"), metadata={"continuation": True})
+        turn.event({"answer": "after the end"})
+
+        assert result is live_turn.MessageUpdateOutcome.UPDATED
+        journal = _journal(bg_db, message_id)
+        # The held "N" goes out once a tool call shows the turn is doing something.
+        assert [t for t, _ in journal] == ["answer", "tool_call", "source", "tool_calls", "end"]
+        assert journal[2][1]["source"][0]["text"] == "x" * 100 + "..."
+        assert journal[2][1]["source"][1] == "raw"
+
+    def test_a_row_it_cannot_reserve_leaves_the_append_to_the_caller(self, bg_db, conversation, quiet, monkeypatch):
+        monkeypatch.setattr(live_turn, "db_session", lambda: _Broken())
+        conversation_id, _ = conversation
+        assert live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), "m", prompt="p", metadata={}) is None
+        assert quiet["events"] == []
+
+    def test_a_save_that_fails_still_ends_the_turn(self, bg_db, conversation, quiet, monkeypatch):
+        import uuid
+
+        conversation_id, _ = conversation
+        message_id = str(uuid.uuid4())
+        turn = live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), message_id, prompt="p", metadata={})
+        monkeypatch.setattr(live_turn, "db_session", lambda: _Broken())
+        assert turn.finish(_outcome("x"), metadata={}) is live_turn.MessageUpdateOutcome.INVALID
+        turn.discard()
+        assert quiet["events"] == [("message.started", message_id), ("message.finished", message_id)]
+
+    def test_the_ticker_keeps_the_row_alive(self, bg_db, conversation, quiet, monkeypatch):
+        import uuid
+
+        monkeypatch.setattr(live_turn, "STOP_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(live_turn, "HEARTBEAT_SECONDS", 0)
+        beats = []
+        monkeypatch.setattr(
+            live_turn.ConversationsRepository, "heartbeat_message", lambda self, message_id: beats.append(message_id)
+        )
+        conversation_id, _ = conversation
+        message_id = str(uuid.uuid4())
+        turn = live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), message_id, prompt="p", metadata={})
+        deadline = time.monotonic() + 5
+        while len(beats) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        turn.discard()
+        assert len(beats) >= 3
+
+    def test_a_failed_publish_does_not_fail_the_turn(self, bg_db, conversation, monkeypatch):
+        def _boom(*args, **kwargs):
+            raise RuntimeError("redis down")
+
+        monkeypatch.setattr("docsgpt.events.publisher.publish_user_event", _boom)
+        monkeypatch.setattr(live_turn, "clear_stop", lambda message_id: None)
+        monkeypatch.setattr(live_turn, "stop_requested", lambda message_id: False)
+        import uuid
+
+        conversation_id, _ = conversation
+        turn = live_turn.LiveTurn.open(_conversation_row(bg_db, conversation_id), str(uuid.uuid4()), prompt="p",
+                                       metadata={})
+        assert turn is not None
+        turn.discard()
+
+
+def test_repositories_ignore_ids_that_are_not_uuids(pg_conn):
+    from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
+
+    assert BackgroundJobsRepository(pg_conn).list_for_message("nope", "nope", "u1") == []
+    assert ConversationsRepository(pg_conn).delete_in_flight_message("nope") is False

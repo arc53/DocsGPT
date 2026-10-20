@@ -814,6 +814,13 @@ export const tailInFlightMessage = createAsyncThunk<
       // ended silent or failed and took its message back out. Reload the
       // chat if it is still open, so the message does not linger.
       if (resp.status === 404) {
+        // A newer answer started in this chat meanwhile: it owns the status now.
+        const now = (getState() as RootState).conversation;
+        if (
+          now.conversationId !== conversationId ||
+          now.queries[now.queries.length - 1]?.messageId !== messageId
+        )
+          return;
         dispatch(conversationSlice.actions.setStatus('idle'));
         // Once per message: a reload that still lists it must not tail it again and again.
         if (

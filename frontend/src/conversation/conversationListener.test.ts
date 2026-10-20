@@ -23,6 +23,7 @@ import {
   conversationSlice,
   fetchAnswer,
   setConversation,
+  tailInFlightMessage,
 } from './conversationSlice';
 
 vi.mock('./conversationHandlers', async (importOriginal) => ({
@@ -424,6 +425,30 @@ describe('conversation listener — a continuation starts in the open chat', () 
     expect(state.status).toBe('loading');
     expect(state.queries).toHaveLength(1);
     expect(state.queries[0].prompt).toBe('new question');
+  });
+
+  it('leaves a newer answer alone when an old tail finds its message gone', async () => {
+    (conversationService.tailMessage as unknown as Mock).mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ status: 'not found' }),
+    });
+    const store = makeStore('conv-1');
+    store.dispatch(
+      setConversation([
+        { prompt: 'woken', messageId: 'msg-2', messageStatus: 'streaming' },
+        { prompt: 'new question', messageId: 'msg-3' },
+      ]),
+    );
+    await store.dispatch(
+      tailInFlightMessage({
+        messageId: 'msg-2',
+        index: 0,
+        conversationId: 'conv-1',
+      }),
+    );
+    expect(store.getState().conversation.status).toBe('loading');
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
   });
 
   it('leaves an answer the chat already shows alone', async () => {
