@@ -24,10 +24,12 @@ file peaked a worker at 10.3 GiB. :class:`TokenCounter` walks text longer than
 ``_WINDOW_CHARS`` window by window, and no ``encode``, ``encode_ordinary`` or
 ``decode_with_offsets`` call sees more than ``2 * _WINDOW_CHARS`` characters.
 Windows end where pre-tokenizers already break (after a newline, before a
-space), so counts of ordinary prose stay exact. In a document longer than one
-window, chunk boundaries after the first seam can shift by a few tokens,
-because each segment re-encodes from a piece boundary; every piece still stays
-within its budget.
+space), so prose counts stay exact for cl100k, WordPiece (mpnet) and
+granite-r2. A SentencePiece tokenizer that prepends ``▁`` to every input
+(bge-m3) adds one token at each newline seam, about 0.0015% at the default
+window. In a document longer than one window, chunk boundaries after the first
+seam can shift by a few tokens, because each segment re-encodes from a piece
+boundary; every piece still stays within its budget.
 """
 
 from __future__ import annotations
@@ -182,8 +184,10 @@ class TokenCounter:
     def count(self, text: str) -> int:
         """Number of tokens ``text`` occupies, counted window by window.
 
-        Prose windows end where the tokenizer breaks anyway, so the sum equals
-        a one-shot count. A hard cut through unbroken text can add a few
+        Prose windows end where the tokenizer breaks anyway, so for cl100k,
+        WordPiece and granite-r2 the sum equals a one-shot count. A
+        SentencePiece tokenizer that prepends ``▁`` to each input adds one
+        token per newline seam. A hard cut through unbroken text can add a few
         tokens per seam: inside a word longer than WordPiece's limit, one
         ``[UNK]`` becomes ordinary wordpieces on both sides.
 
@@ -511,8 +515,10 @@ def get_token_counter(embeddings_name: Optional[str] = None) -> TokenCounter:
 def count_tokens_windowed(text: str) -> int:
     """Count ``text`` in cl100k tokens, window by window.
 
-    For ingest's whole-file counts: the per-file ``token_count`` in
-    :mod:`docsgpt.parser.file.bulk` and the markdown parser's chunk check.
+    For ingest's counts: the per-file ``token_count`` in
+    :mod:`docsgpt.parser.file.bulk` and :func:`docsgpt.worker.remote_worker`,
+    the markdown parser's chunk check, and
+    :func:`docsgpt.utils.count_tokens_docs`.
     They always counted cl100k and still do, but one encode of a whole file
     is the per-character memory cost #3130 removes, so they go through
     :class:`TiktokenCounter`'s bounded windows instead.
