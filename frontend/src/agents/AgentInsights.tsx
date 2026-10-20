@@ -14,7 +14,7 @@ import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import { Agent } from './types';
 
 /**
- * An agent's Conversation insights: what the decision model estimated about
+ * An agent's Insights: what the decision model estimated about
  * its conversations, and the docs-gap report. The weekly docs-gaps
  * notification links here (`#docs-gaps`).
  */

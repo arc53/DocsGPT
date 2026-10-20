@@ -86,7 +86,7 @@ describe('AgentLogs', () => {
   });
 
   // Logs filters by the agent's labels and tags, and is the `#logs` target
-  // of a drill-down from its Conversation insights.
+  // of a drill-down from its Insights.
   it("hands the agent's analytics to Logs", async () => {
     await act(async () => {
       root.render(

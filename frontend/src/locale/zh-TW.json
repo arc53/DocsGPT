@@ -73,7 +73,7 @@
         "monitor_expired": "監控已過期",
         "schedule": "排程工作已完成",
         "default": "新回覆",
-        "docs_gaps": "每週文件缺口"
+        "docs_gaps": "每週文件缺口摘要"
       },
       "open": "開啟",
       "fallbackTitle": "你的助理有新消息"
@@ -659,16 +659,16 @@
         }
       },
       "insights": {
-        "heading": "對話洞察",
+        "heading": "洞察",
         "description": "由決策模型根據每段對話估算。每個數字都附有它最可能落入的範圍。",
         "learnMore": "了解更多",
         "coverage": "已標註 {{labelled}}/{{total}} 則回答",
-        "agentOff": "此代理已關閉對話洞察。",
+        "agentOff": "此代理已關閉洞察。",
         "agentOffLink": "在代理設定中開啟",
         "noTraffic": "此期間沒有對話。",
         "starting": "已開始標註",
         "startingDescription": "洞察會在每段對話結束幾分鐘後出現。最新的對話會最先標註。",
-        "loadError": "無法載入對話洞察。",
+        "loadError": "無法載入洞察。",
         "notEnough": "資料還不夠（目前 {{formatted}} 則）",
         "notEnoughShort": "資料還不夠",
         "notEnoughReplies": "回覆還不夠",
@@ -2672,7 +2672,7 @@
       "tabs": {
         "overview": "總覽",
         "logs": "日誌",
-        "insights": "對話洞察",
+        "insights": "洞察",
         "schedules": "排程"
       },
       "fallbackName": "未命名代理",
@@ -2739,7 +2739,7 @@
         "basics": "基本資訊",
         "knowledge": "知識與行為",
         "model": "模型",
-        "analytics": "分析"
+        "analytics": "洞察"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -2961,10 +2961,10 @@
         "stopNote_other": "如果你失去編輯權限，它們將停止執行。"
       },
       "analytics": {
-        "enable": "標註此代理的對話",
-        "enableDescription": "在背景估算回答是否有幫助、使用者在問什麼，以及文件哪裡不足。結果會顯示在此代理的日誌中。",
+        "enable": "收集洞察",
+        "enableDescription": "在背景讀取已結束的對話，估算回答是否有幫助以及文件哪裡不足。結果會顯示在「洞察」分頁和日誌中。",
         "learnMore": "了解更多",
-        "serverOff": "此伺服器已關閉分析，因此這些設定暫不生效。請聯絡管理員設定 DECISION_ANALYTICS_ENABLED=true。",
+        "serverOff": "此伺服器已關閉洞察，因此這些設定暫不生效。請聯絡管理員開啟。",
         "topics": "主題",
         "topicModes": {
           "auto": "來自來源",
@@ -2972,7 +2972,7 @@
           "off": "關閉"
         },
         "topicHints": {
-          "auto": "根據此代理來源中的資料夾產生，用於在分析中為問題分組。依主題分組仍屬實驗性功能。",
+          "auto": "根據此代理來源中的資料夾產生，用於在「洞察」分頁中為問題分組。依主題分組仍屬實驗性功能。",
           "custom": "你自己的清單。問題會依名稱與描述歸入其中。",
           "off": "問題不依主題分組。文件缺口仍可依頁面或來源分組。"
         },
@@ -3024,11 +3024,11 @@
         },
         "removeTag": {
           "title": "要移除「{{name}}」嗎？",
-          "description": "它過去的標註將不再顯示在分析中。重新新增此標籤會開始新的紀錄。",
+          "description": "它的結果將從洞察和日誌中消失。重新新增後會從頭開始。",
           "submit": "移除"
         },
-        "digest": "每週文件缺口通知",
-        "digestDescription": "每週一次，代理的擁有者會在應用程式內收到一則通知，列出主要的文件缺口及其變化。"
+        "digest": "每週文件缺口摘要",
+        "digestDescription": "每週一次，代理的擁有者會收到一則通知，列出主要的文件缺口。"
       }
     },
     "logs": {

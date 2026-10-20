@@ -46,7 +46,7 @@ import Analytics from './Analytics';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe('Analytics with conversation insights', () => {
+describe('Analytics with insights', () => {
   let container: HTMLDivElement;
   let root: Root;
 

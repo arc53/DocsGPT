@@ -27,7 +27,7 @@ KIND_HEADINGS: Dict[str, str] = {
     "trigger": "Webhook received",
     "approval": "Approval received",
     "schedule": "Scheduled task finished",
-    "docs_gaps": "Weekly docs gaps",
+    "docs_gaps": "Weekly docs-gap summary",
 }
 
 #: The push title when there is neither a known kind nor a title.

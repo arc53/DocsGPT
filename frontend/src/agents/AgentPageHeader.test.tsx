@@ -132,7 +132,7 @@ describe('AgentPageHeader sub-nav', () => {
     ).toBeNull();
   });
 
-  it('adds Conversation insights after Logs while the server labels conversations', () => {
+  it('adds Insights after Logs while the server labels conversations', () => {
     server.analytics = true;
     act(() => {
       root.render(

@@ -73,7 +73,7 @@
         "monitor_expired": "监控已过期",
         "schedule": "计划任务已完成",
         "default": "新回复",
-        "docs_gaps": "每周文档缺口"
+        "docs_gaps": "每周文档缺口摘要"
       },
       "open": "打开",
       "fallbackTitle": "你的助手有新消息"
@@ -659,16 +659,16 @@
         }
       },
       "insights": {
-        "heading": "对话洞察",
+        "heading": "洞察",
         "description": "由决策模型根据每段对话估算。每个数字都附有它最可能落入的范围。",
         "learnMore": "了解更多",
         "coverage": "已标注 {{labelled}}/{{total}} 条回答",
-        "agentOff": "此智能体已关闭对话洞察。",
+        "agentOff": "此智能体已关闭洞察。",
         "agentOffLink": "在智能体设置中开启",
         "noTraffic": "此期间没有对话。",
         "starting": "已开始标注",
         "startingDescription": "洞察会在每段对话结束几分钟后出现。最新的对话最先标注。",
-        "loadError": "无法加载对话洞察。",
+        "loadError": "无法加载洞察。",
         "notEnough": "数据还不够（目前 {{formatted}} 条）",
         "notEnoughShort": "数据还不够",
         "notEnoughReplies": "回复还不够",
@@ -2670,7 +2670,7 @@
       "tabs": {
         "overview": "概览",
         "logs": "日志",
-        "insights": "对话洞察",
+        "insights": "洞察",
         "schedules": "计划"
       },
       "fallbackName": "未命名智能体",
@@ -2737,7 +2737,7 @@
         "basics": "基本信息",
         "knowledge": "知识与行为",
         "model": "模型",
-        "analytics": "分析"
+        "analytics": "洞察"
       },
       "placeholders": {
         "agentName": "智能体名称",
@@ -2959,10 +2959,10 @@
         "stopNote_other": "如果你失去编辑权限，它们将停止运行。"
       },
       "analytics": {
-        "enable": "标注此智能体的对话",
-        "enableDescription": "在后台估算回答是否有帮助、用户在问什么，以及文档哪里不足。结果显示在此智能体的日志中。",
+        "enable": "收集洞察",
+        "enableDescription": "在后台读取已结束的对话，估算回答是否有帮助以及文档哪里不足。结果显示在“洞察”标签页和日志中。",
         "learnMore": "了解更多",
-        "serverOff": "此服务器已关闭分析，因此这些设置暂不生效。请让管理员设置 DECISION_ANALYTICS_ENABLED=true。",
+        "serverOff": "此服务器已关闭洞察，因此这些设置暂不生效。请让管理员开启。",
         "topics": "主题",
         "topicModes": {
           "auto": "来自来源",
@@ -2970,7 +2970,7 @@
           "off": "关闭"
         },
         "topicHints": {
-          "auto": "根据此智能体来源中的文件夹生成，用于在分析中为问题分组。按主题分组仍处于实验阶段。",
+          "auto": "根据此智能体来源中的文件夹生成，用于在“洞察”标签页中为问题分组。按主题分组仍处于实验阶段。",
           "custom": "你自己的列表。问题会根据名称和描述归入其中。",
           "off": "问题不按主题分组。文档缺口仍可按页面或来源分组。"
         },
@@ -3022,11 +3022,11 @@
         },
         "removeTag": {
           "title": "移除“{{name}}”？",
-          "description": "它过去的标注将不再显示在分析中。重新添加该标签会开始新的记录。",
+          "description": "它的结果将从洞察和日志中消失。重新添加后会从头开始。",
           "submit": "移除"
         },
-        "digest": "每周文档缺口通知",
-        "digestDescription": "每周一次，智能体的所有者会在应用内收到一条通知，列出主要的文档缺口及其变化。"
+        "digest": "每周文档缺口摘要",
+        "digestDescription": "每周一次，智能体的所有者会收到一条通知，列出主要的文档缺口。"
       }
     },
     "logs": {

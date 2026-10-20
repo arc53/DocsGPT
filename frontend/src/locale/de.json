@@ -74,7 +74,7 @@
         "monitor_expired": "Monitor abgelaufen",
         "schedule": "Geplante Aufgabe fertig",
         "default": "Neue Antwort",
-        "docs_gaps": "Wöchentliche Lücken in der Doku"
+        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken"
       },
       "open": "Öffnen",
       "fallbackTitle": "Dein Assistent hat Neuigkeiten"
@@ -661,16 +661,16 @@
         }
       },
       "insights": {
-        "heading": "Gesprächseinblicke",
+        "heading": "Einblicke",
         "description": "Vom Entscheidungsmodell aus jedem Gespräch geschätzt. Zu jeder Zahl gehört der Bereich, in dem sie am wahrscheinlichsten liegt.",
         "learnMore": "Mehr erfahren",
         "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
-        "agentOff": "Gesprächseinblicke sind für diesen Agenten ausgeschaltet.",
+        "agentOff": "Einblicke sind für diesen Agenten ausgeschaltet.",
         "agentOffLink": "In den Einstellungen des Agenten einschalten",
         "noTraffic": "Keine Gespräche in diesem Zeitraum.",
         "starting": "Die Auswertung hat begonnen",
         "startingDescription": "Einblicke erscheinen einige Minuten nach jedem Gespräch. Die neuesten werden zuerst ausgewertet.",
-        "loadError": "Die Gesprächseinblicke konnten nicht geladen werden.",
+        "loadError": "Die Einblicke konnten nicht geladen werden.",
         "notEnough": "Noch nicht genug Daten (bisher {{formatted}})",
         "notEnoughShort": "Noch nicht genug Daten",
         "notEnoughReplies": "Noch nicht genug Folgenachrichten",
@@ -2686,7 +2686,7 @@
       "tabs": {
         "overview": "Übersicht",
         "logs": "Protokolle",
-        "insights": "Gesprächseinblicke",
+        "insights": "Einblicke",
         "schedules": "Zeitpläne"
       },
       "fallbackName": "Unbenannter Agent",
@@ -2753,7 +2753,7 @@
         "basics": "Grundlagen",
         "knowledge": "Wissen und Verhalten",
         "model": "Modell",
-        "analytics": "Analytik"
+        "analytics": "Einblicke"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -2976,10 +2976,10 @@
         "stopNote_other": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff verlierst."
       },
       "analytics": {
-        "enable": "Gespräche dieses Agenten auswerten",
-        "enableDescription": "Schätzt im Hintergrund, ob Antworten geholfen haben, wonach Nutzer fragen und wo die Doku Lücken hat. Die Ergebnisse erscheinen in den Protokollen dieses Agenten.",
+        "enable": "Einblicke sammeln",
+        "enableDescription": "Liest abgeschlossene Gespräche im Hintergrund und schätzt, ob Antworten geholfen haben und wo die Doku Lücken hat. Die Ergebnisse erscheinen im Tab „Einblicke“ und in den Protokollen.",
         "learnMore": "Mehr erfahren",
-        "serverOff": "Die Analytik ist auf diesem Server ausgeschaltet, daher laufen diese Einstellungen noch nicht. Bitte deinen Administrator, DECISION_ANALYTICS_ENABLED=true zu setzen.",
+        "serverOff": "Einblicke sind auf diesem Server ausgeschaltet, daher wirken diese Einstellungen noch nicht. Bitte deinen Administrator, sie einzuschalten.",
         "topics": "Themen",
         "topicModes": {
           "auto": "Aus Quellen",
@@ -2987,7 +2987,7 @@
           "off": "Aus"
         },
         "topicHints": {
-          "auto": "Aus den Ordnern in den Quellen dieses Agenten gebildet und in der Analytik zum Gruppieren der Fragen genutzt. Die Gruppierung nach Thema ist experimentell.",
+          "auto": "Aus den Ordnern in den Quellen dieses Agenten gebildet und im Tab „Einblicke“ zum Gruppieren der Fragen genutzt. Die Gruppierung nach Thema ist experimentell.",
           "custom": "Deine eigene Liste. Fragen werden anhand von Name und Beschreibung zugeordnet.",
           "off": "Fragen werden nicht nach Thema gruppiert. Lücken in der Doku lassen sich weiterhin nach Seite oder Quelle gruppieren."
         },
@@ -3039,11 +3039,11 @@
         },
         "removeTag": {
           "title": "\"{{name}}\" entfernen?",
-          "description": "Seine bisherigen Labels erscheinen nicht mehr in der Analytik. Wird das Tag erneut hinzugefügt, beginnt eine neue Historie.",
+          "description": "Seine Ergebnisse verschwinden aus den Einblicken und Protokollen. Wird es erneut hinzugefügt, beginnt es von vorn.",
           "submit": "Entfernen"
         },
-        "digest": "Wöchentliche Benachrichtigung zu Lücken in der Doku",
-        "digestDescription": "Einmal pro Woche erhält der Eigentümer des Agenten eine Benachrichtigung in der App mit den größten Lücken in der Doku und wie sie sich verändert haben."
+        "digest": "Wöchentliche Übersicht der Doku-Lücken",
+        "digestDescription": "Einmal pro Woche erhält der Eigentümer des Agenten eine Benachrichtigung mit den größten Lücken in der Doku."
       }
     },
     "logs": {

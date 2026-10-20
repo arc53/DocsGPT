@@ -21,7 +21,7 @@ export type TimeFilter = (typeof TIME_FILTERS)[number][0];
 
 export const DEFAULT_TIME_FILTER: TimeFilter = 'last_30_days';
 
-/** The window select of Analytics and an agent's Conversation insights. */
+/** The window select of Analytics and an agent's Insights. */
 export default function TimeFilterSelect({
   value,
   onChange,

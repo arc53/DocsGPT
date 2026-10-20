@@ -212,7 +212,7 @@ describe('buildAgentSection tabs by role', () => {
     expect(keys(['pin', 'use', 'view_logs'])).toEqual(['logs', 'insights']);
   });
 
-  it('hides Conversation insights while the server labels no conversations', () => {
+  it('hides Insights while the server labels no conversations', () => {
     const visible = (analytics: boolean) =>
       getVisibleGroups(buildAgentSection('a1', 'Bot', false), {
         features: { analytics },

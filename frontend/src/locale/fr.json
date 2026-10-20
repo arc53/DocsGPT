@@ -75,7 +75,7 @@
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
         "default": "Nouvelle réponse",
-        "docs_gaps": "Lacunes de la doc de la semaine"
+        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"
@@ -679,16 +679,16 @@
         }
       },
       "insights": {
-        "heading": "Analyse des conversations",
+        "heading": "Analyses",
         "description": "Estimé par le modèle de décision à partir de chaque conversation. Chaque chiffre est accompagné de la fourchette où il se situe le plus probablement.",
         "learnMore": "En savoir plus",
         "coverage": "{{labelled}} réponses analysées sur {{total}}",
-        "agentOff": "L’aperçu des conversations est désactivé pour cet agent.",
-        "agentOffLink": "Activez-le dans les paramètres de l’agent",
+        "agentOff": "Les analyses sont désactivées pour cet agent.",
+        "agentOffLink": "Activez-les dans les paramètres de l’agent",
         "noTraffic": "Aucune conversation sur cette période.",
         "starting": "L’analyse a commencé",
         "startingDescription": "L’aperçu apparaît quelques minutes après chaque conversation. Les plus récentes sont analysées en premier.",
-        "loadError": "Impossible de charger l’aperçu des conversations.",
+        "loadError": "Impossible de charger les analyses.",
         "notEnough": "Pas encore assez de données ({{formatted}} pour l’instant)",
         "notEnoughShort": "Pas encore assez de données",
         "notEnoughReplies": "Pas encore assez de relances",
@@ -2760,7 +2760,7 @@
       "tabs": {
         "overview": "Aperçu",
         "logs": "Journaux",
-        "insights": "Analyse des conversations",
+        "insights": "Analyses",
         "schedules": "Planifications"
       },
       "fallbackName": "Agent sans titre",
@@ -2827,7 +2827,7 @@
         "basics": "Informations de base",
         "knowledge": "Connaissances et comportement",
         "model": "Modèle",
-        "analytics": "Statistiques"
+        "analytics": "Analyses"
       },
       "placeholders": {
         "agentName": "Nom de l’agent",
@@ -3055,10 +3055,10 @@
         "stopNote_many": "Ils cessent de s’exécuter si vous perdez l’accès en modification."
       },
       "analytics": {
-        "enable": "Analyser les conversations de cet agent",
-        "enableDescription": "Estime en arrière-plan si les réponses ont aidé, ce que demandent les utilisateurs et où la doc est insuffisante. Les résultats apparaissent dans les journaux de cet agent.",
+        "enable": "Générer des analyses",
+        "enableDescription": "Lit en arrière-plan les conversations terminées pour estimer si les réponses ont aidé et où la doc est insuffisante. Les résultats apparaissent dans l’onglet Analyses et dans les journaux.",
         "learnMore": "En savoir plus",
-        "serverOff": "Les statistiques sont désactivées sur ce serveur, ces paramètres ne s’appliquent donc pas encore. Demandez à votre administrateur de définir DECISION_ANALYTICS_ENABLED=true.",
+        "serverOff": "Les analyses sont désactivées sur ce serveur, ces paramètres sont donc encore sans effet. Demandez à votre administrateur de les activer.",
         "topics": "Sujets",
         "topicModes": {
           "auto": "Depuis les sources",
@@ -3066,7 +3066,7 @@
           "off": "Désactivés"
         },
         "topicHints": {
-          "auto": "Construits à partir des dossiers des sources de cet agent et utilisés pour regrouper les questions dans les statistiques. Le regroupement par sujet est expérimental.",
+          "auto": "Construits à partir des dossiers des sources de cet agent et utilisés pour regrouper les questions dans l’onglet Analyses. Le regroupement par sujet est expérimental.",
           "custom": "Votre propre liste. Les questions y sont classées selon le nom et la description.",
           "off": "Les questions ne sont pas regroupées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source."
         },
@@ -3118,11 +3118,11 @@
         },
         "removeTag": {
           "title": "Retirer « {{name}} » ?",
-          "description": "Ses étiquettes passées ne s’affichent plus dans les statistiques. Ajouter à nouveau l’étiquette démarre un nouvel historique.",
+          "description": "Ses résultats disparaissent des analyses et des journaux. L’ajouter à nouveau repart de zéro.",
           "submit": "Retirer"
         },
-        "digest": "Notification hebdomadaire des lacunes de la doc",
-        "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification dans l’application avec les principales lacunes de la doc et leur évolution."
+        "digest": "Synthèse hebdomadaire des lacunes de la doc",
+        "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification listant les principales lacunes de la doc."
       }
     },
     "logs": {

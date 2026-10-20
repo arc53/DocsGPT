@@ -383,8 +383,8 @@ const TAB_ACTIONS: Record<string, string> = {
  * its title is the agent's name and its paths carry the agent's id.
  *
  * `access` is the agent's record once loaded: each tab shows only when the
- * caller's role allows its page (Overview `view`, Logs and Conversation
- * insights `view_logs`, Schedules `manage_schedules`); Conversation insights
+ * caller's role allows its page (Overview `view`, Logs and Insights
+ * `view_logs`, Schedules `manage_schedules`); Insights
  * also only while the server labels conversations. Until the record arrives every tab shows,
  * and the route guard sends a caller who may not open a page back to the
  * list.

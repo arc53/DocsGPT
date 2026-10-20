@@ -28,7 +28,7 @@ vi.mock('../settings/insights/ConversationInsights', () => ({
   },
 }));
 vi.mock('../navigation/SectionPageHeader', () => ({
-  CurrentSectionHeader: () => <h1>Conversation insights</h1>,
+  CurrentSectionHeader: () => <h1>Insights</h1>,
 }));
 
 import AgentInsights from './AgentInsights';

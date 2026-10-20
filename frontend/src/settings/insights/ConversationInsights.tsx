@@ -78,14 +78,14 @@ type ConversationInsightsProps = {
   filterOption: string;
   onRetry: () => void;
   /**
-   * The whole page (an agent's Conversation insights), whose title already
+   * The whole page (an agent's Insights), whose title already
    * names it: the section opens with its description, not a heading.
    */
   standalone?: boolean;
 };
 
 /**
- * Conversation insights: what the decision model estimated about the
+ * Insights: what the decision model estimated about the
  * window's conversations, as rates with their ranges, then the docs-gap
  * report. A section of the account's Analytics, and an agent's own page. It
  * owns every off, empty and error message, so the panels and the report

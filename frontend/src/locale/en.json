@@ -74,7 +74,7 @@
         "monitor_expired": "Monitor expired",
         "schedule": "Scheduled task finished",
         "default": "New reply",
-        "docs_gaps": "Weekly docs gaps"
+        "docs_gaps": "Weekly docs-gap summary"
       },
       "open": "Open",
       "fallbackTitle": "Your assistant has an update"
@@ -661,16 +661,16 @@
         }
       },
       "insights": {
-        "heading": "Conversation insights",
+        "heading": "Insights",
         "description": "Estimated by the decision model from each conversation. Each figure comes with the range it most likely falls in.",
         "learnMore": "Learn more",
         "coverage": "{{labelled}} of {{total}} answers labelled",
-        "agentOff": "Conversation insights are off for this agent.",
+        "agentOff": "Insights are off for this agent.",
         "agentOffLink": "Turn them on in the agent's settings",
         "noTraffic": "No conversations in this period.",
         "starting": "Labelling has started",
         "startingDescription": "Insights appear a few minutes after each conversation. The newest are labelled first.",
-        "loadError": "Could not load conversation insights.",
+        "loadError": "Could not load insights.",
         "notEnough": "Not enough data yet ({{formatted}} so far)",
         "notEnoughShort": "Not enough data yet",
         "notEnoughReplies": "Not enough replies yet",
@@ -2686,7 +2686,7 @@
       "tabs": {
         "overview": "Overview",
         "logs": "Logs",
-        "insights": "Conversation insights",
+        "insights": "Insights",
         "schedules": "Schedules"
       },
       "fallbackName": "Untitled agent",
@@ -2753,7 +2753,7 @@
         "basics": "Basics",
         "knowledge": "Knowledge and behaviour",
         "model": "Model",
-        "analytics": "Analytics"
+        "analytics": "Insights"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -2976,10 +2976,10 @@
         "stopNote_other": "They stop running if you lose edit access."
       },
       "analytics": {
-        "enable": "Label this agent's conversations",
-        "enableDescription": "Estimates in the background whether answers helped, what users ask about and where the docs fall short. Results show in this agent's Logs.",
+        "enable": "Collect insights",
+        "enableDescription": "Reads finished conversations in the background to estimate whether answers helped and where the docs fall short. Results show on the Insights tab and in Logs.",
         "learnMore": "Learn more",
-        "serverOff": "Analytics are off on this server, so these settings don't run yet. Ask your administrator to set DECISION_ANALYTICS_ENABLED=true.",
+        "serverOff": "Insights are off on this server, so these settings have no effect yet. Ask your administrator to turn them on.",
         "topics": "Topics",
         "topicModes": {
           "auto": "From sources",
@@ -2987,7 +2987,7 @@
           "off": "Off"
         },
         "topicHints": {
-          "auto": "Built from the folders in this agent's sources and used to group questions in Analytics. Topic grouping is experimental.",
+          "auto": "Built from the folders in this agent's sources and used to group questions on the Insights tab. Topic grouping is experimental.",
           "custom": "Your own list. Questions are sorted into these by name and description.",
           "off": "Questions are not grouped by topic. Docs gaps can still be grouped by page or source."
         },
@@ -3039,11 +3039,11 @@
         },
         "removeTag": {
           "title": "Remove \"{{name}}\"?",
-          "description": "Its past labels stop showing in Analytics. Adding the tag again starts a new history.",
+          "description": "Its results disappear from Insights and Logs. Adding it again starts from scratch.",
           "submit": "Remove"
         },
-        "digest": "Weekly docs-gaps notification",
-        "digestDescription": "Once a week, the agent's owner gets an in-app notification with the top docs gaps and how they changed."
+        "digest": "Weekly docs-gap summary",
+        "digestDescription": "Once a week, the agent's owner gets a notification listing the top docs gaps."
       }
     },
     "logs": {
