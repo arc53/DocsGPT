@@ -79,6 +79,9 @@ def _run(
     continuation: dict | None = None,
     requested=None,
     clear=None,
+    agent_calls=None,
+    background=None,
+    stop_jobs=None,
 ):
     from docsgpt.api.answer.routes import base as base_mod
     from docsgpt.api.answer.routes.base import BaseAnswerResource
@@ -97,7 +100,10 @@ def _run(
         agent.gen_continuation.side_effect = gen
         if client_gone is not None:
             agent.client_disconnected = client_gone
-        with patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
+        agent._get_truncated_tool_calls.return_value = list(agent_calls or [])
+        with patch.object(base_mod, "bind_background_turn", return_value=background), patch(
+            "docsgpt.background.service.stop_turn_jobs", side_effect=stop_jobs
+        ), patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
             base_mod, "STREAM_STOP_POLL_SECONDS", 0.02
         ), patch.object(base_mod, "stop_requested", side_effect=requested or _requested), patch.object(
             base_mod, "clear_stop", side_effect=clear
@@ -320,6 +326,65 @@ class TestStopFromActivity:
     def test_no_stop_runs_to_the_end(self, mock_mongo_db, flask_app):
         _, out, _, _ = _run(flask_app, _chatty(chunks=20, gap=0.005), stop_after=None)
         assert len([line for line in out if '"type": "answer"' in line]) == 20
+
+
+HANDED_OFF = {"call_id": "c1", "tool_name": "artifact_generator", "status": "pending", "job_id": "j1"}
+
+
+def _background():
+    from docsgpt.background.context import BackgroundContext
+
+    return BackgroundContext(user_id="u", conversation_id=CONVERSATION_ID, origin_message_id=MESSAGE_ID)
+
+
+@pytest.mark.unit
+class TestStopWithBackgroundJobs:
+    def test_a_stopped_turn_keeps_the_calls_it_had_not_reported(self, mock_mongo_db, flask_app):
+        # The agent reports its calls only when its turn ends; a Stop cut it
+        # short, and the message lost its job card and the job's file.
+        service, _, _, _ = _run(flask_app, _chatty(), stop_after=0.2, agent_calls=[HANDED_OFF])
+        saved = service.finalize_message.call_args.kwargs["tool_calls"]
+        assert [c["job_id"] for c in saved] == ["j1"]
+
+    def test_a_stop_before_any_text_keeps_them_too(self, mock_mongo_db, flask_app):
+        service, _, _, _ = _run(flask_app, _thinking(), stop_after=0.2, agent_calls=[HANDED_OFF])
+        failed = [c for c in service.finalize_message.call_args_list if c.kwargs.get("status") == "failed"]
+        assert [c["job_id"] for c in failed[0].kwargs["tool_calls"]] == ["j1"]
+
+    def test_a_stop_cancels_the_turns_jobs_after_saving_it(self, mock_mongo_db, flask_app, monkeypatch):
+        # After: a job that already ended shows its outcome on the saved entry.
+        service = _service()
+        monkeypatch.setitem(globals(), "_service", lambda: service)
+        captured = []
+
+        def _record(conversation_id, message_id, user_id):
+            captured.append((conversation_id, message_id, user_id, service.finalize_message.called))
+
+        _run(flask_app, _chatty(), stop_after=0.2, background=_background(), stop_jobs=_record)
+        assert captured == [(CONVERSATION_ID, MESSAGE_ID, "u", True)]
+
+    def test_a_dropped_connection_leaves_the_jobs_running(self, mock_mongo_db, flask_app):
+        # A job is meant to outlive a closed tab.
+        gone = threading.Event()
+        calls = []
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"answer": f"c{i} "}
+
+        _run(flask_app, _gen, stop_after=None, client_gone=gone, background=_background(),
+             stop_jobs=lambda *a: calls.append(a), agent_calls=[HANDED_OFF])
+        assert calls == []
+
+    def test_a_failure_to_stop_the_jobs_still_ends_the_stream(self, mock_mongo_db, flask_app):
+        def _boom(*args):
+            raise RuntimeError("db down")
+
+        _, out, _, _ = _run(flask_app, _chatty(), stop_after=0.2, background=_background(), stop_jobs=_boom)
+        assert _frame_type(out[-1]) == "end"
 
 
 @pytest.mark.unit

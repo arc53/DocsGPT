@@ -26,6 +26,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from docsgpt.activity.flags import stop_requested
 from docsgpt.background import jobs, pool
 from docsgpt.background.context import BackgroundContext
 from docsgpt.background.results import running_payload
@@ -43,6 +44,9 @@ CONTROL_ARGS = ("background", "watch")
 
 #: How long a finished pool thread waits for the request thread to write the job row.
 _JOB_READY_TIMEOUT = 300.0
+
+#: How often the yield-window wait checks whether the turn was stopped.
+_STOP_POLL_SECONDS = 1.0
 
 #: Returned by a tool whose work a background job's poller took over (a
 #: detached sandbox run): the pool thread then has nothing left to finish.
@@ -321,10 +325,9 @@ def _await_or_hand_off(
     """Wait out the yield window, then hand the call off if it is still running."""
     yield_seconds = window_override
     window = context.yield_seconds if yield_seconds is None else max(0.0, float(yield_seconds))
-    try:
-        return Outcome(False, value=future.result(timeout=window))
-    except FuturesTimeout:
-        pass
+    done, value = _wait_unless_stopped(context, future, window)
+    if done:
+        return Outcome(False, value=value)
 
     if not _caps_allow(context):
         return Outcome(False, value=future.result())
@@ -371,6 +374,30 @@ def _await_or_hand_off(
         extra={"job_id": flight.job_id, "tool_name": spec.tool_name, "action_name": spec.action_name},
     )
     return Outcome(True, payload=payload, job=job)
+
+
+def _wait_unless_stopped(context: BackgroundContext, future: Any, window: float) -> Tuple[bool, Any]:
+    """Wait up to ``window`` for the call, giving up early once the user stopped the turn.
+
+    A Stop is only seen between streamed chunks, and a call in its yield window
+    streams nothing, so without this the Stop waited out the whole window. A
+    stopped turn hands the call off at once; its Stop then cancels the job.
+
+    Returns:
+        ``(True, value)`` when the call finished in time (its exception
+        propagates), else ``(False, None)``.
+    """
+    message_id = context.origin_message_id
+    deadline = time.monotonic() + window
+    while True:
+        remaining = deadline - time.monotonic()
+        step = min(remaining, _STOP_POLL_SECONDS) if message_id else remaining
+        try:
+            return True, future.result(timeout=max(0.0, step))
+        except FuturesTimeout:
+            pass
+        if remaining <= step or (message_id and stop_requested(message_id)):
+            return False, None
 
 
 def _watch_of(spec: CallSpec) -> Optional[dict]:

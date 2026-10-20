@@ -159,6 +159,43 @@ def _client_gone(agent: Any) -> bool:
     event = getattr(agent, "client_disconnected", None)
     return isinstance(event, threading.Event) and event.is_set()
 
+def _turn_tool_calls(agent: Any, reported: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The turn's tool calls, with those the agent made but had not reported yet.
+
+    An agent reports its calls once, when its turn ends. A stream cut short by
+    a Stop or a dropped connection never reads that line, so without this the
+    message lost its calls, among them a handed-off call's job card and the
+    file the job made.
+
+    Args:
+        agent: The turn's agent.
+        reported: The calls the stream has read so far.
+
+    Returns:
+        ``reported`` merged with the agent's calls.
+    """
+    try:
+        made = agent._get_truncated_tool_calls()
+    except Exception:
+        logger.debug("reading the agent's tool calls failed", exc_info=True)
+        return reported
+    if not isinstance(made, list) or not made:
+        return reported
+    return merge_tool_calls(reported, made)
+
+
+def _stop_background_jobs(context: Any) -> None:
+    """Cancel the jobs a stopped turn handed off, so none of them resumes the chat. Never raises."""
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    from docsgpt.background.service import stop_turn_jobs
+
+    try:
+        stop_turn_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("stopping the background jobs of message %s failed", context.origin_message_id)
+
+
 def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
     """Keep the models that answered on the message, once a fallback answered.
 
@@ -941,7 +978,7 @@ class BaseAnswerResource:
         # A slow tool call in this turn may be handed off to a background job.
         # A resumed round with no row of its own (the first /v1 pause finalized
         # it) has nothing to report back to: its jobs are poll-only.
-        bind_background_turn(
+        background_turn = bind_background_turn(
             getattr(agent, "tool_executor", None),
             conversation_id=conversation_id,
             message_id=reserved_message_id,
@@ -1710,6 +1747,12 @@ class BaseAnswerResource:
                 journal_writer.flush()
                 journal_writer.close()
             response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
+            tool_calls = _turn_tool_calls(agent, tool_calls)
+            # The chat's own Stop stores the request and then closes the
+            # stream, so a close can arrive before the ticker has seen it.
+            stopped_by_user = isinstance(stream_exit, StreamStopped) or (
+                reserved_message_id is not None and stop_requested(reserved_message_id)
+            )
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -1854,12 +1897,8 @@ class BaseAnswerResource:
                         # reconnecting client surfaces the same failure
                         # the UI would show on a live error. A Stop says
                         # so: its code keeps the chat out of the failed ones
-                        # the sidebar marks. The chat's own Stop stores the
-                        # request and then closes the stream, so a close can
-                        # arrive before the ticker has seen it.
-                        stopped = isinstance(stream_exit, StreamStopped) or stop_requested(
-                            reserved_message_id
-                        )
+                        # the sidebar marks.
+                        stopped = stopped_by_user
                         failure_metadata = dict(query_metadata or {})
                         if stopped:
                             failure_metadata["error"] = "Stopped by its user before any response was produced."
@@ -1911,12 +1950,14 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if stopped_by_user:
+                # After the message is saved, so a job that already ended
+                # can show its outcome on the message's entry.
+                _stop_background_jobs(background_turn)
             # A Stop is the user's own end of the turn: it keeps its Logs
             # entry, as a turn that runs out or fails does. A dropped
             # connection writes none.
-            if not turn_logged and reserved_message_id is not None and (
-                isinstance(stream_exit, StreamStopped) or stop_requested(reserved_message_id)
-            ):
+            if not turn_logged and reserved_message_id is not None and stopped_by_user:
                 self._persist_turn_log(
                     decoded_token=decoded_token,
                     user_api_key=user_api_key,

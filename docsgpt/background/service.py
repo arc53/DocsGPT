@@ -125,3 +125,40 @@ def cancel_job(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         enqueue_device_poll(str(row["id"]), 0)
     publish_job_updated(row)
     return row
+
+
+def stop_turn_jobs(conversation_id: str, message_id: str, user_id: str) -> int:
+    """Stop the jobs a turn handed off, because its user pressed Stop.
+
+    A Stop means the user does not want the turn to go on, so none of its jobs
+    may resume the conversation. A running job is cancelled (``cancel_job``):
+    it ends ``cancelled``, keeps its result for the job card, and wakes no
+    one. A job that already finished has its pending delivery withdrawn, and
+    its outcome is shown on the stopped message's entry, which did not exist
+    yet when the job ended. A dropped connection does not come here: a job
+    is meant to outlive a closed tab.
+
+    Args:
+        conversation_id: The turn's conversation.
+        message_id: The stopped turn's message.
+        user_id: Its owner.
+
+    Returns:
+        How many jobs the turn had.
+    """
+    from docsgpt.background.jobs import patch_origin_entry
+
+    with db_session() as conn:
+        rows = BackgroundJobsRepository(conn).list_for_message(conversation_id, message_id, user_id)
+    for row in rows:
+        job_id = str(row["id"])
+        if row.get("status") == "working":
+            row = cancel_job(job_id, user_id) or row
+        if row.get("status") == "working":
+            continue
+        # It finished before the cancel reached it: take back the wake it queued.
+        with db_session() as conn:
+            if BackgroundJobsRepository(conn).claim_delivery(job_id, "suppressed") is not None:
+                ConversationWakesRepository(conn).supersede_for_ref("job", job_id)
+            patch_origin_entry(conn, row)
+    return len(rows)
