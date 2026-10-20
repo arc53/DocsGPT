@@ -4,6 +4,7 @@ import activityReducer, {
   activityListenerMiddleware,
 } from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import { MAX_TAGS, MAX_TOPICS } from './agents/analyticsConfig';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
 import connectorsReducer from './connectors/connectorsSlice';
@@ -69,6 +70,8 @@ const preloadedState: { preference: Preference } = {
     authRequired: false,
     attachmentBudgetShare: null,
     analyticsEnabled: false,
+    analyticsMaxTopics: MAX_TOPICS,
+    analyticsMaxTags: MAX_TAGS,
   },
 };
 const store = configureStore({

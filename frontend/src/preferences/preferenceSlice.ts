@@ -5,6 +5,7 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import { MAX_TAGS, MAX_TOPICS } from '../agents/analyticsConfig';
 import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
@@ -72,6 +73,11 @@ export interface Preference {
   // The decision model may label conversations (/api/config
   // ``decision_analytics_enabled``); off until the config loads.
   analyticsEnabled: boolean;
+  // The agent editor's topic and tag limits (/api/config
+  // ``analytics_max_topics`` / ``analytics_max_tags``); the server's
+  // defaults until the config loads.
+  analyticsMaxTopics: number;
+  analyticsMaxTags: number;
 }
 
 const initialState: Preference = {
@@ -107,6 +113,8 @@ const initialState: Preference = {
   authRequired: false,
   attachmentBudgetShare: null,
   analyticsEnabled: false,
+  analyticsMaxTopics: MAX_TOPICS,
+  analyticsMaxTags: MAX_TAGS,
 };
 
 export const prefSlice = createSlice({
@@ -283,8 +291,17 @@ export const prefSlice = createSlice({
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
     },
-    setAnalyticsEnabled: (state, action: PayloadAction<boolean>) => {
-      state.analyticsEnabled = action.payload;
+    setAnalyticsAvailability: (
+      state,
+      action: PayloadAction<{
+        enabled: boolean;
+        maxTopics: number;
+        maxTags: number;
+      }>,
+    ) => {
+      state.analyticsEnabled = action.payload.enabled;
+      state.analyticsMaxTopics = action.payload.maxTopics;
+      state.analyticsMaxTags = action.payload.maxTags;
     },
   },
 });
@@ -320,7 +337,7 @@ export const {
   setSpeechAvailability,
   setAuthRequired,
   setAttachmentBudgetShare,
-  setAnalyticsEnabled,
+  setAnalyticsAvailability,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -480,3 +497,7 @@ export const selectAttachmentBudgetShare = (state: RootState) =>
   state.preference.attachmentBudgetShare;
 export const selectAnalyticsEnabled = (state: RootState) =>
   state.preference.analyticsEnabled;
+export const selectAnalyticsMaxTopics = (state: RootState) =>
+  state.preference.analyticsMaxTopics;
+export const selectAnalyticsMaxTags = (state: RootState) =>
+  state.preference.analyticsMaxTags;

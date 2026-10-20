@@ -6,7 +6,13 @@ const mockDispatch = vi.fn();
 vi.mock('react-redux', () => ({
   useDispatch: () => mockDispatch,
   useSelector: (selector: { name?: string }) =>
-    selector.name === 'selectToken' ? 'token' : [],
+    ({
+      selectToken: 'token',
+      // The server's switch and limits, as /api/config left them.
+      selectAnalyticsEnabled: true,
+      selectAnalyticsMaxTopics: 15,
+      selectAnalyticsMaxTags: 5,
+    })[selector.name ?? ''] ?? [],
 }));
 
 const mockT = (key: string) => key;
@@ -102,8 +108,6 @@ vi.mock('../../api/services/userService', () => ({
           },
         },
       }),
-    getConfig: () =>
-      ok({ decision_analytics_enabled: true, analytics_max_tags: 5 }),
     updateAgent: (...a: unknown[]) => updateAgent(...a),
     updateWorkflow: (...a: unknown[]) => updateWorkflow(...a),
     getUserTools: () => ok({ tools: [] }),

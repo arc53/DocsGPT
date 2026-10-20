@@ -12,10 +12,14 @@ import reducer, {
   setConversationsHead,
   setConversationsLoading,
   prefListenerMiddleware,
+  selectAnalyticsEnabled,
+  selectAnalyticsMaxTags,
+  selectAnalyticsMaxTopics,
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
   selectTtsAvailable,
+  setAnalyticsAvailability,
   setAuthRequired,
   setRoles,
   setSourceDocs,
@@ -217,5 +221,31 @@ describe('text-to-speech availability', () => {
         setSpeechAvailability({ tts: false, stt: true }),
       ]),
     ).toBe(false);
+  });
+});
+
+// FX-9: /api/config is read once, at start (useDataInitializer); the flag
+// and the editor's limits come from here.
+describe('insights availability', () => {
+  const root = (preference: ReturnType<typeof baseState>) =>
+    ({ preference }) as unknown as RootState;
+
+  it('is off, with the default limits, until /api/config loads', () => {
+    const state = root(baseState());
+    expect(selectAnalyticsEnabled(state)).toBe(false);
+    expect(selectAnalyticsMaxTopics(state)).toBe(15);
+    expect(selectAnalyticsMaxTags(state)).toBe(20);
+  });
+
+  it("keeps the server's switch and limits", () => {
+    const state = root(
+      reducer(
+        baseState(),
+        setAnalyticsAvailability({ enabled: true, maxTopics: 8, maxTags: 0 }),
+      ),
+    );
+    expect(selectAnalyticsEnabled(state)).toBe(true);
+    expect(selectAnalyticsMaxTopics(state)).toBe(8);
+    expect(selectAnalyticsMaxTags(state)).toBe(0);
   });
 });

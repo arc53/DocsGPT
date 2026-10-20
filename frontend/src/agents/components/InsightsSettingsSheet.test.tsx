@@ -7,8 +7,17 @@ import type { Agent } from '../types';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+// The server's switch and limits, as /api/config left them in the store.
+const store = {
+  preference: {
+    token: 'token',
+    analyticsEnabled: true,
+    analyticsMaxTopics: 15,
+    analyticsMaxTags: 3,
+  },
+};
 vi.mock('react-redux', () => ({
-  useSelector: () => 'token',
+  useSelector: (selector: (state: unknown) => unknown) => selector(store),
   useDispatch: () => vi.fn(),
 }));
 
@@ -63,14 +72,6 @@ describe('InsightsSettingsSheet', () => {
         }),
     });
     service.getConfig.mockReset();
-    service.getConfig.mockResolvedValue({
-      json: () =>
-        Promise.resolve({
-          decision_analytics_enabled: true,
-          analytics_max_topics: 15,
-          analytics_max_tags: 3,
-        }),
-    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);

@@ -20,12 +20,13 @@ import {
   setConversations,
   setConversationsLoading,
   setPrompts,
-  setAnalyticsEnabled,
+  setAnalyticsAvailability,
   setAttachmentBudgetShare,
   setAuthRequired,
   setSourceDocs,
   setSpeechAvailability,
 } from '../preferences/preferenceSlice';
+import { analyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import type { AppDispatch } from '../store';
 
 /**
@@ -37,7 +38,7 @@ import type { AppDispatch } from '../store';
  * - Fetching and setting up prompts
  * - Fetching and setting up conversations
  * - Reading which speech features the server has switched on, and whether
- *   conversation insights are
+ *   conversation insights are, with the insights editor's limits
  *
  * @param isAuthLoading -
  */
@@ -61,9 +62,7 @@ export default function useDataInitializer(isAuthLoading: boolean) {
         dispatch(setAuthRequired(config?.requires_auth === true));
         // A backend from before connectors has no flag: hide the page.
         dispatch(setConnectorsEnabled(config?.connectors_enabled === true));
-        dispatch(
-          setAnalyticsEnabled(config?.decision_analytics_enabled === true),
-        );
+        dispatch(setAnalyticsAvailability(analyticsAvailability(config)));
         const share = Number(config?.attachment_budget_share);
         dispatch(
           setAttachmentBudgetShare(

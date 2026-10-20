@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
 
-import userService from '../../api/services/userService';
 import { MAX_TAGS, MAX_TOPICS } from '../../agents/analyticsConfig';
+import {
+  selectAnalyticsEnabled,
+  selectAnalyticsMaxTags,
+  selectAnalyticsMaxTopics,
+} from '../../preferences/preferenceSlice';
 
 /**
  * Whether the decision model may label conversations on this server, and the
@@ -11,12 +15,6 @@ export type AnalyticsAvailability = {
   enabled: boolean;
   maxTopics: number;
   maxTags: number;
-};
-
-export const NO_ANALYTICS: AnalyticsAvailability = {
-  enabled: false,
-  maxTopics: MAX_TOPICS,
-  maxTags: MAX_TAGS,
 };
 
 // The server allows ANALYTICS_MAX_TAGS=0 (tags off), but never fewer than 2 topics.
@@ -36,29 +34,14 @@ export function analyticsAvailability(config: unknown): AnalyticsAvailability {
 }
 
 /**
- * `AnalyticsAvailability` for this server, read once per mount; off (and the
- * default limits) until /api/config answers, and if it fails.
+ * `AnalyticsAvailability` for this server, from the store, which reads
+ * /api/config once at start (`useDataInitializer`): off, with the default
+ * limits, until the config loads, and if it fails.
  */
-export function useAnalyticsAvailability(): AnalyticsAvailability & {
-  loaded: boolean;
-} {
-  const [state, setState] = useState({ ...NO_ANALYTICS, loaded: false });
-  useEffect(() => {
-    let cancelled = false;
-    // Started inside the chain, so a missing config reads as off.
-    Promise.resolve()
-      .then(() => userService.getConfig())
-      .then((response: Response) => response.json())
-      .then((config: unknown) => {
-        if (!cancelled)
-          setState({ ...analyticsAvailability(config), loaded: true });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ ...NO_ANALYTICS, loaded: true });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return state;
+export function useAnalyticsAvailability(): AnalyticsAvailability {
+  return {
+    enabled: useSelector(selectAnalyticsEnabled),
+    maxTopics: useSelector(selectAnalyticsMaxTopics),
+    maxTags: useSelector(selectAnalyticsMaxTags),
+  };
 }
