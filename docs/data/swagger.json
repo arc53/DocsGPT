@@ -4018,7 +4018,7 @@
     },
     "/api/get_conversation_insights": {
       "post": {
-        "description": "Conversation insights from the decision model's labels: per label and option the expected count and its rate with a 95% interval widened by the label's calibration error, each label's tier, the same per time bucket, label coverage and the language mix. answer_status rates are over requests (not over greetings). 'available' is the operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' (from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' (still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill).",
+        "description": "Insights from the decision model's labels: per label and option the expected count and its rate with a 95% interval widened by the label's calibration error, each label's tier, the same per time bucket, label coverage and the language mix. answer_status rates are over requests (not over greetings). 'available' is the operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' (from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' (still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill).",
         "operationId": "post_get_conversation_insights",
         "parameters": [
           {

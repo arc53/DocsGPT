@@ -1,7 +1,7 @@
 ---
 title: The Decision Model
 description: The small model some DocsGPT features ask typed questions about a message or a chunk, where it runs (the API process, the opt-in decider, a Mac's GPU, vLLM), and why it downloads nothing until a feature is turned on.
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-21
 ---
 
 # The Decision Model
@@ -44,7 +44,7 @@ Each feature has its own switch, so you can turn them on one at a time:
 | --- | --- | --- |
 | `DECISION_INJECTION_ENABLED` | `false` | Prompt-injection scoring: agents' and the floor's `injection_model` guardrail controls (Admin → Guardrails), chat attachments once uploaded, and MCP tool descriptions while Admin → Guardrails warns on them |
 | `DECISION_RELEVANCE_ENABLED` | `false` | Relevance of retrieved chunks, for the sources whose **Relevance** setting is on (Reorder, or Reorder and filter), or the admin's [defaults for new sources](/Sources/Per-source-configuration#defaults-for-new-sources) |
-| `DECISION_ANALYTICS_ENABLED` | `false` | Labelling stored conversations in the background for [conversation insights and docs gaps](/Using/analytics-and-logs#conversation-insights): conversations without an agent, and those of every agent whose **Label this agent's conversations** is on (the default) |
+| `DECISION_ANALYTICS_ENABLED` | `false` | Labelling stored conversations in the background for [Insights and docs gaps](/Using/analytics-and-logs#conversation-insights): conversations without an agent, and those of every agent whose **Collect insights** is on (the default) |
 
 The injection check is described in [Agent Guardrails](/Agents/guardrails#injection_model--prompt-injection-model), reviewing a source's flagged chunks in [Per-Source Configuration](/Sources/Per-source-configuration#reviewing-flagged-chunks), relevance in [Per-Source Configuration](/Sources/Per-source-configuration#relevance), and the labels in [Analytics and Logs](/Using/analytics-and-logs#conversation-insights). Each is one switch, not a mode: there is no `monitor` or `auto` for it. Neither an agent nor a source can turn the model on by itself: while a switch is `false`, its settings do nothing and the UI hides them or marks them unavailable. While any is `true`, the API (or the [decider](#the-decider)) loads the model when it starts, so the first call does not fall back while it loads.
 
@@ -63,7 +63,7 @@ Admin → Guardrails and Admin → Defaults show the measured figure for your se
 
 ### Conversation analytics
 
-`DECISION_ANALYTICS_ENABLED=true` lets the model label stored conversations for [conversation insights and docs gaps](/Using/analytics-and-logs#conversation-insights). Which agents are labelled, and with which topics and tags, is each agent's own setting; the `ANALYTICS_*` settings in the [Settings Reference](/Deploying/Settings-Reference#conversation-analytics) only tune the sweep and never appear in the UI.
+`DECISION_ANALYTICS_ENABLED=true` lets the model label stored conversations for [Insights and docs gaps](/Using/analytics-and-logs#conversation-insights). Which agents are labelled, and with which topics and tags, is each agent's own [insights settings](/Using/analytics-and-logs#analytics-settings-for-an-agent); the `ANALYTICS_*` settings in the [Settings Reference](/Deploying/Settings-Reference#conversation-analytics) only tune the sweep and never appear in the UI.
 
 Nothing runs in the request path. A Celery beat task, `analytics-sweep`, runs every 5 minutes on the worker's `analytics` queue: it reads finished messages, builds the states and writes the labels, and sends its model calls where the worker's go (the API process, the decider or the decision server) at background priority. The worker never loads the model. See [Background Jobs](/Deploying/Background-Jobs#the-analytics-queue) for the queue and the backfill command.
 

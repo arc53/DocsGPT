@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-21
 ---
 
 import { Callout } from 'nextra/components'
@@ -194,7 +194,7 @@ Migration `0055_content_scores` adds the `content_scores` table (cached prompt-i
 
 Migration `0057_conversation_labels` adds the `conversation_labels` table and an index on `conversation_messages (timestamp)`. The index is built `CONCURRENTLY`, so chat keeps writing while it builds, which can take a while on a large table. Downgrading below the migration drops both.
 
-[Conversation insights](/Using/analytics-and-logs#conversation-insights) are off until you set `DECISION_ANALYTICS_ENABLED=true`. The labelling runs on a new Celery queue, `analytics`. The shipped Compose files and Kubernetes manifest now list it; pull them along with the code. A worker you start with your own `-Q` must add it before you turn analytics on, or nothing is labelled:
+[Insights](/Using/analytics-and-logs#conversation-insights) are off until you set `DECISION_ANALYTICS_ENABLED=true`. The labelling runs on a new Celery queue, `analytics`. The shipped Compose files and Kubernetes manifest now list it; pull them along with the code. A worker you start with your own `-Q` must add it before you turn analytics on, or nothing is labelled:
 
 ```diff
 - celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings

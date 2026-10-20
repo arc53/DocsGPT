@@ -925,7 +925,7 @@ class GetConversationInsights(Resource):
     @api.expect(get_conversation_insights_model)
     @api.doc(
         description=(
-            "Conversation insights from the decision model's labels: per label and option the "
+            "Insights from the decision model's labels: per label and option the "
             "expected count and its rate with a 95% interval widened by the label's calibration "
             "error, each label's tier, the same per time bucket, label coverage and the language "
             "mix. answer_status rates are over requests (not over greetings). 'available' is the "
