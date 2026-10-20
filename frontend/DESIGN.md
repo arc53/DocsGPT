@@ -84,7 +84,9 @@ so the charts use the same colours as the rest of the app in both themes.
 A single series uses `chart-1`, the brand colour. When a series has a
 meaning, use the token for that meaning, not the next one in order:
 failed tool calls use `destructive`, succeeded ones `success`, pending
-ones `warning`. Series with no meaning (models, agents, sources) take
+ones `warning`. A series that is neither good nor bad is `muted-foreground`,
+not a status hue: Sentiment's Neutral and Answer status' "Said it didn't
+know" (declining when the docs have nothing is no failure). Series with no meaning (models, agents, sources) take
 `chart-1` to `chart-5` in order. When there are more than five, the four
 largest keep `chart-1` to `chart-4` and the rest are summed into one
 "Other" series in `chart-5`, so no colour repeats (`settings/foldSeries.ts`).
@@ -276,8 +278,8 @@ Patterns:
   the admin Audit log toolbar, whose CSV / NDJSON exports are `outline field
 pill`), and a field that takes a pill header button's place (AgentsList's
   new-folder field). Modal footers (`ModalActions`) stay `lg pill`.
-- Buttons on the agent pages (Overview, Logs, Schedules, the workflow builder's
-  toolbar): see PATTERNS.md › Agent pages.
+- Buttons on the agent pages (Overview, Schedules, Analytics, Insights, Logs, the
+  workflow builder's toolbar): see PATTERNS.md › Agent pages.
 - Rows in the navigation sidebar (`hover:bg-sidebar-accent … pl-3 gap-2.5
 rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   weight, `bg-sidebar-accent` on hover and while `aria-current="page"`. Use it
@@ -308,8 +310,10 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   setting `aria-current="page"`), in a `<nav>`: the same recipe and 36px,
   edge to edge, `-mb-px` laying the underline over the row's baseline. Never
   Radix Tabs for routes. Its one use is `agents/AgentPageHeader.tsx`, the
-  workflow builder's fixed toolbar (Overview / Logs / Schedules, no tabs until
-  the workflow has an id); the agent section pages switch with the section
+  workflow builder's fixed toolbar: the agent sidebar's items from
+  `buildAgentSection`, flat and in its order (Overview / Schedules / Analytics /
+  Insights / Logs, each as the role and the server's flags allow), no tabs until
+  the workflow has an id; the agent section pages switch with the section
   sidebar (the phone menu below `lg`) and the agent tile's ⋯ also opens Logs.
   Panels unmount when hidden, except one whose state is costly to rebuild
   (the graph source view's laid-out canvas and zoom): that `TabsContent`
@@ -399,7 +403,10 @@ Recipes by role:
   click navigates (a draft agent is not). The Add tool picker tiles are
   choices: `outline interactive lg` with `asChild` around a `<button>`.
 - Chart panels are `subtle lg` with fixed heights passed as layout; a chart
-  panel inside a modal is `outline` (the modal is already `bg-card`).
+  panel inside a modal is `outline` (the modal is already `bg-card`). On
+  Analytics and Insights every one is `settings/insights/ChartPanel` (title,
+  `actions`, `loading`, `error` with `onRetry`, `empty`; see PATTERNS.md ›
+  Monitoring pages).
 - Form sections (the agent form's panels): see PATTERNS.md › Agent pages.
 - Row boxes inside a form or panel (a guardrail check, the schedule's
   timezone box) are `padding="sm"`, in the panel
@@ -500,7 +507,9 @@ A title with controls beside it (Add, a filter Select, Import spec) passes
 them as `actions`, never a hand-rolled `flex justify-between` row around the
 header: the row centres the title on the buttons and wraps them under it on
 a phone (`flex-wrap items-center gap-x-4 gap-y-2`). Panel and chart titles
-are `size="xs"` with `as="h3"`; a title row that also holds a legend or a
+are `size="xs"`, `as="h3"` under a section heading and `as="h2"` for a panel
+straight under the page's title (`ChartPanel` on Analytics and Insights, and
+Insights' share-bar panels); a title row that also holds a legend or a
 "Resets" line keeps its wrapper and swaps only the heading. Disclosure
 headers (`CollapsibleTrigger look="section"`) and the Agents breadcrumb are not
 SectionHeaders.
@@ -541,7 +550,11 @@ identifiers: token scopes, workflow state keys) and `tabular-nums` (stat
 chips: durations, counts); no disable needed. HTTP method pills take their variant from
 `getMethodBadgeVariant` (`utils/httpMethodColors.ts`): GET `success`, POST
 `info`, PUT `warning`, DELETE `destructive`, PATCH `default`, anything else
-`neutral`.
+`neutral`. Logs' label chips (`settings/LabelChips`) are outcome badges, so text
+only, by meaning: `warning` where the answer needs attention (Docs gap, Not
+fully answered, Asked for a person), `destructive` where the user is upset
+(Asked again or pushed back, Negative sentiment, Frustrated), `neutral` for the
+owner's tags and the "+N" overflow (see PATTERNS.md › Monitoring pages).
 
 A removable chip (a filter chip, a picked source) is `<Badge onRemove
 removeLabel>`: a named X button (12px X in a 16px round hover well, a 24px
@@ -618,11 +631,12 @@ the window edge and scrolls; one that can grow long (the landing page's model
 picker) passes `SelectContent capped`, which also stops it at CommandList's
 `max-h-75`. A `max-h-*` in `className` replaces the window limit rather than
 adding to it. A list is as wide as its trigger; a page filter pill whose
-options run longer than its value (Logs, Guardrail activity, the analytics
-window) passes `SelectContent fit`, which sizes the list to its longest option
-(never narrower than the trigger, never wider than the window) so each option
-stays one line, and gives its trigger a `min-w-[…]`, not a fixed `w-[…]`, so
-a long value or a longer language grows it instead of cutting it.
+options run longer than its value (Logs' level, event and label filters,
+Guardrail activity, the analytics window, Token usage's Group by) passes
+`SelectContent fit`, which sizes the list to its longest option (never
+narrower than the trigger, never wider than the window) so each option stays
+on one line. Its trigger takes a `min-w-[…]`, not a fixed `w-[…]`, so a long
+value or a longer language grows it instead of cutting it.
 
 ### Textarea (`ui/textarea.tsx`)
 
@@ -924,7 +938,9 @@ its Retry follows the locale too. Never a bare `text-destructive` paragraph.
 
 `value` 0 to 100, `variant`: `default`, `success`, `warning`,
 `destructive`, `info`; `size`: `sm`, `default`. Replaces the
-width-percent divs in quota, indexing and guardrail views.
+width-percent divs in quota, indexing and guardrail views, and is the track
+of Insights' share bars (`settings/insights/ShareBars`: label, Progress, whole
+percent, one `sr-only` run per row) and of its Analyzing state.
 
 ### Avatar (`ui/avatar.tsx`)
 
@@ -1091,7 +1107,8 @@ variant="destructive"` above the form, not text in or beside the button.
 Agents, sources, tools and prompts come to the UI with `access` and
 `allowed_actions`. Gate every control with `can(item, action)`
 (`utils/accessUtils`; `canAgent` in `agents/agentAccess.ts` for agents, which
-also refuses Logs, Schedules and Pin on a draft), never on `ownership`,
+also refuses the Monitoring pages (`view_logs`: Analytics, Insights, Logs),
+Schedules and Pin on a draft), never on `ownership`,
 `team_access` or the user id.
 
 - An action the role doesn't allow is not rendered. A menu builds its
@@ -1761,7 +1778,7 @@ fade-in slide-in-from-bottom-1.5 duration-260 ease-out`, both with
 
 Phone / desktop is `lg` (1024px) in classes and `isDesktop` in JS
 (`useMediaQuery`); `sm` and `md` only reflow content. Wide two-column layouts
-that need more room (Analytics' chart rows) go two-up at `xl`. No custom
+that need more room (the Analytics and Insights chart rows) go two-up at `xl`. No custom
 breakpoints (`min-[…]`, `max-[…]`, `[@media(…)]`; enforced). The workflow builder needs `lg`; below it `MobileBlocker`
 shows.
 
