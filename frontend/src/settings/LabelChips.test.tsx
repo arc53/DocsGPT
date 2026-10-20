@@ -76,25 +76,49 @@ describe('LabelChips', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('colours each label by meaning, with its icon first', () => {
+  it('colours each label by meaning, in text only', () => {
+    const variants = (labels: string[]) => {
+      act(() =>
+        root.render(<LabelChips labels={labels} tagNames={{ t: 'Tag' }} />),
+      );
+      return Array.from(
+        container.querySelectorAll<HTMLElement>('[data-slot="badge"]'),
+      ).map((badge) => badge.dataset.variant);
+    };
+    // Needs attention: amber.
+    expect(variants(['docs_gap', 'asks_human'])).toEqual([
+      'warning',
+      'warning',
+    ]);
+    expect(variants(['not_answered'])).toEqual(['warning']);
+    // Upset: red, as the row's thumbs-down is.
+    expect(variants(['negative_reaction', 'frustrated'])).toEqual([
+      'destructive',
+      'destructive',
+    ]);
+    expect(variants(['negative_sentiment'])).toEqual(['destructive']);
+    // The owner's own tags: grey.
+    expect(variants(['tag:t'])).toEqual(['neutral']);
+    // No icons, on labels or tags.
     act(() =>
       root.render(
         <LabelChips
-          labels={['docs_gap', 'frustrated', 'asks_human']}
-          tagNames={{}}
+          labels={['docs_gap', 'frustrated', 'tag:t']}
+          tagNames={{ t: 'Tag' }}
         />,
       ),
     );
-    const badges = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-slot="badge"]'),
-    );
-    expect(badges.map((badge) => badge.dataset.variant)).toEqual([
-      'warning',
-      'destructive',
-      'info',
-    ]);
-    expect(badges[0].textContent).toBe('settings.logs.labels.docsGap');
-    expect(badges[0].querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(container.querySelector('svg')).toBeNull();
+    const first = container.querySelector<HTMLElement>('[data-slot="badge"]')!;
+    expect(first.textContent).toBe('settings.logs.labels.docsGap');
+  });
+
+  it('sets its own UI font, since rows are monospace', () => {
+    act(() => root.render(<LabelChips labels={['docs_gap']} />));
+    const line = container.querySelector<HTMLElement>(
+      '[data-testid="label-chips"]',
+    )!;
+    expect(line.className.split(' ')).toContain('font-sans');
   });
 
   it('shows three chips, then +N naming the rest', () => {
@@ -119,7 +143,9 @@ describe('LabelChips', () => {
     const more = badges[3];
     expect(more.dataset.variant).toBe('neutral');
     expect(more.textContent).toContain('settings.logs.labels.more(2)');
-    expect(more.title).toBe(
+    // The rest is named for screen readers; no title, which is not a tooltip.
+    expect(more.hasAttribute('title')).toBe(false);
+    expect(more.querySelector('.sr-only')!.textContent).toBe(
       'settings.logs.labels.asksHuman and Pricing question',
     );
   });

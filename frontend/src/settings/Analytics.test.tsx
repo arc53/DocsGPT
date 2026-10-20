@@ -125,4 +125,23 @@ describe('Analytics without insights', () => {
     );
     expect(tiles[3].className).not.toContain('col-span');
   });
+  it('names the token group-by select, lets it grow, and fits its menu', async () => {
+    await render('a1');
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.analytics.groupBy"]',
+    )!;
+    expect(trigger).not.toBeNull();
+    const classes = trigger.className.split(' ');
+    expect(classes).toContain('min-w-[110px]');
+    expect(classes.some((c) => /^w-\[/.test(c))).toBe(false);
+    await act(async () => {
+      trigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const menu = document.querySelector<HTMLElement>(
+      '[data-slot="select-content"]',
+    )!;
+    expect(menu.className.split(' ')).toContain('w-auto');
+  });
 });

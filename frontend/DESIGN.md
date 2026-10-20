@@ -617,7 +617,12 @@ CommandInput. The `sm` sizes stay 14px. A highlighted list row is
 the window edge and scrolls; one that can grow long (the landing page's model
 picker) passes `SelectContent capped`, which also stops it at CommandList's
 `max-h-75`. A `max-h-*` in `className` replaces the window limit rather than
-adding to it.
+adding to it. A list is as wide as its trigger; a page filter pill whose
+options run longer than its value (Logs, Guardrail activity, the analytics
+window) passes `SelectContent fit`, which sizes the list to its longest option
+(never narrower than the trigger, never wider than the window) so each option
+stays one line, and gives its trigger a `min-w-[…]`, not a fixed `w-[…]`, so
+a long value or a longer language grows it instead of cutting it.
 
 ### Textarea (`ui/textarea.tsx`)
 

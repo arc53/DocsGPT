@@ -1012,8 +1012,11 @@
         "conversation": "Gespräch",
         "clearConversation": "Alle Gespräche anzeigen",
         "more": "+{{formatted}}",
-        "emptyForFilter": "Keine Nachrichten passen zu diesen Filtern."
-      }
+        "emptyForFilter": "Keine Nachrichten passen zu diesen Filtern.",
+        "filter": "Label"
+      },
+      "levelFilter": "Stufe",
+      "typeFilter": "Ereignistyp"
     },
     "teams": {
       "label": "Teams",

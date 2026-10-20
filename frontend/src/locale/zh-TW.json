@@ -1010,8 +1010,11 @@
         "conversation": "對話",
         "clearConversation": "顯示所有對話",
         "more": "+{{formatted}}",
-        "emptyForFilter": "沒有符合這些篩選條件的訊息。"
-      }
+        "emptyForFilter": "沒有符合這些篩選條件的訊息。",
+        "filter": "標註"
+      },
+      "levelFilter": "層級",
+      "typeFilter": "事件類型"
     },
     "teams": {
       "label": "團隊",

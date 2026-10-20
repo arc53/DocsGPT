@@ -6,7 +6,7 @@ import examples from './insights/fixtures/apiExamples.json';
 
 const store = vi.hoisted(() => ({
   state: {
-    preference: { token: 'token' },
+    preference: { token: 'token', analyticsEnabled: true },
     activity: { now: null as object | null, revision: 0 },
   },
 }));
@@ -47,10 +47,10 @@ const page = (body: object) => ({
   json: () => Promise.resolve({ has_more: false, ...body }),
 });
 
-const config = (enabled: boolean) =>
-  getConfig.mockResolvedValue({
-    json: () => Promise.resolve({ decision_analytics_enabled: enabled }),
-  });
+// The server's flag, as useDataInitializer puts it in Redux at start-up.
+const config = (enabled: boolean) => {
+  store.state.preference.analyticsEnabled = enabled;
+};
 
 /** The URL the app is on, so a test can see what the filters wrote. */
 let currentUrl = '';
@@ -67,6 +67,7 @@ describe('Logs label filter and drill-down', () => {
   beforeEach(() => {
     getLogs.mockReset();
     getLogs.mockResolvedValue(page(examples.logs));
+    getConfig.mockReset();
     config(true);
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -90,7 +91,7 @@ describe('Logs label filter and drill-down', () => {
         </MemoryRouter>,
       ),
     );
-    // The config read and the first page both settle.
+    // The first page settles.
     await act(async () => undefined);
   };
 
@@ -106,6 +107,56 @@ describe('Logs label filter and drill-down', () => {
     root = createRoot(container);
     await render('/settings/logs');
     expect(labelFilter()).toBeNull();
+  });
+
+  it('reads the flag from Redux, so the filter is there from the first paint', async () => {
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={['/settings/logs']}>
+          <Logs />
+        </MemoryRouter>,
+      ),
+    );
+    expect(labelFilter()).not.toBeNull();
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it('names each filter, and lets each grow to its longest value', async () => {
+    await render('/agents/manage/logs/a1', {
+      agentId: 'a1',
+      analytics: { enabled: true, tags: [] },
+    });
+    const triggers = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]'),
+    );
+    expect(triggers.map((el) => el.getAttribute('aria-label'))).toEqual([
+      'settings.logs.levelFilter',
+      'settings.logs.typeFilter',
+      'settings.logs.labels.filter',
+    ]);
+    for (const el of triggers) {
+      const classes = el.className.split(' ');
+      expect(classes.some((c) => /^w-\[/.test(c))).toBe(false);
+      expect(classes.some((c) => /^min-w-\[/.test(c))).toBe(true);
+    }
+  });
+
+  it('opens a label menu at least as wide as its trigger, as wide as its longest label', async () => {
+    await render('/settings/logs');
+    const trigger = labelFilter() as HTMLElement;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const menu = document.querySelector<HTMLElement>(
+      '[data-slot="select-content"]',
+    )!;
+    expect(menu).not.toBeNull();
+    const classes = menu.className.split(' ');
+    expect(classes).toContain('w-auto');
+    expect(classes).toContain('min-w-(--radix-select-trigger-width)');
+    expect(classes).not.toContain('w-(--radix-select-trigger-width)');
   });
 
   it("hides it on an agent's Logs while the agent has analytics off", async () => {
@@ -188,17 +239,20 @@ describe('Logs label filter and drill-down', () => {
       'settings.logs.labels.negativeReaction',
       'settings.logs.labels.frustrated',
     ]);
-    // The fourth folds into "+1", which names it for hover and screen readers.
+    // The fourth folds into "+1", which names it for screen readers.
     expect(chips[3].textContent).toBe(
       'settings.logs.labels.morePricing question',
     );
-    expect(chips[3].title).toBe('Pricing question');
-    // Their own line under the one-line header, in the UI font.
+    expect(chips[3].hasAttribute('title')).toBe(false);
+    // Their own line under the one-line header, in the UI font; the header
+    // column spaces it, not a margin passed in.
     const line = header.querySelector<HTMLElement>(
       '[data-testid="label-chips"]',
     )!;
     expect(line.className).toContain('font-sans');
+    expect(line.className.split(' ')).not.toContain('mt-1');
     expect(line.parentElement!.className).toContain('flex-col');
+    expect(line.parentElement!.className.split(' ')).toContain('gap-1');
     expect(line.previousElementSibling!.textContent).toContain('q');
   });
 

@@ -1010,8 +1010,11 @@
         "conversation": "会話",
         "clearConversation": "すべての会話を表示",
         "more": "+{{formatted}}",
-        "emptyForFilter": "これらのフィルターに一致するメッセージはありません。"
-      }
+        "emptyForFilter": "これらのフィルターに一致するメッセージはありません。",
+        "filter": "ラベル"
+      },
+      "levelFilter": "レベル",
+      "typeFilter": "イベントの種類"
     },
     "teams": {
       "label": "チーム",

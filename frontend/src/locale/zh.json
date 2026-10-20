@@ -1010,8 +1010,11 @@
         "conversation": "对话",
         "clearConversation": "显示全部对话",
         "more": "+{{formatted}}",
-        "emptyForFilter": "没有符合这些筛选条件的消息。"
-      }
+        "emptyForFilter": "没有符合这些筛选条件的消息。",
+        "filter": "标注"
+      },
+      "levelFilter": "级别",
+      "typeFilter": "事件类型"
     },
     "teams": {
       "label": "团队",

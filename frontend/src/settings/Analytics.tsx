@@ -393,10 +393,15 @@ export default function Analytics({
               value={tokenGroupBy}
               onValueChange={(value) => setTokenGroupBy(value as TokenGroupBy)}
             >
-              <SelectTrigger className="w-[110px]" size="field" shape="pill">
+              <SelectTrigger
+                className="min-w-[110px]"
+                size="field"
+                shape="pill"
+                aria-label={t('settings.analytics.groupBy')}
+              >
                 <SelectValue placeholder={t('settings.analytics.groupBy')} />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent fit>
                 {groupByOptions.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}

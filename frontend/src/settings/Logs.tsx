@@ -37,8 +37,10 @@ import {
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
 import { cn } from '../lib/utils';
-import { selectToken } from '../preferences/preferenceSlice';
-import { useAnalyticsAvailability } from './insights/useAnalyticsAvailability';
+import {
+  selectAnalyticsEnabled,
+  selectToken,
+} from '../preferences/preferenceSlice';
 import LabelChips from './LabelChips';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
@@ -89,12 +91,14 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
   const labelFilter = isLogLabel(rawLabel) ? rawLabel : null;
   const conversationFilter = searchParams.get('conversation') || null;
   const messageTarget = searchParams.get('message') || null;
-  const availability = useAnalyticsAvailability();
+  // The server's flag from Redux (read at start-up), so the filter row is
+  // whole on the first paint instead of growing a select later.
+  const serverLabels = useSelector(selectAnalyticsEnabled);
   // On an agent's page the agent must label its conversations too; until it
   // has loaded the filter stays hidden. A link that carries a label keeps it
   // shown, so the filter can be cleared.
   const labelsOn =
-    availability.enabled && (agentId ? Boolean(analytics?.enabled) : true);
+    serverLabels && (agentId ? Boolean(analytics?.enabled) : true);
   const showLabelFilter = labelsOn || labelFilter !== null;
   // Tag names from the agent's settings, then from each page's `tag_names`.
   const [pageTagNames, setPageTagNames] = useState<Record<string, string>>({});
@@ -437,10 +441,15 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
       <div className="mb-3">
         <div className="flex flex-row flex-wrap items-center gap-3">
           <Select value={levelFilter} onValueChange={setLevelFilter}>
-            <SelectTrigger className="w-[125px]" size="field" shape="pill">
+            <SelectTrigger
+              className="min-w-[125px]"
+              size="field"
+              shape="pill"
+              aria-label={t('settings.logs.levelFilter')}
+            >
               <SelectValue placeholder={t('settings.logs.levels.all')} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent fit>
               {levelOptions.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
@@ -449,10 +458,15 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
             </SelectContent>
           </Select>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[140px]" size="field" shape="pill">
+            <SelectTrigger
+              className="min-w-[140px]"
+              size="field"
+              shape="pill"
+              aria-label={t('settings.logs.typeFilter')}
+            >
               <SelectValue placeholder={t('settings.logs.types.all')} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent fit>
               {typeOptions.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
@@ -463,9 +477,10 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
           {showLabelFilter && (
             <Select value={labelFilter ?? 'all'} onValueChange={setLabelFilter}>
               <SelectTrigger
-                className="w-[170px]"
+                className="min-w-[170px]"
                 size="field"
                 shape="pill"
+                aria-label={t('settings.logs.labels.filter')}
                 title={selectedTagName}
                 data-testid="logs-label-filter"
               >
@@ -473,7 +488,7 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
                   placeholder={t('settings.logs.labels.filterAll')}
                 />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent fit>
                 <SelectItem value="all">
                   {t('settings.logs.labels.filterAll')}
                 </SelectItem>
@@ -872,7 +887,7 @@ function Log({
             isOpen && 'rotate-90',
           )}
         />
-        <span className="flex min-w-0 flex-col">
+        <span className="flex min-w-0 flex-col gap-1">
           <span className="flex flex-row flex-wrap gap-2">
             <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
             {log.event_type && (
@@ -960,13 +975,8 @@ function Log({
                 : log.question}
             </span>
           </span>
-          {/* The labels on a line of their own, so the header stays one line
-            and the chips read in the UI font, not the row's monospace. */}
-          <LabelChips
-            labels={log.labels}
-            tagNames={tagNames}
-            className="mt-1 font-sans"
-          />
+          {/* The labels on a line of their own, so the header stays one line. */}
+          <LabelChips labels={log.labels} tagNames={tagNames} />
         </span>
       </button>
       <Collapsible open={isOpen} id={bodyId}>

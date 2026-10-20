@@ -1086,8 +1086,11 @@
         "conversation": "Разговор",
         "clearConversation": "Показать все разговоры",
         "more": "+{{formatted}}",
-        "emptyForFilter": "Нет сообщений, подходящих под эти фильтры."
-      }
+        "emptyForFilter": "Нет сообщений, подходящих под эти фильтры.",
+        "filter": "Метка"
+      },
+      "levelFilter": "Уровень",
+      "typeFilter": "Тип события"
     },
     "teams": {
       "label": "Команды",

@@ -172,11 +172,12 @@ export default function GuardrailEvents({ agentId }: Props) {
               className="min-w-[125px]"
               size="field"
               shape="pill"
+              aria-label={t('activity.history.periodFilter')}
               data-testid="guardrail-events-window"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent fit>
               {WINDOWS.map(([window, labelKey]) => (
                 <SelectItem key={window} value={String(window)}>
                   {t(`settings.analytics.filterOptions.${labelKey}`)}
@@ -235,14 +236,15 @@ export default function GuardrailEvents({ agentId }: Props) {
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Select value={checkFilter} onValueChange={setCheckFilter}>
           <SelectTrigger
-            className="w-[170px]"
+            className="min-w-[170px]"
             size="field"
             shape="pill"
+            aria-label={t('agents.guardrailEvents.check')}
             data-testid="guardrail-events-check-filter"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent fit>
             <SelectItem value="all">
               {t('agents.guardrailEvents.allChecks')}
             </SelectItem>
@@ -255,14 +257,15 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
         <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
           <SelectTrigger
-            className="w-[170px]"
+            className="min-w-[170px]"
             size="field"
             shape="pill"
+            aria-label={t('agents.guardrailEvents.outcome')}
             data-testid="guardrail-events-outcome-filter"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent fit>
             <SelectItem value="all">
               {t('agents.guardrailEvents.allOutcomes')}
             </SelectItem>

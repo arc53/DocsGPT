@@ -48,10 +48,15 @@ export default function TimeFilterSelect({
         if (known) onChange(known[0]);
       }}
     >
-      <SelectTrigger className="min-w-[125px]" size="field" shape="pill">
+      <SelectTrigger
+        className="min-w-[125px]"
+        size="field"
+        shape="pill"
+        aria-label={t('activity.history.periodFilter')}
+      >
         <SelectValue placeholder={t('settings.analytics.filterPlaceholder')} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent fit>
         {TIME_FILTERS.map(([option, key]) => (
           <SelectItem key={option} value={option}>
             {t(`settings.analytics.filterOptions.${key}`)}

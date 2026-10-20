@@ -1012,8 +1012,11 @@
         "conversation": "Conversation",
         "clearConversation": "Show all conversations",
         "more": "+{{formatted}}",
-        "emptyForFilter": "No messages match these filters."
-      }
+        "emptyForFilter": "No messages match these filters.",
+        "filter": "Label"
+      },
+      "levelFilter": "Level",
+      "typeFilter": "Event type"
     },
     "teams": {
       "label": "Teams",

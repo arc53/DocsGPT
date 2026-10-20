@@ -1049,8 +1049,11 @@
         "conversation": "Conversación",
         "clearConversation": "Mostrar todas las conversaciones",
         "more": "+{{formatted}}",
-        "emptyForFilter": "Ningún mensaje coincide con estos filtros."
-      }
+        "emptyForFilter": "Ningún mensaje coincide con estos filtros.",
+        "filter": "Etiqueta"
+      },
+      "levelFilter": "Nivel",
+      "typeFilter": "Tipo de evento"
     },
     "teams": {
       "label": "Equipos",

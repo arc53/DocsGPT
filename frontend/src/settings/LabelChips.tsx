@@ -1,13 +1,3 @@
-import {
-  Annoyed,
-  CircleQuestionMark,
-  FileQuestionMark,
-  Frown,
-  Headset,
-  MessageSquareWarning,
-  Tag,
-  type LucideIcon,
-} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
@@ -17,33 +7,22 @@ import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 
 type ChipSpec = {
   key: string;
-  variant: 'warning' | 'destructive' | 'info';
-  icon: LucideIcon;
+  variant: 'warning' | 'destructive';
 };
 
 /**
- * The model's labels as chips, in this order. Amber: the answer fell short;
- * red: the user is upset (as a thumbs-down is); blue: someone should step in.
+ * The model's labels as chips, in this order, in text only (status and
+ * outcome badges carry no icon). Coloured by meaning: amber, the answer needs
+ * attention; red, the user is upset (as a thumbs-down is). The owner's own
+ * tags are neutral.
  */
 const LABELS: Record<string, ChipSpec> = {
-  docs_gap: { key: 'docsGap', variant: 'warning', icon: FileQuestionMark },
-  not_answered: {
-    key: 'notAnswered',
-    variant: 'warning',
-    icon: CircleQuestionMark,
-  },
-  negative_reaction: {
-    key: 'negativeReaction',
-    variant: 'warning',
-    icon: MessageSquareWarning,
-  },
-  negative_sentiment: {
-    key: 'negativeSentiment',
-    variant: 'destructive',
-    icon: Annoyed,
-  },
-  frustrated: { key: 'frustrated', variant: 'destructive', icon: Frown },
-  asks_human: { key: 'asksHuman', variant: 'info', icon: Headset },
+  docs_gap: { key: 'docsGap', variant: 'warning' },
+  not_answered: { key: 'notAnswered', variant: 'warning' },
+  negative_reaction: { key: 'negativeReaction', variant: 'destructive' },
+  negative_sentiment: { key: 'negativeSentiment', variant: 'destructive' },
+  frustrated: { key: 'frustrated', variant: 'destructive' },
+  asks_human: { key: 'asksHuman', variant: 'warning' },
 };
 
 const ORDER = Object.keys(LABELS);
@@ -83,7 +62,7 @@ type LabelChipsProps = {
   labels?: string[];
   /** Tag id to the owner's tag name. */
   tagNames?: Record<string, string>;
-  /** Layout only. */
+  /** Layout only. The line sets its own UI font, as Logs rows are monospace. */
   className?: string;
 };
 
@@ -109,30 +88,27 @@ export default function LabelChips({
   }).format(rest.map((chip) => chip.label));
   return (
     <span
-      className={cn('flex flex-wrap gap-1.5', className)}
+      className={cn('flex flex-wrap gap-1.5 font-sans', className)}
       data-testid="label-chips"
     >
-      {shown.map((chip) => {
-        const Icon = chip.spec?.icon ?? Tag;
-        return (
-          <Badge
-            key={chip.id}
-            variant={chip.spec?.variant ?? 'neutral'}
-            className={chip.spec ? undefined : 'max-w-48'}
-          >
-            <Icon aria-hidden="true" />
-            {chip.spec ? (
-              chip.label
-            ) : (
-              <span className="min-w-0 truncate" title={chip.label}>
-                {chip.label}
-              </span>
-            )}
-          </Badge>
-        );
-      })}
+      {shown.map((chip) => (
+        <Badge
+          key={chip.id}
+          variant={chip.spec?.variant ?? 'neutral'}
+          className={chip.spec ? undefined : 'max-w-48'}
+        >
+          {chip.spec ? (
+            chip.label
+          ) : (
+            <span className="min-w-0 truncate" title={chip.label}>
+              {chip.label}
+            </span>
+          )}
+        </Badge>
+      ))}
+      {/* The rest named for screen readers only: a title is not a tooltip. */}
       {rest.length > 0 && (
-        <Badge variant="neutral" className="tabular-nums" title={restNames}>
+        <Badge variant="neutral" className="tabular-nums">
           <span aria-hidden="true">
             {t('settings.logs.labels.more', {
               formatted: formatCount(rest.length),
