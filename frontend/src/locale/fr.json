@@ -681,7 +681,7 @@
       },
       "insights": {
         "heading": "Analyses",
-        "description": "Estimé par le modèle de décision à partir de chaque conversation. Chaque chiffre est accompagné de la fourchette où il se situe le plus probablement.",
+        "description": "Estimé par un modèle d’IA à partir de chaque conversation.",
         "learnMore": "En savoir plus",
         "coverage": "{{labelled}} réponses analysées sur {{total}}",
         "agentOff": "Les analyses sont désactivées pour cet agent.",
@@ -695,13 +695,6 @@
         "notEnoughReplies": "Pas encore assez de relances",
         "languageNote": "{{share}} de ces messages sont en {{languages}}, que le modèle lit moins précisément. {{labels}} peuvent être moins fiables.",
         "otherLanguages": "d’autres langues",
-        "tiers": {
-          "estimated": "Estimé",
-          "estimatedHint": "Moins sûr que les chiffres principaux : environ ±{{points}} points. Affiché sous forme de fourchette, jamais comme un nombre exact.",
-          "estimatedHintPlain": "Moins sûr que les chiffres principaux. Affiché sous forme de fourchette, jamais comme un nombre exact.",
-          "experimental": "Expérimental",
-          "experimentalHint": "Souvent faux sur les messages de suivi courts. À utiliser pour repérer des tendances, pas pour des chiffres exacts."
-        },
         "stats": {
           "fullyAnswered": "Réponse complète",
           "fullyAnsweredHint": "Questions auxquelles la réponse a entièrement répondu. Les salutations et les échanges informels ne comptent pas.",
@@ -715,18 +708,18 @@
           "docsGapsHint": "Réponses insuffisantes parce que la doc ne couvre pas la question ou que la recherche n’a pas trouvé la page. Regroupées plus bas."
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · sur {{formatted}} question",
-          "ofQuestions_other": "{{range}} · sur {{formatted}} questions",
-          "ofQuestions_many": "{{range}} · sur {{formatted}} questions",
-          "ofReplies_one": "{{range}} · sur {{formatted}} relance",
-          "ofReplies_other": "{{range}} · sur {{formatted}} relances",
-          "ofReplies_many": "{{range}} · sur {{formatted}} relances",
-          "ofConversations_one": "{{range}} · sur {{formatted}} conversation",
-          "ofConversations_other": "{{range}} · sur {{formatted}} conversations",
-          "ofConversations_many": "{{range}} · sur {{formatted}} conversations",
-          "inAnswers_one": "{{range}} · dans {{formatted}} réponse",
-          "inAnswers_other": "{{range}} · dans {{formatted}} réponses",
-          "inAnswers_many": "{{range}} · dans {{formatted}} réponses"
+          "ofQuestions_one": "sur {{formatted}} question",
+          "ofQuestions_other": "sur {{formatted}} questions",
+          "ofQuestions_many": "sur {{formatted}} questions",
+          "ofReplies_one": "sur {{formatted}} relance",
+          "ofReplies_other": "sur {{formatted}} relances",
+          "ofReplies_many": "sur {{formatted}} relances",
+          "ofConversations_one": "sur {{formatted}} conversation",
+          "ofConversations_other": "sur {{formatted}} conversations",
+          "ofConversations_many": "sur {{formatted}} conversations",
+          "inAnswers_one": "dans {{formatted}} réponse",
+          "inAnswers_other": "dans {{formatted}} réponses",
+          "inAnswers_many": "dans {{formatted}} réponses"
         },
         "panels": {
           "answerStatus": "Statut des réponses dans le temps",
@@ -748,7 +741,7 @@
           "ofReplies_one": "Sur {{formatted}} relance",
           "ofReplies_other": "Sur {{formatted}} relances",
           "ofReplies_many": "Sur {{formatted}} relances",
-          "barLabel": "{{name}} : {{value}}, probablement entre {{low}} et {{high}}",
+          "barLabel": "{{name}} : {{value}}",
           "barLabelNone": "{{name}} : pas encore assez de données",
           "noneOfThese": "Aucun de ces sujets",
           "tooltipValue": "{{name}} : {{value}} ({{share}})",
@@ -826,9 +819,9 @@
         "share_one": "{{percent}} sur {{formatted}}",
         "share_other": "{{percent}} sur {{formatted}}",
         "share_many": "{{percent}} sur {{formatted}}",
-        "gapsCount_one": "{{formatted}} lacune ({{range}})",
-        "gapsCount_other": "{{formatted}} lacunes ({{range}})",
-        "gapsCount_many": "{{formatted}} lacunes ({{range}})",
+        "gapsCount_one": "{{formatted}} lacune",
+        "gapsCount_other": "{{formatted}} lacunes",
+        "gapsCount_many": "{{formatted}} lacunes",
         "change": {
           "new": "Nouveau",
           "none": "Aucune évolution",
@@ -843,11 +836,7 @@
         "loadError": "Impossible de charger les lacunes de la doc.",
         "panel": {
           "gaps": "Lacunes",
-          "gapsValue": "{{value}} ({{range}})",
           "share": "Part des questions",
-          "shareValue_one": "{{percent}} ({{range}}) sur {{formatted}}",
-          "shareValue_other": "{{percent}} ({{range}}) sur {{formatted}}",
-          "shareValue_many": "{{percent}} ({{range}}) sur {{formatted}}",
           "previous": "Période précédente",
           "examples": "Exemples de questions",
           "allInLogs": "Voir toutes les lacunes dans les journaux"
@@ -3071,7 +3060,7 @@
           "off": "Désactivés"
         },
         "topicHints": {
-          "auto": "Construits à partir des dossiers des sources de cet agent et utilisés pour regrouper les questions dans l’onglet Analyses. Le regroupement par sujet est expérimental.",
+          "auto": "Construits à partir des dossiers des sources de cet agent et utilisés pour regrouper les questions dans l’onglet Analyses.",
           "custom": "Votre propre liste. Les questions y sont classées selon le nom et la description.",
           "off": "Les questions ne sont pas regroupées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source."
         },

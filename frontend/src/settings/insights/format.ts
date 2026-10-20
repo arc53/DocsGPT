@@ -1,19 +1,16 @@
 /**
  * Pure helpers for conversation insights: the section's state, the model's
- * option keys mapped to translation keys, and how a rate, a range or an
- * expected count reads. Every figure the model produces is a rate with its
- * range or a rounded expected count, never a thresholded tally.
+ * option keys mapped to translation keys, and how a rate or an expected
+ * count reads. Every figure the model produces is a rate or a rounded
+ * expected count, never a thresholded tally; the API also sends each rate's
+ * range, which only the CSV export carries.
  */
 import {
   EMPTY_VALUE,
   formatCount,
   intlLocale,
 } from '../../utils/dateTimeUtils';
-import type {
-  ConversationInsights,
-  InsightLabelTotals,
-  InsightOption,
-} from '../types';
+import type { ConversationInsights, InsightLabelTotals } from '../types';
 
 /**
  * Below this many labelled items a figure is not shown: its 95% range spans
@@ -140,36 +137,6 @@ export function formatShare(rate: number, locale = intlLocale()): string {
   return format.format(rate);
 }
 
-const NUMBER_PARTS = new Set(['integer', 'group', 'decimal', 'fraction']);
-
-/**
- * A rate's range as whole percents with one sign, as the locale places it
- * ("66–81%", "66–81 %", "%66–81"); one value when both ends round the same.
- * Built from the formatter's parts rather than `formatRange`, whose output
- * differs between engines ("66–81%" or "66% – 81%").
- */
-export function formatShareRange(
-  low: number,
-  high: number,
-  locale = intlLocale(),
-): string {
-  if (!Number.isFinite(low) || !Number.isFinite(high)) return EMPTY_VALUE;
-  const lowPct = Math.round(low * 100);
-  const highPct = Math.round(high * 100);
-  if (lowPct === highPct) return formatShare(low, locale);
-  const span = `${formatCount(lowPct, locale)}–${formatCount(highPct, locale)}`;
-  let placed = false;
-  return percentFormat(locale)
-    .formatToParts(highPct / 100)
-    .map((part) => {
-      if (!NUMBER_PARTS.has(part.type)) return part.value;
-      if (placed) return '';
-      placed = true;
-      return span;
-    })
-    .join('');
-}
-
 /**
  * An expected count (a sum of probabilities) as a whole number: "6.2 gaps"
  * would claim a precision the estimate does not have. Under one half reads
@@ -181,37 +148,11 @@ export function formatEstimate(value: number, locale = intlLocale()): string {
   return formatCount(Math.round(value), locale);
 }
 
-/** An expected count's range as whole numbers ("3–10"). */
-export function formatEstimateRange(
-  low: number,
-  high: number,
-  locale = intlLocale(),
-): string {
-  if (!Number.isFinite(low) || !Number.isFinite(high)) return EMPTY_VALUE;
-  const lowCount = Math.round(low);
-  const highCount = Math.round(high);
-  if (lowCount === highCount) return formatCount(lowCount, locale);
-  return `${formatCount(lowCount, locale)}–${formatCount(highCount, locale)}`;
-}
-
-/**
- * Half the widest drawn range, in percentage points: what an `Estimated`
- * badge says its figures are good to. Undefined with nothing drawn.
- */
-export function rangePoints(options: InsightOption[]): number | undefined {
-  if (!options.length) return undefined;
-  return Math.round(
-    Math.max(...options.map((option) => (option.high - option.low) / 2)) * 100,
-  );
-}
-
-/** A row of an interval-bar panel; no `value` draws "—" and no bar. */
+/** A row of a share-bar panel; no `rate` draws "—" and an empty track. */
 export type BarRow = {
   key: string;
   label: string;
-  value?: { rate: number; low: number; high: number };
-  /** The label is the owner's text (a topic, a tag), so it carries `title`. */
-  ownerText?: boolean;
+  rate?: number;
 };
 
 /**
@@ -222,11 +163,7 @@ export type BarRow = {
 export function optionBars(
   totals: InsightLabelTotals | undefined,
   name: (option: string) => string,
-  {
-    skip = [],
-    last = [],
-    ownerText = false,
-  }: { skip?: string[]; last?: string[]; ownerText?: boolean } = {},
+  { skip = [], last = [] }: { skip?: string[]; last?: string[] } = {},
 ): BarRow[] {
   if (!totals) return [];
   const rows = Object.entries(totals.options)
@@ -243,20 +180,8 @@ export function optionBars(
   return rows.map(([option, value]) => ({
     key: option,
     label: name(option),
-    value: { rate: value.rate, low: value.low, high: value.high },
-    ownerText: ownerText && !last.includes(option),
+    rate: value.rate,
   }));
-}
-
-/** The drawn options of a bar panel, for its badge's range width. */
-export function drawnOptions(
-  totals: InsightLabelTotals | undefined,
-  rows: BarRow[],
-): InsightOption[] {
-  if (!totals) return [];
-  return rows
-    .map((row) => totals.options[row.key])
-    .filter((option): option is InsightOption => Boolean(option));
 }
 
 /** Languages the model reads as well as English. */

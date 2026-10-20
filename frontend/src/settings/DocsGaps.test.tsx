@@ -129,18 +129,16 @@ describe('DocsGaps', () => {
     expect(groupItems()).toHaveLength(3);
   });
 
-  it('fetches again by the picked group, remembers it and badges topic grouping', async () => {
+  it('fetches again by the picked group and remembers it, with a plain heading', async () => {
     respond({ rows: [row()] });
     await render({ hasTopics: true });
-    expect(
-      container.querySelector('button[data-variant="warning"]'),
-    ).toBeNull();
     await act(async () => groupItems()[2].click());
     expect(getDocsGaps.mock.calls.at(-1)![0].group_by).toBe('topic');
     expect(localStorage.getItem('DocsGPTDocsGapsGroup')).toBe('topic');
-    expect(
-      container.querySelector('button[data-variant="warning"]')!.textContent,
-    ).toBe('settings.analytics.insights.tiers.experimental');
+    // No badge in the heading, by any grouping.
+    const heading = container.querySelector('h2')!;
+    expect(heading.textContent).toBe('settings.analytics.gaps.heading');
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
   });
 
   it('falls back to page when a remembered topic grouping does not apply', async () => {
@@ -150,7 +148,7 @@ describe('DocsGaps', () => {
     expect(getDocsGaps.mock.calls[0][0].group_by).toBe('page');
   });
 
-  it('lists each group with its gaps, range, share, change and an example', async () => {
+  it('lists each group with its gaps, share, change and an example, no range', async () => {
     respond({
       rows: [
         row(),
@@ -172,7 +170,7 @@ describe('DocsGaps', () => {
       (cell) => cell.textContent,
     );
     expect(cells[0]).toBe('Installing on Docker');
-    expect(cells[1]).toBe('6 3–10');
+    expect(cells[1]).toBe('6');
     expect(cells[2]).toBe('settings.analytics.gaps.share(20%|31)');
     expect(cells[3]).toContain('+2');
     expect(cells[3]).toContain('settings.analytics.gaps.change.upLabel(2)');
@@ -191,7 +189,12 @@ describe('DocsGaps', () => {
     expect(second[3].textContent).toBe('settings.analytics.gaps.change.new');
     expect(second[4].textContent).toBe('—');
     // The phone tiles carry the same groups.
-    expect(container.querySelectorAll('ul.lg\\:hidden > li')).toHaveLength(2);
+    const tiles = container.querySelectorAll('ul.lg\\:hidden > li');
+    expect(tiles).toHaveLength(2);
+    expect(tiles[0].textContent).toContain(
+      'settings.analytics.gaps.gapsCount(6)',
+    );
+    expect(tiles[0].textContent).not.toContain('–');
   });
 
   it('opens a group in a side panel whose examples link into Logs', async () => {
@@ -202,9 +205,13 @@ describe('DocsGaps', () => {
     expect(first.getAttribute('aria-current')).toBe('true');
     const dialog = document.body.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Installing on Docker');
-    expect(dialog.textContent).toContain(
-      'settings.analytics.gaps.panel.shareValue(20%|11–33%|31)',
+    const values = Array.from(dialog.querySelectorAll('dd')).map(
+      (value) => value.textContent,
     );
+    expect(values.slice(0, 2)).toEqual([
+      '6',
+      'settings.analytics.gaps.share(20%|31)',
+    ]);
     const links = Array.from(dialog.querySelectorAll('a')).map((a) =>
       a.getAttribute('href'),
     );
@@ -261,7 +268,7 @@ describe('DocsGaps', () => {
       container.querySelectorAll('tbody tr:first-child td'),
     ).map((cell) => cell.textContent);
     expect(cells[0]).toBe('installation');
-    expect(cells[1]).toBe('2 0–2');
+    expect(cells[1]).toBe('2');
     expect(cells[3]).toBe('settings.analytics.gaps.change.new');
   });
 });

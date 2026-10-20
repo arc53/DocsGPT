@@ -681,7 +681,7 @@
       },
       "insights": {
         "heading": "Información",
-        "description": "Estimado por el modelo de decisión a partir de cada conversación. Cada cifra va con el rango en el que es más probable que esté.",
+        "description": "Estimado por un modelo de IA a partir de cada conversación.",
         "learnMore": "Más información",
         "coverage": "{{labelled}} de {{total}} respuestas etiquetadas",
         "agentOff": "La recopilación de información está desactivada para este agente.",
@@ -695,13 +695,6 @@
         "notEnoughReplies": "Aún no hay suficientes réplicas",
         "languageNote": "El {{share}} de estos mensajes está en {{languages}}, que el modelo lee con menos precisión. {{labels}} pueden ser menos fiables.",
         "otherLanguages": "otros idiomas",
-        "tiers": {
-          "estimated": "Estimado",
-          "estimatedHint": "Menos seguro que las cifras principales: unos ±{{points}} puntos. Se muestra como un rango, nunca como un recuento exacto.",
-          "estimatedHintPlain": "Menos seguro que las cifras principales. Se muestra como un rango, nunca como un recuento exacto.",
-          "experimental": "Experimental",
-          "experimentalHint": "Suele fallar con mensajes de seguimiento cortos. Úsalo para ver tendencias, no para cifras exactas."
-        },
         "stats": {
           "fullyAnswered": "Respondidas por completo",
           "fullyAnsweredHint": "Preguntas que la respuesta resolvió por completo. Los saludos y la charla no cuentan.",
@@ -715,18 +708,18 @@
           "docsGapsHint": "Respuestas que se quedaron cortas porque la documentación no cubre la pregunta o la búsqueda no encontró la página. Agrupadas abajo."
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · de {{formatted}} pregunta",
-          "ofQuestions_other": "{{range}} · de {{formatted}} preguntas",
-          "ofQuestions_many": "{{range}} · de {{formatted}} preguntas",
-          "ofReplies_one": "{{range}} · de {{formatted}} réplica",
-          "ofReplies_other": "{{range}} · de {{formatted}} réplicas",
-          "ofReplies_many": "{{range}} · de {{formatted}} réplicas",
-          "ofConversations_one": "{{range}} · de {{formatted}} conversación",
-          "ofConversations_other": "{{range}} · de {{formatted}} conversaciones",
-          "ofConversations_many": "{{range}} · de {{formatted}} conversaciones",
-          "inAnswers_one": "{{range}} · en {{formatted}} respuesta",
-          "inAnswers_other": "{{range}} · en {{formatted}} respuestas",
-          "inAnswers_many": "{{range}} · en {{formatted}} respuestas"
+          "ofQuestions_one": "de {{formatted}} pregunta",
+          "ofQuestions_other": "de {{formatted}} preguntas",
+          "ofQuestions_many": "de {{formatted}} preguntas",
+          "ofReplies_one": "de {{formatted}} réplica",
+          "ofReplies_other": "de {{formatted}} réplicas",
+          "ofReplies_many": "de {{formatted}} réplicas",
+          "ofConversations_one": "de {{formatted}} conversación",
+          "ofConversations_other": "de {{formatted}} conversaciones",
+          "ofConversations_many": "de {{formatted}} conversaciones",
+          "inAnswers_one": "en {{formatted}} respuesta",
+          "inAnswers_other": "en {{formatted}} respuestas",
+          "inAnswers_many": "en {{formatted}} respuestas"
         },
         "panels": {
           "answerStatus": "Estado de las respuestas a lo largo del tiempo",
@@ -748,7 +741,7 @@
           "ofReplies_one": "De {{formatted}} réplica",
           "ofReplies_other": "De {{formatted}} réplicas",
           "ofReplies_many": "De {{formatted}} réplicas",
-          "barLabel": "{{name}}: {{value}}, probablemente entre {{low}} y {{high}}",
+          "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: aún no hay datos suficientes",
           "noneOfThese": "Ninguno de estos temas",
           "tooltipValue": "{{name}}: {{value}} ({{share}})",
@@ -826,9 +819,9 @@
         "share_one": "{{percent}} de {{formatted}}",
         "share_other": "{{percent}} de {{formatted}}",
         "share_many": "{{percent}} de {{formatted}}",
-        "gapsCount_one": "{{formatted}} hueco ({{range}})",
-        "gapsCount_other": "{{formatted}} huecos ({{range}})",
-        "gapsCount_many": "{{formatted}} huecos ({{range}})",
+        "gapsCount_one": "{{formatted}} hueco",
+        "gapsCount_other": "{{formatted}} huecos",
+        "gapsCount_many": "{{formatted}} huecos",
         "change": {
           "new": "Nuevo",
           "none": "Sin cambios",
@@ -843,11 +836,7 @@
         "loadError": "No se pudieron cargar los huecos en la documentación.",
         "panel": {
           "gaps": "Huecos",
-          "gapsValue": "{{value}} ({{range}})",
           "share": "Porcentaje de preguntas",
-          "shareValue_one": "{{percent}} ({{range}}) de {{formatted}}",
-          "shareValue_other": "{{percent}} ({{range}}) de {{formatted}}",
-          "shareValue_many": "{{percent}} ({{range}}) de {{formatted}}",
           "previous": "Periodo anterior",
           "examples": "Preguntas de ejemplo",
           "allInLogs": "Ver todos los huecos en los registros"
@@ -3071,7 +3060,7 @@
           "off": "Desactivados"
         },
         "topicHints": {
-          "auto": "Se crean a partir de las carpetas de las fuentes de este agente y sirven para agrupar las preguntas en la pestaña Información. La agrupación por tema es experimental.",
+          "auto": "Se crean a partir de las carpetas de las fuentes de este agente y sirven para agrupar las preguntas en la pestaña Información.",
           "custom": "Tu propia lista. Las preguntas se clasifican en ellos por nombre y descripción.",
           "off": "Las preguntas no se agrupan por tema. Los huecos en la documentación se pueden seguir agrupando por página o fuente."
         },

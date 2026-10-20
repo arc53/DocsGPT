@@ -661,7 +661,7 @@
       },
       "insights": {
         "heading": "洞察",
-        "description": "由決策模型根據每段對話估算。每個數字都附有它最可能落入的範圍。",
+        "description": "由 AI 模型根據每段對話估算。",
         "learnMore": "了解更多",
         "coverage": "已標註 {{labelled}}/{{total}} 則回答",
         "agentOff": "此代理已關閉洞察。",
@@ -675,13 +675,6 @@
         "notEnoughReplies": "回覆還不夠",
         "languageNote": "這些訊息中有 {{share}} 使用{{languages}}，模型對這些語言的理解較不準確。{{labels}}可能較不可靠。",
         "otherLanguages": "其他語言",
-        "tiers": {
-          "estimated": "估算",
-          "estimatedHint": "不如主要數字確定：約 ±{{points}} 個百分點。一律以範圍顯示，絕不顯示為精確數量。",
-          "estimatedHintPlain": "不如主要數字確定。一律以範圍顯示，絕不顯示為精確數量。",
-          "experimental": "實驗性",
-          "experimentalHint": "對簡短的追問訊息經常判斷錯誤。適合用來觀察趨勢，不適合看精確數字。"
-        },
         "stats": {
           "fullyAnswered": "完整回答",
           "fullyAnsweredHint": "回答完整解決的問題。問候與閒聊不計入。",
@@ -695,14 +688,14 @@
           "docsGapsHint": "因文件未涵蓋該問題或搜尋找不到頁面而不夠完整的回答。下方分組列出。"
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · 共 {{formatted}} 個問題",
-          "ofQuestions_other": "{{range}} · 共 {{formatted}} 個問題",
-          "ofReplies_one": "{{range}} · 共 {{formatted}} 則回覆",
-          "ofReplies_other": "{{range}} · 共 {{formatted}} 則回覆",
-          "ofConversations_one": "{{range}} · 共 {{formatted}} 段對話",
-          "ofConversations_other": "{{range}} · 共 {{formatted}} 段對話",
-          "inAnswers_one": "{{range}} · 共 {{formatted}} 則回答",
-          "inAnswers_other": "{{range}} · 共 {{formatted}} 則回答"
+          "ofQuestions_one": "共 {{formatted}} 個問題",
+          "ofQuestions_other": "共 {{formatted}} 個問題",
+          "ofReplies_one": "共 {{formatted}} 則回覆",
+          "ofReplies_other": "共 {{formatted}} 則回覆",
+          "ofConversations_one": "共 {{formatted}} 段對話",
+          "ofConversations_other": "共 {{formatted}} 段對話",
+          "inAnswers_one": "共 {{formatted}} 則回答",
+          "inAnswers_other": "共 {{formatted}} 則回答"
         },
         "panels": {
           "answerStatus": "回答狀態隨時間變化",
@@ -720,7 +713,7 @@
           "shareOfConversations_other": "佔 {{formatted}} 段對話的比例",
           "ofReplies_one": "共 {{formatted}} 則回覆",
           "ofReplies_other": "共 {{formatted}} 則回覆",
-          "barLabel": "{{name}}：{{value}}，可能介於 {{low}} 到 {{high}}",
+          "barLabel": "{{name}}：{{value}}",
           "barLabelNone": "{{name}}：資料還不夠",
           "noneOfThese": "不屬於這些主題",
           "tooltipValue": "{{name}}：{{value}}（{{share}}）",
@@ -797,8 +790,8 @@
         },
         "share_one": "{{formatted}} 個中的 {{percent}}",
         "share_other": "{{formatted}} 個中的 {{percent}}",
-        "gapsCount_one": "{{formatted}} 個缺口（{{range}}）",
-        "gapsCount_other": "{{formatted}} 個缺口（{{range}}）",
+        "gapsCount_one": "{{formatted}} 個缺口",
+        "gapsCount_other": "{{formatted}} 個缺口",
         "change": {
           "new": "新增",
           "none": "沒有變化",
@@ -813,10 +806,7 @@
         "loadError": "無法載入文件缺口。",
         "panel": {
           "gaps": "缺口",
-          "gapsValue": "{{value}}（{{range}}）",
           "share": "佔問題的比例",
-          "shareValue_one": "{{formatted}} 個中的 {{percent}}（{{range}}）",
-          "shareValue_other": "{{formatted}} 個中的 {{percent}}（{{range}}）",
           "previous": "上一期",
           "examples": "範例問題",
           "allInLogs": "在日誌中查看所有文件缺口"
@@ -2977,7 +2967,7 @@
           "off": "關閉"
         },
         "topicHints": {
-          "auto": "根據此代理來源中的資料夾產生，用於在「洞察」分頁中為問題分組。依主題分組仍屬實驗性功能。",
+          "auto": "根據此代理來源中的資料夾產生，用於在「洞察」分頁中為問題分組。",
           "custom": "你自己的清單。問題會依名稱與描述歸入其中。",
           "off": "問題不依主題分組。文件缺口仍可依頁面或來源分組。"
         },

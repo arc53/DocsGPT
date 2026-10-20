@@ -3,15 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useChartPalette } from '../../utils/chartUtils';
 import { formatCount, formatDate } from '../../utils/dateTimeUtils';
 import AnalyticsChart from '../AnalyticsChart';
-import type { ConversationInsights, InsightOption } from '../types';
-import {
-  formatEstimate,
-  MIN_SAMPLE,
-  rangePoints,
-  REACTION_SERIES,
-} from './format';
+import type { ConversationInsights } from '../types';
+import { formatEstimate, MIN_SAMPLE, REACTION_SERIES } from './format';
 import ChartPanel from './ChartPanel';
-import TierBadge from './TierBadge';
 
 /**
  * How users' next messages responded to answers: thanks, asking again, and
@@ -26,8 +20,7 @@ export default function ImplicitFeedbackPanel({
 }) {
   const { t } = useTranslation();
   const palette = useChartPalette();
-  const reaction = data.totals.reaction;
-  const enough = (reaction?.n ?? 0) >= MIN_SAMPLE;
+  const enough = (data.totals.reaction?.n ?? 0) >= MIN_SAMPLE;
 
   const colors = {
     thanks: palette.success,
@@ -48,19 +41,10 @@ export default function ImplicitFeedbackPanel({
     ),
     backgroundColor: colors[key],
   }));
-  const points = rangePoints(
-    series
-      .flatMap(([, options]) => options)
-      .map((option) => reaction?.options[option])
-      .filter((option): option is InsightOption => option !== undefined),
-  );
 
   return (
     <ChartPanel
       title={t('settings.analytics.insights.panels.implicitFeedback')}
-      badge={
-        <TierBadge tier="estimated" points={enough ? points : undefined} />
-      }
       empty={
         enough ? undefined : t('settings.analytics.insights.notEnoughReplies')
       }

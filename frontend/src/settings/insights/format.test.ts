@@ -4,14 +4,11 @@ import type { ConversationInsights, InsightLabelTotals } from '../types';
 import {
   capitalize,
   formatEstimate,
-  formatEstimateRange,
   formatShare,
-  formatShareRange,
   gapChange,
   insightsState,
   optionBars,
   optionName,
-  rangePoints,
   showsFigures,
   weakLanguages,
 } from './format';
@@ -90,30 +87,11 @@ describe('numbers', () => {
     expect(formatShare(Number.NaN, 'en')).toBe('—');
   });
 
-  it('formats a range as the locale writes one, collapsing equal ends', () => {
-    expect(formatShareRange(0.66, 0.81, 'en')).toBe('66–81%');
-    expect(formatShareRange(0.104, 0.096, 'en')).toBe('10%');
-    // French puts a no-break space before the sign.
-    expect(formatShareRange(0.66, 0.81, 'fr')).toMatch(/^66\s?–\s?81\s%$/u);
-  });
-
   it('never shows an expected count with decimals', () => {
     expect(formatEstimate(6.2, 'en')).toBe('6');
     expect(formatEstimate(1234.6, 'en')).toBe('1,235');
     expect(formatEstimate(0.3, 'en')).toBe('<1');
     expect(formatEstimate(0, 'en')).toBe('0');
-    expect(formatEstimateRange(3.4, 10.2, 'en')).toBe('3–10');
-    expect(formatEstimateRange(2.4, 2.2, 'en')).toBe('2');
-  });
-
-  it('gives an estimated badge half the widest range in points', () => {
-    expect(
-      rangePoints([
-        { expected: 1, rate: 0.1, low: 0.06, high: 0.14 },
-        { expected: 1, rate: 0.3, low: 0.2, high: 0.44 },
-      ]),
-    ).toBe(12);
-    expect(rangePoints([])).toBeUndefined();
   });
 });
 
@@ -143,18 +121,8 @@ describe('optionBars', () => {
     expect(rows[0]).toEqual({
       key: 'how-to',
       label: 'HOW-TO',
-      value: { rate: 0.38, low: 0.31, high: 0.45 },
-      ownerText: false,
+      rate: 0.38,
     });
-  });
-
-  it('marks owner text, but not the catch-all', () => {
-    const rows = optionBars(totals, (option) => option, {
-      skip: ['none'],
-      last: ['other'],
-      ownerText: true,
-    });
-    expect(rows.map((row) => row.ownerText)).toEqual([true, true, false]);
   });
 
   it('names model options through their keys and passes unknown ones through', () => {

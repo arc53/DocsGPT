@@ -108,15 +108,4 @@ describe('Badge onRemove', () => {
     expect(html).not.toContain('<button');
     expect(html).not.toContain('pr-1.5');
   });
-
-  it('draws its look on its one child with asChild (a tooltip trigger)', () => {
-    const html = renderToStaticMarkup(
-      <Badge asChild variant="neutral">
-        <button type="button">Estimated</button>
-      </Badge>,
-    );
-    expect(html).toMatch(/^<button type="button" data-slot="badge"/);
-    expect(html).toContain('bg-muted-foreground/15');
-    expect(html).toContain('>Estimated</button>');
-  });
 });

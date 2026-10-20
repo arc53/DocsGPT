@@ -661,7 +661,7 @@
       },
       "insights": {
         "heading": "インサイト",
-        "description": "意思決定モデルが各会話から推定した値です。各数値には、その値が入る可能性が最も高い範囲を併記しています。",
+        "description": "AI モデルが各会話から推定した値です。",
         "learnMore": "詳細",
         "coverage": "{{total}} 件中 {{labelled}} 件の回答を分析済み",
         "agentOff": "このエージェントではインサイトがオフになっています。",
@@ -675,13 +675,6 @@
         "notEnoughReplies": "返信がまだ足りません",
         "languageNote": "これらのメッセージの {{share}} は{{languages}}で書かれており、モデルの読み取り精度が下がります。{{labels}}は信頼性が低い可能性があります。",
         "otherLanguages": "その他の言語",
-        "tiers": {
-          "estimated": "推定",
-          "estimatedHint": "主要な数値より不確かです（約 ±{{points}} ポイント）。正確な件数ではなく、常に範囲で表示します。",
-          "estimatedHintPlain": "主要な数値より不確かです。正確な件数ではなく、常に範囲で表示します。",
-          "experimental": "試験運用",
-          "experimentalHint": "短いフォローアップのメッセージではよく誤ります。正確な数値ではなく、傾向をつかむために使ってください。"
-        },
         "stats": {
           "fullyAnswered": "完全に回答",
           "fullyAnsweredHint": "回答が完全に答えた質問です。あいさつや雑談は数えません。",
@@ -695,14 +688,14 @@
           "docsGapsHint": "ドキュメントが質問に対応していない、または検索でページが見つからなかったために不十分だった回答です。下でグループ化しています。"
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · 質問 {{formatted}} 件中",
-          "ofQuestions_other": "{{range}} · 質問 {{formatted}} 件中",
-          "ofReplies_one": "{{range}} · 返信 {{formatted}} 件中",
-          "ofReplies_other": "{{range}} · 返信 {{formatted}} 件中",
-          "ofConversations_one": "{{range}} · 会話 {{formatted}} 件中",
-          "ofConversations_other": "{{range}} · 会話 {{formatted}} 件中",
-          "inAnswers_one": "{{range}} · 回答 {{formatted}} 件中",
-          "inAnswers_other": "{{range}} · 回答 {{formatted}} 件中"
+          "ofQuestions_one": "質問 {{formatted}} 件中",
+          "ofQuestions_other": "質問 {{formatted}} 件中",
+          "ofReplies_one": "返信 {{formatted}} 件中",
+          "ofReplies_other": "返信 {{formatted}} 件中",
+          "ofConversations_one": "会話 {{formatted}} 件中",
+          "ofConversations_other": "会話 {{formatted}} 件中",
+          "inAnswers_one": "回答 {{formatted}} 件中",
+          "inAnswers_other": "回答 {{formatted}} 件中"
         },
         "panels": {
           "answerStatus": "回答状況の推移",
@@ -720,7 +713,7 @@
           "shareOfConversations_other": "会話 {{formatted}} 件に占める割合",
           "ofReplies_one": "返信 {{formatted}} 件中",
           "ofReplies_other": "返信 {{formatted}} 件中",
-          "barLabel": "{{name}}: {{value}}、おそらく {{low}}〜{{high}}",
+          "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: データがまだ足りません",
           "noneOfThese": "どのトピックにも該当しない",
           "tooltipValue": "{{name}}: {{value}}（{{share}}）",
@@ -797,8 +790,8 @@
         },
         "share_one": "{{formatted}} 件中 {{percent}}",
         "share_other": "{{formatted}} 件中 {{percent}}",
-        "gapsCount_one": "不足 {{formatted}} 件（{{range}}）",
-        "gapsCount_other": "不足 {{formatted}} 件（{{range}}）",
+        "gapsCount_one": "不足 {{formatted}} 件",
+        "gapsCount_other": "不足 {{formatted}} 件",
         "change": {
           "new": "新規",
           "none": "変化なし",
@@ -813,10 +806,7 @@
         "loadError": "ドキュメントの不足を読み込めませんでした。",
         "panel": {
           "gaps": "不足",
-          "gapsValue": "{{value}}（{{range}}）",
           "share": "質問に占める割合",
-          "shareValue_one": "{{formatted}} 件中 {{percent}}（{{range}}）",
-          "shareValue_other": "{{formatted}} 件中 {{percent}}（{{range}}）",
           "previous": "前の期間",
           "examples": "質問の例",
           "allInLogs": "ドキュメントの不足をすべてログで表示"
@@ -2977,7 +2967,7 @@
           "off": "オフ"
         },
         "topicHints": {
-          "auto": "このエージェントのソースにあるフォルダーから作られ、「インサイト」タブで質問をまとめるために使われます。トピックによるまとめは試験運用です。",
+          "auto": "このエージェントのソースにあるフォルダーから作られ、「インサイト」タブで質問をまとめるために使われます。",
           "custom": "独自のリストです。質問は名前と説明をもとに振り分けられます。",
           "off": "質問をトピックでまとめません。ドキュメントの不足は、引き続きページまたはソースでまとめられます。"
         },

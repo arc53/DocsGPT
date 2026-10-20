@@ -6,8 +6,6 @@ import { SectionHeader } from '@/components/ui/section-header';
 
 type ChartPanelProps = {
   title: string;
-  /** Beside the title: a tier badge. */
-  badge?: ReactNode;
   /** The chart, given the id of the legend container it draws into. */
   chart: (legendId: string) => ReactNode;
   /** Drawn instead of the chart: why there is no figure yet. */
@@ -22,7 +20,6 @@ type ChartPanelProps = {
  */
 export default function ChartPanel({
   title,
-  badge,
   chart,
   empty,
   'data-testid': testId,
@@ -35,13 +32,10 @@ export default function ChartPanel({
       className="h-full min-h-[345px] w-full overflow-hidden"
       data-testid={testId}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <SectionHeader as="h3" size="xs" title={title} />
-        {badge}
-      </div>
+      <SectionHeader as="h3" size="xs" title={title} />
       <div className="relative min-h-[245px] w-full flex-1">
         {empty ? (
-          <EmptyState size="xs" illustration="none" title={empty} />
+          <EmptyState size="sm" illustration="none" title={empty} />
         ) : (
           <div className="absolute inset-0 flex flex-col">
             <div

@@ -24,8 +24,7 @@ vi.mock('../AnalyticsChart', () => ({
 }));
 
 import ImplicitFeedbackPanel from './ImplicitFeedbackPanel';
-import IntervalBars from './IntervalBars';
-import TierBadge from './TierBadge';
+import ShareBars from './ShareBars';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -102,51 +101,30 @@ describe('insight panels', () => {
         'settings.analytics.insights.options.reaction.pushbackOrComplaint=0.75',
       ].join(','),
     );
-    const badge = container.querySelector<HTMLElement>('button[data-variant]')!;
-    expect(badge.dataset.variant).toBe('neutral');
+    // Every figure is an estimate, said once in the intro: no badge.
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+    expect(container.querySelector('button')).toBeNull();
   });
 
   it('waits for enough replies before drawing implicit feedback', () => {
     act(() => root.render(<ImplicitFeedbackPanel data={insights(4)} />));
     expect(container.querySelector('[data-testid="chart"]')).toBeNull();
-    expect(container.textContent).toContain(
+    // The empty state at the size for inside a panel.
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.getAttribute('data-size')).toBe('sm');
+    expect(empty.textContent).toContain(
       'settings.analytics.insights.notEnoughReplies',
     );
   });
 
-  it('says how wide an estimated range is when the badge gets focus', async () => {
-    act(() => root.render(<TierBadge tier="estimated" points={12} />));
-    const badge = container.querySelector<HTMLButtonElement>('button')!;
-    expect(badge.type).toBe('button');
-    expect(badge.className).toContain('focus-visible:ring-3');
-    expect(badge.className).toContain('cursor-help');
-    await act(async () => badge.focus());
-    expect(document.body.textContent).toContain(
-      'settings.analytics.insights.tiers.estimatedHint(12)',
-    );
-  });
-
-  it('marks experimental figures in amber', () => {
-    act(() => root.render(<TierBadge tier="experimental" />));
-    const badge = container.querySelector<HTMLElement>('button')!;
-    expect(badge.dataset.variant).toBe('warning');
-    expect(badge.textContent).toBe(
-      'settings.analytics.insights.tiers.experimental',
-    );
-  });
-
-  it('draws each bar to its rate and its whisker over the range, hidden from assistive tech', () => {
+  it('draws each bar as a Progress to its rate, with the figure alone beside it', () => {
     act(() =>
       root.render(
-        <IntervalBars
+        <ShareBars
           ariaLabel="Request type"
           rows={[
-            {
-              key: 'how-to',
-              label: 'How-to',
-              value: { rate: 0.38, low: 0.31, high: 0.45 },
-            },
-            { key: 'tag', label: 'Pricing question', ownerText: true },
+            { key: 'how-to', label: 'How-to', rate: 0.38 },
+            { key: 'tag', label: 'Pricing question' },
           ]}
         />,
       ),
@@ -154,30 +132,45 @@ describe('insight panels', () => {
     const list = container.querySelector('[role="list"]')!;
     expect(list.getAttribute('aria-label')).toBe('Request type');
     const [howTo, tag] = Array.from(list.querySelectorAll('li'));
-    const track = howTo.querySelector<HTMLElement>('.bg-muted')!;
-    expect(track.style.getPropertyValue('--rate')).toBe('38%');
-    expect(track.style.getPropertyValue('--low')).toBe('31%');
-    expect(track.style.getPropertyValue('--high')).toBe('45%');
-    expect(track.querySelector('.bg-chart-1')).not.toBeNull();
-    expect(track.querySelectorAll('.bg-foreground\\/70')).toHaveLength(3);
+    const bar = howTo.querySelector<HTMLElement>('[data-slot="progress"]')!;
+    expect(bar.getAttribute('data-variant')).toBe('default');
+    expect(
+      howTo
+        .querySelector<HTMLElement>('[data-slot="progress-indicator"]')!
+        .style.getPropertyValue('--progress'),
+    ).toBe('38%');
+    // No range, no whiskers.
     expect(howTo.textContent).toContain('38%');
-    expect(howTo.textContent).toContain('31–45%');
-    // A row with no figure yet: a dash, no bar, its owner text whole in `title`.
+    expect(howTo.textContent).not.toContain('–');
+    expect(howTo.querySelector('.bg-foreground\\/70')).toBeNull();
+    // Assistive tech reads one run per row: the label and the figure; the
+    // drawing is hidden from it.
+    expect(howTo.querySelector('.sr-only')!.textContent).toBe(
+      'settings.analytics.insights.panels.barLabel',
+    );
+    expect(bar.closest('[aria-hidden="true"]')).not.toBeNull();
+    // A row with no figure yet: a dash and an empty track.
     expect(tag.textContent).toContain('—');
-    expect(tag.querySelector('.bg-chart-1')).toBeNull();
-    expect(tag.querySelector('[title="Pricing question"]')).not.toBeNull();
+    expect(
+      tag
+        .querySelector<HTMLElement>('[data-slot="progress-indicator"]')!
+        .style.getPropertyValue('--progress'),
+    ).toBe('0%');
+    expect(tag.querySelector('.sr-only')!.textContent).toBe(
+      'settings.analytics.insights.panels.barLabelNone',
+    );
   });
 
-  it('puts the label on its own line on a phone and beside the track from sm', () => {
+  it('wraps a long label beside the track from sm instead of cutting it', () => {
     act(() =>
       root.render(
-        <IntervalBars
-          ariaLabel="Request type"
+        <ShareBars
+          ariaLabel="Why not fully answered"
           rows={[
             {
-              key: 'how-to',
-              label: 'How-to',
-              value: { rate: 0.38, low: 0.31, high: 0.45 },
+              key: 'needs account data',
+              label: 'Needs account access or staff',
+              rate: 0.06,
             },
           ]}
         />,
@@ -185,11 +178,13 @@ describe('insight panels', () => {
     );
     const row = container.querySelector('li')!;
     expect(row.className.split(' ')).toEqual(
-      expect.arrayContaining(['flex-col', 'sm:flex-row', 'sm:h-7']),
+      expect.arrayContaining(['flex-col', 'sm:flex-row', 'sm:min-h-7']),
     );
-    const label = row.firstElementChild as HTMLElement;
-    expect(label.className).toContain('truncate');
+    expect(row.className.split(' ')).not.toContain('sm:h-7');
+    const label = row.querySelector<HTMLElement>('[aria-hidden="true"]')!;
+    expect(label.textContent).toBe('Needs account access or staff');
+    expect(label.className).toContain('wrap-break-word');
     expect(label.className).toContain('sm:w-40');
-    expect(label.className).not.toMatch(/(^|\s)w-28/);
+    expect(label.className).not.toContain('truncate');
   });
 });

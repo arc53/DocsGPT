@@ -44,13 +44,10 @@ import {
 import { docsGapsCsv, docsGapsFileName, downloadCsv } from './docsGapsCsv';
 import {
   formatEstimate,
-  formatEstimateRange,
   formatShare,
-  formatShareRange,
   gapChange,
   NONE_OF_THESE,
 } from './insights/format';
-import TierBadge from './insights/TierBadge';
 import { logsDrilldownPath, revealElement } from './logsLinks';
 import type { DocsGapRow, DocsGapsGroup } from './types';
 
@@ -90,7 +87,7 @@ type DocsGapsProps = {
 
 /**
  * Questions the docs could not answer, grouped by the closest retrieved page,
- * its source or the question's topic: expected gaps with their range, the
+ * its source or the question's topic: expected gaps, the
  * share of the group's questions, the change from the previous period, and
  * example questions that open in Logs. Rendered by ConversationInsights only
  * while it has figures, so it says nothing about off or empty states itself.
@@ -194,8 +191,6 @@ export default function DocsGaps({
       percent: formatShare(row.rate),
       formatted: formatCount(row.turns),
     });
-  const gapsRange = (row: DocsGapRow) =>
-    formatEstimateRange(row.low * row.turns, row.high * row.turns);
 
   return (
     <div
@@ -205,12 +200,7 @@ export default function DocsGaps({
       data-testid="docs-gaps"
     >
       <SectionHeader
-        title={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            {t('settings.analytics.gaps.heading')}
-            {groupBy === 'topic' && <TierBadge tier="experimental" />}
-          </span>
-        }
+        title={t('settings.analytics.gaps.heading')}
         description={t(`settings.analytics.gaps.description.${groupBy}`)}
         actions={
           <>
@@ -326,10 +316,7 @@ export default function DocsGaps({
                         align="right"
                         className="whitespace-nowrap tabular-nums"
                       >
-                        {formatEstimate(row.expected_gaps)}{' '}
-                        <span className="text-muted-foreground text-xs">
-                          {gapsRange(row)}
-                        </span>
+                        {formatEstimate(row.expected_gaps)}
                       </TableCell>
                       <TableCell
                         align="right"
@@ -392,7 +379,6 @@ export default function DocsGaps({
                           {t('settings.analytics.gaps.gapsCount', {
                             count: Math.round(row.expected_gaps),
                             formatted: formatEstimate(row.expected_gaps),
-                            range: gapsRange(row),
                           })}
                         </span>
                         <span aria-hidden>·</span>
@@ -432,20 +418,12 @@ export default function DocsGaps({
                 <DescriptionItem
                   label={t('settings.analytics.gaps.panel.gaps')}
                 >
-                  {t('settings.analytics.gaps.panel.gapsValue', {
-                    value: formatEstimate(openRow.expected_gaps),
-                    range: gapsRange(openRow),
-                  })}
+                  {formatEstimate(openRow.expected_gaps)}
                 </DescriptionItem>
                 <DescriptionItem
                   label={t('settings.analytics.gaps.panel.share')}
                 >
-                  {t('settings.analytics.gaps.panel.shareValue', {
-                    count: openRow.turns,
-                    percent: formatShare(openRow.rate),
-                    range: formatShareRange(openRow.low, openRow.high),
-                    formatted: formatCount(openRow.turns),
-                  })}
+                  {shareText(openRow)}
                 </DescriptionItem>
                 <DescriptionItem
                   label={t('settings.analytics.gaps.panel.previous')}

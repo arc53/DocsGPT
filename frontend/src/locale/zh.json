@@ -661,7 +661,7 @@
       },
       "insights": {
         "heading": "洞察",
-        "description": "由决策模型根据每段对话估算。每个数字都附有它最可能落入的范围。",
+        "description": "由 AI 模型根据每段对话估算。",
         "learnMore": "了解更多",
         "coverage": "已标注 {{labelled}}/{{total}} 条回答",
         "agentOff": "此智能体已关闭洞察。",
@@ -675,13 +675,6 @@
         "notEnoughReplies": "回复还不够",
         "languageNote": "这些消息中有 {{share}} 使用{{languages}}，模型对这些语言的理解不够准确。{{labels}}可能不太可靠。",
         "otherLanguages": "其他语言",
-        "tiers": {
-          "estimated": "估算",
-          "estimatedHint": "不如主要数字确定：约 ±{{points}} 个百分点。始终以范围显示，绝不显示为精确数量。",
-          "estimatedHintPlain": "不如主要数字确定。始终以范围显示，绝不显示为精确数量。",
-          "experimental": "实验性",
-          "experimentalHint": "对简短的追问消息经常判断错误。适合用来发现趋势，不适合看精确数字。"
-        },
         "stats": {
           "fullyAnswered": "完整回答",
           "fullyAnsweredHint": "回答完整解决了的问题。问候和闲聊不计入。",
@@ -695,14 +688,14 @@
           "docsGapsHint": "因文档未涵盖该问题或搜索未找到页面而不够完整的回答。下方分组列出。"
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · 共 {{formatted}} 个问题",
-          "ofQuestions_other": "{{range}} · 共 {{formatted}} 个问题",
-          "ofReplies_one": "{{range}} · 共 {{formatted}} 条回复",
-          "ofReplies_other": "{{range}} · 共 {{formatted}} 条回复",
-          "ofConversations_one": "{{range}} · 共 {{formatted}} 段对话",
-          "ofConversations_other": "{{range}} · 共 {{formatted}} 段对话",
-          "inAnswers_one": "{{range}} · 共 {{formatted}} 条回答",
-          "inAnswers_other": "{{range}} · 共 {{formatted}} 条回答"
+          "ofQuestions_one": "共 {{formatted}} 个问题",
+          "ofQuestions_other": "共 {{formatted}} 个问题",
+          "ofReplies_one": "共 {{formatted}} 条回复",
+          "ofReplies_other": "共 {{formatted}} 条回复",
+          "ofConversations_one": "共 {{formatted}} 段对话",
+          "ofConversations_other": "共 {{formatted}} 段对话",
+          "inAnswers_one": "共 {{formatted}} 条回答",
+          "inAnswers_other": "共 {{formatted}} 条回答"
         },
         "panels": {
           "answerStatus": "回答状态随时间变化",
@@ -720,7 +713,7 @@
           "shareOfConversations_other": "占 {{formatted}} 段对话的比例",
           "ofReplies_one": "共 {{formatted}} 条回复",
           "ofReplies_other": "共 {{formatted}} 条回复",
-          "barLabel": "{{name}}：{{value}}，可能在 {{low}} 到 {{high}} 之间",
+          "barLabel": "{{name}}：{{value}}",
           "barLabelNone": "{{name}}：数据还不够",
           "noneOfThese": "不属于这些主题",
           "tooltipValue": "{{name}}：{{value}}（{{share}}）",
@@ -797,8 +790,8 @@
         },
         "share_one": "{{formatted}} 个中的 {{percent}}",
         "share_other": "{{formatted}} 个中的 {{percent}}",
-        "gapsCount_one": "{{formatted}} 个缺口（{{range}}）",
-        "gapsCount_other": "{{formatted}} 个缺口（{{range}}）",
+        "gapsCount_one": "{{formatted}} 个缺口",
+        "gapsCount_other": "{{formatted}} 个缺口",
         "change": {
           "new": "新增",
           "none": "无变化",
@@ -813,10 +806,7 @@
         "loadError": "无法加载文档缺口。",
         "panel": {
           "gaps": "缺口",
-          "gapsValue": "{{value}}（{{range}}）",
           "share": "占问题的比例",
-          "shareValue_one": "{{formatted}} 个中的 {{percent}}（{{range}}）",
-          "shareValue_other": "{{formatted}} 个中的 {{percent}}（{{range}}）",
           "previous": "上一周期",
           "examples": "示例问题",
           "allInLogs": "在日志中查看全部文档缺口"
@@ -2975,7 +2965,7 @@
           "off": "关闭"
         },
         "topicHints": {
-          "auto": "根据此智能体来源中的文件夹生成，用于在“洞察”标签页中为问题分组。按主题分组仍处于实验阶段。",
+          "auto": "根据此智能体来源中的文件夹生成，用于在“洞察”标签页中为问题分组。",
           "custom": "你自己的列表。问题会根据名称和描述归入其中。",
           "off": "问题不按主题分组。文档缺口仍可按页面或来源分组。"
         },

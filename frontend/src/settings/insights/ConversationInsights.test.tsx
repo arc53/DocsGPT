@@ -274,23 +274,26 @@ describe('ConversationInsights', () => {
     expect(section()!.querySelector('[data-slot="count"]')).toBeNull();
   });
 
-  it('gives every headline tile a rate, its range and its own denominator', () => {
+  it('gives every headline tile a rate and its own denominator, no range', () => {
     render(data());
     expect(tile('fullyAnswered').textContent).toContain('74%');
     expect(tile('fullyAnswered').textContent).toContain(
-      'settings.analytics.insights.sub.ofQuestions(104|66–81%)',
+      'settings.analytics.insights.sub.ofQuestions(104)',
     );
     expect(tile('goalMet').textContent).toContain(
-      'settings.analytics.insights.sub.ofConversations(61|74–87%)',
+      'settings.analytics.insights.sub.ofConversations(61)',
     );
     expect(tile('frustrated').textContent).toContain(
-      'settings.analytics.insights.sub.ofReplies(40|1–6%)',
+      'settings.analytics.insights.sub.ofReplies(40)',
     );
-    // Docs gaps: an expected count, never decimals, with its range.
+    // Docs gaps: an expected count, never decimals.
     expect(tile('docsGaps').textContent).toContain('12');
     expect(tile('docsGaps').textContent).toContain(
-      'settings.analytics.insights.sub.inAnswers(118|8–17)',
+      'settings.analytics.insights.sub.inAnswers(118)',
     );
+    expect(
+      container.querySelector('[data-testid="insight-tiles"]')!.textContent,
+    ).not.toContain('–');
     // A hint on each tile, and no badge on any.
     expect(tile('goalMet').title).toBe(
       'settings.analytics.insights.stats.goalMetHint',
@@ -311,20 +314,10 @@ describe('ConversationInsights', () => {
     expect(tile('asksHuman').textContent).not.toContain('10%');
   });
 
-  it('draws the estimated panels with their badge, and the docs-gap report', () => {
+  it('draws the bar panels with no badge, and the docs-gap report', () => {
     render(data());
-    const badges = Array.from(
-      section()!.querySelectorAll<HTMLElement>('button[data-variant]'),
-    );
-    // Implicit feedback, request type, why not fully answered.
-    expect(badges.map((badge) => badge.textContent)).toEqual([
-      'settings.analytics.insights.tiers.estimated',
-      'settings.analytics.insights.tiers.estimated',
-      'settings.analytics.insights.tiers.estimated',
-    ]);
-    expect(badges.every((badge) => badge.dataset.variant === 'neutral')).toBe(
-      true,
-    );
+    // Every figure is an estimate, said once in the intro.
+    expect(section()!.querySelector('[data-slot="badge"]')).toBeNull();
     const lists = section()!.querySelectorAll('[role="list"]');
     // Request type sits beside the third chart, then why not fully answered.
     expect(lists[0].getAttribute('aria-label')).toBe(
@@ -337,15 +330,15 @@ describe('ConversationInsights', () => {
     // "none" and zero-mass deferred types are not drawn; docs missing reads
     // as "or not found" while search misses carry no mass.
     expect(
-      Array.from(whyNot.querySelectorAll('li')).map((li) =>
-        li.getAttribute('aria-label'),
+      Array.from(whyNot.querySelectorAll('li .sr-only')).map(
+        (text) => text.textContent,
       ),
     ).toEqual([
-      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.docsMissing|10%|7%|14%)',
-      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.outOfScope|5%|2%|9%)',
+      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.docsMissing|10%)',
+      'settings.analytics.insights.panels.barLabel(settings.analytics.insights.options.gapType.outOfScope|5%)',
     ]);
-    const requests = Array.from(lists[0].querySelectorAll('li')).map((li) =>
-      li.getAttribute('aria-label'),
+    const requests = Array.from(lists[0].querySelectorAll('li .sr-only')).map(
+      (text) => text.textContent,
     );
     expect(requests[0]).toContain('requestType.howTo');
     expect(requests[2]).toContain('requestType.other');
@@ -453,7 +446,7 @@ describe('ConversationInsights', () => {
     );
   });
 
-  it("marks topics experimental and lists an agent's tags, a new one without a figure", () => {
+  it("lists topics with no badge and an agent's tags, a new one without a figure", () => {
     const response = data({
       tags: [
         { id: 'a1b2c3d4', name: 'Pricing question' },
@@ -474,12 +467,7 @@ describe('ConversationInsights', () => {
       options: { yes: option(13, 0.22, 0.13, 0.33) },
     };
     render(response, { agentProp: agent(['view', 'edit']) });
-    const experimental = Array.from(
-      section()!.querySelectorAll<HTMLElement>('button[data-variant]'),
-    ).filter((badge) => badge.dataset.variant === 'warning');
-    expect(experimental.map((badge) => badge.textContent)).toEqual([
-      'settings.analytics.insights.tiers.experimental',
-    ]);
+    expect(section()!.querySelector('[data-slot="badge"]')).toBeNull();
     const lists = Array.from(section()!.querySelectorAll('[role="list"]'));
     const topics = lists.find(
       (list) =>
@@ -488,7 +476,6 @@ describe('ConversationInsights', () => {
     )!;
     const topicRows = Array.from(topics.querySelectorAll('li'));
     expect(topicRows[0].textContent).toContain('installation');
-    expect(topicRows[0].querySelector('[title="installation"]')).not.toBeNull();
     expect(topicRows[1].textContent).toContain(
       'settings.analytics.insights.panels.noneOfThese',
     );
@@ -500,7 +487,7 @@ describe('ConversationInsights', () => {
     const tagRows = Array.from(tags.querySelectorAll('li'));
     expect(tagRows[0].textContent).toContain('22%');
     expect(tagRows[1].textContent).toContain('—');
-    expect(tagRows[1].getAttribute('aria-label')).toBe(
+    expect(tagRows[1].querySelector('.sr-only')!.textContent).toBe(
       'settings.analytics.insights.panels.barLabelNone(Wants a refund)',
     );
     expect(
@@ -564,6 +551,14 @@ describe('ConversationInsights', () => {
         /settings\.analytics\.insights\.notEnoughShort/g,
       )!.length,
     ).toBe(4);
+    // Every panel's empty state is the size for inside a panel.
+    const empties = Array.from(
+      section()!.querySelectorAll('[data-slot="empty-state"]'),
+    );
+    expect(empties.length).toBeGreaterThanOrEqual(4);
+    expect(empties.map((empty) => empty.getAttribute('data-size'))).toEqual(
+      empties.map(() => 'sm'),
+    );
     expect(section()!.querySelector('[role="note"]')!.textContent).toContain(
       'Russian',
     );

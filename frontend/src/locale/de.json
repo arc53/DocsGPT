@@ -663,7 +663,7 @@
       },
       "insights": {
         "heading": "Einblicke",
-        "description": "Vom Entscheidungsmodell aus jedem Gespräch geschätzt. Zu jeder Zahl gehört der Bereich, in dem sie am wahrscheinlichsten liegt.",
+        "description": "Von einem KI-Modell aus jedem Gespräch geschätzt.",
         "learnMore": "Mehr erfahren",
         "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
         "agentOff": "Einblicke sind für diesen Agenten ausgeschaltet.",
@@ -677,13 +677,6 @@
         "notEnoughReplies": "Noch nicht genug Folgenachrichten",
         "languageNote": "{{share}} dieser Nachrichten sind auf {{languages}}; diese Sprachen liest das Modell weniger genau. {{labels}} können daher weniger zuverlässig sein.",
         "otherLanguages": "anderen Sprachen",
-        "tiers": {
-          "estimated": "Geschätzt",
-          "estimatedHint": "Unsicherer als die Hauptzahlen: etwa ±{{points}} Prozentpunkte. Immer als Bereich gezeigt, nie als genaue Anzahl.",
-          "estimatedHintPlain": "Unsicherer als die Hauptzahlen. Immer als Bereich gezeigt, nie als genaue Anzahl.",
-          "experimental": "Experimentell",
-          "experimentalHint": "Bei kurzen Folgenachrichten oft falsch. Gut, um Trends zu erkennen, nicht für genaue Zahlen."
-        },
         "stats": {
           "fullyAnswered": "Vollständig beantwortet",
           "fullyAnsweredHint": "Fragen, die die Antwort vollständig beantwortet hat. Begrüßungen und Smalltalk zählen nicht.",
@@ -697,14 +690,14 @@
           "docsGapsHint": "Antworten, die zu kurz kamen, weil die Doku die Frage nicht abdeckt oder die Suche die Seite nicht gefunden hat. Unten gruppiert."
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · von {{formatted}} Frage",
-          "ofQuestions_other": "{{range}} · von {{formatted}} Fragen",
-          "ofReplies_one": "{{range}} · von {{formatted}} Folgenachricht",
-          "ofReplies_other": "{{range}} · von {{formatted}} Folgenachrichten",
-          "ofConversations_one": "{{range}} · von {{formatted}} Gespräch",
-          "ofConversations_other": "{{range}} · von {{formatted}} Gesprächen",
-          "inAnswers_one": "{{range}} · in {{formatted}} Antwort",
-          "inAnswers_other": "{{range}} · in {{formatted}} Antworten"
+          "ofQuestions_one": "von {{formatted}} Frage",
+          "ofQuestions_other": "von {{formatted}} Fragen",
+          "ofReplies_one": "von {{formatted}} Folgenachricht",
+          "ofReplies_other": "von {{formatted}} Folgenachrichten",
+          "ofConversations_one": "von {{formatted}} Gespräch",
+          "ofConversations_other": "von {{formatted}} Gesprächen",
+          "inAnswers_one": "in {{formatted}} Antwort",
+          "inAnswers_other": "in {{formatted}} Antworten"
         },
         "panels": {
           "answerStatus": "Antwortstatus im Zeitverlauf",
@@ -722,7 +715,7 @@
           "shareOfConversations_other": "Anteil an {{formatted}} Gesprächen",
           "ofReplies_one": "Von {{formatted}} Folgenachricht",
           "ofReplies_other": "Von {{formatted}} Folgenachrichten",
-          "barLabel": "{{name}}: {{value}}, wahrscheinlich {{low}} bis {{high}}",
+          "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: noch nicht genug Daten",
           "noneOfThese": "Keines dieser Themen",
           "tooltipValue": "{{name}}: {{value}} ({{share}})",
@@ -799,8 +792,8 @@
         },
         "share_one": "{{percent}} von {{formatted}}",
         "share_other": "{{percent}} von {{formatted}}",
-        "gapsCount_one": "{{formatted}} Lücke ({{range}})",
-        "gapsCount_other": "{{formatted}} Lücken ({{range}})",
+        "gapsCount_one": "{{formatted}} Lücke",
+        "gapsCount_other": "{{formatted}} Lücken",
         "change": {
           "new": "Neu",
           "none": "Keine Änderung",
@@ -815,10 +808,7 @@
         "loadError": "Die Lücken in der Doku konnten nicht geladen werden.",
         "panel": {
           "gaps": "Lücken",
-          "gapsValue": "{{value}} ({{range}})",
           "share": "Anteil der Fragen",
-          "shareValue_one": "{{percent}} ({{range}}) von {{formatted}}",
-          "shareValue_other": "{{percent}} ({{range}}) von {{formatted}}",
           "previous": "Voriger Zeitraum",
           "examples": "Beispielfragen",
           "allInLogs": "Alle Lücken in den Protokollen ansehen"
@@ -2992,7 +2982,7 @@
           "off": "Aus"
         },
         "topicHints": {
-          "auto": "Aus den Ordnern in den Quellen dieses Agenten gebildet und im Tab „Einblicke“ zum Gruppieren der Fragen genutzt. Die Gruppierung nach Thema ist experimentell.",
+          "auto": "Aus den Ordnern in den Quellen dieses Agenten gebildet und im Tab „Einblicke“ zum Gruppieren der Fragen genutzt.",
           "custom": "Deine eigene Liste. Fragen werden anhand von Name und Beschreibung zugeordnet.",
           "off": "Fragen werden nicht nach Thema gruppiert. Lücken in der Doku lassen sich weiterhin nach Seite oder Quelle gruppieren."
         },

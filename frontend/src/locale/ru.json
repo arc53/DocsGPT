@@ -699,7 +699,7 @@
       },
       "insights": {
         "heading": "Инсайты",
-        "description": "Оценка модели принятия решений по каждому разговору. У каждой цифры указан диапазон, в котором она вероятнее всего находится.",
+        "description": "Оценка ИИ-модели по каждому разговору.",
         "learnMore": "Подробнее",
         "coverage": "Размечено ответов: {{labelled}} из {{total}}",
         "agentOff": "Инсайты отключены для этого агента.",
@@ -713,13 +713,6 @@
         "notEnoughReplies": "Пока мало реплик",
         "languageNote": "{{share}} этих сообщений написаны на языках, которые модель читает менее точно: {{languages}}. {{labels}} могут быть менее надёжны.",
         "otherLanguages": "другие языки",
-        "tiers": {
-          "estimated": "Оценка",
-          "estimatedHint": "Менее точно, чем основные цифры: примерно ±{{points}} п. п. Показывается диапазоном, а не точным числом.",
-          "estimatedHintPlain": "Менее точно, чем основные цифры. Показывается диапазоном, а не точным числом.",
-          "experimental": "Экспериментально",
-          "experimentalHint": "Часто ошибается на коротких уточняющих сообщениях. Подходит, чтобы замечать тенденции, но не для точных цифр."
-        },
         "stats": {
           "fullyAnswered": "Полный ответ",
           "fullyAnsweredHint": "Вопросы, на которые ответ ответил полностью. Приветствия и болтовня не учитываются.",
@@ -733,22 +726,22 @@
           "docsGapsHint": "Ответы, которые не справились, потому что документация не покрывает вопрос или поиск не нашёл страницу. Сгруппированы ниже."
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · из {{formatted}} вопроса",
-          "ofQuestions_other": "{{range}} · из {{formatted}} вопроса",
-          "ofQuestions_few": "{{range}} · из {{formatted}} вопросов",
-          "ofQuestions_many": "{{range}} · из {{formatted}} вопросов",
-          "ofReplies_one": "{{range}} · из {{formatted}} реплики",
-          "ofReplies_other": "{{range}} · из {{formatted}} реплики",
-          "ofReplies_few": "{{range}} · из {{formatted}} реплик",
-          "ofReplies_many": "{{range}} · из {{formatted}} реплик",
-          "ofConversations_one": "{{range}} · из {{formatted}} разговора",
-          "ofConversations_other": "{{range}} · из {{formatted}} разговора",
-          "ofConversations_few": "{{range}} · из {{formatted}} разговоров",
-          "ofConversations_many": "{{range}} · из {{formatted}} разговоров",
-          "inAnswers_one": "{{range}} · в {{formatted}} ответе",
-          "inAnswers_other": "{{range}} · в {{formatted}} ответа",
-          "inAnswers_few": "{{range}} · в {{formatted}} ответах",
-          "inAnswers_many": "{{range}} · в {{formatted}} ответах"
+          "ofQuestions_one": "из {{formatted}} вопроса",
+          "ofQuestions_other": "из {{formatted}} вопроса",
+          "ofQuestions_few": "из {{formatted}} вопросов",
+          "ofQuestions_many": "из {{formatted}} вопросов",
+          "ofReplies_one": "из {{formatted}} реплики",
+          "ofReplies_other": "из {{formatted}} реплики",
+          "ofReplies_few": "из {{formatted}} реплик",
+          "ofReplies_many": "из {{formatted}} реплик",
+          "ofConversations_one": "из {{formatted}} разговора",
+          "ofConversations_other": "из {{formatted}} разговора",
+          "ofConversations_few": "из {{formatted}} разговоров",
+          "ofConversations_many": "из {{formatted}} разговоров",
+          "inAnswers_one": "в {{formatted}} ответе",
+          "inAnswers_other": "в {{formatted}} ответа",
+          "inAnswers_few": "в {{formatted}} ответах",
+          "inAnswers_many": "в {{formatted}} ответах"
         },
         "panels": {
           "answerStatus": "Статус ответов во времени",
@@ -774,7 +767,7 @@
           "ofReplies_other": "Из {{formatted}} реплики",
           "ofReplies_few": "Из {{formatted}} реплик",
           "ofReplies_many": "Из {{formatted}} реплик",
-          "barLabel": "{{name}}: {{value}}, вероятно от {{low}} до {{high}}",
+          "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: пока мало данных",
           "noneOfThese": "Ни одна из этих тем",
           "tooltipValue": "{{name}}: {{value}} ({{share}})",
@@ -853,10 +846,10 @@
         "share_other": "{{percent}} из {{formatted}}",
         "share_few": "{{percent}} из {{formatted}}",
         "share_many": "{{percent}} из {{formatted}}",
-        "gapsCount_one": "{{formatted}} пробел ({{range}})",
-        "gapsCount_other": "{{formatted}} пробела ({{range}})",
-        "gapsCount_few": "{{formatted}} пробела ({{range}})",
-        "gapsCount_many": "{{formatted}} пробелов ({{range}})",
+        "gapsCount_one": "{{formatted}} пробел",
+        "gapsCount_other": "{{formatted}} пробела",
+        "gapsCount_few": "{{formatted}} пробела",
+        "gapsCount_many": "{{formatted}} пробелов",
         "change": {
           "new": "Новый",
           "none": "Без изменений",
@@ -871,12 +864,7 @@
         "loadError": "Не удалось загрузить пробелы в документации.",
         "panel": {
           "gaps": "Пробелы",
-          "gapsValue": "{{value}} ({{range}})",
           "share": "Доля вопросов",
-          "shareValue_one": "{{percent}} ({{range}}) из {{formatted}}",
-          "shareValue_other": "{{percent}} ({{range}}) из {{formatted}}",
-          "shareValue_few": "{{percent}} ({{range}}) из {{formatted}}",
-          "shareValue_many": "{{percent}} ({{range}}) из {{formatted}}",
           "previous": "Прошлый период",
           "examples": "Примеры вопросов",
           "allInLogs": "Все пробелы в документации в журналах"
@@ -3150,7 +3138,7 @@
           "off": "Выкл."
         },
         "topicHints": {
-          "auto": "Строятся по папкам в источниках этого агента и группируют вопросы на вкладке «Инсайты». Группировка по темам экспериментальная.",
+          "auto": "Строятся по папкам в источниках этого агента и группируют вопросы на вкладке «Инсайты».",
           "custom": "Ваш собственный список. Вопросы распределяются по нему по названию и описанию.",
           "off": "Вопросы не группируются по темам. Пробелы в документации по-прежнему можно группировать по странице или источнику."
         },

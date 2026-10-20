@@ -27,11 +27,8 @@ import type { ConversationInsights as Insights } from '../types';
 import {
   ANSWER_STATUS_SERIES,
   capitalize,
-  drawnOptions,
   formatEstimate,
-  formatEstimateRange,
   formatShare,
-  formatShareRange,
   insightsState,
   joinList,
   languageName,
@@ -39,7 +36,6 @@ import {
   NONE_OF_THESE,
   optionBars,
   optionName,
-  rangePoints,
   showsFigures,
   weakLanguages,
   type BarRow,
@@ -47,9 +43,8 @@ import {
 } from './format';
 import ChartPanel from './ChartPanel';
 import ImplicitFeedbackPanel from './ImplicitFeedbackPanel';
-import IntervalBars from './IntervalBars';
 import SentimentPanel from './SentimentPanel';
-import TierBadge from './TierBadge';
+import ShareBars from './ShareBars';
 import { useConversationInsights } from './useConversationInsights';
 
 const DOCS_URL =
@@ -63,7 +58,10 @@ const INLINE_LABELS = [
   'reaction',
 ];
 
-/** Gap types derived from signals not computed yet: drawn only once they carry mass. */
+/**
+ * Gap types never drawn: `none` is the leftover share of fully answered
+ * answers, not a reason one fell short.
+ */
 const GAP_SKIP = ['none'];
 
 /** Chart panels ahead of the bar panels in the grid. */
@@ -141,7 +139,7 @@ export function InsightsIntro({
 
 /**
  * Insights: what the decision model estimated about the
- * window's conversations, as rates with their ranges, then the docs-gap
+ * window's conversations, as rates, then the docs-gap
  * report. The body of an agent's Insights page and of Settings › Insights. It
  * owns every off, empty and error message, so the panels and the report
  * render nothing in those states.
@@ -380,7 +378,6 @@ function InsightTiles({ data }: { data: Insights }) {
       sub: t(`settings.analytics.insights.sub.${subKey}`, {
         count: n,
         formatted: formatCount(n),
-        range: formatShareRange(figure.low, figure.high),
       }),
     };
   };
@@ -399,12 +396,6 @@ function InsightTiles({ data }: { data: Insights }) {
           sub: t('settings.analytics.insights.sub.inAnswers', {
             count: gapsN,
             formatted: formatCount(gapsN),
-            range: docsMissing
-              ? formatEstimateRange(
-                  docsMissing.low * gapsN,
-                  docsMissing.high * gapsN,
-                )
-              : formatCount(0),
           }),
         }),
   };
@@ -436,7 +427,7 @@ function InsightTiles({ data }: { data: Insights }) {
   );
 }
 
-/** The panel grid: answer status over time, then the interval-bar panels. */
+/** The panel grid: answer status over time, then the share-bar panels. */
 function InsightPanels({ data }: { data: Insights }) {
   const { t } = useTranslation();
   const { totals } = data;
@@ -464,7 +455,7 @@ function InsightPanels({ data }: { data: Insights }) {
       option === NONE_OF_THESE
         ? t('settings.analytics.insights.panels.noneOfThese')
         : option,
-    { last: [NONE_OF_THESE], ownerText: true },
+    { last: [NONE_OF_THESE] },
   );
   const tagN = Math.max(
     0,
@@ -476,30 +467,22 @@ function InsightPanels({ data }: { data: Insights }) {
     return {
       key: tag.id,
       label: tag.name,
-      ownerText: true,
-      value:
-        yes && (tagTotals?.n ?? 0) >= MIN_SAMPLE
-          ? { rate: yes.rate, low: yes.low, high: yes.high }
-          : undefined,
+      rate: yes && (tagTotals?.n ?? 0) >= MIN_SAMPLE ? yes.rate : undefined,
     };
   });
 
   const bars: Omit<BarsPanelProps, 'wide'>[] = [
     {
       title: t('settings.analytics.insights.panels.requestType'),
-      tier: 'estimated',
       n: totals.request_type?.n ?? 0,
       denominatorKey: 'shareOfMessages',
       rows: requestRows,
-      points: rangePoints(drawnOptions(totals.request_type, requestRows)),
     },
     {
       title: t('settings.analytics.insights.panels.whyNot'),
-      tier: 'estimated',
       n: gapType?.n ?? 0,
       denominatorKey: 'shareOfAnswers',
       rows: gapRows,
-      points: rangePoints(drawnOptions(gapType, gapRows)),
     },
   ];
   if (data.tags.length > 0)
@@ -515,7 +498,6 @@ function InsightPanels({ data }: { data: Insights }) {
   if (topic && topic.n > 0)
     bars.push({
       title: t('settings.analytics.insights.panels.topic'),
-      tier: 'experimental',
       n: topic.n,
       denominatorKey: 'shareOfMessages',
       rows: topicRows,
@@ -602,12 +584,10 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
 
 type BarsPanelProps = {
   title: string;
-  tier?: 'estimated' | 'experimental';
   /** What every figure in the panel is a share of. */
   n: number;
   denominatorKey: 'shareOfAnswers' | 'shareOfMessages' | 'shareOfConversations';
   rows: BarRow[];
-  points?: number;
   /** Draw the rows even under the sample floor (they check their own). */
   alwaysRows?: boolean;
   /** Span both grid columns, with the bars in two columns. */
@@ -616,43 +596,30 @@ type BarsPanelProps = {
 
 function BarsPanel({
   title,
-  tier,
   n,
   denominatorKey,
   rows,
-  points,
   alwaysRows = false,
   wide = false,
 }: BarsPanelProps) {
   const { t } = useTranslation();
   const enough = alwaysRows || n >= MIN_SAMPLE;
-  const heading = <SectionHeader as="h3" size="xs" title={title} />;
   return (
     <Card
       variant="subtle"
       padding="lg"
       className={cn('w-full', wide && 'xl:col-span-2')}
     >
-      {tier ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {heading}
-          <TierBadge
-            tier={tier}
-            points={tier === 'estimated' && enough ? points : undefined}
-          />
-        </div>
-      ) : (
-        heading
-      )}
+      <SectionHeader as="h3" size="xs" title={title} />
       {!enough ? (
         <EmptyState
-          size="xs"
+          size="sm"
           illustration="none"
           title={t('settings.analytics.insights.notEnoughShort')}
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          size="xs"
+          size="sm"
           illustration="none"
           title={t('settings.analytics.insights.panels.empty')}
         />
@@ -666,7 +633,7 @@ function BarsPanel({
               })}
             </p>
           )}
-          <IntervalBars rows={rows} ariaLabel={title} columns={wide ? 2 : 1} />
+          <ShareBars rows={rows} ariaLabel={title} columns={wide ? 2 : 1} />
         </>
       )}
     </Card>

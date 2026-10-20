@@ -663,7 +663,7 @@
       },
       "insights": {
         "heading": "Insights",
-        "description": "Estimated by the decision model from each conversation. Each figure comes with the range it most likely falls in.",
+        "description": "Estimated by an AI model from each conversation.",
         "learnMore": "Learn more",
         "coverage": "{{labelled}} of {{total}} answers labelled",
         "agentOff": "Insights are off for this agent.",
@@ -677,13 +677,6 @@
         "notEnoughReplies": "Not enough replies yet",
         "languageNote": "{{share}} of these messages are in {{languages}}, which the model reads less accurately. {{labels}} may be less reliable.",
         "otherLanguages": "other languages",
-        "tiers": {
-          "estimated": "Estimated",
-          "estimatedHint": "Less certain than the headline figures: about ±{{points}} points. Shown as a range, never as an exact count.",
-          "estimatedHintPlain": "Less certain than the headline figures. Shown as a range, never as an exact count.",
-          "experimental": "Experimental",
-          "experimentalHint": "Often wrong on short follow-up messages. Use it to spot trends, not for exact numbers."
-        },
         "stats": {
           "fullyAnswered": "Fully answered",
           "fullyAnsweredHint": "Questions the answer fully addressed. Greetings and small talk are not counted.",
@@ -697,14 +690,14 @@
           "docsGapsHint": "Answers that fell short because the docs don't cover the question or the search didn't find the page. Grouped below."
         },
         "sub": {
-          "ofQuestions_one": "{{range}} · of {{formatted}} question",
-          "ofQuestions_other": "{{range}} · of {{formatted}} questions",
-          "ofReplies_one": "{{range}} · of {{formatted}} reply",
-          "ofReplies_other": "{{range}} · of {{formatted}} replies",
-          "ofConversations_one": "{{range}} · of {{formatted}} conversation",
-          "ofConversations_other": "{{range}} · of {{formatted}} conversations",
-          "inAnswers_one": "{{range}} · in {{formatted}} answer",
-          "inAnswers_other": "{{range}} · in {{formatted}} answers"
+          "ofQuestions_one": "of {{formatted}} question",
+          "ofQuestions_other": "of {{formatted}} questions",
+          "ofReplies_one": "of {{formatted}} reply",
+          "ofReplies_other": "of {{formatted}} replies",
+          "ofConversations_one": "of {{formatted}} conversation",
+          "ofConversations_other": "of {{formatted}} conversations",
+          "inAnswers_one": "in {{formatted}} answer",
+          "inAnswers_other": "in {{formatted}} answers"
         },
         "panels": {
           "answerStatus": "Answer status over time",
@@ -722,7 +715,7 @@
           "shareOfConversations_other": "Share of {{formatted}} conversations",
           "ofReplies_one": "Of {{formatted}} reply",
           "ofReplies_other": "Of {{formatted}} replies",
-          "barLabel": "{{name}}: {{value}}, likely {{low}} to {{high}}",
+          "barLabel": "{{name}}: {{value}}",
           "barLabelNone": "{{name}}: not enough data yet",
           "noneOfThese": "None of these topics",
           "tooltipValue": "{{name}}: {{value}} ({{share}})",
@@ -799,8 +792,8 @@
         },
         "share_one": "{{percent}} of {{formatted}}",
         "share_other": "{{percent}} of {{formatted}}",
-        "gapsCount_one": "{{formatted}} gap ({{range}})",
-        "gapsCount_other": "{{formatted}} gaps ({{range}})",
+        "gapsCount_one": "{{formatted}} gap",
+        "gapsCount_other": "{{formatted}} gaps",
         "change": {
           "new": "New",
           "none": "No change",
@@ -815,10 +808,7 @@
         "loadError": "Could not load docs gaps.",
         "panel": {
           "gaps": "Gaps",
-          "gapsValue": "{{value}} ({{range}})",
           "share": "Share of questions",
-          "shareValue_one": "{{percent}} ({{range}}) of {{formatted}}",
-          "shareValue_other": "{{percent}} ({{range}}) of {{formatted}}",
           "previous": "Previous period",
           "examples": "Example questions",
           "allInLogs": "See every docs gap in Logs"
@@ -2992,7 +2982,7 @@
           "off": "Off"
         },
         "topicHints": {
-          "auto": "Built from the folders in this agent's sources and used to group questions on the Insights tab. Topic grouping is experimental.",
+          "auto": "Built from the folders in this agent's sources and used to group questions on the Insights tab.",
           "custom": "Your own list. Questions are sorted into these by name and description.",
           "off": "Questions are not grouped by topic. Docs gaps can still be grouped by page or source."
         },
