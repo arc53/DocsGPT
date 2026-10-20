@@ -322,8 +322,20 @@ def _policy_changed(existing: dict, update_fields: dict) -> bool:
 
 
 def _without_analytics(config) -> dict:
-    """``config`` without its ``analytics`` key; ``{}`` when unset."""
-    return {key: value for key, value in (config or {}).items() if key != "analytics"}
+    """``config`` normalized, without its ``analytics`` key.
+
+    Both sides are read through ``AgentConfig.parse`` so a stored config that was
+    never normalized (``{}`` on a workflow or an older agent) compares equal to the
+    defaults an update fills in, and an insights-only save is not a policy change.
+
+    Args:
+        config: A stored or inbound ``config`` value, or ``None``.
+
+    Returns:
+        The normalized config without ``analytics``.
+    """
+    normalized = AgentConfig.parse(config if isinstance(config, dict) else None).model_dump(mode="json")
+    return {key: value for key, value in normalized.items() if key != "analytics"}
 
 
 def _reject(message: str, user: str, field: str = "-"):

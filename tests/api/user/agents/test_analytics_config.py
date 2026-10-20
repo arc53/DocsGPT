@@ -112,6 +112,12 @@ class TestNotPolicy:
         assert normalized["analytics"] == AnalyticsConfig().model_dump(mode="json")
         assert not _policy_changed({"config": stored}, {"config": normalized})
 
+    def test_an_analytics_save_on_a_never_normalized_config_is_not_a_policy_change(self):
+        # A workflow (or an older agent) stores ``{}``; the update normalizes to every default.
+        new = normalize_agent_config({"analytics": {"enabled": False, "tags": [_tag(1)]}})
+        assert not _policy_changed({"config": {}}, {"config": new})
+        assert not _policy_changed({"config": None}, {"config": new})
+
     def test_a_guardrails_change_still_is(self):
         new = {"guardrails": {"enabled": False}, "api_write_allowlist": [], "analytics": {}}
         assert _policy_changed({"config": self.GUARDED}, {"config": new})
