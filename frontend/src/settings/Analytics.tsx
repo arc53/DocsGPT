@@ -4,10 +4,7 @@ import { useSelector } from 'react-redux';
 import { foldSeries, OTHER_SERIES_KEY } from './foldSeries';
 
 import userService from '../api/services/userService';
-import SkeletonLoader from '../components/SkeletonLoader';
 import StatCard from '../components/StatCard';
-import { Card } from '../components/ui/card';
-import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -20,11 +17,15 @@ import { useLoaderState } from '../hooks';
 import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { useChartPalette } from '../utils/chartUtils';
-import { formatCount, formatDate } from '../utils/dateTimeUtils';
+import { EMPTY_VALUE, formatCount, formatDate } from '../utils/dateTimeUtils';
 import AnalyticsChart from './AnalyticsChart';
+import ChartPanel from './insights/ChartPanel';
+import { formatShare } from './insights/format';
 import { type TimeFilter } from './TimeFilterSelect';
 
 type TokenGroupBy = 'none' | 'model' | 'agent' | 'source';
+
+type Chart = 'messages' | 'tokens' | 'feedback' | 'tools' | 'schedules';
 
 type AnalyticsProps = {
   agentId?: string;
@@ -93,6 +94,18 @@ export default function Analytics({
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
   const [loadingTools, setLoadingTools] = useLoaderState(true);
   const [loadingSchedules, setLoadingSchedules] = useLoaderState(true);
+  // The charts whose last fetch failed: each shows its error with Retry.
+  const [failed, setFailed] = useState<Record<Chart, boolean>>({
+    messages: false,
+    tokens: false,
+    feedback: false,
+    tools: false,
+    schedules: false,
+  });
+  const markFailed = (chart: Chart, value: boolean) =>
+    setFailed((prev) =>
+      prev[chart] === value ? prev : { ...prev, [chart]: value },
+    );
   // Re-read on every theme change; Chart.js can't read CSS variables.
   const palette = useChartPalette();
   const primaryColor = palette.primary;
@@ -126,8 +139,9 @@ export default function Analytics({
       const data = await response.json();
       if (reqId !== requestIds.current.messages) return;
       setMessagesData(data.messages);
-    } catch (error) {
-      console.error(error);
+      markFailed('messages', false);
+    } catch {
+      if (reqId === requestIds.current.messages) markFailed('messages', true);
     } finally {
       if (reqId === requestIds.current.messages) setLoadingMessages(false);
     }
@@ -156,8 +170,9 @@ export default function Analytics({
       if (reqId !== requestIds.current.tokens) return;
       setTokenUsageData(data.token_usage);
       setTokenSeries(data.series);
-    } catch (error) {
-      console.error(error);
+      markFailed('tokens', false);
+    } catch {
+      if (reqId === requestIds.current.tokens) markFailed('tokens', true);
     } finally {
       if (reqId === requestIds.current.tokens) setLoadingTokens(false);
     }
@@ -178,8 +193,9 @@ export default function Analytics({
       const data = await response.json();
       if (reqId !== requestIds.current.feedback) return;
       setFeedbackData(data.feedback);
-    } catch (error) {
-      console.error(error);
+      markFailed('feedback', false);
+    } catch {
+      if (reqId === requestIds.current.feedback) markFailed('feedback', true);
     } finally {
       if (reqId === requestIds.current.feedback) setLoadingFeedback(false);
     }
@@ -200,8 +216,9 @@ export default function Analytics({
       const data = await response.json();
       if (reqId !== requestIds.current.tools) return;
       setToolsData(data.tools);
-    } catch (error) {
-      console.error(error);
+      markFailed('tools', false);
+    } catch {
+      if (reqId === requestIds.current.tools) markFailed('tools', true);
     } finally {
       if (reqId === requestIds.current.tools) setLoadingTools(false);
     }
@@ -222,8 +239,9 @@ export default function Analytics({
       const data = await response.json();
       if (reqId !== requestIds.current.schedules) return;
       setScheduleData(data.runs);
-    } catch (error) {
-      console.error(error);
+      markFailed('schedules', false);
+    } catch {
+      if (reqId === requestIds.current.schedules) markFailed('schedules', true);
     } finally {
       if (reqId === requestIds.current.schedules) setLoadingSchedules(false);
     }
@@ -270,8 +288,8 @@ export default function Analytics({
   const scheduleRunsTotal = scheduleTotals.completed + scheduleTotals.failed;
   const scheduleSuccessRate =
     scheduleRunsTotal > 0
-      ? `${Math.round((scheduleTotals.completed / scheduleRunsTotal) * 100)}%`
-      : '—';
+      ? formatShare(scheduleTotals.completed / scheduleRunsTotal)
+      : EMPTY_VALUE;
 
   const statCards: { label: string; value: string; hint?: string }[] = [
     {
@@ -316,6 +334,14 @@ export default function Analytics({
     backgroundColor: seriesColor(index),
   }));
 
+  // A panel's loading, error and Retry, from its chart's fetch.
+  const chartState = (chart: Chart, loading: boolean, retry: () => void) => ({
+    loading,
+    error:
+      !loading && failed[chart] ? t('settings.analytics.loadError') : undefined,
+    onRetry: retry,
+  });
+
   return (
     <div>
       {/* Summary stat cards */}
@@ -334,273 +360,220 @@ export default function Analytics({
         ))}
       </div>
 
-      {/* Messages Analytics */}
+      {/* Messages and token usage */}
       <div className="mt-4 flex w-full flex-col gap-3 xl:flex-row">
-        <Card
-          variant="subtle"
-          padding="lg"
-          className="h-[345px] w-full overflow-hidden xl:w-1/2"
-        >
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('settings.analytics.messages')}
-          />
-          <div className="relative h-[245px] w-full">
-            <div
-              id="legend-container-1"
-              className="flex flex-row items-center justify-end"
-            ></div>
-            {loadingMessages ? (
-              <SkeletonLoader count={1} component={'analysis'} />
-            ) : (
-              <AnalyticsChart
-                data={{
-                  labels: Object.keys(messagesData || {}).map((item) =>
-                    formatDate(item),
-                  ),
-                  datasets: [
-                    {
-                      label: t('settings.analytics.messages'),
-                      data: Object.values(messagesData || {}),
-                      backgroundColor: primaryColor,
-                    },
-                  ],
-                }}
-                legendID="legend-container-1"
-                maxTicksLimitInX={8}
-                gridColor={palette.border}
-                tickColor={palette.mutedForeground}
-                isStacked={false}
-              />
-            )}
-          </div>
-        </Card>
-
-        {/* Token Usage Analytics */}
-        <Card
-          variant="subtle"
-          padding="lg"
-          className="h-[345px] w-full overflow-hidden xl:w-1/2"
-        >
-          <div className="flex flex-row flex-wrap items-center justify-start gap-3">
-            <SectionHeader
-              as="h3"
-              size="xs"
-              title={t('settings.analytics.tokenUsage')}
+        <ChartPanel
+          className="xl:w-1/2"
+          title={t('settings.analytics.messages')}
+          {...chartState('messages', loadingMessages, () =>
+            fetchMessagesData(agentId, timeFilter),
+          )}
+          chart={(legendId) => (
+            <AnalyticsChart
+              data={{
+                labels: Object.keys(messagesData || {}).map((item) =>
+                  formatDate(item),
+                ),
+                datasets: [
+                  {
+                    label: t('settings.analytics.messages'),
+                    data: Object.values(messagesData || {}),
+                    backgroundColor: primaryColor,
+                  },
+                ],
+              }}
+              legendID={legendId}
+              maxTicksLimitInX={8}
+              gridColor={palette.border}
+              tickColor={palette.mutedForeground}
+              isStacked={false}
             />
-            <Select
-              value={tokenGroupBy}
-              onValueChange={(value) => setTokenGroupBy(value as TokenGroupBy)}
-            >
-              <SelectTrigger
-                className="min-w-[110px]"
-                size="field"
-                shape="pill"
-                aria-label={t('settings.analytics.groupBy')}
+          )}
+        />
+
+        <ChartPanel
+          className="xl:w-1/2"
+          title={t('settings.analytics.tokenUsage')}
+          actions={
+            <>
+              <Select
+                value={tokenGroupBy}
+                onValueChange={(value) =>
+                  setTokenGroupBy(value as TokenGroupBy)
+                }
               >
-                <SelectValue placeholder={t('settings.analytics.groupBy')} />
-              </SelectTrigger>
-              <SelectContent fit>
-                {groupByOptions.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="ml-auto flex flex-row items-center gap-2">
-              <p className="text-muted-foreground text-xs">
-                {t('settings.analytics.includeSideChannel')}
-              </p>
-              <Switch
-                aria-label={t('settings.analytics.includeSideChannel')}
-                checked={includeSideChannel}
-                onCheckedChange={setIncludeSideChannel}
-              />
-            </div>
-          </div>
-          <div className="relative h-[245px] w-full">
-            <div
-              id="legend-container-2"
-              className="flex flex-row items-center justify-end"
-            ></div>
-            {loadingTokens ? (
-              <SkeletonLoader count={1} component={'analysis'} />
-            ) : (
-              <AnalyticsChart
-                data={{
-                  labels: tokenLabels,
-                  datasets: tokenDatasets,
-                }}
-                legendID="legend-container-2"
-                maxTicksLimitInX={8}
-                gridColor={palette.border}
-                tickColor={palette.mutedForeground}
-                isStacked={true}
-              />
-            )}
-          </div>
-        </Card>
+                <SelectTrigger
+                  className="min-w-[110px]"
+                  size="field"
+                  shape="pill"
+                  aria-label={t('settings.analytics.groupBy')}
+                >
+                  <SelectValue placeholder={t('settings.analytics.groupBy')} />
+                </SelectTrigger>
+                <SelectContent fit>
+                  {groupByOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="ml-auto flex flex-row items-center gap-2">
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.analytics.includeSideChannel')}
+                </p>
+                <Switch
+                  aria-label={t('settings.analytics.includeSideChannel')}
+                  checked={includeSideChannel}
+                  onCheckedChange={setIncludeSideChannel}
+                />
+              </div>
+            </>
+          }
+          {...chartState('tokens', loadingTokens, () =>
+            fetchTokenData(
+              agentId,
+              timeFilter,
+              tokenGroupBy,
+              includeSideChannel,
+            ),
+          )}
+          chart={(legendId) => (
+            <AnalyticsChart
+              data={{
+                labels: tokenLabels,
+                datasets: tokenDatasets,
+              }}
+              legendID={legendId}
+              maxTicksLimitInX={8}
+              gridColor={palette.border}
+              tickColor={palette.mutedForeground}
+              isStacked={true}
+            />
+          )}
+        />
       </div>
 
       {/* Scheduled runs + tool usage */}
       <div className="mt-4 flex w-full flex-col gap-3 xl:flex-row">
-        <Card
-          variant="subtle"
-          padding="lg"
-          className="h-[345px] w-full overflow-hidden xl:w-1/2"
-        >
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('settings.analytics.scheduledRuns')}
-          />
-          <div className="relative h-[245px] w-full">
-            <div
-              id="legend-container-4"
-              className="flex flex-row items-center justify-end"
-            ></div>
-            {loadingSchedules ? (
-              <SkeletonLoader count={1} component={'analysis'} />
-            ) : (
-              <AnalyticsChart
-                data={{
-                  labels: Object.keys(scheduleData || {}).map((item) =>
-                    formatDate(item),
-                  ),
-                  datasets: [
-                    {
-                      label: t('settings.analytics.completed'),
-                      data: Object.values(scheduleData || {}).map(
-                        (item) => item.completed,
-                      ),
-                      backgroundColor: palette.success,
-                    },
-                    {
-                      label: t('settings.analytics.failed'),
-                      data: Object.values(scheduleData || {}).map(
-                        (item) => item.failed,
-                      ),
-                      backgroundColor: palette.destructive,
-                    },
-                    {
-                      label: t('settings.analytics.skipped'),
-                      data: Object.values(scheduleData || {}).map(
-                        (item) => item.skipped,
-                      ),
-                      backgroundColor: palette.warning,
-                    },
-                  ],
-                }}
-                legendID="legend-container-4"
-                maxTicksLimitInX={8}
-                gridColor={palette.border}
-                tickColor={palette.mutedForeground}
-                isStacked={true}
-              />
-            )}
-          </div>
-        </Card>
+        <ChartPanel
+          className="xl:w-1/2"
+          title={t('settings.analytics.scheduledRuns')}
+          {...chartState('schedules', loadingSchedules, () =>
+            fetchScheduleData(agentId, timeFilter),
+          )}
+          chart={(legendId) => (
+            <AnalyticsChart
+              data={{
+                labels: Object.keys(scheduleData || {}).map((item) =>
+                  formatDate(item),
+                ),
+                datasets: [
+                  {
+                    label: t('settings.analytics.completed'),
+                    data: Object.values(scheduleData || {}).map(
+                      (item) => item.completed,
+                    ),
+                    backgroundColor: palette.success,
+                  },
+                  {
+                    label: t('settings.analytics.failed'),
+                    data: Object.values(scheduleData || {}).map(
+                      (item) => item.failed,
+                    ),
+                    backgroundColor: palette.destructive,
+                  },
+                  {
+                    label: t('settings.analytics.skipped'),
+                    data: Object.values(scheduleData || {}).map(
+                      (item) => item.skipped,
+                    ),
+                    backgroundColor: palette.warning,
+                  },
+                ],
+              }}
+              legendID={legendId}
+              maxTicksLimitInX={8}
+              gridColor={palette.border}
+              tickColor={palette.mutedForeground}
+              isStacked={true}
+            />
+          )}
+        />
 
-        <Card
-          variant="subtle"
-          padding="lg"
-          className="h-[345px] w-full overflow-hidden xl:w-1/2"
-        >
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('settings.analytics.toolUsage')}
-          />
-          <div className="relative h-[245px] w-full">
-            <div
-              id="legend-container-5"
-              className="flex flex-row items-center justify-end"
-            ></div>
-            {loadingTools ? (
-              <SkeletonLoader count={1} component={'analysis'} />
-            ) : (
-              <AnalyticsChart
-                data={{
-                  labels: (toolsData || []).map((tool) => tool.tool_name),
-                  datasets: [
-                    {
-                      label: t('settings.analytics.successful'),
-                      data: (toolsData || []).map(
-                        (tool) => tool.calls - tool.failures,
-                      ),
-                      backgroundColor: palette.success,
-                    },
-                    {
-                      label: t('settings.analytics.failed'),
-                      data: (toolsData || []).map((tool) => tool.failures),
-                      backgroundColor: palette.destructive,
-                    },
-                  ],
-                }}
-                legendID="legend-container-5"
-                maxTicksLimitInX={8}
-                gridColor={palette.border}
-                tickColor={palette.mutedForeground}
-                isStacked={true}
-              />
-            )}
-          </div>
-        </Card>
+        <ChartPanel
+          className="xl:w-1/2"
+          title={t('settings.analytics.toolUsage')}
+          {...chartState('tools', loadingTools, () =>
+            fetchToolsData(agentId, timeFilter),
+          )}
+          chart={(legendId) => (
+            <AnalyticsChart
+              data={{
+                labels: (toolsData || []).map((tool) => tool.tool_name),
+                datasets: [
+                  {
+                    label: t('settings.analytics.successful'),
+                    data: (toolsData || []).map(
+                      (tool) => tool.calls - tool.failures,
+                    ),
+                    backgroundColor: palette.success,
+                  },
+                  {
+                    label: t('settings.analytics.failed'),
+                    data: (toolsData || []).map((tool) => tool.failures),
+                    backgroundColor: palette.destructive,
+                  },
+                ],
+              }}
+              legendID={legendId}
+              maxTicksLimitInX={8}
+              gridColor={palette.border}
+              tickColor={palette.mutedForeground}
+              isStacked={true}
+            />
+          )}
+        />
       </div>
 
       {/* Feedback Analytics */}
       <div className="mt-4 flex w-full flex-col gap-3">
-        <Card
-          variant="subtle"
-          padding="lg"
-          className="h-[345px] w-full overflow-hidden"
-        >
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('settings.analytics.userFeedback')}
-          />
-          <div className="relative h-[245px] w-full">
-            <div
-              id="legend-container-3"
-              className="flex flex-row items-center justify-end"
-            ></div>
-            {loadingFeedback ? (
-              <SkeletonLoader count={1} component={'analysis'} />
-            ) : (
-              <AnalyticsChart
-                data={{
-                  labels: Object.keys(feedbackData || {}).map((item) =>
-                    formatDate(item),
-                  ),
-                  datasets: [
-                    {
-                      label: t('settings.analytics.positiveFeedback'),
-                      data: Object.values(feedbackData || {}).map(
-                        (item) => item.positive,
-                      ),
-                      backgroundColor: palette.success,
-                    },
-                    {
-                      label: t('settings.analytics.negativeFeedback'),
-                      data: Object.values(feedbackData || {}).map(
-                        (item) => item.negative,
-                      ),
-                      backgroundColor: palette.destructive,
-                    },
-                  ],
-                }}
-                legendID="legend-container-3"
-                maxTicksLimitInX={8}
-                gridColor={palette.border}
-                tickColor={palette.mutedForeground}
-                isStacked={false}
-              />
-            )}
-          </div>
-        </Card>
+        <ChartPanel
+          title={t('settings.analytics.userFeedback')}
+          {...chartState('feedback', loadingFeedback, () =>
+            fetchFeedbackData(agentId, timeFilter),
+          )}
+          chart={(legendId) => (
+            <AnalyticsChart
+              data={{
+                labels: Object.keys(feedbackData || {}).map((item) =>
+                  formatDate(item),
+                ),
+                datasets: [
+                  {
+                    label: t('settings.analytics.positiveFeedback'),
+                    data: Object.values(feedbackData || {}).map(
+                      (item) => item.positive,
+                    ),
+                    backgroundColor: palette.success,
+                  },
+                  {
+                    label: t('settings.analytics.negativeFeedback'),
+                    data: Object.values(feedbackData || {}).map(
+                      (item) => item.negative,
+                    ),
+                    backgroundColor: palette.destructive,
+                  },
+                ],
+              }}
+              legendID={legendId}
+              maxTicksLimitInX={8}
+              gridColor={palette.border}
+              tickColor={palette.mutedForeground}
+              isStacked={false}
+            />
+          )}
+        />
       </div>
     </div>
   );

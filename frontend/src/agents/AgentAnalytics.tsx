@@ -1,18 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
-import userService from '../api/services/userService';
+import { EmptyState } from '../components/ui/empty-state';
 import SectionShell from '../navigation/SectionShell';
-import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import TimeFilterSelect, {
   DEFAULT_TIME_FILTER,
   type TimeFilter,
 } from '../settings/TimeFilterSelect';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
-import { Agent } from './types';
+import { useAgent } from './hooks/useAgent';
 
 /**
  * An agent's Analytics: the counted usage (messages, tokens, scheduled
@@ -23,27 +21,8 @@ import { Agent } from './types';
 export default function AgentAnalytics() {
   const { t } = useTranslation();
   const { agentId } = useParams();
-  const token = useSelector(selectToken);
-  const [agent, setAgent] = useState<Agent>();
+  const { agent, error, reload } = useAgent(agentId);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
-
-  useEffect(() => {
-    if (!agentId) return;
-    let cancelled = false;
-    userService
-      .getAgent(agentId, token)
-      .then((response) => {
-        if (!response.ok) throw new Error('agent');
-        return response.json();
-      })
-      .then((record: Agent) => {
-        if (!cancelled) setAgent(record);
-      })
-      .catch((error) => console.error(error));
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId, token]);
 
   return (
     <SectionShell>
@@ -54,10 +33,22 @@ export default function AgentAnalytics() {
           <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
         }
       />
-      <p className="text-muted-foreground mb-4 text-sm leading-6">
-        {t('agents.analytics.subtitle')}
-      </p>
-      {agentId && <Analytics agentId={agentId} filterOption={timeFilter} />}
+      {error ? (
+        <EmptyState
+          tone="destructive"
+          size="sm"
+          illustration="none"
+          title={t('agents.loadError')}
+          onRetry={reload}
+        />
+      ) : (
+        <>
+          <p className="text-muted-foreground mb-4 text-sm leading-6">
+            {t('agents.analytics.subtitle')}
+          </p>
+          {agentId && <Analytics agentId={agentId} filterOption={timeFilter} />}
+        </>
+      )}
     </SectionShell>
   );
 }

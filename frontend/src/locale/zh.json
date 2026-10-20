@@ -660,7 +660,6 @@
         }
       },
       "insights": {
-        "heading": "洞察",
         "description": "由 AI 模型根据每段对话估算。",
         "learnMore": "了解更多",
         "coverage": "已分析 {{labelled}}/{{total}} 条回答",
@@ -834,7 +833,8 @@
           "examples": "示例问题",
           "allInLogs": "在日志中查看全部文档缺口"
         }
-      }
+      },
+      "loadError": "无法加载此图表。"
     },
     "logs": {
       "label": "日志",
@@ -2991,7 +2991,7 @@
           "off": "问题不归入主题。文档缺口仍可按页面或来源分组。",
           "workflowOff": "工作流没有自己的来源，因此由你来命名主题。开启后即可添加。"
         },
-        "autoTopicsNone": "此智能体的来源中没有文件夹，因此问题不会按主题分组。",
+        "autoTopicsNone": "此智能体的来源中文件夹少于两个，因此问题不会按主题分组。",
         "countOf": "{{count}}/{{max}}",
         "addTopic": "添加主题",
         "suggestFailed": "无法加载此智能体来源中的文件夹。",
@@ -3525,7 +3525,8 @@
     "deleteConsequence": "其计划任务和运行历史也会一并删除。此操作无法撤销。",
     "analytics": {
       "subtitle": "此智能体的消息量、令牌使用情况和用户反馈。"
-    }
+    },
+    "loadError": "无法加载此智能体。"
   },
   "components": {
     "fileUpload": {

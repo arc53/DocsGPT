@@ -1,14 +1,12 @@
 import { Settings2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
 import { Navigate, useParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
-import userService from '../api/services/userService';
 import SectionShell from '../navigation/SectionShell';
-import { selectToken } from '../preferences/preferenceSlice';
 import ConversationInsights from '../settings/insights/ConversationInsights';
 import { insightsState } from '../settings/insights/format';
 import { useConversationInsights } from '../settings/insights/useConversationInsights';
@@ -19,8 +17,8 @@ import TimeFilterSelect, {
 import { canAgent } from './agentAccess';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import InsightsSettingsSheet from './components/InsightsSettingsSheet';
+import { useAgent } from './hooks/useAgent';
 import { agentLogsPath } from './paths';
-import { Agent } from './types';
 
 /**
  * An agent's Insights: what the decision model estimated about
@@ -32,10 +30,7 @@ import { Agent } from './types';
 export default function AgentInsights() {
   const { t } = useTranslation();
   const { agentId } = useParams();
-  const token = useSelector(selectToken);
-  const [agent, setAgent] = useState<Agent>();
-  // Bumped after a settings save, so the record is read again.
-  const [agentReload, setAgentReload] = useState(0);
+  const { agent, error, reload, setAgent } = useAgent(agentId);
   const [settings, setSettings] = useState<{
     open: boolean;
     startEnabled: boolean;
@@ -43,24 +38,6 @@ export default function AgentInsights() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
   const insights = useConversationInsights(agentId, timeFilter);
   const state = insightsState(insights.status, insights.data);
-
-  useEffect(() => {
-    if (!agentId) return;
-    let cancelled = false;
-    userService
-      .getAgent(agentId, token)
-      .then((response) => {
-        if (!response.ok) throw new Error('agent');
-        return response.json();
-      })
-      .then((record: Agent) => {
-        if (!cancelled) setAgent(record);
-      })
-      .catch((error) => console.error(error));
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId, token, agentReload]);
 
   const canEdit = canAgent(agent, 'edit');
   const openSettings = (startEnabled: boolean) =>
@@ -92,17 +69,26 @@ export default function AgentInsights() {
           </div>
         }
       />
-      {agentId && (
-        <ConversationInsights
-          state={state}
-          data={insights.data}
-          agentId={agentId}
-          agent={agent}
-          filterOption={timeFilter}
-          onRetry={insights.retry}
-          standalone
-          onTurnOn={canEdit ? () => openSettings(true) : undefined}
+      {error ? (
+        <EmptyState
+          tone="destructive"
+          size="sm"
+          illustration="none"
+          title={t('agents.loadError')}
+          onRetry={reload}
         />
+      ) : (
+        agentId && (
+          <ConversationInsights
+            state={state}
+            data={insights.data}
+            agentId={agentId}
+            agent={agent}
+            filterOption={timeFilter}
+            onRetry={insights.retry}
+            onTurnOn={canEdit ? () => openSettings(true) : undefined}
+          />
+        )
       )}
       {agent && canEdit && (
         <InsightsSettingsSheet
@@ -111,8 +97,8 @@ export default function AgentInsights() {
           agent={agent}
           startEnabled={settings.startEnabled}
           onSaved={(config) => {
-            setAgent((prev) => prev && { ...prev, config });
-            setAgentReload((key) => key + 1);
+            setAgent((prev) => ({ ...prev, config }));
+            reload();
             insights.retry();
           }}
         />

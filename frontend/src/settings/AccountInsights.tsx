@@ -46,7 +46,6 @@ export default function AccountInsights() {
         data={insights.data}
         filterOption={timeFilter}
         onRetry={insights.retry}
-        standalone
         intro={false}
       />
     </>

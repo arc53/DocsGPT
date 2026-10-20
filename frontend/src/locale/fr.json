@@ -680,7 +680,6 @@
         }
       },
       "insights": {
-        "heading": "Analyses",
         "description": "Estimé par un modèle d’IA à partir de chaque conversation.",
         "learnMore": "En savoir plus",
         "coverage": "{{labelled}} réponses analysées sur {{total}}",
@@ -866,7 +865,8 @@
           "examples": "Exemples de questions",
           "allInLogs": "Voir toutes les lacunes dans les journaux"
         }
-      }
+      },
+      "loadError": "Impossible de charger ce graphique."
     },
     "logs": {
       "label": "Journaux",
@@ -3088,7 +3088,7 @@
           "off": "Les questions ne sont pas classées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source.",
           "workflowOff": "Un workflow n’a pas de sources propres, c’est donc vous qui nommez les sujets. Activez cette option pour les ajouter."
         },
-        "autoTopicsNone": "Les sources de cet agent n’ont aucun dossier, les questions ne sont donc pas regroupées par sujet.",
+        "autoTopicsNone": "Les sources de cet agent comptent moins de deux dossiers, les questions ne sont donc pas regroupées par sujet.",
         "countOf": "{{count}} sur {{max}}",
         "addTopic": "Ajouter un sujet",
         "suggestFailed": "Impossible de charger les dossiers des sources de cet agent.",
@@ -3632,7 +3632,8 @@
     "deleteConsequence": "Ses planifications et son historique d’exécutions sont également supprimés. Cette action est irréversible.",
     "analytics": {
       "subtitle": "Volume de messages, consommation de jetons et retours des utilisateurs pour cet agent."
-    }
+    },
+    "loadError": "Impossible de charger cet agent."
   },
   "components": {
     "fileUpload": {

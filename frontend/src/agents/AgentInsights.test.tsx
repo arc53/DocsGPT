@@ -12,13 +12,14 @@ const insights = vi.hoisted(() => ({ body: {} as object }));
 const record = vi.hoisted(() => ({
   actions: undefined as string[] | undefined,
   calls: { agent: 0, insights: 0 },
+  ok: true,
 }));
 vi.mock('../api/services/userService', () => ({
   default: {
     getAgent: () => {
       record.calls.agent += 1;
       return Promise.resolve({
-        ok: true,
+        ok: record.ok,
         json: () =>
           Promise.resolve({
             id: 'a1',
@@ -69,6 +70,7 @@ describe('AgentInsights', () => {
     sheet.props = [];
     record.actions = undefined;
     record.calls = { agent: 0, insights: 0 };
+    record.ok = true;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -112,7 +114,6 @@ describe('AgentInsights', () => {
       agentId: 'a1',
       agent: { id: 'a1' },
       filterOption: 'last_30_days',
-      standalone: true,
     });
   });
 
@@ -191,5 +192,20 @@ describe('AgentInsights', () => {
     await render();
     expect(settingsButton()).toBeUndefined();
     expect(seen.props.at(-1)!.onTurnOn).toBeUndefined();
+  });
+
+  // DESIGN › Load errors.
+  it('says the agent failed to load and reads it again on Retry', async () => {
+    insights.body = examples.insights;
+    record.ok = false;
+    await render();
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('agents.loadError');
+    expect(container.querySelector('[data-testid="insights"]')).toBeNull();
+    record.ok = true;
+    await act(async () => alert.querySelector('button')!.click());
+    await act(async () => undefined);
+    expect(record.calls.agent).toBe(2);
+    expect(container.querySelector('[data-testid="insights"]')).not.toBeNull();
   });
 });

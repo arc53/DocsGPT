@@ -662,7 +662,6 @@
         }
       },
       "insights": {
-        "heading": "Insights",
         "description": "Estimated by an AI model from each conversation.",
         "learnMore": "Learn more",
         "coverage": "{{labelled}} of {{total}} answers analyzed",
@@ -836,7 +835,8 @@
           "examples": "Example questions",
           "allInLogs": "See every docs gap in Logs"
         }
-      }
+      },
+      "loadError": "Could not load this chart."
     },
     "logs": {
       "label": "Logs",
@@ -3008,7 +3008,7 @@
           "off": "Questions aren't sorted into topics. Docs gaps can still be grouped by page or source.",
           "workflowOff": "A workflow has no sources of its own, so you name the topics. Turn this on to add them."
         },
-        "autoTopicsNone": "This agent's sources have no folders, so questions are not grouped by topic.",
+        "autoTopicsNone": "This agent's sources have fewer than two folders, so questions are not grouped by topic.",
         "countOf": "{{count}} of {{max}}",
         "addTopic": "Add topic",
         "suggestFailed": "Couldn't load the folders of this agent's sources.",
@@ -3542,7 +3542,8 @@
     "deleteConsequence": "Its schedules and run history are deleted too. This can't be undone.",
     "analytics": {
       "subtitle": "Message volume, token usage and user feedback for this agent."
-    }
+    },
+    "loadError": "Could not load this agent."
   },
   "components": {
     "fileUpload": {

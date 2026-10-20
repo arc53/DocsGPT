@@ -27,8 +27,8 @@ vi.mock('../api/services/userService', () => {
   return {
     default: {
       getMessageAnalytics: vi.fn(empty),
+      getFeedbackAnalytics: vi.fn(empty),
       getTokenAnalytics: empty,
-      getFeedbackAnalytics: empty,
       getToolAnalytics: empty,
       getScheduleAnalytics: empty,
       getConversationInsights: vi.fn(() =>
@@ -74,7 +74,7 @@ describe('Analytics without insights', () => {
   };
 
   const feedbackRow = () =>
-    Array.from(container.querySelectorAll('h3'))
+    Array.from(container.querySelectorAll('h2'))
       .find((h) => h.textContent === 'settings.analytics.userFeedback')!
       .closest('[data-slot="card"]')!.parentElement!;
 
@@ -125,6 +125,49 @@ describe('Analytics without insights', () => {
     );
     expect(tiles[3].className).not.toContain('col-span');
   });
+  // FX-7: the shared ChartPanel, one outline level under the page's h1.
+  it('titles its five chart panels as sections of the page', async () => {
+    await render('a1');
+    expect(
+      Array.from(container.querySelectorAll('h2')).map((h) => h.textContent),
+    ).toEqual([
+      'settings.analytics.messages',
+      'settings.analytics.tokenUsage',
+      'settings.analytics.scheduledRuns',
+      'settings.analytics.toolUsage',
+      'settings.analytics.userFeedback',
+    ]);
+    expect(container.querySelector('h3')).toBeNull();
+  });
+
+  // DESIGN › Load errors: a failed chart says so, with Retry, instead of an
+  // empty chart.
+  it('says a chart failed to load and fetches it again on Retry', async () => {
+    const feedback = vi.mocked(userService.getFeedbackAnalytics);
+    feedback.mockClear();
+    feedback.mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({}),
+      } as Response),
+    );
+    await render('a1');
+    // The loading flags drop 250ms after the answer (useLoaderState).
+    const settle = () =>
+      act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    await settle();
+    const alerts = container.querySelectorAll('[role="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toContain('settings.analytics.loadError');
+    expect(
+      alerts[0].closest('[data-slot="card"]')!.querySelector('h2')!.textContent,
+    ).toBe('settings.analytics.userFeedback');
+    await act(async () => alerts[0].querySelector('button')!.click());
+    await settle();
+    expect(feedback).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('names the token group-by select, lets it grow, and fits its menu', async () => {
     await render('a1');
     const trigger = container.querySelector<HTMLElement>(

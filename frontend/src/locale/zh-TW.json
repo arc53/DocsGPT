@@ -660,7 +660,6 @@
         }
       },
       "insights": {
-        "heading": "洞察",
         "description": "由 AI 模型根據每段對話估算。",
         "learnMore": "了解更多",
         "coverage": "已分析 {{labelled}}/{{total}} 則回答",
@@ -834,7 +833,8 @@
           "examples": "範例問題",
           "allInLogs": "在日誌中查看所有文件缺口"
         }
-      }
+      },
+      "loadError": "無法載入此圖表。"
     },
     "logs": {
       "label": "日誌",
@@ -2993,7 +2993,7 @@
           "off": "問題不歸入主題。文件缺口仍可依頁面或來源分組。",
           "workflowOff": "工作流程沒有自己的來源，因此由你為主題命名。開啟後即可新增。"
         },
-        "autoTopicsNone": "此代理的來源中沒有資料夾，因此問題不會依主題分組。",
+        "autoTopicsNone": "此代理的來源中資料夾少於兩個，因此問題不會依主題分組。",
         "countOf": "{{count}}/{{max}}",
         "addTopic": "新增主題",
         "suggestFailed": "無法載入此代理來源中的資料夾。",
@@ -3527,7 +3527,8 @@
     "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。",
     "analytics": {
       "subtitle": "此代理的訊息量、Token 使用量和使用者回饋。"
-    }
+    },
+    "loadError": "無法載入此代理。"
   },
   "components": {
     "fileUpload": {

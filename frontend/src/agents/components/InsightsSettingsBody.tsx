@@ -183,7 +183,7 @@ export default function InsightsSettingsBody({
 
   /** The folders as a custom list: no reserved name, no repeats, within the limit. */
   const asList = (source: AnalyticsTopic[]) =>
-    appendSuggestions([], source, maxTopics).items;
+    appendSuggestions([], source, maxTopics);
 
   const customize = async () => {
     let source = folderTopics ?? null;

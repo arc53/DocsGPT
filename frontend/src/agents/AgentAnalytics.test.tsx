@@ -6,11 +6,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'token' }));
+const agentRead = vi.hoisted(() => ({ ok: true, calls: 0 }));
 vi.mock('../api/services/userService', () => ({
   default: {
     getAgent: () =>
       Promise.resolve({
-        ok: true,
+        ok: (agentRead.calls++, agentRead.ok),
         json: () =>
           Promise.resolve({
             id: 'a1',
@@ -40,6 +41,8 @@ describe('AgentAnalytics', () => {
   let root: Root;
 
   beforeEach(() => {
+    agentRead.ok = true;
+    agentRead.calls = 0;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -81,5 +84,30 @@ describe('AgentAnalytics', () => {
     );
     expect(subtitle).toBeDefined();
     expect(container.textContent).not.toContain('settings.analytics.subtitle');
+  });
+
+  // DESIGN › Load errors.
+  it('says the agent failed to load and reads it again on Retry', async () => {
+    agentRead.ok = false;
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/analytics/a1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/analytics/:agentId"
+              element={<AgentAnalytics />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('agents.loadError');
+    expect(container.querySelector('[data-testid="analytics"]')).toBeNull();
+    agentRead.ok = true;
+    await act(async () => alert.querySelector('button')!.click());
+    await act(async () => undefined);
+    expect(agentRead.calls).toBe(2);
+    expect(container.querySelector('[data-testid="analytics"]')).not.toBeNull();
   });
 });

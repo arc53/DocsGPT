@@ -27,10 +27,10 @@ const strings = (tree: object): string[] =>
 const LOCALES = { de, en, es, fr, jp, ru, zh, zhTW };
 
 // The feature is called one thing wherever its name is shown: the agent tab
-// and page title, the Settings › Analytics heading, and the editor section.
+// and page title, the Settings › Insights page, and the editor section.
 const NAME_KEYS = [
   'agents.pageHeader.tabs.insights',
-  'settings.analytics.insights.heading',
+  'settings.insights.label',
   'agents.form.sections.analytics',
 ];
 

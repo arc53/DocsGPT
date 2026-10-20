@@ -6,11 +6,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'token' }));
+const agentRead = vi.hoisted(() => ({ ok: true, calls: 0 }));
 vi.mock('../api/services/userService', () => ({
   default: {
     getAgent: () =>
       Promise.resolve({
-        ok: true,
+        ok: (agentRead.calls++, agentRead.ok),
         json: () =>
           Promise.resolve({
             id: 'a1',
@@ -55,6 +56,8 @@ describe('AgentLogs', () => {
   let root: Root;
 
   beforeEach(() => {
+    agentRead.ok = true;
+    agentRead.calls = 0;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -148,5 +151,32 @@ describe('AgentLogs', () => {
     expect(heading?.textContent).toBe('agents.pageHeader.tabs.logs');
     expect(section.textContent).toContain('agents.logs.description');
     expect(section.querySelector('[data-testid="logs"]')).not.toBeNull();
+  });
+
+  // DESIGN › Load errors: an agent that fails to load says so, with Retry,
+  // in place of its guardrail activity and logs.
+  it('says the agent failed to load and reads it again on Retry', async () => {
+    agentRead.ok = false;
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/logs/a1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/logs/:agentId"
+              element={<AgentLogs />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('agents.loadError');
+    expect(container.querySelector('[data-testid="logs"]')).toBeNull();
+    agentRead.ok = true;
+    await act(async () => alert.querySelector('button')!.click());
+    await act(async () => undefined);
+    expect(agentRead.calls).toBe(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[data-testid="logs"]')).not.toBeNull();
   });
 });

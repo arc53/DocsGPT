@@ -662,7 +662,6 @@
         }
       },
       "insights": {
-        "heading": "Einblicke",
         "description": "Von einem KI-Modell aus jedem Gespräch geschätzt.",
         "learnMore": "Mehr erfahren",
         "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
@@ -836,7 +835,8 @@
           "examples": "Beispielfragen",
           "allInLogs": "Alle Lücken in den Protokollen ansehen"
         }
-      }
+      },
+      "loadError": "Dieses Diagramm konnte nicht geladen werden."
     },
     "logs": {
       "label": "Protokolle",
@@ -3008,7 +3008,7 @@
           "off": "Fragen werden keinem Thema zugeordnet. Lücken in der Doku lassen sich weiterhin nach Seite oder Quelle gruppieren.",
           "workflowOff": "Ein Workflow hat keine eigenen Quellen, daher legst du die Themen selbst fest. Schalte dies ein, um sie hinzuzufügen."
         },
-        "autoTopicsNone": "Die Quellen dieses Agenten haben keine Ordner, daher werden Fragen nicht nach Thema gruppiert.",
+        "autoTopicsNone": "Die Quellen dieses Agenten haben weniger als zwei Ordner, daher werden Fragen nicht nach Thema gruppiert.",
         "countOf": "{{count}} von {{max}}",
         "addTopic": "Thema hinzufügen",
         "suggestFailed": "Die Ordner aus den Quellen dieses Agenten konnten nicht geladen werden.",
@@ -3542,7 +3542,8 @@
     "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
     "analytics": {
       "subtitle": "Nachrichtenvolumen, Token-Verbrauch und Nutzerfeedback für diesen Agenten."
-    }
+    },
+    "loadError": "Dieser Agent konnte nicht geladen werden."
   },
   "components": {
     "fileUpload": {

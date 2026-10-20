@@ -680,7 +680,6 @@
         }
       },
       "insights": {
-        "heading": "Información",
         "description": "Estimado por un modelo de IA a partir de cada conversación.",
         "learnMore": "Más información",
         "coverage": "{{labelled}} de {{total}} respuestas analizadas",
@@ -866,7 +865,8 @@
           "examples": "Preguntas de ejemplo",
           "allInLogs": "Ver todos los huecos en los registros"
         }
-      }
+      },
+      "loadError": "No se pudo cargar este gráfico."
     },
     "logs": {
       "label": "Registros",
@@ -3088,7 +3088,7 @@
           "off": "Las preguntas no se clasifican en temas. Los huecos en la documentación se pueden seguir agrupando por página o fuente.",
           "workflowOff": "Un flujo de trabajo no tiene fuentes propias, así que tú das nombre a los temas. Actívalo para añadirlos."
         },
-        "autoTopicsNone": "Las fuentes de este agente no tienen carpetas, así que las preguntas no se agrupan por tema.",
+        "autoTopicsNone": "Las fuentes de este agente tienen menos de dos carpetas, así que las preguntas no se agrupan por tema.",
         "countOf": "{{count}} de {{max}}",
         "addTopic": "Añadir tema",
         "suggestFailed": "No se pudieron cargar las carpetas de las fuentes de este agente.",
@@ -3632,7 +3632,8 @@
     "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer.",
     "analytics": {
       "subtitle": "Volumen de mensajes, uso de tokens y comentarios de usuarios de este agente."
-    }
+    },
+    "loadError": "No se pudo cargar este agente."
   },
   "components": {
     "fileUpload": {

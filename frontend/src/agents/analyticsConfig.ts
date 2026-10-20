@@ -103,21 +103,12 @@ export function nameTaken(name: string, others: string[]): boolean {
 /**
  * Suggested topics appended to the list: those whose name is not there yet,
  * up to the limit. Existing rows are never changed.
- *
- * Returns:
- *   The new list and why nothing (or not everything) was added: `none` when
- *   there was nothing to suggest, `noNew` when every suggestion is listed,
- *   `full` when the limit cut some off.
  */
 export function appendSuggestions(
   items: AnalyticsTopic[],
   suggestions: AnalyticsTopic[],
   max: number,
-): {
-  items: AnalyticsTopic[];
-  note: 'none' | 'noNew' | 'full' | null;
-} {
-  if (suggestions.length === 0) return { items, note: 'none' };
+): AnalyticsTopic[] {
   const fresh: AnalyticsTopic[] = [];
   for (const suggestion of suggestions) {
     const name = suggestion.name.trim();
@@ -131,10 +122,5 @@ export function appendSuggestions(
       continue;
     fresh.push({ name, description: suggestion.description ?? '' });
   }
-  if (fresh.length === 0) return { items, note: 'noNew' };
-  const room = Math.max(0, max - items.length);
-  return {
-    items: [...items, ...fresh.slice(0, room)],
-    note: fresh.length > room ? 'full' : null,
-  };
+  return [...items, ...fresh.slice(0, Math.max(0, max - items.length))];
 }

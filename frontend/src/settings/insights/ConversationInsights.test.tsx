@@ -197,14 +197,12 @@ describe('ConversationInsights', () => {
       agentProp,
       onRetry = () => undefined,
       filterOption = 'last_30_days',
-      standalone = false,
       onTurnOn,
     }: {
       status?: 'loading' | 'error' | 'ready';
       agentProp?: Agent;
       onRetry?: () => void;
       filterOption?: string;
-      standalone?: boolean;
       onTurnOn?: () => void;
     } = {},
   ) => {
@@ -219,7 +217,6 @@ describe('ConversationInsights', () => {
             agent={agentProp}
             filterOption={filterOption}
             onRetry={onRetry}
-            standalone={standalone}
             onTurnOn={onTurnOn}
           />
           <LocationProbe />
@@ -263,7 +260,6 @@ describe('ConversationInsights', () => {
     const onTurnOn = vi.fn();
     render(data({ enabled: false }), {
       agentProp: agent(['view', 'edit']),
-      standalone: true,
       onTurnOn,
     });
     const empty = emptyState()!;
@@ -310,7 +306,7 @@ describe('ConversationInsights', () => {
   });
 
   it('shows how far analysis has come while answers are still to be labelled', () => {
-    render(unlabelled(40, 6, 30, 4), { standalone: true });
+    render(unlabelled(40, 6, 30, 4));
     const empty = emptyState()!;
     expect(empty.textContent).toContain(
       'settings.analytics.insights.analyzing.title',
@@ -328,7 +324,7 @@ describe('ConversationInsights', () => {
   });
 
   it('says where insights start when every answer is older than the labelling window', () => {
-    render(unlabelled(12, 0, 0, 12), { standalone: true });
+    render(unlabelled(12, 0, 0, 12));
     const empty = emptyState()!;
     expect(empty.textContent).toContain(
       'settings.analytics.insights.olderOnly.title',
@@ -371,12 +367,32 @@ describe('ConversationInsights', () => {
     expect(tiles[3].className).not.toContain('col-span');
   });
 
-  it('counts labelled answers beside the title while some are still waiting', () => {
+  // FX-7: the skeleton is the loaded grid's panels, in its order, so no
+  // title changes when the figures land.
+  it('loads with the panels it will show, in their order', () => {
+    const titles = () =>
+      Array.from(section()!.querySelectorAll('h2')).map((h) => h.textContent);
+    const always = [
+      'settings.analytics.insights.panels.answerStatus',
+      'settings.analytics.insights.panels.sentiment',
+      'settings.analytics.insights.panels.implicitFeedback',
+      'settings.analytics.insights.panels.requestType',
+      'settings.analytics.insights.panels.whyNot',
+    ];
+    render(null, { status: 'loading' });
+    expect(titles()).toEqual(always);
+    // The fixture has no tags and no topics: the always-there panels only.
     render(data());
-    const count = section()!.querySelector('[data-slot="count"]')!;
-    expect(count.textContent).toBe(
-      'settings.analytics.insights.coverage(118|120)',
-    );
+    expect(titles()).toEqual(always);
+  });
+
+  // The intro paragraph: the description, then the coverage while some
+  // answers are still waiting.
+  const intro = () => section()!.firstElementChild!.textContent;
+
+  it('counts labelled answers after the description while some are still waiting', () => {
+    render(data());
+    expect(intro()).toContain('settings.analytics.insights.coverage(118|120)');
     render(
       data({
         coverage: {
@@ -387,17 +403,16 @@ describe('ConversationInsights', () => {
         },
       }),
     );
-    expect(section()!.querySelector('[data-slot="count"]')).toBeNull();
+    expect(intro()).toContain('settings.analytics.insights.description');
+    expect(intro()).not.toContain('settings.analytics.insights.coverage');
   });
 
   // Only answers the sweep can still label count: older ones never would.
   it('leaves answers older than the labelling window out of the count', () => {
     render(unlabelled(120, 100, 5, 15));
-    expect(section()!.querySelector('[data-slot="count"]')!.textContent).toBe(
-      'settings.analytics.insights.coverage(100|105)',
-    );
+    expect(intro()).toContain('settings.analytics.insights.coverage(100|105)');
     render(unlabelled(120, 100, 0, 20));
-    expect(section()!.querySelector('[data-slot="count"]')).toBeNull();
+    expect(intro()).not.toContain('settings.analytics.insights.coverage');
     expect(
       container.querySelector('[data-testid="insight-tiles"]'),
     ).not.toBeNull();
@@ -542,23 +557,9 @@ describe('ConversationInsights', () => {
   });
 
   it('opens with its description, not a heading, as a page of its own', () => {
-    act(() =>
-      root.render(
-        <MemoryRouter>
-          <ConversationInsights
-            state="ready"
-            data={data()}
-            filterOption="last_30_days"
-            onRetry={() => undefined}
-            standalone
-          />
-        </MemoryRouter>,
-      ),
-    );
-    expect(section()!.querySelector('h2')).toBeNull();
-    expect(section()!.firstElementChild!.textContent).toContain(
-      'settings.analytics.insights.description',
-    );
+    render(data());
+    expect(section()!.firstElementChild!.tagName).toBe('P');
+    expect(intro()).toContain('settings.analytics.insights.description');
   });
 
   // Settings › Insights draws the description in its page toolbar.
@@ -571,7 +572,6 @@ describe('ConversationInsights', () => {
             data={data()}
             filterOption="last_30_days"
             onRetry={() => undefined}
-            standalone
             intro={false}
           />
         </MemoryRouter>,

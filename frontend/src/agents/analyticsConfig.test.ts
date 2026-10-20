@@ -72,28 +72,34 @@ describe('appendSuggestions', () => {
   ];
 
   it('appends only names not in the list, never touching existing rows', () => {
-    const result = appendSuggestions(
-      listed,
-      [
-        { name: 'installation', description: 'Different text' },
-        { name: 'Billing', description: 'Pages such as: Plans' },
-        { name: 'None of these', description: 'Reserved' },
-      ],
-      15,
-    );
-    expect(result.items).toEqual([
+    expect(
+      appendSuggestions(
+        listed,
+        [
+          { name: 'installation', description: 'Different text' },
+          { name: 'Billing', description: 'Pages such as: Plans' },
+          { name: 'None of these', description: 'Reserved' },
+        ],
+        15,
+      ),
+    ).toEqual([
       listed[0],
       { name: 'Billing', description: 'Pages such as: Plans' },
     ]);
-    expect(result.note).toBeNull();
   });
 
-  it('says why nothing was added, or that the limit cut some off', () => {
-    expect(appendSuggestions(listed, [], 15).note).toBe('none');
+  it('keeps the list as it is with nothing new to add', () => {
+    expect(appendSuggestions(listed, [], 15)).toEqual(listed);
     expect(
-      appendSuggestions(listed, [{ name: 'INSTALLATION', description: '' }], 15)
-        .note,
-    ).toBe('noNew');
+      appendSuggestions(
+        listed,
+        [{ name: 'INSTALLATION', description: '' }],
+        15,
+      ),
+    ).toEqual(listed);
+  });
+
+  it('stops at the limit', () => {
     const full = appendSuggestions(
       listed,
       [
@@ -102,8 +108,7 @@ describe('appendSuggestions', () => {
       ],
       2,
     );
-    expect(full.items.map((item) => item.name)).toEqual(['Installation', 'A']);
-    expect(full.note).toBe('full');
+    expect(full.map((item) => item.name)).toEqual(['Installation', 'A']);
   });
 });
 

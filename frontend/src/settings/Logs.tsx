@@ -55,6 +55,8 @@ const RUNNING_POLL_MS = 30_000;
 
 /** Rows per page. */
 const PAGE_SIZE = 10;
+/** A log's own keys that its Copy leaves out; the rest is the record. */
+const COPY_OMITS = ['id', 'action', 'timestamp', 'event_type'];
 
 /** The most rows one request reads: the endpoint's largest page. */
 const MAX_REQUEST_ROWS = 100;
@@ -738,7 +740,9 @@ function Log({
     error: 'text-destructive',
     warning: 'text-warning',
   };
-  const { id, action, timestamp, event_type, ...filteredLog } = log;
+  const filteredLog = Object.fromEntries(
+    Object.entries(log).filter(([key]) => !COPY_OMITS.includes(key)),
+  );
 
   const detailRows: [string, string][] = [];
   if (log.event_type === 'chat') {

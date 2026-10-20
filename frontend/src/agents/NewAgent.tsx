@@ -861,7 +861,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const parsed = JSON.parse(text);
       setAgent({ ...agent, json_schema: parsed });
       setJsonSchemaValid(true);
-    } catch (error) {
+    } catch {
       setJsonSchemaValid(false);
     }
   };
@@ -1539,7 +1539,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         type: 'public',
                       }
                     }
-                    onSelectPrompt={(name, id, type) =>
+                    onSelectPrompt={(name, id) =>
                       setAgent({ ...agent, prompt_id: id })
                     }
                     setPrompts={(newPrompts) =>
@@ -2001,7 +2001,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         prompts={prompts}
         isOpen={addPromptModal}
         onClose={() => setAddPromptModal('INACTIVE')}
-        onSelect={(name: string, id: string, type: string) => {
+        onSelect={(name: string, id: string) => {
           setAgent({ ...agent, prompt_id: id });
         }}
       />

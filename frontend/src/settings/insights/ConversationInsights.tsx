@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 
 import { canAgent } from '../../agents/agentAccess';
 import type { Agent } from '../../agents/types';
-import SkeletonLoader from '../../components/SkeletonLoader';
 import StatCard from '../../components/StatCard';
 import { useChartPalette } from '../../utils/chartUtils';
 import {
@@ -78,11 +77,6 @@ type ConversationInsightsProps = {
   filterOption: string;
   onRetry: () => void;
   /**
-   * The whole page (an agent's Insights), whose title already
-   * names it: the section opens with its description, not a heading.
-   */
-  standalone?: boolean;
-  /**
    * False when the page draws `InsightsIntro` in its own toolbar, beside the
    * window select (Settings › Insights), so the section opens with figures.
    */
@@ -90,11 +84,19 @@ type ConversationInsightsProps = {
 };
 
 /**
- * The insights description and, while labelling is partial, its coverage:
- * labelled of what the sweep will label, so answers older than its window
- * (never labelled) leave the count out.
+ * The intro of insights as a page of its own: the description, its Learn
+ * more link and, while labelling is partial, its coverage (labelled of what
+ * the sweep will label, so answers older than its window, never labelled,
+ * leave the count out), as inline content for a paragraph (the section's
+ * own, or a page toolbar's `intro`).
  */
-function useInsightsCopy(state: InsightsState, data: Insights | null) {
+export function InsightsIntro({
+  state,
+  data,
+}: {
+  state: InsightsState;
+  data: Insights | null;
+}) {
   const { t } = useTranslation();
   const coverage = data?.coverage;
   const count =
@@ -106,7 +108,7 @@ function useInsightsCopy(state: InsightsState, data: Insights | null) {
           ),
         })
       : undefined;
-  const description = (
+  return (
     <>
       {t('settings.analytics.insights.description')}{' '}
       <Button variant="link" size="text" asChild>
@@ -114,27 +116,6 @@ function useInsightsCopy(state: InsightsState, data: Insights | null) {
           {t('settings.analytics.insights.learnMore')}
         </a>
       </Button>
-    </>
-  );
-  return { count, description };
-}
-
-/**
- * The intro of insights as a page of its own: the description, its Learn
- * more link and the coverage count, as inline content for a paragraph (the
- * section's own, or a page toolbar's `intro`).
- */
-export function InsightsIntro({
-  state,
-  data,
-}: {
-  state: InsightsState;
-  data: Insights | null;
-}) {
-  const { count, description } = useInsightsCopy(state, data);
-  return (
-    <>
-      {description}
       {count && (
         <>
           <span aria-hidden> · </span>
@@ -159,31 +140,24 @@ export default function ConversationInsights({
   agent,
   filterOption,
   onRetry,
-  standalone = false,
   intro = true,
   onTurnOn,
 }: ConversationInsightsProps) {
   const { t } = useTranslation();
-  const { count, description } = useInsightsCopy(state, data);
   const canEditAgent = Boolean(agent) && canAgent(agent, 'edit');
 
   // Off on the server: nothing to show, and nothing the page can change.
   if (state === 'serverOff') return null;
 
   // The intro (what the figures are, how many answers are in) only sits
-  // above figures: every other state says what it is itself.
+  // above figures: every other state says what it is itself. The page's
+  // title already names the section, so it opens with the description.
   const header =
-    !intro || !showsFigures(state) ? null : standalone ? (
+    intro && showsFigures(state) ? (
       <p className="text-muted-foreground text-sm leading-6">
         <InsightsIntro state={state} data={data} />
       </p>
-    ) : (
-      <SectionHeader
-        title={t('settings.analytics.insights.heading')}
-        count={count}
-        description={description}
-      />
-    );
+    ) : null;
 
   let body: ReactNode = null;
   if (state === 'loading') body = <InsightsSkeleton />;
@@ -246,10 +220,7 @@ export default function ConversationInsights({
 
   return (
     <>
-      <section
-        className={cn('flex flex-col gap-4', !standalone && 'mt-8')}
-        data-testid="insights"
-      >
+      <section className="flex flex-col gap-4" data-testid="insights">
         {header}
         {body}
       </section>
@@ -329,6 +300,12 @@ function OlderOnlyState({ data }: { data: Insights }) {
   );
 }
 
+/**
+ * The loaded layout with nothing in it yet: the five tiles, then the panels
+ * every window has, in the grid's order and under their own titles, so
+ * nothing moves or renames when the figures land. Tags and Topic join only
+ * when the window has them.
+ */
 function InsightsSkeleton() {
   const { t } = useTranslation();
   const stats = [
@@ -337,6 +314,13 @@ function InsightsSkeleton() {
     'frustrated',
     'asksHuman',
     'docsGaps',
+  ] as const;
+  const panels = [
+    'answerStatus',
+    'sentiment',
+    'implicitFeedback',
+    'requestType',
+    'whyNot',
   ] as const;
   return (
     <>
@@ -354,20 +338,12 @@ function InsightsSkeleton() {
         ))}
       </div>
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        {(['answerStatus', 'whyNot'] as const).map((key) => (
-          <Card
+        {panels.map((key) => (
+          <ChartPanel
             key={key}
-            variant="subtle"
-            padding="lg"
-            className="h-[345px] w-full overflow-hidden"
-          >
-            <SectionHeader
-              as="h3"
-              size="xs"
-              title={t(`settings.analytics.insights.panels.${key}`)}
-            />
-            <SkeletonLoader count={1} component="analysis" />
-          </Card>
+            title={t(`settings.analytics.insights.panels.${key}`)}
+            loading
+          />
         ))}
       </div>
     </>
@@ -703,7 +679,7 @@ function BarsPanel({
       padding="lg"
       className={cn('w-full', wide && 'xl:col-span-2')}
     >
-      <SectionHeader as="h3" size="xs" title={title} />
+      <SectionHeader as="h2" size="xs" title={title} />
       {!enough ? (
         <EmptyState
           size="sm"
