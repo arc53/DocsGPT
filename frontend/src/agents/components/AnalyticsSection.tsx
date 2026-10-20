@@ -25,7 +25,7 @@ type AnalyticsSectionProps = {
   disabled?: boolean;
   /**
    * Open the section and bring it into view, once: the page was opened at
-   * `#insights` (Insights' "Turn on").
+   * `#insights`.
    */
   reveal?: boolean;
   token: string | null;

@@ -9,20 +9,40 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'token' }));
 const insights = vi.hoisted(() => ({ body: {} as object }));
+const record = vi.hoisted(() => ({
+  actions: undefined as string[] | undefined,
+  calls: { agent: 0, insights: 0 },
+}));
 vi.mock('../api/services/userService', () => ({
   default: {
-    getAgent: () =>
-      Promise.resolve({
+    getAgent: () => {
+      record.calls.agent += 1;
+      return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve({
             id: 'a1',
             name: 'Carrier FAQ',
+            agent_type: 'classic',
             last_used_at: null,
+            allowed_actions: record.actions,
           }),
-      }),
-    getConversationInsights: () =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve(insights.body) }),
+      });
+    },
+    getConversationInsights: () => {
+      record.calls.insights += 1;
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(insights.body),
+      });
+    },
+  },
+}));
+const sheet = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+vi.mock('./components/InsightsSettingsSheet', () => ({
+  default: (props: Record<string, unknown>) => {
+    sheet.props.push(props);
+    return props.open ? <div data-testid="insights-sheet" /> : null;
   },
 }));
 const seen = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
@@ -46,6 +66,9 @@ describe('AgentInsights', () => {
 
   beforeEach(() => {
     seen.props = [];
+    sheet.props = [];
+    record.actions = undefined;
+    record.calls = { agent: 0, insights: 0 };
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -100,5 +123,73 @@ describe('AgentInsights', () => {
     await render();
     expect(container.querySelector('[data-testid="logs"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="insights"]')).toBeNull();
+  });
+
+  const settingsButton = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="page-toolbar"] button',
+      ),
+    ).find(
+      (b) => b.textContent === 'settings.analytics.insights.settings.button',
+    );
+
+  // IN-6 + IN-21: the settings open in a panel on the page they change.
+  it('gives an editor a Settings button after the window that opens the settings panel', async () => {
+    insights.body = examples.insights;
+    record.actions = ['view', 'edit'];
+    await render();
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    const trigger = toolbar.querySelector('[data-slot="select-trigger"]')!;
+    const button = settingsButton()!;
+    expect(
+      trigger.compareDocumentPosition(button) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="insights-sheet"]'),
+    ).toBeNull();
+    await act(async () => button.click());
+    expect(
+      container.querySelector('[data-testid="insights-sheet"]'),
+    ).not.toBeNull();
+    expect(sheet.props.at(-1)).toMatchObject({
+      open: true,
+      startEnabled: false,
+      agent: { id: 'a1' },
+    });
+  });
+
+  it("opens the panel switched on from the off state's Turn on", async () => {
+    insights.body = { ...examples.insights, enabled: false };
+    record.actions = ['view', 'edit'];
+    await render();
+    const onTurnOn = seen.props.at(-1)!.onTurnOn as () => void;
+    await act(async () => onTurnOn());
+    expect(sheet.props.at(-1)).toMatchObject({
+      open: true,
+      startEnabled: true,
+    });
+  });
+
+  it('refreshes the agent and its insights after a save', async () => {
+    insights.body = examples.insights;
+    record.actions = ['view', 'edit'];
+    await render();
+    await act(async () => settingsButton()!.click());
+    const before = { ...record.calls };
+    const onSaved = sheet.props.at(-1)!.onSaved as (config: object) => void;
+    await act(async () => onSaved({ analytics: { enabled: false } }));
+    await act(async () => undefined);
+    expect(record.calls.insights).toBe(before.insights + 1);
+    expect(record.calls.agent).toBe(before.agent + 1);
+  });
+
+  it('gives a viewer no Settings button and no Turn on', async () => {
+    insights.body = { ...examples.insights, enabled: false };
+    record.actions = ['view'];
+    await render();
+    expect(settingsButton()).toBeUndefined();
+    expect(seen.props.at(-1)!.onTurnOn).toBeUndefined();
   });
 });

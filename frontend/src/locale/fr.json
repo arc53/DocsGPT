@@ -813,6 +813,11 @@
         "olderOnly": {
           "title": "Aucune conversation récente à analyser",
           "description": "Les analyses couvrent les conversations à partir du {{date}}. Les plus anciennes ne sont pas analysées ; un administrateur peut les rattraper."
+        },
+        "settings": {
+          "button": "Paramètres",
+          "title": "Paramètres des analyses",
+          "saveFailed": "Impossible d’enregistrer les paramètres des analyses. Réessayez."
         }
       },
       "gaps": {

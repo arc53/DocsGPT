@@ -198,12 +198,14 @@ describe('ConversationInsights', () => {
       onRetry = () => undefined,
       filterOption = 'last_30_days',
       standalone = false,
+      onTurnOn,
     }: {
       status?: 'loading' | 'error' | 'ready';
       agentProp?: Agent;
       onRetry?: () => void;
       filterOption?: string;
       standalone?: boolean;
+      onTurnOn?: () => void;
     } = {},
   ) => {
     const state: InsightsState = insightsState(status, response);
@@ -218,6 +220,7 @@ describe('ConversationInsights', () => {
             filterOption={filterOption}
             onRetry={onRetry}
             standalone={standalone}
+            onTurnOn={onTurnOn}
           />
           <LocationProbe />
         </MemoryRouter>,
@@ -257,9 +260,11 @@ describe('ConversationInsights', () => {
   // IN-20: one honest state each, with its next step, and the intro only
   // above figures.
   it("offers an agent's editors Turn on when the agent has it off", () => {
+    const onTurnOn = vi.fn();
     render(data({ enabled: false }), {
       agentProp: agent(['view', 'edit']),
       standalone: true,
+      onTurnOn,
     });
     const empty = emptyState()!;
     expect(empty.textContent).toContain(
@@ -274,14 +279,18 @@ describe('ConversationInsights', () => {
     const turnOn = empty.querySelector('button')!;
     expect(turnOn.textContent).toBe('settings.analytics.insights.off.turnOn');
     act(() => turnOn.click());
-    // The agent's Overview, its Insights section opened.
+    // The page's settings panel opens; nothing navigates.
+    expect(onTurnOn).toHaveBeenCalledTimes(1);
     expect(
       container.querySelector('[data-testid="location"]')!.textContent,
-    ).toBe('/agents/manage/edit/a1#insights');
+    ).toBe('/agents/manage/insights/a1');
   });
 
   it("says the agent has it off, with no button, to someone who can't change it", () => {
-    render(data({ enabled: false }), { agentProp: agent(['view']) });
+    render(data({ enabled: false }), {
+      agentProp: agent(['view']),
+      onTurnOn: vi.fn(),
+    });
     const empty = emptyState()!;
     expect(empty.textContent).toContain(
       'settings.analytics.insights.off.title',

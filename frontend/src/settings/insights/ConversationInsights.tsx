@@ -1,6 +1,5 @@
 import { type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -11,7 +10,6 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { cn } from '@/lib/utils';
 
 import { canAgent } from '../../agents/agentAccess';
-import { agentEditPathFor } from '../../agents/paths';
 import type { Agent } from '../../agents/types';
 import SkeletonLoader from '../../components/SkeletonLoader';
 import StatCard from '../../components/StatCard';
@@ -73,8 +71,10 @@ type ConversationInsightsProps = {
   state: InsightsState;
   data: Insights | null;
   agentId?: string;
-  /** The agent whose page this is, for the link to its settings. */
+  /** The agent whose page this is: Turn on is only for who can edit it. */
   agent?: Agent;
+  /** Opens the page's insights settings switched on (the off state's Turn on). */
+  onTurnOn?: () => void;
   filterOption: string;
   onRetry: () => void;
   /**
@@ -161,6 +161,7 @@ export default function ConversationInsights({
   onRetry,
   standalone = false,
   intro = true,
+  onTurnOn,
 }: ConversationInsightsProps) {
   const { t } = useTranslation();
   const { count, description } = useInsightsCopy(state, data);
@@ -203,7 +204,20 @@ export default function ConversationInsights({
         illustration="none"
         title={t('settings.analytics.insights.off.title')}
         description={t('settings.analytics.insights.off.description')}
-        action={agent && canEditAgent && <TurnOnInsights agent={agent} />}
+        action={
+          canEditAgent &&
+          onTurnOn && (
+            <Button
+              type="button"
+              variant="outline"
+              size="field"
+              shape="pill"
+              onClick={onTurnOn}
+            >
+              {t('settings.analytics.insights.off.turnOn')}
+            </Button>
+          )
+        }
       />
     );
   else if (state === 'noTraffic')
@@ -252,26 +266,6 @@ export default function ConversationInsights({
         />
       )}
     </>
-  );
-}
-
-/**
- * "Turn on" for an agent with insights off: opens the agent's Overview at its
- * Insights section. The one place that decides where turning on happens.
- */
-function TurnOnInsights({ agent }: { agent: Agent }) {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="field"
-      shape="pill"
-      onClick={() => navigate(`${agentEditPathFor(agent)}#insights`)}
-    >
-      {t('settings.analytics.insights.off.turnOn')}
-    </Button>
   );
 }
 

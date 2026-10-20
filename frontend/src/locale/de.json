@@ -785,6 +785,11 @@
         "olderOnly": {
           "title": "Keine aktuellen Gespräche zum Auswerten",
           "description": "Einblicke umfassen Gespräche ab dem {{date}}. Ältere werden nicht ausgewertet; ein Administrator kann sie nachträglich auswerten lassen."
+        },
+        "settings": {
+          "button": "Einstellungen",
+          "title": "Einstellungen für Einblicke",
+          "saveFailed": "Die Einstellungen für Einblicke konnten nicht gespeichert werden. Versuche es noch einmal."
         }
       },
       "gaps": {

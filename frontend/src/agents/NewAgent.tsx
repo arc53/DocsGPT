@@ -1898,7 +1898,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           maxTags={analyticsAvailability.maxTags}
           // Not policy: anyone who can save the agent changes it.
           disabled={!canSubmit}
-          // Insights' "Turn on" links here at `#insights`.
+          // Opened at `#insights`, the section opens and scrolls into view.
           reveal={location.hash === '#insights'}
           onChange={(analytics) =>
             setAgent((prev) => ({

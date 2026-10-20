@@ -1,6 +1,10 @@
+import { Settings2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Navigate, useParams } from 'react-router-dom';
+
+import { Button } from '@/components/ui/button';
 
 import userService from '../api/services/userService';
 import SectionShell from '../navigation/SectionShell';
@@ -12,7 +16,9 @@ import TimeFilterSelect, {
   DEFAULT_TIME_FILTER,
   type TimeFilter,
 } from '../settings/TimeFilterSelect';
+import { canAgent } from './agentAccess';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
+import InsightsSettingsSheet from './components/InsightsSettingsSheet';
 import { agentLogsPath } from './paths';
 import { Agent } from './types';
 
@@ -20,12 +26,20 @@ import { Agent } from './types';
  * An agent's Insights: what the decision model estimated about
  * its conversations, and the docs-gap report. The weekly docs-gaps
  * notification links here (`#docs-gaps`); while the server has insights off,
- * such a link goes on to the agent's Logs.
+ * such a link goes on to the agent's Logs. Whoever can edit the agent opens
+ * its insights settings here, in a panel (Settings, or Turn on while off).
  */
 export default function AgentInsights() {
+  const { t } = useTranslation();
   const { agentId } = useParams();
   const token = useSelector(selectToken);
   const [agent, setAgent] = useState<Agent>();
+  // Bumped after a settings save, so the record is read again.
+  const [agentReload, setAgentReload] = useState(0);
+  const [settings, setSettings] = useState<{
+    open: boolean;
+    startEnabled: boolean;
+  }>({ open: false, startEnabled: false });
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
   const insights = useConversationInsights(agentId, timeFilter);
   const state = insightsState(insights.status, insights.data);
@@ -46,7 +60,11 @@ export default function AgentInsights() {
     return () => {
       cancelled = true;
     };
-  }, [agentId, token]);
+  }, [agentId, token, agentReload]);
+
+  const canEdit = canAgent(agent, 'edit');
+  const openSettings = (startEnabled: boolean) =>
+    setSettings({ open: true, startEnabled });
 
   if (state === 'serverOff')
     return <Navigate to={agentLogsPath(agentId)} replace />;
@@ -57,7 +75,21 @@ export default function AgentInsights() {
         name={agent?.name}
         meta={agent && <LastUsedMeta lastUsedAt={agent.last_used_at} />}
         actions={
-          <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
+          <div className="flex w-full gap-2 sm:w-auto">
+            <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
+            {canEdit && (
+              <Button
+                type="button"
+                variant="outline"
+                size="field"
+                shape="pill"
+                onClick={() => openSettings(false)}
+              >
+                <Settings2 />
+                {t('settings.analytics.insights.settings.button')}
+              </Button>
+            )}
+          </div>
         }
       />
       {agentId && (
@@ -69,6 +101,20 @@ export default function AgentInsights() {
           filterOption={timeFilter}
           onRetry={insights.retry}
           standalone
+          onTurnOn={canEdit ? () => openSettings(true) : undefined}
+        />
+      )}
+      {agent && canEdit && (
+        <InsightsSettingsSheet
+          open={settings.open}
+          onOpenChange={(open) => setSettings((prev) => ({ ...prev, open }))}
+          agent={agent}
+          startEnabled={settings.startEnabled}
+          onSaved={(config) => {
+            setAgent((prev) => prev && { ...prev, config });
+            setAgentReload((key) => key + 1);
+            insights.retry();
+          }}
         />
       )}
     </SectionShell>

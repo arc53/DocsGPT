@@ -785,6 +785,11 @@
         "olderOnly": {
           "title": "No recent conversations to analyze",
           "description": "Insights cover conversations from {{date}} onwards. Older ones aren't analyzed; an admin can backfill them."
+        },
+        "settings": {
+          "button": "Settings",
+          "title": "Insights settings",
+          "saveFailed": "Couldn't save the insights settings. Try again."
         }
       },
       "gaps": {

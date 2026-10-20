@@ -783,6 +783,11 @@
         "olderOnly": {
           "title": "沒有可分析的近期對話",
           "description": "洞察涵蓋 {{date}} 起的對話。更早的對話不會分析；管理員可以補做分析。"
+        },
+        "settings": {
+          "button": "設定",
+          "title": "洞察設定",
+          "saveFailed": "無法儲存洞察設定。請再試一次。"
         }
       },
       "gaps": {

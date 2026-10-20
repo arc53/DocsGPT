@@ -813,6 +813,11 @@
         "olderOnly": {
           "title": "No hay conversaciones recientes que analizar",
           "description": "La información abarca las conversaciones desde el {{date}}. Las anteriores no se analizan; un administrador puede analizarlas a posteriori."
+        },
+        "settings": {
+          "button": "Configuración",
+          "title": "Configuración de la información",
+          "saveFailed": "No se pudo guardar la configuración de la información. Inténtalo de nuevo."
         }
       },
       "gaps": {
