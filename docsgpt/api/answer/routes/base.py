@@ -1588,7 +1588,11 @@ class BaseAnswerResource:
                         mark_unread_when_away=True,
                     )
                     if finalize_outcome is MessageUpdateOutcome.UPDATED:
-                        _show_finished_jobs(background_turn, tool_calls)
+                        # A Stop that landed after the last event still stops the turn's jobs.
+                        if stop_requested(reserved_message_id):
+                            _stop_background_jobs(background_turn)
+                        else:
+                            _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was
                     # deleted mid-stream (retry/edit truncation) the write

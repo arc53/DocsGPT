@@ -443,6 +443,20 @@ class TestFinishedJobsOnTheSavedMessage:
              agent_calls=[HANDED_OFF], show_jobs=lambda *a: seen.append(a))
         assert seen == [(CONVERSATION_ID, MESSAGE_ID, "u")]
 
+    def test_a_stop_that_lands_after_the_last_event_still_cancels_the_jobs(self, mock_mongo_db, flask_app):
+        ended = threading.Event()
+
+        def _gen(*args, **kwargs):
+            yield {"answer": "Working on it."}
+            yield {"tool_calls": [HANDED_OFF]}
+            ended.set()
+
+        stopped, seen = [], []
+        _run(flask_app, _gen, stop_after=None, requested=lambda message_id: ended.is_set(),
+             background=_background(), stop_jobs=lambda *a: stopped.append(a), show_jobs=lambda *a: seen.append(a))
+        assert stopped == [(CONVERSATION_ID, MESSAGE_ID, "u")]
+        assert seen == []
+
     def test_a_failure_to_show_them_never_fails_the_turn(self, mock_mongo_db, flask_app):
         def _boom(*args):
             raise RuntimeError("db down")
