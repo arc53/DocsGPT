@@ -71,6 +71,8 @@ The analytics sweep spends most of its time waiting for the [decision model](/Mo
 
 Beat schedules the sweep and the digest only while `DECISION_ANALYTICS_ENABLED` is on, so the queue gets no messages otherwise; restart beat (the worker that embeds it) after turning the switch on or off. A message no worker takes stays in Redis until one does, which then drops it if its interval has passed.
 
+`docsgpt doctor` reads that backlog from the broker while `DECISION_ANALYTICS_ENABLED` is on. Three or more messages waiting is a warning that names the fix, `docsgpt worker --analytics` next to the worker or `analytics` in its `-Q`, along with the workers that answer a one-second ping and consume the queue. A worker busy with a sweep may not answer, and doctor run before any worker starts sees at most a message or two, so neither is reported as a problem.
+
 To keep the sweep apart from the rest, run one worker for it alone and leave `analytics` out of the others:
 
 ```bash

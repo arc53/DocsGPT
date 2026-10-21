@@ -1266,6 +1266,108 @@ def _local_decisions(settings: Any) -> str:
     return text
 
 
+# Beat sends one sweep per ANALYTICS_SWEEP_SECONDS; a worker on the queue takes each within seconds. This many
+# waiting means several intervals went by with nothing taking them, whereas doctor run before the workers start
+# sees one or two at most.
+ANALYTICS_BACKLOG_WARN = 3
+
+
+def _queue_backlog(client: Any, queue: str) -> int:
+    """Messages waiting on a Celery queue in Redis: kombu keeps one list per priority step, the name and its twins.
+
+    Args:
+        client: A redis-py client on the broker's database.
+        queue: The Celery queue name.
+
+    Returns:
+        The total length of the queue's lists; reserved (unacked) messages are not in them.
+    """
+    from kombu.transport.redis import PRIORITY_STEPS, Channel
+
+    keys = [f"{queue}{Channel.sep}{step}" if step else queue for step in PRIORITY_STEPS]
+    return sum(int(client.llen(key) or 0) for key in keys)
+
+
+def _analytics_consumers(url: str, queue: str, timeout: float = 1.0) -> Optional[list[str]]:
+    """The worker nodes that answer a short ``inspect`` and list ``queue``, or None when none answers.
+
+    A solo-pool worker answers only between tasks, so one in the middle of a sweep is silent: an empty answer or
+    none is not evidence that nothing consumes the queue.
+
+    Args:
+        url: The Celery broker URL.
+        queue: The queue to look for.
+        timeout: Seconds to wait for replies.
+
+    Returns:
+        Sorted node names consuming ``queue``, an empty list when workers answered without it, or None.
+    """
+    from celery import Celery
+
+    app = Celery("docsgpt-doctor", broker=url, set_as_current=False)
+    try:
+        replies = app.control.inspect(timeout=timeout).active_queues()
+    except Exception:  # noqa: BLE001 - this is extra detail; the redis row reports a broker that does not answer
+        return None
+    finally:
+        app.close()
+    if not replies:
+        return None
+    return sorted(node for node, queues in replies.items()
+                  if any(isinstance(q, dict) and q.get("name") == queue for q in queues or []))
+
+
+def _check_analytics(env: Mapping[str, str], broker_url: Optional[str]) -> Check:
+    """Whether anything takes the analytics queue, judged by its backlog on the broker; never a failure.
+
+    With ``DECISION_ANALYTICS_ENABLED`` on, beat sends the sweep to ``ANALYTICS_QUEUE``. A worker whose ``-Q``
+    leaves it out, or a solo-pool ``docsgpt worker`` with no ``docsgpt worker --analytics`` beside it, lets the
+    messages pile up in Redis and the Insights pages never fill. Workers are often not running when doctor is, so
+    only a backlog of several intervals warns; a short ``inspect`` adds which workers consume the queue.
+
+    Args:
+        env: The stack's settings file.
+        broker_url: The broker the redis row pinged (``--redis-url`` or ``CELERY_BROKER_URL``); the settings'
+            default when None.
+    """
+    try:
+        with _service_environment(env):
+            from docsgpt.core.settings import Settings
+
+            _forget_shell_settings(env)
+            settings = Settings(_env_file=None)
+    except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
+        return Check("analytics", "warn", f"the settings do not load: {_first_error(exc)}")
+    if not settings.DECISION_ANALYTICS_ENABLED:
+        return Check("analytics", "ok", "off (DECISION_ANALYTICS_ENABLED=false)")
+    queue = settings.ANALYTICS_QUEUE
+    url = broker_url or settings.CELERY_BROKER_URL
+    try:
+        import redis
+
+        client = redis.Redis.from_url(url, socket_connect_timeout=3, socket_timeout=3)
+        waiting = _queue_backlog(client, queue)
+    except Exception as exc:  # noqa: BLE001 - the redis row reports a broker that does not answer
+        return Check("analytics", "warn", f"on, but the `{queue}` queue cannot be read on {_endpoint(url)}: "
+                                          f"{_scrub(str(exc).strip(), url)}")
+    consumers = _analytics_consumers(url, queue)
+    held = f"{waiting} message{'' if waiting == 1 else 's'} waiting on the `{queue}` queue"
+    if waiting >= ANALYTICS_BACKLOG_WARN:
+        minutes = waiting * max(60, settings.ANALYTICS_SWEEP_SECONDS) // 60
+        held += f" (about {minutes} min of sweeps)"
+        if consumers:
+            verb = "consumes" if len(consumers) == 1 else "consume"
+            return Check("analytics", "warn", f"{held} although {', '.join(consumers)} {verb} it, so it is behind")
+        nobody = "none of the workers that answered consumes it" if consumers == [] else "no worker takes them"
+        return Check("analytics", "warn", f"{held} and {nobody}, so Insights stay empty: run "
+                                          f"`docsgpt worker --analytics` next to the worker, or add {queue} to its -Q")
+    if consumers:
+        held += f"; consumed by {', '.join(consumers)}"
+    elif consumers == []:
+        held += "; no worker that answered consumes it"
+    return Check("analytics", "ok", f"on; {held}")
+
+
 def doctor(args, context: Optional[Context] = None) -> int:
     """Check what DocsGPT needs on this machine, and say what is missing."""
     from docsgpt.core import paths
@@ -1280,14 +1382,16 @@ def doctor(args, context: Optional[Context] = None) -> int:
     env = envfile.read(env_path)
     directory = stack.stack_dir(args.dir)
     docker = _mode(directory) == "docker" and (directory / stack.COMPOSE_FILE).is_file()
+    redis_urls = _redis_to_check(args, env)
     checks = [
         Check("settings", "ok" if env_path.is_file() else "warn",
               f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
         _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
-        _check_redis(_redis_to_check(args, env)),
+        _check_redis(redis_urls),
         _check_provider(env),
         _check_model(env),
         _check_decisions(env, docker),
+        _check_analytics(env, redis_urls.get("broker")),
     ]
 
     # The one command that exists to explain a broken setup must not fall over on one.

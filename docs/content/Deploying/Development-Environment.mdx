@@ -174,7 +174,8 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     <Callout type="info">
       `docsgpt doctor` checks the things that usually break a new setup: whether PostgreSQL answers and
       its schema matches this version, whether Redis answers, whether a model provider is configured,
-      and whether the port is free. Run it first when something does not start.
+      whether the port is free and, with conversation analytics on, whether the `analytics` queue is
+      piling up with no worker taking it. Run it first when something does not start.
     </Callout>
 
     To run the two processes yourself instead, start the ASGI composition under uvicorn. It serves the
@@ -336,7 +337,7 @@ other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alon
 
 ## Troubleshooting
 
-Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and the API port.
+Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and the API port, and with `DECISION_ANALYTICS_ENABLED` on, the backlog of the `analytics` queue.
 
 - **Searches hang for up to a minute or fail at once, and answers ignore your documents.** No worker is consuming the `embeddings`
   queue. Start one as in step 5. A worker started with an explicit `-Q` must list `embeddings`.

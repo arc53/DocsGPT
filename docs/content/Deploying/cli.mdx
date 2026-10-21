@@ -48,7 +48,7 @@ directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
 | `docsgpt backup [--out DIR] [--with-settings]` | Write an archive of the database and the data volumes (Docker installs). See [Backups](/Deploying/Docker-Deploying#backups). |
 | `docsgpt restore ARCHIVE [-y] [--force]` | Put a backup back over this install (Docker installs). |
 | `docsgpt uninstall [-y] [--purge]` | Remove the containers or services; `--purge` also deletes the settings and all data. |
-| `docsgpt doctor [--postgres-uri URI] [--redis-url URL]` | Check what this machine needs: the settings file, Postgres, Redis, the model provider and the default model. It reads the `.env` DocsGPT would load, or the stack's with `--dir`. |
+| `docsgpt doctor [--postgres-uri URI] [--redis-url URL]` | Check what this machine needs: the settings file, Postgres, Redis, the model provider, the default model and the decision model. While `DECISION_ANALYTICS_ENABLED` is on, it also warns when messages pile up on the `analytics` queue with no worker taking them; see [The analytics queue](/Deploying/Background-Jobs#the-analytics-queue). It reads the `.env` DocsGPT would load, or the stack's with `--dir`. |
 
 ### `docsgpt up` options
 
