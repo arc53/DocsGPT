@@ -53,15 +53,20 @@ _cache_lock = threading.Lock()
 # encode. Read at call time, so tests can shrink it to exercise many seams.
 _WINDOW_CHARS = 65_536
 
-# Categories that attach to the preceding character: combining marks,
-# enclosing marks, and format controls such as ZWJ. A cut in front of one
-# would separate it from its base.
-_GLUE_CATEGORIES = frozenset({"Mn", "Me", "Cf"})
+# Categories that attach to the preceding character: combining marks (spacing
+# ones too, such as Indic vowel signs), enclosing marks, and format controls
+# such as ZWJ. A cut in front of one would separate it from its base.
+_GLUE_CATEGORIES = frozenset({"Mn", "Mc", "Me", "Cf"})
 
 
 def _is_glue(char: str) -> bool:
     """Whether ``char`` must stay with the character before it."""
-    return 0xD800 <= ord(char) <= 0xDFFF or unicodedata.category(char) in _GLUE_CATEGORIES
+    code = ord(char)
+    # Lone surrogates, and emoji skin-tone modifiers (category Sk, which also
+    # holds standalone symbols like ``^``, so only this range is glue).
+    if 0xD800 <= code <= 0xDFFF or 0x1F3FB <= code <= 0x1F3FF:
+        return True
+    return unicodedata.category(char) in _GLUE_CATEGORIES
 
 
 def _window_cut(text: str, start: int, size: int) -> int:
@@ -532,8 +537,9 @@ def count_tokens_windowed(text: str) -> int:
     They always counted cl100k and still do, but one encode of a whole file
     is the per-character memory cost #3130 removes, so they go through
     :class:`TiktokenCounter`'s bounded windows instead.
-    :func:`docsgpt.utils.num_tokens_from_string` stays one-shot for its other
-    callers, which take offsets from a single encode.
+    :func:`docsgpt.utils.num_tokens_from_string` is left one-shot: its other
+    callers count prompts, messages and chunk-sized text, not whole ingested
+    documents, so changing it is outside #3130.
 
     A counter is built per call rather than cached here; ``get_encoding`` is
     cached, so construction is cheap.
