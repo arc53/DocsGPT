@@ -90,6 +90,12 @@ class TestDecisions:
         assert _call(conversation_id) == notify.WATCHING
         assert published == [] and pushes == []
         assert _unread(db, conversation_id) is None
+        # Seen on screen: Activity counts the event as read.
+        with db.connect() as conn:
+            read_at = conn.execute(
+                text("SELECT read_at FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": conversation_id}
+            ).scalar()
+        assert read_at is not None
 
     def test_a_tab_elsewhere_gets_a_toast_and_the_mark(
         self, db, conversation_id, fake_redis, published, pushes, push_on

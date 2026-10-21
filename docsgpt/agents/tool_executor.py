@@ -4,7 +4,7 @@ import logging
 import re
 import uuid
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 
@@ -684,6 +684,9 @@ class ToolExecutor:
         # (artifact_generator / code_executor) address artifacts by the
         # workflow run rather than a conversation.
         self.workflow_run_id: Optional[str] = None
+        # Set by the headless runner for a scheduled or webhook run with no
+        # conversation, so code_executor still gets a sandbox for the run.
+        self.run_scope_id: Optional[str] = None
         self.message_id: Optional[str] = None
         # The request's own (already user-scoped) chat attachments, stamped onto
         # sandbox tools so a referenced attachment can be lazily bridged to a
@@ -694,6 +697,10 @@ class ToolExecutor:
         # are final. Held here rather than in ``tools_dict``, which is saved
         # with a paused turn and would come back as a detached copy.
         self.citation_registry: Optional[List[Dict]] = None
+        # The agent's per-document retrieval screen (``BaseAgent._screen_docs``),
+        # handed to the search tools so each hit is screened as a retrieved
+        # document before it is formatted into their result.
+        self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -1182,10 +1189,20 @@ class ToolExecutor:
             return result
         if not isinstance(result, str) or not result:
             return result
+        # A search tool's hits were screened one by one as retrieved documents
+        # (``retrieval_screen``); its result, which joins them, then gets only
+        # the whole-text controls, so the model check never scores them twice.
+        screened = (
+            tool_name in CITING_TOOLS
+            and self.retrieval_screen is not None
+            and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
+        )
         try:
             engine.context.tool_name = tool_name
             engine.context.action_name = action_name
-            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
+            decision = engine.evaluate(
+                result, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
+            )
         except Exception:
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
@@ -2169,6 +2186,11 @@ class ToolExecutor:
                         "id": str(a["id"]).strip(),
                         "filename": a.get("filename"),
                         "ref": a.get("ref"),
+                        # The version this call produced, so a later edit in the
+                        # same turn cannot make this call's entry describe it.
+                        **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
+                        # The name the chat's artifact card shows; the filename stays the download name.
+                        **({"title": a["title"]} if isinstance(a.get("title"), str) and a["title"].strip() else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
@@ -2266,6 +2288,7 @@ class ToolExecutor:
                 cached_config["attachments"] = self.attachments or []
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
+                cached_config["retrieval_screen"] = self.retrieval_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2349,8 +2372,11 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            elif self.run_scope_id and not self.conversation_id:
+                tool_config["run_scope_id"] = self.run_scope_id
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
+                tool_config["retrieval_screen"] = self.retrieval_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's

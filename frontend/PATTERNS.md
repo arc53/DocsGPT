@@ -4,7 +4,7 @@ DESIGN.md is the system; this is how each area applies it. DESIGN.md holds the t
 `ui/` component contracts, spacing, type, radius, motion, focus and the approved exceptions,
 and every rule there holds here too. This file is the per-area spec: the page chrome every
 section page shares, the agent pages, the app chrome, the chat, the source views, the workflow
-builder and the connectors. A "see X" below points to a section of this file unless it names
+builder, the connectors and Activity. A "see X" below points to a section of this file unless it names
 DESIGN.md.
 
 ## Contents
@@ -17,10 +17,11 @@ DESIGN.md.
 - [Source views](#source-views-componentstree-wikiviewer-componentsgraph-graphview)
 - [Workflow builder](#workflow-builder-agentsworkflow)
 - [Connectors](#connectors-connectors-conversationtoolcallcard)
+- [Activity](#activity-activity)
 
 ## Page chrome: SectionShell, PageToolbar, SearchInput
 
-Every section page (settings, admin, agents, teams) is wrapped in
+Every section page (settings, admin, agents, teams, activity) is wrapped in
 `navigation/SectionShell` (`width` `default` 6xl, `wide` 7xl for admin,
 `narrow` 5xl; `title` replaces the section title; `titleAction` puts a page-level
 control, such as a toolbar `ActionMenu`, at the title row's end;
@@ -146,6 +147,12 @@ a chat".
   Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
   with no margin; the size's `gap-1.5` spaces them, and the label span keeps
   `text-xs sm:text-sm` so the row still fits on a phone.
+- Tools and Knowledge show what is on without opening the picker. Tools
+  adds a `Badge` with the count of tools on in this chat. Knowledge names
+  a single source; with several it keeps the "Knowledge" label, adds the
+  count `Badge` and lists the names in its `title`. The badge is
+  `tabular-nums` and `aria-hidden`; the trigger's `aria-label` says the
+  count instead. With nothing on (or one source), neither has a badge.
 - The attachment chips above the field (`message-input/AttachmentChipList`)
   sit in one `scrollbar-overlay` area capped at `max-h-32 sm:max-h-48` (about
   two and a half rows on a phone, three and a half wider, so the cut row
@@ -180,6 +187,9 @@ that fixes the error (Add to Knowledge, when a turn's files overflowed the
 model) is an `outline sm pill` Button with a leading lucide icon under the
 message, in a `text-foreground` wrapper so its label is body text rather than
 the alert's red; a link in the alert's colour does not read as a control.
+An answer its user stopped before it wrote anything (`error_code: "stopped"`)
+is the same block as a note, `Alert variant="info" role="note"` titled
+`conversation.stoppedTitle`, with the same Retry and Copy: nothing failed.
 
 The rows in an answer's step column (Sources, Reasoning, each tool step) are
 one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
@@ -224,6 +234,39 @@ that order into blocks:
   icon is a brand mark in its own colours, or that has none, draws a lucide
   stand-in (wiki `BookOpen`, Brave and DuckDuckGo `Search`, Telegram `Send`,
   ntfy `Bell`, Postgres `Database`). The Tools page keeps the brand marks.
+
+An answer's artifacts (files and notes its tool calls made, and its
+workflow run's files) are cards between the answer and its action row
+(`components/ArtifactCard`, built by `conversation/artifactCards`), never
+chips in the action row, which holds only the answer's own actions:
+
+- A card is the answer's surface (`bg-answer-surface`, `hover:bg-accent`,
+  `rounded-2xl p-3`): the kind's lucide icon on the brand soft fill
+  (`bg-secondary text-secondary-foreground`, a 40px `rounded-xl` square; the
+  grey icon tile would vanish, as `muted` is the answer surface in light),
+  the title (the artifact's title, else its filename) and a muted meta line,
+  the kind and the version its turn made ("PDF · v2"). The whole card opens
+  the artifact in the side panel on that version through a stretched button
+  named by the title; Download (`ghost-muted icon-sm pill`, `z-10`) saves
+  that version (DESIGN.md › A clickable card that holds a link). The card the
+  panel shows is `bg-secondary` (the open-row rule).
+- The list is a container query: two columns once the answer column fits two
+  (`@min-[33rem]`, across the full answer column), one below that, so the builder
+  preview's narrow column stacks them on any screen. Its outer box is
+  `w-full min-w-0`: in the answer's wrapping flex column a container-query
+  box has no width of its own and lays its height out as if stacked.
+- Order: documents (HTML, PDF, slides, documents, spreadsheets, notes), then
+  images, then data and other files, each in the order produced; one card per
+  artifact.
+- Past four, the first three cards and a fourth, "N more files · Show all
+  M", with a chevron instead of Download, that opens the answer's list in the
+  side panel (`conversation/ArtifactsPanel`): `ListRows` grouped by kind
+  under `SectionHeader size="xs"` with counts, in a `subtle` Card, each row
+  opening that artifact as the panel's second level with Back to the list,
+  the Sources pattern. The fourth card is open while its list shows.
+- A workflow run's files are listed only where they can open (not in a
+  shared chat), quietly: no spinner, nothing for a run that made none, a
+  destructive `EmptyState` with Retry when the list fails.
 
 A cited source opens in that panel as its second level, `CitationReader`:
 a source card under the answer, a tile in the list and an inline `[n]` pill
@@ -527,3 +570,56 @@ pill actions. The arguments stay behind the Details chevron. The card sits in
 a `w-full min-w-0` wrapper with its margins on an inner div, because the
 answer bubble is a wrapping flex column and would let a one-line preview widen
 the card past the column.
+
+## Activity (`activity/`)
+
+A section like Settings: `activity/index.tsx` puts Now, Calendar and History,
+then the Automations group (Schedules across every agent, and Monitors, which
+moved here from Settings; `/settings/monitors` redirects) in `ACTIVITY_SECTION`,
+and below `lg` the root is the `SectionIndexPage`. Times on these pages are
+24-hour `formatClock`, and day and range headings use `headingLocale()` (see
+the dates rule in DESIGN.md › Pagination); a monitor's end is `formatDeadline`, the one
+time in the browser's own clock.
+
+A sidebar chat carries one status mark, `activity/ConversationMark`, in a
+fixed `size-4` slot so every mark's centre lines up. It shows the most urgent
+state the chat is in: failed (`bg-destructive` dot), needs you (`bg-warning`
+dot, an approval waiting), working (`Spinner size="xs"`), unread
+(`bg-primary` dot), watching (a hollow `border-muted-foreground` ring:
+something is on, nothing to do). The tooltip names every state, joined with
+` · `. A new chat state joins `useConversationStates` at its place in that
+order; it never gets a second mark beside the first.
+
+The sidebar's Activity row ends in `ActivityNavBadge`: a dot while something
+needs the user (red only when a schedule paused itself after failures, else
+amber) and the running count (`formatCount`), `text-xs text-muted-foreground
+tabular-nums`, named by a `Tooltip` on the right as ConversationMark is. On the
+collapsed rail it is the dot alone, at the icon's corner, and the
+counts are an `sr-only` span the icon button names with `aria-describedby`.
+`useActivitySummary` is the one count for the row and the Now page.
+
+A Now row's leading icon is the `Avatar variant="icon" size="sm"
+shape="square"` tile; in Needs you a waiting row's tile is `bg-warning/10
+text-warning` and a failed one's `bg-destructive/10 text-destructive`, the
+same `size-8 rounded-md` square (Avatar has no status tone). Running rows end
+in an `info` Badge.
+
+Calendar events take their look from `calendar/layout.ts`, never inline
+classes: `STATE_CLASS` per run state and `SYNC_CLASS` for a knowledge sync,
+and the legend reads the same maps. A planned slot is the brand soft fill
+with a `border-l-2 border-primary` stripe; a run is `bg-<role>/10` with a
+full-strength `border-l-2 border-<role>` stripe, because on a 20px block a
+`/50` stripe disappears; skipped and paused are a dashed
+`border-muted-foreground` on the background, missed the same dash in
+`border-warning` (nobody chose it: the scheduler was down), a sync is
+`bg-muted` dashed. A running run adds a pulsing `bg-info` dot. Event hover is
+`hover:brightness-95`, the calendar's exception to the fill-change hover: an
+accent fill would hide the state colour. Events are raw buttons positioned
+with `--top` / `--height` custom properties, so each carries `focusRing` and
+`outline-none`.
+
+The pages stay live without a reload: the Now snapshot (`activitySlice`) is
+loaded every 60 s by `useActivityLoader` and refetched, debounced, on the
+realtime events that change it (`message.*`, `schedule.*`, `job.updated`,
+`workflow.run.step`, `activity.updated`). A relative time or an Overdue label
+re-renders through `useClock`, never a timer of its own.

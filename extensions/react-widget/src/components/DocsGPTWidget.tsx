@@ -1062,10 +1062,11 @@ const ConversationArea = styled.div`
   flex: 1;
   min-height: 0;
 `;
-const Composer = styled.div`
+// The credit line pads the bottom; without it the composer pads itself.
+const Composer = styled.div<{ $noCredit?: boolean }>`
   flex-shrink: 0;
   box-sizing: border-box;
-  padding: 12px 16px 0 16px;
+  padding: 12px 16px ${(props) => (props.$noCredit ? '16px' : '0')} 16px;
 `;
 // border bg-card rounded-3xl; the rows pad themselves.
 const PromptContainer = styled.form<{ $stacked?: boolean }>`
@@ -1221,6 +1222,68 @@ const HeroTitle = styled.h3`
   margin: 0px;
   padding: 0px;
   overflow-wrap: break-word;
+`;
+const SuggestedQuestions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+`;
+const SuggestedQuestionsLabel = styled.p`
+  margin: 0;
+  padding: 0 4px;
+  color: ${(props) => props.theme.mutedForeground};
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.33;
+`;
+const SuggestedQuestionsList = styled.ul`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+`;
+const SuggestedQuestion = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid ${(props) => props.theme.border};
+  border-radius: ${radii.xl};
+  background-color: ${(props) => props.theme.controlFill};
+  color: ${(props) => props.theme.foreground};
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.43;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  & > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  & > svg {
+    flex-shrink: 0;
+    color: ${(props) => props.theme.mutedForeground};
+  }
+
+  &:hover:not(:disabled) {
+    background-color: ${(props) => props.theme.controlHover};
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  ${focusRing}
 `;
 // A filled Card turns muted text to foreground.
 const HeroDescription = styled.p`
@@ -1478,11 +1541,21 @@ const Hero = ({
   title,
   description,
   icon,
+  questions,
+  questionsLabel,
+  questionsDisabledReason,
+  onQuestion,
 }: {
   title: string;
   description: string;
   icon?: string;
+  questions: string[];
+  questionsLabel: string;
+  /** Set while a send is blocked; the questions are disabled with it as their tooltip. */
+  questionsDisabledReason?: string;
+  onQuestion: (question: string) => void;
 }) => {
+  const labelId = React.useId();
   return (
     <HeroContainer>
       <HeroWrapper>
@@ -1492,6 +1565,32 @@ const Hero = ({
           <HeroDescription>{description}</HeroDescription>
         </HeroText>
       </HeroWrapper>
+      {questions.length > 0 && (
+        <SuggestedQuestions>
+          {questionsLabel && (
+            <SuggestedQuestionsLabel id={labelId}>
+              {questionsLabel}
+            </SuggestedQuestionsLabel>
+          )}
+          <SuggestedQuestionsList
+            aria-labelledby={questionsLabel ? labelId : undefined}
+          >
+            {questions.map((question, index) => (
+              <li key={`${index}-${question}`}>
+                <SuggestedQuestion
+                  type="button"
+                  onClick={() => onQuestion(question)}
+                  disabled={Boolean(questionsDisabledReason)}
+                  title={questionsDisabledReason}
+                >
+                  <span>{question}</span>
+                  <ChevronRight size={16} />
+                </SuggestedQuestion>
+              </li>
+            ))}
+          </SuggestedQuestionsList>
+        </SuggestedQuestions>
+      )}
     </HeroContainer>
   );
 };
@@ -1545,6 +1644,8 @@ export const WidgetCore = ({
   description = "DocsGPT's AI Chatbot is here to help",
   heroTitle = 'Welcome to DocsGPT !',
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
+  suggestedQuestions,
+  suggestedQuestionsLabel = 'Suggested questions',
   size = 'medium',
   theme = 'dark',
   collectFeedback = true,
@@ -1555,6 +1656,7 @@ export const WidgetCore = ({
   allowedFileExtensions,
   showMicButton = false,
   poweredBy = true,
+  passthrough,
 }: WidgetCoreProps) => {
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
@@ -1790,6 +1892,7 @@ export const WidgetCore = ({
         history: queries,
         conversationId: conversationId,
         attachments: attachmentIds,
+        passthrough,
         onEvent: (event: MessageEvent) => {
           let data: StreamEvent;
           try {
@@ -1889,7 +1992,12 @@ export const WidgetCore = ({
     }
   }
 
-  const appendQuery = async (userQuery: string) => {
+  // A suggested question is sent with keepDraft, so text the user had
+  // started typing stays in the composer.
+  const appendQuery = async (
+    userQuery: string,
+    { keepDraft = false }: { keepDraft?: boolean } = {},
+  ) => {
     if (!userQuery) return;
 
     // Only parsed attachments have a server id. The send is held until none
@@ -1904,7 +2012,7 @@ export const WidgetCore = ({
       prompt: userQuery,
       attachments: sent.length > 0 ? sent : undefined,
     });
-    setPrompt('');
+    if (!keepDraft) setPrompt('');
     if (sent.length > 0) clearAttachments();
     await stream(
       userQuery,
@@ -2041,6 +2149,23 @@ export const WidgetCore = ({
     // Reset first, so the empty composer does not render tall for a frame.
     if (promptRef.current) promptRef.current.style.height = 'auto';
     await appendQuery(prompt);
+  };
+
+  const heroQuestions = React.useMemo(
+    () =>
+      (suggestedQuestions ?? [])
+        .map((question) => question.trim())
+        .filter(Boolean),
+    [suggestedQuestions],
+  );
+  // The composer's send gate, minus the typed-text check.
+  const questionBlockedReason =
+    sendBlockedReason ??
+    (isDictating ? 'Stop dictating to send a question.' : undefined);
+
+  const sendSuggestedQuestion = async (question: string) => {
+    if (questionBlockedReason || status === 'loading') return;
+    await appendQuery(question, { keepDraft: true });
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -2427,6 +2552,10 @@ export const WidgetCore = ({
                     title={heroTitle}
                     description={heroDescription}
                     icon={heroIcon}
+                    questions={heroQuestions}
+                    questionsLabel={suggestedQuestionsLabel}
+                    questionsDisabledReason={questionBlockedReason}
+                    onQuestion={sendSuggestedQuestion}
                   />
                 )}
               </Conversation>
@@ -2440,7 +2569,7 @@ export const WidgetCore = ({
                 </ScrollToLatest>
               )}
             </ConversationArea>
-            <Composer>
+            <Composer $noCredit={poweredBy === false}>
               {attachmentsEnabled && (
                 <HiddenFileInput
                   ref={attachmentInputRef}

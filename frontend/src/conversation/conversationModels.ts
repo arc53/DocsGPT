@@ -70,7 +70,7 @@ export interface Query {
   // or no longer fits, ``getAnswerSegments`` synthesizes one.
   segments?: AnswerSegment[];
   // Set when this answer came from a workflow agent run; lets the chat render
-  // the run's produced artifacts via WorkflowRunArtifacts.
+  // the run's produced artifacts as cards (useRunArtifacts).
   workflow_run_id?: string;
   error?: string;
   // Why the turn failed, when the backend says (``context_length_exceeded``);

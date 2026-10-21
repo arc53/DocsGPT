@@ -1,7 +1,7 @@
 ---
 title: Air-Gapped Deployment
 description: Run DocsGPT on a network with no internet access.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-16
 ---
 
 import { Callout } from 'nextra/components'
@@ -22,6 +22,7 @@ With a self-hosted LLM, chat, document ingestion and retrieval work offline. The
 | Speech-to-text (microphone, audio files) | OpenAI (`openai`) | `STT_PROVIDER=none` |
 | `read_webpage` chat tool | Any URL the model chooses | Leave it out of `DEFAULT_CHAT_TOOLS` |
 | Embedding models | Hugging Face, the first time a model is used | Bundled in the Docker image; `docsgpt prefetch-models` for pip |
+| Decision model | Hugging Face, the first time a decision feature is turned on (all ship off) | `docsgpt decisions prefetch` on a connected machine, then copy `DECISION_CACHE_DIR` (in Docker, the `decision_models` volume) or point `DECISION_MODEL_PATH` at the copy; see [offline installs](/Models/decision-model#offline-and-air-gapped-installs) |
 
 Features whose purpose is to fetch outside content cannot work offline: URL, crawler, sitemap, GitHub and Reddit sources, the Google Drive, SharePoint and Confluence connectors, web search and other internet-facing tools, and hosted LLM or embedding providers.
 
@@ -163,7 +164,7 @@ services:
       - ./certs:/etc/nginx/certs:ro
 ```
 
-Start both files together: `docker compose -f docker-compose-standalone.yaml -f docker-compose.airgap.yaml up -d`. Leave the `https` profile off; its Caddy service needs the internet to get a certificate. Add the proxy image to the `docker save` list above. The checkout Compose files also have a `frontend` service; put it on `airgap` too and drop its `ports` the same way.
+Start both files together: `docker compose -f docker-compose-standalone.yaml -f docker-compose.airgap.yaml up -d`. Leave the `https` profile off; its Caddy service needs the internet to get a certificate. With the `decider` profile on, put `decider` on `airgap` too. Add the proxy image to the `docker save` list above. The checkout Compose files also have a `frontend` service; put it on `airgap` too and drop its `ports` the same way.
 
 Docker's published ports bypass host firewalls such as `ufw`. If you rely on host rules instead of internal networks, filter container traffic in the `DOCKER-USER` iptables chain.
 

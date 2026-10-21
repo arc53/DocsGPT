@@ -6,10 +6,16 @@ vi.mock('react-redux', () => ({
   useSelector: () => 'tok',
 }));
 
+const feed: { current: Record<string, unknown>[] } = { current: [] };
 const empty = () =>
   Promise.resolve({
     ok: true,
-    json: async () => ({ success: true, activity: [], total: 0, events: [] }),
+    json: async () => ({
+      success: true,
+      activity: feed.current,
+      total: feed.current.length,
+      events: [],
+    }),
   });
 vi.mock('../api/services/adminService', () => ({
   default: {
@@ -27,10 +33,7 @@ describe('Activity toolbar', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  beforeEach(async () => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
+  const render = async () => {
     await act(async () => {
       root.render(
         <MemoryRouter>
@@ -38,6 +41,14 @@ describe('Activity toolbar', () => {
         </MemoryRouter>,
       );
     });
+  };
+
+  beforeEach(async () => {
+    feed.current = [];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await render();
   });
 
   afterEach(() => {
@@ -75,5 +86,33 @@ describe('Activity toolbar', () => {
     expect(empty?.dataset.size).toBe('sm');
     expect(empty?.querySelector('svg')).toBeNull();
     expect(empty?.textContent).toBe('No activity.');
+  });
+
+  it('names the actor by email over the id, the affected user by id', async () => {
+    feed.current = [
+      {
+        feed: 'auth',
+        id: '1',
+        event: 'role_granted',
+        category: 'access',
+        actor_id: 'sub-admin',
+        actor_email: 'admin@example.com',
+        target_id: 'sub-user',
+        target_email: null,
+        ip: null,
+        user_agent: null,
+        outcome: null,
+        detail: {},
+        created_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    for (let i = 0; i < 3; i += 1) await act(async () => Promise.resolve());
+    const cells = Array.from(container.querySelectorAll('tbody tr td'));
+    const texts = cells.map((td) => td.textContent);
+    expect(texts).toContain('admin@example.comsub-admin');
+    expect(texts).toContain('sub-user');
   });
 });

@@ -216,6 +216,174 @@ class TestListForAgent:
         assert len(resp.get_json()["schedules"]) == 1
 
 
+class TestListForUser:
+    def test_unauthorized(self, app):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+
+        with app.test_request_context("/api/schedules", method="GET"):
+            from flask import request
+            request.decoded_token = None
+            resp = UserSchedules().get()
+        assert resp.status_code == 401
+
+    def test_lists_own_schedules_across_agents_and_agentless(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        repo = SchedulesRepository(pg_conn)
+        agent_id = _make_agent(pg_conn)
+        conv = str(ConversationsRepository(pg_conn).create("u1", "QBR prep")["id"])
+        repo.create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="digest", cron="0 15 * * 1-5",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+        repo.create(
+            user_id="u1", agent_id=None, trigger_type="once", instruction="remind me",
+            run_at=_now() + timedelta(hours=2), next_run_at=_now() + timedelta(hours=2),
+            origin_conversation_id=conv, created_via="chat",
+        )
+        repo.create(
+            user_id="u2", agent_id=_make_agent(pg_conn, "u2"), trigger_type="recurring",
+            instruction="not mine", cron="* * * * *",
+        )
+        with _patch_db(pg_conn), app.test_request_context("/api/schedules", method="GET"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            resp = UserSchedules().get()
+        assert resp.status_code == 200
+        rows = resp.get_json()["schedules"]
+        assert {r["instruction"] for r in rows} == {"digest", "remind me"}
+        agentless = next(r for r in rows if r["agent_id"] is None)
+        assert agentless["origin_conversation_id"] == conv
+        assert agentless["origin_conversation_name"] == "QBR prep"
+        with_agent = next(r for r in rows if r["agent_id"])
+        assert with_agent["agent_id"] == agent_id
+        assert with_agent["agent_name"] == "a"
+
+
+class TestListForUserImages:
+    def test_never_returns_a_storage_path_for_the_agent_image(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+
+        agent_id = _make_agent(pg_conn)
+        pg_conn.execute(
+            text("UPDATE agents SET image = :img WHERE id = CAST(:id AS uuid)"),
+            {"img": "inputs/u1/attachments/avatar.png", "id": agent_id},
+        )
+        SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="digest", cron="0 15 * * 1-5",
+        )
+        with _patch_db(pg_conn), app.test_request_context("/api/schedules", method="GET"), patch(
+            "docsgpt.api.user.schedules.routes.generate_image_url",
+            return_value="https://api.example/api/images/x/cap",
+        ) as signer:
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            resp = UserSchedules().get()
+        row = resp.get_json()["schedules"][0]
+        assert row["agent_image"] == "https://api.example/api/images/x/cap"
+        assert "agent_user_id" not in row
+        signer.assert_called_once_with("inputs/u1/attachments/avatar.png", agent_id, "u1")
+
+
+class TestListForUserTeamAgents:
+    def _share(self, conn, agent_id: str, access: str):
+        import uuid
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        team = TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:8]}", "owner1")
+        TeamMembersRepository(conn).add_member(team["id"], "u1", role="team_member")
+        TeamResourceGrantsRepository(conn).grant(
+            team["id"], "agent", agent_id, owner_id="owner1", granted_by="owner1", access_level=access,
+        )
+
+    def _list(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+
+        with _patch_db(pg_conn), app.test_request_context("/api/schedules", method="GET"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            return UserSchedules().get().get_json()["schedules"]
+
+    def test_lists_schedules_of_agents_the_caller_edits_on_a_team(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "editor")
+        repo = SchedulesRepository(pg_conn)
+        repo.create(user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+                    instruction="team digest", cron="0 9 * * 1")
+        # A teammate's own chat task on the agent stays private to them.
+        repo.create(user_id="u3", agent_id=agent_id, trigger_type="once",
+                    instruction="their task", run_at=_now() + timedelta(hours=1))
+        rows = self._list(app, pg_conn)
+        assert [r["instruction"] for r in rows] == ["team digest"]
+        assert rows[0]["team"] is True
+
+    def test_the_owners_chat_name_stays_with_the_owner(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "editor")
+        conv = ConversationsRepository(pg_conn).create("owner1", "Confidential deal")
+        SchedulesRepository(pg_conn).create(
+            user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+            instruction="weekly check", cron="0 9 * * 1",
+            origin_conversation_id=str(conv["id"]), created_via="chat",
+        )
+        [row] = self._list(app, pg_conn)
+        assert row["team"] is True
+        assert row["origin_conversation_name"] is None
+
+    def test_a_team_runs_chat_is_not_linked_for_a_teammate(self, app, pg_conn):
+        # The run's chat is the agent owner's: the teammate can't open it.
+        from docsgpt.api.user.schedules.routes import ScheduleRunDetail, ScheduleRunList
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+        from docsgpt.storage.db.repositories.schedule_runs import ScheduleRunsRepository
+
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "editor")
+        schedule = SchedulesRepository(pg_conn).create(
+            user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+            instruction="team digest", cron="0 9 * * 1",
+        )
+        sid = str(schedule["id"])
+        conv = str(ConversationsRepository(pg_conn).create("owner1", "Digest")["id"])
+        runs = ScheduleRunsRepository(pg_conn)
+        run = runs.record_pending(sid, "owner1", agent_id, _now())
+        runs.update(str(run["id"]), {"status": "success", "conversation_id": conv})
+
+        def _as(user):
+            with _patch_db(pg_conn), app.test_request_context("/", method="GET"):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                detail = ScheduleRunDetail().get(sid, str(run["id"])).get_json()["run"]
+                listed = ScheduleRunList().get(sid).get_json()["runs"][0]
+            return detail["conversation_id"], listed["conversation_id"]
+
+        assert _as("u1") == (None, None)
+        assert _as("owner1") == (conv, conv)
+
+    def test_a_viewer_does_not_see_them(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn, "owner1")
+        self._share(pg_conn, agent_id, "viewer")
+        SchedulesRepository(pg_conn).create(
+            user_id="owner1", agent_id=agent_id, trigger_type="recurring",
+            instruction="team digest", cron="0 9 * * 1",
+        )
+        assert self._list(app, pg_conn) == []
+
+    def test_own_schedules_are_not_marked_team(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn)
+        SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring", instruction="mine", cron="0 9 * * 1",
+        )
+        assert self._list(app, pg_conn)[0]["team"] is False
+
+
 class TestGetEditPatchDelete:
     def _make(self, conn, **kwargs):
         return SchedulesRepository(conn).create(**kwargs)

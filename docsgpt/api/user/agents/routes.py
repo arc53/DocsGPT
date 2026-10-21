@@ -25,6 +25,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -193,6 +194,36 @@ def _resolve_workflow_for_user(conn, workflow_value, user):
             jsonify({"success": False, "message": "Workflow not found"}), 404
         )
     return str(workflow["id"]), None
+
+
+def _workflow_taken(conn, workflow_id: str, agent_id: str | None = None):
+    """A 409 response when another agent already uses ``workflow_id``, else None.
+
+    A workflow belongs to one agent: deleting a workflow agent deletes its
+    workflow, and Activity names a run after the agent the workflow is on.
+
+    Args:
+        conn: An open connection.
+        workflow_id: The workflow's PG UUID.
+        agent_id: The agent being saved, which may already use it.
+
+    Returns:
+        The error response, or None when the workflow is free.
+    """
+    from sqlalchemy import text as _sql_text
+
+    taken = conn.execute(
+        _sql_text(
+            "SELECT 1 FROM agents WHERE workflow_id = CAST(:workflow_id AS uuid) "
+            "AND (CAST(:agent_id AS uuid) IS NULL OR id <> CAST(:agent_id AS uuid)) LIMIT 1"
+        ),
+        {"workflow_id": workflow_id, "agent_id": agent_id},
+    ).first()
+    if taken is None:
+        return None
+    return make_response(
+        jsonify({"success": False, "message": "This workflow belongs to another agent"}), 409,
+    )
 
 
 def _resolve_folder_id(conn, folder_id, user):
@@ -777,6 +808,7 @@ class CreateAgent(Resource):
                     jsonify({"success": False, "message": "Invalid JSON schema"}),
                     400,
                 )
+        requested_config = data.get("config")
         if "config" in data:
             try:
                 normalized_config = normalize_agent_config(data.get("config"))
@@ -857,6 +889,10 @@ class CreateAgent(Resource):
                             jsonify({"success": False, "message": "Workflow is required"}),
                             400,
                         )
+                    if pg_workflow_id is not None:
+                        taken = _workflow_taken(conn, pg_workflow_id)
+                        if taken is not None:
+                            return taken
 
                 # Resolve sources — only UUIDs accepted post-cutover.
                 source_id_resolved = None
@@ -923,6 +959,12 @@ class CreateAgent(Resource):
                         and not build_data.get("retriever")
                     ):
                         build_data["retriever"] = "classic"
+
+                # A new agent starts from the admin's default guardrails, under
+                # the guardrails fields this request sets.
+                seeded_config = agent_defaults.seed(conn, requested_config)
+                if seeded_config is not requested_config:
+                    build_data["config"] = normalize_agent_config(seeded_config)
 
                 kwargs = _build_create_kwargs(
                     build_data, image_url=image_url, agent_type=agent_type,
@@ -1307,6 +1349,14 @@ class UpdateAgent(Resource):
                             return _denied(
                                 AccessDenied(403, "Only the owner can change this agent's workflow")
                             )
+                        # Checked only on a change, so an agent that already
+                        # shares its workflow (made before this check) saves.
+                        if pg_workflow_id is not None and pg_workflow_id != (
+                            str(current_workflow) if current_workflow else None
+                        ):
+                            taken = _workflow_taken(conn, pg_workflow_id, pg_agent_id)
+                            if taken is not None:
+                                return taken
                         update_fields["workflow_id"] = pg_workflow_id
                     elif field == "prompt_id":
                         value = data["prompt_id"]
@@ -2075,6 +2125,11 @@ class AdoptAgent(Resource):
                 for col in ("json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
+                # The adopted agent starts from the admin's default guardrails,
+                # under any the template sets.
+                adopted_config = agent_defaults.seed(conn, create_kwargs.get("config"))
+                if adopted_config is not None:
+                    create_kwargs["config"] = adopted_config
                 # Tool ids resolve owner-scoped at run time, so the template
                 # owner's rows would silently drop on every run — keep only
                 # what the adopter can actually use (builtins, own tools).

@@ -22,6 +22,7 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -726,6 +727,9 @@ conversations_table = Table(
     Column("legacy_mongo_id", Text),
     # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
     Column("unread_at", DateTime(timezone=True)),
+    Column("read_at", DateTime(timezone=True)),
+    # The latest turn's request ``passthrough`` values. See migration 0056.
+    Column("passthrough", JSONB),
 )
 
 conversation_messages_table = Table(
@@ -945,6 +949,26 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# Calls to the decision model per day, feature, mode, model version and status:
+# counters only, the denominators of the guardrail journal. Each process
+# upserts increments once a minute. Migration 0053.
+decision_usage_table = Table(
+    "decision_usage",
+    metadata,
+    Column("day", Date, nullable=False),
+    Column("feature", Text, nullable=False),
+    Column("mode", Text, nullable=False),
+    Column("model_version", Text, nullable=False, server_default=""),
+    Column("status", Text, nullable=False),
+    Column("calls", BigInteger, nullable=False, server_default="0"),
+    Column("states", BigInteger, nullable=False, server_default="0"),
+    Column("answered", BigInteger, nullable=False, server_default="0"),
+    Column("ms_total", Float, nullable=False, server_default="0"),
+    Column("queue_ms_total", Float, nullable=False, server_default="0"),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("day", "feature", "mode", "model_version", "status", name="decision_usage_pkey"),
+)
+
 # One execution trace per request (chat turn, continuation, scheduled or
 # webhook run, search, graph extraction): the span tree as a JSONB array,
 # rendered as a waterfall in the Logs UI. ``message_id`` cascades; deleting a
@@ -1116,6 +1140,8 @@ workflow_runs_table = Table(
     Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("ended_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    # The step a running run is on (0053); kept after the run ends.
+    Column("progress", JSONB),
 )
 
 
@@ -1155,6 +1181,8 @@ schedules_table = Table(
     Column("consecutive_failure_count", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Set on create, a timing edit and a resume; never by the dispatcher (0053).
+    Column("plan_changed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 schedule_runs_table = Table(

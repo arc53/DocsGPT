@@ -44,11 +44,14 @@ To link the widget to your api and your documents you can pass parameters to the
                buttonBg = "#222327"
                allowedFileExtensions = {['.pdf', '.docx', '.md', '.png']}
                showMicButton
+               suggestedQuestions = {['How do I get started?', 'Which plans include SSO?']}
           />;
     };
 ```
 
 `avatar` sets the header image and `heroIcon` the image on the welcome card (the DocsGPT mark by default). `poweredBy` controls the credit line under the input: `false` hides it, and `{ label, href }` replaces it.
+
+`suggestedQuestions` lists questions under the welcome card; a click sends one, and the list goes away once the conversation starts. `suggestedQuestionsLabel` sets the heading over them ("Suggested questions" by default; an empty string hides it).
 
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
@@ -65,7 +68,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
@@ -88,7 +91,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', {
@@ -103,7 +106,8 @@ To link the widget to your api and your documents you can pass parameters to the
               buttonIcon:"https://your-icon.svg",
               buttonBg:"#222327",
               allowedFileExtensions: ['.pdf', '.docx', '.md', '.png'],
-              showMicButton: true
+              showMicButton: true,
+              suggestedQuestions: ['How do I get started?', 'Which plans include SSO?']
             });
           }
         </script>
@@ -146,7 +150,7 @@ import { SearchBar } from "docsgpt";
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SearchBar Embedding</title>
-  <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
+  <script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
 </head>
 <body>
   <!-- Element where the SearchBar will render -->
@@ -183,6 +187,7 @@ import { SearchBar } from "docsgpt";
 | **`poweredBy`** | `boolean \| { label, href? }` | `true` | Credit line under the results: `false` hides it, an object replaces it. |
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. |
+| **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}` and they appear in the agent's Logs. |
 
 
 Feel free to reach out if you need help customizing or extending the `SearchBar`!

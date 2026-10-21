@@ -51,7 +51,7 @@
 
 <p align="center">
   <sub>Supported by</sub><br>
-  <a href="https://get.neon.com/docsgpt"><img height="32" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" /></a>
+  <a href="https://get.neon.com/docsgpt"><picture><source media="(prefers-color-scheme: dark)" srcset="https://neon.com/brand/neon-logo-dark-color.svg"><img height="32" alt="Neon" src="https://neon.com/brand/neon-logo-light-color.svg" /></picture></a>
   &nbsp;&nbsp;&nbsp;
   <a href="https://vercel.com/open-source-program"><img height="28" alt="Vercel OSS Program" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
 </p>

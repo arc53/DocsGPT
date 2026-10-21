@@ -267,6 +267,22 @@ class TestUpdateAgent:
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(mine["id"])})
         assert _status(resp) == 404
 
+    def test_workflow_changes_through_a_legacy_id(self, app, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id = _agent(pg_conn, agent_type="workflow")
+        legacy = "65a1b2c3d4e5f6a7b8c9d0e1"
+        pg_conn.execute(
+            text("UPDATE agents SET legacy_mongo_id = :legacy WHERE id = CAST(:id AS uuid)"),
+            {"legacy": legacy, "id": agent_id},
+        )
+        resp = self._put(app, pg_conn, legacy, OWNER, {"workflow": str(wf["id"])})
+        assert _status(resp) == 200
+        assert str(_row(pg_conn, agent_id)["workflow_id"]) == str(wf["id"])
+
     def test_tool_gate(self, app, pg_conn):
         from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 

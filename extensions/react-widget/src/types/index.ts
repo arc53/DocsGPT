@@ -68,6 +68,9 @@ export interface Query {
  */
 export type PoweredBy = boolean | { label: string; href?: string };
 
+/** A value sent in `passthrough`: nested objects and arrays are dropped by the server. */
+export type PassthroughValue = string | number | boolean | null;
+
 export interface WidgetProps {
   apiHost?: string;
   apiKey?: string;
@@ -79,6 +82,13 @@ export interface WidgetProps {
   description?: string;
   heroTitle?: string;
   heroDescription?: string;
+  /**
+   * Questions listed under the welcome card before the first message. A click
+   * sends the question. Blank entries are skipped.
+   */
+  suggestedQuestions?: string[];
+  /** Heading over `suggestedQuestions`; an empty string hides it. */
+  suggestedQuestionsLabel?: string;
   size?:
     | 'small'
     | 'medium'
@@ -112,6 +122,12 @@ export interface WidgetProps {
    */
   showMicButton?: boolean;
   poweredBy?: PoweredBy;
+  /**
+   * Values sent with every question, e.g. `{ user_id: 'emp-42' }`. The agent's
+   * prompt reads them as `{{ passthrough.user_id }}`, and its owner sees them on
+   * each turn in Logs. Set by the embedding page, so treat them as unverified.
+   */
+  passthrough?: Record<string, PassthroughValue>;
 }
 export interface WidgetCoreProps extends WidgetProps {
   widgetRef?: React.RefObject<HTMLDivElement> | null;
@@ -126,7 +142,11 @@ export interface WidgetCoreProps extends WidgetProps {
  */
 export interface SearchBarProps extends Pick<
   WidgetProps,
-  'allowedFileExtensions' | 'showMicButton' | 'avatar' | 'poweredBy'
+  | 'allowedFileExtensions'
+  | 'showMicButton'
+  | 'avatar'
+  | 'poweredBy'
+  | 'passthrough'
 > {
   apiHost?: string;
   apiKey?: string;

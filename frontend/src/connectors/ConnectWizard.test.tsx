@@ -28,6 +28,7 @@ const mcpApi = vi.hoisted(() => ({
   testMCPConnection: vi.fn(),
   saveMCPServer: vi.fn(),
   getConfig: vi.fn(),
+  getSourceDefaults: vi.fn(),
 }));
 vi.mock('../api/services/userService', async (importOriginal) => {
   const original = await importOriginal<{ default: object }>();
@@ -169,6 +170,20 @@ const drive: ConnectorDefinition = {
   setup: { tools: 'off', sync: 'ask' },
 };
 
+const drawio: ConnectorDefinition = {
+  ...base,
+  key: 'mcp:drawio',
+  name: 'draw.io',
+  icon: 'drawio',
+  auth_kind: 'mcp',
+  capabilities: ['read'],
+  credential_fields: [],
+  tool_templates: ['mcp_tool'],
+  mcp_url: 'https://mcp.draw.io/mcp',
+  oauth_scopes: [],
+  publisher: 'preset',
+};
+
 const github: ConnectorDefinition = {
   ...base,
   key: 'github',
@@ -224,6 +239,7 @@ describe('ConnectWizard', () => {
       connections: [],
     });
     mcpApi.getConfig.mockResolvedValue({ json: async () => ({}) });
+    mcpApi.getSourceDefaults.mockResolvedValue({ ok: false });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -912,6 +928,82 @@ describe('ConnectWizard', () => {
       'settings.connectors.wizard.toolsHeading:1',
     );
     open.mockRestore();
+  });
+
+  it('connects a no-auth MCP preset with one Connect button', async () => {
+    const open = vi.spyOn(window, 'open');
+    mcpApi.saveMCPServer.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, id: 'tool-7' }),
+    });
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        { id: 'conn-7', connector_key: 'mcp:drawio', updated_at: '2026-10-09' },
+      ],
+    });
+    service.getConnection.mockResolvedValue({
+      success: true,
+      connection: { tools: [{ ...TELEGRAM_TOOL, display_name: 'draw.io' }] },
+    });
+    await render(drawio);
+    expect(document.body.querySelector('input')).toBeNull();
+    expect(button('settings.connectors.wizard.signIn')).toBeUndefined();
+    await click('settings.connectors.status.connect');
+    expect(open).not.toHaveBeenCalled();
+    expect(mcpApi.testMCPConnection).not.toHaveBeenCalled();
+    const payload = mcpApi.saveMCPServer.mock.calls[0][0];
+    expect(payload).toMatchObject({
+      displayName: 'draw.io',
+      config: { server_url: 'https://mcp.draw.io/mcp', auth_type: 'none' },
+    });
+    expect(payload.config).not.toHaveProperty('oauth_task_id');
+    expect(document.body.textContent).toContain(
+      'settings.connectors.wizard.doneTitle',
+    );
+    open.mockRestore();
+  });
+
+  it.each(['listConnections', 'getConnection'] as const)(
+    'finishes a successful MCP save when %s fails',
+    async (failedRequest) => {
+      mcpApi.saveMCPServer.mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, id: 'tool-7' }),
+      });
+      service.listConnections.mockResolvedValue({
+        success: true,
+        connections: [
+          { id: 'conn-7', connector_key: drawio.key, updated_at: '2026-10-09' },
+        ],
+      });
+      service[failedRequest].mockRejectedValueOnce(
+        new TypeError('Failed to fetch'),
+      );
+      const onClose = vi.fn();
+      await render(drawio, onClose);
+      await click('settings.connectors.status.connect');
+      expect(title()).toBe('settings.connectors.wizard.doneTitle');
+      expect(document.body.textContent).not.toContain('Failed to fetch');
+      expect(button('settings.connectors.status.connect')).toBeUndefined();
+      expect(mcpApi.saveMCPServer).toHaveBeenCalledTimes(1);
+      await click('settings.connectors.wizard.done');
+      expect(onClose).toHaveBeenCalledWith(true);
+    },
+  );
+
+  it('reports a rejected MCP save as a failed connection', async () => {
+    mcpApi.saveMCPServer.mockResolvedValue({
+      ok: false,
+      json: async () => ({ success: false, error: 'Save rejected' }),
+    });
+    const onClose = vi.fn();
+    await render(drawio, onClose);
+    await click('settings.connectors.status.connect');
+    expect(title()).toBe('settings.connectors.wizard.connectTitle');
+    expect(document.body.textContent).toContain('Save rejected');
+    await click('cancel');
+    expect(onClose).toHaveBeenCalledWith(false);
   });
 
   describe('GitHub', () => {

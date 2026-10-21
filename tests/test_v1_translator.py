@@ -387,6 +387,47 @@ class TestTranslateRequest:
         assert "system_prompt_override" not in result
 
 
+@pytest.mark.unit
+class TestPassthrough:
+    def test_docsgpt_passthrough_is_forwarded(self):
+        data = {
+            "messages": [{"role": "user", "content": "Hi"}],
+            "docsgpt": {"passthrough": {"user_id": "emp-42"}},
+        }
+        assert translate_request(data, "k")["passthrough"] == {"user_id": "emp-42"}
+
+    def test_openai_user_becomes_passthrough_user(self):
+        data = {"messages": [{"role": "user", "content": "Hi"}], "user": "emp-42"}
+        assert translate_request(data, "k")["passthrough"] == {"user": "emp-42"}
+
+    def test_explicit_passthrough_user_wins(self):
+        data = {
+            "messages": [{"role": "user", "content": "Hi"}],
+            "user": "from-openai",
+            "docsgpt": {"passthrough": {"user": "explicit", "page": "billing"}},
+        }
+        assert translate_request(data, "k")["passthrough"] == {"user": "explicit", "page": "billing"}
+
+    def test_none_given_leaves_it_out(self):
+        data = {"messages": [{"role": "user", "content": "Hi"}], "user": "  "}
+        assert "passthrough" not in translate_request(data, "k")
+
+    def test_continuation_keeps_it(self):
+        data = {
+            "messages": [
+                {"role": "user", "content": "Hi"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+            ],
+            "user": "emp-42",
+        }
+        assert translate_request(data, "k")["passthrough"] == {"user": "emp-42"}
+
+
 # ---------------------------------------------------------------------------
 # translate_response
 # ---------------------------------------------------------------------------
@@ -1194,3 +1235,70 @@ class TestReasoningLeakHandling:
         ]
         assert {"reasoning_content": "why"} in deltas
         assert {"content": '{"answer": "42"}'} in deltas
+
+
+# ---------------------------------------------------------------------------
+# Artifacts made in the turn
+# ---------------------------------------------------------------------------
+
+_ARTIFACT = {
+    "id": "art-1",
+    "filename": "Deal.docx",
+    "ref": "A1",
+    "version": 2,
+    "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "size": 1500,
+    "sha256": "b" * 64,
+    "kind": "document",
+    "title": "Deal",
+    "download_url": "/api/artifacts/art-1/download?conversation_id=conv-1&version=2",
+}
+
+
+def _frames(chunks):
+    return [json.loads(c[len("data: "):]) for c in chunks if c.startswith("data: {")]
+
+
+@pytest.mark.unit
+class TestTurnArtifacts:
+
+    def test_non_streaming_response_lists_the_artifacts(self):
+        result = translate_response(
+            "conv-1", "Done.", None, [{"call_id": "c1", "artifacts": [_ARTIFACT]}], "", "agent",
+            artifacts=[_ARTIFACT],
+        )
+        assert result["docsgpt"]["artifacts"] == [_ARTIFACT]
+        assert result["docsgpt"]["tool_calls"][0]["artifacts"][0]["download_url"] == _ARTIFACT["download_url"]
+
+    def test_non_streaming_response_without_artifacts_has_no_field(self):
+        result = translate_response("conv-1", "Done.", None, None, "", "agent")
+        assert "artifacts" not in result["docsgpt"]
+
+    def test_stream_end_sends_the_artifacts_before_the_finish_chunk(self):
+        state = StreamTranslationState()
+        chunks = translate_stream_event({"type": "end", "artifacts": [_ARTIFACT]}, "chatcmpl-1", "agent", state=state)
+        frames = _frames(chunks)
+        assert frames[0]["docsgpt"] == {"type": "artifacts", "artifacts": [_ARTIFACT]}
+        assert frames[0]["choices"] == [{"index": 0, "delta": {}, "finish_reason": None}]
+        assert frames[1]["choices"][0]["finish_reason"] == "stop"
+        assert chunks[-1] == "data: [DONE]\n\n"
+
+    def test_stream_end_after_a_tool_pause_still_sends_the_artifacts(self):
+        state = StreamTranslationState()
+        translate_stream_event(
+            {"type": "tool_calls_pending", "data": {"pending_tool_calls": []}}, "chatcmpl-1", "agent", state=state
+        )
+        chunks = translate_stream_event({"type": "end", "artifacts": [_ARTIFACT]}, "chatcmpl-1", "agent", state=state)
+        frames = _frames(chunks)
+        assert [f["docsgpt"]["type"] for f in frames] == ["artifacts"]
+        assert chunks[-1] == "data: [DONE]\n\n"
+
+    def test_stream_end_without_artifacts_is_unchanged(self):
+        chunks = translate_stream_event({"type": "end"}, "chatcmpl-1", "agent", state=StreamTranslationState())
+        frames = _frames(chunks)
+        assert len(frames) == 1 and "docsgpt" not in frames[0]
+
+    def test_tool_call_chunk_passes_described_artifacts_through(self):
+        data = {"call_id": "c1", "status": "completed", "artifacts": [_ARTIFACT]}
+        [chunk] = translate_stream_event({"type": "tool_call", "data": data}, "chatcmpl-1", "agent")
+        assert _frames([chunk])[0]["docsgpt"]["data"]["artifacts"] == [_ARTIFACT]

@@ -1,7 +1,7 @@
 ---
 title: Search Widget
 description: Embed the DocsGPT Search Bar Widget in your React or HTML projects to provide AI-powered document search functionality to your users.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-21
 ---
 import { Tabs } from 'nextra/components'
 
@@ -54,10 +54,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Search Bar Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
 ```
 
-The bundle defines `renderSearchBar` (and `renderDocsGPTWidget`) on `window`. `0.8.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version.
+The bundle defines `renderSearchBar` (and `renderDocsGPTWidget`) on `window`. `0.11.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version.
 
 ### Usage
 
@@ -72,7 +72,7 @@ Then, in a `<script>` block after the widget script, use the `renderSearchBar` f
 ```html filename="html"
 <!DOCTYPE html>
 <div id="search-bar-container"></div>
-<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
 <script>
   window.onload = function() {
     renderSearchBar('search-bar-container', {
@@ -109,6 +109,7 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 | **`poweredBy`** | `boolean \| { label: string; href?: string }` | `true` | The credit line at the bottom of the results. `true` shows "Powered by DocsGPT", `false` hides it, and an object replaces it, e.g. `{ label: 'Powered by Acme', href: 'https://acme.example' }`. The chat opened from "Ask the AI" uses the same value. |
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. See the [chat widget page](/Extensions/chat-widget). |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. See the [chat widget page](/Extensions/chat-widget). |
+| **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. See [Passing who is asking](/Extensions/chat-widget#passing-who-is-asking). |
 
 ---
 

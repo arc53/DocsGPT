@@ -1,7 +1,7 @@
 ---
 title: Docker Deployment of DocsGPT
 description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-16
 ---
 
 import { Callout } from 'nextra/components'
@@ -462,6 +462,34 @@ There are two Ollama optional files:
 
 *   **NVIDIA Container Toolkit (for NVIDIA GPUs):** If you are using NVIDIA GPUs, you need to have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed and configured on your system for Docker to access your GPU.
 *   **Docker GPU Configuration:** Ensure Docker is configured to utilize your GPU. Refer to the [Ollama Docker Hub page](https://hub.docker.com/r/ollama/ollama) and Docker documentation for GPU setup instructions specific to your GPU type (NVIDIA, AMD, Intel).
+
+## The Decision Model Container
+
+The [decision model](/Models/decision-model) runs inside the backend, and the worker calls it there. It downloads and
+loads nothing until you turn a decision feature on in `.env`; the first one downloads the model (about 0.5 GB) into the
+`decision_models` volume, and the backend then holds up to 1 GB more memory.
+
+Every Compose file (and the stack `docsgpt up` runs) also has a `decider` service, off by default: the same
+`arc53/docsgpt` image running `docsgpt decide-server`, which serves the model to the backend and the worker from a
+container of its own. Use it with several backends or workers, to keep the model's memory apart from the backend's, or
+so the model is not reloaded each time gunicorn recycles the backend process (see
+[The decider](/Models/decision-model#the-decider)). Turn it on with three lines in `.env`, or with
+`docsgpt up --decider`, which writes them (a random key included):
+
+```env
+COMPOSE_PROFILES=decider
+DECISION_BASE_URL=http://decider:7095
+DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+```
+
+It idles at about 100 MB, is limited to 2 GB of memory (`DECISION_MEMORY` in `.env`), and the backend never waits for
+it. It refuses to start without `DECISION_KEY`, which the backend and the worker send it; `INTERNAL_KEY` never keys it.
+
+- On a Mac, Docker cannot use the GPU: run the model natively on it instead, as in
+  [On a Mac's GPU](/Models/decision-model#on-a-macs-gpu).
+- On an NVIDIA GPU, layer `deployment/optional/docker-compose.optional.decide-vllm.yaml` on a checkout's Compose
+  file to serve the model with vLLM: see [On an NVIDIA GPU](/Models/decision-model#on-an-nvidia-gpu).
+- `deployment/docker-compose-dev.yaml` builds a decider from the checkout only with `--profile decider`.
 
 ## Optional Code Execution Sandbox
 

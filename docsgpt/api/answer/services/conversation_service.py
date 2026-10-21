@@ -14,12 +14,14 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text as sql_text
 
 from docsgpt.core.settings import settings
+from docsgpt.events.publisher import publish_user_event
 from docsgpt.api.answer.services.compression.types import (
     COMPRESSION_SUMMARY_MARKER,
     COMPRESSION_SUMMARY_PROMPT,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
     HeartbeatState,
@@ -36,6 +38,10 @@ logger = logging.getLogger(__name__)
 TERMINATED_RESPONSE_PLACEHOLDER = (
     "Response was terminated prior to completion, try regenerating."
 )
+
+# A failed answer's codes for an end its user chose: a Stop, or leaving the
+# stream (New Chat, a reload, a closed tab). Neither marks the chat failed.
+_USER_ENDED_CODES = frozenset({"stopped", "client_disconnect"})
 
 
 def _final_finish_reason(llm: Any) -> Optional[str]:
@@ -276,12 +282,15 @@ class ConversationService:
         visibility: str = "hidden",
         status: str = "pending",
         index: Optional[int] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         """Reserve the placeholder message row before the LLM call.
 
         ``index`` triggers regenerate semantics: messages at
         ``position >= index`` are truncated so the new placeholder
         lands at ``position = index`` rather than appending.
+        ``passthrough`` (already bounded) replaces the conversation's
+        stored values; a turn without any clears them.
 
         Returns ``{"conversation_id", "message_id", "request_id"}``.
         """
@@ -315,6 +324,8 @@ class ConversationService:
                 # than appending at the end of the conversation.
                 if isinstance(index, int) and index >= 0:
                     repo.truncate_after(conv_pg_id, keep_up_to=index - 1)
+                # The latest turn's values: a turn without any clears them.
+                repo.set_passthrough(conv_pg_id, passthrough or None)
             else:
                 fallback_name = (question[:50] if question else "New Conversation")
                 conv = repo.create(
@@ -329,6 +340,7 @@ class ConversationService:
                         else None
                     ),
                     visibility=visibility,
+                    passthrough=passthrough,
                 )
                 conv_pg_id = str(conv["id"])
 
@@ -411,6 +423,7 @@ class ConversationService:
         error: Optional[BaseException] = None,
         title_inputs: Optional[Dict[str, Any]] = None,
         async_title_generation: bool = False,
+        mark_unread_when_away: bool = False,
     ) -> MessageUpdateOutcome:
         """Commit the response and tool_call confirms in one transaction.
 
@@ -419,6 +432,11 @@ class ConversationService:
         finalize from "the row was already terminal" — the latter must
         still be treated as success when the prior state was
         ``complete``.
+
+        ``mark_unread_when_away``: the answer finished on its own (not a Stop
+        or a dropped connection, which also save as ``complete``), so a listed
+        chat is marked unread unless its owner is watching it, as a failure
+        is. Only the caller knows how the stream ended.
         """
         if not message_id:
             return MessageUpdateOutcome.INVALID
@@ -473,6 +491,20 @@ class ConversationService:
                 )
                 return outcome
             repo.confirm_executed_tool_calls(message_id)
+            # Activity marks a chat failed while it is unread; a Stop or a
+            # dropped connection (New Chat, a reload) is the user's own doing.
+            failed = status == "failed" and merged_metadata.get("error_code") not in _USER_ENDED_CODES
+            finished = status == "complete" and mark_unread_when_away
+            landed_chat = (
+                ConversationUnreadRepository(conn).listed_chat_of_message(message_id)
+                if failed or finished
+                else None
+            )
+        # Outside the txn: whether the owner is watching is a Redis read.
+        if landed_chat is not None:
+            from docsgpt.notifications.notify import mark_unread_unless_watching
+
+            mark_unread_unless_watching(*landed_chat, begin=db_session)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
         # ``failed`` counts too: the conversation is still listed, and
@@ -495,14 +527,36 @@ class ConversationService:
     def _generate_title_safely(
         self, message_id: str, title_inputs: Dict[str, Any]
     ) -> None:
-        """Generate a title in its own DB transaction without surfacing errors."""
+        """Generate a title in its own DB transaction without surfacing errors.
+
+        A listed chat's new name then goes to its owner's tabs as
+        ``conversation.renamed``, after the commit, so the sidebar swaps the
+        question-prefix fallback for it without refetching its list. The
+        event names the fallback as ``previous``: a tab that shows another
+        name by then (the user renamed it) keeps that one.
+        """
         try:
             with db_session() as conn:
-                self._maybe_generate_title(conn, message_id, title_inputs)
+                renamed = self._maybe_generate_title(conn, message_id, title_inputs)
+                listed = (
+                    ConversationUnreadRepository(conn).listed_chat_of_message(message_id)
+                    if renamed is not None
+                    else None
+                )
         except Exception as e:
             logger.error(
                 f"finalize_message title generation failed: {e}",
                 exc_info=True,
+            )
+            return
+        if renamed is not None and listed is not None:
+            name, previous = renamed
+            conversation_id, user_id = listed
+            publish_user_event(
+                user_id,
+                "conversation.renamed",
+                {"conversation_id": conversation_id, "name": name, "previous": previous},
+                scope={"kind": "conversation", "id": conversation_id},
             )
 
     def _maybe_generate_title(
@@ -510,14 +564,25 @@ class ConversationService:
         conn,
         message_id: str,
         title_inputs: Dict[str, Any],
-    ) -> None:
-        """Generate an LLM-summarised conversation name if one isn't set yet."""
+    ) -> Optional[tuple[str, str]]:
+        """Generate an LLM-summarised conversation name if one isn't set yet.
+
+        Args:
+            conn: The open transaction the rename is written in.
+            message_id: The answered message; its conversation is renamed.
+            title_inputs: ``llm``, ``question``, ``response``, ``model_id`` and
+                ``fallback_name``.
+
+        Returns:
+            ``(name, previous)`` when the chat was renamed from ``previous``,
+            else None.
+        """
         llm = title_inputs.get("llm")
         question = title_inputs.get("question") or ""
         response = title_inputs.get("response") or ""
         fallback_name = title_inputs.get("fallback_name") or question[:50]
         if llm is None:
-            return
+            return None
 
         row = conn.execute(
             sql_text(
@@ -528,10 +593,10 @@ class ConversationService:
             {"mid": message_id},
         ).fetchone()
         if row is None:
-            return
+            return None
         conv_id, current_name = str(row[0]), row[1]
         if current_name and current_name != fallback_name:
-            return
+            return None
 
         messages_summary = [
             {
@@ -557,13 +622,19 @@ class ConversationService:
         )
         if not completion or not completion.strip():
             completion = fallback_name or "New Conversation"
-        conn.execute(
+        name = completion.strip()
+        # Only over the name read before the LLM call: a rename the user saved
+        # during that call wins, and the chat is not announced as renamed.
+        updated = conn.execute(
             sql_text(
                 "UPDATE conversations SET name = :name, updated_at = now() "
-                "WHERE id = CAST(:id AS uuid)"
+                "WHERE id = CAST(:id AS uuid) AND name IS NOT DISTINCT FROM CAST(:current AS text)"
             ),
-            {"id": conv_id, "name": completion.strip()},
+            {"id": conv_id, "name": name, "current": current_name},
         )
+        if updated.rowcount == 0:
+            return None
+        return name, current_name or fallback_name
 
     def update_compression_metadata(
         self, conversation_id: str, compression_metadata: Dict[str, Any]

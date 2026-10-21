@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import de from '../locale/de.json';
 import en from '../locale/en.json';
 import es from '../locale/es.json';
+import fr from '../locale/fr.json';
 import jp from '../locale/jp.json';
 import ru from '../locale/ru.json';
 import zh from '../locale/zh.json';
@@ -23,6 +24,7 @@ const LOCALES: Record<string, Record<string, unknown>> = {
   de,
   en,
   es,
+  fr,
   jp,
   ru,
   zh,

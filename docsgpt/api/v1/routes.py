@@ -60,6 +60,10 @@ logger = logging.getLogger(__name__)
 
 v1_bp = Blueprint("v1", __name__, url_prefix="/v1")
 
+# ``docsgpt.attachments_mode``: ``auto`` plans what fits into the prompt (the
+# default); ``reference`` keeps the files out of it for the tools to work on.
+ATTACHMENTS_MODES = ("auto", "reference")
+
 
 def _extract_bearer_token() -> Optional[str]:
     """Extract API key from Authorization: Bearer header."""
@@ -227,6 +231,13 @@ def _validate_request_options(data: Dict[str, Any], agent: Dict[str, Any]) -> Op
     stream_options = data.get("stream_options")
     if stream_options is not None and not isinstance(stream_options, dict):
         return _invalid_request("stream_options must be an object.")
+    docsgpt = data.get("docsgpt")
+    mode = docsgpt.get("attachments_mode") if isinstance(docsgpt, dict) else None
+    if mode is not None and mode not in ATTACHMENTS_MODES:
+        return _invalid_request(
+            f"docsgpt.attachments_mode must be one of {', '.join(ATTACHMENTS_MODES)}.",
+            code="invalid_attachments_mode",
+        )
     return None
 
 
@@ -257,16 +268,27 @@ def _response_usage(agent: Any) -> Dict[str, Any]:
     Reads the per-instance accumulator so multi-round tool turns report
     the sum of every LLM call, matching what ``token_usage`` rows bill;
     the accumulator carries provider-exact counts whenever the upstream
-    reported them (see ``_prefer_provider_usage``).
+    reported them (see ``_prefer_provider_usage``), including
+    ``prompt_tokens_details.cached_tokens`` and ``cache_write_tokens``.
     """
     tokens = getattr(getattr(agent, "llm", None), "token_usage", {}) or {}
     prompt = int(tokens.get("prompt_tokens", 0) or 0)
     completion = int(tokens.get("generated_tokens", 0) or 0)
-    return {
+    usage: Dict[str, Any] = {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
     }
+    # The prompt-cache bins, when the provider reported them: how much of
+    # ``prompt_tokens`` was read from the cache, and written to it.
+    details = {
+        key: int(tokens[key])
+        for key in ("cached_tokens", "cache_write_tokens")
+        if tokens.get(key) is not None
+    }
+    if details:
+        usage["prompt_tokens_details"] = details
+    return usage
 
 
 def _answered_by(agent: Any) -> List[Dict[str, Any]]:
@@ -721,6 +743,7 @@ def _stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     translation_state = StreamTranslationState()
@@ -811,6 +834,7 @@ def _non_stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     result = helper.process_response_stream(stream)
@@ -839,6 +863,8 @@ def _non_stream_response(
         usage=_response_usage(agent),
         finish_reason_override=_response_finish_reason(agent),
         answered_by=_answered_by(agent),
+        artifacts=result.get("artifacts"),
+        attachments=result.get("attachments"),
     )
     return make_response(jsonify(response), 200)
 
