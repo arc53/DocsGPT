@@ -22,6 +22,7 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -982,6 +983,17 @@ conversation_labels_table = Table(
     # updated_at and a hash of its content; NULL on derived rows
     Column("source_updated_at", DateTime(timezone=True)),
     Column("source_hash", Text),
+    # a resolution still pending (generated): what the sweep's pending pass looks for
+    Column(
+        "pending",
+        Boolean,
+        Computed(
+            "CASE WHEN label = 'resolution' THEN COALESCE((probabilities->>'pending')::float8, 0) > 0"
+            " ELSE false END",
+            persisted=True,
+        ),
+        nullable=False,
+    ),
 )
 
 Index(
@@ -1006,7 +1018,7 @@ Index("conversation_labels_reply_idx", conversation_labels_table.c.reply_message
 Index(
     "conversation_labels_resolution_idx",
     conversation_labels_table.c.occurred_at,
-    postgresql_where=text("label = 'resolution'"),
+    postgresql_where=text("pending"),
 )
 
 # Calls to the decision model per day, feature, mode, model version and status:

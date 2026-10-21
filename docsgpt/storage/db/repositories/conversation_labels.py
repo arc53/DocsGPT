@@ -789,10 +789,10 @@ class ConversationLabelsRepository:
                 FROM conversation_labels l
                 JOIN conversations c ON c.id = l.conversation_id
                 {_AGENT}
-                WHERE l.label = 'resolution' AND l.message_id IS NULL
+                WHERE l.pending AND l.label = 'resolution' AND l.message_id IS NULL
                   AND l.schema_hash = :schema_hash AND l.model_version = :model_version
                   AND l.occurred_at < NOW() - make_interval(hours => :window)
-                  AND COALESCE((l.probabilities->>'pending')::float8, 0) > 0 AND {_ENABLED} {scope}
+                  AND {_ENABLED} {scope}
                 ORDER BY l.occurred_at DESC
                 LIMIT :limit
                 """

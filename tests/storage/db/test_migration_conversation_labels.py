@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -87,6 +88,36 @@ class TestMigration0057RoundTrip:
             "source_updated_at": ("timestamp with time zone", "YES"),
             "source_hash": ("text", "YES"),
         }
+
+    def test_pending_marks_the_resolutions_still_pending_and_only_they_are_indexed(self, pg_engine):
+        # The sweep looks every few minutes for resolutions still pending past their window; settled ones, nearly
+        # all of them, stay out of its index.
+        with pg_engine.begin() as conn:
+            cid, first, _ = _conversation(conn)
+            rows = (("resolution", None, {"resolved": 0.4, "pending": 0.6}), ("experience", None, {"pending": 2}),
+                    ("topic_effective", first, {"pending": 0.9}))
+            for label, message_id, probabilities in rows:
+                conn.execute(
+                    text(
+                        "INSERT INTO conversation_labels (conversation_id, message_id, user_id, level, label, "
+                        "probabilities, schema_hash, model_version, occurred_at) VALUES (CAST(:cid AS uuid), "
+                        "CAST(:mid AS uuid), 'u', 'conversation', :label, CAST(:p AS jsonb), 'h', 'v', now())"
+                    ),
+                    {"cid": cid, "mid": message_id, "label": label, "p": json.dumps(probabilities)},
+                )
+
+            def pending():
+                return {row[0]: row[1] for row in conn.execute(text(
+                    "SELECT label, pending FROM conversation_labels WHERE conversation_id = CAST(:cid AS uuid)"
+                ), {"cid": cid})}
+
+            assert pending() == {"resolution": True, "experience": False, "topic_effective": False}
+            conn.execute(text("UPDATE conversation_labels SET probabilities = '{\"resolved\": 1, \"pending\": 0}'"
+                              " WHERE label = 'resolution'"))
+            assert pending()["resolution"] is False
+            definition = conn.execute(text(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'conversation_labels_resolution_idx'")).scalar()
+        assert definition.endswith("WHERE pending")
 
     def test_one_row_per_conversation_message_and_label(self, pg_engine):
         with pg_engine.begin() as conn:

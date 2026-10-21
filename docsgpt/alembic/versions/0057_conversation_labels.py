@@ -17,9 +17,11 @@
   messages) and a hash of what the states read of it. A label stays current
   while its message is unchanged since then or still hashes the same, so
   feedback or a finished background job does not have it asked again, and an
-  edit made while the sweep ran does. Rows hold no user text.
-  ``conversation_labels_resolution_idx`` keeps the sweep's look for
-  resolutions still pending past their window off the rest of the table.
+  edit made while the sweep ran does. Rows hold no user text. ``pending``
+  (generated) marks a ``resolution`` that still has pending mass; the sweep
+  looks for those past their window every few minutes, and
+  ``conversation_labels_resolution_idx`` holds only them, not the settled
+  ones that make up nearly all resolutions.
   ``cleanup_conversation_labels`` on beat deletes rows past
   ``ANALYTICS_RETENTION_DAYS`` by ``occurred_at``.
 * ``conversation_messages_ts_idx``: the sweep reads messages by time across
@@ -85,7 +87,11 @@ def upgrade() -> None:
             occurred_at       timestamptz NOT NULL,
             created_at        timestamptz NOT NULL DEFAULT now(),
             source_updated_at timestamptz,
-            source_hash       text
+            source_hash       text,
+            pending           boolean NOT NULL GENERATED ALWAYS AS (
+                CASE WHEN label = 'resolution' THEN COALESCE((probabilities->>'pending')::float8, 0) > 0
+                     ELSE false END
+            ) STORED
         );
         """
     )
@@ -103,7 +109,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS conversation_labels_reply_idx ON conversation_labels (reply_message_id);")
     op.execute(
         "CREATE INDEX IF NOT EXISTS conversation_labels_resolution_idx ON conversation_labels (occurred_at) "
-        "WHERE label = 'resolution';"
+        "WHERE pending;"
     )
     # CONCURRENTLY can't run inside a transaction.
     with op.get_context().autocommit_block():

@@ -1267,6 +1267,27 @@ def _generic_plan(conn, statement, params: dict) -> str:
 
 @pytest.mark.unit
 class TestScale:
+    def test_a_long_conversation_writes_each_derived_row_about_once(self, db, fake, monkeypatch):
+        # Each call recomputes the conversation's derived rows; only those whose value changed are written, so a
+        # conversation of N messages costs about N derived writes, not N squared.
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 4)
+        agent = _agent(db, topics=TOPICS)
+        cid = _conversation(db, agent_id=str(agent["id"]))
+        for i in range(20):
+            _message(db, cid, i, "How do I install it?" if i % 5 == 0 else "and then?", ago_minutes=300)
+        written = []
+        real = ConversationLabelsRepository.upsert_many
+
+        def counting(repo, rows):
+            written.extend(row for row in rows if row.get("derived"))
+            return real(repo, rows)
+
+        monkeypatch.setattr(ConversationLabelsRepository, "upsert_many", counting)
+        tasks.sweep()
+        final = [row for row in _labels(db, cid).values() if row.derived]
+        assert len(final) == 42  # gap_type and topic_effective per message, resolution and experience
+        assert len(written) <= 2 * len(final)
+
     def test_a_backfill_excludes_only_what_may_come_back(self, db, fake, excludes, monkeypatch):
         monkeypatch.setattr(tasks, "PAGE", 4)
         monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 4)  # two one-message conversations a call

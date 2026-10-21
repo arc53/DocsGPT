@@ -817,10 +817,15 @@ class Sweep:
         if done:
             repo.delete_retries(cid, done)
         msgs = self._messages.get(cid) or self._load(conn, cid)
-        derived = self._message_rows(conn, cid, rows[0], msgs)
+        labels = self._labels(conn, cid)
+        derived = self._message_rows(conn, cid, rows[0], msgs, labels)
         if conversation_level:
-            derived += self._conversation_rows(conn, rows[0], msgs)
-        self.stats["rows"] += repo.upsert_many(derived)
+            derived += self._conversation_rows(conn, rows[0], msgs, labels)
+        # Every call recomputes the conversation's derived rows; writing only those that changed keeps a long
+        # conversation from rewriting all of them on each of its calls.
+        derived = [row for row in derived if not _unchanged(row, labels)]
+        if derived:
+            self.stats["rows"] += repo.upsert_many(derived)
 
     # ---- derived rows ---------------------------------------------------------------------------------------------
 
@@ -847,9 +852,11 @@ class Sweep:
         return {row["reply_message_id"]: row["probabilities"] for (_, name), row in labels.items()
                 if name == label and row["reply_message_id"]}
 
-    def _message_rows(self, conn, cid: str, ref: dict, msgs: list[states.Message]) -> list[dict]:
-        """``gap_type`` of every labelled turn and ``topic_effective`` of every message with a topic."""
-        labels = self._labels(conn, cid)
+    def _message_rows(self, conn, cid: str, ref: dict, msgs: list[states.Message],
+                      labels: Optional[dict] = None) -> list[dict]:
+        """``gap_type`` of every labelled turn and ``topic_effective`` of every message with a topic, from
+        ``labels`` (the conversation's, read when not given)."""
+        labels = self._labels(conn, cid) if labels is None else labels
         ref = self._owned(ref, labels)
         out = []
         for m in msgs:
@@ -885,11 +892,13 @@ class Sweep:
             "occurred_at": m.timestamp if m else ref["occurred_at"],
         }
 
-    def _conversation_rows(self, conn, ref: dict, msgs: list[states.Message]) -> list[dict]:
-        """``resolution`` and ``experience`` from the stored labels; none before ``goal_met`` exists."""
+    def _conversation_rows(self, conn, ref: dict, msgs: list[states.Message],
+                           labels: Optional[dict] = None) -> list[dict]:
+        """``resolution`` and ``experience`` from the stored labels (``labels``, read when not given); none
+        before ``goal_met`` exists."""
         if not msgs:
             return []
-        labels = self._labels(conn, ref["conversation_id"])
+        labels = self._labels(conn, ref["conversation_id"]) if labels is None else labels
         goal = labels.get((None, "goal_met"))
         if goal is None:
             return []
@@ -919,6 +928,16 @@ class Sweep:
             self._derived(ref, None, "conversation", "experience", experience, goal["lang"], top="score",
                           p_top=experience["score"]),
         ]
+
+
+#: What a derived row's value is: a stored row equal in these needs no write.
+_DERIVED_VALUE = ("level", "top", "p_top", "probabilities", "lang", "options_hash", "occurred_at", "agent_id")
+
+
+def _unchanged(row: dict, labels: dict) -> bool:
+    """Derived ``row`` is stored as it is, among the conversation's ``labels``."""
+    stored = labels.get((row["message_id"], row["label"]))
+    return stored is not None and stored["derived"] and all(stored.get(k) == row[k] for k in _DERIVED_VALUE)
 
 
 def sweep(budget_seconds: Optional[float] = None, days: Optional[int] = None,
