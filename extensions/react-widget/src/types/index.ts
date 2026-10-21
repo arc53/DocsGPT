@@ -1,6 +1,7 @@
 import 'styled-components';
 import type { WidgetTheme } from '../components/tokens';
 import type { Messages } from '../locale/en';
+import type { SupportedLocale } from '../locale/index';
 
 declare module 'styled-components' {
   export interface DefaultTheme extends WidgetTheme {
@@ -76,12 +77,13 @@ export type PassthroughValue = string | number | boolean | null;
 
 /** Language and text options shared by the widget and the search bar. */
 export interface LocaleProps {
+  // `string & {}` keeps editor suggestions for the known codes.
   /**
    * UI language: `'auto'` (the default) follows the visitor's browser, or one
    * of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. Anything else is
    * English. Text set through other props is never translated.
    */
-  locale?: string;
+  locale?: SupportedLocale | 'auto' | (string & {});
   /** Replaces individual UI strings, e.g. `{ composerPlaceholder: 'Ask us' }`. */
   translations?: Partial<Messages>;
 }

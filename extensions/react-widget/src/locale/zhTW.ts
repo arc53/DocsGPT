@@ -16,7 +16,7 @@ export const zhTW = {
   openSource: '開啟來源 {number}',
   toolsUsed: '已使用 {tools}',
   thinking: '思考中…',
-  generating: '生成中…',
+  generating: '產生中…',
   runningCode: '正在執行程式碼…',
   decidingNextStep: '正在決定下一步…',
   workflowStep: '{step}…',
@@ -75,5 +75,5 @@ export const zhTW = {
   askTheAi: '詢問 AI',
   searching: '正在搜尋…',
   searchFailed: '搜尋失敗。您仍可詢問 AI。',
-  noResults: '未找到結果',
+  noResults: '找不到結果',
 } satisfies Messages;

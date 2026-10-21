@@ -67,6 +67,18 @@ export const browserLanguages = (): readonly string[] => {
   return navigator.language ? [navigator.language] : [];
 };
 
+const isAuto = (setting: string | undefined) =>
+  !setting || setting.trim().toLowerCase() === 'auto';
+
+/** The first of `languages` the widget supports, or null. */
+const firstSupported = (languages: readonly string[]) => {
+  for (const language of languages) {
+    const match = matchLocale(language);
+    if (match) return match;
+  }
+  return null;
+};
+
 /**
  * The locale to show. `auto` (or nothing) takes the first of `languages`
  * the widget supports; an explicit code is matched the same way. Anything
@@ -75,25 +87,31 @@ export const browserLanguages = (): readonly string[] => {
 export const resolveLocale = (
   setting: string | undefined,
   languages: readonly string[] = browserLanguages(),
-): SupportedLocale => {
-  if (setting && setting.trim().toLowerCase() !== 'auto')
-    return matchLocale(setting) ?? 'en';
-  for (const language of languages) {
-    const match = matchLocale(language);
-    if (match) return match;
-  }
-  return 'en';
-};
+): SupportedLocale =>
+  (isAuto(setting)
+    ? firstSupported(languages)
+    : matchLocale(setting as string)) ?? 'en';
 
 /**
  * The language to recognise speech in: the visitor's own tag when it maps to
  * the UI locale, so `en-GB` keeps its region; otherwise the locale code.
+ * Under `auto` with no supported browser language (an Italian visitor sees
+ * English text), speech is still recognised in the browser's language.
  */
 export const speechLanguage = (
-  locale: SupportedLocale,
+  setting: string | undefined,
   languages: readonly string[] = browserLanguages(),
-): string =>
-  languages.find((language) => matchLocale(language) === locale) ?? locale;
+  browserLanguage: string | undefined = typeof navigator === 'undefined'
+    ? undefined
+    : navigator.language,
+): string => {
+  if (isAuto(setting) && !firstSupported(languages) && browserLanguage)
+    return browserLanguage;
+  const locale = resolveLocale(setting, languages);
+  return (
+    languages.find((language) => matchLocale(language) === locale) ?? locale
+  );
+};
 
 /** A locale's catalogue with the host's overrides on top. Blank overrides are kept. */
 export const buildMessages = (

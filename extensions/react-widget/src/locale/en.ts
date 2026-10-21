@@ -88,6 +88,8 @@ export const en = {
   // Attach button (screen readers).
   attachFiles: 'Attach files',
   // Attach button's visible text, beside a paperclip. One short word.
+  // At the small size it shares a ~210px row with the microphone button's text
+  // (micVoice, micStop, micTranscribing), so keep them all short.
   attach: 'Attach',
   // Attachment chip tooltip while uploading; {percent} is 0–100.
   uploading: 'Uploading {percent}%',
@@ -112,11 +114,14 @@ export const en = {
   // Attachment error: the upload request timed out.
   uploadTimedOut: 'Upload timed out.',
 
-  // Microphone button's visible text, idle. One short word.
+  // Microphone button's visible text, idle. One short word. Shares a ~210px
+  // row with `attach` at the small size.
   micVoice: 'Voice',
-  // Microphone button's visible text while recording. One short word.
+  // Microphone button's visible text while recording. One short word; shares
+  // the row with `attach`.
   micStop: 'Stop',
-  // Microphone button's visible text while the last words are processed. One word.
+  // Microphone button's visible text while the last words are processed. One
+  // word; shares the row with `attach`.
   micTranscribing: 'Transcribing',
   // Microphone button (screen readers), idle.
   voiceInput: 'Voice input',
@@ -145,7 +150,8 @@ export const en = {
   // Dictation error in a browser without speech recognition.
   voiceUnsupported: 'This browser does not support voice input.',
 
-  // Credit line under the chat and search results; {brand} is the linked product name.
+  // Credit line under the chat and search results; {brand} is the linked product
+  // name. Without {brand} the line is plain text with no link.
   poweredBy: 'Powered by {brand}',
 
   // Search field placeholder and the search dialog's accessible name. About 25 characters.

@@ -24,8 +24,10 @@ export const useDictation = ({
   onEnd,
 }: UseDictationOptions) => {
   const baseRef = React.useRef('');
-  const { locale, t } = useMessages();
-  const lang = React.useMemo(() => speechLanguage(locale), [locale]);
+  const { locale, setting, t } = useMessages();
+  // Read from the browser, so only once mounted: never during a server render.
+  const [lang, setLang] = React.useState<string | undefined>(undefined);
+  React.useEffect(() => setLang(speechLanguage(setting)), [locale, setting]);
 
   const handleStart = React.useCallback(() => {
     baseRef.current = getDraft();

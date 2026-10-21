@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import { highlight } from './prism';
+import { interpolate } from '../locale/index';
 
 type Markdown = ReturnType<typeof MarkdownIt>;
 type CoreRule = Parameters<Markdown['core']['ruler']['push']>[1];
@@ -112,10 +113,11 @@ const createMarkdown = () => {
   md.renderer.rules.dgpt_cite = (tokens, idx, _options, env) => {
     const n = escape(String((tokens[idx].meta as { n: string }).n));
     const label = escape(
-      (
+      interpolate(
         (env as AnswerEnv | undefined)?.openSourceLabel ??
-        'Open source {number}'
-      ).replace('{number}', n),
+          'Open source {number}',
+        { number: n },
+      ),
     );
     return `<button type="button" class="dgpt-cite" data-cite="${n}" aria-label="${label}">${n}</button>`;
   };

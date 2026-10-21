@@ -180,9 +180,9 @@ import { SearchBar } from "docsgpt";
 | **`apiKey`**    | `string`  | a DocsGPT demo agent's key | Required. The API key of your published agent. An omitted key searches a public DocsGPT demo agent; an empty key is rejected. |
 | **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | The base URL of the server hosting the vector similarity search and chatbot services.           |
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | The theme of the search bar. Accepts `"dark"` or `"light"`.                                     |
-| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
+| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field. The default follows `locale`.             |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
-| **`buttonText`** | `string` | `"Search here"`                     | Text in the search field on the page: the button label (`modal`) or the field's placeholder (`dropdown`). |
+| **`buttonText`** | `string` | `"Search here"`                     | Text in the search field on the page: the button label (`modal`) or the field's placeholder (`dropdown`). The default follows `locale`. |
 | **`variant`**   | `"modal" \| "dropdown"` | `"modal"` | `modal` opens a search dialog from a button; `dropdown` is a field you type into, with results in a panel under it. |
 | **`shape`**     | `"pill" \| "rounded"` | `"pill"` | Corners of the search field: fully rounded, or 8px. |
 | **`avatar`**    | `string`  | a person on the brand-colour circle | Image beside "Ask the AI", also used by the chat it opens. |

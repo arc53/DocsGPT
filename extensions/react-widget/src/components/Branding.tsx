@@ -118,6 +118,9 @@ export const PoweredBy = ({
   const { messages } = useMessages();
   if (value === false) return null;
   if (value === true) {
+    // A host's own wording without the placeholder names no brand to link.
+    if (!messages.poweredBy.includes('{brand}'))
+      return <Credit className={className}>{messages.poweredBy}</Credit>;
     // The brand sits wherever the language puts it.
     const [before, after = ''] = messages.poweredBy.split('{brand}');
     return (

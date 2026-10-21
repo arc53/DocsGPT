@@ -14,7 +14,7 @@ export const ja = {
   closeChat: 'チャットを閉じる',
   sources: 'ソース',
   openSource: 'ソース {number} を開く',
-  toolsUsed: '{tools} を使用済み',
+  toolsUsed: '{tools} を使用しました',
   thinking: '考え中…',
   generating: '生成中…',
   runningCode: 'コードを実行中…',
