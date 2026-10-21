@@ -12,7 +12,7 @@ export const zhTW = {
   expandChat: '展開對話',
   collapseChat: '收合對話',
   closeChat: '關閉對話',
-  resizeSidebar: 'Resize chat', // TODO(translate)
+  resizeSidebar: '調整對話視窗大小',
   newChat: '新對話',
   chatHistory: '對話記錄',
   historyHeading: '歷史',

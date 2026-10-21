@@ -12,7 +12,7 @@ export const ru = {
   expandChat: 'Развернуть чат',
   collapseChat: 'Свернуть чат',
   closeChat: 'Закрыть чат',
-  resizeSidebar: 'Resize chat', // TODO(translate)
+  resizeSidebar: 'Изменить размер чата',
   newChat: 'Новый чат',
   chatHistory: 'История бесед',
   historyHeading: 'История',
