@@ -22,7 +22,7 @@ export const de = {
   historyOlder: 'Älter',
   historyEmpty: 'Hier erscheinen deine Unterhaltungen.',
   deleteConversation: 'Unterhaltung löschen',
-  clearAll: 'Alle löschen',
+  clearAll: 'Verlauf leeren',
   clearAllConfirm: 'Alle gespeicherten Unterhaltungen löschen?',
   clearAllConfirmButton: 'Alle löschen',
   cancel: 'Abbrechen',

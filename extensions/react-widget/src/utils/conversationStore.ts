@@ -108,6 +108,23 @@ export const removeStorage = (key: string) => {
   }
 };
 
+/** Removes `key` and every `key:<name>` value stored beside it. */
+export const removeStorageWithSuffixes = (key: string) => {
+  try {
+    const storage = localStorageOrNull();
+    if (!storage) return;
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const name = storage.key(index);
+      if (name !== null && (name === key || name.startsWith(`${key}:`)))
+        keys.push(name);
+    }
+    keys.forEach((name) => storage.removeItem(name));
+  } catch {
+    // Nothing stored that could be read either.
+  }
+};
+
 /** A local id; crypto.randomUUID needs a secure origin. */
 export const newConversationId = () =>
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -306,6 +323,25 @@ export const upsertConversation = (
     ],
   };
 };
+
+/** Sets one stored turn's rating, leaving the rest of the state as it was. */
+export const setTurnFeedback = (
+  state: StoredState,
+  id: string,
+  index: number,
+  feedback: FEEDBACK | undefined,
+): StoredState => ({
+  ...state,
+  conversations: state.conversations.map((item) => {
+    if (item.id !== id || !item.turns[index]) return item;
+    const turns = [...item.turns];
+    const turn = { ...turns[index] };
+    if (feedback) turn.feedback = feedback;
+    else delete turn.feedback;
+    turns[index] = turn;
+    return { ...item, turns };
+  }),
+});
 
 export const removeConversation = (
   state: StoredState,

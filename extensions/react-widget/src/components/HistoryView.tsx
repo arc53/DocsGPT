@@ -229,6 +229,10 @@ const RowButton = styled.button`
 const RowTitle = styled.span`
   overflow: hidden;
   font-size: 14px;
+  /* Marks the open conversation without the pointer's help. */
+  [aria-current='true'] > & {
+    font-weight: 500;
+  }
   line-height: 1.43;
   white-space: nowrap;
   text-overflow: ellipsis;

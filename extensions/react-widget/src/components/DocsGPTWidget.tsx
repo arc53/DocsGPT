@@ -37,7 +37,8 @@ import {
   fromStoredTurn,
   newConversationId,
   removeConversation,
-  removeStorage,
+  removeStorageWithSuffixes,
+  setTurnFeedback,
   storageKey,
   toStoredTurn,
   upsertConversation,
@@ -136,6 +137,15 @@ const useClientLayoutEffect =
 /** What decides whether a stored conversation changed. */
 const savedSignature = (turns: StoredTurn[], conversationId: string | null) =>
   JSON.stringify([conversationId, turns]);
+
+// The width at which the panel goes full screen.
+const MOBILE_QUERY = '(max-width: 768px)';
+const subscribeToMobile = (onChange: () => void) => {
+  const query = window.matchMedia?.(MOBILE_QUERY);
+  query?.addEventListener?.('change', onChange);
+  return () => query?.removeEventListener?.('change', onChange);
+};
+const isMobileWidth = () => Boolean(window.matchMedia?.(MOBILE_QUERY).matches);
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -427,17 +437,13 @@ const HeaderActions = styled.div<{ $compact?: boolean }>`
   flex-shrink: 0;
   margin: -4px -8px 0 0;
   /* The small panel can't spare four buttons' width from the title: two per
-     row, the later ones (Close) on top. */
+     row. */
   ${(props) =>
     props.$compact &&
     css`
-      flex-wrap: wrap-reverse;
+      flex-wrap: wrap;
       justify-content: flex-end;
       max-width: 68px;
-
-      @media only screen and (max-width: 768px) {
-        max-width: none;
-      }
     `}
 `;
 
@@ -1824,12 +1830,17 @@ export const WidgetCore = ({
   >([]);
   const [pendingTick, setPendingTick] = React.useState(0);
 
-  const emit = React.useCallback((event: WidgetEventInit) => {
-    callSafely(onEventRef.current, {
-      ...event,
-      conversationId: conversationIdRef.current,
-    } as WidgetEvent);
-  }, []);
+  // `conversationId` defaults to the chat on screen; an outcome that lands
+  // after the visitor moved on passes the one it belongs to.
+  const emit = React.useCallback(
+    (event: WidgetEventInit, conversationId = conversationIdRef.current) => {
+      callSafely(onEventRef.current, {
+        ...event,
+        conversationId,
+      } as WidgetEvent);
+    },
+    [],
+  );
 
   const updateConversationId = (id: string | null) => {
     conversationIdRef.current = id;
@@ -1861,6 +1872,8 @@ export const WidgetCore = ({
     setActiveIdState(id);
   };
   const savedSignatureRef = useRef('');
+  // Bumped whenever the chat on screen is replaced.
+  const chatEpochRef = useRef(0);
   const statusRef = useRef(status);
   statusRef.current = status;
   // Bumped to land a restored conversation on its latest turn.
@@ -1900,10 +1913,11 @@ export const WidgetCore = ({
   }, [queries.length, status, conversationId, feedbackSignature]);
 
   React.useEffect(() => {
-    if (persistence === 'off') removeStorage(storeKey);
+    if (persistence === 'off') removeStorageWithSuffixes(storeKey);
   }, [persistence, storeKey]);
 
   const resetChat = () => {
+    chatEpochRef.current += 1;
     setQueries([]);
     updateConversationId(null);
     setActiveId(null);
@@ -1956,7 +1970,7 @@ export const WidgetCore = ({
   const clearHistory = () => {
     if (statusRef.current === 'loading') stopGenerating();
     if (store) store.clear();
-    else if (persistence === 'off') removeStorage(storeKey);
+    else if (persistence === 'off') removeStorageWithSuffixes(storeKey);
     setStoredConversations([]);
     emit({ type: 'history_cleared' });
     if (queriesRef.current.length > 0) emit({ type: 'new_chat' });
@@ -1995,6 +2009,18 @@ export const WidgetCore = ({
     );
   };
 
+  // Another agent (apiKey or apiHost changed): nothing of this chat may reach
+  // its storage, nor its conversation id that agent's server.
+  const loadedKeyRef = useRef<string | null>(null);
+  React.useEffect(() => {
+    const previous = loadedKeyRef.current;
+    loadedKeyRef.current = storeKey;
+    if (previous === null || previous === storeKey) return;
+    if (statusRef.current === 'loading') stopGenerating();
+    resetChat();
+    setView('chat');
+  }, [storeKey]);
+
   // Restore the conversation that was on screen, and follow other tabs'
   // changes to the list without switching the one shown here.
   React.useEffect(() => {
@@ -2032,6 +2058,12 @@ export const WidgetCore = ({
   const closePanel = () => {
     (handleClose as ((event?: React.MouseEvent) => void) | undefined)?.();
   };
+
+  const mobileWidth = React.useSyncExternalStore(
+    subscribeToMobile,
+    isMobileWidth,
+    () => false,
+  );
 
   // The node exists only once mounted.
   useVisualViewportBounds(isOpen && mounted, containerRef);
@@ -2194,6 +2226,10 @@ export const WidgetCore = ({
 
     const previous = query.feedback;
     const next = previous === feedback ? undefined : feedback;
+    // The reply can land after the visitor has moved to another chat.
+    const epoch = chatEpochRef.current;
+    const ownerId = activeIdRef.current;
+    const ownerStore = store;
 
     setFeedbackAt(index, next);
 
@@ -2212,14 +2248,26 @@ export const WidgetCore = ({
       if (response.status !== 200) {
         throw new Error(`Feedback rejected with status ${response.status}`);
       }
-      emit({
-        type: 'feedback',
-        question: query.prompt,
-        answer: query.response,
-        value: next === 'LIKE' ? 'like' : next === 'DISLIKE' ? 'dislike' : null,
-      });
+      emit(
+        {
+          type: 'feedback',
+          question: query.prompt,
+          answer: query.response,
+          value:
+            next === 'LIKE' ? 'like' : next === 'DISLIKE' ? 'dislike' : null,
+        },
+        conversationId,
+      );
     } catch (err) {
       console.warn('Feedback not saved:', err);
+      if (epoch !== chatEpochRef.current) {
+        // Not on screen any more: undo the rating where it was saved.
+        if (ownerStore && ownerId)
+          ownerStore.update((state) =>
+            setTurnFeedback(state, ownerId, index, previous),
+          );
+        return;
+      }
       setFeedbackAt(index, previous);
       setFeedbackErrorIndex(index);
       setTimeout(
@@ -2811,6 +2859,64 @@ export const WidgetCore = ({
       : baseDimensions;
   if (!mounted) return null;
 
+  // Two rows in the small panel, Expand and Close on top; the DOM follows
+  // what's on screen so Tab does too. Full screen has room for one row.
+  const compactHeader = size === 'small' && !mobileWidth;
+  const chatActions = (
+    <>
+      {queries.length > 0 && (
+        <IconButton
+          type="button"
+          onClick={() => {
+            startNewChat();
+            if (!touchPrimary) focusPrompt();
+          }}
+          aria-label={t('newChat')}
+          title={t('newChat')}
+        >
+          <SquarePen size={16} />
+        </IconButton>
+      )}
+      {store && (storedConversations.length > 0 || view === 'history') && (
+        <IconButton
+          ref={historyButtonRef}
+          type="button"
+          onClick={() =>
+            view === 'history' ? closeHistory() : setView('history')
+          }
+          aria-label={t('chatHistory')}
+          title={t('chatHistory')}
+          aria-pressed={view === 'history'}
+        >
+          <History size={16} />
+        </IconButton>
+      )}
+    </>
+  );
+  const panelActions = (
+    <>
+      {canExpand && (
+        <ExpandButton
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          aria-label={isExpanded ? t('collapseChat') : t('expandChat')}
+          title={isExpanded ? t('collapseChat') : t('expandChat')}
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </ExpandButton>
+      )}
+      <IconButton
+        type="button"
+        onClick={handleClose}
+        aria-label={t('closeChat')}
+        title={t('closeChat')}
+      >
+        <X size={16} />
+      </IconButton>
+    </>
+  );
+
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
       <InterFontFace />
@@ -2843,60 +2949,18 @@ export const WidgetCore = ({
                   {description ?? t('headerDescription')}
                 </Description>
               </ContentWrapper>
-              <HeaderActions $compact={size === 'small'}>
-                {queries.length > 0 && (
-                  <IconButton
-                    type="button"
-                    onClick={() => {
-                      startNewChat();
-                      if (!touchPrimary) focusPrompt();
-                    }}
-                    aria-label={t('newChat')}
-                    title={t('newChat')}
-                  >
-                    <SquarePen size={16} />
-                  </IconButton>
+              <HeaderActions $compact={compactHeader}>
+                {compactHeader ? (
+                  <>
+                    {panelActions}
+                    {chatActions}
+                  </>
+                ) : (
+                  <>
+                    {chatActions}
+                    {panelActions}
+                  </>
                 )}
-                {store &&
-                  (storedConversations.length > 0 || view === 'history') && (
-                    <IconButton
-                      ref={historyButtonRef}
-                      type="button"
-                      onClick={() =>
-                        view === 'history' ? closeHistory() : setView('history')
-                      }
-                      aria-label={t('chatHistory')}
-                      title={t('chatHistory')}
-                      aria-pressed={view === 'history'}
-                    >
-                      <History size={16} />
-                    </IconButton>
-                  )}
-                {canExpand && (
-                  <ExpandButton
-                    type="button"
-                    onClick={() => setIsExpanded((prev) => !prev)}
-                    aria-label={
-                      isExpanded ? t('collapseChat') : t('expandChat')
-                    }
-                    title={isExpanded ? t('collapseChat') : t('expandChat')}
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? (
-                      <Minimize2 size={16} />
-                    ) : (
-                      <Maximize2 size={16} />
-                    )}
-                  </ExpandButton>
-                )}
-                <IconButton
-                  type="button"
-                  onClick={handleClose}
-                  aria-label={t('closeChat')}
-                  title={t('closeChat')}
-                >
-                  <X size={16} />
-                </IconButton>
               </HeaderActions>
             </Header>
             <ConversationArea>
