@@ -95,7 +95,7 @@ celery==5.6.3
     #   docsgpt
 celery-redbeat==2.4.2
     # via docsgpt
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
