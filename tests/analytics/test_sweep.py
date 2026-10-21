@@ -10,7 +10,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from docsgpt.analytics import schema, tasks
+from docsgpt.analytics import schema, states, tasks
 from docsgpt.analytics.states import TERMINATED_RESPONSE_PLACEHOLDER
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget
@@ -18,7 +18,13 @@ from docsgpt.decisions.models import V02, version
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.storage.db.repositories.agents import AgentsRepository
-from docsgpt.storage.db.repositories.conversation_labels import _AGENT, ConversationLabelsRepository, Scope
+from docsgpt.storage.db.repositories.conversation_labels import (
+    _AGENT,
+    ConversationLabelsRepository,
+    Scope,
+    _has_text,
+    _is_turn,
+)
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 VERSION = version(V02)
@@ -356,6 +362,49 @@ class _Failing(FakeDecider):
                            [self.reason if h else None for h in hit])
 
 
+class _Redis:
+    """The Redis calls the sweep lock makes: ``set``, ``get``, ``delete`` and its compare-and-expire script, which
+    ``eval`` re-implements. TTLs are recorded in ``ttls``, never run down; ``refreshes`` counts the scripts run."""
+
+    def __init__(self, store=None):
+        self.store = dict(store or {})
+        self.ttls: dict = {}
+        self.refreshes = 0
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.store:
+            return None
+        self.store[key], self.ttls[key] = value.encode() if isinstance(value, str) else value, ex
+        return True
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def delete(self, key):
+        self.store.pop(key, None)
+
+    def eval(self, script, numkeys, key, token, ttl):
+        assert numkeys == 1 and "expire" in script
+        self.refreshes += 1
+        if self.store.get(key) != (token.encode() if isinstance(token, str) else token):
+            return 0
+        self.ttls[key] = int(ttl)
+        return 1
+
+
+def _age(conn, cid, days=2):
+    """Move a conversation and its labels ``days`` back, past the resolution window."""
+    for table in ("conversation_messages", "conversation_labels"):
+        column = "timestamp" if table == "conversation_messages" else "occurred_at"
+        conn.execute(text(f"UPDATE {table} SET {column} = {column} - make_interval(days => :days) "
+                          "WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid, "days": days})
+
+
+def _about(prompt):
+    """Picks the requests about the user message ``prompt``: its turn and its request type."""
+    return lambda r: prompt in (r.state.get("question"), r.state.get("message"))
+
+
 @pytest.mark.unit
 class TestStopConditions:
     def test_unavailable_writes_nothing_and_stops(self, db):
@@ -433,16 +482,43 @@ class TestStopConditions:
             assert all(c.feature != "analytics_turn" for c in failing.calls[calls:])
         assert (None, "goal_met") in _labels(db, cid)
 
-    def test_a_message_that_fails_alone_counts_attempts_and_stops_holding_up_the_sweep(self, db):
+    @pytest.mark.parametrize("others", [60, 900], ids=["asked_before", "asked_after"])
+    def test_a_message_that_fails_alone_counts_attempts_only_while_the_backend_answers_others(self, db, others,
+                                                                                             monkeypatch):
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 2)  # a message a call
         cid = _conversation(db)
-        only = _message(db, cid, 0, "How do I install it?")
-        failing = _Failing(lambda r: True, "backend_error", features={"analytics_turn"})
+        only = _message(db, cid, 0, "How do I install it?", ago_minutes=300)
+        failing = _Failing(_about("How do I install it?"), "backend_error", features={"analytics_turn"})
         with installed(failing):
-            for _ in range(tasks.ATTEMPTS):
+            for _ in range(tasks.ATTEMPTS + 1):  # nothing else answered: no telling it from a failing backend
                 assert tasks.sweep()["stopped"] == "unavailable"
-            assert _labels(db, cid)[(only, "_error")].top == "backend_error"
-            tasks.sweep()
-        assert (None, "goal_met") in _labels(db, cid)
+            assert not [key for key in _labels(db, cid) if key[1].startswith("_")]
+            for attempt in range(1, tasks.ATTEMPTS):
+                _message(db, _conversation(db), 0, "and on Windows?", ago_minutes=others)  # traffic it answers
+                report = tasks.sweep()
+                assert report["stopped"] is None and report["retries"] == 1
+                assert _labels(db, cid)[(only, "_retry")].probabilities == {"attempts": attempt}
+            _message(db, _conversation(db), 0, "and on Windows?", ago_minutes=others)
+            report = tasks.sweep()
+        labels = _labels(db, cid)
+        assert labels[(only, "_error")].top == "backend_error" and report["errors"] == 1
+        assert (None, "goal_met") in labels
+
+    @pytest.mark.parametrize("batch", [1, 3, 16])
+    def test_a_backend_that_fails_every_item_marks_none_and_labels_them_once_healthy(self, db, monkeypatch, batch):
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", batch)  # 1: split messages; 3: a message a call
+        cids = [_two_turns(db)[0] for _ in range(3)]
+        lone = _conversation(db)
+        _message(db, lone, 0, "Hello?")
+        cids.append(lone)
+        with installed(_Failing(lambda r: True, "backend_error")):
+            for _ in range(tasks.ATTEMPTS + 1):
+                assert tasks.sweep()["stopped"] == "unavailable"
+        assert not [key for cid in cids for key in _labels(db, cid)]
+        with installed(FakeDecider(ANSWERS)):
+            report = tasks.sweep()
+        assert report["messages"] == 7 and report["conversations"] == 4 and report["stopped"] is None
+        assert not [key for cid in cids for key in _labels(db, cid) if key[1].startswith("_")]
 
     def test_the_time_budget_is_honoured(self, db, fake):
         _two_turns(db)
@@ -459,32 +535,49 @@ class TestStopConditions:
         assert tasks.sweep() == {"skipped": "disabled"}
 
     def test_the_lock_blocks_a_concurrent_sweep(self, db, fake, monkeypatch):
-        class Redis:
-            def __init__(self):
-                self.store = {tasks.LOCK_KEY: b"another worker"}
-
-            def set(self, key, value, nx=False, ex=None):
-                if nx and key in self.store:
-                    return None
-                self.store[key] = value
-                return True
-
-            def get(self, key):
-                return self.store.get(key)
-
-            def delete(self, key):
-                self.store.pop(key, None)
-
-            def expire(self, key, ttl):
-                return True
-
-        redis = Redis()
+        redis = _Redis({tasks.LOCK_KEY: b"another worker"})
         monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
         _two_turns(db)
         assert tasks.sweep() == {"skipped": "locked"} and not fake.calls
         redis.store.clear()
         assert tasks.sweep()["messages"] == 2
         assert tasks.LOCK_KEY not in redis.store  # released
+
+    def test_a_refresh_never_extends_another_workers_lock(self, monkeypatch):
+        redis = _Redis()
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
+        monkeypatch.setattr(tasks, "LOCK_REFRESH_SECONDS", 0)
+        lock = tasks._Lock(600)
+        assert lock.acquire() and lock.refresh() is True and redis.ttls[tasks.LOCK_KEY] == 600
+        redis.store[tasks.LOCK_KEY], redis.ttls[tasks.LOCK_KEY] = b"another worker", 10  # ours expired, then taken
+        assert lock.refresh() is False and redis.ttls[tasks.LOCK_KEY] == 10
+
+    def test_a_lost_lock_stops_the_sweep(self, db, monkeypatch):
+        redis = _Redis()
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
+        monkeypatch.setattr(tasks, "LOCK_REFRESH_SECONDS", 0)
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 5)
+        for _ in range(3):
+            _two_turns(db)
+
+        def taken():
+            redis.store[tasks.LOCK_KEY], redis.ttls[tasks.LOCK_KEY] = b"another worker", 10
+
+        with installed(_Editing("analytics_turn", taken)) as editing:
+            report = tasks.sweep()
+        assert report["stopped"] == "lock_lost" and len(editing.calls) == 1
+        assert redis.store[tasks.LOCK_KEY] == b"another worker" and redis.ttls[tasks.LOCK_KEY] == 10
+
+    def test_a_pass_without_model_calls_keeps_the_lock(self, db, fake, monkeypatch):
+        redis = _Redis()
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
+        monkeypatch.setattr(tasks, "LOCK_REFRESH_SECONDS", 0)
+        cid, _, _ = _two_turns(db)
+        tasks.sweep()
+        _age(db, cid)
+        calls, redis.refreshes = len(fake.calls), 0
+        assert tasks.sweep()["resolutions"] == 1 and len(fake.calls) == calls
+        assert redis.refreshes >= 1
 
 
 @pytest.mark.unit
@@ -503,6 +596,45 @@ class TestPendingAndRetention:
         resolution = _labels(db, cid)[(None, "resolution")].probabilities
         assert resolution["pending"] == 0
         assert resolution["assumed"] > 0 and sum(resolution.values()) == pytest.approx(1.0)
+
+    def test_the_pending_pass_keeps_to_the_agent_asked_for_and_to_agents_with_analytics_on(self, db, fake):
+        mine, other, off = (_agent(db, enabled=True) for _ in range(3))
+        cids = {name: _two_turns(db, agent_id=str(agent["id"]))[0]
+                for name, agent in (("mine", mine), ("other", other), ("off", off))}
+        tasks.sweep()
+        for cid in cids.values():
+            _age(db, cid)
+        AgentsRepository(db).update(str(off["id"]), "owner", {"config": {"analytics": {"enabled": False}}})
+
+        def pending(name):
+            return _labels(db, cids[name])[(None, "resolution")].probabilities["pending"] > 0
+
+        assert tasks.sweep(agent_id=str(mine["id"]))["resolutions"] == 1
+        assert (pending("mine"), pending("other"), pending("off")) == (False, True, True)
+        assert tasks.sweep()["resolutions"] == 1
+        assert (pending("other"), pending("off")) == (False, True)
+
+    def test_a_pending_resolution_left_without_messages_is_dropped_not_reloaded(self, db, fake):
+        cid, _, _ = _two_turns(db)
+        tasks.sweep()
+        _age(db, cid)
+        ConversationsRepository(db).truncate_after(cid, -1)  # a regenerate from the first message
+        report = tasks.sweep()
+        labels = _labels(db, cid)
+        assert report["resolutions"] == 0 and report["rows"] == 0
+        assert (None, "resolution") not in labels and (None, "experience") not in labels
+        assert not ConversationLabelsRepository(db).pending_resolutions(schema.SCHEMA_HASH, VERSION, 24, 50)
+
+    def test_a_pending_resolution_without_goal_met_is_rewritten_with_it(self, db, fake, monkeypatch):
+        cid, _, _ = _two_turns(db)
+        tasks.sweep()
+        _age(db, cid)
+        db.execute(text("DELETE FROM conversation_labels WHERE label = 'goal_met'"))
+        monkeypatch.setattr(settings, "ANALYTICS_TURN_SETTLE_SECONDS", 0)  # moving the messages back edited them
+        report = tasks.sweep()
+        assert report["resolutions"] == 0 and report["conversations"] == 1
+        labels = _labels(db, cid)
+        assert (None, "goal_met") in labels and labels[(None, "resolution")].probabilities["pending"] == 0
 
     def test_cleanup_purges_past_retention(self, db, fake):
         cid, _, _ = _two_turns(db)
@@ -540,6 +672,10 @@ class TestDigestAndBackfill:
 
 def _candidates(conn, **kwargs) -> list[dict]:
     return ConversationLabelsRepository(conn).message_candidates(schema.SCHEMA_HASH, VERSION, 30, 0, 50, **kwargs)
+
+
+def _conversation_candidates(conn) -> list[dict]:
+    return ConversationLabelsRepository(conn).conversation_candidates(schema.SCHEMA_HASH, VERSION, 30, 30, 50)
 
 
 def _coverage(conn, user="owner") -> dict:
@@ -592,6 +728,33 @@ class TestBlankText:
         tasks.sweep()
         coverage = _coverage(db)
         assert (coverage["turns"], coverage["unlabelled_recent_turns"]) == (0, 0)
+
+    def test_sql_and_python_agree_on_whitespace(self, db):
+        python = "".join(c for c in map(chr, range(0x110000)) if c.isspace())
+        assert set(states.WHITESPACE) == set(python)
+        query = text(f"""SELECT {_has_text("CAST(:t AS text)")} AS has_text, {_is_turn("m")} AS is_turn
+                         FROM (SELECT 'complete'::text AS status, CAST(:t AS text) AS response) m""")
+        for c in [*python, "\u200b", "\u00ad", "a"]:  # a zero-width space and a soft hyphen are not whitespace
+            for value in (c * 2, f"{c}{TERMINATED_RESPONSE_PLACEHOLDER}{c}", f"{c}a"):
+                row = db.execute(query, {"t": value, "placeholder": TERMINATED_RESPONSE_PLACEHOLDER}).one()
+                message = states.Message(id="m", prompt=value, response=value)
+                assert (row.has_text, row.is_turn) == (bool(value.strip()), message.is_turn), (hex(ord(c)), value)
+
+    def test_a_prompt_of_whitespace_python_strips_is_never_a_candidate(self, db, fake):
+        cid = _conversation(db)
+        _message(db, cid, 0, "\u00a0\x1f\u3000")
+        tasks.sweep()
+        assert not _labels(db, cid) and not _candidates(db) and not _conversation_candidates(db)
+
+    def test_a_conversation_the_states_drop_whole_gets_an_error_marker(self, db, fake, monkeypatch):
+        cid = _conversation(db)
+        dropped = _message(db, cid, 0, "drop me")
+        monkeypatch.setattr(tasks.states, "messages", lambda rows: [])
+        report = tasks.sweep()
+        labels = _labels(db, cid)
+        assert labels[(dropped, "_error")].top == labels[(None, "_error")].top == "build_failed"
+        assert report["conversations"] == 1 and not fake.calls
+        assert not _candidates(db) and not _conversation_candidates(db)
 
     def test_a_message_the_states_drop_still_gets_a_marker(self, db, fake, monkeypatch):
         cid = _conversation(db)
@@ -768,6 +931,29 @@ class TestBacklog:
             report = tasks.sweep(budget_seconds=30)
         assert report["resolutions"] == 1
         assert _labels(db, cid)[(None, "resolution")].probabilities["pending"] == 0
+
+    @pytest.mark.parametrize("budget", [100, 200])
+    def test_one_long_conversation_keeps_to_the_message_share_and_resumes_after(self, db, monkeypatch, budget):
+        clock = _Clock()
+        monkeypatch.setattr(tasks, "time", clock)
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 5)
+        idle = _conversation(db)
+        _message(db, idle, 0, "How do I install it?", ago_minutes=600)
+        with installed(FakeDecider(ANSWERS)):
+            tasks.Sweep(VERSION).message_pass()  # its messages labelled, its own labels not yet asked
+        assert (None, "goal_met") not in _labels(db, idle)
+        long = _conversation(db)
+        for position in range(60):
+            _message(db, long, position, f"Question {position}?")
+        with installed(_Slow(clock, 20.0)) as slow:
+            tasks.sweep(budget_seconds=budget)
+        assert (None, "goal_met") in _labels(db, idle)
+        features = [c.feature for c in slow.calls]
+        turns = [r.state["question"] for c in slow.calls for r in c.requests if "answer_status" in r.questions]
+        assert len(turns) == len(set(turns))  # nothing asked twice
+        if budget == 200:  # the message pass picks the long conversation up again after the conversation pass
+            assert features[features.index("analytics_conversation") + 1:] == ["analytics_turn"] * 2
+            assert _count(db, "request_type") == len(turns) + 1
 
     def test_messages_count_only_those_labelled(self, db, slow):
         for _ in range(3):

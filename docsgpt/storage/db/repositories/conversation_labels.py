@@ -24,6 +24,7 @@ from docsgpt.analytics.states import (
     COMPRESSION_SUMMARY_MARKER,
     COMPRESSION_SUMMARY_PROMPT,
     TERMINATED_RESPONSE_PLACEHOLDER,
+    WHITESPACE,
 )
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
@@ -70,9 +71,14 @@ _TAGS_HASH = (
 )
 
 
+#: ``states.WHITESPACE`` as the inside of a regex bracket expression, each character an ``\uXXXX`` escape, so blank
+#: text is what ``str.strip`` leaves empty whatever the database's locale (``[[:space:]]`` follows it).
+_SPACE = "".join(f"\\u{ord(c):04x}" for c in WHITESPACE)
+
+
 def _has_text(expr: str) -> str:
     """SQL: text ``expr`` (``NULL`` as empty) has a character other than whitespace, as ``str.strip`` tells it."""
-    return f"COALESCE({expr}, '') ~ '[^[:space:]]'"
+    return f"COALESCE({expr}, '') ~ '[^{_SPACE}]'"
 
 
 def _usable(m: str) -> str:
@@ -185,7 +191,7 @@ def _is_turn(m: str) -> str:
     """
     return (f"({m}.status = 'complete' AND {_has_text(f'{m}.response')}"
             f" AND (strpos({m}.response, :placeholder) = 0"
-            f" OR regexp_replace({m}.response, '^[[:space:]]+|[[:space:]]+$', '', 'g') <> :placeholder))")
+            f" OR regexp_replace({m}.response, '^[{_SPACE}]+|[{_SPACE}]+$', '', 'g') <> :placeholder))")
 
 
 #: The Logs ``label`` filter and row chips: per key, which row the label sits on (``message``: the turn's own row;
@@ -665,30 +671,43 @@ class ConversationLabelsRepository:
         return [dict(row._mapping) for row in result.fetchall()]
 
     def pending_resolutions(
-        self, schema_hash: str, model_version: str, window_hours: int, limit: int, exclude: Iterable[str] = ()
+        self,
+        schema_hash: str,
+        model_version: str,
+        window_hours: int,
+        limit: int,
+        agent_id: Optional[str] = None,
+        exclude: Iterable[str] = (),
     ) -> List[dict]:
-        """Conversations whose ``resolution`` still has pending mass though their last message is past the window.
+        """Conversations whose ``resolution`` still has pending mass though their last message is past the window,
+        in a conversation with no agent or whose agent has analytics on, as the candidate queries take them.
+
+        Args:
+            schema_hash: The running ``schema.SCHEMA_HASH``.
+            model_version: The running ``decisions.model_version()``.
+            window_hours: The resolution window.
+            limit: Most conversations returned.
+            agent_id: Only this agent's conversations.
+            exclude: Conversation ids already handled in this sweep.
 
         Returns:
             ``conversation_id``, ``user_id``, ``agent_id`` and ``last_at``.
         """
         params: Dict[str, Any] = {"schema_hash": schema_hash, "model_version": model_version,
                                   "window": int(window_hours), "limit": int(limit)}
-        clause = ""
-        exclude = list(exclude)
-        if exclude:
-            clause = " AND l.conversation_id <> ALL(CAST(:exclude AS uuid[]))"
-            params["exclude"] = exclude
+        scope = _scope(params, agent_id, exclude, "l.conversation_id")
         result = self._conn.execute(
             text(
                 f"""
                 SELECT CAST(l.conversation_id AS text) AS conversation_id, l.user_id,
                        CAST(l.agent_id AS text) AS agent_id, l.occurred_at AS last_at
                 FROM conversation_labels l
+                JOIN conversations c ON c.id = l.conversation_id
+                {_AGENT}
                 WHERE l.label = 'resolution' AND l.message_id IS NULL
                   AND l.schema_hash = :schema_hash AND l.model_version = :model_version
                   AND l.occurred_at < NOW() - make_interval(hours => :window)
-                  AND COALESCE((l.probabilities->>'pending')::float8, 0) > 0 {clause}
+                  AND COALESCE((l.probabilities->>'pending')::float8, 0) > 0 AND {_ENABLED} {scope}
                 ORDER BY l.occurred_at DESC
                 LIMIT :limit
                 """
@@ -696,6 +715,24 @@ class ConversationLabelsRepository:
             params,
         )
         return [dict(row._mapping) for row in result.fetchall()]
+
+    def delete_outcome(self, conversation_id: str) -> int:
+        """Delete a conversation's derived ``resolution`` and ``experience`` rows; returns how many.
+
+        For a pending resolution that can no longer be recomputed (no user message left, or no ``goal_met``): the
+        conversation pass writes both again with its next ``goal_met``.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                DELETE FROM conversation_labels
+                WHERE conversation_id = CAST(:conversation_id AS uuid) AND message_id IS NULL
+                  AND label IN ('resolution', 'experience') AND derived
+                """
+            ),
+            {"conversation_id": conversation_id},
+        )
+        return result.rowcount or 0
 
     # ---- the weekly digest --------------------------------------------------------------------------------------
 

@@ -27,6 +27,13 @@ COMPRESSION_SUMMARY_PROMPT = "[Context Compression Summary]"
 #: Earlier user messages a turn state shows as history.
 HISTORY_MESSAGES = 2
 
+#: What ``str.strip`` strips: every character ``str.isspace`` holds (Unicode White_Space, and U+001C..U+001F). The
+#: candidate queries test blank text against this set too, as Postgres's ``[[:space:]]`` follows the database's
+#: locale (U+00A0 is a space on one, not on another; U+001C..U+001F on none), and a message SQL counts while the
+#: states leave it out is a candidate no state is ever built for. A test pins it to ``str.isspace``.
+WHITESPACE = ("\t\n\x0b\x0c\r\x1c\x1d\x1e\x1f \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007"
+              "\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000")
+
 
 @dataclass(frozen=True)
 class Message:

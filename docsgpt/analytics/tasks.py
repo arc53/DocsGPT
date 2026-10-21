@@ -6,28 +6,35 @@ import the parsing stack. Nothing runs in the request path. The worker reads row
 its model calls go through the decision client with ``Budget.BACKGROUND``, so they reach the decider sidecar, the
 API process's model or the remote endpoint at background priority, and no worker loads a model.
 
-One sweep, under a Redis lock so overlapping beats and several workers are safe:
+One sweep, under a Redis lock so overlapping beats and several workers are safe. The sweep refreshes the lock as it
+goes, only while it is still its own, and stops (``lock_lost``) once another sweep holds it:
 
 1. **Pending pass.** ``resolution`` recomputed, without a model call, once a pending conversation passes the window.
+   One that cannot be (no user message left, or no ``goal_met``) is deleted with its ``experience``, so it is not
+   loaded again every sweep; the conversation pass writes both again with ``goal_met``.
 2. **Message pass.** Unlabelled messages (``ConversationLabelsRepository.message_candidates``), a conversation at a
    time, taking turns between agents, each one's newest first: per message its turn, the reaction to the answer
    before it, its topic (the one-pick question over the agent's own topics and source folders) and its request
    type, batched ``ANALYTICS_BATCH_STATES`` states to a call (never more than ``DECISION_MAX_BATCH_STATES``). Each
    batch's rows, and the derived ``gap_type`` and ``topic_effective`` rows of its conversations, are written in one
-   transaction. It may take ``MESSAGE_SHARE`` of the budget, so a backlog of messages never starves step 3.
+   transaction. It may take ``MESSAGE_SHARE`` of the budget, counted between messages, so neither a backlog of
+   messages nor one long conversation starves step 3; what the share leaves unasked is built again by its next turn.
 3. **Conversation pass.** Idle conversations without current ``goal_met``: goal met and every topic that can overlap
    (a ``tag:<id>`` label) in one request, then the derived ``resolution`` and ``experience``. Changing the topics
    that can overlap asks it again; changing the others does not. What budget it leaves goes back to step 2.
 
-It stops starting calls when its time budget is spent, when a call answers nothing (``unavailable``, or every state
-failed: nothing is written for that call and the next beat retries) or comes back ``timeout`` (the model is busy with
-chat). Items that timed out are not written and are picked up by the next sweep. A state that could not be built, or
-that the model called ``bad_item`` while answering the rest of its call, is written as an ``_error`` row and not
-retried until the schema or the model changes. A ``backend_error`` (the runtime raised, the server refused the item
-or answered something else) is the backend's fault more often than the item's: the message (or conversation) gets a
-``_retry`` row counting the attempt and is asked again by the next sweep, and only its ``ATTEMPTS``-th failure is an
-``_error``. A call that answered nothing about a single message counts as such an attempt too, so one message the
-backend always fails on cannot stop every sweep.
+It stops starting calls when its time budget is spent, when a call about more than one message answers nothing
+(``unavailable``, or every state failed: nothing is written for that call and the next beat retries) or comes back
+``timeout`` (the model is busy with chat). Items that timed out are not written and are picked up by the next sweep.
+A state that could not be built, or that the model called ``bad_item`` while answering the rest of its call, is
+written as an ``_error`` row and not retried until the schema or the model changes. A ``backend_error`` (the runtime
+raised, the server refused the item or answered something else) is the backend's fault more often than the item's:
+the message (or conversation) gets a ``_retry`` row counting the attempt and is asked again by the next sweep, and
+only its ``ATTEMPTS``-th failure is an ``_error``. A call about a single message (or conversation) that answered
+nothing tells the two apart only by the sweep's other calls: the message is set aside, and the sweep goes on, so one
+message the backend always fails on cannot stop every sweep; it counts as an attempt once a call of the sweep has
+answered something, and not at all while none has, so a backend that fails everything (``LONE_FAILURES``
+conversations of such calls in a row stop the sweep) marks nothing.
 
 Every row a state yields records what the state was built from (``source_updated_at``, ``source_hash``: the message's,
 or for a conversation's own rows the conversation's, as read), so an edit made while the call ran leaves the labels
@@ -75,10 +82,23 @@ DIGEST_GROUPS = 5
 #: conversation pass runs; the message pass then resumes with whatever the conversation pass leaves.
 MESSAGE_SHARE = 0.7
 #: Failed attempts on a message or conversation (a ``backend_error``, or a call about it alone that answered
-#: nothing) before it is marked ``_error``; each one before is a ``_retry`` row, asked again by the next sweep.
+#: nothing while others did) before it is marked ``_error``; each one before is a ``_retry`` row, asked again by the
+#: next sweep.
 ATTEMPTS = 3
+#: Conversations in a row whose calls, each about one message (or conversation), answered nothing before the sweep
+#: stops: past one or two the backend is failing, not the messages.
+LONE_FAILURES = 3
+#: Seconds between two checks that the sweep still holds its lock, each extending it.
+LOCK_REFRESH_SECONDS = 5
+#: Extends the lock only while it holds this sweep's token, so a sweep whose lock ran out never extends another's.
+_REFRESH_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
+)
 #: Why a state-less item failed: its state could not be built.
 BUILD_FAILED = "build_failed"
+#: Reasons a state was not answered that count an attempt on its message (or conversation); the others leave it to
+#: the next sweep.
+_RETRIED = ("backend_error", "bad_item")
 
 TURN_QUESTIONS = {"answer_status": schema.ANSWER_STATUS, "unanswered_reason": schema.UNANSWERED_REASON}
 REACTION_QUESTIONS = {"reaction": schema.REACTION, "frustrated": schema.FRUSTRATED,
@@ -145,6 +165,7 @@ class _Lock:
         self.redis = get_redis_instance()
         self.ttl = ttl
         self.token = f"{socket.gethostname()}:{os.getpid()}:{time.monotonic()}"
+        self._checked = time.monotonic()
 
     def acquire(self) -> bool:
         if self.redis is None:
@@ -155,12 +176,24 @@ class _Lock:
             logger.warning("Analytics sweep skipped: could not take its lock", exc_info=True)
             return False
 
-    def refresh(self) -> None:
-        if self.redis is not None:
-            try:
-                self.redis.expire(LOCK_KEY, self.ttl)
-            except Exception:  # noqa: BLE001
-                logger.debug("Analytics sweep: lock refresh failed", exc_info=True)
+    def refresh(self) -> bool:
+        """Extend the lock while it is still this sweep's, asking Redis at most every ``LOCK_REFRESH_SECONDS``.
+
+        Returns:
+            ``False`` once the lock is not this sweep's (it ran out, and maybe another sweep took it); ``True``
+            otherwise, also with no Redis or when Redis could not be asked, so an outage does not stop a sweep.
+        """
+        if self.redis is None:
+            return True
+        now = time.monotonic()
+        if now - self._checked < LOCK_REFRESH_SECONDS:
+            return True
+        self._checked = now
+        try:
+            return bool(self.redis.eval(_REFRESH_LUA, 1, LOCK_KEY, self.token, self.ttl))
+        except Exception:  # noqa: BLE001
+            logger.debug("Analytics sweep: lock refresh failed", exc_info=True)
+            return True
 
     def release(self) -> None:
         if self.redis is None:
@@ -197,7 +230,8 @@ class Sweep:
         budget_seconds: Seconds it may spend starting calls; ``None`` for no limit (the backfill command).
         days: How far back to label; ``ANALYTICS_BACKFILL_DAYS`` when omitted.
         agent_id: Only this agent's conversations.
-        lock: Refreshed after every call, so a long backfill keeps it.
+        lock: Refreshed as the sweep goes (``_going``), so a long backfill keeps it; once it is another sweep's,
+            this one stops (``lock_lost``).
     """
 
     def __init__(self, model_version: str, budget_seconds: Optional[float] = None, days: Optional[int] = None,
@@ -217,15 +251,23 @@ class Sweep:
         self._pass_deadline: Optional[float] = None  # the message pass's share of the budget
         self._seen: set[str] = set()  # conversations the message pass has read, across its two turns
         self._late: set[tuple] = set()  # item keys with a state not answered: none of their rows is written
+        self._answered = False  # a call of this sweep answered something: the backend works
+        self._parked: list[tuple[_Item, str]] = []  # failed alone before that, charged once a call answers
+        self._failing: set[str] = set()  # conversations failed alone since a call last answered
+        self._lone_stop: Optional[str] = None  # how the sweep reports parked items no call vouched for
 
     # ---- control --------------------------------------------------------------------------------------------------
 
     def _going(self) -> bool:
-        """Whether the sweep may start another call: not stopped, and its budget not spent."""
+        """Whether the sweep may go on: not stopped, its budget not spent, and its lock still its own (refreshed)."""
         if self.stopped:
             return False
         if self.deadline is not None and time.monotonic() >= self.deadline:
             self.stopped = "budget"
+            return False
+        if self.lock is not None and not self.lock.refresh():
+            logger.warning("Analytics sweep stopped: its lock ran out and is not its own any more")
+            self.stopped = "lock_lost"
             return False
         return True
 
@@ -252,6 +294,8 @@ class Sweep:
             self.conversation_pass()
         if self._going():
             self.message_pass()
+        if self._parked and not self.stopped:  # failed alone and no call answered: the backend's fault, as a stop
+            self.stopped = self._lone_stop
         report = {**{k: self.stats.get(k, 0) for k in (
             "messages", "conversations", "resolutions", "calls", "states", "rows", "errors", "retries", "timeouts",
             "truncated")}, "stopped": self.stopped, "ms": round((time.monotonic() - self._started) * 1000)}
@@ -291,7 +335,12 @@ class Sweep:
     # ---- message pass ---------------------------------------------------------------------------------------------
 
     def message_pass(self) -> None:
-        """Label unlabelled messages, a conversation at a time, in ``message_candidates`` order."""
+        """Label unlabelled messages, a conversation at a time, in ``message_candidates`` order.
+
+        The pass's share is checked before every message, so one long conversation cannot spend the conversation
+        pass's time. A conversation it ends in, and every conversation with states still queued, is left unseen with
+        nothing queued, so the pass's next turn builds what is still unlabelled of it again.
+        """
         cap = self._cap()
         while self._in_pass():
             with db_readonly() as conn:
@@ -302,10 +351,14 @@ class Sweep:
             if not candidates:
                 break
             for candidate in candidates:
-                self._seen.add(candidate["conversation_id"])
+                cid = candidate["conversation_id"]
+                self._seen.add(cid)
                 with db_readonly() as conn:
                     groups = self._message_items(conn, candidate)
                 for group in groups:
+                    if not self._in_pass():
+                        self._seen.discard(cid)
+                        break
                     # a message's states go in one call where the cap allows, so its marker is written with the rest
                     if self._queue and _asked(self._queue) + _asked(group) > cap:
                         self._flush("analytics_turn")
@@ -314,8 +367,11 @@ class Sweep:
                         self._flush("analytics_turn")
                 if not self._in_pass():
                     break
-        if self._queue:  # built already: asked unless the whole budget is spent
+        if self._queue:  # built already: asked while the pass may still call
             self._flush("analytics_turn")
+        for item in self._queue:  # not asked: its conversation is built again by the next turn
+            self._seen.discard(item.conversation_id)
+        self._queue = []
 
     def _message_items(self, conn, candidate: dict) -> list[list[_Item]]:
         """The states of a conversation's unlabelled messages, one group per message; the request type is last,
@@ -386,8 +442,6 @@ class Sweep:
                 seen.add(candidate["conversation_id"])
                 with db_readonly() as conn:
                     item = self._conversation_item(conn, candidate)
-                if item is None:
-                    continue
                 self._queue.append(item)
                 if _asked(self._queue) >= cap:
                     self._flush("analytics_conversation")
@@ -395,12 +449,21 @@ class Sweep:
                     break
         if self._queue:
             self._flush("analytics_conversation")
+        self._queue = []  # what the budget left unasked: the next sweep asks it
 
-    def _conversation_item(self, conn, candidate: dict) -> Optional[_Item]:
+    def _conversation_item(self, conn, candidate: dict) -> _Item:
+        """The conversation's state; a state-less item, written as an ``_error`` marker, when the candidate query
+        counts user messages the states leave out, so it is never a candidate again and the pass always ends."""
         cid = candidate["conversation_id"]
         msgs = self._load(conn, cid)
+        updated_at, source_hash = self._conversations[cid]
+        owner = dict(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
+                     level="conversation", message_id=None, source_updated_at=updated_at, source_hash=source_hash,
+                     attempts=candidate.get("attempts") or 0)
         if not msgs:
-            return None
+            logger.warning("Analytics: conversation %s is a candidate but has no user message; marked as an error",
+                           cid)
+            return _Item(occurred_at=candidate["last_at"], lang="en", **owner)
         agent = self._agent(conn, candidate["agent_id"])
         questions = {"goal_met": schema.GOAL_MET}
         hashes = {"goal_met": candidate["tags_hash"]}
@@ -409,12 +472,8 @@ class Sweep:
             description = topic.description or topic.name
             questions[f"tag:{topic.id}"] = schema.tag_question(topic.name, description)
             hashes[f"tag:{topic.id}"] = topics.options_hash([topic.name, description])
-        updated_at, source_hash = self._conversations[cid]
-        item = _Item(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
-                     level="conversation", message_id=None, occurred_at=msgs[-1].timestamp,
-                     lang=states.lang("\n".join(m.prompt for m in msgs)), questions=questions, hashes=hashes,
-                     source_updated_at=updated_at, source_hash=source_hash,
-                     attempts=candidate.get("attempts") or 0)
+        item = _Item(occurred_at=msgs[-1].timestamp, lang=states.lang("\n".join(m.prompt for m in msgs)),
+                     questions=questions, hashes=hashes, **owner)
         try:
             item.state = states.conversation(msgs)
         except Exception:  # noqa: BLE001
@@ -424,42 +483,55 @@ class Sweep:
     # ---- pending pass ---------------------------------------------------------------------------------------------
 
     def pending_pass(self) -> None:
-        """Settle resolutions still pending once their conversation is past the window; no model call."""
+        """Settle resolutions still pending once their conversation is past the window; no model call.
+
+        One that cannot be recomputed (no user message left, or no ``goal_met``) is deleted with its experience,
+        so it is not loaded again every sweep; the conversation pass writes both again with ``goal_met``.
+        """
         seen: set[str] = set()
         while self._going():
             with db_readonly() as conn:
                 candidates = ConversationLabelsRepository(conn).pending_resolutions(
                     schema.SCHEMA_HASH, self.model_version, settings.ANALYTICS_RESOLUTION_WINDOW_HOURS, PAGE,
-                    exclude=seen,
+                    agent_id=self.agent_id, exclude=seen,
                 )
             if not candidates:
                 break
             for candidate in candidates:
-                seen.add(candidate["conversation_id"])
+                if not self._going():
+                    break
+                cid = candidate["conversation_id"]
+                seen.add(cid)
                 with db_session() as conn:
-                    msgs = self._load(conn, candidate["conversation_id"])
-                    rows = self._conversation_rows(conn, candidate, msgs)
-                    ConversationLabelsRepository(conn).upsert_many(rows)
-                self.stats["resolutions"] += 1
-                self.stats["rows"] += len(rows)
+                    repo = ConversationLabelsRepository(conn)
+                    rows = self._conversation_rows(conn, candidate, self._load(conn, cid))
+                    if rows:
+                        repo.upsert_many(rows)
+                    else:
+                        repo.delete_outcome(cid)
+                if rows:
+                    self.stats["resolutions"] += 1
+                    self.stats["rows"] += len(rows)
 
     # ---- calls and writes -----------------------------------------------------------------------------------------
 
     def _flush(self, feature: str) -> None:
-        """Ask the queued states, at most ``_cap()`` to a call, and write what came back.
+        """Ask the queued states, at most ``_cap()`` to a call, while the pass may, and write what came back; what
+        it may not ask stays queued.
 
         A message with more states than the cap is split across calls, in order, so its marker (the request type,
         its last state) comes last and is skipped if an earlier part was not answered (``_late``).
         """
         batch, self._queue = self._queue, []
         cap = self._cap()
-        while batch and self._going():
+        while batch and self._in_pass():
             chunk, asked = [], 0
             while batch and (asked < cap or batch[0].state is None):
                 item = batch.pop(0)
                 chunk.append(item)
                 asked += item.state is not None
             self._call(chunk, feature)
+        self._queue = batch
 
     def _call(self, batch: list[_Item], feature: str) -> None:
         """Ask one call's states and write what came back; see the module docstring for what each outcome writes.
@@ -467,6 +539,10 @@ class Sweep:
         A state not answered keeps every row of its message (or conversation) out of this call and of the
         sweep's later ones, so a marker is never written without the rest, except a ``bad_item`` in a call that
         answered others, which is the item's own fault and written as an ``_error`` beside its other rows.
+
+        A call about one message (or conversation) that answered nothing (``backend_error`` or ``bad_item``) does
+        not stop the sweep: the message is charged the attempt if a call of the sweep has answered, else parked and
+        charged when one does (``_charge``). ``LONE_FAILURES`` conversations failing so in a row stop it.
         """
         batch = [item for item in batch if item.key not in self._late]
         asked = [item for item in batch if item.state is not None]
@@ -477,17 +553,28 @@ class Sweep:
                                             budget=Budget.BACKGROUND)
             self.stats["calls"] += 1
             self.stats["states"] += len(asked)
-            if self.lock is not None:
-                self.lock.refresh()
             outcome = {id(item): (decision, reason) for item, decision, reason in zip(asked, result, result.reasons)}
             answered = any(decision is not None for decision in result)
+            lone = len({item.key for item in asked}) == 1
+            if answered:
+                self._answered = True
+                self._failing.clear()
             if result.status == "timeout":
                 self.stopped = "timeout"
             elif not answered:  # the backend's fault, unless the call was about one message alone
-                self.stopped = "unavailable" if result.status == "unavailable" else "failed"
-                logger.info("Analytics sweep stopped: the decision model answered nothing (%s)",
-                            ", ".join(sorted({r for r in result.reasons if r})))
-                if len({item.key for item in asked}) > 1:
+                stop = "unavailable" if result.status == "unavailable" else "failed"
+                reasons = {r for r in result.reasons if r}
+                if lone and reasons <= set(_RETRIED):  # the message's fault or the backend's: _charge tells
+                    self._failing.add(asked[0].conversation_id)
+                    self._lone_stop = stop
+                    if len(self._failing) >= LONE_FAILURES:
+                        self.stopped = stop
+                else:
+                    self.stopped = stop
+                if self.stopped:
+                    logger.info("Analytics sweep stopped: the decision model answered nothing (%s)",
+                                ", ".join(sorted(reasons)))
+                if not lone:
                     return
             version = next((d.model.version for d in result if d is not None), self.model_version)
             if version != self.model_version:  # the server changed models: label as the one that answered
@@ -500,7 +587,7 @@ class Sweep:
             decision, reason = outcome[id(item)]
             if decision is not None or (reason == "bad_item" and answered):
                 continue
-            kind = "retry" if reason in ("backend_error", "bad_item") else "late"
+            kind = "retry" if reason in _RETRIED else "late"
             if failed.get(item.key) != "retry":
                 failed[item.key], first[item.key] = kind, item
             if kind == "late":
@@ -516,21 +603,31 @@ class Sweep:
             else:  # its state could not be built, or the model called it bad while answering the rest
                 self.stats["errors"] += 1
                 rows.append(self._marker(item, ERROR, reason))
-        for key, kind in failed.items():
-            if kind == "late":
-                continue
-            item = first[key]
-            attempts = item.attempts + 1
-            reason = outcome[id(item)][1]
-            if attempts >= ATTEMPTS:
-                self.stats["errors"] += 1
-                rows.append(self._marker(item, ERROR, reason))
-            else:
-                self.stats["retries"] += 1
-                rows.append(self._marker(item, RETRY, reason, {"attempts": attempts}))
+        retried = [(first[key], outcome[id(first[key])][1]) for key, kind in failed.items() if kind == "retry"]
+        if self._answered:
+            rows += [self._charge(item, reason) for item, reason in retried]
+        else:  # no call has answered yet: a failing backend, or the messages; told apart by the calls to come
+            self._parked += retried
         self._late |= failed.keys()
-        # counted as written, so a message queued when the budget ran out is not
-        conversation_level = feature == "analytics_conversation"
+        self._commit(rows, feature == "analytics_conversation")
+        if self._answered and self._parked:  # the backend answers after all: what failed alone before is charged
+            charged, self._parked = [self._charge(item, reason) for item, reason in self._parked], []
+            for conversation_level in (False, True):
+                self._commit([row for row in charged if (row["level"] == "conversation") == conversation_level],
+                             conversation_level)
+
+    def _charge(self, item: _Item, reason: Optional[str]) -> dict:
+        """The row of a failed attempt on ``item``: a ``_retry`` counting it, or at the ``ATTEMPTS``-th an
+        ``_error``."""
+        attempts = item.attempts + 1
+        if attempts >= ATTEMPTS:
+            self.stats["errors"] += 1
+            return self._marker(item, ERROR, reason)
+        self.stats["retries"] += 1
+        return self._marker(item, RETRY, reason, {"attempts": attempts})
+
+    def _commit(self, rows: list[dict], conversation_level: bool) -> None:
+        """Count rows as written, so a message queued when the budget ran out is not, and write them."""
         if conversation_level:
             done = {r["conversation_id"] for r in rows if r["label"] in ("goal_met", ERROR)}
             self.stats["conversations"] += len(done)
