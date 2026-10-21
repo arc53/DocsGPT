@@ -2677,6 +2677,9 @@ export const WidgetCore = ({
                       {dictation.available && (
                         <MicButton
                           state={dictation.state}
+                          // The small panel's row can't fit two labelled
+                          // buttons in every language.
+                          variant={size === 'small' ? 'icon' : 'pill'}
                           // Enabled while recording: it is how dictation stops.
                           disabled={
                             status === 'loading' && dictation.state === 'idle'

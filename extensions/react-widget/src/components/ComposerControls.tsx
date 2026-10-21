@@ -378,6 +378,8 @@ export const MicButton = ({
       $recording={state === 'recording'}
       $iconOnly={variant === 'icon'}
       aria-label={t(MIC_TITLES[state])}
+      // With no visible text, the name is also the tooltip.
+      title={variant === 'icon' ? t(MIC_TITLES[state]) : undefined}
     >
       {state === 'recording' ? (
         <SquareGlyph aria-hidden="true" />
