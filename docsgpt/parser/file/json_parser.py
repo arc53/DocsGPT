@@ -8,7 +8,8 @@ class JSONParser(BaseParser):
     r"""JSON (.json) parser.
 
     Parses JSON files into a list of strings or a concatenated document.
-    It handles both JSON objects (dictionaries) and arrays (lists).
+    It handles JSON objects (dictionaries), arrays (lists), and scalar values.
+    Objects and scalars are treated as one row; arrays retain their items as rows.
 
     Args:
         concat_rows (bool): Whether to concatenate all rows into one document.
@@ -48,7 +49,7 @@ class JSONParser(BaseParser):
         with open(file, 'r', encoding='utf-8') as f:
                 data = json.load(f, **self._json_config)
 
-        if isinstance(data, dict):
+        if not isinstance(data, list):
             data = [data]
 
         if self._concat_rows:
