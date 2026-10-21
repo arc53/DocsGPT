@@ -53,7 +53,12 @@ _AGENT = """
     ) ag ON true
 """
 _ENABLED = "COALESCE(ag.config->'analytics'->>'enabled', 'true') <> 'false'"
-_TAGS_HASH = "md5(COALESCE(ag.config->'analytics'->'tags', '[]'::jsonb)::text)"
+# The agent's topics that can overlap, each its own ``tag:<id>`` question: when they change, ``goal_met`` and the tags
+# are asked again. Topics that don't overlap are left out, so editing them never re-asks a conversation.
+_TAGS_HASH = (
+    "md5(COALESCE(jsonb_path_query_array(ag.config->'analytics'->'topics', '$[*] ? (@.overlap == true)'), "
+    "'[]'::jsonb)::text)"
+)
 
 
 def _usable(m: str) -> str:
@@ -915,13 +920,14 @@ class ConversationLabelsRepository:
         return [dict(row._mapping) for row in result.fetchall()]
 
     def tag_names(self, agent_ids: Iterable[str]) -> Dict[str, str]:
-        """``{tag id: name}`` over the given agents' current analytics tags."""
+        """``{tag id: name}`` over the given agents' current topics that can overlap (their ``tag:<id>`` labels)."""
         ids = sorted({str(i) for i in agent_ids if i})
         if not ids:
             return {}
         result = self._conn.execute(
             text(
-                "SELECT a.config->'analytics'->'tags' AS tags FROM agents a WHERE a.id = ANY(CAST(:ids AS uuid[]))"
+                "SELECT jsonb_path_query_array(a.config->'analytics'->'topics', '$[*] ? (@.overlap == true)') AS tags "
+                "FROM agents a WHERE a.id = ANY(CAST(:ids AS uuid[]))"
             ),
             {"ids": ids},
         )

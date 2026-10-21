@@ -9,11 +9,13 @@ API process's model or the remote endpoint at background priority, and no worker
 One sweep, under a Redis lock so overlapping beats and several workers are safe:
 
 1. **Message pass.** Unlabelled messages (``ConversationLabelsRepository.message_candidates``), a conversation at a
-   time, newest first: per message its turn, the reaction to the answer before it, its topic and its request type,
+   time, newest first: per message its turn, the reaction to the answer before it, its topic (the one-pick question
+   over the agent's own topics and source folders) and its request type,
    batched ``ANALYTICS_BATCH_STATES`` states to a call. Each batch's rows, and the derived ``gap_type`` and
    ``topic_effective`` rows of its conversations, are written in one transaction.
-2. **Conversation pass.** Idle conversations without current ``goal_met``: goal met and every tag in one request,
-   then the derived ``resolution`` and ``experience``.
+2. **Conversation pass.** Idle conversations without current ``goal_met``: goal met and every topic that can overlap
+   (a ``tag:<id>`` label) in one request, then the derived ``resolution`` and ``experience``. Changing the topics
+   that can overlap asks it again; changing the others does not.
 3. **Pending pass.** ``resolution`` recomputed, without a model call, once a pending conversation passes the window.
 
 It stops starting calls when its time budget is spent, when a call comes back ``unavailable`` (nothing is written for
@@ -336,9 +338,11 @@ class Sweep:
         agent = self._agent(conn, candidate["agent_id"])
         questions = {"goal_met": schema.GOAL_MET}
         hashes = {"goal_met": candidate["tags_hash"]}
-        for tag in agent.config.tags if agent is not None else []:
-            questions[f"tag:{tag.id}"] = schema.tag_question(tag.name, tag.description)
-            hashes[f"tag:{tag.id}"] = topics.options_hash([tag.name, tag.description])
+        # An overlapping topic is asked in the model's trained tag form; without a description, by its name.
+        for topic in agent.config.overlapping() if agent is not None else []:
+            description = topic.description or topic.name
+            questions[f"tag:{topic.id}"] = schema.tag_question(topic.name, description)
+            hashes[f"tag:{topic.id}"] = topics.options_hash([topic.name, description])
         item = _Item(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
                      level="conversation", message_id=None, occurred_at=msgs[-1].timestamp,
                      lang=states.lang("\n".join(m.prompt for m in msgs)), questions=questions, hashes=hashes)

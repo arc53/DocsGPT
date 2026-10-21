@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-21
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -763,13 +763,13 @@ Days conversation labels are kept, by message time, before the cleanup task remo
 
 Type `int`, default `15`, must be `>= 2` and `<= 15`.
 
-Most topics an agent's topic question offers; the decision model's 16 options less 'none of these'. Automatic topic lists keep the largest sections.
+Most topics that don't overlap an agent's topic question offers: the decision model's 16 options less 'none of these'. The owner's own topics come first; the agent's source folders fill what is left, largest first.
 
-### `ANALYTICS_MAX_TAGS`
+### `ANALYTICS_MAX_OVERLAPPING_TOPICS`
 
 Type `int`, default `20`, must be `>= 0` and `<= 50`.
 
-Most custom tags per agent; every tag is one more question per conversation.
+Most topics that can overlap per agent; each is one more question per conversation. 0 turns them off.
 
 ### `ANALYTICS_FILTER_MIN_PROBABILITY`
 

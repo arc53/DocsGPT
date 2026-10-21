@@ -1328,7 +1328,8 @@ def _insert_message(conn, cid, position, prompt, response="Here is how.", *, ago
 def _analytics_agent(conn, owner="owner", **analytics):
     from docsgpt.storage.db.repositories.agents import AgentsRepository
 
-    analytics.setdefault("tags", [{"id": _TAG, "name": "Pricing question", "description": "Asks about price."}])
+    analytics.setdefault("topics", [{"id": _TAG, "name": "Pricing question", "description": "Asks about price.",
+                                     "overlap": True}])
     return AgentsRepository(conn).create(
         owner, "Docs bot", "published", key=f"key-{owner}", config={"analytics": analytics},
     )
@@ -1784,8 +1785,8 @@ class TestTopicSuggestions:
         response = self._get(app, pg_conn, "owner", str(agent["id"]))
         assert response.status_code == 200
         assert response.json == {"success": True, "topics": [
-            {"name": "api", "description": "Pages such as: Auth"},
             {"name": "guides", "description": "Pages such as: Deploy; Setup"},
+            {"name": "api", "description": "Pages such as: Auth"},
         ]}
 
     def test_needs_an_agent_the_caller_can_edit(self, app, pg_conn):

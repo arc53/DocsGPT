@@ -166,9 +166,9 @@ class TestConfigRoute:
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ANALYTICS_MAX_TOPICS", 8)
-        monkeypatch.setattr(settings, "ANALYTICS_MAX_TAGS", 5)
+        monkeypatch.setattr(settings, "ANALYTICS_MAX_OVERLAPPING_TOPICS", 5)
         data = json.loads(client.get("/api/config").data)
-        assert (data["analytics_max_topics"], data["analytics_max_tags"]) == (8, 5)
+        assert (data["analytics_max_topics"], data["analytics_max_overlapping_topics"]) == (8, 5)
 
     @pytest.mark.unit
     def test_decision_model_is_reported_off(self, client):

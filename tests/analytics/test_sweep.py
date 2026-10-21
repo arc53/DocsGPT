@@ -32,7 +32,8 @@ ANSWERS = {
     "goal_met": 0.8,
     "tag": 0.9,
 }
-TOPICS = {"mode": "custom", "items": [{"name": "install", "description": "Setting it up"}, {"name": "auth"}]}
+TOPICS = [{"id": "install01", "name": "install", "description": "Setting it up"}, {"id": "auth0001", "name": "auth"}]
+PRICING = {"id": "pricing01", "name": "Pricing", "description": "Asks about plans or prices.", "overlap": True}
 
 
 @pytest.fixture
@@ -262,13 +263,12 @@ class TestTopicsAndTags:
         question = fake.calls[0].requests[1].questions["topic"]
         assert question == schema.topic_question({"auth": None, "install": "Setting it up"})
 
-    def test_a_new_tag_relabels_the_conversation_and_a_removed_one_goes(self, db, fake):
+    def test_a_new_overlapping_topic_relabels_the_conversation_and_a_removed_one_goes(self, db, fake):
         agent = _agent(db, enabled=True)
         cid, _, _ = _two_turns(db, agent_id=str(agent["id"]))
         tasks.sweep()
         assert (None, "tag:pricing01") not in _labels(db, cid)
-        tag = {"id": "pricing01", "name": "Pricing", "description": "Asks about plans or prices."}
-        AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {"tags": [tag]}}})
+        AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {"topics": [PRICING]}}})
         calls = len(fake.calls)
         tasks.sweep()
         asked = fake.calls[calls]
@@ -277,9 +277,38 @@ class TestTopicsAndTags:
                                                                                      "Asks about plans or prices.")
         row = _labels(db, cid)[(None, "tag:pricing01")]
         assert row.top == "yes" and row.p_top == pytest.approx(0.9) and row.options_hash
-        AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {"tags": []}}})
+        AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {"topics": []}}})
         tasks.sweep()
         assert (None, "tag:pricing01") not in _labels(db, cid)
+
+    def test_an_overlapping_topic_without_a_description_is_asked_by_its_name(self, db, fake):
+        bare = {**PRICING, "description": ""}
+        agent = _agent(db, topics=[bare])
+        _two_turns(db, agent_id=str(agent["id"]))
+        tasks.sweep()
+        (asked,) = [c for c in fake.calls if c.feature == "analytics_conversation"]
+        assert asked.requests[0].questions["tag:pricing01"] == schema.tag_question("Pricing", "Pricing")
+
+    def test_a_topic_that_does_not_overlap_never_reasks_the_conversation(self, db, fake):
+        agent = _agent(db, topics=[PRICING])
+        _two_turns(db, agent_id=str(agent["id"]))
+        tasks.sweep()
+        AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {
+            "topics": [PRICING, *TOPICS], "hidden_folders": ["guides"]}}})
+        calls = len(fake.calls)
+        tasks.sweep()
+        assert not [c for c in fake.calls[calls:] if c.feature == "analytics_conversation"]
+
+    def test_flipping_a_topic_to_overlap_reasks_the_conversation(self, db, fake):
+        agent = _agent(db, topics=TOPICS)
+        cid, _, _ = _two_turns(db, agent_id=str(agent["id"]))
+        tasks.sweep()
+        flipped = [{**TOPICS[0], "overlap": True}, TOPICS[1]]
+        AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {"topics": flipped}}})
+        calls = len(fake.calls)
+        tasks.sweep()
+        assert [c.feature for c in fake.calls[calls:]] == ["analytics_conversation"]
+        assert (None, "tag:install01") in _labels(db, cid)
 
     def test_conversations_wait_until_idle(self, db, fake):
         cid = _conversation(db)

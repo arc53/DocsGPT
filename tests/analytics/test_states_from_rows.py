@@ -108,15 +108,23 @@ def _file(tokens=10):
     return {"type": "text/markdown", "size_bytes": 1, "token_count": tokens}
 
 
+def _folders(sources) -> dict:
+    return {f["name"]: f["description"] for f in topics.folders(sources)}
+
+
+def _source(structure) -> list[dict]:
+    return [{"name": "S", "directory_structure": structure}]
+
+
 @pytest.mark.unit
-class TestAutoTopics:
+class TestFolders:
     def test_sections_skip_folders_and_root_files_go_to_overview(self):
         structure = {"docs": {"getting-started": {"01-install.md": _file(), "upgrade_guide.md": _file()},
                               "en": {"API_reference": {"auth.md": _file()}}},
                      "README.md": _file()}
-        assert topics.auto_topics([{"name": "S", "directory_structure": structure}], 15) == {
-            "api reference": "Pages such as: Auth",
+        assert _folders(_source(structure)) == {
             "getting started": "Pages such as: Install; Upgrade guide",
+            "api reference": "Pages such as: Auth",
             "overview": "Pages such as: Readme",
         }
 
@@ -131,43 +139,72 @@ class TestAutoTopics:
 
     def test_five_titles_are_sampled_with_a_fixed_seed(self):
         structure = {"guides": {f"page-{i:02d}.md": _file() for i in range(12)}, "faq": {"a.md": _file()}}
-        first = topics.auto_topics([{"name": "S", "directory_structure": structure}], 15)
-        again = topics.auto_topics([{"name": "S", "directory_structure": structure}], 15)
-        assert first == again
+        first = _folders(_source(structure))
+        assert first == _folders(_source(structure))
         titles = first["guides"].removeprefix("Pages such as: ").split("; ")
         assert len(titles) == 5 and titles == sorted(titles)
 
     def test_descriptions_are_capped_at_150_units(self):
         structure = {"guides": {f"{'x' * 60}{i}.md": _file() for i in range(5)}, "faq": {"a.md": _file()}}
-        description = topics.auto_topics([{"name": "S", "directory_structure": structure}], 15)["guides"]
+        description = _folders(_source(structure))["guides"]
         assert schema.units(description) <= 150 and description.endswith("…")
 
-    def test_more_sections_than_the_cap_keep_the_largest(self):
-        structure = {f"section{i:02d}": {"page.md": _file(tokens=i)} for i in range(20)}
-        kept = topics.auto_topics([{"name": "S", "directory_structure": structure}], 15)
-        assert list(kept) == sorted(f"section{i:02d}" for i in range(5, 20))
+    def test_largest_first_and_capped(self):
+        structure = {f"section{i:02d}": {"page.md": _file(tokens=i)} for i in range(60)}
+        listed = [f["name"] for f in topics.folders(_source(structure))]
+        assert listed == [f"section{i:02d}" for i in range(59, 9, -1)]
 
     def test_flat_sources_of_a_multi_source_agent_are_one_section_each(self):
         flat_a = {"name": "Product Docs", "directory_structure": {"intro.md": _file(), "setup.md": _file()}}
         flat_b = {"name": "API", "directory_structure": '{"auth.md": {"token_count": 3}}'}
-        assert topics.auto_topics([flat_a, flat_b], 15) == {"api": "Pages such as: Auth",
-                                                            "product docs": "Pages such as: Intro; Setup"}
+        assert _folders([flat_a, flat_b]) == {"product docs": "Pages such as: Intro; Setup",
+                                             "api": "Pages such as: Auth"}
 
-    def test_fewer_than_two_sections_ask_no_topic(self):
-        assert topics.auto_topics([{"name": "S", "directory_structure": {"a.md": _file()}}], 15) == {}
-        assert topics.auto_topics([{"name": "S", "directory_structure": None}], 15) == {}
+    def test_a_single_folder_is_still_listed(self):
+        assert _folders(_source({"a.md": _file()})) == {"overview": "Pages such as: A"}
+        assert topics.folders(_source(None)) == []
 
-    def test_modes(self, monkeypatch):
+
+@pytest.mark.unit
+class TestOptions:
+    FOLDERS = [{"name": n, "description": f"Pages such as: {n}"} for n in ("big", "mid", "small", "tiny")]
+
+    def _merge(self, own=(), hidden=(), max_topics=15):
+        return topics.merge(list(own), self.FOLDERS, list(hidden), max_topics)
+
+    def test_folders_alone(self):
+        assert self._merge() == {f["name"]: f["description"] for f in self.FOLDERS}
+
+    def test_own_topics_come_first_and_folders_fill_what_is_left_largest_first(self):
+        own = [("Pricing", None), ("auth", "Logging in")]
+        assert self._merge(own, max_topics=4) == {"auth": "Logging in", "big": "Pages such as: big",
+                                                  "mid": "Pages such as: mid", "Pricing": None}
+
+    def test_hidden_and_clashing_folders_are_skipped(self):
+        assert list(self._merge([("Big", "Mine")], hidden=["MID"])) == ["Big", "small", "tiny"]
+
+    def test_fewer_than_two_options_ask_nothing(self):
+        assert self._merge(hidden=["big", "mid", "small"]) == {}
+        assert self._merge([("Only", None)], hidden=["big", "mid", "small", "tiny"]) == {}
+        assert self._merge([("Only", None)], hidden=["big", "mid", "small"]) == {"Only": None,
+                                                                                "tiny": "Pages such as: tiny"}
+
+    def test_options_reads_the_agent(self, monkeypatch):
         monkeypatch.setattr(topics, "agent_sources", lambda conn, agent: [{"name": "S", "directory_structure": {
             "a": {"x.md": _file()}, "b": {"y.md": _file()}}}])
         agent = {"id": "a1"}
         assert topics.options(None, agent, AnalyticsConfig()) == {"a": "Pages such as: X", "b": "Pages such as: Y"}
-        off = AnalyticsConfig.model_validate({"topics": {"mode": "off"}})
-        assert topics.options(None, agent, off) == {}
-        custom = AnalyticsConfig.model_validate({"topics": {"mode": "custom", "items": [
-            {"name": "Pricing"}, {"name": "auth", "description": "Logging in"}]}})
-        assert topics.options(None, agent, custom) == {"auth": "Logging in", "Pricing": None}
+        config = AnalyticsConfig.model_validate({"hidden_folders": ["a"], "topics": [
+            {"id": "topic0001", "name": "Pricing"},
+            {"id": "topic0002", "name": "Bug report", "overlap": True}]})
+        assert topics.options(None, agent, config) == {"b": "Pages such as: Y", "Pricing": None}
         assert topics.options(None, None, AnalyticsConfig()) == {}
+
+    def test_a_workflow_offers_its_own_topics(self, monkeypatch):
+        monkeypatch.setattr(topics, "agent_sources", lambda conn, agent: [])
+        config = AnalyticsConfig.model_validate({"topics": [
+            {"id": "topic0001", "name": "Pricing"}, {"id": "topic0002", "name": "Setup", "description": "Install"}]})
+        assert topics.options(None, {"id": "w1"}, config) == {"Pricing": None, "Setup": "Install"}
 
     def test_options_hash_follows_order_and_text(self):
         assert topics.options_hash({"a": "x", "b": "y"}) == topics.options_hash({"a": "x", "b": "y"})

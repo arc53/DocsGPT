@@ -1,7 +1,7 @@
 """Conversation analytics: the tuning knobs of the background sweep that labels stored conversations.
 
 Whether the decision model may label conversations at all is ``DECISION_ANALYTICS_ENABLED`` (decision model
-settings); which agents are labelled, and with which topics and tags, is each agent's own setting in the UI.
+settings); which agents are labelled, and with which topics, is each agent's own setting in the UI.
 """
 
 from __future__ import annotations
@@ -80,15 +80,18 @@ class AnalyticsSettings(SettingsGroup):
         ge=2,
         le=15,
         description=(
-            "Most topics an agent's topic question offers; the decision model's 16 options less 'none of these'. "
-            "Automatic topic lists keep the largest sections."
+            "Most topics that don't overlap an agent's topic question offers: the decision model's 16 options less "
+            "'none of these'. The owner's own topics come first; the agent's source folders fill what is left, "
+            "largest first."
         ),
     )
-    ANALYTICS_MAX_TAGS: int = Field(
+    ANALYTICS_MAX_OVERLAPPING_TOPICS: int = Field(
         default=20,
         ge=0,
         le=50,
-        description="Most custom tags per agent; every tag is one more question per conversation.",
+        description=(
+            "Most topics that can overlap per agent; each is one more question per conversation. 0 turns them off."
+        ),
     )
     ANALYTICS_FILTER_MIN_PROBABILITY: float = Field(
         default=0.5,

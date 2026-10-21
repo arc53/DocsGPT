@@ -11,7 +11,7 @@ from docsgpt import decisions
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.now import CHAT_FRESH_SECONDS
 from docsgpt.analytics import insights, schema as analytics_schema, topics as analytics_topics
-from docsgpt.analytics.config import TAG_ID, AnalyticsConfig
+from docsgpt.analytics.config import TOPIC_ID, AnalyticsConfig
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.api.user.base import (
@@ -975,7 +975,7 @@ class GetConversationInsights(Resource):
                 config = _agent_analytics(agent)
                 result["enabled"] = available and (agent is None or config.enabled)
                 if agent is not None:
-                    result["tags"] = [{"id": tag.id, "name": tag.name} for tag in config.tags]
+                    result["tags"] = [{"id": topic.id, "name": topic.name} for topic in config.overlapping()]
                 if not result["enabled"]:
                     return make_response(jsonify(result), 200)
 
@@ -1172,7 +1172,7 @@ class GetTopicSuggestions(Resource):
                 agent = AgentsRepository(conn).get_by_id(access.resource_id)
                 if agent is None:
                     raise AccessDenied(404, "Agent not found")
-                suggested = analytics_topics.suggestions(conn, agent)
+                suggested = analytics_topics.folders_of(conn, agent)
         except AccessDenied as denied:
             return _denied(denied)
         except Exception as err:
@@ -1246,7 +1246,7 @@ def _log_filters(data: dict) -> dict:
         isinstance(label, str)
         and (
             label in LOG_LABELS
-            or (label.startswith(TAG_PREFIX) and TAG_ID.match(label[len(TAG_PREFIX):]))
+            or (label.startswith(TAG_PREFIX) and TOPIC_ID.match(label[len(TAG_PREFIX):]))
         )
     ):
         raise _BadLogFilter(

@@ -278,9 +278,9 @@ def get_config():
         # Whether the model may label stored conversations for analytics
         # (DECISION_ANALYTICS_ENABLED, with the model available).
         "decision_analytics_enabled": bool(settings.DECISION_ANALYTICS_ENABLED and decision_available),
-        # The agent editor's list limits for topics and tags.
+        # The agent editor's limits for the two kinds of topic.
         "analytics_max_topics": int(settings.ANALYTICS_MAX_TOPICS),
-        "analytics_max_tags": int(settings.ANALYTICS_MAX_TAGS),
+        "analytics_max_overlapping_topics": int(settings.ANALYTICS_MAX_OVERLAPPING_TOPICS),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

@@ -1,6 +1,7 @@
-"""Per-agent topic lists for the ``topic`` question, and the effective topic of a follow-up message.
+"""Per-agent options of the one-pick ``topic`` question, and the effective topic of a follow-up message.
 
-``auto`` derives the sections from the agent's sources exactly as arc-decide's training and eval sets did
+The options are the owner's topics that don't overlap, then the agent's source folders. Folders are derived from the
+agent's sources exactly as arc-decide's training and eval sets did
 (``arcd/data/train_analytics.py``: ``_section``, ``doc_sections``; ``arcd/data/sim_convs.py``: ``_title``): a
 section is the first directory of a page's path, described by up to five page titles. Bare folder names held topic
 near 40% for every model; adding the titles raised it by 13 points.
@@ -23,6 +24,8 @@ SKIPPED_DIRS = ("docs", "content", "src", "en")
 ROOT_SECTION = "overview"
 #: Page titles shown per section.
 TOPIC_TITLES = 5
+#: Folders listed for the settings, largest first; far past the 15 a question can offer.
+MAX_FOLDERS = 50
 #: Reactions that make a message a continuation of the topic before it.
 CONTINUATIONS = ("follow-up", "re-ask", "correction or pushback", "clarifies own question")
 
@@ -76,19 +79,17 @@ def _describe(name: str, titles: set[str]) -> str:
     return schema.cap("Pages such as: " + "; ".join(shown), TOPIC_DESCRIPTION_UNITS)
 
 
-def auto_topics(sources: list[dict], max_topics: int) -> dict[str, str]:
-    """The ``auto`` topic list of an agent's sources: section name to description, sorted by name.
+def folders(sources: list[dict]) -> list[dict[str, str]]:
+    """The folders of an agent's sources, largest first by tokens: ``[{name, description}]``.
 
-    In an agent with several sources, a flat one (every page at its root) is one section named after the
-    source. With more than ``max_topics`` sections the largest by tokens are kept; the rest fall into "none of
-    these". Fewer than two sections give no list, since a choice with one real option says nothing.
+    In an agent with several sources, a flat one (every page at its root) is one folder named after the source. At
+    most ``MAX_FOLDERS`` are listed.
 
     Args:
         sources: Source rows with ``name`` and ``directory_structure``.
-        max_topics: Most sections kept (``ANALYTICS_MAX_TOPICS``).
 
     Returns:
-        ``{section: description}``, empty when the agent gets no topic question.
+        The folders, each with its "Pages such as: …" description.
     """
     listed = [(source, list(_files(_structure(source)))) for source in sources]
     listed = [(source, files) for source, files in listed if files]
@@ -101,10 +102,38 @@ def auto_topics(sources: list[dict], max_topics: int) -> dict[str, str]:
             entry = sections.setdefault(name, {"titles": set(), "tokens": 0})
             entry["titles"].add(page_title(path))
             entry["tokens"] += tokens
-    if len(sections) < 2:
+    ordered = sorted(sections, key=lambda name: (-sections[name]["tokens"], name))[:MAX_FOLDERS]
+    return [{"name": name, "description": _describe(name, sections[name]["titles"])} for name in ordered]
+
+
+def merge(own: list[tuple[str, Optional[str]]], folder_list: list[dict[str, str]], hidden: list[str],
+          max_topics: int) -> dict[str, Optional[str]]:
+    """The one-pick question's options: the owner's topics, then folders filling what is left, sorted by name.
+
+    Folders are taken largest first (``folder_list`` is in that order), skipping hidden ones and any whose name an
+    own topic already has. Fewer than two options give none, since a choice with one real option says nothing. The
+    frontend's ``visibleFolders`` applies the same rule to show the list.
+
+    Args:
+        own: The owner's topics that don't overlap, as ``(name, description or None)``.
+        folder_list: :func:`folders` of the agent's sources.
+        hidden: Folder names the owner hid.
+        max_topics: Most options (``ANALYTICS_MAX_TOPICS``).
+
+    Returns:
+        ``{name: description}``, empty when the agent gets no topic question.
+    """
+    options: dict[str, Optional[str]] = dict(own[:max_topics])
+    taken = {name.lower() for name in options} | {name.lower() for name in hidden}
+    for folder in folder_list:
+        if len(options) >= max_topics:
+            break
+        if folder["name"].lower() not in taken:
+            options[folder["name"]] = folder["description"]
+            taken.add(folder["name"].lower())
+    if len(options) < 2:
         return {}
-    kept = sorted(sections, key=lambda name: (-sections[name]["tokens"], name))[:max_topics]
-    return {name: _describe(name, sections[name]["titles"]) for name in sorted(kept)}
+    return {name: options[name] for name in sorted(options, key=str.lower)}
 
 
 def agent_sources(conn, agent: dict) -> list[dict]:
@@ -116,28 +145,23 @@ def agent_sources(conn, agent: dict) -> list[dict]:
     return SourcesRepository(conn).list_by_ids(ids) if ids else []
 
 
-def suggestions(conn, agent: dict) -> list[dict[str, str]]:
-    """The ``auto`` list as ``[{name, description}]``, for the editor's "Suggest from sources"."""
-    from docsgpt.core.settings import settings
-
-    topics = auto_topics(agent_sources(conn, agent), settings.ANALYTICS_MAX_TOPICS)
-    return [{"name": name, "description": description} for name, description in topics.items()]
+def folders_of(conn, agent: dict) -> list[dict[str, str]]:
+    """:func:`folders` of an agent's sources, for the settings list."""
+    return folders(agent_sources(conn, agent))
 
 
 def options(conn, agent: Optional[dict], config: AnalyticsConfig) -> dict[str, Optional[str]]:
     """The options of an agent's topic question, without "none of these"; empty when none is asked.
 
-    Conversations without an agent, and agents in mode ``off``, get none. ``custom`` uses the owner's list as it
-    is, a single topic included; ``auto`` derives the list from the agent's sources.
+    Conversations without an agent get none. The owner's topics that don't overlap come first, then the agent's
+    source folders (a workflow has none).
     """
     from docsgpt.core.settings import settings
 
-    if agent is None or config.topics.mode == "off":
+    if agent is None:
         return {}
-    if config.topics.mode == "custom":
-        items = sorted(config.topics.items, key=lambda t: t.name.lower())
-        return {t.name: t.description or None for t in items[: settings.ANALYTICS_MAX_TOPICS]}
-    return dict(auto_topics(agent_sources(conn, agent), settings.ANALYTICS_MAX_TOPICS))
+    own = [(t.name, t.description or None) for t in config.one_pick()]
+    return merge(own, folders_of(conn, agent), config.hidden_folders, settings.ANALYTICS_MAX_TOPICS)
 
 
 def options_hash(value: Any) -> str:
