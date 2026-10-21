@@ -2,14 +2,24 @@ import React, { useRef } from 'react';
 import DOMPurify from 'dompurify';
 import styled, { keyframes, css, ThemeProvider } from 'styled-components';
 import {
+  AnswerSource,
   FEEDBACK,
   MESSAGE_TYPE,
   Query,
+  QuestionSource,
   SentAttachment,
   Status,
+  WidgetController,
+  WidgetCoreHandle,
   WidgetCoreProps,
+  WidgetEvent,
   WidgetProps,
 } from '../types/index';
+import {
+  callSafely,
+  createEmitter,
+  type WidgetEventInit,
+} from '../utils/events';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import {
   acceptAttribute,
@@ -1485,12 +1495,19 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
 
 type Source = NonNullable<Query['sources']>[number];
 
+/** A source as events report it: a title, and a URL for web pages only. */
+const answerSource = (source: Source): AnswerSource =>
+  isWebSource(source.source)
+    ? { title: source.title || sourceHost(source.source), url: source.source }
+    : { title: sourceLabel(source.title, source.source) };
+
 const SourcesComponent = ({
   sources,
   turn,
   open,
   highlighted,
   onToggle,
+  onOpenLink,
 }: {
   sources: Source[];
   /** The answer's index, which keys its rows for a citation to find. */
@@ -1498,6 +1515,7 @@ const SourcesComponent = ({
   open: boolean;
   highlighted: number | null;
   onToggle: () => void;
+  onOpenLink: (source: Source) => void;
 }) => {
   const { t } = useMessages();
   return (
@@ -1523,6 +1541,11 @@ const SourcesComponent = ({
                 href={source.source}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => onOpenLink(source)}
+                // A middle click opens it in a new tab too.
+                onAuxClick={(event) => {
+                  if (event.button === 1) onOpenLink(source);
+                }}
               >
                 <Globe size={16} />
                 <SourceText>
@@ -1617,35 +1640,81 @@ const Hero = ({
     </HeroContainer>
   );
 };
-export const DocsGPTWidget = (props: WidgetProps) => (
-  <I18nProvider locale={props.locale} translations={props.translations}>
-    <Launcher {...props} />
-  </I18nProvider>
+/** The chat with its launcher button. `ref` receives a `WidgetController`. */
+export const DocsGPTWidget = React.forwardRef<WidgetController, WidgetProps>(
+  function DocsGPTWidget(props, ref) {
+    return (
+      <I18nProvider locale={props.locale} translations={props.translations}>
+        <Launcher {...props} controllerRef={ref} />
+      </I18nProvider>
+    );
+  },
 );
 
 // Inside the provider, so its defaults read the resolved locale.
-const Launcher = (props: WidgetProps) => {
+const Launcher = (
+  props: WidgetProps & { controllerRef?: React.Ref<WidgetController> },
+) => {
   const { locale, t } = useMessages();
   const {
     buttonIcon,
     buttonText = t('launcherButton'),
     buttonBg,
     defaultOpen = false,
+    onEvent,
+    controllerRef,
     ...coreProps
   } = props;
 
   const [open, setOpen] = React.useState<boolean>(defaultOpen);
   const [isFloatingButtonVisible, setIsFloatingButtonVisible] =
     React.useState(!defaultOpen);
+  // State lags a render behind; the controller answers isOpen() at once.
+  const openRef = React.useRef(defaultOpen);
+  const coreRef = React.useRef<WidgetCoreHandle>(null);
 
-  const handleClose = () => {
-    setIsFloatingButtonVisible(true);
-    setOpen(false);
-  };
-  const handleOpen = () => {
-    setOpen(true);
-    setIsFloatingButtonVisible(false);
-  };
+  const setOpenState = React.useCallback((next: boolean) => {
+    openRef.current = next;
+    setOpen(next);
+    setIsFloatingButtonVisible(!next);
+  }, []);
+  const handleClose = () => setOpenState(false);
+  const handleOpen = () => setOpenState(true);
+
+  // The host's onEvent first, then the controller's subscribers.
+  const onEventRef = React.useRef(onEvent);
+  onEventRef.current = onEvent;
+  const [emitter] = React.useState(createEmitter);
+  const emit = React.useCallback(
+    (event: WidgetEvent) => {
+      callSafely(onEventRef.current, event);
+      emitter.emit(event);
+    },
+    [emitter],
+  );
+
+  React.useImperativeHandle(
+    controllerRef,
+    (): WidgetController => ({
+      open: () => setOpenState(true),
+      close: () => setOpenState(false),
+      toggle: () => setOpenState(!openRef.current),
+      isOpen: () => openRef.current,
+      focus: () => {
+        setOpenState(true);
+        coreRef.current?.focus();
+      },
+      // The panel picks the question up once it has opened.
+      ask: (question, options) => {
+        setOpenState(true);
+        coreRef.current?.ask(String(question ?? ''), options?.send !== false);
+      },
+      on: emitter.on,
+      off: emitter.off,
+    }),
+    [emitter, setOpenState],
+  );
+
   return (
     <ThemeProvider theme={themes[coreProps.theme ?? 'dark']}>
       <FloatingButton
@@ -1662,7 +1731,13 @@ const Launcher = (props: WidgetProps) => {
         )}
         <span>{buttonText}</span>
       </FloatingButton>
-      <WidgetCore isOpen={open} handleClose={handleClose} {...coreProps} />
+      <WidgetCore
+        {...coreProps}
+        isOpen={open}
+        handleClose={handleClose}
+        onEvent={emit}
+        coreRef={coreRef}
+      />
     </ThemeProvider>
   );
 };
@@ -1689,6 +1764,8 @@ export const WidgetCore = ({
   showMicButton = false,
   poweredBy = true,
   passthrough,
+  onEvent,
+  coreRef,
 }: WidgetCoreProps) => {
   const { locale, t, plural } = useMessages();
   const [prompt, setPrompt] = React.useState<string>('');
@@ -1717,6 +1794,32 @@ export const WidgetCore = ({
   } | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Ends the streaming turn as stopped, reporting it once.
+  const stopTurnRef = useRef<(() => void) | null>(null);
+  // Stream handlers and memoised click handlers outlive their render; events
+  // read these instead of stale state.
+  const conversationIdRef = useRef<string | null>(null);
+  const queriesRef = useRef(queries);
+  queriesRef.current = queries;
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  // ask() and focus() calls from the host, run once the panel is on screen.
+  const pendingActionsRef = useRef<
+    ({ type: 'ask'; question: string; send: boolean } | { type: 'focus' })[]
+  >([]);
+  const [pendingTick, setPendingTick] = React.useState(0);
+
+  const emit = React.useCallback((event: WidgetEventInit) => {
+    callSafely(onEventRef.current, {
+      ...event,
+      conversationId: conversationIdRef.current,
+    } as WidgetEvent);
+  }, []);
+
+  const updateConversationId = (id: string | null) => {
+    conversationIdRef.current = id;
+    setConversationId(id);
+  };
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
@@ -1795,10 +1898,18 @@ export const WidgetCore = ({
     onEnd: focusPrompt,
   });
 
+  // Before the effect below, so `open` precedes the search bar's question.
+  const wasOpenRef = useRef(false);
+  React.useEffect(() => {
+    if (isOpen === wasOpenRef.current) return;
+    wasOpenRef.current = isOpen;
+    emit({ type: isOpen ? 'open' : 'close' });
+  }, [isOpen]);
+
   React.useEffect(() => {
     if (isOpen) {
       setMounted(true); // Mount the component
-      appendQuery(prefilledQuery);
+      appendQuery(prefilledQuery, { source: 'search' });
     } else {
       // Wait for animations before unmounting
       const timeout = setTimeout(() => {
@@ -1895,6 +2006,12 @@ export const WidgetCore = ({
       if (response.status !== 200) {
         throw new Error(`Feedback rejected with status ${response.status}`);
       }
+      emit({
+        type: 'feedback',
+        question: query.prompt,
+        answer: query.response,
+        value: next === 'LIKE' ? 'like' : next === 'DISLIKE' ? 'dislike' : null,
+      });
     } catch (err) {
       console.warn('Feedback not saved:', err);
       setFeedbackAt(index, previous);
@@ -1911,6 +2028,7 @@ export const WidgetCore = ({
     query.errorKey ? t(query.errorKey) : (query.error ?? '');
 
   const stopGenerating = () => {
+    stopTurnRef.current?.();
     abortRef.current?.abort();
     abortRef.current = null;
     setStatus('idle');
@@ -1920,6 +2038,35 @@ export const WidgetCore = ({
     setStatus('loading');
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // What the host hears about this turn: the answer as it stands, and one
+    // outcome, whichever path ends it first.
+    let answer = '';
+    let sources: Source[] = [];
+    let settled = false;
+    const settle = (
+      outcome:
+        | { type: 'answer_completed' }
+        | { type: 'answer_failed'; error: string }
+        | { type: 'answer_stopped' },
+    ) => {
+      if (settled) return;
+      settled = true;
+      if (stopTurnRef.current === stopTurn) stopTurnRef.current = null;
+      if (outcome.type === 'answer_completed')
+        emit({
+          type: 'answer_completed',
+          question,
+          answer,
+          sources: sources.map(answerSource),
+        });
+      else if (outcome.type === 'answer_failed')
+        emit({ type: 'answer_failed', question, error: outcome.error });
+      else emit({ type: 'answer_stopped', question });
+    };
+    const stopTurn = () => settle({ type: 'answer_stopped' });
+    stopTurnRef.current = stopTurn;
+
     try {
       await fetchAnswerStreaming({
         signal: controller.signal,
@@ -1952,6 +2099,7 @@ export const WidgetCore = ({
 
           const appendAnswer = (d: StreamEvent) => {
             if (typeof d.answer !== 'string') return;
+            answer += d.answer;
             patch((query) => {
               query.response = (query.response ?? '') + d.answer;
             });
@@ -1969,15 +2117,20 @@ export const WidgetCore = ({
 
           const handlers: Record<string, (d: StreamEvent) => void> = {
             answer: appendAnswer,
-            end: () => setStatus('idle'),
-            id: (d) => setConversationId(d.id as string),
+            end: () => {
+              setStatus('idle');
+              settle({ type: 'answer_completed' });
+            },
+            id: (d) => updateConversationId(d.id as string),
             error: (d) => {
               patch((query) => {
                 query.error = d.error as string;
               });
               setStatus('idle');
+              settle({ type: 'answer_failed', error: String(d.error ?? '') });
             },
             source: (d) => {
+              if (Array.isArray(d.source)) sources = d.source as Source[];
               if (!showSources) return;
               patch((query) => {
                 query.sources = d.source as Query['sources'];
@@ -2006,6 +2159,7 @@ export const WidgetCore = ({
             // Blocked content must leave the screen, reasoning included.
             guardrail: (d) => {
               if (!d.retract) return;
+              answer = '';
               patch((query) => {
                 query.response = '';
                 query.thought = '';
@@ -2027,7 +2181,14 @@ export const WidgetCore = ({
       failed.errorKey = 'connectionError';
       setQueries(updatedQueries);
       setStatus('idle');
+      settle({ type: 'answer_failed', error: t('connectionError') });
       //setEventInterrupt(false)
+      return;
+    }
+    // The stream closed without an end or error frame.
+    if (!settled && !controller.signal.aborted) {
+      setStatus('idle');
+      settle({ type: 'answer_completed' });
     }
   }
 
@@ -2035,7 +2196,10 @@ export const WidgetCore = ({
   // started typing stays in the composer.
   const appendQuery = async (
     userQuery: string,
-    { keepDraft = false }: { keepDraft?: boolean } = {},
+    {
+      keepDraft = false,
+      source,
+    }: { keepDraft?: boolean; source: QuestionSource },
   ) => {
     if (!userQuery) return;
 
@@ -2053,11 +2217,13 @@ export const WidgetCore = ({
     });
     if (!keepDraft) setPrompt('');
     if (sent.length > 0) clearAttachments();
+    emit({ type: 'question_submitted', question: userQuery, source });
     await stream(
       userQuery,
       sent.map((attachment) => attachment.id),
     );
   };
+  /** Copies `text`; true once it is on the clipboard. */
   const handleCopy = async (text: string, index: number) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -2066,9 +2232,17 @@ export const WidgetCore = ({
         () => setCopiedIndex((cur) => (cur === index ? null : cur)),
         1600,
       );
+      return true;
     } catch (err) {
       console.warn('Copy failed:', err);
+      return false;
     }
+  };
+
+  const copyAnswer = async (query: Query, index: number) => {
+    const answer = query.response ?? '';
+    if (await handleCopy(answer, index))
+      emit({ type: 'answer_copied', question: query.prompt, answer });
   };
 
   const toggleSources = (turn: number) =>
@@ -2108,6 +2282,8 @@ export const WidgetCore = ({
     () => () => {
       if (highlightTimerRef.current !== null)
         window.clearTimeout(highlightTimerRef.current);
+      // Unmounted (destroy(), or the host removed it): drop the stream too.
+      abortRef.current?.abort();
     },
     [],
   );
@@ -2125,12 +2301,19 @@ export const WidgetCore = ({
       }
       const copy = target.closest<HTMLButtonElement>('.dgpt-code-copy');
       if (!copy) return;
-      const code =
-        copy.closest('.dgpt-code')?.querySelector('pre code')?.textContent ??
-        '';
+      const block = copy.closest('.dgpt-code');
+      const code = block?.querySelector('pre code')?.textContent ?? '';
       navigator.clipboard
         .writeText(code)
         .then(() => {
+          emit({
+            type: 'code_copied',
+            question: queriesRef.current[turn]?.prompt ?? '',
+            code,
+            language:
+              block?.querySelector('.dgpt-code-language')?.textContent ||
+              'text',
+          });
           copy.classList.add('is-copied');
           copy.setAttribute('aria-label', t('copied'));
           window.setTimeout(() => {
@@ -2140,7 +2323,7 @@ export const WidgetCore = ({
         })
         .catch((err) => console.warn('Copy failed:', err));
     },
-    [openCitedSource, t],
+    [openCitedSource, t, emit],
   );
 
   // Re-runs the turn in place instead of appending a duplicate prompt.
@@ -2159,6 +2342,7 @@ export const WidgetCore = ({
     setOpenSources((prev) => new Set([...prev].filter((turn) => turn < index)));
     setHighlightedSource((prev) => (prev && prev.turn >= index ? null : prev));
     setIsPinnedToLatest(true);
+    emit({ type: 'question_submitted', question: prompt, source: 'retry' });
     await stream(
       prompt,
       (attached ?? []).map((attachment) => attachment.id),
@@ -2182,7 +2366,7 @@ export const WidgetCore = ({
     if (!canSubmit) return;
     // Reset first, so the empty composer does not render tall for a frame.
     if (promptRef.current) promptRef.current.style.height = 'auto';
-    await appendQuery(prompt);
+    await appendQuery(prompt, { source: 'composer' });
   };
 
   const heroQuestions = React.useMemo(
@@ -2198,8 +2382,50 @@ export const WidgetCore = ({
 
   const sendSuggestedQuestion = async (question: string) => {
     if (questionBlockedReason || status === 'loading') return;
-    await appendQuery(question, { keepDraft: true });
+    await appendQuery(question, { keepDraft: true, source: 'suggestion' });
   };
+
+  // ask() goes through the suggested questions' gate: blocked, it only fills
+  // the composer, so the question is never lost.
+  const runPendingAction = (action: (typeof pendingActionsRef.current)[0]) => {
+    if (action.type === 'focus') {
+      focusPrompt();
+      return;
+    }
+    const question = action.question.trim();
+    if (!question) return;
+    if (action.send && !questionBlockedReason && status !== 'loading') {
+      void appendQuery(question, { keepDraft: true, source: 'api' });
+      return;
+    }
+    applyDraft(question);
+    focusPrompt();
+  };
+
+  React.useImperativeHandle(
+    coreRef,
+    (): WidgetCoreHandle => ({
+      ask: (question, send) => {
+        pendingActionsRef.current.push({ type: 'ask', question, send });
+        setPendingTick((tick) => tick + 1);
+      },
+      focus: () => {
+        pendingActionsRef.current.push({ type: 'focus' });
+        setPendingTick((tick) => tick + 1);
+      },
+    }),
+    [],
+  );
+
+  // One action per render, so a second ask() sees the first one's send.
+  React.useEffect(() => {
+    if (!isOpen || !mounted) return;
+    const action = pendingActionsRef.current.shift();
+    if (!action) return;
+    if (pendingActionsRef.current.length > 0)
+      setPendingTick((tick) => tick + 1);
+    runPendingAction(action);
+  }, [pendingTick, isOpen, mounted]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -2446,6 +2672,13 @@ export const WidgetCore = ({
                                     : null
                                 }
                                 onToggle={() => toggleSources(index)}
+                                onOpenLink={(source) =>
+                                  emit({
+                                    type: 'source_clicked',
+                                    title: answerSource(source).title,
+                                    url: source.source,
+                                  })
+                                }
                               />
                             )}
                             {query.toolCalls && query.toolCalls.length > 0 && (
@@ -2482,7 +2715,7 @@ export const WidgetCore = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleCopy(query.response ?? '', index);
+                                  copyAnswer(query, index);
                                 }}
                                 aria-label={
                                   copiedIndex === index

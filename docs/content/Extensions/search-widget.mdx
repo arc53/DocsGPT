@@ -86,6 +86,8 @@ Then, in a `<script>` block after the widget script, use the `renderSearchBar` f
 </script>
 ```
 
+`renderSearchBar` returns an object with a `destroy()` method, which removes the search bar from the page. Calling it again does nothing.
+
   </Tabs.Tab>
 </Tabs>
 
@@ -112,6 +114,7 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 | **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. See [Passing who is asking](/Extensions/chat-widget#passing-who-is-asking). |
 | **`locale`** | `string` | `"auto"` | Language of the search bar's own text, and of the chat it opens. `"auto"` follows the visitor's browser; or set one of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. See [Languages](/Extensions/chat-widget#languages). |
 | **`translations`** | `Partial<Messages>` | _unset_ | Replaces individual strings of the search bar's and the chat's own text, by key, e.g. `{ askTheAi: 'Ask our assistant' }`. See [Languages](/Extensions/chat-widget#languages). |
+| **`onEvent`** | `(event: WidgetEvent) => void` | _unset_ | Passed to the chat opened from "Ask the AI": called with each of its events, such as the question sent (with `source: 'search'`) and the answer finished. See [JavaScript API](/Extensions/chat-widget#javascript-api). |
 
 ---
 

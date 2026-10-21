@@ -188,6 +188,8 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`passthrough`**  | `Record<string, string \| number \| boolean \| null>` | _unset_                 | Values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}`, and they appear on each turn in Logs. See [Passing who is asking](#passing-who-is-asking). |
 | **`locale`**       | `string`         | `"auto"`                                                    | Language of the widget's own text. `"auto"` follows the visitor's browser; or set one of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. See [Languages](#languages). |
 | **`translations`** | `Partial<Messages>` | _unset_                                                  | Replaces individual strings of the widget's own text, by key, e.g. `{ composerPlaceholder: 'Ask our team' }`. See [Languages](#languages). |
+| **`onEvent`**      | `(event: WidgetEvent) => void` | _unset_                                       | Called with every event the chat fires, such as a question sent or an answer finished. See [JavaScript API](#javascript-api). |
+| **`ref`**          | `Ref<WidgetController>` | _unset_                                              | React only: receives the controller that opens the chat, asks questions and subscribes to events. The script tag gets the same controller from `renderDocsGPTWidget`. See [JavaScript API](#javascript-api). |
 
 ---
 
@@ -315,6 +317,82 @@ The defaults of `title`, `description`, `heroTitle`, `heroDescription`, `suggest
 The keys, each with a note on where its text appears, are listed in [`src/locale/en.ts`](https://github.com/arc53/DocsGPT/blob/main/extensions/react-widget/src/locale/en.ts). In TypeScript, the `Messages` type and the `SUPPORTED_LOCALES` list are exported from the package. The search bar takes the same two props, and the chat it opens uses its language.
 
 The widget marks its own markup with the chosen language (`lang`), so screen readers pronounce it correctly, and voice input listens in that language. Answers come from your agent, so their language follows the question and the agent's prompt, not `locale`.
+
+---
+
+## JavaScript API
+
+Your page can drive the widget and hear what happens in it, for example to open the chat from your own "Contact support" button, to ask about the page the visitor is reading, or to send answers and ratings to your analytics.
+
+With the script tag, `renderDocsGPTWidget` returns the controller:
+
+```html filename="html"
+<div id="app"></div>
+<button id="ask-pricing">Ask about pricing</button>
+<script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
+<script>
+  window.onload = function () {
+    const widget = renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
+
+    document.getElementById('ask-pricing').onclick = function () {
+      widget.ask('Which plans include SSO?');
+    };
+
+    widget.on('answer_completed', function (event) {
+      console.log(event.question, event.answer, event.sources);
+    });
+  };
+</script>
+```
+
+In React, pass a `ref` to `DocsGPTWidget`, and `onEvent` to receive every event:
+
+```jsx
+import { useRef } from 'react';
+import { DocsGPTWidget } from 'docsgpt';
+
+export function Help() {
+  const widget = useRef(null);
+  return (
+    <>
+      <button onClick={() => widget.current?.open()}>Chat with us</button>
+      <DocsGPTWidget
+        ref={widget}
+        apiKey="your-agent-api-key"
+        onEvent={(event) => analytics.track(`docsgpt_${event.type}`, event)}
+      />
+    </>
+  );
+}
+```
+
+You can call the controller as soon as you have it, before the chat has opened or finished loading; a question sent early waits for the panel and is not lost.
+
+| **Method** | **Description** |
+|---|---|
+| `open()`, `close()`, `toggle()` | Opens or closes the chat panel. |
+| `isOpen()` | `true` while the panel is open. |
+| `focus()` | Opens the panel and puts the cursor in the message field. |
+| `ask(question, { send })` | Opens the panel and sends `question`. With `{ send: false }` it only puts the question in the message field, for the visitor to edit and send. If the visitor couldn't send right now either, because an answer is still streaming, a file is uploading or the microphone is on, the question goes into the message field instead of being sent. |
+| `on(type, handler)` | Calls `handler` for each event of that type. Returns a function that removes it. |
+| `off(type, handler)` | Removes a handler added with `on`. |
+| `destroy()` | Script tag only: removes the widget from the page and drops its handlers. Calling it again does nothing. In React, stop rendering the component instead. |
+
+Every event has a `type` and a `conversationId`: the server's id for the conversation, or `null` before the first answer has started.
+
+| **Event** | **Fields** | **When** |
+|---|---|---|
+| `open`, `close` | | The panel opened or closed, by the visitor or from your code. `defaultOpen` fires `open` on load. |
+| `question_submitted` | `question`, `source` | A question was sent. `source` says how: `composer` (typed), `suggestion` (a suggested question), `api` (`ask()`), `search` ("Ask the AI" in the search bar) or `retry` (the retry button on a failed answer). |
+| `answer_completed` | `question`, `answer`, `sources` | The answer finished. `answer` is its Markdown; `sources` is a list of `{ title, url }`, with `url` only for web pages. |
+| `answer_failed` | `question`, `error` | The answer ended in an error, including a guardrail blocking it. |
+| `answer_stopped` | `question` | The visitor stopped the answer. |
+| `feedback` | `question`, `answer`, `value` | A rating was saved: `like`, `dislike`, or `null` when the visitor took theirs back. |
+| `source_clicked` | `title`, `url` | The visitor opened a web source from the Sources list. |
+| `answer_copied` | `question`, `answer` | The visitor copied an answer. |
+| `code_copied` | `question`, `code`, `language` | The visitor copied a code block from an answer. |
+
+Each question ends in exactly one of `answer_completed`, `answer_failed` or `answer_stopped`. An error thrown by your handler is logged to the console and doesn't affect the widget or other handlers. In TypeScript, `WidgetController`, `WidgetInstance` (the script tag's controller, with `destroy`), `WidgetEvent` and the related types are exported from the package.
 
 ---
 

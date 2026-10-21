@@ -145,17 +145,31 @@ export interface WidgetProps extends LocaleProps {
    * each turn in Logs. Set by the embedding page, so treat them as unverified.
    */
   passthrough?: Record<string, PassthroughValue>;
+  /**
+   * Called with every event the chat fires, e.g. to send them to analytics.
+   * `ref` and the controller's `on()` reach the same events.
+   */
+  onEvent?: (event: WidgetEvent) => void;
 }
+
+/** What `WidgetCore` exposes to whatever owns its open state. */
+export interface WidgetCoreHandle {
+  ask: (question: string, send: boolean) => void;
+  focus: () => void;
+}
+
 export interface WidgetCoreProps extends WidgetProps {
   widgetRef?: React.RefObject<HTMLDivElement> | null;
   handleClose?: React.MouseEventHandler | undefined;
   isOpen: boolean;
   prefilledQuery?: string;
+  coreRef?: React.Ref<WidgetCoreHandle>;
 }
 
 /**
- * Both props are forwarded to the chat opened from "Ask the AI";
- * `showMicButton` also adds a microphone to the search field.
+ * `allowedFileExtensions`, `showMicButton` and `onEvent` are forwarded to the
+ * chat opened from "Ask the AI"; `showMicButton` also adds a microphone to the
+ * search field.
  */
 export interface SearchBarProps extends Pick<
   WidgetProps,
@@ -166,6 +180,7 @@ export interface SearchBarProps extends Pick<
   | 'passthrough'
   | 'locale'
   | 'translations'
+  | 'onEvent'
 > {
   apiHost?: string;
   apiKey?: string;
@@ -186,4 +201,115 @@ export interface Result {
   text: string;
   title: string;
   source: string;
+}
+
+/** How a question reached the chat. */
+export type QuestionSource =
+  /** Typed in the composer. */
+  | 'composer'
+  /** One of `suggestedQuestions`. */
+  | 'suggestion'
+  /** The controller's `ask()`. */
+  | 'api'
+  /** "Ask the AI" in the search bar. */
+  | 'search'
+  /** The retry button on a failed answer. */
+  | 'retry';
+
+/** A source an answer drew on; `url` is set for web pages only. */
+export interface AnswerSource {
+  title: string;
+  url?: string;
+}
+
+/**
+ * Something the visitor did in the chat, or that happened to an answer.
+ * `conversationId` is the server's id for the chat, null until the first
+ * answer starts.
+ */
+export type WidgetEvent = { conversationId: string | null } & (
+  | { type: 'open' }
+  | { type: 'close' }
+  | { type: 'question_submitted'; question: string; source: QuestionSource }
+  | {
+      type: 'answer_completed';
+      question: string;
+      answer: string;
+      sources: AnswerSource[];
+    }
+  | { type: 'answer_failed'; question: string; error: string }
+  | { type: 'answer_stopped'; question: string }
+  | {
+      type: 'feedback';
+      question: string;
+      answer: string;
+      /** The rating now saved; null when the visitor took theirs back. */
+      value: 'like' | 'dislike' | null;
+    }
+  | { type: 'source_clicked'; title: string; url: string }
+  | { type: 'answer_copied'; question: string; answer: string }
+  | {
+      type: 'code_copied';
+      question: string;
+      code: string;
+      /** The code block's language, `text` when it has none. */
+      language: string;
+    }
+);
+
+export type WidgetEventType = WidgetEvent['type'];
+
+/** The event with the given `type`. */
+export type WidgetEventOf<T extends WidgetEventType> = Extract<
+  WidgetEvent,
+  { type: T }
+>;
+
+export type WidgetEventHandler<T extends WidgetEventType = WidgetEventType> = (
+  event: WidgetEventOf<T>,
+) => void;
+
+export interface AskOptions {
+  /** Send right away (the default), or only put the question in the composer. */
+  send?: boolean;
+}
+
+/**
+ * Drives the widget from the host page: `renderDocsGPTWidget` returns one,
+ * and `DocsGPTWidget` hands one to its `ref`.
+ */
+export interface WidgetController {
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  isOpen: () => boolean;
+  /** Opens the panel and focuses the message field. */
+  focus: () => void;
+  /**
+   * Opens the panel and sends `question`. When the composer couldn't send
+   * either (an answer is streaming, a file is uploading, the mic is on), or
+   * with `{ send: false }`, the question is put in the composer instead.
+   */
+  ask: (question: string, options?: AskOptions) => void;
+  /** Subscribes to one event type; returns a function that unsubscribes. */
+  on: <T extends WidgetEventType>(
+    type: T,
+    handler: WidgetEventHandler<T>,
+  ) => () => void;
+  off: <T extends WidgetEventType>(
+    type: T,
+    handler: WidgetEventHandler<T>,
+  ) => void;
+}
+
+/** What `renderDocsGPTWidget` returns. */
+export interface WidgetInstance extends WidgetController {
+  /** Unmounts the widget and drops every handler. Safe to call twice. */
+  destroy: () => void;
+}
+
+/** What `renderSearchBar` returns. */
+export interface SearchBarInstance {
+  /** Unmounts the search bar. Safe to call twice. */
+  destroy: () => void;
 }

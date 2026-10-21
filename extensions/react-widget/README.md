@@ -55,6 +55,8 @@ To link the widget to your api and your documents you can pass parameters to the
 
 The widget's own text follows the visitor's browser language (`locale="auto"`, the default) in English, Spanish, French, Japanese, Simplified and Traditional Chinese, Russian and German. Set `locale` (e.g. `"de"`) to fix it, and `translations` to replace single strings by key, e.g. `translations={{ composerPlaceholder: 'Ask our team' }}`. Text you pass in props such as `title` is never translated. The keys are in [`src/locale/en.ts`](src/locale/en.ts); `SearchBar` takes the same two props. See [Languages](https://docs.docsgpt.cloud/Extensions/chat-widget#languages).
 
+Pass a `ref` to drive the widget from your page (`open()`, `close()`, `toggle()`, `isOpen()`, `focus()`, `ask(question, { send })`, and `on`/`off` for events), and `onEvent` to receive every event, e.g. `question_submitted`, `answer_completed` or `feedback`. With the script tag, `renderDocsGPTWidget` returns the same controller plus `destroy()`, and `renderSearchBar` returns `{ destroy }`. See [JavaScript API](https://docs.docsgpt.cloud/Extensions/chat-widget#javascript-api).
+
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
 ### Html
@@ -192,6 +194,7 @@ import { SearchBar } from "docsgpt";
 | **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}` and they appear in the agent's Logs. |
 | **`locale`** | `string` | `"auto"` | Language of the search bar's text and the chat it opens: `"auto"` (the browser's), or `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. |
 | **`translations`** | `Partial<Messages>` | _unset_ | Replaces single strings by key, e.g. `{ askTheAi: 'Ask our assistant' }`. |
+| **`onEvent`** | `(event) => void` | _unset_ | Passed to the chat opened from "Ask the AI": called with each of its events. |
 
 
 Feel free to reach out if you need help customizing or extending the `SearchBar`!

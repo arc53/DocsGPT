@@ -571,6 +571,7 @@ const SearchBarInner = ({
   allowedFileExtensions,
   showMicButton,
   passthrough,
+  onEvent,
 }: SearchBarProps) => {
   const { locale, t } = useMessages();
   const placeholder = placeholderProp ?? t('searchPlaceholder');
@@ -1071,6 +1072,7 @@ const SearchBarInner = ({
           allowedFileExtensions={allowedFileExtensions}
           showMicButton={showMicButton}
           passthrough={passthrough}
+          onEvent={onEvent}
         />
       </Main>
     </ThemeProvider>
