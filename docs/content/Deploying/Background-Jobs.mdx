@@ -64,8 +64,9 @@ All the settings above are listed in the [Settings Reference](/Deploying/Setting
 The analytics sweep spends most of its time waiting for the [decision model](/Models/decision-model#conversation-analytics), up to a few minutes per run, so it has a queue of its own, `analytics` (`ANALYTICS_QUEUE`). The worker only reads messages, builds the model's input and writes labels; it never loads the model. The sweep holds a lock in Redis, so overlapping runs and several workers are safe.
 
 - **A bare prefork worker** (`celery ... worker` with no `-Q`, or `docsgpt worker` on Linux) consumes every queue, `analytics` included. While a backlog is being labelled, one of its processes is busy with the sweep and the others take ingestion and query embedding.
-- **A solo-pool worker must not consume it.** The solo pool runs one task at a time, so a sweep would hold the whole worker and searches would time out waiting for their query embedding. On macOS and Windows, `docsgpt worker` runs the solo pool and leaves `analytics` out; `docsgpt worker --analytics` takes it in a second process. `docsgpt dev` and `docsgpt up --native` start both. With raw Celery and `--pool=solo`, add `-X analytics` and run `celery -A docsgpt.app.celery worker -l INFO -Q analytics --pool=solo` next to it.
+- **A solo-pool worker must not consume it.** The solo pool runs one task at a time, so a sweep would hold the whole worker and searches would time out waiting for their query embedding. On macOS and Windows, `docsgpt worker` runs the solo pool and leaves `analytics` out; `docsgpt worker --analytics` takes it in a second process. `docsgpt up --native` installs both; `docsgpt dev` starts the second only while `DECISION_ANALYTICS_ENABLED` is on, read when it starts. With raw Celery and `--pool=solo`, add `-X analytics` and run `celery -A docsgpt.app.celery worker -l INFO -Q analytics -n analytics@%h --pool=solo` next to it; `-n` gives it a node name of its own on the shared host.
 - **The shipped Compose files and Kubernetes manifest** list it: `-Q docsgpt,parsing,embeddings,analytics`.
+- **On a single-CPU host** a prefork worker starts one process (the default concurrency is the CPU count), so with `DECISION_ANALYTICS_ENABLED` on, a sweep holds it for up to `ANALYTICS_SWEEP_BUDGET_SECONDS` plus one call's `DECISION_BACKGROUND_TIMEOUT`, and searches time out waiting for their query embedding. There, run a dedicated `-Q analytics -c 1` worker as below and drop `analytics` from the main worker's `-Q`, or give the main worker `-c 2`. The shipped files leave concurrency at its default, since each process holds its own memory.
 - **A worker you start with your own `-Q`** must list `analytics` too, or the sweep never runs and the Insights pages stay at **Analyzing conversations**, with none analyzed. Nothing else depends on it.
 
 Beat schedules the sweep and the digest only while `DECISION_ANALYTICS_ENABLED` is on, so the queue gets no messages otherwise; restart beat (the worker that embeds it) after turning the switch on or off. A message no worker takes stays in Redis until one does, which then drops it if its interval has passed.
@@ -73,10 +74,10 @@ Beat schedules the sweep and the digest only while `DECISION_ANALYTICS_ENABLED` 
 To keep the sweep apart from the rest, run one worker for it alone and leave `analytics` out of the others:
 
 ```bash
-celery -A docsgpt.app.celery worker -l INFO -Q analytics -c 1
+celery -A docsgpt.app.celery worker -l INFO -Q analytics -c 1 -n analytics@%h
 ```
 
-One process is enough: only one sweep runs at a time.
+One process is enough: only one sweep runs at a time. `-n` keeps its node name apart from a worker on the same host.
 
 ### Labelling past conversations
 

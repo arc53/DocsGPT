@@ -317,8 +317,9 @@ class TestCrossFieldRules:
     def test_scim_disabled_needs_no_token(self):
         assert Settings.model_validate({"SCIM_ENABLED": False}).SCIM_TOKEN is None
 
-    def test_analytics_backfill_past_retention_is_cut_to_it(self, caplog):
+    def test_analytics_backfill_past_retention_is_cut_to_it(self, caplog, monkeypatch):
         """Labels past retention are purged, so a longer backfill would relabel them; it must not stop startup."""
+        monkeypatch.setattr("docsgpt.core.settings.analytics._WARNED_BACKFILL_CUTS", set())
         with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
             loaded = Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14})
         assert loaded.ANALYTICS_BACKFILL_DAYS == 14
@@ -328,6 +329,19 @@ class TestCrossFieldRules:
             fits = Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 14, "ANALYTICS_RETENTION_DAYS": 14})
         assert fits.ANALYTICS_BACKFILL_DAYS == 14
         assert caplog.text == ""
+
+    def test_the_backfill_cut_is_logged_once_per_process(self, caplog, monkeypatch):
+        """``docsgpt doctor`` builds Settings three times; the same mismatch is one warning, still cut each time."""
+        monkeypatch.setattr("docsgpt.core.settings.analytics._WARNED_BACKFILL_CUTS", set())
+        values = {"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14}
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            first = Settings.model_validate(values)
+            second = Settings(_env_file=None, **values)
+        assert first.ANALYTICS_BACKFILL_DAYS == second.ANALYTICS_BACKFILL_DAYS == 14
+        assert len(caplog.records) == 1
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            Settings.model_validate({**values, "ANALYTICS_BACKFILL_DAYS": 31})
+        assert len(caplog.records) == 2, "a different mismatch is news"
 
     def test_validation_errors_do_not_echo_the_value(self):
         """A secret in the environment must not land in a startup traceback or a log."""

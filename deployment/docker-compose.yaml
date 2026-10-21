@@ -95,7 +95,8 @@ services:
     # the read_document await never resolves; without `embeddings` every search
     # fails after EMBEDDINGS_DELEGATE_TIMEOUT, because EMBEDDINGS_DELEGATE_TO_WORKER
     # is on by default. `analytics` carries the conversation-analytics sweep (idle
-    # unless DECISION_ANALYTICS_ENABLED). For heavy/OCR parsing run a separate
+    # unless DECISION_ANALYTICS_ENABLED); on a 1-CPU host, see "The analytics queue"
+    # in docs/content/Deploying/Background-Jobs.mdx first. For heavy/OCR parsing run a separate
     # worker with `-Q parsing`; to keep query latency off the ingest pool, another
     # with `-Q embeddings`.
     command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,analytics

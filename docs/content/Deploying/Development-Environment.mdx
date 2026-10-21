@@ -154,9 +154,11 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     ```
 
     Both run as children of that terminal, with their output interleaved and labelled, and Ctrl-C stops
-    them together. On macOS and Windows a third child, `analytics`, runs `docsgpt worker --analytics`: the
-    worker there uses the solo pool, which a [conversation-analytics sweep](/Deploying/Background-Jobs#the-analytics-queue)
-    would hold for minutes. Useful flags:
+    them together. On macOS and Windows, while `DECISION_ANALYTICS_ENABLED` is on, a third child, `analytics`,
+    runs `docsgpt worker --analytics`: the worker there uses the solo pool, which a
+    [conversation-analytics sweep](/Deploying/Background-Jobs#the-analytics-queue) would hold for minutes. The
+    setting is read when `docsgpt dev` starts, so after turning it on, stop and start `docsgpt dev` again.
+    Useful flags:
 
     | Flag | What it does |
     | --- | --- |

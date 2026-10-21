@@ -202,6 +202,15 @@ class TestWorker:
         assert "-B" in argv, "the scheduler still runs embedded"
         assert "docsgpt worker --analytics" in capsys.readouterr().err
 
+    def test_the_solo_pool_leaves_the_analytics_queue_alone_with_analytics_off(self, monkeypatch, capsys):
+        """``docsgpt dev`` then starts no analytics worker, and the queue gets nothing to hold."""
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_ANALYTICS_ENABLED", False)
+        assert cli.main(["worker"]) == 0
+        assert celery.start.call_args.args[0][celery.start.call_args.args[0].index("-X") + 1] == "analytics"
+        assert "docsgpt worker --analytics" not in capsys.readouterr().err
+
     def test_a_shared_prefork_pool_keeps_the_analytics_queue(self, monkeypatch):
         celery = self._celery(monkeypatch)
         monkeypatch.setattr(sys, "platform", "linux")
@@ -242,6 +251,16 @@ class TestWorker:
         assert cli.main(["worker", "--analytics"]) == 0
         argv = celery.start.call_args.args[0]
         assert argv[argv.index("--concurrency") + 1] == "1"
+
+    def test_the_analytics_worker_has_its_own_node_name(self, monkeypatch):
+        """Beside the main worker on one host, a shared celery@host name clashes and inspect replies collide."""
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        assert cli.main(["worker", "--analytics"]) == 0
+        argv = celery.start.call_args.args[0]
+        assert argv[argv.index("-n") + 1] == "analytics@%h"
+        assert cli.main(["worker"]) == 0
+        assert "-n" not in celery.start.call_args.args[0], "the main worker keeps Celery's default name"
 
     def test_the_analytics_worker_takes_no_queue_list(self, monkeypatch, capsys):
         self._celery(monkeypatch)
@@ -331,6 +350,10 @@ class TestAnalyticsBackfill:
     def test_without_an_action_prints_usage(self, capsys):
         assert cli.main(["analytics"]) == 2
         assert "docsgpt analytics backfill --days N" in capsys.readouterr().err
+
+    def test_zero_days_are_refused_not_replaced_by_the_default(self, capsys):
+        assert cli.main(["analytics", "backfill", "--days", "0", "--dry-run"]) == 2
+        assert "--days must be 1 to ANALYTICS_RETENTION_DAYS" in capsys.readouterr().err
 
     def test_days_past_retention_are_refused(self, capsys):
         assert cli.main(["analytics", "backfill", "--days", "365"]) == 2

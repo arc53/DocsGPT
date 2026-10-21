@@ -51,6 +51,31 @@ def watchfiles_available() -> bool:
     return True
 
 
+def analytics_enabled(home: Path) -> bool:
+    """Whether the children will start with ``DECISION_ANALYTICS_ENABLED`` on, read the way they read it.
+
+    They inherit this environment, ``DOCSGPT_ENV_FILE`` included, and ``home`` as their ``DOCSGPT_HOME``, so
+    the settings built here from the same file are theirs. The switch is read once, at start, by every process
+    (beat schedules the sweep only while it is on), so turning it on means restarting ``docsgpt dev``.
+
+    Args:
+        home: The children's data home.
+
+    Returns:
+        The switch; True when the settings do not load, so the analytics worker starts as it always did and the
+        children report the broken settings themselves.
+    """
+    from docsgpt.core import paths
+
+    try:
+        from docsgpt.core.settings import Settings
+
+        env_file = paths.env_file() if os.environ.get(paths.ENV_FILE_ENV) else home.expanduser().resolve() / ".env"
+        return bool(Settings(_env_file=env_file, _env_file_encoding="utf-8").DECISION_ANALYTICS_ENABLED)
+    except Exception:  # noqa: BLE001 - a broken setup is the children's to report, not a reason to drop one
+        return True
+
+
 def _reloading_command(command: list[str], watched: Path) -> list[str]:
     """``command`` under watchfiles, restarted when a Python file under ``watched`` changes."""
     return [sys.executable, "-m", "watchfiles", "--filter", "python", shlex.join(command), str(watched)]
@@ -67,7 +92,8 @@ def plan(
     """The children to run, in the order they should start.
 
     Where the worker runs Celery's solo pool (macOS, Windows) it leaves the analytics queue alone, so an
-    ``analytics`` child, ``docsgpt worker --analytics``, runs next to it.
+    ``analytics`` child, ``docsgpt worker --analytics``, runs next to it while ``DECISION_ANALYTICS_ENABLED``
+    is on; while it is off nothing is queued there, and the child would only idle.
 
     Args:
         args: The parsed ``docsgpt dev`` options.
@@ -116,7 +142,7 @@ def plan(
         if getattr(args, "reload", True) and watching:
             worker = _reloading_command(worker, package)
         children.append(Child(name="worker", command=worker, cwd=checkout, env=dict(environment)))
-        if needs_analytics_worker(platform):
+        if needs_analytics_worker(platform) and analytics_enabled(Path(environment["DOCSGPT_HOME"])):
             analytics = [*launcher, "worker", "--analytics", "-l", getattr(args, "loglevel", "INFO")]
             if getattr(args, "reload", True) and watching:
                 analytics = _reloading_command(analytics, package)

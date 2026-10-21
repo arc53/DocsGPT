@@ -14,6 +14,10 @@ from docsgpt.core.settings._shared import SettingsGroup
 
 logger = logging.getLogger(__name__)
 
+# (backfill, retention) pairs already warned about: a process builds Settings more than once (``docsgpt doctor``
+# three times), and the same mismatch is one warning.
+_WARNED_BACKFILL_CUTS: set[tuple[int, int]] = set()
+
 
 class AnalyticsSettings(SettingsGroup):
     """How the analytics sweep runs; none of these are shown in the UI."""
@@ -115,15 +119,18 @@ class AnalyticsSettings(SettingsGroup):
 
         Rows past retention are purged, so a longer backfill would label them again on every sweep. The
         mismatch must not stop the API, the worker or the CLI, which load these settings whether analytics is on
-        or not.
+        or not. Each mismatch is logged once per process, however often the settings are built.
 
         Returns:
             These settings, with the backfill no longer than retention.
         """
         if self.ANALYTICS_BACKFILL_DAYS > self.ANALYTICS_RETENTION_DAYS:
-            logger.warning(
-                "ANALYTICS_BACKFILL_DAYS (%d) exceeds ANALYTICS_RETENTION_DAYS (%d); labelling %d days back",
-                self.ANALYTICS_BACKFILL_DAYS, self.ANALYTICS_RETENTION_DAYS, self.ANALYTICS_RETENTION_DAYS,
-            )
+            cut = (self.ANALYTICS_BACKFILL_DAYS, self.ANALYTICS_RETENTION_DAYS)
+            if cut not in _WARNED_BACKFILL_CUTS:
+                _WARNED_BACKFILL_CUTS.add(cut)
+                logger.warning(
+                    "ANALYTICS_BACKFILL_DAYS (%d) exceeds ANALYTICS_RETENTION_DAYS (%d); labelling %d days back",
+                    *cut, self.ANALYTICS_RETENTION_DAYS,
+                )
             self.ANALYTICS_BACKFILL_DAYS = self.ANALYTICS_RETENTION_DAYS
         return self

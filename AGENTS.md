@@ -125,8 +125,14 @@ about 660 MB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails 
 On macOS, prefer the solo pool for Celery:
 
 ```bash
-python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
+python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo -X analytics
 ```
+
+`-X analytics` keeps the conversation-analytics sweep, which holds a worker for
+minutes, off the solo worker. With `DECISION_ANALYTICS_ENABLED` on, run
+`docsgpt worker --analytics` (or `celery ... worker -Q analytics -n analytics@%h`)
+next to it; `docsgpt worker` excludes the queue itself, and `docsgpt dev` starts
+the analytics worker while the setting is on.
 
 Note that `--pool=solo` costs roughly 350 ms per query embed against ~55 ms on the
 default prefork pool — nearly all of it the solo worker picking the message up, not
@@ -137,7 +143,8 @@ whole job — app tasks, query embedding, and document parsing (the `read_docume
 tool / workflow native-file parse) alike. Use `-Q` only to split load: run the main
 worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
 `-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
-pool. Note the main `ingest` task parses in-process on `docsgpt`; only
+pool; `analytics` needs a consumer too (`-Q analytics -c 1`, or listed in another
+worker's `-Q`). Note the main `ingest` task parses in-process on `docsgpt`; only
 `read_document` is routed to `parsing`. When you split workers, keep `-B` on
 at least one of them.
 

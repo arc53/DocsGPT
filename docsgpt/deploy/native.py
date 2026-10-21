@@ -62,6 +62,9 @@ def service_names(stack_directory: Path, default_directory: Path, platform: Opti
     """
     from docsgpt.cli import needs_analytics_worker
 
+    # Installed whether or not DECISION_ANALYTICS_ENABLED is on, unlike ``docsgpt dev``'s child: turning it on
+    # later is a .env edit and ``docsgpt restart``, which restarts the installed services and installs none, so
+    # the sweeps beat then schedules would wait on a queue nobody consumes. Off, it idles on an empty queue.
     plain = (API_SERVICE, WORKER_SERVICE) + ((ANALYTICS_SERVICE,) if needs_analytics_worker(platform) else ())
     resolved = stack_directory.expanduser().resolve()
     if resolved == default_directory.expanduser().resolve():

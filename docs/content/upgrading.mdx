@@ -203,6 +203,8 @@ Migration `0057_conversation_labels` adds the `conversation_labels` table and an
 
 See [The analytics queue](/Deploying/Background-Jobs#the-analytics-queue).
 
+**Before rolling back to 1.0.0:** an agent created or saved on this release holds an `analytics` block in its `config`, which 1.0.0 does not accept. 1.0.0 then keeps that agent's guardrails but drops its [`api_write_allowlist`](/API/agent-api#letting-api-callers-make-changes), so API-key, widget and public-link callers, and the schedules they set, have every write on the owner's credentials refused. It fails safe, but those agents stop making the changes you allowed. To keep them, [roll back](#rollback) by restoring the backup you took before upgrading.
+
 ### Upgrading to 1.0.0
 
 These apply to 1.0.0. The [changelog](/changelog#100) lists the other changes that need action: `SCIM_TOKEN` with `SCIM_ENABLED`, six retrieved chunks by default, and the removed providers and settings.

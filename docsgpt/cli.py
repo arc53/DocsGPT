@@ -45,8 +45,8 @@ def needs_analytics_worker(platform: Optional[str] = None) -> bool:
     """Whether a default ``docsgpt worker`` here leaves the analytics queue to ``docsgpt worker --analytics``.
 
     A solo pool runs one task at a time, and an analytics sweep holds it for minutes, so the query embeddings
-    behind it would time out. ``docsgpt dev`` and ``docsgpt up --native`` start the analytics worker where this
-    holds.
+    behind it would time out. ``docsgpt up --native`` installs the analytics worker where this holds, and
+    ``docsgpt dev`` starts it there while ``DECISION_ANALYTICS_ENABLED`` is on.
 
     Args:
         platform: A ``sys.platform`` value; this machine's when omitted.
@@ -177,7 +177,8 @@ def _worker(args: argparse.Namespace) -> int:
     pool = args.pool or default_pool()
     argv = ["worker", "-l", args.loglevel]
     if args.analytics:
-        argv += ["-Q", settings.ANALYTICS_QUEUE]
+        # Its own node name: next to the main worker on one host, a second celery@host clashes.
+        argv += ["-Q", settings.ANALYTICS_QUEUE, "-n", "analytics@%h"]
     elif args.queues:
         argv += ["-Q", args.queues]
     elif pool == "solo" and settings.ANALYTICS_QUEUE not in _shared_queues(settings):
@@ -482,7 +483,7 @@ def _analytics(args: argparse.Namespace) -> int:
             return 2
     from docsgpt.core.settings import settings
 
-    days = args.days or settings.ANALYTICS_BACKFILL_DAYS
+    days = args.days if args.days is not None else settings.ANALYTICS_BACKFILL_DAYS
     if not 1 <= days <= settings.ANALYTICS_RETENTION_DAYS:
         # Older labels are purged by retention, so they would be labelled again and again.
         print(f"docsgpt: --days must be 1 to ANALYTICS_RETENTION_DAYS ({settings.ANALYTICS_RETENTION_DAYS})",
