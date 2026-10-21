@@ -53,10 +53,11 @@ export function useSidebarResize({
   const dragRef = React.useRef<Drag | null>(null);
   const handleRef = React.useRef<HTMLDivElement | null>(null);
 
+  // A different agent starts from its own stored width, or the default.
   React.useEffect(() => {
-    if (!storageKey) return;
-    const stored = parseSidebarWidth(readStorage(storageKey));
-    if (stored !== null) setChosenWidth(stored);
+    setChosenWidth(
+      storageKey ? parseSidebarWidth(readStorage(storageKey)) : null,
+    );
   }, [storageKey]);
 
   React.useEffect(() => {
