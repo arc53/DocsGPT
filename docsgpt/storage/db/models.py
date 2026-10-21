@@ -455,8 +455,8 @@ user_custom_models_table = Table(
     Column("display_name", Text, nullable=False),
     Column("description", Text, nullable=False, server_default=""),
     Column("base_url", Text, nullable=False),
-    # AES-CBC ciphertext (base64) keyed via per-user PBKDF2 in
-    # docsgpt.security.encryption.encrypt_credentials.
+    # v2 envelope (AES-GCM, see docsgpt.security.encryption.encrypt_tool_credentials);
+    # legacy v1 AES-CBC blobs remain readable via decrypt_tool_credentials.
     Column("api_key_encrypted", Text, nullable=False),
     Column("capabilities", JSONB, nullable=False, server_default="{}"),
     Column("enabled", Boolean, nullable=False, server_default="true"),

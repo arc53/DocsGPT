@@ -304,3 +304,44 @@ def decrypt_json(blob: str, owner_id: str) -> dict:
     if not isinstance(data, dict):
         raise CredentialDecryptionError("Credential payload is not an object")
     return data
+
+
+def encrypt_tool_credentials(credentials: dict, user_id: str) -> str:
+    """Encrypt tool, MCP and custom-model secrets with the v2 envelope.
+
+    Args:
+        credentials: JSON-serialisable secrets.
+        user_id: The owner the blob belongs to; decryption needs it.
+
+    Returns:
+        The ``v2:<key_id>:<payload>`` string, or ``""`` for empty input.
+    """
+    if not credentials:
+        return ""
+    return encrypt_json(credentials, user_id)
+
+
+def decrypt_tool_credentials(blob: str, user_id: str) -> dict:
+    """Decrypt tool, MCP and custom-model secrets written by either envelope.
+
+    New blobs are v2 (AES-GCM, tampering fails). Legacy v1 blobs (AES-CBC)
+    still decrypt so existing rows keep working until they are re-saved.
+
+    Args:
+        blob: The stored string from :func:`encrypt_tool_credentials` or the
+            legacy :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        The credentials, or an empty dict when the blob is missing,
+        tampered with, or bound to another owner/key.
+    """
+    if not blob:
+        return {}
+    if envelope_key_id(blob) is not None:
+        try:
+            return decrypt_json(blob, user_id)
+        except CredentialDecryptionError as e:
+            logger.warning(f"Failed to decrypt tool credentials: {e}")
+            return {}
+    return decrypt_credentials(blob, user_id)

@@ -239,3 +239,37 @@ class TestResealCredentials:
         monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
         assert encryption.reseal_credentials(blob, "user-1") == ("failed", None)
         assert encryption.reseal_credentials("not base64 !!", "user-1") == ("failed", None)
+
+
+@pytest.mark.unit
+class TestToolCredentialsEnvelope:
+    def test_new_tool_blobs_are_authenticated(self, monkeypatch):
+        """New tool/MCP/custom-model writes use v2 and fail on tampering."""
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        assert blob.startswith("v2:")
+
+        parts = blob.split(":", 2)
+        raw = bytearray(base64.b64decode(parts[2]))
+        raw[-5] ^= 1
+        tampered = f"{parts[0]}:{parts[1]}:" + base64.b64encode(bytes(raw)).decode()
+        assert encryption.decrypt_tool_credentials(tampered, "user-1") == {}
+
+    def test_tool_reader_still_opens_legacy_v1_blobs(self, monkeypatch):
+        """Rows written before the migration stay readable."""
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        legacy = encryption.encrypt_credentials({"api_key": "k"}, "user-1")
+        assert encryption.decrypt_tool_credentials(legacy, "user-1") == {"api_key": "k"}
+
+    def test_tool_reader_rejects_cross_user_replay(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        assert encryption.decrypt_tool_credentials(blob, "user-2") == {}
+
+    def test_tool_helpers_handle_empty_input(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        assert encryption.encrypt_tool_credentials({}, "user-1") == ""
+        assert encryption.decrypt_tool_credentials("", "user-1") == {}

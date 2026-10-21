@@ -29,7 +29,7 @@ from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
 from docsgpt.monitors import secret_refs
-from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.tool_call_attempts import (
@@ -71,7 +71,7 @@ def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_own
     owner = tool_data.get("user_id") or fallback_owner
     if not blob or not owner:
         return action
-    secrets = decrypt_credentials(blob, owner).get(action_name) or {}
+    secrets = decrypt_tool_credentials(blob, owner).get(action_name) or {}
     for section in API_TOOL_SECRET_SECTIONS:
         block = action.get(section)
         props = block.get("properties") if isinstance(block, dict) else None
@@ -2343,7 +2343,7 @@ class ToolExecutor:
                             "agent_id": self.agent_id,
                         },
                     )
-                decrypted = decrypt_credentials(tool_config["encrypted_credentials"], tool_owner)
+                decrypted = decrypt_tool_credentials(tool_config["encrypted_credentials"], tool_owner)
                 tool_config.update(decrypted)
                 tool_config["auth_credentials"] = decrypted
                 tool_config.pop("encrypted_credentials", None)
