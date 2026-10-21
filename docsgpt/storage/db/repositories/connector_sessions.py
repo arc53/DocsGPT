@@ -359,6 +359,51 @@ class ConnectorSessionsRepository:
         )
         return result.rowcount > 0
 
+    def update_if_revision(
+        self,
+        session_id: str,
+        expected_updated_at: Any,
+        fields: dict[str, Any],
+    ) -> bool:
+        """Update a connection only when no newer write has changed it.
+
+        Args:
+            session_id: Connection UUID to update.
+            expected_updated_at: Revision read before a long-running operation.
+            fields: Partial connection fields to write.
+
+        Returns:
+            True when the expected revision still matched and was updated.
+        """
+        filtered = {
+            key: value
+            for key, value in fields.items()
+            if key in _UPDATABLE_SCALARS | _UPDATABLE_JSONB
+        }
+        if not filtered:
+            return False
+        set_clauses: list[str] = []
+        params: dict[str, Any] = {
+            "id": session_id,
+            "expected_updated_at": expected_updated_at,
+        }
+        for column, value in filtered.items():
+            if column in _UPDATABLE_JSONB:
+                set_clauses.append(f"{column} = CAST(:{column} AS jsonb)")
+                params[column] = _jsonb(value)
+            else:
+                set_clauses.append(f"{column} = :{column}")
+                params[column] = value
+        set_clauses.append("updated_at = now()")
+        result = self._conn.execute(
+            text(
+                f"UPDATE connector_sessions SET {', '.join(set_clauses)} "
+                "WHERE id = CAST(:id AS uuid) AND updated_at = :expected_updated_at"
+            ),
+            params,
+        )
+        return result.rowcount > 0
+
     def update_by_legacy_id(self, legacy_mongo_id: str, fields: dict) -> bool:
         legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         filtered = {

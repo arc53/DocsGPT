@@ -70,6 +70,13 @@ const DRAWIO = {
   sync_ingestor: null,
 } as unknown as ConnectorDefinition;
 
+const EXCALIDRAW = {
+  ...DRAWIO,
+  key: 'mcp:excalidraw',
+  name: 'Excalidraw',
+  mcp_url: 'https://mcp.excalidraw.com/mcp',
+} as unknown as ConnectorDefinition;
+
 const DRIVE = {
   key: 'google_drive',
   name: 'Google Drive',
@@ -155,10 +162,13 @@ describe('useConnectorLauncher', () => {
     expect(wizard()).toBe('reconnect:c1');
   });
 
-  it('opens a no-auth MCP preset in the wizard, not the server form', async () => {
-    await act(async () => launchRef!(DRAWIO));
-    expect(wizard()).toBe('connect:');
-  });
+  it.each([DRAWIO, EXCALIDRAW])(
+    'opens the no-auth $name preset in the wizard',
+    async (connector) => {
+      await act(async () => launchRef!(connector));
+      expect(wizard()).toBe('connect:');
+    },
+  );
 
   const purpose = () =>
     container
