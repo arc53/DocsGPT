@@ -227,4 +227,23 @@ describe('WorkflowBuilder insights', () => {
     expect(updateAgent).toHaveBeenCalledTimes(1);
     expect(sentConfig()).toBeNull();
   });
+
+  it('keeps toolbar Save on for an insights edit left by a failed save', async () => {
+    await render();
+    updateAgent
+      .mockReset()
+      .mockImplementation(() =>
+        Promise.resolve({ ok: false, json: () => Promise.resolve({}) }),
+      );
+    await save({ ...details().analytics, digest: true });
+    const onOpenChange = sheet.props!.onOpenChange as (open: boolean) => void;
+    await act(async () => onOpenChange(false));
+    const saveButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'agents.form.buttons.save',
+    );
+    expect(container.textContent).toContain(
+      'agents.workflow.builder.unsavedChanges',
+    );
+    expect(saveButton?.disabled).toBe(false);
+  });
 });

@@ -1426,6 +1426,7 @@ function WorkflowBuilderInner() {
     canManageAgent && savedWorkflowSignature !== null
       ? workflowPayloadSignature !== savedWorkflowSignature ||
         imageFile !== null ||
+        pendingAnalytics !== null ||
         takeovers.length > 0
       : false;
 
