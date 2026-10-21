@@ -225,11 +225,12 @@ class TestWorker:
         assert "-X" not in argv
         assert argv[argv.index("-Q") + 1] == "docsgpt,analytics"
 
-    def test_an_analytics_queue_shared_with_another_is_not_excluded(self, monkeypatch):
-        """Excluding it would drop the queue it shares, such as ``docsgpt``."""
+    @pytest.mark.parametrize("shared", ["docsgpt", "ingest"])
+    def test_an_analytics_queue_shared_with_another_is_not_excluded(self, monkeypatch, shared):
+        """Excluding it would drop the queue it shares, such as ``docsgpt`` or ``ingest``."""
         celery = self._celery(monkeypatch)
         monkeypatch.setattr(sys, "platform", "darwin")
-        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_QUEUE", "docsgpt")
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_QUEUE", shared)
         assert cli.main(["worker"]) == 0
         assert "-X" not in celery.start.call_args.args[0]
 

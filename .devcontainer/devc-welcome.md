@@ -32,7 +32,7 @@ artifact downloads. See "ASGI-only features" in
 ### Celery (Task Queue)
 
 ```bash
-celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,analytics
+celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
 ```
 
 `-B` embeds the beat scheduler, which fires scheduled agent runs, source syncs,

@@ -84,7 +84,7 @@ services:
       - OTEL_SERVICE_NAME=docsgpt-backend
   worker:
     # The bundled worker command behind opentelemetry-instrument.
-    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,analytics
+    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     environment:
       - OTEL_SERVICE_NAME=docsgpt-celery-worker
 ```

@@ -384,7 +384,7 @@ run a dedicated parsing worker, or the tool's await never resolves. Keep
 `analytics` in the list too, or conversation analytics never runs:
 
 ```bash
-celery -A docsgpt.app.celery worker -B -Q docsgpt,parsing,embeddings,analytics -l INFO
+celery -A docsgpt.app.celery worker -B -Q docsgpt,parsing,embeddings,ingest,analytics -l INFO
 ```
 
 Tuning settings: `DOCUMENT_PARSE_TIMEOUT` (seconds the tool awaits before

@@ -2142,6 +2142,7 @@
       "dropzoneText": "Cliquez pour importer ou glissez-déposez",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON ou ZIP, jusqu’à 25 Mo chacun",
       "filesRejected": "Non ajoutés (plus de 25 Mo ou type non pris en charge) : {{files}}",
+      "selectFolder": "Sélectionner un dossier",
       "uploadedFiles": "Fichiers importés",
       "cancel": "Annuler",
       "train": "Ajouter aux connaissances",

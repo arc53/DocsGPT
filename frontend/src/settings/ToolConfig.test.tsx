@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-redux', () => ({
@@ -1069,6 +1069,74 @@ describe('ToolConfig', () => {
       expect(
         (current as UserToolType).actions[0].parameters.properties.q,
       ).toMatchObject({ filled_by_llm: false, required: false });
+    });
+  });
+
+  describe('API action fields', () => {
+    let current: UserToolType | APIToolType;
+    // The settings page keeps the tool in state, as Tools does.
+    function Live({ initial }: { initial: UserToolType | APIToolType }) {
+      const [tool, setTool] = useState(initial);
+      current = tool;
+      return (
+        <ToolConfig tool={tool} setTool={setTool} handleGoBack={() => {}} />
+      );
+    }
+    const headerValue = () =>
+      container.querySelector<HTMLInputElement>(
+        'input[placeholder="settings.tools.headerValuePlaceholder"]',
+      )!;
+    const setValue = (input: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const renderOpen = async () => {
+      await act(async () => {
+        root.render(<Live initial={apiTool} />);
+      });
+      await act(async () => {
+        (
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
+        ).click();
+      });
+    };
+
+    it('settles when two edits land in one commit', async () => {
+      await renderOpen();
+      const input = headerValue();
+      let renders = 0;
+      const observer = new MutationObserver(() => renders++);
+      observer.observe(input, { attributes: true, attributeFilter: ['value'] });
+      // Outside act, so React schedules as in a browser and fast typing can
+      // batch two keystrokes before the effects of the first one run.
+      Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false });
+      try {
+        setValue(input, 'a');
+        setValue(input, 'ab');
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } finally {
+        observer.disconnect();
+        Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+      }
+      expect(renders).toBeLessThan(5);
+      expect(headerValue().value).toBe('ab');
+    });
+
+    it('keeps every character typed into a header value', async () => {
+      await renderOpen();
+      for (const value of ['a', 'ap', 'app', 'appl']) {
+        await act(async () => setValue(headerValue(), value));
+      }
+      expect(headerValue().value).toBe('appl');
+      expect(
+        (current as APIToolType).config.actions.list.headers.properties.Accept
+          .value,
+      ).toBe('appl');
     });
   });
 });

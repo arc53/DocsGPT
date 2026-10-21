@@ -666,7 +666,7 @@ class WorkflowEngine:
         from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
         from docsgpt.storage.db.session import db_readonly
         from docsgpt.storage.storage_creator import StorageCreator
-        from docsgpt.utils import safe_filename
+        from docsgpt.utils import display_filename
 
         loaded: List[str] = []
         raw_ids = self._resolve_input_artifact_ids(inputs)
@@ -699,7 +699,7 @@ class WorkflowEngine:
                 raise ValueError(
                     f"input artifact {artifact_id} exceeds the {max_bytes}-byte sandbox input limit."
                 )
-            filename = safe_filename(version.get("filename") or artifact_id)
+            filename = display_filename(version.get("filename") or artifact_id)
             file_obj = storage.get_file(version["storage_path"])
             try:
                 data = file_obj.read(max_bytes + 1) if max_bytes else file_obj.read()

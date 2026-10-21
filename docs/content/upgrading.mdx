@@ -173,6 +173,17 @@ Newest first. Each note says what an existing deployment has to do.
 
 These apply to the release after 1.0.0.
 
+#### Ingests move to an `ingest` queue
+
+Source uploads, remote and connector ingests, re-ingests, source syncs, graph builds and wiki conversion now go to their own Celery queue, `ingest` (`INGEST_QUEUE`). Chat attachments stay on `docsgpt`. A worker started without `-Q` consumes it automatically. **If you start your worker with an explicit `-Q`, add `ingest`:**
+
+```diff
+- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings
++ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
+```
+
+The bundled Compose and Kubernetes manifests already include it, so pull them along with the code. Without it, new sources stay in "processing" forever, because nothing picks the task up, and no error is logged. Tasks queued before the upgrade are still on `docsgpt` and finish there. If you set `INGEST_QUEUE` to another name, use that name in every `-Q` list instead. To keep long ingests from delaying scheduled runs and cleanups, run a second worker with `-Q ingest`; see [Scaling and scheduled tasks](/Deploying/Kubernetes-Deploying#scaling-and-scheduled-tasks).
+
 #### GUARDRAILS_FLOOR moves to Admin → Guardrails
 
 The [instance floor](/Agents/guardrails#the-instance-floor), the guardrails every agent follows, is now stored in the database and edited by an admin under **Admin → Guardrails** (`GET`/`PUT /api/admin/guardrails`). `GUARDRAILS_FLOOR` is deprecated:
@@ -197,8 +208,8 @@ Migration `0057_conversation_labels` adds the `conversation_labels` table and an
 [Insights](/Using/analytics-and-logs#conversation-insights) are off until you set `DECISION_ANALYTICS_ENABLED=true`. The labelling runs on a new Celery queue, `analytics`. The shipped Compose files and Kubernetes manifest now list it; pull them along with the code. A worker you start with your own `-Q` must add it before you turn analytics on, or nothing is labelled:
 
 ```diff
-- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings
-+ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,analytics
+- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
++ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest,analytics
 ```
 
 See [The analytics queue](/Deploying/Background-Jobs#the-analytics-queue).

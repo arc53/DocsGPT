@@ -144,7 +144,7 @@ A local embedding model costs a few hundred megabytes of resident memory per pro
 
 `EMBEDDINGS_THREADS` sets the intra-op threads of the local ONNX runner; unset, it uses every core. It scales sub-linearly, so several single-threaded workers do more than one many-threaded process on the same cores.
 
-Retrieval then depends on a worker consuming `EMBEDDINGS_QUEUE` (`embeddings` by default). A bare `celery worker` with no `-Q` consumes it along with everything else. **A worker started with an explicit `-Q` must list it** — the bundled Compose and Kubernetes manifests list it in `-Q docsgpt,parsing,embeddings,analytics` for exactly this reason. Omit it and every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` and then returns an answer with no retrieved context, without raising.
+Retrieval then depends on a worker consuming `EMBEDDINGS_QUEUE` (`embeddings` by default). A bare `celery worker` with no `-Q` consumes it along with everything else. **A worker started with an explicit `-Q` must list it** — the bundled Compose and Kubernetes manifests list it in `-Q docsgpt,parsing,embeddings,ingest,analytics` for exactly this reason. Omit it and every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` and then returns an answer with no retrieved context, without raising.
 
 Sharing one worker also shares its concurrency with ingest, so a query can queue behind a long parse. Run a dedicated worker to isolate query latency:
 

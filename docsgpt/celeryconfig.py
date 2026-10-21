@@ -46,14 +46,38 @@ task_routes = {
     "docsgpt.analytics.tasks.analytics_gap_digest": {"queue": settings.ANALYTICS_QUEUE},
 }
 
+# Whole-source jobs can hold a worker slot for hours. On a shared worker two of
+# them fill a ``-c 2`` pool and every beat task (reconciler, schedule dispatch,
+# job sweeps) waits until they finish. Routed here, a separate ``-Q ingest``
+# worker takes them and the default queue stays free. Attachments and single
+# wiki-page re-embeds stay on the default queue: a user is waiting on those.
+INGEST_TASKS = (
+    "docsgpt.api.user.tasks.ingest",
+    "docsgpt.api.user.tasks.ingest_remote",
+    "docsgpt.api.user.tasks.ingest_connector_task",
+    "docsgpt.api.user.tasks.reingest_source_task",
+    "docsgpt.api.user.tasks.sync_source",
+    "docsgpt.api.user.tasks.sync_connector_source",
+    "docsgpt.api.user.tasks.extract_graph",
+    "docsgpt.api.user.tasks.convert_source_to_wiki",
+)
+task_routes.update({name: {"queue": settings.INGEST_QUEUE} for name in INGEST_TASKS})
+
 # Declare every queue so a bare ``celery worker`` (no -Q) consumes ALL of them —
-# the default worker does the whole job, parsing included. Operators who want
-# heavy OCR isolated run one worker with ``-Q docsgpt`` and another with
-# ``-Q parsing``. (dict.fromkeys dedupes if DOCUMENT_PARSE_QUEUE == "docsgpt".)
+# the default worker does the whole job, parsing and ingest included. Operators
+# who want heavy OCR isolated run one worker with ``-Q docsgpt`` and another with
+# ``-Q parsing``; the same goes for ``-Q ingest``. (dict.fromkeys dedupes when a
+# queue setting is "docsgpt".)
 task_queues = tuple(
     Queue(name)
     for name in dict.fromkeys(
-        ["docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE, settings.ANALYTICS_QUEUE]
+        [
+            "docsgpt",
+            settings.DOCUMENT_PARSE_QUEUE,
+            settings.EMBEDDINGS_QUEUE,
+            settings.INGEST_QUEUE,
+            settings.ANALYTICS_QUEUE,
+        ]
     )
 )
 

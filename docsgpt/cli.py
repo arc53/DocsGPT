@@ -204,7 +204,7 @@ def _worker(args: argparse.Namespace) -> int:
 
 def _shared_queues(settings) -> set[str]:
     """The queues other than analytics a worker consumes; excluding analytics must not drop one of them."""
-    return {"docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE}
+    return {"docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE, settings.INGEST_QUEUE}
 
 
 def _beat(args: argparse.Namespace) -> int:

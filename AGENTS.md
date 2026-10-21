@@ -139,14 +139,18 @@ default prefork pool — nearly all of it the solo worker picking the message up
 the embedding itself. That only affects local dev; production runs prefork.
 
 A bare worker (no `-Q`) consumes every configured queue, so one worker does the
-whole job — app tasks, query embedding, and document parsing (the `read_document`
-tool / workflow native-file parse) alike. Use `-Q` only to split load: run the main
-worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
-`-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
-pool; `analytics` needs a consumer too (`-Q analytics -c 1`, or listed in another
-worker's `-Q`). Note the main `ingest` task parses in-process on `docsgpt`; only
-`read_document` is routed to `parsing`. When you split workers, keep `-B` on
-at least one of them.
+whole job — app tasks, ingests, query embedding, and document parsing (the
+`read_document` tool / workflow native-file parse) alike. Use `-Q` only to split load:
+run the main worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker
+with `-Q parsing` for heavy OCR, `-Q embeddings` to keep query latency off the ingest
+pool, and `-Q ingest` for whole-source jobs (`INGEST_QUEUE`: uploads, remote and
+connector ingests, re-ingests, syncs, graph builds, wiki conversion). One of those can
+hold a slot for hours, so on a shared worker they starve beat tasks; attachments and
+single wiki-page re-embeds stay on `docsgpt`. `analytics` needs a consumer too
+(`-Q analytics -c 1`, or listed in another worker's `-Q`). The ingest tasks parse
+in-process; only `read_document` is routed to `parsing`. A worker started with an
+explicit `-Q` list consumes only that list, so every queue must be covered by some
+worker. When you split workers, keep `-B` on at least one of them.
 
 ### Frontend
 

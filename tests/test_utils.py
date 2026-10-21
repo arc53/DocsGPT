@@ -20,6 +20,7 @@ from docsgpt.utils import (
     limit_chat_history,
     num_tokens_from_object_or_list,
     num_tokens_from_string,
+    display_filename,
     safe_filename,
     truncate_to_line_boundary,
     validate_function_name,
@@ -126,6 +127,52 @@ class TestSafeFilename:
     def test_non_latin_filename(self):
         result = safe_filename("документ.pdf")
         assert result.endswith(".pdf")
+
+
+class TestDisplayFilename:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "name",
+        ["report.pdf", "Отчёт за квартал.docx", "\u6587\u4ef6.pdf", "café menu.xlsx", "my  file (v2).txt"],
+    )
+    def test_keeps_readable_names(self, name):
+        assert display_filename(name) == " ".join(name.split())
+
+    @pytest.mark.unit
+    def test_normalizes_to_nfc(self):
+        assert display_filename("cafe\u0301.txt") == "caf\u00e9.txt"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "name, expected",
+        [
+            ("../../etc/passwd", "passwd"),
+            ("a/b\\c.txt", "c.txt"),
+            ('re:po*rt?"<>|.pdf', "report.pdf"),
+            ("..hidden.txt", "hidden.txt"),
+            ("tab\tnew\nline\x00.md", "tab new line.md"),
+        ],
+    )
+    def test_strips_path_and_reserved_characters(self, name, expected):
+        assert display_filename(name) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("name", ["", None, "..", "///", " .docx", "\x00"])
+    def test_falls_back_to_a_generic_name(self, name):
+        result = display_filename(name, fallback="document")
+        assert result.startswith("document")
+        assert "/" not in result and ".." not in result
+
+    @pytest.mark.unit
+    def test_extension_survives_the_fallback(self):
+        assert display_filename("???.docx", fallback="document") == "document.docx"
+
+    @pytest.mark.unit
+    def test_caps_length_in_utf8_bytes_and_keeps_the_extension(self):
+        result = display_filename("ж" * 500 + ".docx")
+        assert result.endswith(".docx")
+        assert len(result.encode("utf-8")) <= 200
 
 
 class TestNumTokens:

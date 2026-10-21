@@ -82,6 +82,13 @@ export interface WidgetProps {
   description?: string;
   heroTitle?: string;
   heroDescription?: string;
+  /**
+   * Questions listed under the welcome card before the first message. A click
+   * sends the question. Blank entries are skipped.
+   */
+  suggestedQuestions?: string[];
+  /** Heading over `suggestedQuestions`; an empty string hides it. */
+  suggestedQuestionsLabel?: string;
   size?:
     | 'small'
     | 'medium'
