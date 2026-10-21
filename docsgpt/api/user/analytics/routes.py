@@ -11,7 +11,7 @@ from docsgpt import decisions
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.now import CHAT_FRESH_SECONDS
 from docsgpt.analytics import insights, schema as analytics_schema, topics as analytics_topics
-from docsgpt.analytics.config import TOPIC_ID, AnalyticsConfig
+from docsgpt.analytics.config import TOPIC_ID, TOPIC_NAME_CHARS, AnalyticsConfig
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.api.user.base import (
@@ -27,6 +27,7 @@ from docsgpt.storage.db.repositories.conversation_labels import (
     GAP_GROUPS,
     LOG_LABELS,
     TAG_PREFIX,
+    TOPIC_PREFIX,
     ConversationLabelsRepository,
     Scope,
     log_label_exists,
@@ -932,7 +933,9 @@ class GetConversationInsights(Resource):
             "operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is "
             "that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' "
             "(from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' "
-            "(still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill)."
+            "(still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). "
+            "For an agent, 'overlapping' lists its topics that can overlap; each one's totals are under "
+            "'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list."
         )
     )
     def post(self):
@@ -962,7 +965,7 @@ class GetConversationInsights(Resource):
             "coverage": dict(_EMPTY_COVERAGE),
             "languages": {},
             "language_warnings": [],
-            "tags": [],
+            "overlapping": [],
             "totals": {},
             "series": [],
         }
@@ -975,22 +978,26 @@ class GetConversationInsights(Resource):
                 config = _agent_analytics(agent)
                 result["enabled"] = available and (agent is None or config.enabled)
                 if agent is not None:
-                    result["tags"] = [{"id": topic.id, "name": topic.name} for topic in config.overlapping()]
+                    result["overlapping"] = [{"id": topic.id, "name": topic.name} for topic in config.overlapping()]
                 if not result["enabled"]:
                     return make_response(jsonify(result), 200)
 
                 scope = _label_scope(user, api_key, agent_pg_id)
                 repo = ConversationLabelsRepository(conn)
                 schema_hash = analytics_schema.SCHEMA_HASH
-                labels = [*insights.TOTAL_LABELS, *(f"{TAG_PREFIX}{tag['id']}" for tag in result["tags"])]
+                # Without an agent, topics would mix every agent's own list into one chart.
+                own = [label for label in insights.TOTAL_LABELS if agent is not None or label != "topic_effective"]
+                series_labels = [label for label in insights.SERIES_LABELS
+                                 if agent is not None or label != "topic_effective"]
+                labels = [*own, *(f"{TAG_PREFIX}{topic['id']}" for topic in result["overlapping"])]
                 result["coverage"] = repo.coverage(scope, schema_hash, start_date, end_date, labelling_from)
                 counts = repo.label_counts(scope, schema_hash, start_date, end_date, labels)
                 sums = repo.label_sums(scope, schema_hash, start_date, end_date, labels)
                 bucket_counts = repo.bucket_counts(
-                    scope, schema_hash, start_date, end_date, insights.SERIES_LABELS, pg_fmt
+                    scope, schema_hash, start_date, end_date, series_labels, pg_fmt
                 )
                 bucket_sums = repo.label_sums(
-                    scope, schema_hash, start_date, end_date, insights.SERIES_LABELS, bucket_format=pg_fmt
+                    scope, schema_hash, start_date, end_date, series_labels, bucket_format=pg_fmt
                 )
 
             totals = insights.totals(labels, counts, sums)
@@ -999,10 +1006,10 @@ class GetConversationInsights(Resource):
             result["language_warnings"] = insights.language_warnings(counts)
             result["series"] = insights.series(
                 _intervals_for_filter(filter_option, start_date, end_date),
-                insights.SERIES_LABELS,
+                series_labels,
                 bucket_counts,
                 bucket_sums,
-                {label: list(totals[label]["options"]) for label in insights.SERIES_LABELS if label in totals},
+                {label: list(totals[label]["options"]) for label in series_labels if label in totals},
             )
         except AccessDenied as denied:
             return _denied(denied)
@@ -1146,13 +1153,13 @@ class GetDocsGaps(Resource):
         return make_response(jsonify(result), 200)
 
 
-@analytics_ns.route("/analytics/topic_suggestions")
-class GetTopicSuggestions(Resource):
+@analytics_ns.route("/analytics/topic_folders")
+class GetTopicFolders(Resource):
     @api.doc(
         description=(
-            "The topic list an agent's sources give (its analytics topics in 'auto' mode), for "
-            "filling a custom list: one topic per documentation section, described by up to five "
-            "page titles. Needs edit access to the agent."
+            "The folders of an agent's sources, largest first: one per documentation section, described "
+            "by up to five page titles. They fill the agent's topic question after its own topics; the "
+            "settings list them so the owner can hide or edit them. Needs edit access to the agent."
         ),
         params={"agent_id": "Agent id"},
     )
@@ -1172,13 +1179,53 @@ class GetTopicSuggestions(Resource):
                 agent = AgentsRepository(conn).get_by_id(access.resource_id)
                 if agent is None:
                     raise AccessDenied(404, "Agent not found")
-                suggested = analytics_topics.folders_of(conn, agent)
+                folders = analytics_topics.folders_of(conn, agent)
         except AccessDenied as denied:
             return _denied(denied)
         except Exception as err:
-            current_app.logger.error(f"Error suggesting topics: {err}", exc_info=True)
+            current_app.logger.error(f"Error listing topic folders: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "topics": suggested}), 200)
+        return make_response(jsonify({"success": True, "folders": folders}), 200)
+
+
+@analytics_ns.route("/analytics/topics")
+class GetAgentTopics(Resource):
+    @api.doc(
+        description=(
+            "Every topic an agent's conversations are labelled with, sorted by name, each with the Logs "
+            "'label' filter that selects it: topic:<name> for a topic that doesn't overlap (its own "
+            "topics and source folders), tag:<id> for one that can. Needs the agent's logs; an agent "
+            "the caller can't see gives an empty list."
+        ),
+        params={"agent_id": "Agent id"},
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("agent_id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "agent_id is required"}), 400
+            )
+        try:
+            with db_readonly() as conn:
+                agent, _api_key, _agent_pg_id = _resolve_agent(conn, agent_id, user)
+                if agent is None:
+                    return make_response(jsonify({"success": True, "topics": []}), 200)
+                config = _agent_analytics(agent)
+                listed = [{"label": f"{TOPIC_PREFIX}{name}", "name": name, "overlap": False}
+                          for name in analytics_topics.options(conn, agent, config)]
+                listed += [{"label": f"{TAG_PREFIX}{topic.id}", "name": topic.name, "overlap": True}
+                           for topic in config.overlapping()]
+        except AccessDenied as denied:
+            return _denied(denied)
+        except Exception as err:
+            current_app.logger.error(f"Error listing agent topics: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        listed.sort(key=lambda topic: topic["name"].lower())
+        return make_response(jsonify({"success": True, "topics": listed}), 200)
 
 
 # Scheduled runs the timeline lists: running ones and every finished state the
@@ -1247,10 +1294,11 @@ def _log_filters(data: dict) -> dict:
         and (
             label in LOG_LABELS
             or (label.startswith(TAG_PREFIX) and TOPIC_ID.match(label[len(TAG_PREFIX):]))
+            or (label.startswith(TOPIC_PREFIX) and 0 < len(label[len(TOPIC_PREFIX):].strip()) <= TOPIC_NAME_CHARS)
         )
     ):
         raise _BadLogFilter(
-            "label must be one of " + ", ".join(LOG_LABELS) + " or tag:<id>"
+            "label must be one of " + ", ".join(LOG_LABELS) + ", tag:<id> or topic:<name>"
         )
     feedback = data.get("feedback") or None
     if feedback not in (None, "like", "dislike"):
@@ -1463,7 +1511,8 @@ class GetUserLogs(Resource):
                     "Only chat turns the decision model labelled this way at "
                     "ANALYTICS_FILTER_MIN_PROBABILITY or better: one of "
                     + ", ".join(LOG_LABELS)
-                    + ", or tag:<id> (a tag of the turn's conversation)"
+                    + ", tag:<id> (a topic of the turn's conversation that can overlap) or topic:<name> "
+                    "(the turn's own topic)"
                 ),
             ),
             "date_from": fields.String(
@@ -1872,6 +1921,8 @@ class GetUserLogs(Resource):
                     params["schema_hash"] = analytics_schema.SCHEMA_HASH
                     params["label_min"] = settings.ANALYTICS_FILTER_MIN_PROBABILITY
                     params["label_name"] = filters["label"]
+                    if filters["label"].startswith(TOPIC_PREFIX):
+                        params["topic_name"] = filters["label"][len(TOPIC_PREFIX):]
 
                 branch_sqls = []
                 for branch in branches:

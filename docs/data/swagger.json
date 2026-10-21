@@ -704,7 +704,7 @@
           "type": "string"
         },
         "label": {
-          "description": "Only chat turns the decision model labelled this way at ANALYTICS_FILTER_MIN_PROBABILITY or better: one of docs_gap, not_answered, negative_reaction, negative_sentiment, frustrated, asks_human, or tag:<id> (a tag of the turn's conversation)",
+          "description": "Only chat turns the decision model labelled this way at ANALYTICS_FILTER_MIN_PROBABILITY or better: one of docs_gap, not_answered, negative_reaction, negative_sentiment, frustrated, asks_human, tag:<id> (a topic of the turn's conversation that can overlap) or topic:<name> (the turn's own topic)",
           "type": "string"
         },
         "level": {
@@ -2675,10 +2675,10 @@
         }
       ]
     },
-    "/api/analytics/topic_suggestions": {
+    "/api/analytics/topic_folders": {
       "get": {
-        "description": "The topic list an agent's sources give (its analytics topics in 'auto' mode), for filling a custom list: one topic per documentation section, described by up to five page titles. Needs edit access to the agent.",
-        "operationId": "get_get_topic_suggestions",
+        "description": "The folders of an agent's sources, largest first: one per documentation section, described by up to five page titles. They fill the agent's topic question after its own topics; the settings list them so the owner can hide or edit them. Needs edit access to the agent.",
+        "operationId": "get_get_topic_folders",
         "parameters": [
           {
             "description": "Agent id",
@@ -2697,6 +2697,31 @@
         ],
         "x-pat-scopes": [
           "agents:read"
+        ]
+      }
+    },
+    "/api/analytics/topics": {
+      "get": {
+        "description": "Every topic an agent's conversations are labelled with, sorted by name, each with the Logs 'label' filter that selects it: topic:<name> for a topic that doesn't overlap (its own topics and source folders), tag:<id> for one that can. Needs the agent's logs; an agent the caller can't see gives an empty list.",
+        "operationId": "get_get_agent_topics",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
         ]
       }
     },
@@ -4018,7 +4043,7 @@
     },
     "/api/get_conversation_insights": {
       "post": {
-        "description": "Insights from the decision model's labels: per label and option the expected count and its rate with a 95% interval widened by the label's calibration error, each label's tier, the same per time bucket, label coverage and the language mix. answer_status rates are over requests (not over greetings). 'available' is the operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' (from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' (still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill).",
+        "description": "Insights from the decision model's labels: per label and option the expected count and its rate with a 95% interval widened by the label's calibration error, each label's tier, the same per time bucket, label coverage and the language mix. answer_status rates are over requests (not over greetings). 'available' is the operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' (from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' (still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). For an agent, 'overlapping' lists its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list.",
         "operationId": "post_get_conversation_insights",
         "parameters": [
           {

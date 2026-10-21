@@ -684,14 +684,24 @@ class TestAnalytics:
         assert _status(_call(app, pg_conn, cls, "post", path, VIEWER, json=body)) == 403
         assert _status(_call(app, pg_conn, cls, "post", path, EDITOR, json=body)) == 200
 
-    def test_topic_suggestions_need_edit(self, app, pg_conn):
-        from docsgpt.api.user.analytics.routes import GetTopicSuggestions
+    def test_topic_folders_need_edit(self, app, pg_conn):
+        from docsgpt.api.user.analytics.routes import GetTopicFolders
 
         agent_id = _agent(pg_conn)
-        path = f"/api/analytics/topic_suggestions?agent_id={agent_id}"
-        assert _status(_call(app, pg_conn, GetTopicSuggestions, "get", path, VIEWER)) == 403
-        assert _status(_call(app, pg_conn, GetTopicSuggestions, "get", path, STRANGER)) == 404
-        resp = _call(app, pg_conn, GetTopicSuggestions, "get", path, EDITOR)
+        path = f"/api/analytics/topic_folders?agent_id={agent_id}"
+        assert _status(_call(app, pg_conn, GetTopicFolders, "get", path, VIEWER)) == 403
+        assert _status(_call(app, pg_conn, GetTopicFolders, "get", path, STRANGER)) == 404
+        resp = _call(app, pg_conn, GetTopicFolders, "get", path, EDITOR)
+        assert _status(resp) == 200
+        assert _json(resp) == {"success": True, "folders": []}
+
+    def test_agent_topics_need_the_logs(self, app, pg_conn):
+        from docsgpt.api.user.analytics.routes import GetAgentTopics
+
+        agent_id = _agent(pg_conn)
+        path = f"/api/analytics/topics?agent_id={agent_id}"
+        assert _status(_call(app, pg_conn, GetAgentTopics, "get", path, VIEWER)) == 403
+        resp = _call(app, pg_conn, GetAgentTopics, "get", path, EDITOR)
         assert _status(resp) == 200
         assert _json(resp) == {"success": True, "topics": []}
 

@@ -125,6 +125,8 @@ LOG_LABELS: Dict[str, tuple[str, str, tuple[str, ...]]] = {
     "asks_human": ("reply", "asks_human", ("yes",)),
 }
 TAG_PREFIX = "tag:"
+#: A Logs filter on the turn's own effective topic: ``topic:<name>``, one of the one-pick question's options.
+TOPIC_PREFIX = "topic:"
 
 
 def _mass(alias: str, options: Iterable[str]) -> str:
@@ -136,9 +138,15 @@ def _mass(alias: str, options: Iterable[str]) -> str:
 def log_label_exists(key: str, message_expr: str) -> str:
     """SQL: the Logs row whose message id is ``message_expr`` carries ``key`` at even odds or better.
 
-    Binds ``:schema_hash`` and ``:label_min``, and ``:label_name`` for a tag. ``key`` must be a ``LOG_LABELS`` key
-    or ``tag:<id>``.
+    Binds ``:schema_hash`` and ``:label_min``, ``:label_name`` for a tag and ``:topic_name`` for a topic. ``key``
+    must be a ``LOG_LABELS`` key, ``tag:<id>`` (the conversation's overlapping topic) or ``topic:<name>`` (the turn's
+    own effective topic).
     """
+    if key.startswith(TOPIC_PREFIX):
+        return f"""EXISTS (
+            SELECT 1 FROM conversation_labels cl
+            WHERE cl.message_id = {message_expr} AND cl.label = 'topic_effective' AND cl.schema_hash = :schema_hash
+              AND COALESCE((cl.probabilities->>CAST(:topic_name AS text))::float8, 0) >= :label_min)"""
     if key.startswith(TAG_PREFIX):
         return f"""EXISTS (
             SELECT 1 FROM conversation_messages lm

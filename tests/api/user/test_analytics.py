@@ -1409,7 +1409,7 @@ class TestConversationInsights:
         assert response.status_code == 200
         data = response.json
         assert data["success"] and data["enabled"] and data["available"]
-        assert data["tags"] == [{"id": _TAG, "name": "Pricing question"}]
+        assert data["overlapping"] == [{"id": _TAG, "name": "Pricing question"}]
         assert data["coverage"] == {"turns": 4, "labelled_turns": 4, "replies": 2, "labelled_replies": 2,
                                     "conversations": 2, "labelled_conversations": 2,
                                     "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0}
@@ -1488,7 +1488,7 @@ class TestConversationInsights:
         mine = _insights(app, pg_conn, "owner-a", {}).json
         assert mine["coverage"]["turns"] == 0
         assert mine["totals"]["frustrated"]["n"] == 0
-        assert mine["tags"] == []
+        assert mine["overlapping"] == []
 
     def test_unknown_agent_is_empty(self, app, pg_conn, analytics_on):
         import uuid as _uuid
@@ -1528,12 +1528,21 @@ class TestConversationInsights:
         assert data["language_warnings"] == ["answer_status", "gap_type", "reaction"]
 
     def test_topic_effective_appears_with_rows(self, app, pg_conn, analytics_on):
-        _labelled_conversation(pg_conn, "u-topic", topics={"install": 0.75, "none of these": 0.25})
-        data = _insights(app, pg_conn, "u-topic", {}).json
+        agent = _analytics_agent(pg_conn, owner="u-topic")
+        _labelled_conversation(pg_conn, "u-topic", agent_id=str(agent["id"]),
+                               topics={"install": 0.75, "none of these": 0.25})
+        data = _insights(app, pg_conn, "u-topic", {"api_key_id": str(agent["id"])}).json
         topic = data["totals"]["topic_effective"]
         assert topic["tier"] == "experimental"
         assert topic["options"]["install"]["expected"] == 1.5
         assert "topic_effective" in data["series"][-1]["labels"]
+
+    def test_the_account_view_has_no_topics(self, app, pg_conn, analytics_on):
+        """Each agent has its own list, so one chart over all of them would mix unrelated lists."""
+        _labelled_conversation(pg_conn, "u-topic", topics={"install": 0.75, "none of these": 0.25})
+        data = _insights(app, pg_conn, "u-topic", {}).json
+        assert "topic_effective" not in data["totals"]
+        assert all("topic_effective" not in bucket["labels"] for bucket in data["series"])
 
     def test_invalid_filter_is_400(self, app, pg_conn, analytics_on):
         assert _insights(app, pg_conn, "u", {"filter_option": "bogus"}).status_code == 400
@@ -1746,8 +1755,28 @@ class TestLogsLabels:
         assert ids({"conversation_id": cid}) == {first, second}
         assert ids({"label": "frustrated", "event_type": "schedule"}) == set()
 
+    def test_topic_filter_matches_turns_about_the_topic(self, app, pg_conn):
+        agent = _analytics_agent(pg_conn)
+        agent_id = str(agent["id"])
+        cid, first, second = _labelled_conversation(pg_conn, "owner", agent_id=agent_id,
+                                                    topics={"install": 0.7, "auth": 0.3})
+        other, other_first, other_second = _labelled_conversation(pg_conn, "owner", agent_id=agent_id,
+                                                                  topics={"install": 0.4, "auth": 0.6})
+        for message, conversation in ((first, cid), (second, cid), (other_first, other),
+                                      (other_second, other)):
+            _chat_log(pg_conn, "owner", message, conversation, agent_id)
+
+        def ids(label):
+            response = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, "label": label})
+            assert response.status_code == 200
+            return {row["message_id"] for row in response.json["logs"]}
+
+        assert ids("topic:install") == {first, second}
+        assert ids("topic:auth") == {other_first, other_second}
+        assert ids("topic:it's quoted") == set()
+
     def test_invalid_label_is_400(self, app, pg_conn):
-        for label in ("bogus", "tag:UPPER123", "tag:", 5, ["frustrated"], {"a": 1}):
+        for label in ("bogus", "tag:UPPER123", "tag:", "topic:", "topic:" + "n" * 61, 5, ["frustrated"], {"a": 1}):
             response = _post_logs(app, pg_conn, "owner", {"label": label})
             assert response.status_code == 400
 
@@ -1762,19 +1791,19 @@ class TestLogsLabels:
         assert data["tag_names"] == {}
 
 
-class TestTopicSuggestions:
+class TestTopicFolders:
     def _get(self, app, pg_conn, user, agent_id):
-        from docsgpt.api.user.analytics.routes import GetTopicSuggestions
+        from docsgpt.api.user.analytics.routes import GetTopicFolders
 
         query = f"?agent_id={agent_id}" if agent_id else ""
         with _patch_analytics_db(pg_conn), app.test_request_context(
-            f"/api/analytics/topic_suggestions{query}", method="GET"
+            f"/api/analytics/topic_folders{query}", method="GET"
         ):
             from flask import request
             request.decoded_token = {"sub": user}
-            return GetTopicSuggestions().get()
+            return GetTopicFolders().get()
 
-    def test_returns_the_auto_list(self, app, pg_conn):
+    def test_lists_the_folders_largest_first(self, app, pg_conn):
         from docsgpt.storage.db.repositories.agents import AgentsRepository
         from docsgpt.storage.db.repositories.sources import SourcesRepository
 
@@ -1784,7 +1813,7 @@ class TestTopicSuggestions:
         agent = AgentsRepository(pg_conn).create("owner", "a", "published", source_id=str(source["id"]))
         response = self._get(app, pg_conn, "owner", str(agent["id"]))
         assert response.status_code == 200
-        assert response.json == {"success": True, "topics": [
+        assert response.json == {"success": True, "folders": [
             {"name": "guides", "description": "Pages such as: Deploy; Setup"},
             {"name": "api", "description": "Pages such as: Auth"},
         ]}
@@ -1794,4 +1823,44 @@ class TestTopicSuggestions:
 
         agent = AgentsRepository(pg_conn).create("owner", "a", "published")
         assert self._get(app, pg_conn, "stranger", str(agent["id"])).status_code == 404
+        assert self._get(app, pg_conn, "owner", None).status_code == 400
+
+
+class TestAgentTopics:
+    def _get(self, app, pg_conn, user, agent_id):
+        from docsgpt.api.user.analytics.routes import GetAgentTopics
+
+        query = f"?agent_id={agent_id}" if agent_id else ""
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            f"/api/analytics/topics{query}", method="GET"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return GetAgentTopics().get()
+
+    def test_every_topic_with_its_logs_label_sorted_by_name(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        structure = {"guides": {"setup.md": {"token_count": 10}}, "api": {"auth.md": {"token_count": 3}},
+                     "faq": {"q.md": {"token_count": 1}}}
+        source = SourcesRepository(pg_conn).create("Docs", user_id="owner", directory_structure=structure)
+        agent = AgentsRepository(pg_conn).create("owner", "a", "published", source_id=str(source["id"]), config={
+            "analytics": {"hidden_folders": ["faq"], "topics": [
+                {"id": _TAG, "name": "Pricing question", "overlap": True},
+                {"id": "billing01", "name": "Billing"}]}})
+        response = self._get(app, pg_conn, "owner", str(agent["id"]))
+        assert response.status_code == 200
+        assert response.json == {"success": True, "topics": [
+            {"label": "topic:api", "name": "api", "overlap": False},
+            {"label": "topic:Billing", "name": "Billing", "overlap": False},
+            {"label": "topic:guides", "name": "guides", "overlap": False},
+            {"label": f"tag:{_TAG}", "name": "Pricing question", "overlap": True},
+        ]}
+
+    def test_needs_the_agents_logs(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create("owner", "a", "published")
+        assert self._get(app, pg_conn, "stranger", str(agent["id"])).json == {"success": True, "topics": []}
         assert self._get(app, pg_conn, "owner", None).status_code == 400
