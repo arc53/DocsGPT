@@ -106,8 +106,12 @@ import {
 /** How long a source a citation opened stays highlighted. */
 const SOURCE_HIGHLIGHT_MS = 2000;
 
-/** Below this a sidebar gets the small panel's two-row header. */
+/** Below this a sidebar gets the narrow header and an icon-only mic. */
 const SIDEBAR_COMPACT_WIDTH = 400;
+// The sidebar's container, named so a host's own containers never match.
+const narrowSidebarQuery = `@container dgpt-sidebar (width < ${SIDEBAR_COMPACT_WIDTH}px)`;
+/** Longer than the slide-in, after which a re-dock doesn't replay it. */
+const SIDEBAR_SLIDE_MS = 320;
 
 /** `example.com/faq` for a source's URL; the URL itself if it won't parse. */
 const sourceHost = (source: string) => {
@@ -303,6 +307,7 @@ const WidgetContainer = styled.div<{
   $modal?: boolean;
   $sidebar?: SidebarSide;
   $isOpen?: boolean;
+  $slideIn?: boolean;
 }>`
   all: initial;
   position: fixed;
@@ -327,9 +332,10 @@ const WidgetContainer = styled.div<{
 
   /* Docked to the window's edge, over the page. Top and bottom follow the
      visual viewport, so a tablet's keyboard doesn't cover the composer. */
-  ${({ $sidebar, $isOpen }) =>
+  ${({ $sidebar, $isOpen, $slideIn }) =>
     $sidebar &&
     css`
+      container: dgpt-sidebar / inline-size;
       top: var(--dgpt-vv-top, 0px);
       bottom: var(--dgpt-vv-bottom, 0px);
       ${$sidebar}: 0;
@@ -338,11 +344,15 @@ const WidgetContainer = styled.div<{
         var(${SIDEBAR_WIDTH_VAR}, ${SIDEBAR_DEFAULT_WIDTH}px) +
           env(safe-area-inset-${$sidebar}, 0px)
       );
+      /* Only as it opens; docking again after a phone-width spell doesn't
+         slide. */
       animation: ${
         $isOpen
-          ? css`
-              ${sidebarIn[$sidebar]} 280ms cubic-bezier(0.16, 1, 0.3, 1)
-            `
+          ? $slideIn
+            ? css`
+                ${sidebarIn[$sidebar]} 280ms cubic-bezier(0.16, 1, 0.3, 1)
+              `
+            : 'none'
           : css`
               ${sidebarOut[$sidebar]} 200ms cubic-bezier(0.4, 0, 1, 1) forwards
             `
@@ -443,6 +453,7 @@ const StyledContainer = styled.div<{
       border-${$sidebar === 'right' ? 'left' : 'right'}: 1px solid
         ${theme.border};
       box-shadow: ${shadows.sidebar};
+      overscroll-behavior: contain;
       animation: none;
       transition: none;
 
@@ -452,45 +463,74 @@ const StyledContainer = styled.div<{
     `}
 `;
 
-// A wide hit area over the sidebar's inner edge; the line inside it lights
-// up on hover, while dragging and on keyboard focus.
+// A wide hit area over the sidebar's inner edge. On hover, while dragging
+// and on keyboard focus a line lights up along the edge, with a grip at its
+// middle.
 const ResizeHandle = styled.div<{ $side: SidebarSide; $dragging: boolean }>`
+  --dgpt-handle-width: 11px;
   position: absolute;
   top: 0;
   bottom: 0;
-  ${(props) => (props.$side === 'right' ? 'left' : 'right')}: -5px;
+  /* Centred on the panel's 1px border. */
+  ${(props) => (props.$side === 'right' ? 'left' : 'right')}: calc(
+    0.5px - var(--dgpt-handle-width) / 2
+  );
   z-index: 6;
-  width: 11px;
+  width: var(--dgpt-handle-width);
   cursor: col-resize;
   touch-action: none;
   outline: none;
 
-  &::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 4px;
-    width: 3px;
-    background-color: ${(props) =>
-      props.$dragging ? props.theme.ring : 'transparent'};
-    transition: background-color 0.15s ease;
+  /* A fingertip needs more than a mouse. */
+  @media (pointer: coarse) {
+    --dgpt-handle-width: 24px;
   }
 
-  &:hover::after {
+  &::after,
+  &::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: ${(props) => (props.$dragging ? 1 : 0)};
+    transition: opacity 0.15s ease;
+  }
+
+  &::after {
+    top: 0;
+    bottom: 0;
+    width: 2px;
     background-color: ${(props) => props.theme.ring};
+  }
+
+  &::before {
+    z-index: 1;
+    top: calc(50% - 16px);
+    width: 4px;
+    height: 32px;
+    border-radius: ${radii.full};
+    background-color: ${(props) => props.theme.mutedForeground};
+  }
+
+  &:hover::after,
+  &:hover::before {
+    opacity: 1;
     /* A pointer passing over the edge doesn't flash it. */
     transition-delay: 0.15s;
   }
 
+  &:focus-visible::after,
+  &:focus-visible::before {
+    opacity: 1;
+  }
+
   &:focus-visible::after {
-    background-color: ${(props) => props.theme.ring};
     box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
   @media (prefers-reduced-motion: reduce) {
     &::after,
-    &:hover::after {
+    &::before {
       transition: none;
     }
   }
@@ -565,6 +605,20 @@ const Header = styled.div`
   box-sizing: border-box;
   padding: 16px 16px 12px 16px;
   border-bottom: 1px solid ${(props) => props.theme.border};
+
+  /* A narrow sidebar keeps its header to two short lines: a smaller avatar,
+     and the title and description on a line each (see Title, Description). */
+  ${narrowSidebarQuery} {
+    && > :first-child {
+      width: 32px;
+      height: 32px;
+    }
+
+    && > :first-child svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
 `;
 
 const ContentWrapper = styled.div`
@@ -589,6 +643,14 @@ const HeaderActions = styled.div<{ $compact?: boolean }>`
       flex-direction: column;
       align-items: flex-end;
     `}
+
+  /* A narrow sidebar puts Close on top and the chat's buttons below; with
+     only two buttons they still share a row. */
+  ${narrowSidebarQuery} {
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
+    max-width: 68px;
+  }
 `;
 
 const HeaderActionsRow = styled.div`
@@ -607,6 +669,12 @@ const Title = styled.h3`
   color: ${(props) => props.theme.foreground};
   margin: 0;
   overflow-wrap: break-word;
+
+  ${narrowSidebarQuery} {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
 `;
 
 const Description = styled.p`
@@ -616,6 +684,13 @@ const Description = styled.p`
   margin: 0;
   padding: 0;
   overflow-wrap: break-word;
+
+  ${narrowSidebarQuery} {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
 `;
 
 const Conversation = styled.div<{ $hidden?: boolean }>`
@@ -624,6 +699,8 @@ const Conversation = styled.div<{ $hidden?: boolean }>`
   padding: 16px;
   text-align: left;
   overflow-y: auto;
+  /* Scrolling past either end doesn't carry on into the host page. */
+  overscroll-behavior: contain;
   display: ${(props) => (props.$hidden ? 'none' : 'flex')};
   flex-direction: column;
   gap: 20px;
@@ -1387,10 +1464,11 @@ const StopGlyph = styled.span`
   background-color: currentColor;
 `;
 // Centred in the empty conversation.
-const HeroContainer = styled.div`
+// Centred in the floating panel; at the top of a full-height sidebar.
+const HeroContainer = styled.div<{ $top?: boolean }>`
   box-sizing: border-box;
   width: 100%;
-  margin: auto 0;
+  margin: ${(props) => (props.$top ? '8px 0 auto' : 'auto 0')};
 `;
 // SharedAgentCard: a filled Card, at the top of the conversation.
 const HeroWrapper = styled.div`
@@ -1761,6 +1839,7 @@ const Hero = ({
   questionsLabel,
   questionsDisabledReason,
   onQuestion,
+  anchorTop,
 }: {
   title: string;
   description: string;
@@ -1770,10 +1849,11 @@ const Hero = ({
   /** Set while a send is blocked; the questions are disabled with it as their tooltip. */
   questionsDisabledReason?: string;
   onQuestion: (question: string) => void;
+  anchorTop?: boolean;
 }) => {
   const labelId = React.useId();
   return (
-    <HeroContainer>
+    <HeroContainer $top={anchorTop}>
       <HeroWrapper>
         <AgentAvatar src={icon} size={48} fallback="mark" />
         <HeroText>
@@ -1842,6 +1922,7 @@ const Launcher = (
   // State lags a render behind; the controller answers isOpen() at once.
   const openRef = React.useRef(defaultOpen);
   const coreRef = React.useRef<WidgetCoreHandle>(null);
+  const launcherRef = React.useRef<HTMLButtonElement>(null);
 
   const setOpenState = React.useCallback((next: boolean) => {
     openRef.current = next;
@@ -1890,6 +1971,7 @@ const Launcher = (
   return (
     <ThemeProvider theme={themes[coreProps.theme ?? 'dark']}>
       <FloatingButton
+        ref={launcherRef}
         type="button"
         lang={locale}
         $bg={buttonBg}
@@ -1909,6 +1991,7 @@ const Launcher = (
         handleClose={handleClose}
         onEvent={emit}
         coreRef={coreRef}
+        returnFocusRef={launcherRef}
       />
     </ThemeProvider>
   );
@@ -1943,6 +2026,7 @@ export const WidgetCore = ({
   ephemeral = false,
   onEvent,
   coreRef,
+  returnFocusRef,
 }: WidgetCoreProps) => {
   const { locale, t, plural } = useMessages();
   const sidebarLayout = layout === 'sidebar';
@@ -2308,6 +2392,19 @@ export const WidgetCore = ({
     if (isOpen === wasOpenRef.current) return;
     wasOpenRef.current = isOpen;
     emit({ type: isOpen ? 'open' : 'close' });
+    // Focus left inside the closing panel would be lost; elsewhere on the
+    // page it stays where the visitor put it.
+    if (!isOpen && containerRef.current?.contains(document.activeElement))
+      returnFocusRef?.current?.focus();
+  }, [isOpen]);
+
+  // The sidebar slides in as it opens, and only then.
+  const [slideIn, setSlideIn] = React.useState(true);
+  useClientLayoutEffect(() => {
+    if (!isOpen) return;
+    setSlideIn(true);
+    const timer = window.setTimeout(() => setSlideIn(false), SIDEBAR_SLIDE_MS);
+    return () => window.clearTimeout(timer);
   }, [isOpen]);
 
   React.useEffect(() => {
@@ -3036,12 +3133,14 @@ export const WidgetCore = ({
       : baseDimensions;
   if (!mounted) return null;
 
-  // Two rows in the small panel and a narrow sidebar, Expand and Close on
-  // top; the DOM follows what's on screen so Tab does too. Full screen has
-  // room for one row.
+  // Two rows in the small panel, Expand and Close on top; the DOM follows
+  // what's on screen so Tab does too. Full screen has room for one row. A
+  // narrow sidebar stacks its header by container query instead, so it
+  // follows a drag as it happens.
+  const compactHeader = size === 'small' && !mobileWidth;
+  // The mic's label goes once the width is set; mid-drag it would flicker.
   const narrowSidebar =
     Boolean(docked) && sidebar.width < SIDEBAR_COMPACT_WIDTH;
-  const compactHeader = (size === 'small' && !mobileWidth) || narrowSidebar;
   const chatActions = (
     <>
       {queries.length > 0 && (
@@ -3109,6 +3208,7 @@ export const WidgetCore = ({
           $modal={size === 'large'}
           $sidebar={docked}
           $isOpen={isOpen}
+          $slideIn={slideIn}
           style={
             docked
               ? ({
@@ -3368,6 +3468,7 @@ export const WidgetCore = ({
                       suggestedQuestionsLabel ?? t('suggestedQuestions')
                     }
                     questionsDisabledReason={questionBlockedReason}
+                    anchorTop={Boolean(docked)}
                     onQuestion={sendSuggestedQuestion}
                   />
                 )}

@@ -186,6 +186,8 @@ export interface WidgetCoreProps extends WidgetProps {
   isOpen: boolean;
   prefilledQuery?: string;
   coreRef?: React.Ref<WidgetCoreHandle>;
+  /** Takes focus when the panel closes with focus inside it. */
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
   /** A one-off chat: stored conversations are neither read, written nor removed. */
   ephemeral?: boolean;
 }

@@ -86,7 +86,17 @@ export function useSidebarResize({
     if (drag.width !== drag.startWidth) choose(drag.width);
   };
 
+  // Closed, or gone full screen, mid-drag: the handle is unmounted and its
+  // pointer events stop, so end the drag here rather than leave the page's
+  // cursor and selection locked.
+  React.useEffect(() => {
+    if (!active) endDrag();
+  }, [active]);
   React.useEffect(() => () => dragRef.current?.style?.remove(), []);
+
+  // A drag whose handle lost the pointer without telling us.
+  const isStale = (drag: Drag) =>
+    !handleRef.current?.hasPointerCapture?.(drag.pointerId);
 
   // Written straight to the nodes, so a long conversation isn't re-rendered
   // per pointer move; the width is committed once the drag ends.
@@ -102,6 +112,7 @@ export function useSidebarResize({
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current && isStale(dragRef.current)) endDrag();
     if (event.button !== 0 || dragRef.current) return;
     // Keeps the press from starting a text selection.
     event.preventDefault();
@@ -148,7 +159,10 @@ export function useSidebarResize({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (dragRef.current) return;
+    if (dragRef.current) {
+      if (!isStale(dragRef.current)) return;
+      endDrag();
+    }
     const next = sidebarWidthForKey(
       event.key,
       event.shiftKey,

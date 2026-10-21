@@ -125,6 +125,8 @@ const Scroll = styled.div`
   box-sizing: border-box;
   padding: 4px 8px 16px 8px;
   overflow-y: auto;
+  /* Scrolling past either end doesn't carry on into the host page. */
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 16px;
