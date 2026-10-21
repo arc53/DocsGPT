@@ -77,14 +77,16 @@ def _summary_row(row: dict) -> bool:
     metadata = row.get("metadata", row.get("message_metadata"))
     if isinstance(metadata, dict) and metadata.get(COMPRESSION_SUMMARY_MARKER) is True:
         return True
-    return row.get("prompt") == COMPRESSION_SUMMARY_PROMPT and not row.get("tool_calls") and not metadata
+    calls = row["has_tool_calls"] if "has_tool_calls" in row else row.get("tool_calls")
+    return row.get("prompt") == COMPRESSION_SUMMARY_PROMPT and not calls and not metadata
 
 
 def messages(rows: list[dict]) -> list[Message]:
     """A conversation's user messages, in position order, from its ``conversation_messages`` rows.
 
     Args:
-        rows: The rows as ``ConversationsRepository.get_messages`` returns them.
+        rows: The rows as ``ConversationsRepository.get_messages`` returns them, or as
+            ``ConversationLabelsRepository.source_messages`` loads them (``has_tool_calls`` for ``tool_calls``).
     """
     out = []
     for row in sorted(rows, key=lambda r: int(r.get("position") or 0)):

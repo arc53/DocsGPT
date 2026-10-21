@@ -50,7 +50,7 @@ import socket
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from sqlalchemy.exc import IntegrityError
 
@@ -144,6 +144,54 @@ class _Item:
 def _asked(items: list[_Item]) -> int:
     """The states among ``items`` that will be asked (not those that failed to build)."""
     return sum(item.state is not None for item in items)
+
+
+class _Read:
+    """The conversations a pass has read this sweep, and those its candidate query must still leave out.
+
+    A conversation read leaves the query by itself once each source the pass built for it (a user message, or the
+    conversation: ``None``) has its marker written, so only the rest is excluded: those queued, late, retried or set
+    aside, about a call's worth plus what failed, whatever the size of the backfill. One the query returns again all
+    the same (a marker stale since it was written: an edit during the call, a model change) is skipped and held out
+    from then on, so a pass still reads a conversation once, as when every one read was excluded.
+    """
+
+    def __init__(self) -> None:
+        self.read: set[str] = set()
+        self.open: dict[str, set[Optional[str]]] = {}  # conversation to its sources without a marker written
+        self.held: set[str] = set()  # returned again once read: excluded for the rest of the sweep
+
+    def again(self, cid: str) -> bool:
+        """Whether ``cid`` was read already, and so is skipped; it is then excluded from the next queries."""
+        if cid not in self.read:
+            return False
+        self.held.add(cid)
+        return True
+
+    def add(self, cid: str, sources: Iterable[Optional[str]]) -> None:
+        """``cid`` was read, and states built for ``sources``."""
+        self.read.add(cid)
+        self.open[cid] = set(sources)
+        if not self.open[cid]:
+            del self.open[cid]
+
+    def written(self, cid: str, source: Optional[str]) -> None:
+        """``source``'s marker was written (committed)."""
+        sources = self.open.get(cid)
+        if sources is not None:
+            sources.discard(source)
+            if not sources:
+                del self.open[cid]
+
+    def discard(self, cid: str) -> None:
+        """Forget ``cid``: the pass reads and builds it again."""
+        self.read.discard(cid)
+        self.open.pop(cid, None)
+        self.held.discard(cid)
+
+    def exclude(self) -> set[str]:
+        """What the candidate query leaves out."""
+        return self.open.keys() | self.held
 
 
 @dataclass
@@ -244,12 +292,15 @@ class Sweep:
         self.stats: Counter = Counter()
         self.stopped: Optional[str] = None
         self._agents: dict[str, Optional[_Agent]] = {}
+        # The loaded rows of conversations with states queued (and the one being built), dropped once written
+        # (``_release``), so a backfill holds about a call's worth of them.
         self._messages: dict[str, list[states.Message]] = {}
         self._conversations: dict[str, tuple[Any, Optional[str]]] = {}  # (updated_at, hash) as read
         self._queue: list[_Item] = []
         self._started = time.monotonic()
         self._pass_deadline: Optional[float] = None  # the message pass's share of the budget
-        self._seen: set[str] = set()  # conversations the message pass has read, across its two turns
+        self._seen = _Read()  # conversations the message pass has read, across its two turns
+        self._seen_conversations = _Read()  # and the conversation pass
         self._late: set[tuple] = set()  # item keys with a state not answered: none of their rows is written
         self._answered = False  # a call of this sweep answered something: the backend works
         self._parked: list[tuple[_Item, str]] = []  # failed alone before that, charged once a call answers
@@ -332,6 +383,13 @@ class Sweep:
         self._conversations[conversation_id] = (loaded["updated_at"], loaded["hash"])
         return msgs
 
+    def _release(self) -> None:
+        """Drop the loaded rows of every conversation with nothing queued; ``_write_group`` loads any it needs."""
+        queued = {item.conversation_id for item in self._queue}
+        for cache in (self._messages, self._conversations):
+            for cid in cache.keys() - queued:
+                del cache[cid]
+
     # ---- message pass ---------------------------------------------------------------------------------------------
 
     def message_pass(self) -> None:
@@ -346,15 +404,17 @@ class Sweep:
             with db_readonly() as conn:
                 candidates = ConversationLabelsRepository(conn).message_candidates(
                     schema.SCHEMA_HASH, self.model_version, self.days, settings.ANALYTICS_TURN_SETTLE_SECONDS,
-                    PAGE, agent_id=self.agent_id, exclude=self._seen,
+                    PAGE, agent_id=self.agent_id, exclude=self._seen.exclude(),
                 )
             if not candidates:
                 break
             for candidate in candidates:
                 cid = candidate["conversation_id"]
-                self._seen.add(cid)
+                if self._seen.again(cid):
+                    continue
                 with db_readonly() as conn:
                     groups = self._message_items(conn, candidate)
+                self._seen.add(cid, (group[0].source for group in groups))
                 for group in groups:
                     if not self._in_pass():
                         self._seen.discard(cid)
@@ -365,6 +425,7 @@ class Sweep:
                     self._queue.extend(group)
                     if _asked(self._queue) >= cap:
                         self._flush("analytics_turn")
+                self._release()
                 if not self._in_pass():
                     break
         if self._queue:  # built already: asked while the pass may still call
@@ -372,6 +433,7 @@ class Sweep:
         for item in self._queue:  # not asked: its conversation is built again by the next turn
             self._seen.discard(item.conversation_id)
         self._queue = []
+        self._release()
 
     def _message_items(self, conn, candidate: dict) -> list[list[_Item]]:
         """The states of a conversation's unlabelled messages, one group per message; the request type is last,
@@ -428,28 +490,32 @@ class Sweep:
 
     def conversation_pass(self) -> None:
         """Ask goal met and the agent's tags of every idle conversation that needs them."""
-        seen: set[str] = set()
+        seen = self._seen_conversations
         cap = self._cap()
         while self._in_pass():
             with db_readonly() as conn:
                 candidates = ConversationLabelsRepository(conn).conversation_candidates(
                     schema.SCHEMA_HASH, self.model_version, self.days, settings.ANALYTICS_CONVERSATION_IDLE_MINUTES,
-                    PAGE, agent_id=self.agent_id, exclude=seen,
+                    PAGE, agent_id=self.agent_id, exclude=seen.exclude(),
                 )
             if not candidates:
                 break
             for candidate in candidates:
-                seen.add(candidate["conversation_id"])
+                if seen.again(candidate["conversation_id"]):
+                    continue
+                seen.add(candidate["conversation_id"], (None,))
                 with db_readonly() as conn:
                     item = self._conversation_item(conn, candidate)
                 self._queue.append(item)
                 if _asked(self._queue) >= cap:
                     self._flush("analytics_conversation")
+                self._release()
                 if not self._in_pass():
                     break
         if self._queue:
             self._flush("analytics_conversation")
         self._queue = []  # what the budget left unasked: the next sweep asks it
+        self._release()
 
     def _conversation_item(self, conn, candidate: dict) -> _Item:
         """The conversation's state; a state-less item, written as an ``_error`` marker, when the candidate query
@@ -486,14 +552,15 @@ class Sweep:
         """Settle resolutions still pending once their conversation is past the window; no model call.
 
         One that cannot be recomputed (no user message left, or no ``goal_met``) is deleted with its experience,
-        so it is not loaded again every sweep; the conversation pass writes both again with ``goal_met``.
+        so it is not loaded again every sweep; the conversation pass writes both again with ``goal_met``. Either
+        way it is no candidate after, so none is excluded unless the query returns it again.
         """
-        seen: set[str] = set()
+        seen = _Read()
         while self._going():
             with db_readonly() as conn:
                 candidates = ConversationLabelsRepository(conn).pending_resolutions(
                     schema.SCHEMA_HASH, self.model_version, settings.ANALYTICS_RESOLUTION_WINDOW_HOURS, PAGE,
-                    agent_id=self.agent_id, exclude=seen,
+                    agent_id=self.agent_id, exclude=seen.exclude(),
                 )
             if not candidates:
                 break
@@ -501,7 +568,9 @@ class Sweep:
                 if not self._going():
                     break
                 cid = candidate["conversation_id"]
-                seen.add(cid)
+                if seen.again(cid):
+                    continue
+                seen.add(cid, ())
                 with db_session() as conn:
                     repo = ConversationLabelsRepository(conn)
                     rows = self._conversation_rows(conn, candidate, self._load(conn, cid))
@@ -509,6 +578,7 @@ class Sweep:
                         repo.upsert_many(rows)
                     else:
                         repo.delete_outcome(cid)
+                self._release()
                 if rows:
                     self.stats["resolutions"] += 1
                     self.stats["rows"] += len(rows)
@@ -674,6 +744,7 @@ class Sweep:
             with db_session() as conn:
                 for cid, group in groups.items():
                     self._write_group(conn, cid, group, conversation_level)
+            self._written(rows, conversation_level)
             return
         except IntegrityError:
             logger.info("Analytics: a labelled message changed while the sweep ran; writing conversations singly")
@@ -681,8 +752,16 @@ class Sweep:
             try:
                 with db_session() as conn:
                     self._write_group(conn, cid, group, conversation_level)
+                self._written(group, conversation_level)
             except IntegrityError:
                 logger.debug("Analytics: conversation %s changed while it was labelled; skipped", cid)
+
+    def _written(self, rows: list[dict], conversation_level: bool) -> None:
+        """Tell the pass's ``_Read`` which markers ``rows`` committed, so their conversations leave its exclusion."""
+        seen, markers = (self._seen_conversations, ("goal_met", ERROR)) if conversation_level else (self._seen, MARKERS)
+        for row in rows:
+            if row["label"] in markers:
+                seen.written(row["conversation_id"], row["message_id"])
 
     def _write_group(self, conn, cid: str, rows: list[dict], conversation_level: bool) -> None:
         repo = ConversationLabelsRepository(conn)

@@ -37,6 +37,13 @@ class TestMessages:
         typed = _row(7, "[Context Compression Summary]", metadata={"request_id": "r"})
         assert [m.id for m in states.messages([typed])] == ["m7"]
 
+    def test_a_legacy_summary_label_with_tool_calls_is_a_message_as_the_sweep_loads_it(self):
+        # ``source_messages`` loads ``has_tool_calls`` in place of the calls themselves
+        label = "[Context Compression Summary]"
+        rows = [{"id": "m0", "position": 0, "prompt": label, "response": "a", "status": "complete",
+                 "message_metadata": {}, "sources": [], "has_tool_calls": called} for called in (True, False)]
+        assert [len(states.messages([row])) for row in rows] == [1, 0]
+
     def test_turns_need_a_complete_real_answer(self):
         msgs = states.messages([
             _row(0, "a"), _row(1, "b", "  "), _row(2, "c", states.TERMINATED_RESPONSE_PLACEHOLDER),

@@ -5,7 +5,9 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
+import re
 import uuid
+from typing import Any
 
 import pytest
 from sqlalchemy import text
@@ -24,6 +26,7 @@ from docsgpt.storage.db.repositories.conversation_labels import (
     Scope,
     _has_text,
     _is_turn,
+    _message_hash,
 )
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
@@ -991,3 +994,186 @@ class TestBatchCap:
         assert (first, "request_type") in labels
         assert not [key for key in labels if key[0] == second] and (first, "reaction") not in labels
         assert report["timeouts"] >= 1
+
+
+_CANDIDATE_QUERIES = ("message_candidates", "conversation_candidates", "pending_resolutions")
+
+
+@pytest.fixture
+def excludes(monkeypatch):
+    """The ``exclude`` every candidate query is asked with, per query, in order."""
+    asked: dict[str, list[set]] = {name: [] for name in _CANDIDATE_QUERIES}
+    for name in _CANDIDATE_QUERIES:
+        real = getattr(ConversationLabelsRepository, name)
+
+        def spy(self, *args, _real=real, _name=name, **kwargs):
+            asked[_name].append(set(kwargs.get("exclude", ())))
+            return _real(self, *args, **kwargs)
+
+        monkeypatch.setattr(ConversationLabelsRepository, name, spy)
+    return asked
+
+
+class _Reasons(FakeDecider):
+    """Fails, on every call of a feature, the requests whose state mentions a text, each with its reason."""
+
+    def __init__(self, reasons: dict[tuple[str, str], str]):
+        super().__init__(ANSWERS)
+        self.reasons = reasons
+
+    def decide_batch(self, requests, *, feature, budget=Budget.HOT):
+        result = super().decide_batch(requests, feature=feature, budget=budget)
+        why = [next((reason for (f, needle), reason in self.reasons.items()
+                     if f == feature and needle in json.dumps(r.state)), None) for r in requests]
+        return BatchResult([None if w else d for d, w in zip(result, why)], why)
+
+
+def _asked_about(calls, feature, needle) -> int:
+    return sum(needle in json.dumps(r.state) for c in calls if c.feature == feature for r in c.requests)
+
+
+class _NoRows:
+    def fetchall(self):
+        return []
+
+
+class _Recorder:
+    """A connection that records the statements run on it and returns no rows."""
+
+    def __init__(self):
+        self.statements: list[tuple[Any, dict]] = []
+
+    def execute(self, statement, params=None):
+        self.statements.append((statement, params or {}))
+        return _NoRows()
+
+
+def _generic_plan(conn, statement, params: dict) -> str:
+    """``EXPLAIN`` of ``statement`` as a prepared statement's generic plan: the plan psycopg's prepared statements
+    get from Postgres after a few runs on one connection (``plan_cache_mode`` forces it on the first)."""
+    names: list[str] = []
+
+    def number(match):
+        if match.group(1) not in names:
+            names.append(match.group(1))
+        return f"${names.index(match.group(1)) + 1}"
+
+    def literal(value):
+        if isinstance(value, (list, tuple, set)):
+            value = "{" + ",".join(value) + "}"
+        if isinstance(value, str):
+            return "'" + value.replace("'", "''") + "'"
+        return repr(value)
+
+    sql = re.sub(r"%\((\w+)\)s", number, str(statement.compile(dialect=conn.dialect))).replace("%%", "%")
+    conn.exec_driver_sql("SET LOCAL plan_cache_mode = force_generic_plan")
+    conn.exec_driver_sql(f"PREPARE candidates AS {sql}")
+    try:
+        args = ", ".join(literal(params[name]) for name in names)
+        return "\n".join(row[0] for row in conn.exec_driver_sql(f"EXPLAIN EXECUTE candidates({args})"))
+    finally:
+        conn.exec_driver_sql("DEALLOCATE candidates")
+
+
+@pytest.mark.unit
+class TestScale:
+    def test_a_backfill_excludes_only_what_may_come_back(self, db, fake, excludes, monkeypatch):
+        monkeypatch.setattr(tasks, "PAGE", 4)
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 4)  # two one-message conversations a call
+        cids = []
+        for i in range(30):
+            cids.append(_conversation(db))
+            _message(db, cids[-1], 0, "How do I install it?", ago_minutes=100 + i)
+        report = tasks.sweep()
+        assert report["messages"] == 30 and report["conversations"] == 30 and report["stopped"] is None
+        assert all((None, "goal_met") in _labels(db, cid) for cid in cids)
+        assert _asked_about(fake.calls, "analytics_turn", "install") == 60  # each message's two states, once
+        assert max(len(exclude) for asked in excludes.values() for exclude in asked) <= tasks.PAGE
+
+    def test_what_stays_a_candidate_stays_excluded_and_the_backfill_ends(self, db, excludes, monkeypatch):
+        monkeypatch.setattr(tasks, "PAGE", 3)
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 4)
+        prompts = {3: "retry me", 7: "late one", 9: "How do I pay?"}
+        cids = {}
+        for i in range(12):
+            cid = _conversation(db)
+            _message(db, cid, 0, prompts.get(i, "How do I install it?"), ago_minutes=100 + i)
+            cids[prompts.get(i, cid)] = cid
+        failing = _Reasons({("analytics_turn", "retry me"): "backend_error", ("analytics_turn", "late one"): "timeout",
+                            ("analytics_conversation", "pay?"): "backend_error"})
+        with installed(failing):
+            report = tasks.sweep()
+        assert report["stopped"] is None and report["retries"] == 2 and report["timeouts"] == 2
+        for needle, feature in (("retry me", "analytics_turn"), ("late one", "analytics_turn"),
+                                ("pay?", "analytics_conversation")):
+            per_message = 2 if feature == "analytics_turn" else 1
+            assert _asked_about(failing.calls, feature, needle) == per_message, needle
+        retried, late, paid = cids["retry me"], cids["late one"], cids["How do I pay?"]
+        assert [key[1] for key in _labels(db, retried)] == ["_retry"] and not _labels(db, late)
+        assert (None, "_retry") in _labels(db, paid) and (None, "goal_met") not in _labels(db, paid)
+        assert sum((None, "goal_met") in _labels(db, cid) for cid in cids.values()) == 9
+        later = [exclude for exclude in excludes["message_candidates"] if retried in exclude]
+        assert later and all(late in exclude for exclude in later[1:])
+        assert max(len(exclude) for exclude in excludes["message_candidates"]) <= 3  # the two, a call queued
+        assert any(paid in exclude for exclude in excludes["conversation_candidates"])
+        assert max(len(exclude) for exclude in excludes["conversation_candidates"]) <= tasks.PAGE + 1
+
+    @pytest.mark.parametrize("query", _CANDIDATE_QUERIES)
+    def test_the_exclusion_is_hashed_in_a_generic_plan(self, db, query):
+        recorder = _Recorder()
+        args = {"message_candidates": (30, 60, 50), "conversation_candidates": (30, 30, 50),
+                "pending_resolutions": (24, 50)}[query]
+        exclude = [str(uuid.uuid4()) for _ in range(3)]
+        getattr(ConversationLabelsRepository(recorder), query)(schema.SCHEMA_HASH, VERSION, *args, exclude=exclude)
+        (statement, params), = recorder.statements
+        plan = _generic_plan(db, statement, params)
+        assert "NOT (hashed SubPlan" in plan and "<> ALL" not in plan, plan
+
+    def test_a_backfill_holds_the_rows_of_about_a_call(self, db, fake, monkeypatch):
+        monkeypatch.setattr(tasks, "PAGE", 4)
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 4)
+        for _ in range(12):
+            _two_turns(db)
+        held: list[int] = []
+        real = tasks.Sweep._load
+
+        def load(self, conn, conversation_id):
+            msgs = real(self, conn, conversation_id)
+            held.append(max(len(self._messages), len(self._conversations)))
+            return msgs
+
+        monkeypatch.setattr(tasks.Sweep, "_load", load)
+        sweep = tasks.Sweep(VERSION)
+        report = sweep.run()
+        assert report["messages"] == 24 and report["conversations"] == 12
+        # at most the conversations of one call: the conversation pass asks one state of each
+        assert max(held) <= settings.ANALYTICS_BATCH_STATES and not sweep._messages and not sweep._conversations
+
+
+@pytest.mark.unit
+class TestSourceMessages:
+    def test_only_what_the_states_read_is_loaded_and_the_hash_is_unchanged(self, db):
+        cid = _conversation(db)
+        first = _message(db, cid, 0, "How do I install it?",
+                         tool_calls=[{"call_id": "c1", "job_id": "job-1", "status": "running"}])
+        second = _message(db, cid, 1, "and on Windows?")
+        db.execute(text("UPDATE conversation_messages SET thought = 'thinking...',"
+                        " attachments = ARRAY[gen_random_uuid()], message_metadata = '{\"request_id\": \"r\"}'"
+                        " WHERE id = CAST(:id AS uuid)"), {"id": first})
+        # the hash as it was always computed: what the states read, nothing else (stored labels compare with it)
+        pinned = dict(db.execute(text(
+            "SELECT CAST(id AS text), md5(jsonb_build_array(prompt, response, sources, status,"
+            " extract(epoch FROM timestamp))::text) FROM conversation_messages"
+            " WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid}).fetchall())
+        loaded = ConversationLabelsRepository(db).source_messages(cid)
+        rows = {row["id"]: row for row in loaded["messages"]}
+        assert {m: rows[m]["source_hash"] for m in rows} == pinned
+        assert {m: row["has_tool_calls"] for m, row in rows.items()} == {first: True, second: False}
+        assert not {"thought", "attachments", "tool_calls", "feedback"} & set(rows[first])
+        assert rows[first]["message_metadata"] == {"request_id": "r"}
+        conversation_hash = db.execute(text(
+            f"SELECT md5(string_agg({_message_hash('m')}, ',' ORDER BY m.position)) FROM conversation_messages m"
+            " WHERE m.conversation_id = CAST(:cid AS uuid)"), {"cid": cid}).scalar()
+        assert loaded["hash"] == conversation_hash
+        msgs = states.messages(loaded["messages"])
+        assert [m.id for m in msgs] == [first, second] and msgs[0].source_hash == pinned[first]

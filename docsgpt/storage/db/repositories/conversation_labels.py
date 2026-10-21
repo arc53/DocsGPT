@@ -149,16 +149,28 @@ def _unlabelled(m: str) -> str:
 
 
 def _scope(params: Dict[str, Any], agent_id: Optional[str], exclude: Iterable[str], column: str) -> str:
-    """The optional agent and already-seen-conversation clauses, binding their parameters."""
+    """The optional agent and already-seen-conversation clauses, binding their parameters.
+
+    The conversations left out are a hashed subplan whatever the plan: ``<> ALL(array)`` scans the array for every
+    row in a generic plan (what psycopg's prepared statements get after a few runs on one connection), and on
+    Postgres 14 in every plan.
+    """
     clauses = ""
     if agent_id:
         clauses += " AND ag.id = CAST(:agent_id AS uuid)"
         params["agent_id"] = agent_id
     exclude = list(exclude)
     if exclude:
-        clauses += f" AND {column} <> ALL(CAST(:exclude AS uuid[]))"
+        clauses += f" AND {column} NOT IN (SELECT unnest(CAST(:exclude AS uuid[])))"
         params["exclude"] = exclude
     return clauses
+
+
+def _has_tool_calls(m: str) -> str:
+    """SQL: message ``m`` has tool calls, as Python's truth of its ``tool_calls`` tells it (``states._summary_row``),
+    so the sweep loads the test rather than the calls."""
+    empty = ", ".join(f"'{value}'::jsonb" for value in ("[]", "{}", "null", "false", "0", '""'))
+    return f"COALESCE({m}.tool_calls NOT IN ({empty}), false)"
 
 
 def _turns(agent: str, user: str, newest: str) -> str:
@@ -476,7 +488,7 @@ class ConversationLabelsRepository:
             settle_seconds: How long a message must be unchanged.
             limit: Most conversations returned.
             agent_id: Only this agent's conversations.
-            exclude: Conversation ids already handled in this sweep.
+            exclude: Conversation ids to leave out: those the sweep read that may still be candidates.
 
         Returns:
             ``conversation_id``, ``user_id``, ``agent_id`` (resolved through the API key when the conversation
@@ -566,7 +578,8 @@ class ConversationLabelsRepository:
     def source_messages(self, conversation_id: str) -> Dict[str, Any]:
         """A conversation's messages as the sweep builds states from them, with what it stores of their source.
 
-        One statement, so the hashes describe exactly the rows returned.
+        One statement, so the hashes describe exactly the rows returned. Only the columns ``states.messages``
+        reads: a message's thought, attachments and tool calls (``has_tool_calls`` in their place) are not loaded.
 
         Returns:
             ``messages``: its ``conversation_messages`` rows in position order (as ``row_to_dict`` gives them),
@@ -576,7 +589,9 @@ class ConversationLabelsRepository:
         result = self._conn.execute(
             text(
                 f"""
-                SELECT m.*, {_message_hash("m")} AS source_hash, src.updated_at AS conversation_updated_at,
+                SELECT m.id, m.position, m.status, m.prompt, m.response, m.sources, m.message_metadata,
+                       m.timestamp, m.updated_at, {_has_tool_calls("m")} AS has_tool_calls,
+                       {_message_hash("m")} AS source_hash, src.updated_at AS conversation_updated_at,
                        src.hash AS conversation_hash
                 FROM conversation_messages m
                 CROSS JOIN ({_conversation_source("CAST(:conversation_id AS uuid)")}) src
@@ -688,7 +703,7 @@ class ConversationLabelsRepository:
             window_hours: The resolution window.
             limit: Most conversations returned.
             agent_id: Only this agent's conversations.
-            exclude: Conversation ids already handled in this sweep.
+            exclude: Conversation ids to leave out: those the sweep read that may still be candidates.
 
         Returns:
             ``conversation_id``, ``user_id``, ``agent_id`` and ``last_at``.
