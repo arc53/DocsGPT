@@ -46,7 +46,8 @@ class AnalyticsSettings(SettingsGroup):
         le=64,
         description=(
             "States per decision-model call, about four turns: around 25 s of compute on 4 vCPU, within the "
-            "background deadline at the default share."
+            "background deadline at the default share. Never more than DECISION_MAX_BATCH_STATES; below a message's "
+            "states (up to four), a message is split across calls."
         ),
     )
     ANALYTICS_TURN_SETTLE_SECONDS: int = Field(

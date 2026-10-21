@@ -34,6 +34,9 @@ from docsgpt.utils import strip_null_bytes
 #: (``_fresh``), is labelled again.
 MARKERS = ("request_type", "_error")
 ERROR = "_error"
+#: Not a marker: how many times the backend failed on a message (or a conversation) as it is now, in
+#: ``probabilities["attempts"]``. The sweep asks it again until the count reaches its limit, then writes ``_error``.
+RETRY = "_retry"
 
 _UPSERT_COLUMNS = (
     "conversation_id", "message_id", "reply_message_id", "user_id", "agent_id", "level", "label", "top", "p_top",
@@ -150,6 +153,21 @@ def _scope(params: Dict[str, Any], agent_id: Optional[str], exclude: Iterable[st
         clauses += f" AND {column} <> ALL(CAST(:exclude AS uuid[]))"
         params["exclude"] = exclude
     return clauses
+
+
+def _turns(agent: str, user: str, newest: str) -> str:
+    """SQL: an ``ORDER BY`` that takes turns between agents, each one's newest first.
+
+    A candidate's rank within its agent (conversations without one, within their user) comes first, so one busy
+    agent cannot keep another's older messages at the back until they leave the window.
+    """
+    return (f"ROW_NUMBER() OVER (PARTITION BY {agent}, CASE WHEN {agent} IS NULL THEN {user} END"
+            f" ORDER BY {newest} DESC), {newest} DESC")
+
+
+def _attempts(row: str) -> str:
+    """SQL: the backend failures a ``RETRY`` row ``row`` (joined only while current) counts; 0 without one."""
+    return f"COALESCE(CAST({row}.probabilities->>'attempts' AS integer), 0)"
 
 
 # A conversation-level row (no message), written so the unique target index serves the lookup.
@@ -437,11 +455,13 @@ class ConversationLabelsRepository:
         agent_id: Optional[str] = None,
         exclude: Iterable[str] = (),
     ) -> List[dict]:
-        """Conversations with unlabelled messages, the newest such message first.
+        """Conversations with unlabelled messages, taking turns between agents, each one's newest first.
 
         A message is a candidate when it is a finished user message from the last ``days``, unchanged for
         ``settle_seconds``, in a conversation with no agent or whose agent has analytics on, and it has no marker
-        (``MARKERS``) under the running schema and model newer than its last edit.
+        (``MARKERS``) under the running schema and model newer than its last edit. Each agent's conversation with
+        the newest such message comes first, then each one's second, and so on (``_turns``); conversations
+        without an agent take turns by user.
 
         Args:
             schema_hash: The running ``schema.SCHEMA_HASH``.
@@ -462,16 +482,20 @@ class ConversationLabelsRepository:
         result = self._conn.execute(
             text(
                 f"""
-                SELECT CAST(m.conversation_id AS text) AS conversation_id, c.user_id,
-                       CAST(ag.id AS text) AS agent_id, MAX(m.timestamp) AS newest
-                FROM conversation_messages m
-                JOIN conversations c ON c.id = m.conversation_id
-                {_AGENT}
-                WHERE m.timestamp >= NOW() - make_interval(days => :days)
-                  AND m.updated_at <= NOW() - make_interval(secs => :settle)
-                  AND {_usable("m")} AND {_ENABLED} AND {_unlabelled("m")} {scope}
-                GROUP BY m.conversation_id, c.user_id, ag.id
-                ORDER BY newest DESC
+                WITH cand AS (
+                    SELECT m.conversation_id, c.user_id, ag.id AS agent_id, MAX(m.timestamp) AS newest
+                    FROM conversation_messages m
+                    JOIN conversations c ON c.id = m.conversation_id
+                    {_AGENT}
+                    WHERE m.timestamp >= NOW() - make_interval(days => :days)
+                      AND m.updated_at <= NOW() - make_interval(secs => :settle)
+                      AND {_usable("m")} AND {_ENABLED} AND {_unlabelled("m")} {scope}
+                    GROUP BY m.conversation_id, c.user_id, ag.id
+                )
+                SELECT CAST(conversation_id AS text) AS conversation_id, user_id, CAST(agent_id AS text) AS agent_id,
+                       newest
+                FROM cand
+                ORDER BY {_turns("agent_id", "user_id", "newest")}, conversation_id
                 LIMIT :limit
                 """
             ),
@@ -509,13 +533,17 @@ class ConversationLabelsRepository:
 
         Returns:
             By message id: its ``timestamp``, ``updated_at`` and ``source_hash`` (``_message_hash``), for a marker
-            written without loading it.
+            written without loading it, and ``attempts``, the backend failures on it as it is now (``RETRY``).
         """
         result = self._conn.execute(
             text(
                 f"""
-                SELECT CAST(m.id AS text) AS id, m.timestamp, m.updated_at, {_message_hash("m")} AS source_hash
+                SELECT CAST(m.id AS text) AS id, m.timestamp, m.updated_at, {_message_hash("m")} AS source_hash,
+                       {_attempts("rt")} AS attempts
                 FROM conversation_messages m
+                LEFT JOIN conversation_labels rt
+                    ON rt.message_id = m.id AND rt.label = '{RETRY}' AND rt.schema_hash = :schema_hash
+                   AND rt.model_version = :model_version AND {_fresh("rt", "m.updated_at", _message_hash("m"))}
                 WHERE m.conversation_id = CAST(:conversation_id AS uuid)
                   AND m.timestamp >= NOW() - make_interval(days => :days)
                   AND m.updated_at <= NOW() - make_interval(secs => :settle)
@@ -525,7 +553,8 @@ class ConversationLabelsRepository:
             {"conversation_id": conversation_id, "schema_hash": schema_hash, "model_version": model_version,
              "days": int(days), "settle": float(settle_seconds)},
         )
-        return {row.id: {"timestamp": row.timestamp, "updated_at": row.updated_at, "source_hash": row.source_hash}
+        return {row.id: {"timestamp": row.timestamp, "updated_at": row.updated_at, "source_hash": row.source_hash,
+                         "attempts": row.attempts}
                 for row in result.fetchall()}
 
     def source_messages(self, conversation_id: str) -> Dict[str, Any]:
@@ -569,7 +598,8 @@ class ConversationLabelsRepository:
         agent_id: Optional[str] = None,
         exclude: Iterable[str] = (),
     ) -> List[dict]:
-        """Idle conversations whose own labels (goal met, tags) are missing or stale, the most recent first.
+        """Idle conversations whose own labels (goal met, tags) are missing or stale, taking turns between agents,
+        each one's most recent first (``_turns``).
 
         A conversation is a candidate when its last user message is within the last ``days`` and older than
         ``idle_minutes``, every one of its messages in the window is labelled, and it has no ``goal_met`` row
@@ -578,8 +608,9 @@ class ConversationLabelsRepository:
         (a current ``_error`` row) is not asked again.
 
         Returns:
-            ``conversation_id``, ``user_id``, ``agent_id``, ``last_at`` and ``tags_hash``, the value to store
-            as the ``goal_met`` row's ``options_hash``.
+            ``conversation_id``, ``user_id``, ``agent_id``, ``last_at``, ``tags_hash``, the value to store
+            as the ``goal_met`` row's ``options_hash``, and ``attempts``, the backend failures on the conversation
+            as it is now (``RETRY``).
         """
         params: Dict[str, Any] = {"schema_hash": schema_hash, "model_version": model_version, "days": int(days),
                                   "idle": int(idle_minutes), "limit": int(limit)}
@@ -600,12 +631,16 @@ class ConversationLabelsRepository:
                     HAVING MAX(m.timestamp) < NOW() - make_interval(mins => :idle)
                 )
                 SELECT CAST(conv.conversation_id AS text) AS conversation_id, c.user_id,
-                       CAST(ag.id AS text) AS agent_id, conv.last_at, {_TAGS_HASH} AS tags_hash
+                       CAST(ag.id AS text) AS agent_id, conv.last_at, {_TAGS_HASH} AS tags_hash,
+                       {_attempts("rt")} AS attempts
                 FROM conv
                 JOIN conversations c ON c.id = conv.conversation_id
                 {_AGENT}
                 LEFT JOIN conversation_labels g
                     ON g.conversation_id = conv.conversation_id AND g.message_id IS NULL AND g.label = 'goal_met'
+                LEFT JOIN conversation_labels rt
+                    ON rt.conversation_id = conv.conversation_id AND rt.message_id IS NULL AND rt.label = '{RETRY}'
+                   AND rt.schema_hash = :schema_hash AND rt.model_version = :model_version AND {fresh("rt")}
                 WHERE {_ENABLED}
                   AND (g.id IS NULL OR g.schema_hash <> :schema_hash OR g.model_version <> :model_version
                        OR NOT {fresh("g")} OR g.options_hash IS DISTINCT FROM {_TAGS_HASH})
@@ -621,7 +656,7 @@ class ConversationLabelsRepository:
                         AND m.timestamp >= NOW() - make_interval(days => :days)
                         AND {_usable("m")} AND {_unlabelled("m")}
                   ) {scope}
-                ORDER BY conv.last_at DESC
+                ORDER BY {_turns("ag.id", "c.user_id", "conv.last_at")}, conv.conversation_id
                 LIMIT :limit
                 """
             ),

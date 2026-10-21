@@ -8,20 +8,26 @@ API process's model or the remote endpoint at background priority, and no worker
 
 One sweep, under a Redis lock so overlapping beats and several workers are safe:
 
-1. **Message pass.** Unlabelled messages (``ConversationLabelsRepository.message_candidates``), a conversation at a
-   time, newest first: per message its turn, the reaction to the answer before it, its topic (the one-pick question
-   over the agent's own topics and source folders) and its request type,
-   batched ``ANALYTICS_BATCH_STATES`` states to a call. Each batch's rows, and the derived ``gap_type`` and
-   ``topic_effective`` rows of its conversations, are written in one transaction.
-2. **Conversation pass.** Idle conversations without current ``goal_met``: goal met and every topic that can overlap
+1. **Pending pass.** ``resolution`` recomputed, without a model call, once a pending conversation passes the window.
+2. **Message pass.** Unlabelled messages (``ConversationLabelsRepository.message_candidates``), a conversation at a
+   time, taking turns between agents, each one's newest first: per message its turn, the reaction to the answer
+   before it, its topic (the one-pick question over the agent's own topics and source folders) and its request
+   type, batched ``ANALYTICS_BATCH_STATES`` states to a call (never more than ``DECISION_MAX_BATCH_STATES``). Each
+   batch's rows, and the derived ``gap_type`` and ``topic_effective`` rows of its conversations, are written in one
+   transaction. It may take ``MESSAGE_SHARE`` of the budget, so a backlog of messages never starves step 3.
+3. **Conversation pass.** Idle conversations without current ``goal_met``: goal met and every topic that can overlap
    (a ``tag:<id>`` label) in one request, then the derived ``resolution`` and ``experience``. Changing the topics
-   that can overlap asks it again; changing the others does not.
-3. **Pending pass.** ``resolution`` recomputed, without a model call, once a pending conversation passes the window.
+   that can overlap asks it again; changing the others does not. What budget it leaves goes back to step 2.
 
-It stops starting calls when its time budget is spent, when a call comes back ``unavailable`` (nothing is written for
-that call; the next beat retries) or ``timeout`` (the model is busy with chat). Items that timed out are not written
-and are picked up by the next sweep; a state that could not be built, or came back ``bad_item``, is written as an
-``_error`` row and not retried until the schema or the model changes.
+It stops starting calls when its time budget is spent, when a call answers nothing (``unavailable``, or every state
+failed: nothing is written for that call and the next beat retries) or comes back ``timeout`` (the model is busy with
+chat). Items that timed out are not written and are picked up by the next sweep. A state that could not be built, or
+that the model called ``bad_item`` while answering the rest of its call, is written as an ``_error`` row and not
+retried until the schema or the model changes. A ``backend_error`` (the runtime raised, the server refused the item
+or answered something else) is the backend's fault more often than the item's: the message (or conversation) gets a
+``_retry`` row counting the attempt and is asked again by the next sweep, and only its ``ATTEMPTS``-th failure is an
+``_error``. A call that answered nothing about a single message counts as such an attempt too, so one message the
+backend always fails on cannot stop every sweep.
 
 Every row a state yields records what the state was built from (``source_updated_at``, ``source_hash``: the message's,
 or for a conversation's own rows the conversation's, as read), so an edit made while the call ran leaves the labels
@@ -48,7 +54,12 @@ from docsgpt.celery_init import celery
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Request
 from docsgpt.storage.db.repositories.agents import AgentsRepository
-from docsgpt.storage.db.repositories.conversation_labels import ERROR, ConversationLabelsRepository
+from docsgpt.storage.db.repositories.conversation_labels import (
+    ERROR,
+    MARKERS,
+    RETRY,
+    ConversationLabelsRepository,
+)
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
@@ -60,6 +71,14 @@ PAGE = 50
 DIGEST_DAYS = 7
 #: Gap groups a digest names.
 DIGEST_GROUPS = 5
+#: The share of what is left of a sweep's budget after the pending pass that the message pass may take before the
+#: conversation pass runs; the message pass then resumes with whatever the conversation pass leaves.
+MESSAGE_SHARE = 0.7
+#: Failed attempts on a message or conversation (a ``backend_error``, or a call about it alone that answered
+#: nothing) before it is marked ``_error``; each one before is a ``_retry`` row, asked again by the next sweep.
+ATTEMPTS = 3
+#: Why a state-less item failed: its state could not be built.
+BUILD_FAILED = "build_failed"
 
 TURN_QUESTIONS = {"answer_status": schema.ANSWER_STATUS, "unanswered_reason": schema.UNANSWERED_REASON}
 REACTION_QUESTIONS = {"reaction": schema.REACTION, "frustrated": schema.FRUSTRATED,
@@ -89,11 +108,17 @@ class _Item:
     hashes: dict = field(default_factory=dict)  # question key to the row's options_hash
     source_updated_at: Any = None  # the source message's (or conversation's) updated_at, as read
     source_hash: Optional[str] = None  # and its content hash, as read
+    attempts: int = 0  # backend failures on the source as read (its current _retry row)
 
     @property
     def source(self) -> Optional[str]:
         """The user message the state was built for: the reply, for a reaction; ``None`` for a conversation."""
         return self.reply_message_id or self.message_id
+
+    @property
+    def key(self) -> tuple[str, Optional[str]]:
+        """What its marker labels: the conversation and the source message (``None`` for the conversation)."""
+        return self.conversation_id, self.source
 
 
 def _asked(items: list[_Item]) -> int:
@@ -189,10 +214,14 @@ class Sweep:
         self._conversations: dict[str, tuple[Any, Optional[str]]] = {}  # (updated_at, hash) as read
         self._queue: list[_Item] = []
         self._started = time.monotonic()
+        self._pass_deadline: Optional[float] = None  # the message pass's share of the budget
+        self._seen: set[str] = set()  # conversations the message pass has read, across its two turns
+        self._late: set[tuple] = set()  # item keys with a state not answered: none of their rows is written
 
     # ---- control --------------------------------------------------------------------------------------------------
 
     def _going(self) -> bool:
+        """Whether the sweep may start another call: not stopped, and its budget not spent."""
         if self.stopped:
             return False
         if self.deadline is not None and time.monotonic() >= self.deadline:
@@ -200,15 +229,31 @@ class Sweep:
             return False
         return True
 
+    def _in_pass(self) -> bool:
+        """``_going``, and the running pass's own share of the budget (``MESSAGE_SHARE``) not spent."""
+        return self._going() and (self._pass_deadline is None or time.monotonic() < self._pass_deadline)
+
+    @staticmethod
+    def _cap() -> int:
+        """States per call: ``ANALYTICS_BATCH_STATES``, never more than the decision client takes."""
+        return max(1, min(settings.ANALYTICS_BATCH_STATES, settings.DECISION_MAX_BATCH_STATES))
+
     def run(self) -> dict:
-        """The three passes, in order, each while the sweep is still going."""
-        self.message_pass()
+        """The passes, each while the sweep is still going: pending resolutions (no model call), messages until
+        ``MESSAGE_SHARE`` of the budget left is spent, conversations, then messages again with what is left."""
+        self.pending_pass()
+        if self.deadline is not None and self._going():
+            now = time.monotonic()
+            self._pass_deadline = now + MESSAGE_SHARE * (self.deadline - now)
+        if self._going():
+            self.message_pass()
+        self._pass_deadline = None
         if self._going():
             self.conversation_pass()
         if self._going():
-            self.pending_pass()
+            self.message_pass()
         report = {**{k: self.stats.get(k, 0) for k in (
-            "messages", "conversations", "resolutions", "calls", "states", "rows", "errors", "timeouts",
+            "messages", "conversations", "resolutions", "calls", "states", "rows", "errors", "retries", "timeouts",
             "truncated")}, "stopped": self.stopped, "ms": round((time.monotonic() - self._started) * 1000)}
         return report
 
@@ -246,30 +291,30 @@ class Sweep:
     # ---- message pass ---------------------------------------------------------------------------------------------
 
     def message_pass(self) -> None:
-        """Label unlabelled messages, the conversation with the newest one first."""
-        seen: set[str] = set()
-        while self._going():
+        """Label unlabelled messages, a conversation at a time, in ``message_candidates`` order."""
+        cap = self._cap()
+        while self._in_pass():
             with db_readonly() as conn:
                 candidates = ConversationLabelsRepository(conn).message_candidates(
                     schema.SCHEMA_HASH, self.model_version, self.days, settings.ANALYTICS_TURN_SETTLE_SECONDS,
-                    PAGE, agent_id=self.agent_id, exclude=seen,
+                    PAGE, agent_id=self.agent_id, exclude=self._seen,
                 )
             if not candidates:
                 break
             for candidate in candidates:
-                seen.add(candidate["conversation_id"])
+                self._seen.add(candidate["conversation_id"])
                 with db_readonly() as conn:
                     groups = self._message_items(conn, candidate)
                 for group in groups:
-                    # a message's states go in one call, so its marker is never written without the rest
-                    if self._queue and _asked(self._queue) + _asked(group) > settings.ANALYTICS_BATCH_STATES:
+                    # a message's states go in one call where the cap allows, so its marker is written with the rest
+                    if self._queue and _asked(self._queue) + _asked(group) > cap:
                         self._flush("analytics_turn")
                     self._queue.extend(group)
-                    if _asked(self._queue) >= settings.ANALYTICS_BATCH_STATES:
+                    if _asked(self._queue) >= cap:
                         self._flush("analytics_turn")
-                if not self._going():
+                if not self._in_pass():
                     break
-        if self._queue and self._going():
+        if self._queue:  # built already: asked unless the whole budget is spent
             self._flush("analytics_turn")
 
     def _message_items(self, conn, candidate: dict) -> list[list[_Item]]:
@@ -291,9 +336,9 @@ class Sweep:
         for i, m in enumerate(msgs):
             if m.id not in unlabelled:
                 continue
-            self.stats["messages"] += 1
             base = dict(owner, message_id=m.id, occurred_at=m.timestamp, lang=states.lang(m.prompt),
-                        source_updated_at=m.updated_at, source_hash=m.source_hash)
+                        source_updated_at=m.updated_at, source_hash=m.source_hash,
+                        attempts=unlabelled[m.id].get("attempts") or 0)
             plan: list[tuple[str, Callable[[], Any], dict, dict]] = []
             if m.is_turn:
                 plan.append(("turn", lambda i=i: states.turn(msgs, i), TURN_QUESTIONS, {}))
@@ -319,7 +364,6 @@ class Sweep:
             row = unlabelled[message_id]
             logger.warning("Analytics: message %s is a candidate but not a user message; marked as an error",
                            message_id)
-            self.stats["messages"] += 1
             groups.append([_Item(level="message", message_id=message_id, occurred_at=row["timestamp"], lang="en",
                                  source_updated_at=row["updated_at"], source_hash=row["source_hash"], **owner)])
         return groups
@@ -329,7 +373,8 @@ class Sweep:
     def conversation_pass(self) -> None:
         """Ask goal met and the agent's tags of every idle conversation that needs them."""
         seen: set[str] = set()
-        while self._going():
+        cap = self._cap()
+        while self._in_pass():
             with db_readonly() as conn:
                 candidates = ConversationLabelsRepository(conn).conversation_candidates(
                     schema.SCHEMA_HASH, self.model_version, self.days, settings.ANALYTICS_CONVERSATION_IDLE_MINUTES,
@@ -343,13 +388,12 @@ class Sweep:
                     item = self._conversation_item(conn, candidate)
                 if item is None:
                     continue
-                self.stats["conversations"] += 1
                 self._queue.append(item)
-                if _asked(self._queue) >= settings.ANALYTICS_BATCH_STATES:
+                if _asked(self._queue) >= cap:
                     self._flush("analytics_conversation")
-                if not self._going():
+                if not self._in_pass():
                     break
-        if self._queue and self._going():
+        if self._queue:
             self._flush("analytics_conversation")
 
     def _conversation_item(self, conn, candidate: dict) -> Optional[_Item]:
@@ -369,7 +413,8 @@ class Sweep:
         item = _Item(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
                      level="conversation", message_id=None, occurred_at=msgs[-1].timestamp,
                      lang=states.lang("\n".join(m.prompt for m in msgs)), questions=questions, hashes=hashes,
-                     source_updated_at=updated_at, source_hash=source_hash)
+                     source_updated_at=updated_at, source_hash=source_hash,
+                     attempts=candidate.get("attempts") or 0)
         try:
             item.state = states.conversation(msgs)
         except Exception:  # noqa: BLE001
@@ -401,13 +446,32 @@ class Sweep:
     # ---- calls and writes -----------------------------------------------------------------------------------------
 
     def _flush(self, feature: str) -> None:
-        """Ask the queued states in one call and write what came back; an unavailable call writes nothing."""
+        """Ask the queued states, at most ``_cap()`` to a call, and write what came back.
+
+        A message with more states than the cap is split across calls, in order, so its marker (the request type,
+        its last state) comes last and is skipped if an earlier part was not answered (``_late``).
+        """
         batch, self._queue = self._queue, []
-        if not self._going():
-            return
+        cap = self._cap()
+        while batch and self._going():
+            chunk, asked = [], 0
+            while batch and (asked < cap or batch[0].state is None):
+                item = batch.pop(0)
+                chunk.append(item)
+                asked += item.state is not None
+            self._call(chunk, feature)
+
+    def _call(self, batch: list[_Item], feature: str) -> None:
+        """Ask one call's states and write what came back; see the module docstring for what each outcome writes.
+
+        A state not answered keeps every row of its message (or conversation) out of this call and of the
+        sweep's later ones, so a marker is never written without the rest, except a ``bad_item`` in a call that
+        answered others, which is the item's own fault and written as an ``_error`` beside its other rows.
+        """
+        batch = [item for item in batch if item.key not in self._late]
         asked = [item for item in batch if item.state is not None]
-        decided: list = []
-        reasons: list = []
+        outcome: dict[int, tuple[Any, Optional[str]]] = {}
+        answered = False
         if asked:
             result = decisions.decide_batch([Request(i.state, i.questions) for i in asked], feature=feature,
                                             budget=Budget.BACKGROUND)
@@ -415,41 +479,71 @@ class Sweep:
             self.stats["states"] += len(asked)
             if self.lock is not None:
                 self.lock.refresh()
-            if result.status == "unavailable":
-                logger.info("Analytics sweep stopped: the decision model is unavailable (%s)",
-                            ", ".join(sorted({r for r in result.reasons if r})))
-                self.stopped = "unavailable"
-                return
+            outcome = {id(item): (decision, reason) for item, decision, reason in zip(asked, result, result.reasons)}
+            answered = any(decision is not None for decision in result)
             if result.status == "timeout":
                 self.stopped = "timeout"
-            decided, reasons = list(result), list(result.reasons)
-            answered = next((d.model.version for d in decided if d is not None), self.model_version)
-            if answered != self.model_version:  # the server changed models: label as the one that answered
-                logger.info("Analytics sweep: model version changed from %s to %s", self.model_version, answered)
-                self.model_version = answered
-        rows: list[dict] = []
-        outcome = dict(zip(map(id, asked), zip(decided, reasons)))
-        # A message with a state not answered in time keeps no rows from this call, so it has no marker and the
-        # next sweep labels all of it again.
-        late = {item.source for item in asked if outcome[id(item)][0] is None and outcome[id(item)][1] != "bad_item"}
-        for item in batch:
-            decision, reason = outcome.get(id(item), (None, "build_failed"))
-            if item.source in late and item.source is not None:
-                if decision is None and reason not in ("bad_item", "build_failed"):
-                    self.stats["timeouts"] += 1
+            elif not answered:  # the backend's fault, unless the call was about one message alone
+                self.stopped = "unavailable" if result.status == "unavailable" else "failed"
+                logger.info("Analytics sweep stopped: the decision model answered nothing (%s)",
+                            ", ".join(sorted({r for r in result.reasons if r})))
+                if len({item.key for item in asked}) > 1:
+                    return
+            version = next((d.model.version for d in result if d is not None), self.model_version)
+            if version != self.model_version:  # the server changed models: label as the one that answered
+                logger.info("Analytics sweep: model version changed from %s to %s", self.model_version, version)
+                self.model_version = version
+        # Per key, why its states were not all answered: an attempt to count ("retry") or nothing to write ("late").
+        failed: dict[tuple, str] = {}
+        first: dict[tuple, _Item] = {}
+        for item in asked:
+            decision, reason = outcome[id(item)]
+            if decision is not None or (reason == "bad_item" and answered):
                 continue
+            kind = "retry" if reason in ("backend_error", "bad_item") else "late"
+            if failed.get(item.key) != "retry":
+                failed[item.key], first[item.key] = kind, item
+            if kind == "late":
+                self.stats["timeouts"] += 1
+        rows: list[dict] = []
+        for item in batch:
+            if item.key in failed:
+                continue
+            decision, reason = outcome.get(id(item), (None, BUILD_FAILED))
             if decision is not None:
                 self.stats["truncated"] += int(decision.truncated)
                 rows.extend(self._rows(item, decision))
-            elif reason in ("bad_item", "build_failed"):
+            else:  # its state could not be built, or the model called it bad while answering the rest
                 self.stats["errors"] += 1
-                # on the user message it was built for, where it marks that message labelled
-                error = self._row(item, label=ERROR, probabilities={}, top=reason)
-                error.update(message_id=item.source, reply_message_id=None)
-                rows.append(error)
-            else:  # a conversation's state, not answered in time
-                self.stats["timeouts"] += 1
-        self._write(rows, feature == "analytics_conversation")
+                rows.append(self._marker(item, ERROR, reason))
+        for key, kind in failed.items():
+            if kind == "late":
+                continue
+            item = first[key]
+            attempts = item.attempts + 1
+            reason = outcome[id(item)][1]
+            if attempts >= ATTEMPTS:
+                self.stats["errors"] += 1
+                rows.append(self._marker(item, ERROR, reason))
+            else:
+                self.stats["retries"] += 1
+                rows.append(self._marker(item, RETRY, reason, {"attempts": attempts}))
+        self._late |= failed.keys()
+        # counted as written, so a message queued when the budget ran out is not
+        conversation_level = feature == "analytics_conversation"
+        if conversation_level:
+            done = {r["conversation_id"] for r in rows if r["label"] in ("goal_met", ERROR)}
+            self.stats["conversations"] += len(done)
+        else:
+            self.stats["messages"] += len({r["message_id"] for r in rows if r["label"] in MARKERS})
+        self._write(rows, conversation_level)
+
+    def _marker(self, item: _Item, label: str, reason: Optional[str], probabilities: Optional[dict] = None) -> dict:
+        """An ``_error`` or ``_retry`` row naming ``reason``, on the user message the state was built for (where it
+        marks that message) or on the conversation."""
+        row = self._row(item, label=label, probabilities=probabilities or {}, top=reason)
+        row.update(message_id=item.source, reply_message_id=None)
+        return row
 
     def _row(self, item: _Item, *, label: str, probabilities: dict, top: Optional[str] = None,
              p_top: Optional[float] = None) -> dict:

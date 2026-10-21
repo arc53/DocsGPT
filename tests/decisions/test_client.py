@@ -13,7 +13,7 @@ from docsgpt.decisions.client import DecisionClient
 from docsgpt.decisions.models import V02
 from docsgpt.decisions.latency import SpeedProfile
 from docsgpt.decisions.testing import FakeDecider, installed
-from docsgpt.decisions.types import Decision, FeatureSpec, Shape
+from docsgpt.decisions.types import BatchResult, Decision, FeatureSpec, Shape
 
 from .fakes import expected_p
 
@@ -147,6 +147,10 @@ class TestCalls:
         batch = decisions.decide_batch([Request("a", {"q": NOUL}), Request(object(), {"q": NOUL})], feature="test")
         assert isinstance(batch[0], Decision) and batch[1] is None
         assert batch.reasons == [None, "bad_item"] and batch.status == "partial"
+
+    def test_a_batch_the_backend_failed_whole_is_unavailable(self):
+        assert BatchResult([None, None], ["backend_error", "backend_error"]).status == "unavailable"
+        assert BatchResult([None, None], ["bad_item", "bad_item"]).status == "partial"
 
     def test_status_once_loaded(self, local):
         status = decisions.status()

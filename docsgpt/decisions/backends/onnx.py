@@ -485,9 +485,9 @@ class OnnxBackend:
                     self.profile.observe(step, elapsed)
                 logits[max(step.segment, 0)] = out
             answers = {key: engine.answer(logits[i], key, q) for i, (key, q) in enumerate(request.questions.items())}
-        except Exception:  # noqa: BLE001 -- one bad item never fails the batch
+        except Exception:  # noqa: BLE001 -- one failed pass never fails the batch
             logger.exception("A decision-model pass failed")
-            return "bad_item"
+            return "backend_error"
         finally:
             if lane == "background":
                 self._background_used = self._clock()

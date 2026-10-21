@@ -340,6 +340,22 @@ class _Partial(FakeDecider):
                            [self.reason if h else None for h in hit])
 
 
+class _Failing(FakeDecider):
+    """Fails the requests ``fail(request)`` picks with ``reason`` on every call (of ``features``, when given)."""
+
+    def __init__(self, fail, reason, features=None):
+        super().__init__(ANSWERS)
+        self.fail, self.reason, self.features = fail, reason, features
+
+    def decide_batch(self, requests, *, feature, budget=Budget.HOT):
+        result = super().decide_batch(requests, feature=feature, budget=budget)
+        if self.features is not None and feature not in self.features:
+            return result
+        hit = [self.fail(r) for r in requests]
+        return BatchResult([None if h else d for d, h in zip(result, hit)],
+                           [self.reason if h else None for h in hit])
+
+
 @pytest.mark.unit
 class TestStopConditions:
     def test_unavailable_writes_nothing_and_stops(self, db):
@@ -370,7 +386,8 @@ class TestStopConditions:
 
     def test_bad_items_and_unbuildable_states_become_error_rows(self, db, monkeypatch):
         cid, first, second = _two_turns(db)
-        bad = _Partial(lambda r: r.state.get("message") == "and on Windows?", "bad_item")
+        # the reply's reaction fails while the call answers the rest, so the fault is the item's own
+        bad = _Partial(lambda r: "reaction" in r.questions, "bad_item")
         real_turn = tasks.states.turn
         monkeypatch.setattr(tasks.states, "turn", lambda msgs, i: 1 / 0 if i == 0 else real_turn(msgs, i))
         with installed(bad):
@@ -383,6 +400,49 @@ class TestStopConditions:
             calls = len(bad.calls)
             tasks.sweep()
             assert all(c.feature != "analytics_turn" for c in bad.calls[calls:])
+
+    @pytest.mark.parametrize("reason", ["bad_item", "backend_error"])
+    def test_a_call_that_fails_whole_stops_and_writes_nothing(self, db, reason):
+        cid, first, second = _two_turns(db)
+        with installed(_Partial(lambda r: True, reason)) as failing:
+            report = tasks.sweep()
+            stopped = {"bad_item": "failed", "backend_error": "unavailable"}[reason]
+            assert report["stopped"] == stopped and len(failing.calls) == 1
+            assert not _labels(db, cid) and report["errors"] == 0
+            report = tasks.sweep()  # healthy again
+        labels = _labels(db, cid)
+        assert (first, "request_type") in labels and (second, "request_type") in labels
+        assert not [key for key in labels if key[1].startswith("_")]
+        assert report["messages"] == 2
+
+    def test_a_backend_error_among_answers_is_retried_then_marked(self, db):
+        cid, first, second = _two_turns(db)
+        failing = _Failing(lambda r: r.state.get("message") == "and on Windows?", "backend_error")
+        with installed(failing):
+            for attempt in range(1, tasks.ATTEMPTS):
+                report = tasks.sweep()
+                labels = _labels(db, cid)
+                assert (first, "request_type") in labels and (second, "_error") not in labels
+                assert labels[(second, "_retry")].probabilities == {"attempts": attempt}
+                assert report["stopped"] is None and report["retries"] == 1 and report["errors"] == 0
+            report = tasks.sweep()
+            labels = _labels(db, cid)
+            assert labels[(second, "_error")].top == "backend_error" and report["errors"] == 1
+            calls = len(failing.calls)
+            tasks.sweep()
+            assert all(c.feature != "analytics_turn" for c in failing.calls[calls:])
+        assert (None, "goal_met") in _labels(db, cid)
+
+    def test_a_message_that_fails_alone_counts_attempts_and_stops_holding_up_the_sweep(self, db):
+        cid = _conversation(db)
+        only = _message(db, cid, 0, "How do I install it?")
+        failing = _Failing(lambda r: True, "backend_error", features={"analytics_turn"})
+        with installed(failing):
+            for _ in range(tasks.ATTEMPTS):
+                assert tasks.sweep()["stopped"] == "unavailable"
+            assert _labels(db, cid)[(only, "_error")].top == "backend_error"
+            tasks.sweep()
+        assert (None, "goal_met") in _labels(db, cid)
 
     def test_the_time_budget_is_honoured(self, db, fake):
         _two_turns(db)
@@ -550,7 +610,7 @@ class TestBlankText:
 class TestFailedTurns:
     def test_turns_whose_states_failed_are_counted_failed_not_pending(self, db):
         _two_turns(db)
-        with installed(_Partial(lambda r: True, "bad_item")):
+        with installed(_Partial(lambda r: "answer_status" in r.questions, "bad_item")):
             tasks.sweep()
         coverage = _coverage(db)
         assert (coverage["turns"], coverage["labelled_turns"]) == (2, 0)
@@ -558,7 +618,7 @@ class TestFailedTurns:
 
     def test_an_edit_after_the_failure_makes_the_turn_pending_again(self, db, monkeypatch):
         cid, first, _ = _two_turns(db)
-        with installed(_Partial(lambda r: True, "bad_item")):
+        with installed(_Partial(lambda r: "answer_status" in r.questions, "bad_item")):
             tasks.sweep()
         db.execute(text("UPDATE conversation_messages SET response = 'Regenerated.' WHERE id = CAST(:id AS uuid)"),
                    {"id": first})
@@ -625,3 +685,123 @@ class TestFreshness:
         calls = len(fake.calls)
         report = tasks.sweep()
         assert len(fake.calls) == calls and report["messages"] == 0 and not _candidates(db)
+
+
+class _Clock:
+    """``tasks.time`` with a clock that moves only when told."""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def monotonic(self):
+        return self.now
+
+
+class _Slow(FakeDecider):
+    """Answers as ``FakeDecider``; every call takes ``seconds`` of the fake clock."""
+
+    def __init__(self, clock, seconds):
+        super().__init__(ANSWERS)
+        self.clock, self.seconds = clock, seconds
+
+    def decide_batch(self, requests, *, feature, budget=Budget.HOT):
+        self.clock.now += self.seconds
+        return super().decide_batch(requests, feature=feature, budget=budget)
+
+
+@pytest.fixture
+def slow(monkeypatch):
+    """A decider whose calls take 10 s of a fake clock, at one two-turn conversation (5 states) per call."""
+    clock = _Clock()
+    monkeypatch.setattr(tasks, "time", clock)
+    monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 5)
+    with installed(_Slow(clock, 10.0)) as decider:
+        yield decider
+
+
+def _count(conn, label) -> int:
+    return conn.execute(text("SELECT COUNT(*) FROM conversation_labels WHERE label = :label"),
+                        {"label": label}).scalar()
+
+
+@pytest.mark.unit
+class TestBacklog:
+    def test_a_sustained_backlog_leaves_time_for_conversations(self, db, slow):
+        for _ in range(20):
+            _two_turns(db)
+        report = tasks.sweep(budget_seconds=100)
+        assert report["stopped"] == "budget"
+        assert "analytics_conversation" in [c.feature for c in slow.calls]
+        assert _count(db, "goal_met") > 0 and _count(db, "experience") == _count(db, "goal_met")
+
+    def test_a_quiet_agents_older_message_is_not_starved(self, db, slow):
+        busy, quiet = _agent(db, enabled=True), _agent(db, enabled=True)
+        for _ in range(6):
+            _two_turns(db, agent_id=str(busy["id"]))
+        cid = _conversation(db, agent_id=str(quiet["id"]))
+        old = _message(db, cid, 0, "How do I install it?", ago_minutes=600)
+        assert [c["conversation_id"] for c in _candidates(db)][1] == cid
+        tasks.sweep(budget_seconds=30)
+        assert (old, "request_type") in _labels(db, cid)
+
+    def test_no_agent_conversations_take_turns_by_user(self, db):
+        ann = [_conversation(db, user="ann") for _ in range(3)]
+        bob = _conversation(db, user="bob")
+        for i, cid in enumerate(ann):
+            _message(db, cid, 0, "How do I install it?", ago_minutes=100 + i)
+        _message(db, bob, 0, "How do I install it?", ago_minutes=500)
+        assert [c["conversation_id"] for c in _candidates(db)] == [ann[0], bob, ann[1], ann[2]]
+
+    def test_a_pending_resolution_settles_under_a_backlog(self, db, fake, monkeypatch):
+        cid, _, _ = _two_turns(db)
+        tasks.sweep()
+        db.execute(text("UPDATE conversation_messages SET timestamp = timestamp - interval '2 days' "
+                        "WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid})
+        db.execute(text("UPDATE conversation_labels SET occurred_at = occurred_at - interval '2 days' "
+                        "WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid})
+        for _ in range(20):
+            _two_turns(db)
+        clock = _Clock()
+        monkeypatch.setattr(tasks, "time", clock)
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 5)
+        with installed(_Slow(clock, 10.0)):
+            report = tasks.sweep(budget_seconds=30)
+        assert report["resolutions"] == 1
+        assert _labels(db, cid)[(None, "resolution")].probabilities["pending"] == 0
+
+    def test_messages_count_only_those_labelled(self, db, slow):
+        for _ in range(3):
+            cid = _conversation(db)
+            _message(db, cid, 0, "How do I install it?")
+        report = tasks.sweep(budget_seconds=5)  # one call of two messages; the third is queued, never asked
+        assert report["messages"] == _count(db, "request_type") == 2
+
+
+@pytest.mark.unit
+class TestBatchCap:
+    def test_the_decision_limit_caps_the_batch(self, db, fake, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MAX_BATCH_STATES", 8)
+        cids = [_two_turns(db)[0] for _ in range(3)]
+        report = tasks.sweep()
+        assert max(len(c.requests) for c in fake.calls) <= 8
+        assert report["messages"] == 6 and all((None, "goal_met") in _labels(db, cid) for cid in cids)
+
+    def test_a_message_larger_than_the_limit_is_split_across_calls(self, db, fake, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MAX_BATCH_STATES", 2)
+        agent = _agent(db, topics=TOPICS)
+        cid, first, second = _two_turns(db, agent_id=str(agent["id"]))
+        tasks.sweep()
+        assert max(len(c.requests) for c in fake.calls) <= 2
+        labels = _labels(db, cid)
+        assert {(second, "answer_status"), (first, "reaction"), (second, "topic"), (second, "request_type"),
+                (None, "goal_met")} <= set(labels)
+
+    def test_a_split_message_keeps_no_marker_when_a_part_was_not_answered(self, db, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MAX_BATCH_STATES", 2)
+        cid, first, second = _two_turns(db)
+        with installed(_Failing(lambda r: "reaction" in r.questions, "timeout")):
+            report = tasks.sweep()
+        labels = _labels(db, cid)
+        assert (first, "request_type") in labels
+        assert not [key for key in labels if key[0] == second] and (first, "reaction") not in labels
+        assert report["timeouts"] >= 1

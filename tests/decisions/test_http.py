@@ -87,20 +87,21 @@ class TestWire:
         {"type": "choice", "choice": "mid", "probabilities": {"zeta": 0.9, "alpha": 0.3, "mid": 0.5}},
         {"type": "choice", "choice": "mid", "probabilities": {"zeta": 0.5, "mid": 0.5}},
     ])
-    def test_an_answer_to_another_question_is_a_bad_item(self, remote, answer):
+    def test_an_answer_to_another_question_is_a_backend_error(self, remote, answer):
         server = FakeDecideServer()
         key = "route" if answer["type"] == "choice" else "q"
         server.script.append(httpx2.Response(200, json={"model": "x", "answers": {key: answer}}))
         backend = remote(DecideBackend, server)
-        assert run(backend, [Request("s", {key: CHOICE if key == "route" else NOUL})]) == ["bad_item"]
+        assert run(backend, [Request("s", {key: CHOICE if key == "route" else NOUL})]) == ["backend_error"]
         assert not backend._breaker.open
 
     def test_item_errors_from_the_server(self, remote):
         server = FakeDecideServer()
         server.script.append(lambda body: httpx2.Response(200, json={"responses": [
-            {"error": "timeout"}, {"error": "loading"}, {"error": "melted"}, server.decide(body["requests"][3])]}))
-        out = run(remote(DecideBackend, server), [Request(str(i), {"q": NOUL}) for i in range(4)])
-        assert out[:3] == ["timeout", "loading", "bad_item"] and p(out[3]) == pytest.approx(0.7)
+            {"error": "timeout"}, {"error": "loading"}, {"error": "melted"}, {"error": "bad_item"},
+            server.decide(body["requests"][4])]}))
+        out = run(remote(DecideBackend, server), [Request(str(i), {"q": NOUL}) for i in range(5)])
+        assert out[:4] == ["timeout", "loading", "backend_error", "bad_item"] and p(out[4]) == pytest.approx(0.7)
 
     def test_a_state_that_does_not_render_is_a_bad_item_and_not_sent(self, remote):
         server = FakeDecideServer()
@@ -155,7 +156,7 @@ class TestFailures:
         bad = httpx2.Response(422, json={"detail": "bad"})
         server.script.extend([bad, None, bad, None])  # the batch; then items 0, 1 (refused), 2
         out = run(remote(DecideBackend, server), [Request(str(i), {"q": NOUL}) for i in range(3)])
-        assert p(out[0]) == pytest.approx(0.7) and out[1] == "bad_item" and p(out[2]) == pytest.approx(0.7)
+        assert p(out[0]) == pytest.approx(0.7) and out[1] == "backend_error" and p(out[2]) == pytest.approx(0.7)
         assert server.paths() == ["/v1/decide/batch", "/v1/decide", "/v1/decide", "/v1/decide"]
 
     def test_a_4xx_is_not_retried_and_does_not_count_against_the_server(self, remote):
@@ -163,7 +164,7 @@ class TestFailures:
         server.script.extend([httpx2.Response(400)] * 3)
         backend = remote(DecideBackend, server)
         for _ in range(3):
-            assert run(backend, [Request("s", {"q": NOUL})]) == ["bad_item"]
+            assert run(backend, [Request("s", {"q": NOUL})]) == ["backend_error"]
         assert server.paths() == ["/v1/decide"] * 3 and not backend._breaker.open
 
     def test_a_full_queue_answers_queue_full(self, remote):
@@ -265,7 +266,7 @@ class TestBreaker:
         server.script.extend([httpx2.Response(200, json={"answers": {}})] * 5)
         backend = remote(DecideBackend, server)
         for _ in range(5):
-            assert run(backend, [Request("s", {"q": NOUL})]) == ["bad_item"]
+            assert run(backend, [Request("s", {"q": NOUL})]) == ["backend_error"]
         assert not backend._breaker.open
 
 

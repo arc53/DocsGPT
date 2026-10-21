@@ -275,7 +275,7 @@ class TestBatches:
         out = backend.run([Request(object(), {"q": NOUL}), Request("fine", {"q": NOUL})], "hot", far())
         assert out[0] == "bad_item" and isinstance(out[1], Outcome)
 
-    def test_a_failing_pass_is_a_bad_item(self, engine, monkeypatch):
+    def test_a_failing_pass_is_a_backend_error(self, engine, monkeypatch):
         backend = loaded(engine)
         calls = []
 
@@ -287,7 +287,7 @@ class TestBatches:
 
         monkeypatch.setattr(engine.kv, "extend", flaky)
         out = backend.run([Request("a", {"q": NOUL}), Request("b", {"q": NOUL})], "hot", far())
-        assert out[0] == "bad_item" and isinstance(out[1], Outcome)
+        assert out[0] == "backend_error" and isinstance(out[1], Outcome)
 
 
 @pytest.mark.unit

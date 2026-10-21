@@ -61,7 +61,7 @@ Thumbs are rarely given. **Insights** estimate from the conversations themselves
 
 Insights are off until the operator sets `DECISION_ANALYTICS_ENABLED=true` (see [Conversation analytics](/Models/decision-model#conversation-analytics)). Until then neither Insights page is listed, and a link to one, such as the [weekly docs-gap summary](#weekly-docs-gap-summary)'s, opens **Settings → Analytics**, or the agent's **Logs**. Once they are on, every agent's conversations are analyzed unless someone who can edit the agent turns off **Collect insights** in its [insights settings](#analytics-settings-for-an-agent).
 
-Messages are analyzed a few minutes after they are sent: a background sweep runs every 5 minutes and leaves a message a minute to settle. **Goal met** and topics that can overlap wait until a conversation has been quiet for 30 minutes. The sweep analyzes only the last 7 days (`ANALYTICS_BACKFILL_DAYS`), newest first; an operator can analyze further back with [`docsgpt analytics backfill`](/Deploying/Background-Jobs#labelling-past-conversations).
+Messages are analyzed a few minutes after they are sent: a background sweep runs every 5 minutes and leaves a message a minute to settle. **Goal met** and topics that can overlap wait until a conversation has been quiet for 30 minutes. The sweep analyzes only the last 7 days (`ANALYTICS_BACKFILL_DAYS`), newest first, taking turns between agents so a busy one never holds up the others; an operator can analyze further back with [`docsgpt analytics backfill`](/Deploying/Background-Jobs#labelling-past-conversations).
 
 ### Before there are figures
 
