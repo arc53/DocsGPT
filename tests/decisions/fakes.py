@@ -256,11 +256,20 @@ class FakeHead:
 
 
 class FakeCache:
+    """A KV cache with transformers' ``crop`` contract since 5.20: a negative count of rows to remove from the end,
+    0 a no-op, and a positive value (the absolute length to keep, accepted up to 5.19) a ``ValueError``."""
+
     def __init__(self):
         self.ids = []
+        self.crops = []
 
-    def crop(self, length):
-        self.ids = self.ids[:length]
+    def crop(self, tokens_to_remove):
+        self.crops.append(tokens_to_remove)
+        if tokens_to_remove > 0:
+            raise ValueError(f"Calling `crop` with a positive value (`{tokens_to_remove}`) is not supported. "
+                             "Please use a negative integer to remove that number of tokens from the cache instead.")
+        if tokens_to_remove:
+            self.ids = self.ids[:tokens_to_remove]
 
 
 def fake_decoder(ids, past_key_values=None, use_cache=True):

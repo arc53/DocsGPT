@@ -58,7 +58,18 @@ class TorchKV:
         """Append ``ids`` after the first ``start`` cached rows; the label logits at the last position.
 
         A pass from row 0 starts a new cache (a new state); a question's pass first cuts off the previous
-        question's rows, leaving the state's.
+        question's rows, leaving the state's. The cut passes ``crop`` the negative count of rows to remove, the
+        only form transformers accepts from 5.20 on (a positive value, read as the length to keep up to 5.19,
+        raises there), and is skipped when there is nothing to remove.
+
+        Args:
+            ids: The token ids of this pass.
+            start: How many cached rows the pass follows: 0 for a state, the state's length for a question.
+            io: Unused; the ONNX backend's I/O binding.
+            chunk: Unused; the ONNX backend's chunk size.
+
+        Returns:
+            The label logits at the pass's last position, on the CPU.
         """
         import torch
 
@@ -67,7 +78,7 @@ class TorchKV:
             if start == 0:
                 self.cache = None
             elif self.rows > start:
-                self.cache.crop(start)
+                self.cache.crop(start - self.rows)
             out = engine.decoder(torch.tensor([ids], device=engine.device), past_key_values=self.cache, use_cache=True)
             self.cache, self.rows = out.past_key_values, start + len(ids)
             # to the CPU: the copy waits for the GPU, so the pass is timed whole
