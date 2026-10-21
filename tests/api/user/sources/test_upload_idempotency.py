@@ -776,6 +776,40 @@ class TestManageSourceFilesIdempotency:
         # Confirm the loser never invoked the file-save path.
         assert fake_storage.save_file.call_count == 1
 
+    def test_different_key_second_post_enqueues_new_reingest(self, app, pg_conn):
+        """Distinct keys (e.g. from successive user actions) must both execute
+        and enqueue separate reingest tasks.
+        """
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+
+        user = "alice-mgr-multi"
+        src = _seed_source(pg_conn, user=user, file_path="/data")
+
+        fake_storage = MagicMock()
+        apply_mock = _apply_async_mock()
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
+            apply_mock,
+        ):
+            with self._add_request(app, src["id"], user, key="mgr-op-1"):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                first = ManageSourceFiles().post()
+            with self._add_request(app, src["id"], user, key="mgr-op-2"):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                second = ManageSourceFiles().post()
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert apply_mock.call_count == 2
+        assert first.json["reingest_task_id"] != second.json["reingest_task_id"]
+        assert fake_storage.save_file.call_count == 2
+
     def test_remove_same_key_second_post_returns_real_source_id(
         self, app, pg_conn
     ):
