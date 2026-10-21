@@ -21,6 +21,7 @@ import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
 import { isTouchPrimary, isWebSource, sourceLabel } from '../utils/helper';
 import { renderAnswer } from '../utils/markdown';
+import { I18nProvider, useMessages } from '../locale/context';
 import {
   AttachButton,
   AttachmentChips,
@@ -69,10 +70,6 @@ import {
   type StreamEvent,
 } from '../utils/streamEvents';
 
-/** What the stream's catch block shows when the request itself failed. */
-const CONNECTION_ERROR =
-  'Something went wrong. Check your connection and try again.';
-
 /** How long a source a citation opened stays highlighted. */
 const SOURCE_HIGHLIGHT_MS = 2000;
 
@@ -85,6 +82,24 @@ const sourceHost = (source: string) => {
   } catch {
     return source;
   }
+};
+
+/** `a, b, and c` in the locale's own style, where the engine can. */
+const formatList = (items: string[], locale: string) => {
+  // ES2021, past the lib this package compiles against.
+  const { ListFormat } = Intl as unknown as {
+    ListFormat?: new (
+      locale: string,
+      options: { type: 'conjunction' },
+    ) => { format: (list: string[]) => string };
+  };
+  try {
+    if (ListFormat)
+      return new ListFormat(locale, { type: 'conjunction' }).format(items);
+  } catch {
+    // An engine without the locale's data; the plain join still reads.
+  }
+  return items.join(', ');
 };
 
 const prefersReducedMotion = () =>
@@ -1438,11 +1453,15 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
   response,
   sourceCount,
   turn,
+  openSourceLabel,
+  copyCodeLabel,
   onAnswerClick,
 }: {
   response: string;
   sourceCount: number;
   turn: number;
+  openSourceLabel: string;
+  copyCodeLabel: string;
   onAnswerClick: (
     turn: number,
     event: React.MouseEvent<HTMLDivElement>,
@@ -1450,10 +1469,11 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
 }) {
   const html = React.useMemo(
     () =>
-      DOMPurify.sanitize(renderAnswer(response, { sourceCount }), {
-        ADD_ATTR: ['target'],
-      }),
-    [response, sourceCount],
+      DOMPurify.sanitize(
+        renderAnswer(response, { sourceCount, openSourceLabel, copyCodeLabel }),
+        { ADD_ATTR: ['target'] },
+      ),
+    [response, sourceCount, openSourceLabel, copyCodeLabel],
   );
   return (
     <Markdown
@@ -1478,64 +1498,67 @@ const SourcesComponent = ({
   open: boolean;
   highlighted: number | null;
   onToggle: () => void;
-}) => (
-  <SourcesBlock>
-    <SourcesToggle type="button" aria-expanded={open} onClick={onToggle}>
-      <Database size={16} />
-      <span>Sources</span>
-      <span className="dgpt-sources-count">{sources.length}</span>
-      <ChevronRight size={16} className="dgpt-sources-chevron" />
-    </SourcesToggle>
-    {open && (
-      <SourcesWell>
-        {sources.map((source, index) => {
-          const key = `${turn}-${index}`;
-          const isHighlighted = highlighted === index;
-          // A file's `source` is its path in the library, which no visitor
-          // can open; only a web source is a link.
-          return isWebSource(source.source) ? (
-            <SourceLink
-              key={key}
-              data-source={key}
-              data-highlighted={isHighlighted}
-              href={source.source}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Globe size={16} />
-              <SourceText>
-                <span className="dgpt-source-title">
-                  {source.title || sourceHost(source.source)}
-                </span>
-                <span className="dgpt-source-detail">
-                  {sourceHost(source.source)}
-                </span>
-              </SourceText>
-              <ExternalLink size={12} className="dgpt-source-external" />
-            </SourceLink>
-          ) : (
-            <SourceItem
-              key={key}
-              data-source={key}
-              data-highlighted={isHighlighted}
-              tabIndex={-1}
-            >
-              <FileText size={16} />
-              <SourceText>
-                <span className="dgpt-source-title">
-                  {sourceLabel(source.title, source.source)}
-                </span>
-                {source.text && (
-                  <span className="dgpt-source-detail">{source.text}</span>
-                )}
-              </SourceText>
-            </SourceItem>
-          );
-        })}
-      </SourcesWell>
-    )}
-  </SourcesBlock>
-);
+}) => {
+  const { t } = useMessages();
+  return (
+    <SourcesBlock>
+      <SourcesToggle type="button" aria-expanded={open} onClick={onToggle}>
+        <Database size={16} />
+        <span>{t('sources')}</span>
+        <span className="dgpt-sources-count">{sources.length}</span>
+        <ChevronRight size={16} className="dgpt-sources-chevron" />
+      </SourcesToggle>
+      {open && (
+        <SourcesWell>
+          {sources.map((source, index) => {
+            const key = `${turn}-${index}`;
+            const isHighlighted = highlighted === index;
+            // A file's `source` is its path in the library, which no visitor
+            // can open; only a web source is a link.
+            return isWebSource(source.source) ? (
+              <SourceLink
+                key={key}
+                data-source={key}
+                data-highlighted={isHighlighted}
+                href={source.source}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Globe size={16} />
+                <SourceText>
+                  <span className="dgpt-source-title">
+                    {source.title || sourceHost(source.source)}
+                  </span>
+                  <span className="dgpt-source-detail">
+                    {sourceHost(source.source)}
+                  </span>
+                </SourceText>
+                <ExternalLink size={12} className="dgpt-source-external" />
+              </SourceLink>
+            ) : (
+              <SourceItem
+                key={key}
+                data-source={key}
+                data-highlighted={isHighlighted}
+                tabIndex={-1}
+              >
+                <FileText size={16} />
+                <SourceText>
+                  <span className="dgpt-source-title">
+                    {sourceLabel(source.title, source.source)}
+                  </span>
+                  {source.text && (
+                    <span className="dgpt-source-detail">{source.text}</span>
+                  )}
+                </SourceText>
+              </SourceItem>
+            );
+          })}
+        </SourcesWell>
+      )}
+    </SourcesBlock>
+  );
+};
 
 const Hero = ({
   title,
@@ -1594,10 +1617,18 @@ const Hero = ({
     </HeroContainer>
   );
 };
-export const DocsGPTWidget = (props: WidgetProps) => {
+export const DocsGPTWidget = (props: WidgetProps) => (
+  <I18nProvider locale={props.locale} translations={props.translations}>
+    <Launcher {...props} />
+  </I18nProvider>
+);
+
+// Inside the provider, so its defaults read the resolved locale.
+const Launcher = (props: WidgetProps) => {
+  const { locale, t } = useMessages();
   const {
     buttonIcon,
-    buttonText = 'Ask a question',
+    buttonText = t('launcherButton'),
     buttonBg,
     defaultOpen = false,
     ...coreProps
@@ -1619,6 +1650,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
     <ThemeProvider theme={themes[coreProps.theme ?? 'dark']}>
       <FloatingButton
         type="button"
+        lang={locale}
         $bg={buttonBg}
         onClick={handleOpen}
         $hidden={!isFloatingButtonVisible}
@@ -1640,12 +1672,12 @@ export const WidgetCore = ({
   apiKey = '527686a3-e867-4b4d-9fec-f5f45fdb613a',
   avatar,
   heroIcon,
-  title = 'Get AI assistance',
-  description = "DocsGPT's AI Chatbot is here to help",
-  heroTitle = 'Welcome to DocsGPT !',
-  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
+  title,
+  description,
+  heroTitle,
+  heroDescription,
   suggestedQuestions,
-  suggestedQuestionsLabel = 'Suggested questions',
+  suggestedQuestionsLabel,
   size = 'medium',
   theme = 'dark',
   collectFeedback = true,
@@ -1658,6 +1690,7 @@ export const WidgetCore = ({
   poweredBy = true,
   passthrough,
 }: WidgetCoreProps) => {
+  const { locale, t, plural } = useMessages();
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
   const [status, setStatus] = React.useState<Status>('idle');
@@ -1873,6 +1906,10 @@ export const WidgetCore = ({
     }
   }
 
+  // The widget's own errors follow the locale; the server's are shown as sent.
+  const errorText = (query: Query) =>
+    query.errorKey ? t(query.errorKey) : (query.error ?? '');
+
   const stopGenerating = () => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -1957,7 +1994,7 @@ export const WidgetCore = ({
               }),
             // Workflow agents report progress per node instead of `notice`.
             workflow_step: (d) => {
-              const label = workflowStepLabel(d);
+              const label = workflowStepLabel(d, t);
               if (label) {
                 patch((query) => {
                   query.notice = label;
@@ -1985,7 +2022,9 @@ export const WidgetCore = ({
       });
     } catch {
       const updatedQueries = [...queries];
-      updatedQueries[updatedQueries.length - 1].error = CONNECTION_ERROR;
+      const failed = updatedQueries[updatedQueries.length - 1];
+      failed.error = t('connectionError');
+      failed.errorKey = 'connectionError';
       setQueries(updatedQueries);
       setStatus('idle');
       //setEventInterrupt(false)
@@ -2093,15 +2132,15 @@ export const WidgetCore = ({
         .writeText(code)
         .then(() => {
           copy.classList.add('is-copied');
-          copy.setAttribute('aria-label', 'Copied');
+          copy.setAttribute('aria-label', t('copied'));
           window.setTimeout(() => {
             copy.classList.remove('is-copied');
-            copy.setAttribute('aria-label', 'Copy code');
+            copy.setAttribute('aria-label', t('copyCode'));
           }, 2000);
         })
         .catch((err) => console.warn('Copy failed:', err));
     },
-    [openCitedSource],
+    [openCitedSource, t],
   );
 
   // Re-runs the turn in place instead of appending a duplicate prompt.
@@ -2129,13 +2168,8 @@ export const WidgetCore = ({
   // Pending and failed attachments both block sending. The pending note
   // takes precedence because it clears on its own.
   const pendingNote =
-    pendingCount > 0
-      ? `Waiting for ${pendingCount} file${pendingCount === 1 ? '' : 's'} to finish\u2026`
-      : null;
-  const failedNote =
-    failedCount > 0
-      ? 'Remove the file that could not be attached, then send.'
-      : null;
+    pendingCount > 0 ? plural('waitingForFiles', pendingCount) : null;
+  const failedNote = failedCount > 0 ? t('removeFailedFile') : null;
   const sendBlockedReason = pendingNote ?? failedNote;
   const isDictating = dictation.isDictating;
   const canSubmit =
@@ -2160,8 +2194,7 @@ export const WidgetCore = ({
   );
   // The composer's send gate, minus the typed-text check.
   const questionBlockedReason =
-    sendBlockedReason ??
-    (isDictating ? 'Stop dictating to send a question.' : undefined);
+    sendBlockedReason ?? (isDictating ? t('stopDictatingToSend') : undefined);
 
   const sendSuggestedQuestion = async (question: string) => {
     if (questionBlockedReason || status === 'loading') return;
@@ -2263,8 +2296,8 @@ export const WidgetCore = ({
     // A notice/node title is more specific than "Thinking", but goes stale
     // once tokens arrive.
     const label = query.response
-      ? 'Generating\u2026'
-      : (query.notice ?? 'Thinking\u2026');
+      ? t('generating')
+      : (query.notice ?? t('thinking'));
     return (
       <StatusLine role="status" aria-live="polite">
         <StatusDot />
@@ -2291,14 +2324,14 @@ export const WidgetCore = ({
       <StyledButton
         type="button"
         onClick={stopGenerating}
-        aria-label="Stop generating"
+        aria-label={t('stopGenerating')}
       >
         <StopGlyph />
       </StyledButton>
     ) : (
       <StyledButton
         disabled={!canSubmit}
-        aria-label="Send message"
+        aria-label={t('sendMessage')}
         title={sendBlockedReason ?? undefined}
       >
         <SendArrow size={16} />
@@ -2323,6 +2356,7 @@ export const WidgetCore = ({
       {
         <WidgetContainer
           ref={containerRef}
+          lang={locale}
           className={`${size !== 'large' ? (isOpen ? 'open' : 'close') : 'modal'}`}
           $modal={size === 'large'}
         >
@@ -2336,15 +2370,19 @@ export const WidgetCore = ({
             <Header>
               <AgentAvatar src={avatar} size={40} fallback="person" />
               <ContentWrapper>
-                <Title>{title}</Title>
-                <Description>{description}</Description>
+                <Title>{title ?? t('headerTitle')}</Title>
+                <Description>
+                  {description ?? t('headerDescription')}
+                </Description>
               </ContentWrapper>
               <HeaderActions>
                 {canExpand && (
                   <ExpandButton
                     type="button"
                     onClick={() => setIsExpanded((prev) => !prev)}
-                    aria-label={isExpanded ? 'Collapse chat' : 'Expand chat'}
+                    aria-label={
+                      isExpanded ? t('collapseChat') : t('expandChat')
+                    }
                     aria-expanded={isExpanded}
                   >
                     {isExpanded ? (
@@ -2357,7 +2395,7 @@ export const WidgetCore = ({
                 <IconButton
                   type="button"
                   onClick={handleClose}
-                  aria-label="Close chat"
+                  aria-label={t('closeChat')}
                 >
                   <X size={16} />
                 </IconButton>
@@ -2412,8 +2450,12 @@ export const WidgetCore = ({
                             )}
                             {query.toolCalls && query.toolCalls.length > 0 && (
                               <StatusLine>
-                                Used{' '}
-                                {query.toolCalls.map(prettifyName).join(', ')}
+                                {t('toolsUsed', {
+                                  tools: formatList(
+                                    query.toolCalls.map(prettifyName),
+                                    locale,
+                                  ),
+                                })}
                               </StatusLine>
                             )}
                             <Message
@@ -2428,6 +2470,8 @@ export const WidgetCore = ({
                                 response={query.response}
                                 sourceCount={sources.length}
                                 turn={index}
+                                openSourceLabel={t('openSource')}
+                                copyCodeLabel={t('copyCode')}
                                 onAnswerClick={handleAnswerClick}
                               />
                             </Message>
@@ -2442,8 +2486,8 @@ export const WidgetCore = ({
                                 }}
                                 aria-label={
                                   copiedIndex === index
-                                    ? 'Copied'
-                                    : 'Copy answer'
+                                    ? t('copied')
+                                    : t('copyAnswer')
                                 }
                                 $copied={copiedIndex === index}
                               >
@@ -2462,7 +2506,7 @@ export const WidgetCore = ({
                                       e.stopPropagation();
                                       handleFeedback('LIKE', index);
                                     }}
-                                    aria-label="Good response"
+                                    aria-label={t('goodResponse')}
                                     aria-pressed={query.feedback === 'LIKE'}
                                     $tone={
                                       query.feedback === 'LIKE'
@@ -2478,7 +2522,7 @@ export const WidgetCore = ({
                                       e.stopPropagation();
                                       handleFeedback('DISLIKE', index);
                                     }}
-                                    aria-label="Bad response"
+                                    aria-label={t('badResponse')}
                                     aria-pressed={query.feedback === 'DISLIKE'}
                                     $tone={
                                       query.feedback === 'DISLIKE'
@@ -2492,7 +2536,7 @@ export const WidgetCore = ({
                               )}
                               {feedbackErrorIndex === index && (
                                 <ActionHint role="status">
-                                  Couldn&apos;t save
+                                  {t('feedbackNotSaved')}
                                 </ActionHint>
                               )}
                             </ActionsRow>
@@ -2501,13 +2545,9 @@ export const WidgetCore = ({
                           <ErrorTurn>
                             <ErrorAlert role="alert">
                               <CircleAlert size={16} />
-                              <ErrorTitle>
-                                Couldn&apos;t generate a response
-                              </ErrorTitle>
-                              <ErrorText
-                                $raw={query.error !== CONNECTION_ERROR}
-                              >
-                                {query.error}
+                              <ErrorTitle>{t('answerFailed')}</ErrorTitle>
+                              <ErrorText $raw={!query.errorKey}>
+                                {errorText(query)}
                               </ErrorText>
                             </ErrorAlert>
                             <ActionsRow>
@@ -2515,19 +2555,19 @@ export const WidgetCore = ({
                                 type="button"
                                 onClick={() => handleRetry(index)}
                                 disabled={status === 'loading'}
-                                aria-label="Retry"
+                                aria-label={t('retry')}
                               >
                                 <RotateCcw size={16} />
                               </ActionButton>
                               <ActionButton
                                 type="button"
                                 onClick={() =>
-                                  handleCopy(query.error ?? '', index)
+                                  handleCopy(errorText(query), index)
                                 }
                                 aria-label={
                                   copiedIndex === index
-                                    ? 'Copied'
-                                    : 'Copy error'
+                                    ? t('copied')
+                                    : t('copyError')
                                 }
                                 $copied={copiedIndex === index}
                               >
@@ -2549,11 +2589,13 @@ export const WidgetCore = ({
                   })
                 ) : (
                   <Hero
-                    title={heroTitle}
-                    description={heroDescription}
+                    title={heroTitle ?? t('heroTitle')}
+                    description={heroDescription ?? t('heroDescription')}
                     icon={heroIcon}
                     questions={heroQuestions}
-                    questionsLabel={suggestedQuestionsLabel}
+                    questionsLabel={
+                      suggestedQuestionsLabel ?? t('suggestedQuestions')
+                    }
                     questionsDisabledReason={questionBlockedReason}
                     onQuestion={sendSuggestedQuestion}
                   />
@@ -2563,7 +2605,7 @@ export const WidgetCore = ({
                 <ScrollToLatest
                   type="button"
                   onClick={jumpToLatest}
-                  aria-label="Scroll to latest message"
+                  aria-label={t('scrollToLatest')}
                 >
                   <ArrowDown size={16} />
                 </ScrollToLatest>
@@ -2595,8 +2637,8 @@ export const WidgetCore = ({
                       analyserRef={dictation.analyserRef}
                       label={
                         dictation.state === 'recording'
-                          ? 'Listening\u2026'
-                          : 'Finishing\u2026'
+                          ? t('listening')
+                          : t('finishing')
                       }
                       minHeight={size === 'large' ? '64px' : '48px'}
                     />
@@ -2611,8 +2653,8 @@ export const WidgetCore = ({
                     onInput={handleUserInput}
                     value={prompt}
                     onChange={handlePromptChange}
-                    placeholder="Ask your question"
-                    aria-label="Ask your question"
+                    placeholder={t('composerPlaceholder')}
+                    aria-label={t('composerPlaceholder')}
                     onKeyDown={handlePromptKeyDown}
                     onPaste={handlePromptPaste}
                     /* Typing would be overwritten by the next interim
@@ -2661,7 +2703,7 @@ export const WidgetCore = ({
               <DropOverlay>
                 <DropTarget>
                   <CloudUpload size={16} />
-                  Drop files to attach
+                  {t('dropFiles')}
                 </DropTarget>
               </DropOverlay>
             )}

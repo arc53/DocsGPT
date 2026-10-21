@@ -1,6 +1,8 @@
 import React from 'react';
 
 import type { MicButtonState } from '../components/ComposerControls';
+import { useMessages } from '../locale/context';
+import { speechLanguage } from '../locale/index';
 import { useVoiceInput, voiceInputSupported } from './useVoiceInput';
 
 interface UseDictationOptions {
@@ -22,6 +24,8 @@ export const useDictation = ({
   onEnd,
 }: UseDictationOptions) => {
   const baseRef = React.useRef('');
+  const { locale, t } = useMessages();
+  const lang = React.useMemo(() => speechLanguage(locale), [locale]);
 
   const handleStart = React.useCallback(() => {
     baseRef.current = getDraft();
@@ -43,6 +47,7 @@ export const useDictation = ({
     onStart: handleStart,
     onTranscript: handleTranscript,
     onEnd,
+    lang,
   });
 
   const state: MicButtonState =
@@ -56,7 +61,7 @@ export const useDictation = ({
     available: enabled && voiceInputSupported(),
     state,
     isDictating: state !== 'idle',
-    error: voice.error,
+    error: voice.error ? t(voice.error) : null,
     clearError: voice.clearError,
     toggle: voice.toggle,
     stop: voice.stop,

@@ -184,8 +184,10 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`defaultOpen`**  | `boolean`        | `false`                                                     | Opens the chat panel on page load instead of showing only the launch button.                         |
 | **`allowedFileExtensions`** | `string[]` | _unset_                                        | File extensions the composer accepts, e.g. `['.pdf', '.docx', '.md', '.png']`. Setting it turns on attachments: an Attach button, drag-and-drop onto the panel, and paste-to-attach. Leave it unset to keep attachments off. |
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
-| **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT", `false` hides it, and an object replaces it. See [Branding](#branding). |
+| **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT" in the widget's language, `false` hides it, and an object replaces it. See [Branding](#branding). |
 | **`passthrough`**  | `Record<string, string \| number \| boolean \| null>` | _unset_                 | Values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}`, and they appear on each turn in Logs. See [Passing who is asking](#passing-who-is-asking). |
+| **`locale`**       | `string`         | `"auto"`                                                    | Language of the widget's own text. `"auto"` follows the visitor's browser; or set one of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. See [Languages](#languages). |
+| **`translations`** | `Partial<Messages>` | _unset_                                                  | Replaces individual strings of the widget's own text, by key, e.g. `{ composerPlaceholder: 'Ask our team' }`. See [Languages](#languages). |
 
 ---
 
@@ -283,6 +285,36 @@ Three properties change what the widget shows of DocsGPT:
 ```
 
 The list shows every question you pass, each on its own row, so keep it to a handful that fit the panel. While a file is still uploading, or the microphone is dictating, the questions are disabled until the send can go through.
+
+---
+
+## Languages
+
+The widget shows its own text in the visitor's language: the input placeholder, button labels, status lines such as "Thinking…", error messages and the credit line. It ships with English (`en`), Spanish (`es`), French (`fr`), Japanese (`ja`), Simplified Chinese (`zh`), Traditional Chinese (`zh-TW`), Russian (`ru`) and German (`de`).
+
+By default, `locale` is `"auto"`: the widget takes the first of the browser's preferred languages that it supports, and falls back to English. A regional code uses its base language, so `de-AT` shows German, and `zh-HK`, `zh-MO` and `zh-Hant` show Traditional Chinese. To match your site's own language switcher, set `locale` yourself:
+
+```jsx
+<DocsGPTWidget apiKey="your-agent-api-key" locale="de" />
+```
+
+The defaults of `title`, `description`, `heroTitle`, `heroDescription`, `suggestedQuestionsLabel` and `buttonText` are translated too. Text you pass yourself, in those props or in `suggestedQuestions`, is shown exactly as you wrote it, so pass it in the language you set.
+
+`translations` changes single strings by key, whatever the language. Words in braces, such as `{count}` or `{brand}`, are filled in by the widget, so keep them in your text:
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  translations={{
+    composerPlaceholder: 'Ask our support team',
+    poweredBy: 'Built with {brand}',
+  }}
+/>
+```
+
+The keys, each with a note on where its text appears, are listed in [`src/locale/en.ts`](https://github.com/arc53/DocsGPT/blob/main/extensions/react-widget/src/locale/en.ts). In TypeScript, the `Messages` type and the `SUPPORTED_LOCALES` list are exported from the package. The search bar takes the same two props, and the chat it opens uses its language.
+
+The widget marks its own markup with the chosen language (`lang`), so screen readers pronounce it correctly, and voice input listens in that language. Answers come from your agent, so their language follows the question and the agent's prompt, not `locale`.
 
 ---
 

@@ -53,6 +53,8 @@ To link the widget to your api and your documents you can pass parameters to the
 
 `suggestedQuestions` lists questions under the welcome card; a click sends one, and the list goes away once the conversation starts. `suggestedQuestionsLabel` sets the heading over them ("Suggested questions" by default; an empty string hides it).
 
+The widget's own text follows the visitor's browser language (`locale="auto"`, the default) in English, Spanish, French, Japanese, Simplified and Traditional Chinese, Russian and German. Set `locale` (e.g. `"de"`) to fix it, and `translations` to replace single strings by key, e.g. `translations={{ composerPlaceholder: 'Ask our team' }}`. Text you pass in props such as `title` is never translated. The keys are in [`src/locale/en.ts`](src/locale/en.ts); `SearchBar` takes the same two props. See [Languages](https://docs.docsgpt.cloud/Extensions/chat-widget#languages).
+
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
 ### Html
@@ -188,6 +190,8 @@ import { SearchBar } from "docsgpt";
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. |
 | **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}` and they appear in the agent's Logs. |
+| **`locale`** | `string` | `"auto"` | Language of the search bar's text and the chat it opens: `"auto"` (the browser's), or `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. |
+| **`translations`** | `Partial<Messages>` | _unset_ | Replaces single strings by key, e.g. `{ askTheAi: 'Ask our assistant' }`. |
 
 
 Feel free to reach out if you need help customizing or extending the `SearchBar`!

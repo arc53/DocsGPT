@@ -1,5 +1,6 @@
 import 'styled-components';
 import type { WidgetTheme } from '../components/tokens';
+import type { Messages } from '../locale/en';
 
 declare module 'styled-components' {
   export interface DefaultTheme extends WidgetTheme {
@@ -48,6 +49,8 @@ export interface Query {
   response?: string;
   feedback?: FEEDBACK;
   error?: string;
+  /** Set when `error` is the widget's own message, shown in the current locale. */
+  errorKey?: 'connectionError';
   sources?: { title: string; text: string; source: string }[];
   conversationId?: string | null;
   title?: string | null;
@@ -71,7 +74,19 @@ export type PoweredBy = boolean | { label: string; href?: string };
 /** A value sent in `passthrough`: nested objects and arrays are dropped by the server. */
 export type PassthroughValue = string | number | boolean | null;
 
-export interface WidgetProps {
+/** Language and text options shared by the widget and the search bar. */
+export interface LocaleProps {
+  /**
+   * UI language: `'auto'` (the default) follows the visitor's browser, or one
+   * of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. Anything else is
+   * English. Text set through other props is never translated.
+   */
+  locale?: string;
+  /** Replaces individual UI strings, e.g. `{ composerPlaceholder: 'Ask us' }`. */
+  translations?: Partial<Messages>;
+}
+
+export interface WidgetProps extends LocaleProps {
   apiHost?: string;
   apiKey?: string;
   /** Image in the header. Without one, a person on the brand circle. */
@@ -147,6 +162,8 @@ export interface SearchBarProps extends Pick<
   | 'avatar'
   | 'poweredBy'
   | 'passthrough'
+  | 'locale'
+  | 'translations'
 > {
   apiHost?: string;
   apiKey?: string;
