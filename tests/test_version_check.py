@@ -133,6 +133,33 @@ def test_cache_hit_renders_without_lock_or_network(monkeypatch, enable_check, ca
     assert "SECURITY ADVISORY: DOCSGPT-TEST-1" in capsys.readouterr().out
 
 
+def _posted_payload(monkeypatch) -> dict:
+    """Run a check that misses the cache and return what it posted."""
+    _install_repo(monkeypatch, _FakeRepo({"version_check_notice_shown": "1"}))
+    _install_db_session(monkeypatch)
+    monkeypatch.setattr(vc_module, "get_redis_instance", lambda: _make_redis_mock(get_return=None, set_return=True))
+    post_response = MagicMock()
+    post_response.status_code = 200
+    post_response.json.return_value = {"advisories": []}
+    post_spy = MagicMock(return_value=post_response)
+    monkeypatch.setattr(vc_module.requests, "post", post_spy)
+    vc_module.run_check()
+    post_spy.assert_called_once()
+    return post_spy.call_args.kwargs["json"]
+
+
+@pytest.mark.unit
+def test_the_distribution_is_sent_when_set(monkeypatch, enable_check):
+    monkeypatch.setattr(vc_module.settings, "DOCSGPT_DISTRIBUTION", "digitalocean")
+    assert _posted_payload(monkeypatch)["distribution"] == "digitalocean"
+
+
+@pytest.mark.unit
+def test_no_distribution_is_sent_by_default(monkeypatch, enable_check):
+    monkeypatch.setattr(vc_module.settings, "DOCSGPT_DISTRIBUTION", None)
+    assert "distribution" not in _posted_payload(monkeypatch)
+
+
 @pytest.mark.unit
 def test_cache_miss_lock_acquired_fetches_and_caches(monkeypatch, enable_check):
     repo = _FakeRepo({"version_check_notice_shown": "1"})

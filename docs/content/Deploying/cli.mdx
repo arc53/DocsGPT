@@ -1,7 +1,7 @@
 ---
 title: docsgpt CLI Reference
 description: Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.
-lastUpdated: 2026-10-16
+lastUpdated: 2026-10-20
 ---
 
 import { Callout } from 'nextra/components'
@@ -37,14 +37,15 @@ directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
 | `docsgpt up` | Install DocsGPT or update the running stack, then start it. See the options below. |
 | `docsgpt status` | Version, address, containers or services, and whether the API answers. Exits 1 when it does not. |
 | `docsgpt logs [-f] [--tail N] [service ...]` | Container logs, or on a native install the log files under `<stack>/logs`. |
-| `docsgpt token` | Print the access token, for installs reachable beyond this computer. |
+| `docsgpt token` | Print the access token, for installs reachable beyond this computer. With user accounts on, it names the first administrator and their initial password instead. |
 | `docsgpt open` | Open DocsGPT in the browser. |
 | `docsgpt env` | Print the path of the stack's `.env`. |
 | `docsgpt env get KEY` | Print one setting from it. |
 | `docsgpt env set KEY=VALUE ... [--no-restart]` | Change settings. A running native install restarts by itself unless `--no-restart`; on Docker, run `docsgpt up` to apply. |
 | `docsgpt restart [service ...]` | Restart the services without changing anything else. |
 | `docsgpt down` | Stop the stack. Settings and data stay. |
-| `docsgpt upgrade [--version X.Y.Z]` | Upgrade the package and restart the stack on the new version. For a `uv tool` install it does both; otherwise it prints the `pipx` or `pip` command to run, then run `docsgpt up`. |
+| `docsgpt upgrade [--version X.Y.Z] [--no-backup]` | Upgrade the package and restart the stack on the new version. For a `uv tool` install it does both, after a backup of a Docker install into `<stack>/backups/pre-upgrade` (the last two are kept; `--no-backup` skips it); otherwise it prints the `pipx` or `pip` command to run, then run `docsgpt up`. |
+| `docsgpt upgrade --rollback [-y]` | Go back to the version before the last `docsgpt upgrade`, restoring the backup it took first. Changes made since are lost; it asks before it starts. |
 | `docsgpt backup [--out DIR] [--with-settings]` | Write an archive of the database and the data volumes (Docker installs). See [Backups](/Deploying/Docker-Deploying#backups). |
 | `docsgpt restore ARCHIVE [-y] [--force]` | Put a backup back over this install (Docker installs). |
 | `docsgpt uninstall [-y] [--purge]` | Remove the containers or services; `--purge` also deletes the settings and all data. |
@@ -54,8 +55,10 @@ directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
 
 | Option | Effect |
 | --- | --- |
-| `--expose local\|network\|domain` | Who can reach it: this computer only (default), the network (plain HTTP, with an access token), or a domain. |
+| `--expose local\|network\|ip\|domain` | Who can reach it: this computer only (default), the network (plain HTTP, with an access token), this machine's public IP address over HTTPS, or a domain. |
 | `--domain NAME` | Serve that domain over HTTPS, with a certificate from Let's Encrypt. Implies `--expose domain`. |
+| `--ip ADDRESS` | Serve this public IPv4 address over HTTPS with no domain, with a Let's Encrypt IP certificate (six-day, renewed by Caddy). Implies `--expose ip`; without it, `--expose ip` uses this machine's address when that is a public one. See [HTTPS on the IP address](/Deploying/Docker-Deploying#https-on-the-ip-address-no-domain). |
+| `--accounts` / `--no-accounts` | Sign people in with their own accounts, kept by a Keycloak container on the same address under `/auth`, or go back to the shared access token. Needs `--expose ip` or `--domain`. See [User accounts](/Deploying/Docker-Deploying#user-accounts-with-keycloak). |
 | `--port N` | Host port for the UI and API (default `7091`). |
 | `--provider NAME`, `--api-key KEY`, `--model NAME`, `--base-url URL` | The model provider: `docsgpt` (default), `openai`, `anthropic`, `google`, `openrouter`, `groq` or `openai-compatible`. `DOCSGPT_API_KEY` can carry the key instead. |
 | `--docling` / `--no-docling` | Switch to the image with the docling parser engine and OCR, or back. |

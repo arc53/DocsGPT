@@ -27,8 +27,17 @@ class ServerSettings(SettingsGroup):
         default=True,
         description=(
             "Outbound version check for security advisories: the worker sends its version, a random instance id, "
-            "the Python version and the platform to gptcloud.arc53.com when it starts and every 7 hours (reusing a "
-            "recent cached answer), and logs any advisory. Set false to turn it off."
+            "the Python version, the platform and DOCSGPT_DISTRIBUTION (when set) to gptcloud.arc53.com when it "
+            "starts and every 7 hours (reusing a recent cached answer), and logs any advisory. Set false to turn "
+            "it off."
+        ),
+    )
+    DOCSGPT_DISTRIBUTION: Optional[str] = Field(
+        default=None,
+        description=(
+            "How this install was made, e.g. digitalocean for the DigitalOcean 1-Click App, which sets it. "
+            "Sent with the version check (VERSION_CHECK) so installs can be counted by where they come from; "
+            "unset sends nothing extra."
         ),
     )
     PUBLIC_API_BASE_URL: Optional[str] = Field(

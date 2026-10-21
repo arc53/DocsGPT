@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-20
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1523,7 +1523,13 @@ Run Flask in debug mode.
 
 Type `bool`, default `true`.
 
-Outbound version check for security advisories: the worker sends its version, a random instance id, the Python version and the platform to gptcloud.arc53.com when it starts and every 7 hours (reusing a recent cached answer), and logs any advisory. Set false to turn it off.
+Outbound version check for security advisories: the worker sends its version, a random instance id, the Python version, the platform and DOCSGPT_DISTRIBUTION (when set) to gptcloud.arc53.com when it starts and every 7 hours (reusing a recent cached answer), and logs any advisory. Set false to turn it off.
+
+### `DOCSGPT_DISTRIBUTION`
+
+Type `str`, default unset.
+
+How this install was made, e.g. digitalocean for the DigitalOcean 1-Click App, which sets it. Sent with the version check (VERSION_CHECK) so installs can be counted by where they come from; unset sends nothing extra.
 
 ### `PUBLIC_API_BASE_URL`
 

@@ -173,10 +173,134 @@ class TestExposure:
             ({}, "local"),
             ({"DOCSGPT_BIND": "0.0.0.0"}, "network"),
             ({"COMPOSE_PROFILES": "https", "DOCSGPT_DOMAIN": "d.example.com"}, "domain"),
+            ({"COMPOSE_PROFILES": "https", "DOCSGPT_DOMAIN": "203.0.113.5", "DOCSGPT_TLS": "ip"}, "ip"),
         ],
     )
     def test_the_mode_is_read_back_from_the_env(self, env, mode):
         assert stack.exposure(env) == mode
+
+
+IP_INSTALL = {
+    "COMPOSE_PROFILES": "https",
+    "DOCSGPT_DOMAIN": "8.8.8.8",
+    "DOCSGPT_TLS": "ip",
+    "DOCSGPT_BIND": "127.0.0.1",
+    "AUTH_TYPE": "simple_jwt",
+}
+
+
+class TestIpExposure:
+    def test_serves_https_on_the_address_with_the_token(self):
+        updates = _first_install(expose="ip", ip="8.8.8.8")
+        assert updates["COMPOSE_PROFILES"] == "https"
+        assert updates["DOCSGPT_DOMAIN"] == "8.8.8.8"
+        assert updates["DOCSGPT_TLS"] == "ip"
+        assert updates["DOCSGPT_BIND"] == "127.0.0.1", "the port stays local behind Caddy"
+        assert updates["AUTH_TYPE"] == "simple_jwt"
+        assert stack.exposure(updates) == "ip"
+        assert stack.url(updates, "10.0.0.2") == "https://8.8.8.8"
+
+    def test_an_address_implies_the_exposure(self):
+        assert _first_install(ip="8.8.8.8")["DOCSGPT_TLS"] == "ip"
+
+    def test_needs_the_address(self):
+        with pytest.raises(ValueError, match="needs the address"):
+            _first_install(expose="ip")
+
+    @pytest.mark.parametrize("address", ["192.168.1.10", "10.0.0.5", "127.0.0.1", "::1", "2001:4860::8888", "nope"])
+    def test_only_a_public_ipv4_address_can_be_certified(self, address):
+        with pytest.raises(ValueError):
+            _first_install(expose="ip", ip=address)
+
+    def test_public_ipv4(self):
+        assert stack.public_ipv4(" 8.8.8.8 ") == "8.8.8.8"
+        with pytest.raises(ValueError, match="not a public address"):
+            stack.public_ipv4("203.0.113.5")  # reserved for documentation, so Let's Encrypt could not reach it
+
+    def test_moving_to_a_domain_drops_the_ip_certificate_profile(self):
+        updates = stack.plan(IP_INSTALL, image_tag="x", domain="docs.example.com", fresh_database=False)
+        assert updates["DOCSGPT_DOMAIN"] == "docs.example.com"
+        assert updates["DOCSGPT_TLS"] is None
+        assert "COMPOSE_PROFILES" not in updates and "AUTH_TYPE" not in updates
+
+    def test_going_local_removes_it_all(self):
+        updates = stack.plan(IP_INSTALL, image_tag="x", expose="local", fresh_database=False)
+        assert updates["COMPOSE_PROFILES"] is None
+        assert updates["DOCSGPT_DOMAIN"] is None and updates["DOCSGPT_TLS"] is None
+
+    def test_the_api_url_follows_it(self):
+        updates = _first_install(expose="ip", ip="8.8.8.8", lan_ip="10.0.0.2")
+        assert updates["API_URL"] == "https://8.8.8.8"
+
+
+def _accounts_install(**overrides):
+    options = {"image_tag": "x", "fresh_database": False, "accounts": True, "secret": _secrets(),
+               "password": lambda: "initial-password"}
+    options.update(overrides)
+    return stack.plan(IP_INSTALL, **options)
+
+
+class TestAccounts:
+    def test_turning_them_on_points_oidc_at_keycloak_on_the_same_address(self):
+        updates = _accounts_install()
+        assert updates["COMPOSE_PROFILES"] == "https,accounts"
+        assert updates["DOCSGPT_ACCOUNTS"] == "on"
+        assert updates["AUTH_TYPE"] == "oidc"
+        assert updates["OIDC_ISSUER"] == "https://8.8.8.8/auth/realms/docsgpt"
+        assert updates["OIDC_CLIENT_ID"] == "docsgpt"
+        assert updates["OIDC_FRONTEND_URL"] == "https://8.8.8.8"
+        assert updates["OIDC_REDIRECT_URI"] == "https://8.8.8.8/api/auth/oidc/callback"
+        assert updates["OIDC_ADMIN_GROUPS"] == "docsgpt-admins"
+        assert updates["OIDC_CLIENT_SECRET"] == "secret1"
+        assert updates["KEYCLOAK_ADMIN_PASSWORD"] == "initial-password"
+        assert stack.runs_accounts({**IP_INSTALL, **updates})
+
+    def test_the_secrets_are_kept_once_made(self):
+        """The imported realm holds the client secret, so a new one would lock DocsGPT out of Keycloak."""
+        existing = {**IP_INSTALL, "OIDC_CLIENT_SECRET": "s", "KEYCLOAK_ADMIN_PASSWORD": "p"}
+        updates = stack.plan(existing, image_tag="x", accounts=True, fresh_database=False)
+        assert "OIDC_CLIENT_SECRET" not in updates and "KEYCLOAK_ADMIN_PASSWORD" not in updates
+
+    def test_they_follow_a_move_to_a_domain(self):
+        on = {**IP_INSTALL, **_accounts_install()}
+        updates = stack.plan(on, image_tag="x", domain="docs.example.com", fresh_database=False)
+        assert updates["OIDC_ISSUER"] == "https://docs.example.com/auth/realms/docsgpt"
+        assert updates["OIDC_REDIRECT_URI"] == "https://docs.example.com/api/auth/oidc/callback"
+        assert updates["OIDC_FRONTEND_URL"] == "https://docs.example.com"
+        assert "COMPOSE_PROFILES" not in updates and "OIDC_CLIENT_SECRET" not in updates
+
+    def test_a_rerun_changes_nothing(self):
+        on = {**IP_INSTALL, **_accounts_install()}
+        assert stack.plan(on, image_tag="x", fresh_database=False) == {}
+
+    def test_turning_them_off_goes_back_to_the_token_and_keeps_the_realm_secrets(self):
+        on = {**IP_INSTALL, **_accounts_install()}
+        updates = stack.plan(on, image_tag="x", accounts=False, fresh_database=False)
+        assert updates["COMPOSE_PROFILES"] == "https"
+        assert updates["AUTH_TYPE"] == "simple_jwt"
+        assert updates["DOCSGPT_ACCOUNTS"] is None
+        for key in stack.ACCOUNT_SETTINGS:
+            assert updates[key] is None
+        assert "OIDC_CLIENT_SECRET" not in updates and "KEYCLOAK_ADMIN_PASSWORD" not in updates
+
+    @pytest.mark.parametrize("expose", ["local", "network"])
+    def test_they_need_https(self, expose):
+        with pytest.raises(ValueError, match="over HTTPS"):
+            _first_install(expose=expose, accounts=True)
+        on = {**IP_INSTALL, **_accounts_install()}
+        with pytest.raises(ValueError, match="--no-accounts"):
+            stack.plan(on, image_tag="x", expose=expose, fresh_database=False)
+
+    def test_they_sit_beside_the_decider(self):
+        on = {**IP_INSTALL, **_accounts_install()}
+        assert stack.plan(on, image_tag="x", decider=True, fresh_database=False)["COMPOSE_PROFILES"] == (
+            "https,accounts,decider"
+        )
+
+    def test_a_first_install_on_a_domain_with_accounts(self):
+        updates = _first_install(domain="docs.example.com", accounts=True)
+        assert updates["COMPOSE_PROFILES"] == "accounts,https"
+        assert updates["AUTH_TYPE"] == "oidc"
 
 
 class TestPublicApiUrl:

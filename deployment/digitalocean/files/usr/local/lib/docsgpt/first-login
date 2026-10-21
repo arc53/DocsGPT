@@ -1,0 +1,71 @@
+#!/bin/bash
+# DocsGPT 1-Click: the optional setup questions, asked once on root's first login.
+#
+# DocsGPT already runs at https://<this Droplet's IP> with an access token; these only move it
+# to a domain and turn on user accounts, and every answer can be given later with
+# `docsgpt up --domain NAME` and `docsgpt up --accounts`.
+set -uo pipefail
+
+[ -t 0 ] && [ -t 1 ] || exit 0
+
+set -a
+# shellcheck disable=SC1091
+. /etc/environment
+set +a
+home="${DOCSGPT_HOME:-/opt/docsgpt}"
+
+done_asking() {
+  sed -i '/# docsgpt-first-login$/d' /root/.bashrc
+}
+
+if [ ! -f "$home/install.json" ]; then
+  echo "DocsGPT is still being set up; these questions come back at the next login."
+  exit 0
+fi
+
+ask_yes() {
+  local answer
+  read -r -p "$1 [y/N] " answer || return 1
+  case "$answer" in y | Y | yes | YES) return 0 ;; *) return 1 ;; esac
+}
+
+this_ip="$(grep -E '^DOCSGPT_DOMAIN=' "$home/.env" | tail -n 1 | cut -d= -f2-)"
+
+# The token is shown here, to root on a terminal, rather than in the login message, which any
+# user can read; `docsgpt token` prints it again.
+echo
+echo "DocsGPT is running at https://$this_ip. The page asks for this access token once per browser:"
+echo
+echo "  $(docsgpt token 2>/dev/null)"
+echo
+echo "Two optional steps (both can be done later; see the message above):"
+echo
+
+if ask_yes "Serve DocsGPT on your own domain name instead of the IP address?"; then
+  while true; do
+    read -r -p "Domain name (e.g. docs.example.com): " domain || break
+    domain="${domain// /}"
+    [ -n "$domain" ] || break
+    resolved="$(getent ahostsv4 "$domain" | awk '{print $1; exit}')"
+    if [ -n "$this_ip" ] && [ "$resolved" != "$this_ip" ]; then
+      echo "$domain resolves to ${resolved:-nothing}, not to this Droplet ($this_ip)."
+      echo "Add an A record for it pointing at $this_ip; Let's Encrypt cannot issue the certificate before it does."
+      ask_yes "Use $domain anyway?" || continue
+    fi
+    docsgpt up --yes --domain "$domain" && break
+    echo "That did not work; the message above says why."
+    ask_yes "Try another domain?" || break
+  done
+fi
+
+echo
+echo "User accounts: everyone signs in with their own account (Keycloak, at /auth) instead of"
+echo "sharing the access token. Turn them on before people start using DocsGPT: what was made"
+echo "with the token stays with the token's shared user."
+if ask_yes "Turn on user accounts?"; then
+  docsgpt up --yes --accounts
+fi
+
+done_asking
+echo
+echo "Done. \`docsgpt status\` shows where DocsGPT is; the login message lists the other commands."

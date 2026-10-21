@@ -205,8 +205,10 @@ def _add_deploy_commands(commands) -> None:
         return parser
 
     up = stack_command("up", "up", "install or update DocsGPT on Docker and start it")
-    up.add_argument("--expose", choices=EXPOSURES, help="who can reach it: local (default), network or domain")
+    up.add_argument("--expose", choices=EXPOSURES, help="who can reach it: local (default), network, ip or domain")
     up.add_argument("--domain", help="public domain served over HTTPS by Caddy (implies --expose domain)")
+    up.add_argument("--ip", help="public IPv4 address served over HTTPS by Caddy with no domain (implies --expose ip; "
+                                 "default: this machine's address)")
     up.add_argument("--port", type=int, help="host port for the UI and API (default: 7091)")
     up.add_argument("--provider", choices=list(PROVIDERS), help="model provider (default: the DocsGPT public API)")
     up.add_argument("--api-key", help="the provider's API key (or set DOCSGPT_API_KEY)")
@@ -222,7 +224,13 @@ def _add_deploy_commands(commands) -> None:
                          help="serve the decision model from a container of its own instead of the API process")
     decider.add_argument("--no-decider", dest="decider", action="store_const", const=False,
                          help="remove that container; the API process holds the model again")
-    up.set_defaults(docling=None, decider=None)
+    accounts = up.add_mutually_exclusive_group()
+    accounts.add_argument("--accounts", dest="accounts", action="store_const", const=True,
+                          help="sign people in with their own accounts, kept by a Keycloak container "
+                               "(needs --expose ip or --domain)")
+    accounts.add_argument("--no-accounts", dest="accounts", action="store_const", const=False,
+                          help="go back to the shared access token; the accounts are kept for later")
+    up.set_defaults(docling=None, decider=None, accounts=None)
     up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
     up.add_argument("--native", action="store_true",
                     help="run the API and worker as services on this machine instead of on Docker")
@@ -247,6 +255,13 @@ def _add_deploy_commands(commands) -> None:
 
     upgrade = stack_command("upgrade", "upgrade", "upgrade the package and restart the stack on the new version")
     upgrade.add_argument("--version", help="version to install (default: the latest release)")
+    upgrade.add_argument("--no-backup", dest="backup", action="store_false",
+                         help="skip the backup taken before upgrading (it is what --rollback restores)")
+    upgrade.add_argument("--rollback", action="store_true",
+                         help="go back to the version before the last upgrade and restore the backup taken then")
+    upgrade.add_argument("-y", "--yes", action="store_true", help="do not ask before rolling back")
+    upgrade.add_argument("--timeout", type=int, default=300,
+                         help="seconds to wait for the API after a rollback (default: 300)")
 
     uninstall = stack_command("uninstall", "uninstall", "remove the Docker stack")
     uninstall.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")

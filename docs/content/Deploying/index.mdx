@@ -1,7 +1,7 @@
 ---
 title: Choose a Deployment
 description: Compare the ways to install DocsGPT (installer, Docker Compose, pip, Kubernetes, air-gapped) and pick the one that fits.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-20
 ---
 
 import { Callout } from 'nextra/components'
@@ -20,6 +20,7 @@ differ in who manages them, where the data lives, and which version you get.
 | [Standalone Compose file](/Deploying/Docker-Deploying#quickest-setup-pre-built-images-no-checkout) | Running the images with plain Docker Compose, no Python on the host | The same stack, from one downloaded file | `http://localhost:7091` | Named Docker volumes; `.env` next to the file | `latest` unless `DOCSGPT_IMAGE_TAG` is set |
 | [Source checkout, `setup.sh`](/quickstart#from-a-clone-with-the-setup-script) | Trying changes, building your own images | Compose files under `deployment/` | `http://localhost:5173` (UI) and `:7091` (API) | Uploads and indexes in `application/` in the checkout, the database in the `docsgpt-oss_postgres_data` volume; `.env` in the repository root | `develop` (follows `main`) unless `DOCSGPT_IMAGE_TAG` is set |
 | [pip install](/Deploying/Pip-Install) | Hosts without Docker, or your own process manager | `docsgpt api` and `docsgpt worker` (or `docsgpt up --native` services) against your Postgres and Redis | `http://127.0.0.1:7091` | `~/.docsgpt/server` | The installed package's release |
+| [DigitalOcean 1-Click App](/Deploying/DigitalOcean) | A DigitalOcean Droplet without setting anything up yourself | The `docsgpt up` stack, set up on the Droplet's first boot | `https://<Droplet IP>`, or `https://<domain>` with `docsgpt up --domain` | Named Docker volumes; settings in `/opt/docsgpt/.env` | The release the image was built with; `docsgpt upgrade` moves on |
 | [Kubernetes](/Deploying/Kubernetes-Deploying) | Clusters, several API or worker replicas | Manifests in `deployment/k8s/` | Through `kubectl port-forward` or your Ingress | Postgres volume, S3 for uploads | Pinned in the manifests |
 | [Air-gapped](/Deploying/Air-Gapped) | Networks without internet access | Any of the above, with images and models brought in | As above | As above | Whatever you mirror |
 | [Development environment](/Deploying/Development-Environment) | Working on DocsGPT itself | Postgres and Redis in Docker, the app from source | `http://localhost:5173` | The checkout | Your working tree |
@@ -40,8 +41,13 @@ differ in who manages them, where the data lives, and which version you get.
   ```
 
   Caddy obtains the certificate and DocsGPT asks for an access token. Keep the
-  other ports closed. For separate user accounts, add
-  [OIDC single sign-on](/Deploying/OIDC-SSO).
+  other ports closed. Without a domain yet, `--ip <public address>` serves HTTPS
+  on the address itself. For separate user accounts, `docsgpt up --accounts` runs
+  Keycloak for you, or add [OIDC single sign-on](/Deploying/OIDC-SSO) with your
+  own identity provider.
+- **On DigitalOcean**, the [1-Click App](/Deploying/DigitalOcean) does all of
+  that on the Droplet's first boot: HTTPS on its IP address, the access token in
+  the login message, and backed-up upgrades.
 - **Prefer plain Compose** when you manage containers yourself, for example
   with an existing Compose-based setup. The standalone file runs the same
   images as `docsgpt up`, and `docsgpt up --adopt` can take it over later.

@@ -1,0 +1,5 @@
+# The image's files mirror paths on the Droplet (var/lib, usr/local/lib), which the
+# repository's Python ignores (lib/, var/) would otherwise hide.
+!files/**
+# Written by `packer build`.
+packer-manifest.json

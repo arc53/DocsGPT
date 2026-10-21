@@ -96,6 +96,7 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 - [Docker Setup](https://docs.docsgpt.cloud/Deploying/Docker-Deploying): Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
 - [Install with pip](https://docs.docsgpt.cloud/Deploying/Pip-Install): Run the DocsGPT backend from the PyPI package, inside your own Python environment.
 - [Deploying on Kubernetes](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying): Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
+- [DigitalOcean 1-Click App](https://docs.docsgpt.cloud/Deploying/DigitalOcean): Run DocsGPT on a DigitalOcean Droplet from the Marketplace 1-Click App, with HTTPS on the Droplet's IP address, an access token or user accounts, and backed-up upgrades.
 - [Air-Gapped Deployment](https://docs.docsgpt.cloud/Deploying/Air-Gapped): Run DocsGPT on a network with no internet access.
 - [Code Execution Sandbox](https://docs.docsgpt.cloud/Deploying/Sandbox): Run the sandbox that the Artifact and Code Executor tools need - the self-hosted Jupyter runner with Docker Compose, Kubernetes or pip, or Daytona Cloud - with the gateway token, kernel settings and network isolation.
 - [docsgpt CLI Reference](https://docs.docsgpt.cloud/Deploying/cli): Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.

@@ -107,11 +107,16 @@ class Docker:
                          stdout=stdout, stdin=stdin)
 
     def export_volume(self, volume: str, dest: Path, image: str) -> None:
-        """Write ``volume`` to ``dest`` as a tar, through an image the install already has."""
+        """Write ``volume`` to ``dest`` as a tar, through an image the install already has.
+
+        It runs as root, as the backend and the worker do in the Compose file: the files they
+        write are root's, and the image's own user may not be able to read them all.
+        """
         dest.parent.mkdir(parents=True, exist_ok=True)
         with dest.open("wb") as handle:
             self._run(
-                ["docker", "run", "--rm", "-v", f"{volume}:/data:ro", image, "tar", "cf", "-", "-C", "/data", "."],
+                ["docker", "run", "--rm", "--user", "root", "-v", f"{volume}:/data:ro", image,
+                 "tar", "cf", "-", "-C", "/data", "."],
                 stdout=handle,
             )
 
@@ -119,8 +124,9 @@ class Docker:
         """Replace ``volume``'s contents with the tar at ``source``; the volume is created when missing."""
         # Unpack into a throwaway directory inside the container first, so a truncated or corrupt
         # tar fails before the live volume is touched rather than halfway through emptying it. The
-        # container makes the directory itself: the image does not run as root, and a fixed path
-        # would be both a guess about what is writable and a temp-file smell.
+        # container makes the directory itself, since a fixed path would be a temp-file smell. It
+        # runs as root: the backend and the worker write the volumes as root (the Compose file),
+        # and the image's own user can neither delete their files nor put back root-owned ones.
         script = (
             'set -e; stage=$(mktemp -d); tar xf - -C "$stage"; '
             'find /data -mindepth 1 -delete; tar cf - -C "$stage" . | tar xf - -C /data; '
@@ -128,7 +134,7 @@ class Docker:
         )
         with source.open("rb") as handle:
             self._run(
-                ["docker", "run", "--rm", "-i", "-v", f"{volume}:/data", image, "sh", "-c", script],
+                ["docker", "run", "--rm", "-i", "--user", "root", "-v", f"{volume}:/data", image, "sh", "-c", script],
                 stdin=handle,
             )
 

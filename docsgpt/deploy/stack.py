@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import secrets
 from collections.abc import Callable, Mapping
@@ -15,10 +16,28 @@ RECORD_FILE = "install.json"
 DEFAULT_PORT = 7091
 # What the app uses when API_URL is unset (docsgpt/core/settings/workers.py).
 DEFAULT_API_URL = f"http://localhost:{DEFAULT_PORT}"
-EXPOSURES = ("local", "network", "domain")
+EXPOSURES = ("local", "network", "ip", "domain")
 # The decider sidecar: the Compose profile that starts it, and where the backend and worker reach it.
 DECIDER_PROFILE = "decider"
 DECIDER_URL = "http://decider:7095"
+# User accounts: the Compose profile that starts Keycloak, and what its docsgpt realm holds
+# (the realm itself is in the Compose file, imported on Keycloak's first start).
+ACCOUNTS_PROFILE = "accounts"
+KEYCLOAK_REALM = "docsgpt"
+KEYCLOAK_CLIENT_ID = "docsgpt"
+KEYCLOAK_ADMIN_USER = "admin"
+KEYCLOAK_ADMIN_GROUP = "docsgpt-admins"
+# The backend settings `--accounts` writes, recomputed from the address on every `up` while
+# accounts are on and removed when they are turned off. OIDC_CLIENT_SECRET and
+# KEYCLOAK_ADMIN_PASSWORD are not among them: the imported realm holds the secret, so it
+# stays for the day accounts are turned on again.
+ACCOUNT_SETTINGS = (
+    "OIDC_ISSUER",
+    "OIDC_CLIENT_ID",
+    "OIDC_FRONTEND_URL",
+    "OIDC_REDIRECT_URI",
+    "OIDC_ADMIN_GROUPS",
+)
 
 PROVIDERS = {
     "docsgpt": "DocsGPT public API (free, no key)",
@@ -74,10 +93,42 @@ def runs_decider(env: Mapping[str, str]) -> bool:
     return DECIDER_PROFILE in _profiles(env)
 
 
+def runs_accounts(env: Mapping[str, str]) -> bool:
+    """Whether the stack's ``.env`` starts Keycloak for user accounts (``docsgpt up --accounts``)."""
+    return ACCOUNTS_PROFILE in _profiles(env)
+
+
+def public_ipv4(address: str) -> str:
+    """``address`` as a public IPv4 address, the only kind ``--expose ip`` can get a certificate for.
+
+    Args:
+        address: The address to check.
+
+    Returns:
+        The address in its canonical form.
+
+    Raises:
+        ValueError: When it is not an IPv4 address, or one Let's Encrypt cannot reach (private,
+            loopback, reserved, ...).
+    """
+    try:
+        parsed = ipaddress.ip_address(address.strip())
+    except ValueError:
+        raise ValueError(f"{address!r} is not an IP address") from None
+    if parsed.version != 4:
+        raise ValueError(f"{address} is an IPv6 address; --expose ip takes a public IPv4 address")
+    if not parsed.is_global:
+        raise ValueError(
+            f"{address} is not a public address, so Let's Encrypt cannot reach it to issue a certificate. "
+            "Pass this machine's public IPv4 address with --ip, or use --expose network on a private network."
+        )
+    return str(parsed)
+
+
 def exposure(env: Mapping[str, str]) -> str:
-    """Who can reach the stack, read back from its ``.env``: local, network or domain."""
+    """Who can reach the stack, read back from its ``.env``: local, network, ip or domain."""
     if "https" in _profiles(env) and env.get("DOCSGPT_DOMAIN"):
-        return "domain"
+        return "ip" if env.get("DOCSGPT_TLS") == "ip" else "domain"
     if env.get("DOCSGPT_BIND", "") not in _LOCAL_BINDS:
         return "network"
     return "local"
@@ -122,7 +173,10 @@ def plan(
     provider: Optional[Mapping[str, Optional[str]]] = None,
     docling: Optional[bool] = None,
     decider: Optional[bool] = None,
+    ip: Optional[str] = None,
+    accounts: Optional[bool] = None,
     secret: Optional[Callable[[], str]] = None,
+    password: Optional[Callable[[], str]] = None,
     lan_ip: Optional[str] = None,
     written_api_url: Optional[str] = None,
 ) -> dict[str, Optional[str]]:
@@ -140,29 +194,45 @@ def plan(
     A stack that runs the decider gets a ``DECISION_KEY`` when it has none; turning the
     decider off keeps the key, which a server on the host may use.
 
+    ``expose="ip"`` serves HTTPS on the public IPv4 address ``ip`` (a Let's Encrypt IP
+    certificate, see the Compose file), with no domain. ``accounts`` turns Keycloak user
+    accounts on or off (``None`` keeps what the last ``up`` chose); they need HTTPS, so
+    the ``ip`` or ``domain`` exposure. While they are on, ``AUTH_TYPE=oidc`` and the
+    ``OIDC_*`` settings follow the address; turned off, the stack goes back to the
+    ``simple_jwt`` access token.
+
     Given ``lan_ip``, ``API_URL`` follows the address DocsGPT is opened at (see
     :func:`public_api_url`; ``written_api_url`` is the value the last ``up``
     recorded writing); the worker keeps its own in-stack value from the Compose
     file.
     """
     secret = secret or (lambda: secrets.token_hex(32))
+    password = password or (lambda: secrets.token_urlsafe(12))
     wanted: dict[str, Optional[str]] = {"DOCSGPT_IMAGE_TAG": image_tag}
 
     if domain and expose is None:
         expose = "domain"
+    if ip and expose is None:
+        expose = "ip"
     if expose is None and "DOCSGPT_BIND" not in existing and "COMPOSE_PROFILES" not in existing:
         expose = "local"
     profiles = _profiles(existing)
     if expose == "local":
-        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=None)
+        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=None, DOCSGPT_TLS=None)
         profiles.discard("https")
     elif expose == "network":
-        wanted.update(DOCSGPT_BIND="0.0.0.0", DOCSGPT_DOMAIN=None)
+        # `--expose network` publishes on every interface by request, with the access token on.
+        wanted.update(DOCSGPT_BIND="0.0.0.0", DOCSGPT_DOMAIN=None, DOCSGPT_TLS=None)  # nosec B104
         profiles.discard("https")
+    elif expose == "ip":
+        if not ip:
+            raise ValueError("serving DocsGPT on this machine's IP address needs the address")
+        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=public_ipv4(ip), DOCSGPT_TLS="ip")
+        profiles.add("https")
     elif expose == "domain":
         if not domain:
             raise ValueError("exposing DocsGPT on a domain needs the domain name")
-        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=domain)
+        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=domain, DOCSGPT_TLS=None)
         profiles.add("https")
     elif expose is not None:
         raise ValueError(f"unknown exposure {expose!r}; choose one of: {', '.join(EXPOSURES)}")
@@ -176,10 +246,38 @@ def plan(
             if existing.get("DECISION_MODE") == "api":  # without a URL that would leave no model at all
                 wanted["DECISION_MODE"] = None
         profiles.discard(DECIDER_PROFILE)
+    after_tls = {**existing, **wanted}
+    https_site = after_tls.get("DOCSGPT_DOMAIN") if "https" in profiles else None
+    if accounts is None:
+        accounts = ACCOUNTS_PROFILE in profiles
+    if accounts:
+        if not https_site:
+            raise ValueError(
+                "user accounts sign people in over HTTPS: serve DocsGPT on this machine's IP address "
+                "(--expose ip) or on a domain (--domain) with them, or turn them off with --no-accounts"
+            )
+        profiles.add(ACCOUNTS_PROFILE)
+        site = f"https://{https_site}"
+        wanted.update(
+            DOCSGPT_ACCOUNTS="on",
+            AUTH_TYPE="oidc",
+            OIDC_ISSUER=f"{site}/auth/realms/{KEYCLOAK_REALM}",
+            OIDC_CLIENT_ID=KEYCLOAK_CLIENT_ID,
+            OIDC_FRONTEND_URL=site,
+            OIDC_REDIRECT_URI=f"{site}/api/auth/oidc/callback",
+            OIDC_ADMIN_GROUPS=KEYCLOAK_ADMIN_GROUP,
+        )
+        if not existing.get("OIDC_CLIENT_SECRET"):
+            wanted["OIDC_CLIENT_SECRET"] = secret()
+        if not existing.get("KEYCLOAK_ADMIN_PASSWORD"):
+            wanted["KEYCLOAK_ADMIN_PASSWORD"] = password()
+    elif ACCOUNTS_PROFILE in _profiles(existing):
+        profiles.discard(ACCOUNTS_PROFILE)
+        wanted.update({key: None for key in ACCOUNT_SETTINGS}, DOCSGPT_ACCOUNTS=None, AUTH_TYPE="simple_jwt")
     if profiles != _profiles(existing):
         kept = [name for name in _profile_list(existing) if name in profiles]
         wanted["COMPOSE_PROFILES"] = ",".join(kept + sorted(profiles - set(kept))) or None
-    if expose in ("network", "domain") and not existing.get("AUTH_TYPE"):
+    if expose in ("network", "ip", "domain") and not existing.get("AUTH_TYPE") and "AUTH_TYPE" not in wanted:
         wanted["AUTH_TYPE"] = "simple_jwt"
 
     keys = ["INTERNAL_KEY", "JWT_SECRET_KEY"]
@@ -223,7 +321,7 @@ def _port(env: Mapping[str, str]) -> str:
 def url(env: Mapping[str, str], lan_ip: str) -> str:
     """The address to open DocsGPT at."""
     mode = exposure(env)
-    if mode == "domain":
+    if mode in ("ip", "domain"):
         return f"https://{env['DOCSGPT_DOMAIN']}"
     if mode == "network":
         bind = env.get("DOCSGPT_BIND", "")

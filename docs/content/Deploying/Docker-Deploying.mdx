@@ -1,7 +1,7 @@
 ---
 title: Docker Deployment of DocsGPT
 description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
-lastUpdated: 2026-10-16
+lastUpdated: 2026-10-20
 ---
 
 import { Callout } from 'nextra/components'
@@ -55,8 +55,9 @@ secrets, and `install.json`. Data lives in named Docker volumes. The first run
 asks two questions:
 
 - **Who should reach DocsGPT:** only this computer; other machines on the
-  network (plain HTTP, with `AUTH_TYPE=simple_jwt` and an access token); or a
-  domain name with HTTPS (Caddy gets the certificate, access token as well).
+  network (plain HTTP, with `AUTH_TYPE=simple_jwt` and an access token); this
+  machine's public IP address with HTTPS and no domain; or a domain name with
+  HTTPS (Caddy gets the certificate, access token as well).
 - **Which model provider:** the DocsGPT public API (no key needed), OpenAI,
   Anthropic, Google Gemini, OpenRouter, Groq, or an OpenAI-compatible server
   such as Ollama or vLLM.
@@ -83,7 +84,7 @@ public address of your own reverse proxy.
 | `docsgpt status` | Version, address, containers, and whether the API answers |
 | `docsgpt logs [-f] [service]` | Container logs |
 | `docsgpt env set KEY=VALUE` | Change a setting; `docsgpt up` applies it |
-| `docsgpt upgrade` | Upgrade the package (for `uv tool` installs) and restart on the new version |
+| `docsgpt upgrade` | Back up, upgrade the package (for `uv tool` installs) and restart on the new version; `--rollback` goes back |
 | `docsgpt down` | Stop the stack; data and settings stay |
 
 The [docsgpt CLI reference](/Deploying/cli) lists every command, including
@@ -92,8 +93,10 @@ The [docsgpt CLI reference](/Deploying/cli) lists every command, including
 ### Backups
 
 `docsgpt backup` writes one archive holding a dump of the database and a tar of
-each data volume (`indexes`, `inputs`, `vectors`). It is new in 1.0.0; on
-0.21.0, [back up by hand](/upgrading#back-up-and-restore-by-hand-0210).
+each data volume (`indexes`, `inputs`, `vectors`). With [user accounts](#user-accounts-with-keycloak)
+on, it holds a dump of Keycloak's database as well, and Keycloak pauses with the
+backend and the worker. It is new in 1.0.0; on 0.21.0,
+[back up by hand](/upgrading#back-up-and-restore-by-hand-0210).
 
 ```bash
 docsgpt backup                      # into <stack>/backups
@@ -119,14 +122,71 @@ docsgpt restore ~/.docsgpt/server/backups/docsgpt-20260916-120000.tar.gz
 
 It asks first, then stops the stack, puts the volumes and the database back, and
 starts DocsGPT again. The backup loads into an empty database, so tables a newer
-release added go too; the current database is kept as `docsgpt_before_restore`
-until the load succeeds, and put back if it fails. `--yes` skips the question for scripts. A backup taken
+release added go too. The restore is all or nothing: the current database is kept
+as `docsgpt_before_restore` and the current volumes are copied to a temporary
+folder until everything has loaded, and if any step fails the databases and the
+volumes go back to what they were, so the files never disagree with the database.
+That copy needs free disk space about the size of the data volumes. `--yes` skips the question for scripts. A backup taken
 with a newer DocsGPT is refused, since its data may not fit this version's
 schema; upgrade first, or pass `--force` if you know the two match.
 
 The Postgres data directory itself is not archived: the dump is the database
 backup, and copying a directory Postgres is writing to would capture a torn
 copy. Caddy's certificates are not archived either, as it obtains them again.
+
+`docsgpt upgrade` takes a backup like this before it upgrades a `uv tool` install,
+into `<stack>/backups/pre-upgrade` (it keeps the last two). `docsgpt upgrade --rollback`
+restores that backup on the previous release's image and reinstalls the previous
+`docsgpt` package, so a release that misbehaves can be undone in one command;
+what changed since the upgrade is lost. `docsgpt upgrade --no-backup` skips it.
+
+### HTTPS on the IP address, no domain
+
+On a server with a public IPv4 address, DocsGPT can serve HTTPS before you have a
+domain:
+
+```bash
+docsgpt up --ip 203.0.113.10    # or --expose ip, which uses this machine's address when it is public
+```
+
+Caddy gets a [Let's Encrypt certificate for the IP address](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability).
+These come only on the six-day `shortlived` profile, and Caddy renews them by
+itself; ports 80 and 443 must be open for that. Until the first one is issued,
+Caddy serves a self-signed certificate, so the browser warns for that first
+minute. The access token is on, as for a domain. `docsgpt up --domain NAME`
+moves the install to a domain later. The [DigitalOcean 1-Click App](/Deploying/DigitalOcean)
+starts this way.
+
+### User accounts with Keycloak
+
+With the access token, everyone shares one DocsGPT user. `docsgpt up --accounts`
+gives each person their own, through a [Keycloak](https://www.keycloak.org/)
+container that the stack runs and [OIDC sign-in](/Deploying/OIDC-SSO):
+
+```bash
+docsgpt up --accounts      # with --ip or --domain, now or from an earlier run
+```
+
+- Keycloak serves on the same address under `/auth`, and keeps its data in a
+  `keycloak` database in the stack's PostgreSQL.
+- Its first start imports a `docsgpt` realm: the `docsgpt` client, a
+  `docsgpt-admins` group whose members DocsGPT makes admins, and an `admin` user
+  in that group. `docsgpt up` prints the admin's initial password, kept in
+  `KEYCLOAK_ADMIN_PASSWORD`; the first sign-in sets a new one and asks for an
+  email address.
+- Add people in the Keycloak console at `/auth/admin/docsgpt/console`, signed in
+  as `admin`. Keycloak's own `master` realm isn't reachable from outside.
+- `docsgpt up` writes `AUTH_TYPE=oidc` and the `OIDC_*` settings, and rewrites
+  them when the address changes, for example on a move from the IP address to a
+  domain. The client's redirect address is relative, so Keycloak follows the move
+  too.
+- `docsgpt up --no-accounts` goes back to the access token. The accounts stay in
+  the database for when you turn them on again.
+
+Turn accounts on before people start using DocsGPT: what was made with the access
+token belongs to its shared user and doesn't move to anyone's account. Keycloak
+needs about 500 MB of memory; its limit is `KEYCLOAK_MEMORY` (default `1g`). Its
+first start, which imports the realm, takes a minute or two, and `docsgpt up` waits for it.
 
 More `docsgpt up` options: `--port`, `--docling` (the image with the docling
 parser engine and OCR), `--image-tag develop` (follow the `main` branch) and
@@ -253,6 +313,11 @@ Let's Encrypt certificate and proxies to the backend.
 
 3.  Run `docker compose -f docker-compose-standalone.yaml up -d` and open
     `https://docs.example.com/`.
+
+For HTTPS on the machine's public IP address instead of a domain, set
+`DOCSGPT_DOMAIN` to the address and add `DOCSGPT_TLS=ip`, which makes Caddy ask
+Let's Encrypt for an IP certificate (see
+[HTTPS on the IP address](#https-on-the-ip-address-no-domain)).
 
 `COMPOSE_PROFILES=https` in `.env` makes every later `up`, `down` and `logs`
 include Caddy. Leave `DOCSGPT_BIND` at its default: Caddy reaches the backend

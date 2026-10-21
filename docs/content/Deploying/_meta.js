@@ -7,6 +7,7 @@ export default {
   "Docker-Deploying": "🛳️ Docker Setup",
   "Pip-Install": "🐍 Install with pip",
   "Kubernetes-Deploying": "☸️ Deploying on Kubernetes",
+  "DigitalOcean": "🌊 DigitalOcean 1-Click App",
   "Air-Gapped": "🔒 Air-Gapped Deployment",
   "Sandbox": "🧪 Code Execution Sandbox",
   "cli": "⌨️ docsgpt CLI Reference",

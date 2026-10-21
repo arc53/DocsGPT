@@ -1,0 +1,143 @@
+name: DigitalOcean 1-Click image
+
+# Builds the DocsGPT 1-Click App image (deployment/digitalocean) for a release, boots a
+# Droplet from it and runs the smoke test, then submits it to the DigitalOcean Marketplace.
+# The backend release calls this after the release's Docker images and PyPI package are
+# published; the monthly run rebuilds the latest release on a freshly patched Ubuntu, so the
+# listing never sits on an outdated base image (DigitalOcean suspends listings that do).
+#
+# Secrets: DIGITALOCEAN_TOKEN (read and write: Droplets, snapshots, SSH keys). With
+# DIGITALOCEAN_MARKETPLACE_APP_ID set too, a passing image is submitted for review through
+# the Vendor Portal API; without it the snapshot is only built and tested.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release to build (a PyPI version whose Docker images are published)
+        type: string
+        required: true
+      submit:
+        description: Submit the image to the Marketplace after the smoke test
+        type: boolean
+        default: true
+    secrets:
+      DIGITALOCEAN_TOKEN:
+        required: true
+      DIGITALOCEAN_MARKETPLACE_APP_ID:
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release to build (empty for the latest on PyPI)
+        type: string
+        default: ''
+      submit:
+        description: Submit the image to the Marketplace after the smoke test
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 6 3 * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: digitalocean-image
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
+        with:
+          version: 1.11.2
+
+      - name: Resolve the version
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="$REQUESTED"
+          if [ -z "$version" ]; then
+            version="$(curl -fsS https://pypi.org/pypi/docsgpt/json | jq -r .info.version)"
+          fi
+          # The package and the images of a release appear within minutes of each other.
+          for _ in $(seq 1 30); do
+            if curl -fsS "https://pypi.org/pypi/docsgpt/$version/json" >/dev/null &&
+              curl -fsS "https://hub.docker.com/v2/repositories/arc53/docsgpt/tags/$version" >/dev/null; then
+              echo "version=$version" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "docsgpt $version is not on PyPI and Docker Hub yet" >&2
+          exit 1
+
+      - name: Build the image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          packer init deployment/digitalocean
+          packer build -color=false -var "docsgpt_version=$VERSION" deployment/digitalocean
+          snapshot="$(jq -r '.builds[-1].artifact_id' deployment/digitalocean/packer-manifest.json | cut -d: -f2)"
+          echo "SNAPSHOT_ID=$snapshot" >> "$GITHUB_ENV"
+
+      - name: Smoke test a Droplet booted from it
+        run: python3 deployment/digitalocean/smoke_test.py --snapshot "$SNAPSHOT_ID"
+
+      - name: Submit to the Marketplace
+        id: submit
+        if: github.event_name == 'schedule' || inputs.submit
+        env:
+          APP_ID: ${{ secrets.DIGITALOCEAN_MARKETPLACE_APP_ID }}
+          VERSION: ${{ steps.version.outputs.version }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_ID" ]; then
+            echo "DIGITALOCEAN_MARKETPLACE_APP_ID is not set; the snapshot $SNAPSHOT_ID is built and tested only."
+            exit 0
+          fi
+          reason="DocsGPT $VERSION"
+          if [ "$EVENT" = "schedule" ]; then
+            reason="DocsGPT $VERSION on a freshly patched Ubuntu 24.04"
+          fi
+          jq -n --argjson image "$SNAPSHOT_ID" --arg version "$VERSION" --arg reason "$reason" '{
+            imageId: $image,
+            reasonForUpdate: $reason,
+            osVersion: "Ubuntu 24.04",
+            softwareIncluded: [
+              {name: "DocsGPT", version: $version, website: "https://github.com/arc53/DocsGPT"},
+              {name: "Docker", version: "CE", website: "https://www.docker.com"},
+              {name: "Caddy", version: "2", website: "https://caddyserver.com"},
+              {name: "PostgreSQL", version: "16", website: "https://www.postgresql.org"},
+              {name: "Redis", version: "6", website: "https://redis.io"},
+              {name: "Keycloak (optional accounts)", version: "26", website: "https://www.keycloak.org"}
+            ]
+          }' > submission.json
+          curl -fsS -X PATCH \
+            -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" -H "Content-Type: application/json" \
+            --data @submission.json \
+            "https://api.digitalocean.com/api/v1/vendor-portal/apps/$APP_ID"
+          echo
+          echo "Submitted snapshot $SNAPSHOT_ID for review."
+          echo "submitted=true" >> "$GITHUB_OUTPUT"
+
+      # A snapshot that failed, or was only built and tested, costs storage and serves nothing.
+      # A submitted one stays: the listing runs it once DigitalOcean approves it.
+      - name: Delete the snapshot unless it was submitted
+        if: always() && env.SNAPSHOT_ID != '' && steps.submit.outputs.submitted != 'true'
+        run: |
+          curl -fsS -X DELETE -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+            "https://api.digitalocean.com/v2/snapshots/$SNAPSHOT_ID"
+          echo "Deleted snapshot $SNAPSHOT_ID."
