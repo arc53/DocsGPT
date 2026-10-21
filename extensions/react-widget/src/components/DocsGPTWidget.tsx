@@ -27,6 +27,7 @@ import {
   useAttachments,
 } from '../hooks/useAttachments';
 import { useBackDismiss } from '../hooks/useBackDismiss';
+import { useClientLayoutEffect } from '../hooks/useClientLayoutEffect';
 import { useDictation } from '../hooks/useDictation';
 import { SIDEBAR_WIDTH_VAR, useSidebarResize } from '../hooks/useSidebarResize';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
@@ -141,10 +142,6 @@ const formatList = (items: string[], locale: string) => {
   }
   return items.join(', ');
 };
-
-// Layout timing in the browser, without React's warning on the server.
-const useClientLayoutEffect =
-  typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
 
 /** What decides whether a stored conversation changed. */
 const savedSignature = (turns: StoredTurn[], conversationId: string | null) =>

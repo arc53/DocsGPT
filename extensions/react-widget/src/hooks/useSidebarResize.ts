@@ -7,6 +7,7 @@ import {
   SIDEBAR_MIN_WIDTH,
 } from '../utils/sidebarWidth';
 import { readStorage, writeStorage } from '../utils/conversationStore';
+import { useClientLayoutEffect } from './useClientLayoutEffect';
 
 /** The custom property the sidebar's width is read from. */
 export const SIDEBAR_WIDTH_VAR = '--dgpt-sidebar-width';
@@ -96,7 +97,9 @@ export function useSidebarResize({
   // Unmounted mid-drag (destroy, route change): unlock the page and keep the
   // width, through the latest endDrag so it writes under the current key.
   const endDragRef = React.useRef(endDrag);
-  endDragRef.current = endDrag;
+  useClientLayoutEffect(() => {
+    endDragRef.current = endDrag;
+  });
   React.useEffect(() => () => endDragRef.current(), []);
 
   // A drag whose handle lost the pointer without telling us.
