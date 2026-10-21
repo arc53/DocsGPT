@@ -140,3 +140,48 @@ def test_the_sample_can_end_inside_a_quoted_line_break(tmp_path: Path) -> None:
 
     assert detect_file_separator(_write(tmp_path, text)) == ";"
 
+
+
+# Comma files whose quoted fields hold commas and exactly one semicolon each.
+# Split with csv's defaults, the commas do not line up and the semicolons do,
+# so detection that ignored the configured quoting picked ";".
+SKIPINITIALSPACE_FILE = (
+    'name, "city, region; country", note\n'
+    'Doe, "Berlin, BE; DE", tea\n'
+    'Roe, "Paris, IDF, FR; EU", milk\n'
+)
+QUOTECHAR_FILE = (
+    "name,'city, region; country',note\n"
+    "Doe,'Berlin, BE; DE',tea\n"
+    "Roe,'Paris, IDF, FR; EU',milk\n"
+)
+DIALECT_EXPECTED = (
+    "HEADERS: name, city, region; country, note\n"
+    "Doe, Berlin, BE; DE, tea\n"
+    "Roe, Paris, IDF, FR; EU, milk"
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "dialect"),
+    [
+        (SKIPINITIALSPACE_FILE, {"skipinitialspace": True}),
+        (QUOTECHAR_FILE, {"quotechar": "'"}),
+    ],
+    ids=["skipinitialspace", "quotechar"],
+)
+def test_detection_splits_the_way_the_configured_dialect_reads(
+    tmp_path: Path, text: str, dialect: dict
+) -> None:
+    parser = PandasCSVParser(pandas_config=dialect)
+
+    assert detect_separator(text) == ";"
+    assert detect_separator(text, dialect=dialect) == ","
+    assert parser.parse_file(_write(tmp_path, text)) == DIALECT_EXPECTED
+
+
+def test_dialect_options_csv_cannot_apply_keep_the_comma() -> None:
+    """QUOTE_NONNUMERIC makes csv.reader convert unquoted fields to float."""
+    text = "\n".join(ROWS) + "\n"
+
+    assert detect_separator(text, dialect={"quoting": 2}) == ","

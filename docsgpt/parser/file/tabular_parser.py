@@ -8,7 +8,7 @@ import datetime
 import io
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Mapping, Union
 
 from docsgpt.parser.file.base_parser import BaseParser
 
@@ -22,8 +22,14 @@ CANDIDATE_SEPARATORS = (",", ";", "\t", "|")
 _SAMPLE_CHARS = 64 * 1024
 _SAMPLE_ROWS = 20
 
+# The read_csv options that change where a field ends. They mean the same to
+# csv.reader, so detection splits the sample the way pandas will split the file.
+_DIALECT_OPTIONS = ("quotechar", "escapechar", "doublequote", "skipinitialspace", "quoting")
 
-def _consistent_column_count(sample: str, separator: str, truncated: bool) -> int:
+
+def _consistent_column_count(
+    sample: str, separator: str, truncated: bool, dialect: Mapping[str, Any] | None = None
+) -> int:
     """Columns per row under ``separator``, or 0 when the rows disagree.
 
     A separator the file was not written with either does not occur at all (one
@@ -34,10 +40,13 @@ def _consistent_column_count(sample: str, separator: str, truncated: bool) -> in
     When ``truncated`` is set, the sample is a prefix of a longer file, so the
     row it ends in stops wherever the read did, between two fields or inside a
     quoted one. That row is left out rather than counted as having fewer columns.
+
+    ``dialect`` holds the quoting options the file will be read with. Options
+    csv.reader cannot apply make every separator fail, which leaves the comma.
     """
     rows: List[List[str]] = []
-    reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator)
     try:
+        reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator, **(dialect or {}))
         for row in reader:
             if not any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
                 continue
@@ -47,7 +56,7 @@ def _consistent_column_count(sample: str, separator: str, truncated: bool) -> in
         else:
             if truncated and len(rows) > 1:
                 rows.pop()
-    except csv.Error:
+    except (csv.Error, TypeError, ValueError):
         return 0
     count = 0
     for row in rows:
@@ -57,7 +66,9 @@ def _consistent_column_count(sample: str, separator: str, truncated: bool) -> in
     return count if count > 1 else 0
 
 
-def detect_separator(sample: str, truncated: bool = False) -> str:
+def detect_separator(
+    sample: str, truncated: bool = False, dialect: Mapping[str, Any] | None = None
+) -> str:
     """The separator ``sample`` was written with, defaulting to a comma.
 
     ``pandas.read_csv`` defaults to a comma, and its own sniffing
@@ -71,17 +82,21 @@ def detect_separator(sample: str, truncated: bool = False) -> str:
         sample: The first rows of the file, as text.
         truncated: Whether the file goes on past ``sample``, so that its last
             row may be cut short.
+        dialect: The quoting options the file will be read with (see
+            ``_DIALECT_OPTIONS``); csv's defaults when omitted.
 
     Returns:
         str: One of :data:`CANDIDATE_SEPARATORS`; ``","`` when none of them fits.
     """
     for separator in CANDIDATE_SEPARATORS:
-        if _consistent_column_count(sample, separator, truncated):
+        if _consistent_column_count(sample, separator, truncated, dialect):
             return separator
     return ","
 
 
-def detect_file_separator(file: Path, encoding: str | None = None) -> str:
+def detect_file_separator(
+    file: Path, encoding: str | None = None, dialect: Mapping[str, Any] | None = None
+) -> str:
     """The separator ``file`` was written with, defaulting to a comma.
 
     A file that cannot be read here is left to the caller's own reader, which
@@ -92,7 +107,7 @@ def detect_file_separator(file: Path, encoding: str | None = None) -> str:
             sample = handle.read(_SAMPLE_CHARS + 1)
     except OSError:
         return ","
-    return detect_separator(sample[:_SAMPLE_CHARS], truncated=len(sample) > _SAMPLE_CHARS)
+    return detect_separator(sample[:_SAMPLE_CHARS], truncated=len(sample) > _SAMPLE_CHARS, dialect=dialect)
 
 
 # pandas reads the literal strings ``N/A``, ``NA``, ``n/a``, ``NULL``, ``None``,
@@ -270,7 +285,8 @@ class PandasCSVParser(BaseParser):
 
         pandas_config = {**_KEEP_LITERAL_NA, **self._pandas_config}
         if "sep" not in pandas_config and "delimiter" not in pandas_config:
-            pandas_config["sep"] = detect_file_separator(file, pandas_config.get("encoding"))
+            dialect = {key: pandas_config[key] for key in _DIALECT_OPTIONS if key in pandas_config}
+            pandas_config["sep"] = detect_file_separator(file, pandas_config.get("encoding"), dialect)
 
         df = pd.read_csv(file, **pandas_config)
         headers = [cell_to_text(h) for h in df.columns.tolist()]
