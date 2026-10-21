@@ -10,6 +10,7 @@ from docsgpt.utils import (
     check_required_fields,
     clean_text_for_tts,
     convert_pdf_to_images,
+    count_tokens_docs,
     get_encoding,
     get_field_validation_errors,
     get_gpt_model,
@@ -26,29 +27,7 @@ from docsgpt.utils import (
     validate_function_name,
     validate_required_fields,
 )
-
-
-class _RecordingEncoding:
-    """Wraps the cl100k encoding and records the length of every encode input (#3130)."""
-
-    def __init__(self, inner):
-        self._inner = inner
-        self.encode_lengths = []
-
-    def encode_ordinary(self, text):
-        self.encode_lengths.append(len(text))
-        return self._inner.encode_ordinary(text)
-
-
-def _spy_encoding(monkeypatch):
-    """Record every cl100k encode, whether it goes through utils or the windowed counter."""
-    import docsgpt.parser.tokenization as tokenization_module
-    import docsgpt.utils as utils_module
-
-    encoding = _RecordingEncoding(get_encoding())
-    monkeypatch.setattr(utils_module, "get_encoding", lambda: encoding)
-    monkeypatch.setattr(tokenization_module, "get_encoding", lambda: encoding)
-    return encoding
+from tests.parser.counter_fakes import spy_cl100k
 
 
 class TestGetEncoding:
@@ -240,14 +219,9 @@ class TestNumTokens:
 
     @pytest.mark.unit
     def test_stays_one_shot_beyond_the_chunking_window(self, monkeypatch):
-        # #3130 windows the chunking counters only; this general-purpose helper
-        # keeps its exact one-shot count however small the chunking window is.
-        from docsgpt.parser import tokenization
-
-        monkeypatch.setattr(tokenization, "_WINDOW_CHARS", 64, raising=False)
         text = "Sentence explaining retrieval, ranking and citation.\n" * 40
         expected = len(get_encoding().encode_ordinary(text))
-        encoding = _spy_encoding(monkeypatch)
+        encoding = spy_cl100k(monkeypatch, window=64)
         assert num_tokens_from_string(text) == expected
         assert encoding.encode_lengths == [len(text)]
 
@@ -293,49 +267,22 @@ class TestCountTokensDocs:
 
     @pytest.mark.unit
     def test_counts_each_doc_without_joining_them(self, monkeypatch):
-        # #3130: joining every chunk into one string and encoding it made the
-        # whole-corpus encode the peak. Each doc is counted on its own instead.
-        from docsgpt.utils import count_tokens_docs
-
         contents = ["alpha beta gamma. " * 20, "delta epsilon zeta. " * 70, "eta theta iota. " * 35]
-        docs = []
-        for content in contents:
-            doc = MagicMock()
-            doc.page_content = content
-            docs.append(doc)
-        from docsgpt.parser.tokenization import count_tokens_windowed
-
-        expected = sum(count_tokens_windowed(content) for content in contents)
-        # Each doc is within one window, so the windowed count is the one-shot count.
-        assert expected == sum(num_tokens_from_string(content) for content in contents)
-        encoding = _spy_encoding(monkeypatch)
-        total = count_tokens_docs(docs)
+        expected = sum(num_tokens_from_string(content) for content in contents)
+        encoding = spy_cl100k(monkeypatch)
+        assert count_tokens_docs([MagicMock(page_content=content) for content in contents]) == expected
         assert max(encoding.encode_lengths) == max(len(content) for content in contents)
-        # Seams between docs can shift the total by a token each against a
-        # joined count; that is fine for a display metric.
-        assert total == expected
 
     @pytest.mark.unit
     def test_long_doc_is_counted_in_bounded_windows(self, monkeypatch):
-        # #3130: a chunk can hold many characters but few embedding tokens (a
-        # whitespace run the embedding tokenizer drops), so one doc can far
-        # exceed the window. Counting it in one encode is the unbounded cost.
-        import docsgpt.parser.tokenization as tokenization_module
-        from docsgpt.utils import count_tokens_docs
-
-        window = 256
-        monkeypatch.setattr(tokenization_module, "_WINDOW_CHARS", window)
-        doc = MagicMock()
-        doc.page_content = "a" + " \n\t" * 1_000 + "b"
-        encoding = _spy_encoding(monkeypatch)
-        total = count_tokens_docs([doc])
-        assert total > 0
-        assert max(encoding.encode_lengths) <= 2 * window
+        # Mostly whitespace, so one chunk can far exceed the window.
+        doc = MagicMock(page_content="a" + " \n\t" * 1_000 + "b")
+        encoding = spy_cl100k(monkeypatch, window=256)
+        assert count_tokens_docs([doc]) > 0
+        assert max(encoding.encode_lengths) <= 2 * 256
 
     @pytest.mark.unit
     def test_no_docs_is_zero(self):
-        from docsgpt.utils import count_tokens_docs
-
         assert count_tokens_docs([]) == 0
 
 

@@ -21,8 +21,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from docsgpt import worker
+from docsgpt.parser import tokenization
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from tests.parser.counter_fakes import spy_cl100k
 
 
 @pytest.mark.unit
@@ -514,8 +516,6 @@ class TestSyncUsesTheSourcesConfig:
 
 @pytest.mark.unit
 class TestRemoteWorkerFileTokenCount:
-    """#3130: the per-file ``token_count`` of a remote ingest is counted in bounded windows."""
-
     def test_long_chunk_is_counted_in_bounded_windows(
         self,
         tmp_path,
@@ -523,12 +523,7 @@ class TestRemoteWorkerFileTokenCount:
         monkeypatch,
         remote_pipeline,
     ):
-        import docsgpt.parser.tokenization as tokenization_module
-        import docsgpt.utils as utils_module
-        from docsgpt.parser.tokenization import count_tokens_windowed
-
-        # Mostly whitespace: an embedding tokenizer drops it, so the chunker
-        # can leave the whole text as one chunk far longer than a window.
+        # Mostly whitespace, so the chunker can leave one chunk far longer than a window.
         text = "a" + " \n\t" * 1_000 + "b"
         remote_pipeline.loader.load_data.return_value = [
             Document(text=text, extra_info={"file_path": "big.txt"}, doc_id="d1")
@@ -538,22 +533,9 @@ class TestRemoteWorkerFileTokenCount:
         monkeypatch.setattr(
             worker.ChunkerCreator, "create_chunker", lambda *args, **kwargs: identity_chunker
         )
-
-        window = 256
-        monkeypatch.setattr(tokenization_module, "_WINDOW_CHARS", window)
-        expected = count_tokens_windowed(text)
-
-        real_encoding = utils_module.get_encoding()
-        encode_lengths: list[int] = []
-
-        class _Recording:
-            def encode_ordinary(self, value):
-                encode_lengths.append(len(value))
-                return real_encoding.encode_ordinary(value)
-
-        recording = _Recording()
-        monkeypatch.setattr(utils_module, "get_encoding", lambda: recording)
-        monkeypatch.setattr(tokenization_module, "get_encoding", lambda: recording)
+        encoding = spy_cl100k(monkeypatch, window=256)
+        expected = tokenization.count_tokens_windowed(text)
+        encoding.encode_lengths.clear()
 
         token_counts: list[int] = []
         real_add = worker.add_file_to_structure
@@ -575,5 +557,4 @@ class TestRemoteWorkerFileTokenCount:
         )
 
         assert token_counts == [expected]
-        assert encode_lengths, "the cl100k counts should have run"
-        assert max(encode_lengths) <= 2 * window
+        assert max(encoding.encode_lengths) <= 2 * 256

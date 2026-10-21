@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docsgpt.parser.schema.base import Document
+from tests.parser.counter_fakes import real_cl100k, spy_cl100k
 
 
 # =====================================================================
@@ -429,70 +430,24 @@ class TestSimpleDirectoryReaderLoadData:
         assert hasattr(reader, "file_token_counts")
         assert len(reader.file_token_counts) >= 1
 
-    # #3130: the per-file token count encoded each parsed file in one call,
-    # the whole document at once. It is now counted in bounded windows.
-    _WINDOW = 128
     _PROSE = "\n".join(f"Sentence {i} explains how chunk {i % 7} is retrieved and cited." for i in range(80))
 
-    @staticmethod
-    def _spy_cl100k(monkeypatch):
-        from docsgpt import utils
-        from docsgpt.parser import tokenization
-
-        try:
-            inner = utils.get_encoding()
-            inner.encode_ordinary("probe")
-        except Exception as exc:  # offline CI, same policy as the tokenization tests
-            pytest.skip(f"cl100k encoding unavailable: {exc}")
-
-        class _Recording:
-            def __init__(self):
-                self.encode_lengths = []
-
-            def encode_ordinary(self, text):
-                self.encode_lengths.append(len(text))
-                return inner.encode_ordinary(text)
-
-            def decode(self, ids):
-                return inner.decode(ids)
-
-            def decode_with_offsets(self, ids):
-                return inner.decode_with_offsets(ids)
-
-        encoding = _Recording()
-        cls = TestSimpleDirectoryReaderLoadData
-        expected = len(inner.encode_ordinary(cls._PROSE))
-        monkeypatch.setattr(utils, "get_encoding", lambda: encoding)
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
-        monkeypatch.setattr(tokenization, "_WINDOW_CHARS", cls._WINDOW, raising=False)
-        return encoding, expected
-
-    def _reader(self, tmp_path, parsed):
+    @pytest.mark.parametrize("parsed", [_PROSE, [_PROSE, ""]], ids=["str", "list"])
+    def test_file_token_count_is_windowed(self, tmp_path, monkeypatch, parsed):
         from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
+        expected = len(real_cl100k().encode_ordinary(self._PROSE))
+        encoding = spy_cl100k(monkeypatch, window=128)
         (tmp_path / "big.md").write_text("placeholder")
         mock_parser = MagicMock()
         mock_parser.parser_config_set = True
         mock_parser.parse_file.return_value = parsed
         mock_parser.get_file_metadata.return_value = {}
-        return SimpleDirectoryReader(input_dir=str(tmp_path), file_extractor={".md": mock_parser})
-
-    def test_file_token_count_is_windowed(self, tmp_path, monkeypatch):
-        encoding, expected = self._spy_cl100k(monkeypatch)
-        assert len(self._PROSE) > 4 * self._WINDOW
-        reader = self._reader(tmp_path, self._PROSE)
+        reader = SimpleDirectoryReader(input_dir=str(tmp_path), file_extractor={".md": mock_parser})
 
         reader.load_data()
         assert list(reader.file_token_counts.values()) == [expected]
-        assert max(encoding.encode_lengths) <= 2 * self._WINDOW
-
-    def test_file_token_count_of_list_parse_is_windowed(self, tmp_path, monkeypatch):
-        encoding, expected = self._spy_cl100k(monkeypatch)
-        reader = self._reader(tmp_path, [self._PROSE, ""])
-
-        reader.load_data()
-        assert list(reader.file_token_counts.values()) == [expected]
-        assert max(encoding.encode_lengths) <= 2 * self._WINDOW
+        assert max(encoding.encode_lengths) <= 2 * 128
 
 
 # =====================================================================
