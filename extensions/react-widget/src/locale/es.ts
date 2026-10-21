@@ -2,78 +2,78 @@ import type { Messages } from './en';
 
 /** Spanish. Keys and their context are in `en.ts`. */
 export const es = {
-  launcherButton: 'Ask a question', // TODO(translate)
-  headerTitle: 'Get AI assistance', // TODO(translate)
-  headerDescription: "DocsGPT's AI Chatbot is here to help", // TODO(translate)
-  heroTitle: 'Welcome to DocsGPT !', // TODO(translate)
+  launcherButton: 'Haz una pregunta',
+  headerTitle: 'Obtén ayuda de la IA',
+  headerDescription: 'El chatbot de IA de DocsGPT está aquí para ayudarte',
+  heroTitle: '¡Bienvenido a DocsGPT!',
   heroDescription:
-    'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.', // TODO(translate)
-  suggestedQuestions: 'Suggested questions', // TODO(translate)
-  expandChat: 'Expand chat', // TODO(translate)
-  collapseChat: 'Collapse chat', // TODO(translate)
-  closeChat: 'Close chat', // TODO(translate)
-  sources: 'Sources', // TODO(translate)
-  openSource: 'Open source {number}', // TODO(translate)
-  toolsUsed: 'Used {tools}', // TODO(translate)
-  thinking: 'Thinking…', // TODO(translate)
-  generating: 'Generating…', // TODO(translate)
-  runningCode: 'Running code…', // TODO(translate)
-  decidingNextStep: 'Deciding next step…', // TODO(translate)
-  workflowStep: '{step}…', // TODO(translate)
-  copyAnswer: 'Copy answer', // TODO(translate)
-  copyCode: 'Copy code', // TODO(translate)
-  copied: 'Copied', // TODO(translate)
-  goodResponse: 'Good response', // TODO(translate)
-  badResponse: 'Bad response', // TODO(translate)
-  feedbackNotSaved: "Couldn't save", // TODO(translate)
-  answerFailed: "Couldn't generate a response", // TODO(translate)
-  connectionError: 'Something went wrong. Check your connection and try again.', // TODO(translate)
-  retry: 'Retry', // TODO(translate)
-  copyError: 'Copy error', // TODO(translate)
-  scrollToLatest: 'Scroll to latest message', // TODO(translate)
-  composerPlaceholder: 'Ask your question', // TODO(translate)
-  sendMessage: 'Send message', // TODO(translate)
-  stopGenerating: 'Stop generating', // TODO(translate)
-  waitingForFiles_one: 'Waiting for {count} file to finish…', // TODO(translate)
-  waitingForFiles_other: 'Waiting for {count} files to finish…', // TODO(translate)
-  removeFailedFile: 'Remove the file that could not be attached, then send.', // TODO(translate)
-  stopDictatingToSend: 'Stop dictating to send a question.', // TODO(translate)
-  dropFiles: 'Drop files to attach', // TODO(translate)
-  attachFiles: 'Attach files', // TODO(translate)
-  attach: 'Attach', // TODO(translate)
-  uploading: 'Uploading {percent}%', // TODO(translate)
-  processing: 'Processing', // TODO(translate)
-  ready: 'Ready', // TODO(translate)
-  failed: 'Failed', // TODO(translate)
-  removeFile: 'Remove {name}', // TODO(translate)
-  fileUnreadable: 'Could not read this file.', // TODO(translate)
-  fileTooSlow: 'Took too long to process.', // TODO(translate)
-  fileTypeRejected: '{extension} is not accepted here.', // TODO(translate)
-  fileTypeUnknownRejected: 'That file type is not accepted here.', // TODO(translate)
-  uploadFailed: 'Upload failed.', // TODO(translate)
-  uploadTimedOut: 'Upload timed out.', // TODO(translate)
-  micVoice: 'Voice', // TODO(translate)
-  micStop: 'Stop', // TODO(translate)
-  micTranscribing: 'Transcribing', // TODO(translate)
-  voiceInput: 'Voice input', // TODO(translate)
-  stopRecording: 'Stop recording', // TODO(translate)
-  transcribingAudio: 'Transcribing audio', // TODO(translate)
-  listening: 'Listening…', // TODO(translate)
-  finishing: 'Finishing…', // TODO(translate)
-  voiceNoSpeech: 'No speech was picked up.', // TODO(translate)
-  voiceBlocked: 'Microphone access was blocked.', // TODO(translate)
-  voiceNoMicrophone: 'No microphone was found.', // TODO(translate)
-  voiceUnavailable: 'Voice input is unavailable right now.', // TODO(translate)
-  voiceLanguageUnsupported: 'Voice input does not support this language.', // TODO(translate)
-  voiceStopped: 'Voice input stopped unexpectedly.', // TODO(translate)
-  voiceNeedsHttps: 'Voice input needs a secure connection (HTTPS).', // TODO(translate)
-  voiceUnsupported: 'This browser does not support voice input.', // TODO(translate)
-  poweredBy: 'Powered by {brand}', // TODO(translate)
-  searchPlaceholder: 'Search or Ask AI...', // TODO(translate)
-  searchButton: 'Search here', // TODO(translate)
-  ctrlKey: 'Ctrl', // TODO(translate)
-  askTheAi: 'Ask the AI', // TODO(translate)
-  searching: 'Searching…', // TODO(translate)
-  searchFailed: "Search didn't work. You can still ask the AI.", // TODO(translate)
-  noResults: 'No results found', // TODO(translate)
+    'Este chatbot está creado con DocsGPT y usa IA generativa. Verifica la información importante en las fuentes.',
+  suggestedQuestions: 'Preguntas sugeridas',
+  expandChat: 'Ampliar chat',
+  collapseChat: 'Contraer chat',
+  closeChat: 'Cerrar chat',
+  sources: 'Fuentes',
+  openSource: 'Abrir fuente {number}',
+  toolsUsed: 'Usó {tools}',
+  thinking: 'Pensando…',
+  generating: 'Generando…',
+  runningCode: 'Ejecutando código…',
+  decidingNextStep: 'Decidiendo el siguiente paso…',
+  workflowStep: '{step}…',
+  copyAnswer: 'Copiar respuesta',
+  copyCode: 'Copiar código',
+  copied: 'Copiado',
+  goodResponse: 'Buena respuesta',
+  badResponse: 'Mala respuesta',
+  feedbackNotSaved: 'No se guardó',
+  answerFailed: 'No se pudo generar una respuesta',
+  connectionError: 'Algo salió mal. Revisa tu conexión e inténtalo de nuevo.',
+  retry: 'Reintentar',
+  copyError: 'Copiar error',
+  scrollToLatest: 'Ir al último mensaje',
+  composerPlaceholder: 'Escribe tu pregunta',
+  sendMessage: 'Enviar mensaje',
+  stopGenerating: 'Detener generación',
+  waitingForFiles_one: 'Esperando a que termine {count} archivo…',
+  waitingForFiles_other: 'Esperando a que terminen {count} archivos…',
+  removeFailedFile: 'Quita el archivo que no se pudo adjuntar y luego envía.',
+  stopDictatingToSend: 'Deja de dictar para enviar una pregunta.',
+  dropFiles: 'Suelta archivos para adjuntar',
+  attachFiles: 'Adjuntar archivos',
+  attach: 'Adjuntar',
+  uploading: 'Subiendo {percent}%',
+  processing: 'Procesando',
+  ready: 'Listo',
+  failed: 'Error',
+  removeFile: 'Quitar {name}',
+  fileUnreadable: 'No se pudo leer este archivo.',
+  fileTooSlow: 'El procesamiento tardó demasiado.',
+  fileTypeRejected: '{extension} no se admite aquí.',
+  fileTypeUnknownRejected: 'Ese tipo de archivo no se admite aquí.',
+  uploadFailed: 'Error al subir.',
+  uploadTimedOut: 'Se agotó el tiempo de subida.',
+  micVoice: 'Voz',
+  micStop: 'Detener',
+  micTranscribing: 'Transcribiendo',
+  voiceInput: 'Entrada de voz',
+  stopRecording: 'Detener grabación',
+  transcribingAudio: 'Transcribiendo audio',
+  listening: 'Escuchando…',
+  finishing: 'Finalizando…',
+  voiceNoSpeech: 'No se detectó ninguna voz.',
+  voiceBlocked: 'Se bloqueó el acceso al micrófono.',
+  voiceNoMicrophone: 'No se encontró ningún micrófono.',
+  voiceUnavailable: 'La entrada de voz no está disponible en este momento.',
+  voiceLanguageUnsupported: 'La entrada de voz no admite este idioma.',
+  voiceStopped: 'La entrada de voz se detuvo inesperadamente.',
+  voiceNeedsHttps: 'La entrada de voz requiere una conexión segura (HTTPS).',
+  voiceUnsupported: 'Este navegador no admite la entrada de voz.',
+  poweredBy: 'Con tecnología de {brand}',
+  searchPlaceholder: 'Busca o pregunta a la IA...',
+  searchButton: 'Buscar aquí',
+  ctrlKey: 'Ctrl',
+  askTheAi: 'Preguntar a la IA',
+  searching: 'Buscando…',
+  searchFailed: 'La búsqueda no funcionó. Aún puedes preguntar a la IA.',
+  noResults: 'No se encontraron resultados',
 } satisfies Messages;

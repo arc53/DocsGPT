@@ -2,78 +2,78 @@ import type { Messages } from './en';
 
 /** Traditional Chinese. Keys and their context are in `en.ts`. */
 export const zhTW = {
-  launcherButton: 'Ask a question', // TODO(translate)
-  headerTitle: 'Get AI assistance', // TODO(translate)
-  headerDescription: "DocsGPT's AI Chatbot is here to help", // TODO(translate)
-  heroTitle: 'Welcome to DocsGPT !', // TODO(translate)
+  launcherButton: '提問',
+  headerTitle: '取得 AI 協助',
+  headerDescription: 'DocsGPT 的 AI 聊天機器人隨時為您提供協助',
+  heroTitle: '歡迎使用 DocsGPT！',
   heroDescription:
-    'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.', // TODO(translate)
-  suggestedQuestions: 'Suggested questions', // TODO(translate)
-  expandChat: 'Expand chat', // TODO(translate)
-  collapseChat: 'Collapse chat', // TODO(translate)
-  closeChat: 'Close chat', // TODO(translate)
-  sources: 'Sources', // TODO(translate)
-  openSource: 'Open source {number}', // TODO(translate)
-  toolsUsed: 'Used {tools}', // TODO(translate)
-  thinking: 'Thinking…', // TODO(translate)
-  generating: 'Generating…', // TODO(translate)
-  runningCode: 'Running code…', // TODO(translate)
-  decidingNextStep: 'Deciding next step…', // TODO(translate)
-  workflowStep: '{step}…', // TODO(translate)
-  copyAnswer: 'Copy answer', // TODO(translate)
-  copyCode: 'Copy code', // TODO(translate)
-  copied: 'Copied', // TODO(translate)
-  goodResponse: 'Good response', // TODO(translate)
-  badResponse: 'Bad response', // TODO(translate)
-  feedbackNotSaved: "Couldn't save", // TODO(translate)
-  answerFailed: "Couldn't generate a response", // TODO(translate)
-  connectionError: 'Something went wrong. Check your connection and try again.', // TODO(translate)
-  retry: 'Retry', // TODO(translate)
-  copyError: 'Copy error', // TODO(translate)
-  scrollToLatest: 'Scroll to latest message', // TODO(translate)
-  composerPlaceholder: 'Ask your question', // TODO(translate)
-  sendMessage: 'Send message', // TODO(translate)
-  stopGenerating: 'Stop generating', // TODO(translate)
-  waitingForFiles_one: 'Waiting for {count} file to finish…', // TODO(translate)
-  waitingForFiles_other: 'Waiting for {count} files to finish…', // TODO(translate)
-  removeFailedFile: 'Remove the file that could not be attached, then send.', // TODO(translate)
-  stopDictatingToSend: 'Stop dictating to send a question.', // TODO(translate)
-  dropFiles: 'Drop files to attach', // TODO(translate)
-  attachFiles: 'Attach files', // TODO(translate)
-  attach: 'Attach', // TODO(translate)
-  uploading: 'Uploading {percent}%', // TODO(translate)
-  processing: 'Processing', // TODO(translate)
-  ready: 'Ready', // TODO(translate)
-  failed: 'Failed', // TODO(translate)
-  removeFile: 'Remove {name}', // TODO(translate)
-  fileUnreadable: 'Could not read this file.', // TODO(translate)
-  fileTooSlow: 'Took too long to process.', // TODO(translate)
-  fileTypeRejected: '{extension} is not accepted here.', // TODO(translate)
-  fileTypeUnknownRejected: 'That file type is not accepted here.', // TODO(translate)
-  uploadFailed: 'Upload failed.', // TODO(translate)
-  uploadTimedOut: 'Upload timed out.', // TODO(translate)
-  micVoice: 'Voice', // TODO(translate)
-  micStop: 'Stop', // TODO(translate)
-  micTranscribing: 'Transcribing', // TODO(translate)
-  voiceInput: 'Voice input', // TODO(translate)
-  stopRecording: 'Stop recording', // TODO(translate)
-  transcribingAudio: 'Transcribing audio', // TODO(translate)
-  listening: 'Listening…', // TODO(translate)
-  finishing: 'Finishing…', // TODO(translate)
-  voiceNoSpeech: 'No speech was picked up.', // TODO(translate)
-  voiceBlocked: 'Microphone access was blocked.', // TODO(translate)
-  voiceNoMicrophone: 'No microphone was found.', // TODO(translate)
-  voiceUnavailable: 'Voice input is unavailable right now.', // TODO(translate)
-  voiceLanguageUnsupported: 'Voice input does not support this language.', // TODO(translate)
-  voiceStopped: 'Voice input stopped unexpectedly.', // TODO(translate)
-  voiceNeedsHttps: 'Voice input needs a secure connection (HTTPS).', // TODO(translate)
-  voiceUnsupported: 'This browser does not support voice input.', // TODO(translate)
-  poweredBy: 'Powered by {brand}', // TODO(translate)
-  searchPlaceholder: 'Search or Ask AI...', // TODO(translate)
-  searchButton: 'Search here', // TODO(translate)
-  ctrlKey: 'Ctrl', // TODO(translate)
-  askTheAi: 'Ask the AI', // TODO(translate)
-  searching: 'Searching…', // TODO(translate)
-  searchFailed: "Search didn't work. You can still ask the AI.", // TODO(translate)
-  noResults: 'No results found', // TODO(translate)
+    '此聊天機器人以 DocsGPT 打造，並使用生成式 AI，請透過來源查證重要資訊。',
+  suggestedQuestions: '建議問題',
+  expandChat: '展開對話',
+  collapseChat: '收合對話',
+  closeChat: '關閉對話',
+  sources: '來源',
+  openSource: '開啟來源 {number}',
+  toolsUsed: '已使用 {tools}',
+  thinking: '思考中…',
+  generating: '生成中…',
+  runningCode: '正在執行程式碼…',
+  decidingNextStep: '正在決定下一步…',
+  workflowStep: '{step}…',
+  copyAnswer: '複製回答',
+  copyCode: '複製程式碼',
+  copied: '已複製',
+  goodResponse: '回答很好',
+  badResponse: '回答不好',
+  feedbackNotSaved: '無法儲存',
+  answerFailed: '無法產生回覆',
+  connectionError: '發生錯誤。請檢查網路連線後再試一次。',
+  retry: '重試',
+  copyError: '複製錯誤訊息',
+  scrollToLatest: '捲動至最新訊息',
+  composerPlaceholder: '輸入您的問題',
+  sendMessage: '傳送訊息',
+  stopGenerating: '停止產生',
+  waitingForFiles_one: '正在等候 {count} 個檔案處理完成…',
+  waitingForFiles_other: '正在等候 {count} 個檔案處理完成…',
+  removeFailedFile: '請先移除無法附加的檔案，再傳送。',
+  stopDictatingToSend: '請先停止語音輸入，再傳送問題。',
+  dropFiles: '拖放檔案以附加',
+  attachFiles: '附加檔案',
+  attach: '附件',
+  uploading: '正在上傳 {percent}%',
+  processing: '正在處理',
+  ready: '已就緒',
+  failed: '失敗',
+  removeFile: '移除 {name}',
+  fileUnreadable: '無法讀取此檔案。',
+  fileTooSlow: '處理時間過長。',
+  fileTypeRejected: '此處不接受 {extension} 檔案。',
+  fileTypeUnknownRejected: '此處不接受該檔案類型。',
+  uploadFailed: '上傳失敗。',
+  uploadTimedOut: '上傳逾時。',
+  micVoice: '語音',
+  micStop: '停止',
+  micTranscribing: '轉錄中',
+  voiceInput: '語音輸入',
+  stopRecording: '停止錄音',
+  transcribingAudio: '正在轉錄音訊',
+  listening: '聆聽中…',
+  finishing: '即將完成…',
+  voiceNoSpeech: '未偵測到語音。',
+  voiceBlocked: '麥克風存取遭到封鎖。',
+  voiceNoMicrophone: '找不到麥克風。',
+  voiceUnavailable: '語音輸入目前無法使用。',
+  voiceLanguageUnsupported: '語音輸入不支援此語言。',
+  voiceStopped: '語音輸入意外停止。',
+  voiceNeedsHttps: '語音輸入需要安全連線（HTTPS）。',
+  voiceUnsupported: '此瀏覽器不支援語音輸入。',
+  poweredBy: '由 {brand} 提供技術支援',
+  searchPlaceholder: '搜尋或詢問 AI…',
+  searchButton: '在此搜尋',
+  ctrlKey: 'Ctrl',
+  askTheAi: '詢問 AI',
+  searching: '正在搜尋…',
+  searchFailed: '搜尋失敗。您仍可詢問 AI。',
+  noResults: '未找到結果',
 } satisfies Messages;
