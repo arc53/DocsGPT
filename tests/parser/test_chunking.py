@@ -411,3 +411,58 @@ class TestSpecialTokenText:
         chunks = chunker.chunk([doc])
         assert chunks
         assert all("<|endoftext|>" in c.text for c in chunks[:1])
+
+
+# =====================================================================
+# Chunker - bounded tokenizer calls (#3130)
+# =====================================================================
+
+
+class _RecordingCharEncoded:
+    def __init__(self, text):
+        self.offsets = [(i, i + 1) for i in range(len(text))]
+        self.ids = list(range(len(text)))
+
+
+class _RecordingCharTokenizer:
+    """One token per character; records the length of every encode."""
+
+    def __init__(self):
+        self.encode_lengths = []
+
+    def encode(self, text, add_special_tokens=False):
+        self.encode_lengths.append(len(text))
+        return _RecordingCharEncoded(text)
+
+
+@pytest.mark.unit
+class TestChunkerTokenizerCallsAreBounded:
+    """#3130: chunking one large document used to hand the whole text to a
+    single encode (180-430 bytes of RAM per character). Through the real
+    classic_chunk -> split_document path, no encode may see more than two
+    windows of it, and the chunks must still reassemble the document."""
+
+    WINDOW = 256
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_large_document(self, monkeypatch, duplicate_headers):
+        from docsgpt.parser import tokenization
+        from docsgpt.parser.tokenization import HuggingFaceCounter
+
+        monkeypatch.setattr(tokenization, "_WINDOW_CHARS", self.WINDOW, raising=False)
+        tokenizer = _RecordingCharTokenizer()
+        chunker = Chunker(max_tokens=100, min_tokens=10, duplicate_headers=duplicate_headers)
+        chunker.counter = HuggingFaceCounter(tokenizer, "spy")
+        header = "Title\nSubtitle\nAuthor\n"
+        body = "検索は自然言語でできます。The quick brown fox jumps.\n" * 400
+        assert len(body) > 40 * self.WINDOW
+
+        chunks = chunker.chunk([Document(text=header + body, doc_id="big")])
+
+        assert max(tokenizer.encode_lengths) <= 2 * self.WINDOW
+        assert all(c.extra_info["token_count"] <= 100 for c in chunks)
+        if duplicate_headers:
+            assert all(c.text.startswith(header) for c in chunks)
+            assert "".join(c.text[len(header):] for c in chunks) == body
+        else:
+            assert "".join(c.text for c in chunks) == header + body
