@@ -277,6 +277,23 @@ class TestTopicsAndTags:
         question = fake.calls[0].requests[1].questions["topic"]
         assert question == schema.topic_question({"auth": None, "install": "Setting it up"})
 
+    def test_an_overlapping_topic_added_during_a_sweep_is_asked(self, db, fake, monkeypatch):
+        # The message pass reads the agent; an edit before the conversation pass must not leave conversations
+        # stamped with the new topics' hash while asked the old ones.
+        agent = _agent(db, enabled=True)
+        cid, _, _ = _two_turns(db, agent_id=str(agent["id"]))
+        original = tasks.Sweep.conversation_pass
+
+        def edited_first(sweep):
+            AgentsRepository(db).update(str(agent["id"]), "owner", {"config": {"analytics": {"topics": [PRICING]}}})
+            monkeypatch.setattr(tasks.Sweep, "conversation_pass", original)
+            return original(sweep)
+
+        monkeypatch.setattr(tasks.Sweep, "conversation_pass", edited_first)
+        tasks.sweep()
+        tasks.sweep()
+        assert (None, "tag:pricing01") in _labels(db, cid)
+
     def test_derived_rows_keep_a_deleted_agents_ownership(self, db, fake):
         # topic_effective names the agent's topics: rewritten after the agent is gone (here for a new turn), it
         # must stay the agent's row, hidden from the chatting user's own views, not become a row of no agent.
@@ -383,8 +400,9 @@ class _Failing(FakeDecider):
 
 
 class _Redis:
-    """The Redis calls the sweep lock makes: ``set``, ``get``, ``delete`` and its compare-and-expire script, which
-    ``eval`` re-implements. TTLs are recorded in ``ttls``, never run down; ``refreshes`` counts the scripts run."""
+    """The Redis calls the sweep lock makes: ``set``, ``get``, ``delete`` and its compare-and-expire and
+    compare-and-delete scripts, which ``eval`` re-implements. TTLs are recorded in ``ttls``, never run down;
+    ``refreshes`` counts the compare-and-expire scripts run."""
 
     def __init__(self, store=None):
         self.store = dict(store or {})
@@ -403,10 +421,15 @@ class _Redis:
     def delete(self, key):
         self.store.pop(key, None)
 
-    def eval(self, script, numkeys, key, token, ttl):
-        assert numkeys == 1 and "expire" in script
+    def eval(self, script, numkeys, key, token, ttl=None):
+        assert numkeys == 1 and ("expire" in script or "del" in script)
+        held = self.store.get(key) == (token.encode() if isinstance(token, str) else token)
+        if "del" in script:
+            if held:
+                self.store.pop(key)
+            return int(held)
         self.refreshes += 1
-        if self.store.get(key) != (token.encode() if isinstance(token, str) else token):
+        if not held:
             return 0
         self.ttls[key] = int(ttl)
         return 1
@@ -651,6 +674,10 @@ class TestStopConditions:
         assert lock.acquire() and lock.refresh() is True and redis.ttls[tasks.LOCK_KEY] == 600
         redis.store[tasks.LOCK_KEY], redis.ttls[tasks.LOCK_KEY] = b"another worker", 10  # ours expired, then taken
         assert lock.refresh() is False and redis.ttls[tasks.LOCK_KEY] == 10
+        # released in one compare-and-delete: nothing between reading the token and deleting the key
+        redis.get = redis.delete = None
+        lock.release()
+        assert redis.store[tasks.LOCK_KEY] == b"another worker"
 
     def test_a_lost_lock_stops_the_sweep(self, db, monkeypatch):
         redis = _Redis()
@@ -1037,6 +1064,26 @@ class TestBacklog:
         failed("conversation")
         assert [c["conversation_id"] for c in _conversation_candidates(db)] == [cids[2], cids[3], cids[1], cids[0]]
 
+    def test_a_success_clears_the_attempts_before_it(self, db, fake):
+        # Attempts count one episode: kept past a success, a later re-ask (a topic change) would start near the
+        # limit and one failure would mark the conversation for good.
+        cid = _conversation(db)
+        mid = _message(db, cid, 0, "How do I install it?", ago_minutes=300)
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        def retry(message_id, level):
+            ConversationLabelsRepository(db).upsert_many([{
+                "conversation_id": cid, "message_id": message_id, "user_id": "owner", "level": level,
+                "label": "_retry", "probabilities": {"attempts": 2}, "schema_hash": schema.SCHEMA_HASH,
+                "model_version": VERSION, "occurred_at": now, "source_updated_at": now}])
+
+        retry(mid, "message")
+        tasks.Sweep(VERSION).message_pass()
+        assert (mid, "request_type") in _labels(db, cid) and (mid, "_retry") not in _labels(db, cid)
+        retry(None, "conversation")
+        tasks.Sweep(VERSION).conversation_pass()
+        assert (None, "goal_met") in _labels(db, cid) and (None, "_retry") not in _labels(db, cid)
+
     def test_a_pending_resolution_settles_under_a_backlog(self, db, fake, monkeypatch):
         cid, _, _ = _two_turns(db)
         tasks.sweep()
@@ -1053,6 +1100,30 @@ class TestBacklog:
             report = tasks.sweep(budget_seconds=30)
         assert report["resolutions"] == 1
         assert _labels(db, cid)[(None, "resolution")].probabilities["pending"] == 0
+
+    def test_a_conversation_deleted_while_its_resolution_settles_is_skipped(self, db, fake, monkeypatch):
+        from sqlalchemy.exc import IntegrityError
+
+        gone, _, _ = _two_turns(db)
+        kept, _, _ = _two_turns(db)
+        tasks.sweep()
+        for cid in (gone, kept):
+            db.execute(text("UPDATE conversation_messages SET timestamp = timestamp - interval '2 days' "
+                            "WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid})
+            db.execute(text("UPDATE conversation_labels SET occurred_at = occurred_at - interval '2 days' "
+                            "WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid})
+        real = ConversationLabelsRepository.upsert_many
+
+        def deleted_meanwhile(repo, rows):
+            if rows and rows[0]["conversation_id"] == gone:
+                raise IntegrityError("INSERT", {}, Exception("conversation_labels_conversation_id_fkey"))
+            return real(repo, rows)
+
+        monkeypatch.setattr(ConversationLabelsRepository, "upsert_many", deleted_meanwhile)
+        sweep = tasks.Sweep(VERSION)
+        sweep.pending_pass()
+        assert sweep.stats["resolutions"] == 1
+        assert _labels(db, kept)[(None, "resolution")].probabilities["pending"] == 0
 
     @pytest.mark.parametrize("budget", [100, 200])
     def test_one_long_conversation_keeps_to_the_message_share_and_resumes_after(self, db, monkeypatch, budget):

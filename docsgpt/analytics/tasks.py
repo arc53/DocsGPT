@@ -101,6 +101,8 @@ LOCK_REFRESH_SECONDS = 5
 _REFRESH_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
 )
+#: Deletes the lock only while it holds this sweep's token, so a sweep whose lock ran out never frees another's.
+_RELEASE_LUA = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
 #: Why a state-less item failed: its state could not be built.
 BUILD_FAILED = "build_failed"
 #: Reasons a state was not answered that count an attempt on its message (or conversation); the others leave it to
@@ -210,6 +212,8 @@ class _Agent:
     config: AnalyticsConfig
     topic: Optional[dict] = None
     topic_hash: Optional[str] = None
+    #: The hash of ``config``'s overlapping topics, as the candidate query computes it for the stored agent.
+    tags_hash: Optional[str] = None
 
 
 class _Lock:
@@ -255,9 +259,7 @@ class _Lock:
         if self.redis is None:
             return
         try:
-            held = self.redis.get(LOCK_KEY)
-            if (held.decode() if isinstance(held, bytes) else held) == self.token:
-                self.redis.delete(LOCK_KEY)
+            self.redis.eval(_RELEASE_LUA, 1, LOCK_KEY, self.token)
         except Exception:  # noqa: BLE001
             logger.debug("Analytics sweep: lock release failed", exc_info=True)
 
@@ -374,7 +376,8 @@ class Sweep:
             agent = None
             if row is not None:
                 config = AnalyticsConfig.parse((row.get("config") or {}).get("analytics"))
-                agent = _Agent(row=row, config=config)
+                agent = _Agent(row=row, config=config,
+                               tags_hash=ConversationLabelsRepository(conn).tags_hash(row.get("config")))
                 try:
                     options = topics.options(conn, row, config)
                 except Exception:  # noqa: BLE001 - a broken source structure costs the topic, not the sweep
@@ -543,8 +546,13 @@ class Sweep:
                            cid)
             return _Item(occurred_at=candidate["last_at"], lang="en", **owner)
         agent = self._agent(conn, candidate["agent_id"])
+        if agent is not None and agent.tags_hash != candidate["tags_hash"]:
+            # Its topics changed since the sweep read it: read it again, so this conversation is asked them.
+            self._agents.pop(candidate["agent_id"], None)
+            agent = self._agent(conn, candidate["agent_id"])
         questions = {"goal_met": schema.GOAL_MET}
-        hashes = {"goal_met": candidate["tags_hash"]}
+        # The hash of the topics asked, so a change after they were read leaves the row stale, asked again.
+        hashes = {"goal_met": agent.tags_hash if agent is not None else candidate["tags_hash"]}
         # An overlapping topic is asked in the model's trained tag form; without a description, by its name.
         for topic in agent.config.overlapping() if agent is not None else []:
             description = topic.description or topic.name
@@ -583,13 +591,17 @@ class Sweep:
                 if seen.again(cid):
                     continue
                 seen.add(cid, ())
-                with db_session() as conn:
-                    repo = ConversationLabelsRepository(conn)
-                    rows = self._conversation_rows(conn, candidate, self._load(conn, cid))
-                    if rows:
-                        repo.upsert_many(rows)
-                    else:
-                        repo.delete_outcome(cid)
+                try:
+                    with db_session() as conn:
+                        repo = ConversationLabelsRepository(conn)
+                        rows = self._conversation_rows(conn, candidate, self._load(conn, cid))
+                        if rows:
+                            repo.upsert_many(rows)
+                        else:
+                            repo.delete_outcome(cid)
+                except IntegrityError:  # deleted meanwhile, as in ``_write``
+                    logger.debug("Analytics: conversation %s changed while it was settled; skipped", cid)
+                    rows = []
                 self._release()
                 if rows:
                     self.stats["resolutions"] += 1
@@ -799,6 +811,11 @@ class Sweep:
         self.stats["rows"] += repo.upsert_many(rows)
         if conversation_level and any(row["label"] == "goal_met" for row in rows):
             repo.delete_conversation_tags(cid, [row["label"] for row in rows if row["label"].startswith("tag:")])
+        # Labelled now: the attempts counted before belong to an episode that ended.
+        done = {row["message_id"] for row in rows if row["label"] in ("goal_met", "request_type")}
+        done -= {row["message_id"] for row in rows if row["label"] in (RETRY, ERROR)}
+        if done:
+            repo.delete_retries(cid, done)
         msgs = self._messages.get(cid) or self._load(conn, cid)
         derived = self._message_rows(conn, cid, rows[0], msgs)
         if conversation_level:
