@@ -3082,66 +3082,71 @@
         "learnMore": "En savoir plus",
         "serverOff": "Les analyses sont désactivées sur ce serveur, ces paramètres sont donc encore sans effet. Demandez à votre administrateur de les activer.",
         "topics": "Sujets",
-        "topicHints": {
-          "auto": "Chaque question est classée dans un dossier des sources de cet agent.",
-          "custom": "Chaque question est classée dans l’un de vos sujets.",
-          "off": "Les questions ne sont pas classées par sujet. Les lacunes de la doc peuvent toujours être regroupées par page ou par source.",
-          "workflowOff": "Un workflow n’a pas de sources propres, c’est donc vous qui nommez les sujets. Activez cette option pour les ajouter."
-        },
-        "autoTopicsNone": "Les sources de cet agent comptent moins de deux dossiers, les questions ne sont donc pas regroupées par sujet.",
         "countOf": "{{count}} sur {{max}}",
         "addTopic": "Ajouter un sujet",
-        "suggestFailed": "Impossible de charger les dossiers des sources de cet agent.",
-        "topicsEmpty": "Aucun sujet pour l’instant",
-        "tags": "Étiquettes",
-        "tagsDescription": "Vérifications oui/non sur des conversations entières ; plusieurs peuvent s’appliquer. Elles servent de filtres dans les journaux.",
-        "addTag": "Ajouter une étiquette",
-        "tagsEmpty": "Aucune étiquette pour l’instant",
         "itemActions": "Actions pour {{name}}",
         "edit": "Modifier",
         "remove": "Retirer",
         "modal": {
           "addTopic": "Ajouter un sujet",
           "editTopic": "Modifier le sujet",
-          "topicDescription": "Les questions sont classées dans vos sujets selon leur nom et leur description.",
-          "addTag": "Ajouter une étiquette",
-          "editTag": "Modifier l’étiquette",
-          "tagDescription": "Le nom et la description décident si l’étiquette correspond à une conversation.",
           "name": "Nom",
           "description": "Description",
-          "topicNamePlaceholder": "Installation",
-          "topicDescriptionHint": "Citez quelques pages qui en font partie.",
-          "tagNamePlaceholder": "Question sur les prix",
-          "tagDescriptionPlaceholder": "L’utilisateur demande les prix, les offres ou combien coûte quelque chose.",
-          "tagDescriptionHint": "Une phrase que le modèle compare à la conversation.",
-          "topicDescriptionPlaceholder": "Pages comme : Déploiement Docker ; Déploiement Kubernetes",
           "submitAdd": "Ajouter",
-          "submitSave": "Enregistrer"
+          "submitSave": "Enregistrer",
+          "dialogDescription": "Le nom et la description indiquent au modèle ce qui va ici.",
+          "editFolder": "Ce sujet est le dossier « {{name}} » des sources de cet agent. L’enregistrer en fait le vôtre : il ne suit plus les pages du dossier.",
+          "namePlaceholder": "Facturation",
+          "descriptionHint": "Facultatif. Rend le classement plus précis : citez quelques pages, fonctionnalités ou mots qu’écrivent les utilisateurs.",
+          "descriptionPlaceholder": "Prix, offres, places ou factures.",
+          "overlap": "Peut chevaucher d’autres sujets",
+          "overlapDescription": "Vérifié sur chaque conversation entière, plusieurs peuvent donc s’appliquer : pour un signalement de bug ou une question de prix qui traverse la doc.",
+          "onePickFull": "Au-delà de {{max}} sujets sans chevauchement, ce n’est plus possible : celui-ci peut donc chevaucher les autres.",
+          "overlapFull": "Au-delà de {{max}} sujets qui se chevauchent, ce n’est plus possible : celui-ci ne le peut donc pas.",
+          "reachOnePick": "Classe les nouvelles questions ; les précédentes gardent leur sujet.",
+          "reachOverlap": "Également vérifié sur les conversations récentes.",
+          "kindChangeToOverlap": "Ce changement remet ses chiffres à zéro : il classait des questions et sera désormais vérifié sur des conversations.",
+          "kindChangeToOnePick": "Ce changement remet ses chiffres à zéro : il était vérifié sur des conversations et classera désormais des questions."
         },
         "errors": {
           "nameRequired": "Saisissez un nom.",
           "topicNameTaken": "Un autre sujet porte déjà ce nom.",
           "topicNameReserved": "Ce nom est réservé aux questions qui ne correspondent à aucun sujet.",
-          "tagNameTaken": "Une autre étiquette porte déjà ce nom.",
-          "descriptionRequired": "Saisissez une description.",
           "topicDescriptionTooLong": "Trop long. Raccourcissez-la à {{max}} (les caractères chinois, japonais et coréens comptent triple)."
-        },
-        "removeTag": {
-          "title": "Retirer « {{name}} » ?",
-          "description": "Ses résultats disparaissent des analyses et des journaux. L’ajouter à nouveau repart de zéro.",
-          "submit": "Retirer"
         },
         "digest": "Synthèse hebdomadaire des lacunes de la doc",
         "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification listant les principales lacunes de la doc.",
         "off": "Désactivées",
-        "topicsDescription": "Chaque question va dans un seul sujet. Sert à regrouper les lacunes de la doc.",
-        "groupByTopic": "Regrouper les questions par sujet",
-        "customize": "Personnaliser",
-        "resetToSources": "Rétablir les sources",
-        "resetTopics": {
-          "title": "Rétablir les sujets des sources ?",
-          "description": "Votre liste est remplacée par les dossiers des sources de cet agent, et vos modifications sont perdues.",
-          "submit": "Rétablir"
+        "topicsDescription": "Ce que les gens demandent. Chaque question va dans le sujet qui lui correspond le mieux.",
+        "fromSources": "Des sources",
+        "hide": "Masquer",
+        "groups": {
+          "onePick": "Un par question",
+          "overlap": "Peuvent se chevaucher",
+          "overlapDescription": "Vérifiés sur des conversations entières ; plusieurs peuvent s’appliquer."
+        },
+        "notes": {
+          "foldersFailed": "Impossible de charger les dossiers des sources de cet agent.",
+          "unsaved": "Les dossiers des sources de cet agent apparaissent une fois l’agent enregistré.",
+          "unlisted": "Les questions sont aussi classées dans les dossiers des sources de cet agent.",
+          "hidden": "Dossiers masqués : {{names}}",
+          "show": "Afficher",
+          "cut": "Ces dossiers plus petits ne rentrent pas, leurs questions vont dans Aucun de ces sujets : {{names}}",
+          "single": "Un sujet seul ne classe rien. Ajoutez-en un autre pour commencer.",
+          "full": "Cet agent a atteint le nombre maximal de sujets : {{topics}} qui ne se chevauchent pas et {{overlapping}} qui le peuvent."
+        },
+        "empty": {
+          "title": "Aucun sujet pour l’instant",
+          "workflow": "Ajoutez ce que les gens demandent. Chaque question va dans le sujet qui lui correspond le mieux.",
+          "unsaved": "Les sujets des sources de cet agent apparaissent une fois l’agent enregistré. Vous pouvez ajouter les vôtres dès maintenant.",
+          "noFolders": "Les sources de cet agent n’ont pas de dossiers pour classer les questions. Ajoutez vos propres sujets.",
+          "allHidden": "Tous les dossiers des sources de cet agent sont masqués, les questions ne sont donc pas classées.",
+          "showFolders": "Afficher les dossiers"
+        },
+        "removeTopic": {
+          "title": "Retirer « {{name}} » ?",
+          "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
+          "submit": "Retirer"
         }
       }
     },

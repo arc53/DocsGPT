@@ -2985,66 +2985,71 @@
         "learnMore": "了解更多",
         "serverOff": "此服务器已关闭洞察，因此这些设置暂不生效。请让管理员开启。",
         "topics": "主题",
-        "topicHints": {
-          "auto": "每个问题会归入此智能体来源中的一个文件夹。",
-          "custom": "每个问题会归入你的一个主题。",
-          "off": "问题不归入主题。文档缺口仍可按页面或来源分组。",
-          "workflowOff": "工作流没有自己的来源，因此由你来命名主题。开启后即可添加。"
-        },
-        "autoTopicsNone": "此智能体的来源中文件夹少于两个，因此问题不会按主题分组。",
         "countOf": "{{count}}/{{max}}",
         "addTopic": "添加主题",
-        "suggestFailed": "无法加载此智能体来源中的文件夹。",
-        "topicsEmpty": "还没有主题",
-        "tags": "标签",
-        "tagsDescription": "针对整段对话的“是/否”判断；可同时适用多个。可用它们筛选日志。",
-        "addTag": "添加标签",
-        "tagsEmpty": "还没有标签",
         "itemActions": "{{name}} 的操作",
         "edit": "编辑",
         "remove": "移除",
         "modal": {
           "addTopic": "添加主题",
           "editTopic": "编辑主题",
-          "topicDescription": "问题会根据主题的名称和描述归入你的主题。",
-          "addTag": "添加标签",
-          "editTag": "编辑标签",
-          "tagDescription": "名称和描述决定该标签是否适合某段对话。",
           "name": "名称",
           "description": "描述",
-          "topicNamePlaceholder": "安装",
-          "topicDescriptionHint": "列出几个属于这里的页面。",
-          "tagNamePlaceholder": "价格问题",
-          "tagDescriptionPlaceholder": "用户询问价格、套餐或某样东西的费用。",
-          "tagDescriptionHint": "模型会拿这句话与对话对照。",
-          "topicDescriptionPlaceholder": "页面例如：Docker 部署；Kubernetes 部署",
           "submitAdd": "添加",
-          "submitSave": "保存"
+          "submitSave": "保存",
+          "dialogDescription": "名称和描述告诉模型哪些内容属于这里。",
+          "editFolder": "此主题是此智能体来源中的文件夹“{{name}}”。保存后它会成为你自己的主题，不再跟随该文件夹的页面。",
+          "namePlaceholder": "账单",
+          "descriptionHint": "可选。能让分类更准确：列出几个页面、功能或用户常用的词。",
+          "descriptionPlaceholder": "价格、套餐、席位或发票。",
+          "overlap": "可与其他主题重叠",
+          "overlapDescription": "针对每段完整对话判断，因此可同时适用多个：适合跨越整个文档的错误报告或价格问题。",
+          "onePickFull": "不重叠的主题最多 {{max}} 个，因此这个主题可重叠。",
+          "overlapFull": "可重叠的主题最多 {{max}} 个，因此这个主题不能重叠。",
+          "reachOnePick": "对新问题进行分类；之前的问题保留原主题。",
+          "reachOverlap": "也会对近期的对话进行判断。",
+          "kindChangeToOverlap": "更改后其数据将重新开始：它原先用于分类问题，今后将针对对话进行判断。",
+          "kindChangeToOnePick": "更改后其数据将重新开始：它原先针对对话进行判断，今后将用于分类问题。"
         },
         "errors": {
           "nameRequired": "请输入名称。",
           "topicNameTaken": "已有其他主题使用此名称。",
           "topicNameReserved": "此名称保留给不属于任何主题的问题。",
-          "tagNameTaken": "已有其他标签使用此名称。",
-          "descriptionRequired": "请输入描述。",
           "topicDescriptionTooLong": "太长了。请缩短到 {{max}} 以内（中文、日文和韩文字符按三个计算）。"
-        },
-        "removeTag": {
-          "title": "移除“{{name}}”？",
-          "description": "它的结果将从洞察和日志中消失。重新添加后会从头开始。",
-          "submit": "移除"
         },
         "digest": "每周文档缺口摘要",
         "digestDescription": "每周一次，智能体的所有者会收到一条通知，列出主要的文档缺口。",
         "off": "关闭",
-        "topicsDescription": "每个问题归入一个主题。用于为文档缺口分组。",
-        "groupByTopic": "按主题为问题分组",
-        "customize": "自定义",
-        "resetToSources": "重置为来源",
-        "resetTopics": {
-          "title": "将主题重置为来源？",
-          "description": "你的列表将被此智能体来源中的文件夹替换，你对它的修改会丢失。",
-          "submit": "重置"
+        "topicsDescription": "用户在问什么。每个问题归入最合适的一个主题。",
+        "fromSources": "来自来源",
+        "hide": "隐藏",
+        "groups": {
+          "onePick": "每个问题一个",
+          "overlap": "可重叠",
+          "overlapDescription": "针对整段对话判断；可同时适用多个。"
+        },
+        "notes": {
+          "foldersFailed": "无法加载此智能体来源中的文件夹。",
+          "unsaved": "保存后会显示此智能体来源中的文件夹。",
+          "unlisted": "问题也会归入此智能体来源中的文件夹。",
+          "hidden": "已隐藏的文件夹：{{names}}",
+          "show": "显示",
+          "cut": "这些较小的文件夹放不下，其问题会归入“不属于这些主题”：{{names}}",
+          "single": "只有一个主题无法分类。再添加一个即可开始。",
+          "full": "此智能体的主题已达上限：{{topics}} 个不重叠的主题和 {{overlapping}} 个可重叠的主题。"
+        },
+        "empty": {
+          "title": "还没有主题",
+          "workflow": "添加用户会问的内容。每个问题归入最合适的一个主题。",
+          "unsaved": "保存后会显示此智能体来源中的主题。你现在就可以添加自己的主题。",
+          "noFolders": "此智能体的来源中没有可用于分类问题的文件夹。请添加你自己的主题。",
+          "allHidden": "此智能体来源中的文件夹已全部隐藏，因此问题不会被分类。",
+          "showFolders": "显示文件夹"
+        },
+        "removeTopic": {
+          "title": "移除“{{name}}”？",
+          "description": "它可重叠，因此有自己的结果。这些结果将从洞察和日志中消失，重新添加后会从头开始。",
+          "submit": "移除"
         }
       }
     },

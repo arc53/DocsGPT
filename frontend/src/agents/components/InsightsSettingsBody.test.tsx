@@ -2,10 +2,7 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 import { DEFAULT_ANALYTICS } from '../analyticsConfig';
-import type { AnalyticsConfig } from '../types';
-
-const dispatch = vi.fn();
-vi.mock('react-redux', () => ({ useDispatch: () => dispatch }));
+import type { AnalyticsConfig, AnalyticsTopic } from '../types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -13,16 +10,18 @@ vi.mock('react-i18next', () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
       opts && typeof opts.name === 'string'
         ? `${key}(${opts.name})`
-        : opts && opts.max !== undefined && opts.count !== undefined
-          ? `${key}(${opts.count}/${opts.max})`
-          : key,
+        : opts && typeof opts.names === 'string'
+          ? `${key}(${opts.names})`
+          : opts && opts.max !== undefined && opts.count !== undefined
+            ? `${key}(${opts.count}/${opts.max})`
+            : key,
   }),
 }));
 
-const getTopicSuggestions = vi.fn();
+const getTopicFolders = vi.fn();
 vi.mock('../../api/services/userService', () => ({
   default: {
-    getTopicSuggestions: (...args: unknown[]) => getTopicSuggestions(...args),
+    getTopicFolders: (...args: unknown[]) => getTopicFolders(...args),
   },
 }));
 
@@ -32,31 +31,42 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const K = 'agents.form.analytics';
 
-const TAG = {
-  id: 'a1b2c3d4e5f60718',
-  name: 'Pricing question',
-  description: 'The user asks about prices.',
-};
-
+// Largest first, as the server lists them.
 const FOLDERS = [
+  { name: 'integrations', description: 'Pages such as: Slack' },
   { name: 'billing', description: 'Pages such as: Plans' },
   { name: 'data', description: 'Pages such as: Export' },
-  { name: 'integrations', description: 'Pages such as: Slack' },
 ];
+
+const topic = (
+  name: string,
+  overlap = false,
+  extra: Partial<AnalyticsTopic> = {},
+): AnalyticsTopic => ({
+  id: `${name.toLowerCase().replace(/[^a-z0-9]/g, '')}00000000`.slice(0, 16),
+  name,
+  description: '',
+  overlap,
+  ...extra,
+});
+
+const PRICING = topic('Pricing question', true, {
+  description: 'The user asks about prices.',
+});
 
 let latest: AnalyticsConfig | undefined;
 
-const suggestions = (topics: { name: string; description: string }[]) => ({
+const folders = (list: { name: string; description: string }[]) => ({
   ok: true,
-  json: () => Promise.resolve({ success: true, topics }),
+  json: () => Promise.resolve({ success: true, folders: list }),
 });
 
 function Harness({
   initial,
   disabled = false,
   agentId = 'a1',
-  maxTopics = 3,
-  maxTags = 20,
+  maxTopics = 15,
+  maxOverlapping = 20,
   topicSource,
   active = true,
 }: {
@@ -64,7 +74,7 @@ function Harness({
   disabled?: boolean;
   agentId?: string;
   maxTopics?: number;
-  maxTags?: number;
+  maxOverlapping?: number;
   topicSource?: 'sources' | 'none';
   active?: boolean;
 }) {
@@ -79,7 +89,7 @@ function Harness({
         }}
         agentId={agentId}
         maxTopics={maxTopics}
-        maxTags={maxTags}
+        maxOverlapping={maxOverlapping}
         disabled={disabled}
         topicSource={topicSource}
         active={active}
@@ -89,7 +99,7 @@ function Harness({
   );
 }
 
-const setValue = (
+const setInput = (
   element: HTMLInputElement | HTMLTextAreaElement,
   text: string,
 ) => {
@@ -101,15 +111,19 @@ const setValue = (
   element.dispatchEvent(new Event('input', { bubbles: true }));
 };
 
+const config = (extra: Partial<AnalyticsConfig> = {}): AnalyticsConfig => ({
+  ...DEFAULT_ANALYTICS,
+  ...extra,
+});
+
 describe('InsightsSettingsBody', () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
     latest = undefined;
-    dispatch.mockReset();
-    getTopicSuggestions.mockReset();
-    getTopicSuggestions.mockResolvedValue(suggestions(FOLDERS));
+    getTopicFolders.mockReset();
+    getTopicFolders.mockResolvedValue(folders(FOLDERS));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -128,23 +142,24 @@ describe('InsightsSettingsBody', () => {
     Array.from(
       document.body.querySelectorAll<HTMLButtonElement>('button'),
     ).find((el) => el.textContent === text);
-  const dialog = () => document.body.querySelector('[role="dialog"]')!;
-  const topicsBlock = () =>
+  const dialog = () => document.body.querySelector('[role="dialog"]');
+  const block = () =>
     container.querySelector<HTMLElement>('[data-testid="analytics-topics"]')!;
-  const tagsBlock = () =>
-    container.querySelector<HTMLElement>('[data-testid="analytics-tags"]')!;
-  const groupSwitch = () =>
-    container.querySelector<HTMLButtonElement>(
-      '[data-testid="analytics-group-topics"]',
-    )!;
-  const rowTitles = (block: HTMLElement) =>
-    Array.from(block.querySelectorAll('[data-slot="list-row"]')).map(
-      (row) => row.querySelector('p')!.textContent,
-    );
-  const openMenu = async (block: HTMLElement, index: number) => {
-    const trigger = block.querySelectorAll<HTMLButtonElement>(
+  const rows = () =>
+    Array.from(block().querySelectorAll<HTMLElement>('[data-slot="list-row"]'));
+  // A folder row's title holds its name and the From sources badge.
+  const rowName = (row: HTMLElement) =>
+    (row.querySelector('p span.truncate') ?? row.querySelector('p'))!
+      .textContent;
+  const names = () => rows().map(rowName);
+  const isFolder = (row: HTMLElement) =>
+    row.textContent!.includes(`${K}.fromSources`);
+  const groupTitles = () =>
+    Array.from(block().querySelectorAll('h4')).map((h) => h.textContent);
+  const openMenu = async (row: HTMLElement) => {
+    const trigger = row.querySelector<HTMLButtonElement>(
       '[aria-haspopup="menu"]',
-    )[index];
+    )!;
     await act(async () => {
       trigger.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
@@ -156,6 +171,24 @@ describe('InsightsSettingsBody', () => {
     Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ).find((el) => el.textContent === text)!;
+  const rowNamed = (name: string) => rows().find((r) => rowName(r) === name)!;
+  const fill = async (fields: { name?: string; description?: string }) => {
+    const form = dialog()!;
+    await act(async () => {
+      if (fields.name !== undefined)
+        setInput(form.querySelector('input')!, fields.name);
+      if (fields.description !== undefined)
+        setInput(form.querySelector('textarea')!, fields.description);
+    });
+  };
+  const overlapSwitch = () =>
+    document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="topic-overlap"]',
+    );
+  const submit = async (label = `${K}.modal.submitAdd`) => {
+    await act(async () => button(label)!.click());
+  };
+  const notes = () => block().textContent!;
 
   it('links Learn more to the agent settings heading of the docs', async () => {
     await render({ initial: DEFAULT_ANALYTICS });
@@ -169,427 +202,302 @@ describe('InsightsSettingsBody', () => {
 
   it('hides the rest when Collect insights is off', async () => {
     await render();
-    const enabled = container.querySelector<HTMLButtonElement>(
-      '[data-testid="analytics-enabled"]',
-    )!;
-    await act(async () => enabled.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="analytics-enabled"]')!
+        .click(),
+    );
     expect(latest!.enabled).toBe(false);
-    expect(topicsBlock()).toBeNull();
-    expect(tagsBlock()).toBeNull();
+    expect(block()).toBeNull();
     expect(
       container.querySelector('[data-testid="analytics-digest"]'),
     ).toBeNull();
   });
 
-  it('hides Tags when the server allows none', async () => {
-    await render({ maxTags: 0 });
-    expect(tagsBlock()).toBeNull();
-  });
-
-  // IN-6 B: Topics and Tags are peer SectionHeaders, each with its one-line
-  // description, and no three-way toggle.
-  it('draws Topics and Tags as peer sub-headings with descriptions', async () => {
-    await render({ initial: { ...DEFAULT_ANALYTICS, tags: [TAG] } });
-    const topicsHeader = topicsBlock().querySelector(
-      '[data-slot="section-header"]',
-    )!;
-    expect(topicsHeader.querySelector('h3')!.textContent).toBe(`${K}.topics`);
-    expect(topicsHeader.textContent).toContain(`${K}.topicsDescription`);
-    const tagsHeader = tagsBlock().querySelector(
-      '[data-slot="section-header"]',
-    )!;
-    expect(tagsHeader.querySelector('h3')!.textContent).toContain(`${K}.tags`);
-    expect(tagsHeader.textContent).toContain(`${K}.tagsDescription`);
-    expect(tagsHeader.textContent).toContain(`${K}.addTag`);
-    expect(container.querySelector('[role="radiogroup"]')).toBeNull();
-    expect(container.textContent).not.toContain('topicModes');
-  });
-
-  it('puts the sub-headings one level down when asked (a workflow card)', async () => {
-    await act(async () =>
-      root.render(
-        <InsightsSettingsBody
-          value={DEFAULT_ANALYTICS}
-          onChange={() => undefined}
-          agentId="a1"
-          maxTopics={3}
-          maxTags={20}
-          headingLevel="h4"
-          token="token"
-        />,
-      ),
-    );
-    expect(topicsBlock().querySelector('h4')!.textContent).toBe(`${K}.topics`);
-    expect(container.querySelector('h3')).toBeNull();
-  });
-
-  // DESIGN › Counts: a plain number, with the limit only at the cap.
-  it('counts tags as a plain number and names the limit only at the cap', async () => {
-    await render({
-      initial: { ...DEFAULT_ANALYTICS, tags: [TAG] },
-      maxTags: 2,
-    });
-    const count = () =>
-      tagsBlock().querySelector('[data-slot="count"]')!.textContent;
-    expect(count()).toBe('1');
-    await act(async () => button(`${K}.addTag`)!.click());
-    const [name] = Array.from(dialog().querySelectorAll('input'));
-    await act(async () => {
-      setValue(name, 'Wants a refund');
-      setValue(
-        dialog().querySelector('textarea')!,
-        'The user asks for their money back.',
-      );
-    });
-    await act(async () => button(`${K}.modal.submitAdd`)!.click());
-    expect(count()).toBe(`${K}.countOf(2/2)`);
-    expect(button(`${K}.addTag`)).toBeUndefined();
-  });
-
-  describe('topics from sources', () => {
-    it('shows the folders as read-only rows with their pages', async () => {
+  describe('the default list', () => {
+    it("lists the agent's folders by name, each marked as from sources, with a count", async () => {
       await render();
-      expect(getTopicSuggestions).toHaveBeenCalledWith('a1', 'token');
-      expect(groupSwitch().getAttribute('aria-checked')).toBe('true');
-      expect(topicsBlock().textContent).toContain(`${K}.topicHints.auto`);
-      expect(rowTitles(topicsBlock())).toEqual([
-        'billing',
-        'data',
-        'integrations',
-      ]);
-      expect(topicsBlock().textContent).toContain('Pages such as: Plans');
-      expect(topicsBlock().querySelector('[aria-haspopup="menu"]')).toBeNull();
-      expect(button(`${K}.customize`)).toBeDefined();
-      expect(button(`${K}.addTopic`)).toBeUndefined();
-      // No count on the folders: nothing to fill.
-      expect(topicsBlock().querySelector('[data-slot="count"]')).toBeNull();
+      expect(getTopicFolders).toHaveBeenCalledWith('a1', 'token');
+      expect(names()).toEqual(['billing', 'data', 'integrations']);
+      expect(rows().every(isFolder)).toBe(true);
+      expect(block().querySelector('h3')!.textContent).toBe(`${K}.topics3`);
+      // One kind only: no group headings.
+      expect(groupTitles()).toEqual([]);
     });
 
-    // FX-3: the folders load only while the body is on screen.
-    it('fetches the folders only while active', async () => {
-      await render({ active: false });
-      expect(getTopicSuggestions).not.toHaveBeenCalled();
-      await render({ active: true });
-      expect(getTopicSuggestions).toHaveBeenCalledTimes(1);
-      // Closing and reopening reuses what came back.
-      await render({ active: false });
-      await render({ active: true });
-      expect(getTopicSuggestions).toHaveBeenCalledTimes(1);
+    it.each([
+      ['off screen', { active: false }],
+      ['read-only', { disabled: true }],
+      ['unsaved', { agentId: '' }],
+      ['a workflow', { topicSource: 'none' as const }],
+      ['insights off', { initial: config({ enabled: false }) }],
+    ])('loads no folders %s', async (_name, props) => {
+      await render(props);
+      expect(getTopicFolders).not.toHaveBeenCalled();
     });
 
-    it('asks for no folders before the agent is saved, or for a read-only role', async () => {
-      await render({ agentId: '' });
-      await render({ agentId: 'a1', disabled: true });
-      expect(getTopicSuggestions).not.toHaveBeenCalled();
-    });
-
-    it('says when the sources give too few folders to group by', async () => {
-      getTopicSuggestions.mockResolvedValue(suggestions([FOLDERS[0]]));
+    it('shows skeleton rows while the folders load', async () => {
+      getTopicFolders.mockReturnValue(new Promise(() => undefined));
       await render();
-      const empty = topicsBlock().querySelector('[data-slot="empty-state"]')!;
-      expect(empty.textContent).toBe(`${K}.autoTopicsNone`);
-      expect(empty.getAttribute('data-size')).toBe('sm');
-      expect(topicsBlock().querySelector('[data-slot="list-row"]')).toBeNull();
-    });
-
-    it('turns grouping off and back on, keeping a custom list for later', async () => {
-      const items = [{ name: 'Installation', description: 'Docker' }];
-      await render({
-        initial: { ...DEFAULT_ANALYTICS, topics: { mode: 'custom', items } },
-      });
-      await act(async () => groupSwitch().click());
-      expect(latest!.topics).toEqual({ mode: 'off', items });
-      expect(topicsBlock().textContent).toContain(`${K}.topicHints.off`);
-      expect(topicsBlock().querySelector('[data-slot="list-row"]')).toBeNull();
-      expect(button(`${K}.customize`)).toBeUndefined();
-      await act(async () => groupSwitch().click());
-      expect(latest!.topics).toEqual({ mode: 'custom', items });
-      expect(rowTitles(topicsBlock())).toEqual(['Installation']);
-    });
-
-    it('turns back on to From sources when there is no list of its own', async () => {
-      await render({
-        initial: { ...DEFAULT_ANALYTICS, topics: { mode: 'off', items: [] } },
-      });
-      expect(groupSwitch().getAttribute('aria-checked')).toBe('false');
-      await act(async () => groupSwitch().click());
-      expect(latest!.topics).toEqual({ mode: 'auto', items: [] });
-    });
-
-    it('Customize copies the folders into an editable list', async () => {
-      await render({ maxTopics: 15 });
-      await act(async () => button(`${K}.customize`)!.click());
-      expect(latest!.topics).toEqual({ mode: 'custom', items: FOLDERS });
-      expect(topicsBlock().textContent).toContain(`${K}.topicHints.custom`);
-      expect(rowTitles(topicsBlock())).toEqual([
-        'billing',
-        'data',
-        'integrations',
-      ]);
-      expect(
-        topicsBlock().querySelectorAll('[aria-haspopup="menu"]'),
-      ).toHaveLength(3);
-      expect(button(`${K}.addTopic`)).toBeDefined();
-      expect(button(`${K}.resetToSources`)).toBeDefined();
-      expect(button(`${K}.customize`)).toBeUndefined();
-      expect(
-        topicsBlock().querySelector('[data-slot="count"]')!.textContent,
-      ).toBe('3');
-    });
-
-    it('Customize keeps to the topic limit', async () => {
-      await render({ maxTopics: 2 });
-      await act(async () => button(`${K}.customize`)!.click());
-      expect(latest!.topics.items.map((item) => item.name)).toEqual([
-        'billing',
-        'data',
-      ]);
-      expect(
-        topicsBlock().querySelector('[data-slot="count"]')!.textContent,
-      ).toBe(`${K}.countOf(2/2)`);
-      expect(button(`${K}.addTopic`)).toBeUndefined();
-    });
-
-    it('Customize toasts when the folders cannot load', async () => {
-      getTopicSuggestions.mockResolvedValue({ ok: false });
-      await render();
-      await act(async () => button(`${K}.customize`)!.click());
-      expect(latest).toBeUndefined();
-      expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: {
-            variant: 'destructive',
-            message: `${K}.suggestFailed`,
-          },
-        }),
-      );
-    });
-
-    it('Customize starts an empty list for an agent not saved yet', async () => {
-      await render({ agentId: '' });
-      await act(async () => button(`${K}.customize`)!.click());
-      expect(latest!.topics).toEqual({ mode: 'custom', items: [] });
-      const empty = topicsBlock().querySelector('[data-slot="empty-state"]')!;
-      expect(empty.textContent).toBe(`${K}.topicsEmpty`);
-      expect(empty.getAttribute('data-size')).toBe('sm');
-      // No "0" beside the title, as for tags.
-      expect(topicsBlock().querySelector('[data-slot="count"]')).toBeNull();
-    });
-
-    it('Reset to sources goes straight back while the list is the folders', async () => {
-      await render({ maxTopics: 15 });
-      await act(async () => button(`${K}.customize`)!.click());
-      await act(async () => button(`${K}.resetToSources`)!.click());
-      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
-      expect(latest!.topics).toEqual({ mode: 'auto', items: [] });
-      expect(button(`${K}.customize`)).toBeDefined();
-    });
-
-    it('Reset to sources confirms once the list differs from the folders', async () => {
-      await render({ maxTopics: 15 });
-      await act(async () => button(`${K}.customize`)!.click());
-      await openMenu(topicsBlock(), 0);
-      await act(async () => menuItem(`${K}.remove`).click());
-      expect(latest!.topics.items.map((item) => item.name)).toEqual([
-        'data',
-        'integrations',
-      ]);
-      await act(async () => button(`${K}.resetToSources`)!.click());
-      expect(dialog().textContent).toContain(`${K}.resetTopics.title`);
-      expect(latest!.topics.mode).toBe('custom');
-      await act(async () => button(`${K}.resetTopics.submit`)!.click());
-      expect(latest!.topics).toEqual({ mode: 'auto', items: [] });
+      expect(block().querySelector('[aria-busy="true"]')).not.toBeNull();
     });
   });
 
-  describe('a workflow (no sources of its own)', () => {
-    it('reads a stored From sources as off and offers no folders', async () => {
-      await render({ topicSource: 'none' });
-      expect(getTopicSuggestions).not.toHaveBeenCalled();
-      expect(groupSwitch().getAttribute('aria-checked')).toBe('false');
-      expect(topicsBlock().textContent).toContain(
-        `${K}.topicHints.workflowOff`,
-      );
-      expect(button(`${K}.customize`)).toBeUndefined();
-      expect(button(`${K}.addTopic`)).toBeUndefined();
+  describe('folders', () => {
+    it('hides one from its menu and shows it again from the note', async () => {
+      await render();
+      await openMenu(rowNamed('data'));
+      await act(async () => menuItem(`${K}.hide`).click());
+      expect(latest!.hidden_folders).toEqual(['data']);
+      expect(names()).toEqual(['billing', 'integrations']);
+      expect(notes()).toContain(`${K}.notes.hidden(data)`);
+      await act(async () => button(`${K}.notes.show`)!.click());
+      expect(latest!.hidden_folders).toEqual([]);
+      expect(names()).toEqual(['billing', 'data', 'integrations']);
     });
 
-    it('turns on to its own list, with Add topic and no Reset', async () => {
-      await render({ topicSource: 'none' });
-      await act(async () => groupSwitch().click());
-      expect(latest!.topics).toEqual({ mode: 'custom', items: [] });
-      expect(button(`${K}.addTopic`)).toBeDefined();
-      expect(button(`${K}.resetToSources`)).toBeUndefined();
-      await act(async () => groupSwitch().click());
-      expect(latest!.topics.mode).toBe('off');
-    });
-  });
-
-  describe('tags', () => {
-    it('checks a new tag before adding it, and gives it an id', async () => {
-      await render({ initial: { ...DEFAULT_ANALYTICS, tags: [TAG] } });
-      await act(async () => button(`${K}.addTag`)!.click());
-      const [name] = Array.from(dialog().querySelectorAll('input'));
-      const description = dialog().querySelector('textarea')!;
-      const submit = button(`${K}.modal.submitAdd`)!;
-      await act(async () => submit.click());
-      expect(dialog().textContent).toContain(`${K}.errors.nameRequired`);
-      expect(dialog().textContent).toContain(`${K}.errors.descriptionRequired`);
-      await act(async () => setValue(name, ' pricing QUESTION '));
-      expect(dialog().textContent).toContain(`${K}.errors.tagNameTaken`);
-      await act(async () => {
-        setValue(name, 'Wants a refund');
-        setValue(description, 'The user asks for their money back.');
-      });
-      await act(async () => submit.click());
-      expect(latest!.tags).toHaveLength(2);
-      expect(latest!.tags[1]).toMatchObject({
-        name: 'Wants a refund',
-        description: 'The user asks for their money back.',
-      });
-      expect(latest!.tags[1].id).toMatch(/^[a-z0-9]{8,32}$/);
-      expect(latest!.tags[1].id).not.toBe(TAG.id);
-    });
-
-    it('keeps a tag id when it is renamed, and saves with Save', async () => {
-      await render({ initial: { ...DEFAULT_ANALYTICS, tags: [TAG] } });
-      await openMenu(tagsBlock(), 0);
+    it('turns an edited folder into an own topic and hides the folder', async () => {
+      await render();
+      await openMenu(rowNamed('billing'));
       await act(async () => menuItem(`${K}.edit`).click());
-      expect(dialog().textContent).toContain(`${K}.modal.editTag`);
-      const name = dialog().querySelector('input')!;
-      expect(name.value).toBe('Pricing question');
-      await act(async () => setValue(name, 'Pricing'));
-      expect(button(`${K}.modal.submitAdd`)).toBeUndefined();
-      await act(async () => button(`${K}.modal.submitSave`)!.click());
-      expect(latest!.tags).toEqual([{ ...TAG, name: 'Pricing' }]);
-    });
-
-    it('gives the row menu Pencil and Trash icons', async () => {
-      await render({ initial: { ...DEFAULT_ANALYTICS, tags: [TAG] } });
-      await openMenu(tagsBlock(), 0);
-      expect(
-        menuItem(`${K}.edit`).querySelector('svg.lucide-pencil'),
-      ).not.toBeNull();
-      expect(
-        menuItem(`${K}.remove`).querySelector('svg.lucide-trash-2'),
-      ).not.toBeNull();
-    });
-
-    it('confirms before removing a tag, since its history goes', async () => {
-      await render({ initial: { ...DEFAULT_ANALYTICS, tags: [TAG] } });
-      await openMenu(tagsBlock(), 0);
-      await act(async () => menuItem(`${K}.remove`).click());
-      expect(dialog().textContent).toContain(
-        `${K}.removeTag.title(Pricing question)`,
+      expect(dialog()!.textContent).toContain(`${K}.modal.editFolder(billing)`);
+      expect(dialog()!.querySelector('input')!.value).toBe('billing');
+      expect(dialog()!.querySelector('textarea')!.value).toBe(
+        'Pages such as: Plans',
       );
-      expect(latest).toBeUndefined();
-      await act(async () => button(`${K}.removeTag.submit`)!.click());
-      expect(latest!.tags).toEqual([]);
+      await fill({ description: 'Plans, invoices and refunds.' });
+      await submit(`${K}.modal.submitSave`);
+      expect(latest!.hidden_folders).toEqual(['billing']);
+      expect(latest!.topics).toEqual([
+        expect.objectContaining({
+          name: 'billing',
+          description: 'Plans, invoices and refunds.',
+          overlap: false,
+        }),
+      ]);
+      const billing = rowNamed('billing');
+      expect(isFolder(billing)).toBe(false);
+      // Replaced, not hidden: nothing offers the folder back while the topic is there.
+      expect(notes()).not.toContain(`${K}.notes.hidden`);
+      await openMenu(rowNamed('billing'));
+      await act(async () => menuItem(`${K}.remove`).click());
+      expect(notes()).toContain(`${K}.notes.hidden(billing)`);
     });
 
-    it('shows an empty list as a small EmptyState', async () => {
-      await render();
-      const empty = tagsBlock().querySelector('[data-slot="empty-state"]')!;
-      expect(empty.textContent).toBe(`${K}.tagsEmpty`);
-      expect(empty.getAttribute('data-size')).toBe('sm');
-      expect(tagsBlock().querySelector('[data-slot="count"]')).toBeNull();
+    it('cuts the smallest folders past the limit, own topics first', async () => {
+      await render({
+        maxTopics: 3,
+        initial: config({ topics: [topic('Auth')] }),
+      });
+      expect(names()).toEqual(['Auth', 'billing', 'integrations']);
+      expect(notes()).toContain(`${K}.notes.cut(data)`);
+    });
+
+    it('offers a retry when they fail to load, keeping own topics', async () => {
+      getTopicFolders.mockRejectedValueOnce(new Error('down'));
+      await render({ initial: config({ topics: [topic('Auth')] }) });
+      expect(names()).toEqual(['Auth']);
+      expect(notes()).toContain(`${K}.notes.foldersFailed`);
+      await act(async () => button('retry')!.click());
+      expect(getTopicFolders).toHaveBeenCalledTimes(2);
+      expect(names()).toEqual(['Auth', 'billing', 'data', 'integrations']);
     });
   });
 
-  describe('custom topics', () => {
-    const custom = (
-      items = [
-        { name: 'Installation', description: 'Pages such as: Docker' },
-        { name: 'Billing', description: 'Pages such as: Plans' },
-      ],
-    ): AnalyticsConfig => ({
-      ...DEFAULT_ANALYTICS,
-      topics: { mode: 'custom', items },
+  describe('adding and editing', () => {
+    it('adds a topic that sorts questions by default, with a new id', async () => {
+      await render();
+      await act(async () => button(`${K}.addTopic`)!.click());
+      expect(overlapSwitch()!.getAttribute('aria-checked')).toBe('false');
+      expect(dialog()!.textContent).toContain(`${K}.modal.reachOnePick`);
+      await fill({ name: '  Auth ', description: '' });
+      await submit();
+      expect(latest!.topics).toEqual([
+        {
+          id: expect.stringMatching(/^[a-z0-9]{16}$/),
+          name: 'Auth',
+          description: '',
+          overlap: false,
+        },
+      ]);
+      expect(names()).toEqual(['Auth', 'billing', 'data', 'integrations']);
     });
 
-    it('removes a topic at once (re-adding the name restores it)', async () => {
-      await render({ initial: custom() });
-      await openMenu(topicsBlock(), 0);
-      await act(async () => menuItem(`${K}.remove`).click());
-      expect(
-        document.body.querySelector('[role="alertdialog"], [role="dialog"]'),
-      ).toBeNull();
-      expect(latest!.topics.items.map((item) => item.name)).toEqual([
-        'Billing',
+    it('checks the name against own topics, shown folders and the reserved one', async () => {
+      await render({ initial: config({ topics: [PRICING] }) });
+      await act(async () => button(`${K}.addTopic`)!.click());
+      await submit();
+      expect(dialog()!.textContent).toContain(`${K}.errors.nameRequired`);
+      for (const [name, error] of [
+        ['pricing QUESTION', 'topicNameTaken'],
+        ['Billing', 'topicNameTaken'],
+        ['None of these', 'topicNameReserved'],
+      ]) {
+        await fill({ name });
+        expect(dialog()!.textContent).toContain(`${K}.errors.${error}`);
+      }
+      expect(latest).toBeUndefined();
+    });
+
+    it('splits the list into two groups once a topic can overlap', async () => {
+      await render();
+      await act(async () => button(`${K}.addTopic`)!.click());
+      await fill({ name: 'Bug report' });
+      await act(async () => overlapSwitch()!.click());
+      expect(dialog()!.textContent).toContain(`${K}.modal.reachOverlap`);
+      await submit();
+      expect(latest!.topics).toEqual([
+        expect.objectContaining({ name: 'Bug report', overlap: true }),
+      ]);
+      expect(groupTitles()).toEqual([
+        `${K}.groups.onePick`,
+        `${K}.groups.overlap`,
+      ]);
+      expect(names()).toEqual([
+        'billing',
+        'data',
+        'integrations',
+        'Bug report',
       ]);
     });
 
-    // FX-14: no translated prefill (the model reads the English form), the
-    // description is optional as on the server, and the counter shows only
-    // past 80% of the budget.
-    it('adds a topic with an empty description and no prefill', async () => {
-      await render({ initial: custom([]) });
+    it('fits the description to the kind: 150 units, or 300 when it can overlap', async () => {
+      await render();
       await act(async () => button(`${K}.addTopic`)!.click());
-      const description = dialog().querySelector('textarea')!;
-      expect(description.value).toBe('');
-      expect(description.getAttribute('placeholder')).toBe(
-        `${K}.modal.topicDescriptionPlaceholder`,
-      );
-      await act(async () => setValue(dialog().querySelector('input')!, 'Auth'));
-      await act(async () => button(`${K}.modal.submitAdd`)!.click());
-      expect(latest!.topics.items).toEqual([{ name: 'Auth', description: '' }]);
-    });
-
-    it('shows the description counter only past 80% of the budget', async () => {
-      await render({ initial: custom([]) });
-      await act(async () => button(`${K}.addTopic`)!.click());
-      const description = dialog().querySelector('textarea')!;
-      await act(async () => setValue(description, 'a'.repeat(120)));
-      expect(dialog().textContent).toContain(`${K}.modal.topicDescriptionHint`);
-      expect(dialog().textContent).not.toContain(`${K}.countOf`);
-      await act(async () => setValue(description, 'a'.repeat(121)));
-      expect(dialog().textContent).toContain(`${K}.countOf(121/150)`);
-    });
-
-    it('rejects a topic description over the unit budget, counting CJK three times', async () => {
-      await render({ initial: custom([]) });
-      await act(async () => button(`${K}.addTopic`)!.click());
-      const name = dialog().querySelector('input')!;
-      const description = dialog().querySelector('textarea')!;
-      await act(async () => {
-        setValue(name, '安装');
-        setValue(description, '页'.repeat(51));
-      });
-      await act(async () => button(`${K}.modal.submitAdd`)!.click());
-      expect(dialog().textContent).toContain(
+      await fill({ name: 'Long', description: 'x'.repeat(200) });
+      await submit();
+      expect(dialog()!.textContent).toContain(
         `${K}.errors.topicDescriptionTooLong`,
       );
-      await act(async () => setValue(description, '页'.repeat(50)));
-      await act(async () => button(`${K}.modal.submitAdd`)!.click());
-      expect(latest!.topics.items).toEqual([
-        { name: '安装', description: '页'.repeat(50) },
+      await act(async () => overlapSwitch()!.click());
+      expect(dialog()!.textContent).not.toContain(
+        `${K}.errors.topicDescriptionTooLong`,
+      );
+      await submit();
+      expect(latest!.topics[0].description).toHaveLength(200);
+    });
+
+    it('keeps the id on an edit and warns when the kind changes', async () => {
+      await render({ initial: config({ topics: [PRICING] }) });
+      await openMenu(rowNamed('Pricing question'));
+      await act(async () => menuItem(`${K}.edit`).click());
+      expect(dialog()!.querySelector('[role="note"]')).toBeNull();
+      await act(async () => overlapSwitch()!.click());
+      expect(dialog()!.querySelector('[role="note"]')!.textContent).toBe(
+        `${K}.modal.kindChangeToOnePick`,
+      );
+      await fill({ name: 'Pricing' });
+      await submit(`${K}.modal.submitSave`);
+      expect(latest!.topics).toEqual([
+        { ...PRICING, name: 'Pricing', overlap: false },
       ]);
+    });
+
+    it('has no overlap switch when the server allows none', async () => {
+      await render({ maxOverlapping: 0 });
+      await act(async () => button(`${K}.addTopic`)!.click());
+      expect(overlapSwitch()).toBeNull();
+    });
+
+    it("locks the switch on once topics that don't overlap are full", async () => {
+      await render({
+        maxTopics: 2,
+        initial: config({ topics: [topic('A'), topic('B')] }),
+      });
+      await act(async () => button(`${K}.addTopic`)!.click());
+      expect(overlapSwitch()!.getAttribute('aria-checked')).toBe('true');
+      expect(overlapSwitch()!.disabled).toBe(true);
+      expect(dialog()!.textContent).toContain(`${K}.modal.onePickFull`);
+    });
+
+    it('drops Add topic once both kinds are full and says so', async () => {
+      await render({
+        maxTopics: 2,
+        maxOverlapping: 1,
+        initial: config({ topics: [topic('A'), topic('B'), PRICING] }),
+      });
+      expect(button(`${K}.addTopic`)).toBeUndefined();
+      expect(notes()).toContain(`${K}.notes.full`);
     });
   });
 
-  it('shows a read-only role the settings, with no actions', async () => {
-    await render({
-      disabled: true,
-      initial: {
-        ...DEFAULT_ANALYTICS,
-        topics: {
-          mode: 'custom',
-          items: [{ name: 'Installation', description: 'Pages' }],
-        },
-        tags: [TAG],
-      },
+  describe('removing', () => {
+    it('removes a topic that sorts questions at once', async () => {
+      await render({ initial: config({ topics: [topic('Auth')] }) });
+      await openMenu(rowNamed('Auth'));
+      await act(async () => menuItem(`${K}.remove`).click());
+      expect(latest!.topics).toEqual([]);
     });
-    expect(
-      container.querySelector<HTMLButtonElement>(
-        '[data-testid="analytics-enabled"]',
-      )!.disabled,
-    ).toBe(true);
-    expect(groupSwitch().disabled).toBe(true);
-    expect(button(`${K}.addTag`)).toBeUndefined();
-    expect(button(`${K}.addTopic`)).toBeUndefined();
-    expect(button(`${K}.resetToSources`)).toBeUndefined();
-    expect(container.querySelector('[aria-haspopup="menu"]')).toBeNull();
-    expect(container.textContent).toContain('Pricing question');
-    expect(container.textContent).toContain('Installation');
+
+    it('asks first for one that can overlap, since its results go with it', async () => {
+      await render({ initial: config({ topics: [PRICING] }) });
+      await openMenu(rowNamed('Pricing question'));
+      await act(async () => menuItem(`${K}.remove`).click());
+      expect(latest).toBeUndefined();
+      expect(document.body.textContent).toContain(
+        `${K}.removeTopic.title(Pricing question)`,
+      );
+      await act(async () => button(`${K}.removeTopic.submit`)!.click());
+      expect(latest!.topics).toEqual([]);
+    });
+  });
+
+  describe('empty and edge states', () => {
+    const empty = () => block().textContent!;
+
+    it('asks a workflow for its own topics', async () => {
+      await render({ topicSource: 'none' });
+      expect(rows()).toEqual([]);
+      expect(empty()).toContain(`${K}.empty.title`);
+      expect(empty()).toContain(`${K}.empty.workflow`);
+    });
+
+    it('says folders come after the first save', async () => {
+      await render({ agentId: '' });
+      expect(empty()).toContain(`${K}.empty.unsaved`);
+    });
+
+    it('notes it under own topics on an unsaved agent', async () => {
+      await render({
+        agentId: '',
+        initial: config({ topics: [topic('Auth'), topic('Billing')] }),
+      });
+      expect(notes()).toContain(`${K}.notes.unsaved`);
+    });
+
+    it('says when the sources have no folders', async () => {
+      getTopicFolders.mockResolvedValue(folders([]));
+      await render();
+      expect(empty()).toContain(`${K}.empty.noFolders`);
+    });
+
+    it('offers every hidden folder back when nothing else is left', async () => {
+      await render({
+        initial: config({
+          hidden_folders: ['billing', 'data', 'integrations'],
+        }),
+      });
+      expect(empty()).toContain(`${K}.empty.allHidden`);
+      await act(async () => button(`${K}.empty.showFolders`)!.click());
+      expect(latest!.hidden_folders).toEqual([]);
+    });
+
+    it('says one topic on its own sorts nothing', async () => {
+      getTopicFolders.mockResolvedValue(folders([FOLDERS[0]]));
+      await render();
+      expect(names()).toEqual(['integrations']);
+      expect(notes()).toContain(`${K}.notes.single`);
+    });
+
+    it("is read-only for a caller who can't save, without listing folders", async () => {
+      await render({
+        disabled: true,
+        initial: config({ topics: [PRICING, topic('Auth')] }),
+      });
+      expect(button(`${K}.addTopic`)).toBeUndefined();
+      expect(block().querySelector('[aria-haspopup="menu"]')).toBeNull();
+      expect(names()).toEqual(['Auth', 'Pricing question']);
+      expect(notes()).toContain(`${K}.notes.unlisted`);
+    });
   });
 });

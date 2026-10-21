@@ -11,7 +11,7 @@ vi.mock('react-redux', () => ({
       // The server's switch and limits, as /api/config left them.
       selectAnalyticsEnabled: true,
       selectAnalyticsMaxTopics: 15,
-      selectAnalyticsMaxTags: 5,
+      selectAnalyticsMaxOverlapping: 5,
     })[selector.name ?? ''] ?? [],
 }));
 
@@ -102,8 +102,8 @@ vi.mock('../../api/services/userService', () => ({
           api_write_allowlist: ['t1:write'],
           analytics: {
             enabled: true,
-            topics: { mode: 'custom', items: [] },
-            tags: [],
+            topics: [],
+            hidden_folders: [],
             digest: false,
           },
         },
@@ -194,12 +194,10 @@ describe('WorkflowBuilder insights', () => {
 
   it('hands the details panel the saved insights, the server switch and the limits', async () => {
     await render();
-    expect(details().analytics).toMatchObject({
-      topics: { mode: 'custom', items: [] },
-    });
+    expect(details().analytics).toMatchObject({ topics: [] });
     expect(sheet.props!.insights).toMatchObject({
       available: true,
-      maxTags: 5,
+      maxOverlapping: 5,
       agentId: 'a1',
       token: 'token',
     });

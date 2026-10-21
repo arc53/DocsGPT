@@ -74,8 +74,10 @@ const endpoints = {
     SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
     CONVERSATION_INSIGHTS: '/api/get_conversation_insights',
     DOCS_GAPS: '/api/get_docs_gaps',
-    TOPIC_SUGGESTIONS: (agentId: string) =>
-      `/api/analytics/topic_suggestions?agent_id=${encodeURIComponent(agentId)}`,
+    TOPIC_FOLDERS: (agentId: string) =>
+      `/api/analytics/topic_folders?agent_id=${encodeURIComponent(agentId)}`,
+    AGENT_TOPICS: (agentId: string) =>
+      `/api/analytics/topics?agent_id=${encodeURIComponent(agentId)}`,
     LOGS: `/api/get_user_logs`,
     TRACES: (params: string) => `/api/traces?${params}`,
     MANAGE_SYNC: '/api/manage_sync',

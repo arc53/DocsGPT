@@ -5,7 +5,7 @@ const store = vi.hoisted(() => ({
   preference: {
     analyticsEnabled: true,
     analyticsMaxTopics: 8,
-    analyticsMaxTags: 0,
+    analyticsMaxOverlapping: 0,
   },
 }));
 vi.mock('react-redux', () => ({
@@ -14,7 +14,7 @@ vi.mock('react-redux', () => ({
 const getConfig = vi.hoisted(() => vi.fn());
 vi.mock('../../api/services/userService', () => ({ default: { getConfig } }));
 
-import { MAX_TAGS, MAX_TOPICS } from '../../agents/analyticsConfig';
+import { MAX_OVERLAPPING, MAX_TOPICS } from '../../agents/analyticsConfig';
 import {
   analyticsAvailability,
   useAnalyticsAvailability,
@@ -34,7 +34,7 @@ describe('useAnalyticsAvailability', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
     act(() => root.render(createElement(Probe)));
-    expect(seen).toEqual({ enabled: true, maxTopics: 8, maxTags: 0 });
+    expect(seen).toEqual({ enabled: true, maxTopics: 8, maxOverlapping: 0 });
     expect(getConfig).not.toHaveBeenCalled();
     act(() => root.unmount());
   });
@@ -46,21 +46,28 @@ describe('analyticsAvailability', () => {
       analyticsAvailability({
         decision_analytics_enabled: true,
         analytics_max_topics: 8,
-        analytics_max_tags: 5,
+        analytics_max_overlapping_topics: 5,
       }),
-    ).toEqual({ enabled: true, maxTopics: 8, maxTags: 5 });
+    ).toEqual({ enabled: true, maxTopics: 8, maxOverlapping: 5 });
   });
 
-  it('keeps a tag limit of 0, which the server allows to turn tags off', () => {
-    expect(analyticsAvailability({ analytics_max_tags: 0 }).maxTags).toBe(0);
+  it('keeps an overlap limit of 0, which the server allows to turn overlapping topics off', () => {
+    expect(
+      analyticsAvailability({ analytics_max_overlapping_topics: 0 })
+        .maxOverlapping,
+    ).toBe(0);
   });
 
   it('falls back to the defaults for a missing or invalid limit', () => {
     expect(
       analyticsAvailability({
         analytics_max_topics: 0,
-        analytics_max_tags: -1,
+        analytics_max_overlapping_topics: -1,
       }),
-    ).toEqual({ enabled: false, maxTopics: MAX_TOPICS, maxTags: MAX_TAGS });
+    ).toEqual({
+      enabled: false,
+      maxTopics: MAX_TOPICS,
+      maxOverlapping: MAX_OVERLAPPING,
+    });
   });
 });

@@ -128,7 +128,7 @@ function SheetContents({
           onChange={setDraft}
           agentId={agent.id || undefined}
           maxTopics={limits.maxTopics}
-          maxTags={limits.maxTags}
+          maxOverlapping={limits.maxOverlapping}
           disabled={saving}
           token={token}
           // A workflow has no agent-level sources: its topics are its own list.

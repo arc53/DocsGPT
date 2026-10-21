@@ -3082,66 +3082,71 @@
         "learnMore": "Más información",
         "serverOff": "La recopilación de información está desactivada en este servidor, así que estos ajustes aún no tienen efecto. Pide a tu administrador que la active.",
         "topics": "Temas",
-        "topicHints": {
-          "auto": "Cada pregunta se clasifica en una carpeta de las fuentes de este agente.",
-          "custom": "Cada pregunta se clasifica en uno de tus temas.",
-          "off": "Las preguntas no se clasifican en temas. Los huecos en la documentación se pueden seguir agrupando por página o fuente.",
-          "workflowOff": "Un flujo de trabajo no tiene fuentes propias, así que tú das nombre a los temas. Actívalo para añadirlos."
-        },
-        "autoTopicsNone": "Las fuentes de este agente tienen menos de dos carpetas, así que las preguntas no se agrupan por tema.",
         "countOf": "{{count}} de {{max}}",
         "addTopic": "Añadir tema",
-        "suggestFailed": "No se pudieron cargar las carpetas de las fuentes de este agente.",
-        "topicsEmpty": "Aún no hay temas",
-        "tags": "Etiquetas",
-        "tagsDescription": "Comprobaciones de sí o no sobre conversaciones completas; pueden aplicarse varias. Filtra los registros por ellas.",
-        "addTag": "Añadir etiqueta",
-        "tagsEmpty": "Aún no hay etiquetas",
         "itemActions": "Acciones de {{name}}",
         "edit": "Editar",
         "remove": "Quitar",
         "modal": {
           "addTopic": "Añadir tema",
           "editTopic": "Editar tema",
-          "topicDescription": "Las preguntas se clasifican en tus temas según su nombre y descripción.",
-          "addTag": "Añadir etiqueta",
-          "editTag": "Editar etiqueta",
-          "tagDescription": "El nombre y la descripción deciden si la etiqueta encaja con una conversación.",
           "name": "Nombre",
           "description": "Descripción",
-          "topicNamePlaceholder": "Instalación",
-          "topicDescriptionHint": "Nombra algunas páginas que encajen aquí.",
-          "tagNamePlaceholder": "Pregunta sobre precios",
-          "tagDescriptionPlaceholder": "El usuario pregunta por precios, planes o cuánto cuesta algo.",
-          "tagDescriptionHint": "Una frase que el modelo compara con la conversación.",
-          "topicDescriptionPlaceholder": "Páginas como: Despliegue con Docker; Despliegue con Kubernetes",
           "submitAdd": "Añadir",
-          "submitSave": "Guardar"
+          "submitSave": "Guardar",
+          "dialogDescription": "El nombre y la descripción le indican al modelo qué va aquí.",
+          "editFolder": "Este tema es la carpeta \"{{name}}\" de las fuentes de este agente. Al guardarlo pasa a ser tuyo y deja de seguir las páginas de la carpeta.",
+          "namePlaceholder": "Facturación",
+          "descriptionHint": "Opcional. Hace la clasificación más precisa: nombra algunas páginas, funciones o palabras que escriben los usuarios.",
+          "descriptionPlaceholder": "Precios, planes, puestos o facturas.",
+          "overlap": "Puede solaparse con otros temas",
+          "overlapDescription": "Se comprueba en cada conversación completa, así que pueden aplicarse varios: para un informe de error o una pregunta de precios que atraviesa la documentación.",
+          "onePickFull": "No caben más de {{max}} temas que no se solapan, así que este puede solaparse.",
+          "overlapFull": "No caben más de {{max}} temas que pueden solaparse, así que este no puede.",
+          "reachOnePick": "Clasifica las preguntas nuevas; las anteriores conservan su tema.",
+          "reachOverlap": "También se comprueba en las conversaciones recientes.",
+          "kindChangeToOverlap": "Este cambio reinicia sus cifras: clasificaba preguntas y ahora se comprobará en conversaciones.",
+          "kindChangeToOnePick": "Este cambio reinicia sus cifras: se comprobaba en conversaciones y ahora clasificará preguntas."
         },
         "errors": {
           "nameRequired": "Escribe un nombre.",
           "topicNameTaken": "Otro tema ya tiene este nombre.",
           "topicNameReserved": "Este nombre está reservado para las preguntas que no encajan en ningún tema.",
-          "tagNameTaken": "Otra etiqueta ya tiene este nombre.",
-          "descriptionRequired": "Escribe una descripción.",
           "topicDescriptionTooLong": "Demasiado larga. Acórtala hasta {{max}} (los caracteres chinos, japoneses y coreanos cuentan el triple)."
-        },
-        "removeTag": {
-          "title": "¿Quitar \"{{name}}\"?",
-          "description": "Sus resultados desaparecen de Información y de los registros. Si vuelves a añadirla, empieza desde cero.",
-          "submit": "Quitar"
         },
         "digest": "Resumen semanal de huecos en la documentación",
         "digestDescription": "Una vez a la semana, el propietario del agente recibe un aviso con los principales huecos en la documentación.",
         "off": "Desactivada",
-        "topicsDescription": "Cada pregunta va a un solo tema. Sirve para agrupar los huecos en la documentación.",
-        "groupByTopic": "Agrupar preguntas por tema",
-        "customize": "Personalizar",
-        "resetToSources": "Restablecer a las fuentes",
-        "resetTopics": {
-          "title": "¿Restablecer los temas a las fuentes?",
-          "description": "Tu lista se sustituye por las carpetas de las fuentes de este agente y se pierden tus cambios.",
-          "submit": "Restablecer"
+        "topicsDescription": "Sobre qué pregunta la gente. Cada pregunta va al tema que mejor encaja.",
+        "fromSources": "De las fuentes",
+        "hide": "Ocultar",
+        "groups": {
+          "onePick": "Uno por pregunta",
+          "overlap": "Pueden solaparse",
+          "overlapDescription": "Se comprueban en conversaciones completas; pueden aplicarse varios."
+        },
+        "notes": {
+          "foldersFailed": "No se pudieron cargar las carpetas de las fuentes de este agente.",
+          "unsaved": "Las carpetas de las fuentes de este agente aparecen al guardarlo.",
+          "unlisted": "Las preguntas también se clasifican en las carpetas de las fuentes de este agente.",
+          "hidden": "Carpetas ocultas: {{names}}",
+          "show": "Mostrar",
+          "cut": "Estas carpetas más pequeñas no caben, así que sus preguntas van a Ninguno de estos temas: {{names}}",
+          "single": "Un solo tema no clasifica nada. Añade otro para empezar.",
+          "full": "Este agente tiene el máximo de temas: {{topics}} que no se solapan y {{overlapping}} que pueden solaparse."
+        },
+        "empty": {
+          "title": "Aún no hay temas",
+          "workflow": "Añade sobre qué pregunta la gente. Cada pregunta va al tema que mejor encaja.",
+          "unsaved": "Los temas de las fuentes de este agente aparecen al guardarlo. Puedes añadir los tuyos ahora.",
+          "noFolders": "Las fuentes de este agente no tienen carpetas para clasificar las preguntas. Añade tus propios temas.",
+          "allHidden": "Todas las carpetas de las fuentes de este agente están ocultas, así que las preguntas no se clasifican.",
+          "showFolders": "Mostrar carpetas"
+        },
+        "removeTopic": {
+          "title": "¿Quitar \"{{name}}\"?",
+          "description": "Puede solaparse, así que tiene resultados propios. Desaparecen de Información y de los registros, y si vuelves a añadirlo, empieza desde cero.",
+          "submit": "Quitar"
         }
       }
     },

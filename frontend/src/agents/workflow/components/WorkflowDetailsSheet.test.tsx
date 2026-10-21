@@ -5,9 +5,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('react-redux', () => ({ useDispatch: () => vi.fn() }));
-const getTopicSuggestions = vi.hoisted(() => vi.fn());
+const getTopicFolders = vi.hoisted(() => vi.fn());
 vi.mock('../../../api/services/userService', () => ({
-  default: { getTopicSuggestions },
+  default: { getTopicFolders },
 }));
 
 import { DEFAULT_ANALYTICS } from '../../analyticsConfig';
@@ -55,7 +55,7 @@ describe('WorkflowDetailsSheet', () => {
           insights={{
             available: props.available ?? true,
             maxTopics: 15,
-            maxTags: 20,
+            maxOverlapping: 20,
             agentId: 'wf-agent',
             token: 'token',
           }}
@@ -181,11 +181,8 @@ describe('WorkflowDetailsSheet', () => {
       card.querySelector('[data-testid="analytics-topics"] h4'),
     ).not.toBeNull();
     // A workflow has no sources of its own: its topics are its own list.
-    expect(card.textContent).toContain(
-      'agents.form.analytics.topicHints.workflowOff',
-    );
-    expect(card.textContent).not.toContain('agents.form.analytics.customize');
-    expect(getTopicSuggestions).not.toHaveBeenCalled();
+    expect(card.textContent).toContain('agents.form.analytics.empty.workflow');
+    expect(getTopicFolders).not.toHaveBeenCalled();
   });
 
   it('counts an insights change as an edit and saves it with the rest', () => {

@@ -185,19 +185,28 @@ export type GuardrailsConfig = {
   controls: GuardrailControl[];
 };
 
-/** A documentation section a message can be about; keyed by name. */
-export type AnalyticsTopic = { name: string; description: string };
+/**
+ * One of the owner's topics. One that doesn't overlap is an option of the
+ * question each user message is sorted by, next to the agent's source
+ * folders; one that overlaps is checked on whole conversations, and several
+ * can apply. The id keeps an overlapping topic's history across renames.
+ */
+export type AnalyticsTopic = {
+  id: string;
+  name: string;
+  description: string;
+  overlap: boolean;
+};
 
-/** An owner's yes/no conversation label; the id keeps its history across renames. */
-export type AnalyticsTag = { id: string; name: string; description: string };
-
-export type AnalyticsTopicMode = 'auto' | 'custom' | 'off';
+/** A folder of the agent's sources: a default topic that doesn't overlap. */
+export type TopicFolder = { name: string; description: string };
 
 /** `agents.config.analytics`: whether and how the agent's conversations are labelled. */
 export type AnalyticsConfig = {
   enabled: boolean;
-  topics: { mode: AnalyticsTopicMode; items: AnalyticsTopic[] };
-  tags: AnalyticsTag[];
+  topics: AnalyticsTopic[];
+  /** Source folders left out of the topic question. */
+  hidden_folders: string[];
   /** The owner's weekly in-app docs-gap notification. */
   digest: boolean;
 };

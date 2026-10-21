@@ -99,7 +99,7 @@ const makeStore = (
     attachmentBudgetShare: null,
     analyticsEnabled: false,
     analyticsMaxTopics: 15,
-    analyticsMaxTags: 20,
+    analyticsMaxOverlapping: 20,
   };
   const conversation: ConversationState = {
     queries: [],

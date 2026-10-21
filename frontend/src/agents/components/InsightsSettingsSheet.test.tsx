@@ -12,8 +12,8 @@ const store = {
   preference: {
     token: 'token',
     analyticsEnabled: true,
-    analyticsMaxTopics: 15,
-    analyticsMaxTags: 3,
+    analyticsMaxTopics: 2,
+    analyticsMaxOverlapping: 3,
   },
 };
 vi.mock('react-redux', () => ({
@@ -23,7 +23,7 @@ vi.mock('react-redux', () => ({
 
 const service = vi.hoisted(() => ({
   updateAgent: vi.fn(),
-  getTopicSuggestions: vi.fn(),
+  getTopicFolders: vi.fn(),
   getConfig: vi.fn(),
 }));
 vi.mock('../../api/services/userService', () => ({ default: service }));
@@ -34,13 +34,14 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const K = 'agents.form.analytics';
 
-const TAG = {
+const PRICING = {
   id: 'a1b2c3d4e5f60718',
   name: 'Pricing question',
   description: 'The user asks about prices.',
+  overlap: true,
 };
 
-const classic = (analytics = { ...DEFAULT_ANALYTICS, tags: [TAG] }) =>
+const classic = (analytics = { ...DEFAULT_ANALYTICS, topics: [PRICING] }) =>
   ({
     id: 'a1',
     name: 'Carrier FAQ',
@@ -59,13 +60,13 @@ describe('InsightsSettingsSheet', () => {
   beforeEach(() => {
     service.updateAgent.mockReset();
     service.updateAgent.mockResolvedValue({ ok: true });
-    service.getTopicSuggestions.mockReset();
-    service.getTopicSuggestions.mockResolvedValue({
+    service.getTopicFolders.mockReset();
+    service.getTopicFolders.mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
           success: true,
-          topics: [
+          folders: [
             { name: 'billing', description: 'Pages such as: Plans' },
             { name: 'data', description: 'Pages such as: Export' },
           ],
@@ -130,9 +131,9 @@ describe('InsightsSettingsSheet', () => {
   it('starts from the saved settings, with Save off until something changes', async () => {
     await render(classic());
     expect(panel().textContent).toContain('Pricing question');
-    // The source folders: a classic agent groups by them.
+    // The source folders: a classic agent's default topics.
     expect(panel().textContent).toContain('billing');
-    expect(button(`${K}.customize`)).toBeDefined();
+    expect(button(`${K}.addTopic`)).toBeDefined();
     expect(save().disabled).toBe(true);
     await act(async () => enabled().click());
     expect(save().disabled).toBe(false);
@@ -140,18 +141,39 @@ describe('InsightsSettingsSheet', () => {
     expect(save().disabled).toBe(true);
   });
 
-  it('takes the tag limit from the server', async () => {
-    await render(
-      classic({
-        ...DEFAULT_ANALYTICS,
-        tags: [
-          TAG,
-          { ...TAG, id: 'b2', name: 'B' },
-          { ...TAG, id: 'c3', name: 'C' },
-        ],
-      }),
-    );
-    expect(button(`${K}.addTag`)).toBeUndefined();
+  describe('takes both topic limits from the server', () => {
+    const own = (id: string, name: string, overlap: boolean) => ({
+      ...PRICING,
+      id: `${id}0000000`,
+      name,
+      overlap,
+    });
+    const two = [own('a1', 'A', false), own('b2', 'B', false)];
+
+    it('offers Add topic while one kind has room', async () => {
+      await render(
+        classic({
+          ...DEFAULT_ANALYTICS,
+          topics: [...two, own('c3', 'C', true), own('d4', 'D', true)],
+        }),
+      );
+      expect(button(`${K}.addTopic`)).toBeDefined();
+    });
+
+    it('drops it once both are full', async () => {
+      await render(
+        classic({
+          ...DEFAULT_ANALYTICS,
+          topics: [
+            ...two,
+            own('c3', 'C', true),
+            own('d4', 'D', true),
+            own('e5', 'E', true),
+          ],
+        }),
+      );
+      expect(button(`${K}.addTopic`)).toBeUndefined();
+    });
   });
 
   it('saves only the insights on top of the saved config, then hands it back and closes', async () => {
@@ -212,17 +234,16 @@ describe('InsightsSettingsSheet', () => {
 
   it('gives a workflow its own topic list only', async () => {
     await render({
-      ...classic(),
+      ...classic({ ...DEFAULT_ANALYTICS }),
       agent_type: 'workflow',
     } as Agent);
-    expect(service.getTopicSuggestions).not.toHaveBeenCalled();
-    expect(button(`${K}.customize`)).toBeUndefined();
-    expect(panel().textContent).toContain(`${K}.topicHints.workflowOff`);
+    expect(service.getTopicFolders).not.toHaveBeenCalled();
+    expect(panel().textContent).toContain(`${K}.empty.workflow`);
   });
 
   it('asks nothing of the server while closed', async () => {
     await render(classic(), { open: false });
     expect(service.getConfig).not.toHaveBeenCalled();
-    expect(service.getTopicSuggestions).not.toHaveBeenCalled();
+    expect(service.getTopicFolders).not.toHaveBeenCalled();
   });
 });

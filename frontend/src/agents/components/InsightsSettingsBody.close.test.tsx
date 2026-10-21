@@ -14,7 +14,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../api/services/userService', () => ({
-  default: { getTopicSuggestions: vi.fn(() => new Promise(() => undefined)) },
+  default: { getTopicFolders: vi.fn(() => new Promise(() => undefined)) },
 }));
 
 // A dialog that stays in the DOM after it closes, as Radix keeps one through
@@ -64,10 +64,11 @@ import InsightsSettingsBody from './InsightsSettingsBody';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const K = 'agents.form.analytics';
-const TAG = {
+const REFUND = {
   id: 'a1b2c3d4e5f60718',
   name: 'Refund',
   description: 'Wants money back.',
+  overlap: true,
 };
 
 function Harness({ initial }: { initial: AnalyticsConfig }) {
@@ -78,13 +79,13 @@ function Harness({ initial }: { initial: AnalyticsConfig }) {
       onChange={setValue}
       agentId="a1"
       maxTopics={3}
-      maxTags={20}
+      maxOverlapping={20}
       token="token"
     />
   );
 }
 
-// FX-4: the add/edit dialog and the remove-tag confirm keep their copy
+// FX-4: the add/edit dialog and the remove-topic confirm keep their copy
 // while they close, instead of flipping to "Add topic" and `Remove ""?`.
 describe('InsightsSettingsBody dialogs while closing', () => {
   let container: HTMLDivElement;
@@ -95,7 +96,9 @@ describe('InsightsSettingsBody dialogs while closing', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () =>
-      root.render(<Harness initial={{ ...DEFAULT_ANALYTICS, tags: [TAG] }} />),
+      root.render(
+        <Harness initial={{ ...DEFAULT_ANALYTICS, topics: [REFUND] }} />,
+      ),
     );
   });
 
@@ -135,16 +138,16 @@ describe('InsightsSettingsBody dialogs while closing', () => {
     await act(async () => item.click());
   };
 
-  it('keeps "Edit tag" on the closing edit dialog', async () => {
+  it('keeps "Edit topic" on the closing edit dialog', async () => {
     await openMenuItem(`${K}.edit`);
-    expect(dialogTitles()).toContainEqual(['true', `${K}.modal.editTag`]);
+    expect(dialogTitles()).toContainEqual(['true', `${K}.modal.editTopic`]);
     await act(async () => cancelOpenDialog());
-    expect(dialogTitles()).toContainEqual(['false', `${K}.modal.editTag`]);
+    expect(dialogTitles()).toContainEqual(['false', `${K}.modal.editTopic`]);
   });
 
-  it('keeps the tag name on the closing remove confirm', async () => {
+  it('keeps the topic name on the closing remove confirm', async () => {
     await openMenuItem(`${K}.remove`);
-    const title = `${K}.removeTag.title(Refund)`;
+    const title = `${K}.removeTopic.title(Refund)`;
     expect(dialogTitles()).toContainEqual(['true', title]);
     await act(async () => cancelOpenDialog());
     expect(dialogTitles()).toContainEqual(['false', title]);

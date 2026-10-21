@@ -5,7 +5,7 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
-import { MAX_TAGS, MAX_TOPICS } from '../agents/analyticsConfig';
+import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
 import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
@@ -73,11 +73,11 @@ export interface Preference {
   // The decision model may label conversations (/api/config
   // ``decision_analytics_enabled``); off until the config loads.
   analyticsEnabled: boolean;
-  // The agent editor's topic and tag limits (/api/config
-  // ``analytics_max_topics`` / ``analytics_max_tags``); the server's
+  // The agent editor's limits for the two kinds of topic (/api/config
+  // ``analytics_max_topics`` / ``analytics_max_overlapping_topics``); the server's
   // defaults until the config loads.
   analyticsMaxTopics: number;
-  analyticsMaxTags: number;
+  analyticsMaxOverlapping: number;
 }
 
 const initialState: Preference = {
@@ -114,7 +114,7 @@ const initialState: Preference = {
   attachmentBudgetShare: null,
   analyticsEnabled: false,
   analyticsMaxTopics: MAX_TOPICS,
-  analyticsMaxTags: MAX_TAGS,
+  analyticsMaxOverlapping: MAX_OVERLAPPING,
 };
 
 export const prefSlice = createSlice({
@@ -296,12 +296,12 @@ export const prefSlice = createSlice({
       action: PayloadAction<{
         enabled: boolean;
         maxTopics: number;
-        maxTags: number;
+        maxOverlapping: number;
       }>,
     ) => {
       state.analyticsEnabled = action.payload.enabled;
       state.analyticsMaxTopics = action.payload.maxTopics;
-      state.analyticsMaxTags = action.payload.maxTags;
+      state.analyticsMaxOverlapping = action.payload.maxOverlapping;
     },
   },
 });
@@ -499,5 +499,5 @@ export const selectAnalyticsEnabled = (state: RootState) =>
   state.preference.analyticsEnabled;
 export const selectAnalyticsMaxTopics = (state: RootState) =>
   state.preference.analyticsMaxTopics;
-export const selectAnalyticsMaxTags = (state: RootState) =>
-  state.preference.analyticsMaxTags;
+export const selectAnalyticsMaxOverlapping = (state: RootState) =>
+  state.preference.analyticsMaxOverlapping;

@@ -2987,66 +2987,71 @@
         "learnMore": "了解更多",
         "serverOff": "此伺服器已關閉洞察，因此這些設定暫不生效。請聯絡管理員開啟。",
         "topics": "主題",
-        "topicHints": {
-          "auto": "每個問題會歸入此代理來源中的一個資料夾。",
-          "custom": "每個問題會歸入你的一個主題。",
-          "off": "問題不歸入主題。文件缺口仍可依頁面或來源分組。",
-          "workflowOff": "工作流程沒有自己的來源，因此由你為主題命名。開啟後即可新增。"
-        },
-        "autoTopicsNone": "此代理的來源中資料夾少於兩個，因此問題不會依主題分組。",
         "countOf": "{{count}}/{{max}}",
         "addTopic": "新增主題",
-        "suggestFailed": "無法載入此代理來源中的資料夾。",
-        "topicsEmpty": "還沒有主題",
-        "tags": "標籤",
-        "tagsDescription": "針對整段對話的「是／否」判斷；可同時適用多個。可用它們篩選日誌。",
-        "addTag": "新增標籤",
-        "tagsEmpty": "還沒有標籤",
         "itemActions": "{{name}} 的操作",
         "edit": "編輯",
         "remove": "移除",
         "modal": {
           "addTopic": "新增主題",
           "editTopic": "編輯主題",
-          "topicDescription": "問題會依主題的名稱與描述歸入你的主題。",
-          "addTag": "新增標籤",
-          "editTag": "編輯標籤",
-          "tagDescription": "名稱與描述決定此標籤是否符合某段對話。",
           "name": "名稱",
           "description": "描述",
-          "topicNamePlaceholder": "安裝",
-          "topicDescriptionHint": "列出幾個屬於這裡的頁面。",
-          "tagNamePlaceholder": "價格問題",
-          "tagDescriptionPlaceholder": "使用者詢問價格、方案或某樣東西的費用。",
-          "tagDescriptionHint": "模型會拿這句話與對話比對。",
-          "topicDescriptionPlaceholder": "頁面例如：Docker 部署；Kubernetes 部署",
           "submitAdd": "新增",
-          "submitSave": "儲存"
+          "submitSave": "儲存",
+          "dialogDescription": "名稱和描述告訴模型哪些內容屬於這裡。",
+          "editFolder": "此主題是此代理來源中的資料夾「{{name}}」。儲存後它會成為你自己的主題，不再跟隨該資料夾的頁面。",
+          "namePlaceholder": "帳單",
+          "descriptionHint": "選填。能讓分類更準確：列出幾個頁面、功能或使用者常用的詞。",
+          "descriptionPlaceholder": "價格、方案、席位或發票。",
+          "overlap": "可與其他主題重疊",
+          "overlapDescription": "針對每段完整對話判斷，因此可同時適用多個：適合橫跨整份文件的錯誤回報或價格問題。",
+          "onePickFull": "不重疊的主題最多 {{max}} 個，因此這個主題可重疊。",
+          "overlapFull": "可重疊的主題最多 {{max}} 個，因此這個主題不能重疊。",
+          "reachOnePick": "對新問題進行分類；之前的問題保留原主題。",
+          "reachOverlap": "也會對近期的對話進行判斷。",
+          "kindChangeToOverlap": "變更後其數據將重新開始：它原先用於分類問題，今後將針對對話進行判斷。",
+          "kindChangeToOnePick": "變更後其數據將重新開始：它原先針對對話進行判斷，今後將用於分類問題。"
         },
         "errors": {
           "nameRequired": "請輸入名稱。",
           "topicNameTaken": "已有其他主題使用此名稱。",
           "topicNameReserved": "此名稱保留給不屬於任何主題的問題。",
-          "tagNameTaken": "已有其他標籤使用此名稱。",
-          "descriptionRequired": "請輸入描述。",
           "topicDescriptionTooLong": "太長了。請縮短到 {{max}} 以內（中文、日文和韓文字元以三個計算）。"
-        },
-        "removeTag": {
-          "title": "要移除「{{name}}」嗎？",
-          "description": "它的結果將從洞察和日誌中消失。重新新增後會從頭開始。",
-          "submit": "移除"
         },
         "digest": "每週文件缺口摘要",
         "digestDescription": "每週一次，代理的擁有者會收到一則通知，列出主要的文件缺口。",
         "off": "關閉",
-        "topicsDescription": "每個問題歸入一個主題。用於為文件缺口分組。",
-        "groupByTopic": "依主題為問題分組",
-        "customize": "自訂",
-        "resetToSources": "重設為來源",
-        "resetTopics": {
-          "title": "要將主題重設為來源嗎？",
-          "description": "你的清單將由此代理來源中的資料夾取代，你對它的修改會遺失。",
-          "submit": "重設"
+        "topicsDescription": "使用者在問什麼。每個問題歸入最合適的一個主題。",
+        "fromSources": "來自來源",
+        "hide": "隱藏",
+        "groups": {
+          "onePick": "每個問題一個",
+          "overlap": "可重疊",
+          "overlapDescription": "針對整段對話判斷；可同時適用多個。"
+        },
+        "notes": {
+          "foldersFailed": "無法載入此代理來源中的資料夾。",
+          "unsaved": "儲存後會顯示此代理來源中的資料夾。",
+          "unlisted": "問題也會歸入此代理來源中的資料夾。",
+          "hidden": "已隱藏的資料夾：{{names}}",
+          "show": "顯示",
+          "cut": "這些較小的資料夾放不下，其問題會歸入「不屬於這些主題」：{{names}}",
+          "single": "只有一個主題無法分類。再新增一個即可開始。",
+          "full": "此代理的主題已達上限：{{topics}} 個不重疊的主題和 {{overlapping}} 個可重疊的主題。"
+        },
+        "empty": {
+          "title": "還沒有主題",
+          "workflow": "新增使用者會問的內容。每個問題歸入最合適的一個主題。",
+          "unsaved": "儲存後會顯示此代理來源中的主題。你現在就可以新增自己的主題。",
+          "noFolders": "此代理的來源中沒有可用於分類問題的資料夾。請新增你自己的主題。",
+          "allHidden": "此代理來源中的資料夾已全部隱藏，因此問題不會被分類。",
+          "showFolders": "顯示資料夾"
+        },
+        "removeTopic": {
+          "title": "要移除「{{name}}」嗎？",
+          "description": "它可重疊，因此有自己的結果。這些結果將從洞察和日誌中消失，重新新增後會從頭開始。",
+          "submit": "移除"
         }
       }
     },

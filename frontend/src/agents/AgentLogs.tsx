@@ -12,6 +12,7 @@ import { revealElement } from '../settings/logsLinks';
 import { EmptyState } from '../components/ui/empty-state';
 import { SectionHeader } from '../components/ui/section-header';
 import SectionShell from '../navigation/SectionShell';
+import { analyticsOf } from './analyticsConfig';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import GuardrailEvents from './components/GuardrailEvents';
 import { useAgent } from './hooks/useAgent';
@@ -78,7 +79,9 @@ export default function AgentLogs() {
                   agent
                     ? {
                         enabled: analytics?.enabled !== false,
-                        tags: analytics?.tags ?? [],
+                        tags: analyticsOf(analytics).topics.filter(
+                          (topic) => topic.overlap,
+                        ),
                       }
                     : undefined
                 }

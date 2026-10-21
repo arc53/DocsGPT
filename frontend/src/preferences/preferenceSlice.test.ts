@@ -13,7 +13,7 @@ import reducer, {
   setConversationsLoading,
   prefListenerMiddleware,
   selectAnalyticsEnabled,
-  selectAnalyticsMaxTags,
+  selectAnalyticsMaxOverlapping,
   selectAnalyticsMaxTopics,
   selectIsAdmin,
   selectRoles,
@@ -234,18 +234,22 @@ describe('insights availability', () => {
     const state = root(baseState());
     expect(selectAnalyticsEnabled(state)).toBe(false);
     expect(selectAnalyticsMaxTopics(state)).toBe(15);
-    expect(selectAnalyticsMaxTags(state)).toBe(20);
+    expect(selectAnalyticsMaxOverlapping(state)).toBe(20);
   });
 
   it("keeps the server's switch and limits", () => {
     const state = root(
       reducer(
         baseState(),
-        setAnalyticsAvailability({ enabled: true, maxTopics: 8, maxTags: 0 }),
+        setAnalyticsAvailability({
+          enabled: true,
+          maxTopics: 8,
+          maxOverlapping: 0,
+        }),
       ),
     );
     expect(selectAnalyticsEnabled(state)).toBe(true);
     expect(selectAnalyticsMaxTopics(state)).toBe(8);
-    expect(selectAnalyticsMaxTags(state)).toBe(0);
+    expect(selectAnalyticsMaxOverlapping(state)).toBe(0);
   });
 });

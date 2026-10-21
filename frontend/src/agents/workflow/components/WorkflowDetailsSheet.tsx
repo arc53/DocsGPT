@@ -35,7 +35,7 @@ export interface WorkflowInsightsOptions {
   /** The server lets the decision model label conversations. */
   available: boolean;
   maxTopics: number;
-  maxTags: number;
+  maxOverlapping: number;
   agentId?: string;
   token: string | null;
 }
@@ -225,7 +225,7 @@ export default function WorkflowDetailsSheet({
               onChange={(analytics) => setDraft({ ...draft, analytics })}
               agentId={insights.agentId}
               maxTopics={insights.maxTopics}
-              maxTags={insights.maxTags}
+              maxOverlapping={insights.maxOverlapping}
               token={insights.token}
               // No agent-level sources: the topics are the owner's own list.
               topicSource="none"

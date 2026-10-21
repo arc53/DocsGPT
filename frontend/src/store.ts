@@ -4,7 +4,7 @@ import activityReducer, {
   activityListenerMiddleware,
 } from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
-import { MAX_TAGS, MAX_TOPICS } from './agents/analyticsConfig';
+import { MAX_OVERLAPPING, MAX_TOPICS } from './agents/analyticsConfig';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
 import connectorsReducer from './connectors/connectorsSlice';
@@ -71,7 +71,7 @@ const preloadedState: { preference: Preference } = {
     attachmentBudgetShare: null,
     analyticsEnabled: false,
     analyticsMaxTopics: MAX_TOPICS,
-    analyticsMaxTags: MAX_TAGS,
+    analyticsMaxOverlapping: MAX_OVERLAPPING,
   },
 };
 const store = configureStore({

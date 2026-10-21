@@ -2171,7 +2171,7 @@ function WorkflowBuilderInner() {
           insights={{
             available: analyticsAvailability.enabled,
             maxTopics: analyticsAvailability.maxTopics,
-            maxTags: analyticsAvailability.maxTags,
+            maxOverlapping: analyticsAvailability.maxOverlapping,
             agentId: effectiveAgentId || undefined,
             token,
           }}

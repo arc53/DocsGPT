@@ -1,8 +1,8 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { EyeOff, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch } from 'react-redux';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
@@ -10,39 +10,41 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 import { SectionHeader } from '@/components/ui/section-header';
 import { SettingRow } from '@/components/ui/setting-row';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 
 import userService from '../../api/services/userService';
 import { ActiveState } from '../../models/misc';
 import ConfirmationModal from '../../modals/ConfirmationModal';
-import { showActionToast } from '../../notifications/actionToastSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
-import { analyticsOf, appendSuggestions, newTagId } from '../analyticsConfig';
-import type {
-  AnalyticsConfig,
-  AnalyticsTag,
-  AnalyticsTopic,
-  AnalyticsTopicMode,
-} from '../types';
-import AnalyticsItemModal from './AnalyticsItemModal';
+import {
+  analyticsOf,
+  byName,
+  newTopicId,
+  topicsOfKind,
+  visibleFolders,
+} from '../analyticsConfig';
+import type { AnalyticsConfig, AnalyticsTopic, TopicFolder } from '../types';
+import TopicModal, { type TopicDraft } from './TopicModal';
 
 const DOCS_URL =
   'https://docs.docsgpt.cloud/Using/analytics-and-logs#analytics-settings-for-an-agent';
 
-/** Fewer folders than this and the server asks no topic question. */
-const MIN_AUTO_TOPICS = 2;
-
-type Item = { name: string; description: string };
-
 type Editing = {
-  kind: 'topic' | 'tag';
-  /** The row being edited; null to add one. */
+  /** The owner's topic being edited, by index; null to add one. */
   index: number | null;
-  item?: Item;
+  item?: AnalyticsTopic;
+  /** The folder being edited: saving hides it and adds an own topic. */
+  folder?: TopicFolder;
 };
 
-/** The folders `auto` mode groups by, for one agent; `null` when they failed to load. */
-type Folders = { agentId: string; topics: AnalyticsTopic[] | null };
+/** One agent's source folders, largest first; `null` when they failed to load. */
+type Folders = { agentId: string; folders: TopicFolder[] | null };
+
+/** A row of the list: one of the owner's topics, or a source folder. */
+type Row =
+  | { kind: 'own'; topic: AnalyticsTopic; index: number }
+  | { kind: 'folder'; folder: TopicFolder };
 
 export type InsightsSettingsBodyProps = {
   value?: AnalyticsConfig;
@@ -50,18 +52,16 @@ export type InsightsSettingsBodyProps = {
   /** A saved agent's id: the source folders need it. */
   agentId?: string;
   maxTopics: number;
-  maxTags: number;
+  maxOverlapping: number;
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
   token: string | null;
   /**
-   * Where `auto` topics come from. `sources` (a classic agent) shows its
-   * source folders, with Customize and Reset to sources. `none` (a workflow,
-   * which has no agent-level sources) offers only the owner's own list: on is
-   * `custom`, off is `off`, and a stored `auto` reads as off.
+   * Whether the agent has source folders. `none` (a workflow, which has no
+   * agent-level sources) offers only the owner's own topics.
    */
   topicSource?: 'sources' | 'none';
-  /** The Topics and Tags heading level: `h4` inside a card that has its own `h3`. */
+  /** The Topics heading level: `h4` inside a card that has its own `h3`. */
   headingLevel?: 'h3' | 'h4';
   /**
    * The body is on screen (its section is open, its drawer shown). The
@@ -80,42 +80,39 @@ function useKept<T>(value: T | null): T | null {
   return value ?? kept;
 }
 
-const sameTopics = (a: AnalyticsTopic[], b: AnalyticsTopic[]) =>
-  a.length === b.length &&
-  a.every(
-    (topic, index) =>
-      topic.name.trim() === b[index].name.trim() &&
-      (topic.description ?? '').trim() === (b[index].description ?? '').trim(),
-  );
-
 async function loadFolders(
   agentId: string,
   token: string | null,
-): Promise<AnalyticsTopic[]> {
-  const response = await userService.getTopicSuggestions(agentId, token);
-  if (!response.ok) throw new Error('topic suggestions');
+): Promise<TopicFolder[]> {
+  const response = await userService.getTopicFolders(agentId, token);
+  if (!response.ok) throw new Error('topic folders');
   const body = (await response.json()) as {
     success?: boolean;
-    topics?: AnalyticsTopic[];
+    folders?: TopicFolder[];
   };
-  if (!body?.success) throw new Error('topic suggestions');
-  return body.topics ?? [];
+  if (!body?.success) throw new Error('topic folders');
+  return body.folders ?? [];
 }
 
+const nextHeading = (level: 'h3' | 'h4') => (level === 'h3' ? 'h4' : 'h5');
+
 /**
- * An agent's insights settings: Collect insights, how questions are grouped
- * into topics, the owner's yes/no tags and the weekly docs-gap summary. It
- * edits `value` only; the host saves it (the agent form's Save, a drawer's
- * or the workflow details' own). It renders its blocks as siblings, so the
- * host's flex column sets the gap between them. Everything but the first
- * switch hides while insights are off.
+ * An agent's insights settings: Collect insights, its topics and the weekly
+ * docs-gap summary. The topics are one list: the agent's source folders,
+ * then the owner's own, each either sorting questions (one per question) or
+ * able to overlap (checked on whole conversations). The list splits into
+ * those two groups only once a topic overlaps. It edits `value` only; the
+ * host saves it (the agent form's Save, a drawer's or the workflow details'
+ * own). It renders its blocks as siblings, so the host's flex column sets
+ * the gap between them. Everything but the first switch hides while
+ * insights are off.
  */
 export default function InsightsSettingsBody({
   value,
   onChange,
   agentId,
   maxTopics,
-  maxTags,
+  maxOverlapping,
   disabled = false,
   token,
   topicSource = 'sources',
@@ -123,225 +120,317 @@ export default function InsightsSettingsBody({
   active = true,
 }: InsightsSettingsBodyProps) {
   const { t } = useTranslation();
-  const dispatch = useDispatch();
   const k = (key: string) => t(`agents.form.analytics.${key}`);
 
   const config = analyticsOf(value);
   const fromSources = topicSource === 'sources';
-  const storedMode = config.topics.mode;
-  // A workflow has no folders, so a stored `auto` asks no topic question.
-  const mode: AnalyticsTopicMode =
-    !fromSources && storedMode === 'auto' ? 'off' : storedMode;
-  const topics = config.topics.items;
-  const tags = config.tags;
+  const own = config.topics;
+  const onePickOwn = topicsOfKind(config, false);
+  const overlapping = topicsOfKind(config, true);
 
   const [editing, setEditing] = React.useState<Editing | null>(null);
-  const [removingTag, setRemovingTag] = React.useState<AnalyticsTag | null>(
-    null,
-  );
-  const [confirmingReset, setConfirmingReset] = React.useState(false);
+  const [removing, setRemoving] = React.useState<AnalyticsTopic | null>(null);
   const shownEditing = useKept(editing);
-  const shownRemovingTag = useKept(removingTag);
+  const shownRemoving = useKept(removing);
 
   const [folders, setFolders] = React.useState<Folders | null>(null);
-  const [customizing, setCustomizing] = React.useState(false);
-  const folderTopics =
-    agentId && folders?.agentId === agentId ? folders.topics : undefined;
+  const [attempt, setAttempt] = React.useState(0);
+  const loaded = agentId && folders?.agentId === agentId ? folders : null;
+  // A read-only caller can't list them (the endpoint needs edit access), and
+  // a save in flight keeps what was loaded.
   const wantsFolders =
-    active &&
-    fromSources &&
-    !disabled &&
-    !!agentId &&
-    config.enabled &&
-    mode !== 'off';
-  const foldersLoaded = !!agentId && folders?.agentId === agentId;
+    active && fromSources && !disabled && !!agentId && config.enabled;
   React.useEffect(() => {
-    if (!wantsFolders || !agentId || foldersLoaded) return;
+    if (!wantsFolders || !agentId || loaded) return;
     let cancelled = false;
     loadFolders(agentId, token)
-      .then((topics) => {
-        if (!cancelled) setFolders({ agentId, topics });
+      .then((list) => {
+        if (!cancelled) setFolders({ agentId, folders: list });
       })
       .catch(() => {
-        // A preview only: without it the switch's hint still says what it does.
-        if (!cancelled) setFolders({ agentId, topics: null });
+        if (!cancelled) setFolders({ agentId, folders: null });
       });
     return () => {
       cancelled = true;
     };
-  }, [wantsFolders, agentId, token, foldersLoaded]);
+  }, [wantsFolders, agentId, token, loaded, attempt]);
 
   const enabledId = React.useId();
-  const groupId = React.useId();
   const digestId = React.useId();
 
   const patch = (next: Partial<AnalyticsConfig>) =>
     onChange({ ...config, ...next });
-  const setTopics = (topicsNext: Partial<AnalyticsConfig['topics']>) =>
-    patch({ topics: { ...config.topics, ...topicsNext } });
-  const setTags = (next: AnalyticsTag[]) => patch({ tags: next });
 
-  /** The folders as a custom list: no reserved name, no repeats, within the limit. */
-  const asList = (source: AnalyticsTopic[]) =>
-    appendSuggestions([], source, maxTopics);
+  const folderList = loaded?.folders ?? [];
+  const view = visibleFolders(folderList, config, maxTopics);
+  const foldersFailed = loaded !== null && loaded.folders === null;
+  const foldersLoading =
+    fromSources && !!agentId && wantsFolders && loaded === null;
+  // Folders come once the agent is saved; a read-only caller can't list them.
+  const unsaved = fromSources && !agentId;
+  const unlisted = fromSources && !!agentId && disabled && !loaded;
 
-  const customize = async () => {
-    let source = folderTopics ?? null;
-    if (agentId && !source) {
-      setCustomizing(true);
-      try {
-        source = await loadFolders(agentId, token);
-        setFolders({ agentId, topics: source });
-      } catch {
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: k('suggestFailed'),
-          }),
-        );
-        return;
-      } finally {
-        setCustomizing(false);
-      }
-    }
-    setTopics({ mode: 'custom', items: asList(source ?? []) });
-  };
+  const onePickRows: Row[] = byName([
+    ...view.shown.map((folder) => ({ name: folder.name, folder })),
+    ...onePickOwn.map((topic) => ({ name: topic.name, topic })),
+  ]).map((entry) =>
+    'folder' in entry
+      ? { kind: 'folder', folder: entry.folder }
+      : { kind: 'own', topic: entry.topic, index: own.indexOf(entry.topic) },
+  );
+  const overlapRows: Row[] = byName(overlapping).map((topic) => ({
+    kind: 'own',
+    topic,
+    index: own.indexOf(topic),
+  }));
+  const total = onePickRows.length + overlapRows.length;
 
-  const resetToSources = () => setTopics({ mode: 'auto', items: [] });
-  const askResetToSources = () => {
-    // Back to the folders drops the edits, so a list that differs confirms.
-    const unchanged =
-      topics.length === 0 ||
-      (Array.isArray(folderTopics) && sameTopics(topics, asList(folderTopics)));
-    if (unchanged) resetToSources();
-    else setConfirmingReset(true);
-  };
+  const onePickFull = onePickOwn.length >= maxTopics;
+  const overlapFull = overlapping.length >= maxOverlapping;
+  const canAdd = !disabled && !(onePickFull && overlapFull);
 
-  const setGrouping = (on: boolean) => {
-    if (!on) setTopics({ mode: 'off' });
-    // A list of its own comes back; otherwise the folders (a workflow has none).
-    else
-      setTopics({
-        mode: !fromSources || topics.length > 0 ? 'custom' : 'auto',
-      });
-  };
+  const hide = (folder: TopicFolder) =>
+    patch({ hidden_folders: [...config.hidden_folders, folder.name] });
+  const showHidden = () => patch({ hidden_folders: [] });
+  const removeTopic = (topic: AnalyticsTopic) =>
+    patch({ topics: own.filter((item) => item.id !== topic.id) });
 
-  const saveItem = (item: Item) => {
+  const saveTopic = (draft: TopicDraft) => {
     if (!editing) return;
-    if (editing.kind === 'topic') {
-      setTopics({
-        items:
-          editing.index === null
-            ? [...topics, item]
-            : topics.map((topic, index) =>
-                index === editing.index ? item : topic,
-              ),
+    if (editing.index !== null) {
+      // An edit keeps the id, so a renamed overlapping topic keeps its history.
+      patch({
+        topics: own.map((topic, index) =>
+          index === editing.index ? { ...topic, ...draft } : topic,
+        ),
       });
     } else {
-      setTags(
-        editing.index === null
-          ? [...tags, { id: newTagId(), ...item }]
-          : // An edit keeps the id, so a renamed tag keeps its history.
-            tags.map((tag, index) =>
-              index === editing.index ? { ...tag, ...item } : tag,
-            ),
-      );
+      patch({
+        topics: [...own, { id: newTopicId(), ...draft }],
+        // An edited folder becomes the owner's own topic; the folder hides.
+        ...(editing.folder
+          ? {
+              hidden_folders: [...config.hidden_folders, editing.folder.name],
+            }
+          : {}),
+      });
     }
     setEditing(null);
   };
 
+  // The dialog's limits leave out the topic being edited, so it may keep its kind.
+  const editedOverlap = shownEditing?.item?.overlap;
   const others = shownEditing
-    ? (shownEditing.kind === 'topic' ? topics : tags)
-        .filter((_, index) => index !== shownEditing.index)
-        .map((item) => item.name)
+    ? [
+        ...own
+          .filter((_, index) => index !== shownEditing.index)
+          .map((topic) => topic.name),
+        ...view.shown
+          .filter((folder) => folder !== shownEditing.folder)
+          .map((folder) => folder.name),
+      ]
     : [];
 
-  // DESIGN › Counts: a plain number, and the limit only once it is reached.
-  const countOf = (count: number, max: number) =>
-    count >= max
-      ? t('agents.form.analytics.countOf', {
-          count: formatCount(count),
-          max: formatCount(max),
-        })
-      : count;
-
-  const itemMenu = (name: string, onEdit: () => void, onRemove: () => void) =>
+  const menu = (
+    name: string,
+    options: Parameters<typeof ActionMenu>[0]['options'],
+  ) =>
     disabled ? undefined : (
       <ActionMenu
         triggerLabel={t('agents.form.analytics.itemActions', {
           name,
           interpolation: { escapeValue: false },
         })}
-        options={[
-          { label: k('edit'), icon: Pencil, onClick: onEdit },
-          {
-            label: k('remove'),
-            icon: Trash2,
-            onClick: onRemove,
-            variant: 'destructive',
-            separatorBefore: true,
-          },
-        ]}
+        options={options}
       />
     );
 
-  const addButton = (label: string, onClick: () => void) => (
-    <Button type="button" variant="outline" size="sm" onClick={onClick}>
-      <Plus />
+  const renderRow = (row: Row) =>
+    row.kind === 'folder' ? (
+      <ListRow
+        key={`folder:${row.folder.name}`}
+        title={
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate">{row.folder.name}</span>
+            <Badge variant="neutral">
+              <Folder />
+              {k('fromSources')}
+            </Badge>
+          </span>
+        }
+        description={row.folder.description || undefined}
+        trailing={menu(row.folder.name, [
+          {
+            label: k('edit'),
+            icon: Pencil,
+            onClick: () => setEditing({ index: null, folder: row.folder }),
+          },
+          { label: k('hide'), icon: EyeOff, onClick: () => hide(row.folder) },
+        ])}
+      />
+    ) : (
+      <ListRow
+        key={row.topic.id}
+        title={row.topic.name}
+        description={row.topic.description || undefined}
+        trailing={menu(row.topic.name, [
+          {
+            label: k('edit'),
+            icon: Pencil,
+            onClick: () => setEditing({ index: row.index, item: row.topic }),
+          },
+          {
+            label: k('remove'),
+            icon: Trash2,
+            // An overlapping topic has results of its own, which go with it;
+            // one that doesn't is keyed by name, so adding it back restores it.
+            onClick: () =>
+              row.topic.overlap
+                ? setRemoving(row.topic)
+                : removeTopic(row.topic),
+            variant: 'destructive',
+            separatorBefore: true,
+          },
+        ])}
+      />
+    );
+
+  const groupLabel = (title: string, description?: string) => (
+    <div className="px-4 pt-3 pb-1">
+      <SectionHeader
+        as={nextHeading(headingLevel)}
+        size="sm"
+        title={title}
+        description={description}
+      />
+    </div>
+  );
+
+  // Footer lines, in the card under the rows.
+  const notes: React.ReactNode[] = [];
+  const note = (key: string, text: React.ReactNode, action?: React.ReactNode) =>
+    notes.push(
+      <div
+        key={key}
+        className="text-muted-foreground flex items-center justify-between gap-3 px-4 py-2.5 text-xs"
+      >
+        <span>{text}</span>
+        {action}
+      </div>,
+    );
+  const link = (label: string, onClick: () => void) => (
+    <Button
+      type="button"
+      variant="link"
+      size="text"
+      // size="text" inherits the note's text-xs.
+      className="shrink-0"
+      onClick={onClick}
+    >
       {label}
     </Button>
   );
-
-  const ownList = mode === 'custom';
-  const topicActions = disabled ? undefined : mode === 'auto' ? (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      loading={customizing}
-      onClick={customize}
-    >
-      {k('customize')}
-    </Button>
-  ) : ownList ? (
-    <>
-      {fromSources && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={askResetToSources}
-        >
-          {k('resetToSources')}
-        </Button>
-      )}
-      {topics.length < maxTopics &&
-        addButton(k('addTopic'), () =>
-          setEditing({ kind: 'topic', index: null }),
-        )}
-    </>
-  ) : undefined;
-
-  const topicHint =
-    mode === 'off' ? (fromSources ? 'off' : 'workflowOff') : mode;
-
-  const folderList =
-    mode !== 'auto' || !folderTopics ? null : folderTopics.length <
-      MIN_AUTO_TOPICS ? (
-      <EmptyState size="sm" illustration="none" title={k('autoTopicsNone')} />
-    ) : (
-      <Card variant="subtle" padding="none" className="overflow-hidden">
-        <ListRows>
-          {folderTopics.map((topic) => (
-            <ListRow
-              key={topic.name}
-              title={topic.name}
-              description={topic.description || undefined}
-            />
-          ))}
-        </ListRows>
-      </Card>
+  const names = (list: TopicFolder[]) =>
+    list.map((folder) => folder.name).join(', ');
+  if (foldersFailed)
+    note(
+      'failed',
+      k('notes.foldersFailed'),
+      link(t('retry'), () => {
+        setFolders(null);
+        setAttempt((n) => n + 1);
+      }),
     );
+  if (unsaved && total > 0) note('unsaved', k('notes.unsaved'));
+  if (unlisted) note('unlisted', k('notes.unlisted'));
+  if (view.hidden.length > 0)
+    note(
+      'hidden',
+      t('agents.form.analytics.notes.hidden', {
+        names: names(view.hidden),
+        interpolation: { escapeValue: false },
+      }),
+      disabled ? undefined : link(k('notes.show'), showHidden),
+    );
+  if (view.cut.length > 0)
+    note(
+      'cut',
+      t('agents.form.analytics.notes.cut', {
+        names: names(view.cut),
+        interpolation: { escapeValue: false },
+      }),
+    );
+  // One topic on its own is a choice that says nothing; the server asks none.
+  if (onePickRows.length === 1 && !unsaved && !unlisted)
+    note('single', k('notes.single'));
+  if (!disabled && onePickFull && overlapFull)
+    note(
+      'full',
+      t('agents.form.analytics.notes.full', {
+        topics: formatCount(maxTopics),
+        overlapping: formatCount(maxOverlapping),
+      }),
+    );
+
+  const emptyDescription = !fromSources
+    ? k('empty.workflow')
+    : unsaved
+      ? k('empty.unsaved')
+      : view.hidden.length > 0
+        ? k('empty.allHidden')
+        : k('empty.noFolders');
+
+  let list: React.ReactNode;
+  if (foldersLoading && own.length === 0) {
+    list = (
+      <ul aria-busy="true" className="divide-border divide-y">
+        {[0, 1, 2].map((n) => (
+          <li key={n} className="flex flex-col gap-2 px-4 py-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-56" />
+          </li>
+        ))}
+      </ul>
+    );
+  } else if (total === 0 && !foldersFailed && !unlisted) {
+    list = (
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={k('empty.title')}
+        description={emptyDescription}
+        action={
+          !disabled && view.hidden.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={showHidden}
+            >
+              {k('empty.showFolders')}
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  } else if (overlapRows.length > 0) {
+    list = (
+      <>
+        {onePickRows.length > 0 && (
+          <div>
+            {groupLabel(k('groups.onePick'))}
+            <ListRows>{onePickRows.map(renderRow)}</ListRows>
+          </div>
+        )}
+        <div className={onePickRows.length > 0 ? 'border-t' : undefined}>
+          {groupLabel(k('groups.overlap'), k('groups.overlapDescription'))}
+          <ListRows>{overlapRows.map(renderRow)}</ListRows>
+        </div>
+      </>
+    );
+  } else {
+    list = <ListRows>{onePickRows.map(renderRow)}</ListRows>;
+  }
 
   return (
     <>
@@ -376,107 +465,41 @@ export default function InsightsSettingsBody({
               as={headingLevel}
               size="xs"
               title={k('topics')}
-              count={
-                ownList && topics.length > 0
-                  ? countOf(topics.length, maxTopics)
-                  : undefined
-              }
+              count={total > 0 ? total : undefined}
               description={k('topicsDescription')}
-              actions={topicActions}
+              actions={
+                canAdd ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditing({ index: null })}
+                  >
+                    <Plus />
+                    {k('addTopic')}
+                  </Button>
+                ) : undefined
+              }
             />
-            <SettingRow
-              label={k('groupByTopic')}
-              description={k(`topicHints.${topicHint}`)}
-              htmlFor={groupId}
-              alignStart
+            <Card
+              variant="subtle"
+              padding="none"
+              className="gap-0 overflow-hidden"
             >
-              <Switch
-                id={groupId}
-                checked={mode !== 'off'}
-                disabled={disabled}
-                data-testid="analytics-group-topics"
-                onCheckedChange={setGrouping}
-              />
-            </SettingRow>
-            {folderList}
-            {ownList && (
-              <Card variant="subtle" padding="none" className="overflow-hidden">
-                {topics.length > 0 ? (
-                  <ListRows>
-                    {topics.map((topic, index) => (
-                      <ListRow
-                        key={topic.name}
-                        title={topic.name}
-                        description={topic.description || undefined}
-                        trailing={itemMenu(
-                          topic.name,
-                          () =>
-                            setEditing({ kind: 'topic', index, item: topic }),
-                          // Topic history is keyed by name: adding it back
-                          // restores it, so no confirm.
-                          () =>
-                            setTopics({
-                              items: topics.filter((_, i) => i !== index),
-                            }),
-                        )}
-                      />
-                    ))}
-                  </ListRows>
-                ) : (
-                  <EmptyState
-                    size="sm"
-                    illustration="none"
-                    title={k('topicsEmpty')}
-                  />
-                )}
-              </Card>
-            )}
+              {list}
+              {notes.length > 0 && (
+                <div
+                  className={
+                    total > 0 || foldersLoading
+                      ? 'divide-y border-t'
+                      : 'divide-y'
+                  }
+                >
+                  {notes}
+                </div>
+              )}
+            </Card>
           </div>
-
-          {maxTags > 0 && (
-            <div className="flex flex-col gap-3" data-testid="analytics-tags">
-              <SectionHeader
-                as={headingLevel}
-                size="xs"
-                title={k('tags')}
-                count={
-                  tags.length > 0 ? countOf(tags.length, maxTags) : undefined
-                }
-                description={k('tagsDescription')}
-                actions={
-                  !disabled && tags.length < maxTags
-                    ? addButton(k('addTag'), () =>
-                        setEditing({ kind: 'tag', index: null }),
-                      )
-                    : undefined
-                }
-              />
-              <Card variant="subtle" padding="none" className="overflow-hidden">
-                {tags.length > 0 ? (
-                  <ListRows>
-                    {tags.map((tag, index) => (
-                      <ListRow
-                        key={tag.id}
-                        title={tag.name}
-                        description={tag.description}
-                        trailing={itemMenu(
-                          tag.name,
-                          () => setEditing({ kind: 'tag', index, item: tag }),
-                          () => setRemovingTag(tag),
-                        )}
-                      />
-                    ))}
-                  </ListRows>
-                ) : (
-                  <EmptyState
-                    size="sm"
-                    illustration="none"
-                    title={k('tagsEmpty')}
-                  />
-                )}
-              </Card>
-            </div>
-          )}
 
           <SettingRow
             label={k('digest')}
@@ -495,44 +518,38 @@ export default function InsightsSettingsBody({
         </>
       )}
 
-      <AnalyticsItemModal
-        kind={shownEditing?.kind ?? 'tag'}
+      <TopicModal
         item={shownEditing?.item}
+        folder={shownEditing?.folder}
         others={others}
+        overlapAllowed={maxOverlapping > 0}
+        onePickFull={
+          onePickOwn.length - (editedOverlap === false ? 1 : 0) >= maxTopics
+        }
+        overlapFull={
+          overlapping.length - (editedOverlap === true ? 1 : 0) >=
+          maxOverlapping
+        }
+        maxTopics={maxTopics}
+        maxOverlapping={maxOverlapping}
         open={editing !== null}
         onClose={() => setEditing(null)}
-        onSubmit={saveItem}
+        onSubmit={saveTopic}
       />
       <ConfirmationModal
-        message={t('agents.form.analytics.removeTag.title', {
-          name: shownRemovingTag?.name ?? '',
+        message={t('agents.form.analytics.removeTopic.title', {
+          name: shownRemoving?.name ?? '',
           interpolation: { escapeValue: false },
         })}
-        description={k('removeTag.description')}
-        modalState={removingTag ? 'ACTIVE' : 'INACTIVE'}
+        description={k('removeTopic.description')}
+        modalState={removing ? 'ACTIVE' : 'INACTIVE'}
         setModalState={(state: ActiveState) => {
-          if (state === 'INACTIVE') setRemovingTag(null);
+          if (state === 'INACTIVE') setRemoving(null);
         }}
-        submitLabel={k('removeTag.submit')}
+        submitLabel={k('removeTopic.submit')}
         handleSubmit={() => {
-          if (removingTag)
-            setTags(tags.filter((tag) => tag.id !== removingTag.id));
-          setRemovingTag(null);
-        }}
-        cancelLabel={t('cancel')}
-        variant="destructive"
-      />
-      <ConfirmationModal
-        message={k('resetTopics.title')}
-        description={k('resetTopics.description')}
-        modalState={confirmingReset ? 'ACTIVE' : 'INACTIVE'}
-        setModalState={(state: ActiveState) => {
-          if (state === 'INACTIVE') setConfirmingReset(false);
-        }}
-        submitLabel={k('resetTopics.submit')}
-        handleSubmit={() => {
-          resetToSources();
-          setConfirmingReset(false);
+          if (removing) removeTopic(removing);
+          setRemoving(null);
         }}
         cancelLabel={t('cancel')}
         variant="destructive"

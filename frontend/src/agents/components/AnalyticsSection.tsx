@@ -19,7 +19,7 @@ type AnalyticsSectionProps = {
   /** The server lets the decision model label conversations. */
   available: boolean;
   maxTopics: number;
-  maxTags: number;
+  maxOverlapping: number;
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
   token: string | null;
@@ -39,7 +39,7 @@ export default function AnalyticsSection({
   agentId,
   available,
   maxTopics,
-  maxTags,
+  maxOverlapping,
   disabled = false,
   token,
 }: AnalyticsSectionProps) {
@@ -95,7 +95,7 @@ export default function AnalyticsSection({
               onChange={onChange}
               agentId={agentId}
               maxTopics={maxTopics}
-              maxTags={maxTags}
+              maxOverlapping={maxOverlapping}
               disabled={disabled}
               token={token}
               // The source folders load once the section opens.

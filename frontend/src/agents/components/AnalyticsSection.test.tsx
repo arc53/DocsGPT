@@ -10,10 +10,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const getTopicSuggestions = vi.fn();
+const getTopicFolders = vi.fn();
 vi.mock('../../api/services/userService', () => ({
   default: {
-    getTopicSuggestions: (...args: unknown[]) => getTopicSuggestions(...args),
+    getTopicFolders: (...args: unknown[]) => getTopicFolders(...args),
   },
 }));
 
@@ -21,10 +21,11 @@ import AnalyticsSection from './AnalyticsSection';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const TAG = {
+const PRICING = {
   id: 'a1b2c3d4e5f60718',
   name: 'Pricing question',
   description: 'The user asks about prices.',
+  overlap: true,
 };
 
 function Harness({
@@ -44,7 +45,7 @@ function Harness({
       agentId="a1"
       available={available}
       maxTopics={3}
-      maxTags={20}
+      maxOverlapping={20}
       disabled={disabled}
       token="token"
     />
@@ -56,10 +57,10 @@ describe('AnalyticsSection', () => {
   let root: Root;
 
   beforeEach(() => {
-    getTopicSuggestions.mockReset();
-    getTopicSuggestions.mockResolvedValue({
+    getTopicFolders.mockReset();
+    getTopicFolders.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ success: true, topics: [] }),
+      json: () => Promise.resolve({ success: true, folders: [] }),
     });
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -98,9 +99,9 @@ describe('AnalyticsSection', () => {
   // Overview load.
   it('fetches the topic folders only once it is opened', async () => {
     await render();
-    expect(getTopicSuggestions).not.toHaveBeenCalled();
+    expect(getTopicFolders).not.toHaveBeenCalled();
     await act(async () => toggle().click());
-    expect(getTopicSuggestions).toHaveBeenCalledWith('a1', 'token');
+    expect(getTopicFolders).toHaveBeenCalledWith('a1', 'token');
   });
 
   it('marks an agent with insights off by a neutral Off badge beside the title', async () => {
@@ -121,7 +122,7 @@ describe('AnalyticsSection', () => {
   it('stays, with a note, for an agent with settings of its own', async () => {
     await render({
       available: false,
-      initial: { ...DEFAULT_ANALYTICS, tags: [TAG] },
+      initial: { ...DEFAULT_ANALYTICS, topics: [PRICING] },
     });
     expect(section()!.querySelector('[role="note"]')!.textContent).toBe(
       'agents.form.analytics.serverOff',

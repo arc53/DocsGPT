@@ -88,6 +88,7 @@ import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AnalyticsSection from './components/AnalyticsSection';
+import { configToSave } from './analyticsConfig';
 import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
@@ -669,7 +670,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'draft');
-    formData.append('config', JSON.stringify(agent.config ?? {}));
+    formData.append('config', JSON.stringify(configToSave(agent.config)));
 
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
@@ -761,7 +762,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'published');
-    formData.append('config', JSON.stringify(agent.config ?? {}));
+    formData.append('config', JSON.stringify(configToSave(agent.config)));
 
     if (imageFile) formData.append('image', imageFile);
     if (agent.tools && agent.tools.length > 0)
@@ -1889,7 +1890,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           agentId={agent.id || undefined}
           available={analyticsAvailability.enabled}
           maxTopics={analyticsAvailability.maxTopics}
-          maxTags={analyticsAvailability.maxTags}
+          maxOverlapping={analyticsAvailability.maxOverlapping}
           // Not policy: anyone who can save the agent changes it.
           disabled={!canSubmit}
           onChange={(analytics) =>

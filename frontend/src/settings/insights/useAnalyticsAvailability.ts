@@ -1,23 +1,23 @@
 import { useSelector } from 'react-redux';
 
-import { MAX_TAGS, MAX_TOPICS } from '../../agents/analyticsConfig';
+import { MAX_OVERLAPPING, MAX_TOPICS } from '../../agents/analyticsConfig';
 import {
   selectAnalyticsEnabled,
-  selectAnalyticsMaxTags,
+  selectAnalyticsMaxOverlapping,
   selectAnalyticsMaxTopics,
 } from '../../preferences/preferenceSlice';
 
 /**
  * Whether the decision model may label conversations on this server, and the
- * agent editor's topic and tag limits, from /api/config.
+ * agent editor's limits for the two kinds of topic, from /api/config.
  */
 export type AnalyticsAvailability = {
   enabled: boolean;
   maxTopics: number;
-  maxTags: number;
+  maxOverlapping: number;
 };
 
-// The server allows ANALYTICS_MAX_TAGS=0 (tags off), but never fewer than 2 topics.
+// The server allows ANALYTICS_MAX_OVERLAPPING_TOPICS=0 (no topics can overlap), but never fewer than 2 topics.
 const limit = (value: unknown, fallback: number, min = 1): number =>
   typeof value === 'number' && Number.isInteger(value) && value >= min
     ? value
@@ -29,7 +29,11 @@ export function analyticsAvailability(config: unknown): AnalyticsAvailability {
   return {
     enabled: c.decision_analytics_enabled === true,
     maxTopics: limit(c.analytics_max_topics, MAX_TOPICS),
-    maxTags: limit(c.analytics_max_tags, MAX_TAGS, 0),
+    maxOverlapping: limit(
+      c.analytics_max_overlapping_topics,
+      MAX_OVERLAPPING,
+      0,
+    ),
   };
 }
 
@@ -42,6 +46,6 @@ export function useAnalyticsAvailability(): AnalyticsAvailability {
   return {
     enabled: useSelector(selectAnalyticsEnabled),
     maxTopics: useSelector(selectAnalyticsMaxTopics),
-    maxTags: useSelector(selectAnalyticsMaxTags),
+    maxOverlapping: useSelector(selectAnalyticsMaxOverlapping),
   };
 }

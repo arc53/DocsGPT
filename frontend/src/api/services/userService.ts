@@ -125,11 +125,10 @@ const userService = {
     token: string | null,
   ): Promise<Response> => apiClient.post(endpoints.USER.DOCS_GAPS, data, token),
   /** The `auto` topic rule's topics for an agent (needs edit access). */
-  getTopicSuggestions: (
-    agentId: string,
-    token: string | null,
-  ): Promise<Response> =>
-    apiClient.get(endpoints.USER.TOPIC_SUGGESTIONS(agentId), token),
+  getTopicFolders: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TOPIC_FOLDERS(agentId), token),
+  getAgentTopics: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_TOPICS(agentId), token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   getTraces: (

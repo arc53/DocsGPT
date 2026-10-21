@@ -20,10 +20,21 @@ vi.mock('../api/services/userService', () => ({
             config: {
               analytics: {
                 enabled: true,
-                topics: { mode: 'auto', items: [] },
-                tags: [
-                  { id: 'a1b2c3d4', name: 'Pricing', description: 'Prices' },
+                topics: [
+                  {
+                    id: 'a1b2c3d4',
+                    name: 'Pricing',
+                    description: 'Prices',
+                    overlap: true,
+                  },
+                  {
+                    id: 'e5f6a7b8',
+                    name: 'Setup',
+                    description: '',
+                    overlap: false,
+                  },
                 ],
+                hidden_folders: [],
                 digest: false,
               },
             },
@@ -105,7 +116,14 @@ describe('AgentLogs', () => {
     });
     expect(seen.logs.at(-1)).toEqual({
       enabled: true,
-      tags: [{ id: 'a1b2c3d4', name: 'Pricing', description: 'Prices' }],
+      tags: [
+        {
+          id: 'a1b2c3d4',
+          name: 'Pricing',
+          description: 'Prices',
+          overlap: true,
+        },
+      ],
     });
     expect(
       container.querySelector('#logs [data-testid="logs"]'),
