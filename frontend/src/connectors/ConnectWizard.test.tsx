@@ -964,6 +964,43 @@ describe('ConnectWizard', () => {
     open.mockRestore();
   });
 
+  it('sets up the connection the save names, not the newest at that address', async () => {
+    // A custom server at draw.io's address is named after draw.io too; the
+    // save says which connection the preset's Connect used.
+    mcpApi.saveMCPServer.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        id: 'tool-7',
+        connection_id: 'conn-preset',
+      }),
+    });
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        {
+          id: 'conn-custom',
+          connector_key: 'mcp:drawio',
+          updated_at: '2026-10-16',
+        },
+        {
+          id: 'conn-preset',
+          connector_key: 'mcp:drawio',
+          updated_at: '2026-10-09',
+        },
+      ],
+    });
+    service.getConnection.mockResolvedValue({
+      success: true,
+      connection: { tools: [{ ...TELEGRAM_TOOL, display_name: 'draw.io' }] },
+    });
+    await render(drawio);
+    await click('settings.connectors.status.connect');
+    const opened = service.getConnection.mock.calls.map((call) => call[0]);
+    expect(opened).toContain('conn-preset');
+    expect(opened).not.toContain('conn-custom');
+  });
+
   it.each(['listConnections', 'getConnection'] as const)(
     'finishes a successful MCP save when %s fails',
     async (failedRequest) => {

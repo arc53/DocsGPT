@@ -128,7 +128,8 @@ function toolTitle(tool: ConnectionTool, detail: ConnectionDetail) {
  * or deleted from the Tools page since). The setup call recreates built-in
  * tool templates, GitHub's MCP tool and an MCP preset's (Notion, Linear…),
  * rebuilt from its sign-in. A custom server's tool comes only from its own
- * save, so it is not offered here.
+ * save, so it is not offered here, nor for a custom server at a preset's
+ * address (`detail.custom_server`).
  */
 function recreatesTools(connector: ConnectorDefinition) {
   const templates = connector.tool_templates ?? [];
@@ -620,6 +621,7 @@ function AccountContent({
   const [addToolsError, setAddToolsError] = useState<string | null>(null);
   const canAddTools =
     recreatesTools(connector) &&
+    !detail.custom_server &&
     detail.tools.length === 0 &&
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;

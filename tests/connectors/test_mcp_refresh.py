@@ -114,6 +114,19 @@ class TestRefresh:
         discover.assert_not_called()
         assert result == {"added": [], "removed": [], "tools": [], "injection": None}
 
+    def test_a_tool_removed_while_its_server_is_read_is_reported(self, pg_conn):
+        """Deleted from the Tools page during the re-scan: NoMcpTool, not a crash on the missing row."""
+        connection = _connection(pg_conn)
+        tool_id = _tool(pg_conn, connection["id"], [_action("list_issues")])
+
+        def discover_then_delete(user_id, row, tool):
+            pg_conn.execute(text("DELETE FROM user_tools WHERE id = CAST(:i AS uuid)"), {"i": tool_id})
+            return [_action("list_issues")]
+
+        with _db(pg_conn), patch.object(mcp, "_discover", side_effect=discover_then_delete), \
+                pytest.raises(mcp.NoMcpTool):
+            mcp.refresh_mcp_tools("alice", connection)
+
 
 class TestDiscover:
     def test_oauth_connection_passes_its_id_not_tokens(self):

@@ -156,6 +156,18 @@ class TestClassification:
             "create_issue": "write", "add_issue_comment": "write", "mark_all_notifications_read": "write",
         }
 
+    @pytest.mark.parametrize("action, access", [
+        pytest.param({"name": "a"}, "write", id="no-annotations"),
+        pytest.param({"name": "a", "annotations": None}, "write", id="null-annotations"),
+        pytest.param({"name": "a", "annotations": []}, "write", id="annotations-not-a-mapping"),
+        pytest.param({"name": "a", "annotations": {}}, "write", id="no-hint"),
+        pytest.param({"name": "a", "annotations": {"readOnlyHint": "true"}}, "write", id="hint-not-a-bool"),
+        pytest.param({"name": "a", "annotations": {"readOnlyHint": False}}, "write", id="hint-false"),
+        pytest.param({"name": "a", "annotations": {"readOnlyHint": True}}, "read", id="hint-true"),
+    ])
+    def test_only_a_read_only_hint_of_true_makes_a_read(self, action, access):
+        assert mcp._write_endpoint_access(action)["access"] == access
+
 
 class TestSetup:
     def test_opting_in_uses_the_full_endpoint_and_writes_ask_first(self, app, pg_conn):
@@ -238,6 +250,23 @@ class TestSwitchWrites:
         assert config["server_url"] == READONLY_MCP
         assert set(actions) == {"get_issue", "search_code"}
         assert actions["search_code"]["active"] is False
+
+    def test_a_tool_removed_mid_switch_is_a_conflict_not_a_server_error(self, app, pg_conn):
+        """Deleted from the Tools page while GitHub's server was read: "add its tools", not a 502."""
+        from docsgpt.api.connector.connections import ConnectionWrites
+
+        cid = _connection(pg_conn)
+        tool_id = self._read_only_tool(pg_conn, cid)
+        discover = _fake_discovery([])
+
+        def discover_then_delete(user_id, connection, tool):
+            pg_conn.execute(text("DELETE FROM user_tools WHERE id = CAST(:i AS uuid)"), {"i": tool_id})
+            return discover(user_id, connection, tool)
+
+        with _db(pg_conn), patch.object(mcp, "_discover", side_effect=discover_then_delete):
+            resp = _call(app, ConnectionWrites, "put", "/x", body={"allow": True}, args=[cid])
+        assert resp.status_code == 409
+        assert resp.get_json()["code"] == "no_tools"
 
     def test_forbidden_writes_cannot_be_turned_on_but_can_be_turned_off(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionWrites

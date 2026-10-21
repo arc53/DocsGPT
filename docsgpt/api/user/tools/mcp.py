@@ -109,8 +109,15 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     OAuth servers already have one (the sign-in stored its tokens there).
     Key, bearer and basic auth store their secret on a connection; servers
     with no auth get a credential-less connection so they still appear on
-    the Connectors page. Returns None when a multi-user install runs on the
-    default encryption key, which keeps the legacy per-tool secret.
+    the Connectors page. A keyless preset's Connect (CoinGecko, draw.io) saves
+    its own endpoint here with no auth: that connection holds the preset's key
+    on a row of its own, labelled with the endpoint, never shared with a
+    no-auth custom server at the same address (labelled with the bare host).
+    A row's identity is never changed afterwards, so setup rebuilds only the
+    preset's own row from its URL (see
+    :func:`docsgpt.connectors.catalog.preset_account_label`).
+    Returns None when a multi-user install runs on the default encryption key,
+    which keeps the legacy per-tool secret.
     """
     from docsgpt.connectors import catalog, service
 
@@ -130,10 +137,12 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
                     conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
                 )
             else:
+                preset = catalog.keyless_preset_for_endpoint(config.get("server_url"))
+                label = catalog.preset_account_label(preset) if preset else host
                 repo = ConnectorSessionsRepository(conn)
-                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host) or repo.create(
-                    user, "custom_mcp", connector_key="custom_mcp", auth_kind="none",
-                    display_name=display_name, account_label=host, server_url=base,
+                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=label) or repo.create(
+                    user, "custom_mcp", connector_key=preset.key if preset else "custom_mcp", auth_kind="none",
+                    display_name=display_name, account_label=label, server_url=base,
                 )
     except service.EncryptionKeyNotConfigured:
         return None
@@ -563,6 +572,7 @@ class MCPServerSave(Resource):
                         "id": saved_id,
                         "message": updated_message,
                         "tools_count": len(transformed_actions),
+                        "connection_id": connection_id,
                     }
                 else:
                     fields_out["status"] = status_bool
@@ -584,6 +594,7 @@ class MCPServerSave(Resource):
                             "id": saved_id,
                             "message": updated_message,
                             "tools_count": len(transformed_actions),
+                            "connection_id": connection_id,
                         }
                     else:
                         created = repo.create(
@@ -603,6 +614,7 @@ class MCPServerSave(Resource):
                             "id": saved_id,
                             "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
                             "tools_count": len(transformed_actions),
+                            "connection_id": connection_id,
                         }
             response_data["injection"] = description_scan
             return make_response(jsonify(response_data), 200)

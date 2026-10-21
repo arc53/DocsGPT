@@ -307,7 +307,12 @@ def connection_detail(conn, row: dict) -> dict:
     detail = serialize_connection(row, {"sources": len(sources), "tools": len(tools)})
     detail["sources"] = sources
     detail["tools"] = tools
-    detail["writes"] = builtin_writes(catalog.get_definition(detail["connector_key"]), tool_rows)
+    definition = catalog.get_definition(detail["connector_key"])
+    detail["writes"] = builtin_writes(definition, tool_rows)
+
+    detail["custom_server"] = (
+        definition is not None and definition.publisher == "preset" and not rebuilds_from_preset(row, definition)
+    )
     return detail
 
 
@@ -1356,6 +1361,54 @@ def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: boo
     return builtin_mcp_config(definition, writes=writes) or preset_mcp_config(definition)
 
 
+def rebuilds_from_preset(connection: dict, definition: Optional[ConnectorDefinition]) -> bool:
+    """Whether setup may rebuild a connection's MCP tool from its preset.
+
+    Only for a connection made through the preset, which stores the preset's
+    key: its sign-in does, and so does a keyless preset's Connect (CoinGecko,
+    draw.io) when it saves the preset's own endpoint (see
+    :func:`catalog.keyless_preset_for_endpoint`). Any other connection at a
+    preset's address is a custom server, named after the preset only for admin
+    switches and attribution; its tool comes from the MCP server form's save,
+    which keeps its own path and sign-in.
+
+    Args:
+        connection: The connection row.
+        definition: The catalog entry the connection resolves to.
+
+    Returns:
+        True when the preset's URL and auth are the connection's own.
+    """
+    return (
+        definition is not None
+        and definition.publisher == "preset"
+        and connection.get("connector_key") == definition.key
+    )
+
+
+def connection_rebuild_config(connection: dict, writes: bool = False) -> Optional[dict]:
+    """Config setup rebuilds a connection's MCP tool from: its built-in's or its preset's.
+
+    Args:
+        connection: The connection row.
+        writes: For a built-in connector, use its write endpoint (see
+            :func:`builtin_mcp_config`).
+
+    Returns:
+        The config, or None when setup rebuilds no MCP tool for this
+        connection, as for a custom server at a preset's address (see
+        :func:`rebuilds_from_preset`).
+    """
+    definition = catalog.get_definition(catalog.connector_key_for_row(connection))
+    if (
+        definition is not None
+        and definition.publisher == "preset"
+        and not rebuilds_from_preset(connection, definition)
+    ):
+        return None
+    return connection_mcp_config(definition, writes=writes)
+
+
 def mcp_tool_description(config: dict) -> str:
     """``MCP Server: <url>``: what an MCP tool's save names it."""
     return f"MCP Server: {config.get('server_url', 'Unknown')}"
@@ -1398,9 +1451,10 @@ def needs_mcp_discovery(conn, connection: dict) -> bool:
 
     True for a built-in connector whose tool is its MCP server (GitHub) and for
     an MCP preset whose tool was deleted, while the connection has no such tool.
+    Never for a custom server at a preset's address (see
+    :func:`rebuilds_from_preset`).
     """
-    definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    if connection_mcp_config(definition) is None:
+    if connection_rebuild_config(connection) is None:
         return False
     have = {tool.get("name") for tool in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))}
     return "mcp_tool" not in have
@@ -1427,7 +1481,7 @@ def ensure_connection_tools(
         mcp_actions: The actions of the connection's MCP server (GitHub's,
             or an MCP preset's whose tool was deleted), discovered by the
             caller outside this transaction. Without them that tool is not
-            created.
+            created, nor ever for a custom server at a preset's address.
         mcp_writes: Point that tool at the endpoint that also offers writes;
             the caller checked that an admin allows them.
     """
@@ -1438,7 +1492,7 @@ def ensure_connection_tools(
     if not definition or not definition.tool_templates:
         return existing
     have = {tool.get("name") for tool in existing}
-    mcp_config = connection_mcp_config(definition, writes=mcp_writes)
+    mcp_config = connection_rebuild_config(connection, writes=mcp_writes)
     created = []
     for template in definition.tool_templates:
         if template in have:

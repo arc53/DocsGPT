@@ -1,6 +1,6 @@
 """Tests for docsgpt/api/user/tools/mcp.py using real PG."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -481,6 +481,62 @@ class TestMCPServerSave:
         assert response.status_code == 200
         team = repo.get_any(str(existing["id"]), user)["actions"][0]["parameters"]["properties"]["team"]
         assert team["filled_by_llm"] is False and team["value"] == "ENG"
+
+
+class TestSaveReturnsItsConnection:
+    """The save names the connection it used, so the Connect wizard need not guess among those at one address."""
+
+    URL = "https://example.com/mcp"
+
+    def _save(self, app, pg_conn, user, body, connection=None):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+
+        fake_tool = MagicMock()
+        fake_tool.get_actions_metadata.return_value = [{"name": "search"}]
+        extra = (
+            patch("docsgpt.api.user.tools.mcp._mcp_connection", return_value=connection)
+            if connection is not False else nullcontext()
+        )
+        with _patch_db(pg_conn), patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool), extra, \
+                app.test_request_context("/api/mcp_server/save", method="POST", json=body):
+            from flask import request
+            setattr(request, "decoded_token", {"sub": user})
+            response = MCPServerSave().post()
+        assert response.status_code == 200, response.get_json()
+        return response.get_json()
+
+    def _tool_connection(self, pg_conn, tool_id):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool = UserToolsRepository(pg_conn).get_any(tool_id, "u-save-conn")
+        assert tool is not None
+        return str(tool["connection_id"]) if tool.get("connection_id") else None
+
+    def _body(self, **extra):
+        return {"displayName": "My MCP", "config": {"transport_type": "http", "server_url": self.URL,
+                                                   "auth_type": "none"}, **extra}
+
+    def test_a_new_server(self, app, pg_conn):
+        result = self._save(app, pg_conn, "u-save-conn", self._body(), connection=False)
+        assert result["connection_id"]
+        assert result["connection_id"] == self._tool_connection(pg_conn, result["id"])
+
+    def test_a_server_saved_again_by_id(self, app, pg_conn):
+        first = self._save(app, pg_conn, "u-save-conn", self._body(), connection=False)
+        again = self._save(app, pg_conn, "u-save-conn", self._body(id=first["id"]), connection=False)
+        assert again["id"] == first["id"]
+        assert again["connection_id"] == first["connection_id"] == self._tool_connection(pg_conn, first["id"])
+
+    def test_a_server_saved_again_without_its_id(self, app, pg_conn):
+        first = self._save(app, pg_conn, "u-save-conn", self._body(), connection=False)
+        again = self._save(app, pg_conn, "u-save-conn", self._body(), connection=False)
+        assert again["id"] == first["id"]
+        assert again["connection_id"] == first["connection_id"]
+
+    def test_no_connection_is_named_as_none(self, app, pg_conn):
+        result = self._save(app, pg_conn, "u-save-conn", self._body(), connection=None)
+        assert "connection_id" in result
+        assert result["connection_id"] is None
 
 
 class TestSignInServerWithoutAConnection:

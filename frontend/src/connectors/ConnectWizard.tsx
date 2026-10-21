@@ -309,22 +309,32 @@ export default function ConnectWizard({
       connectedRef.current = true;
       let savedConnectionId: string | null = null;
       try {
-        const list = await connectorsService.listConnections(token);
-        const saved = (
-          (list?.connections ?? []) as {
-            id: string;
-            connector_key: string;
-            updated_at: string | null;
-          }[]
-        )
-          .filter((c) => c.connector_key === connector.key)
-          .sort((a, b) =>
-            (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
-          )[0];
-        if (saved) {
-          savedConnectionId = saved.id;
-          setConnectionId(saved.id);
-          const detail = await connectorsService.getConnection(saved.id, token);
+        // The save names the connection it used: a custom server at this
+        // address is named after the service too. Older servers do not, so
+        // fall back to the service's newest connection.
+        let savedId: string | null =
+          typeof result.connection_id === 'string'
+            ? result.connection_id
+            : null;
+        if (!savedId) {
+          const list = await connectorsService.listConnections(token);
+          const newest = (
+            (list?.connections ?? []) as {
+              id: string;
+              connector_key: string;
+              updated_at: string | null;
+            }[]
+          )
+            .filter((c) => c.connector_key === connector.key)
+            .sort((a, b) =>
+              (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
+            )[0];
+          savedId = newest?.id ?? null;
+        }
+        if (savedId) {
+          savedConnectionId = savedId;
+          setConnectionId(savedId);
+          const detail = await connectorsService.getConnection(savedId, token);
           if (detail?.success) {
             setTools(detail.connection.tools ?? []);
             if (detail.connection.account_label)

@@ -185,4 +185,9 @@ export type ConnectionDetail = Connection & {
    * the connector offers no such choice or the tool is not added yet.
    */
   writes?: boolean | null;
+  /**
+   * A custom MCP server at a preset's address: named after the preset, but
+   * its tool comes only from the MCP server form, so setup cannot add it back.
+   */
+  custom_server?: boolean;
 };

@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
-from typing import Any, Awaitable, Callable, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Coroutine, Optional, TypeVar
 
 from docsgpt.agents.tool_pins import carry_pins
 from docsgpt.connectors import catalog, service
@@ -42,7 +42,8 @@ def _write_endpoint_access(action: dict) -> dict:
     GitHub marks its read tools, so a name is no evidence there: from the name
     alone ``mark_all_notifications_read`` would pass for a read.
     """
-    annotations = action.get("annotations") if isinstance(action.get("annotations"), dict) else {}
+    raw = action.get("annotations")
+    annotations = raw if isinstance(raw, dict) else {}
     return {**action, "access": ACCESS_READ if annotations.get("readOnlyHint") is True else ACCESS_WRITE}
 
 
@@ -87,12 +88,13 @@ def discover_connection_actions(user_id: str, connection: dict, writes: bool = F
             checked that an admin allows them.
 
     Raises:
-        ValueError: The connector has no MCP server of its own.
+        ValueError: The connector has no MCP server of its own, or the
+            connection is a custom server at a preset's address (see
+            :func:`service.rebuilds_from_preset`).
         service.ConnectionUnavailable: The connection needs reconnecting.
         Exception: The server could not be reached or listed.
     """
-    definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    config = service.connection_mcp_config(definition, writes=writes)
+    config = service.connection_rebuild_config(connection, writes=writes)
     if config is None:
         raise ValueError("This connector has no MCP server")
     try:
@@ -120,6 +122,9 @@ def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tup
     Returns:
         ``(added, removed, tool, scan)``: action names, the serialized tool,
         and ``tool_descriptions.score_actions``'s flagged and unscored names.
+
+    Raises:
+        NoMcpTool: The tool was deleted while its server was read.
     """
     discovered = _classified(connection, config, _discover(user_id, connection, {**tool, "config": config}))
     scan = tool_descriptions.score_actions(discovered)
@@ -139,13 +144,16 @@ def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tup
             }
         merged.append(action)
     names = {a.get("name") for a in merged}
-    fields = {"actions": merged}
+    fields: dict[str, Any] = {"actions": merged}
     if config != (tool.get("config") or {}):
         fields["config"] = config
     with db_session() as conn:
         repo = UserToolsRepository(conn)
         repo.update(str(tool["id"]), user_id, fields)
-        serialized = service.serialize_tool(repo.get_any(str(tool["id"]), user_id))
+        updated = repo.get_any(str(tool["id"]), user_id)
+        if updated is None:
+            raise NoMcpTool("This connection's tool was removed; add its tools again")
+        serialized = service.serialize_tool(updated)
     return names - set(previous), set(previous) - names, serialized, scan
 
 
@@ -168,6 +176,9 @@ def refresh_mcp_tools(user_id: str, connection: dict) -> dict:
         ``{"added": [...], "removed": [...], "tools": [...], "injection"}``;
         ``injection`` is ``{"flagged", "unscored"}`` action names while
         Admin > Guardrails warns on tool descriptions, else ``None``.
+
+    Raises:
+        NoMcpTool: A tool was deleted while its server was read.
     """
     with db_readonly() as conn:
         tools = [t for t in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))
@@ -209,12 +220,14 @@ def set_builtin_writes(user_id: str, connection: dict, allow: bool) -> dict:
 
     Raises:
         ValueError: The connector offers no write access.
-        NoMcpTool: The connection has no such tool yet.
+        NoMcpTool: The connection has no such tool yet, or it was deleted
+            while its server was read.
         service.WritesForbidden: ``allow`` while an admin forbids writes.
         service.ConnectionUnavailable: The connection needs reconnecting.
     """
     definition = _builtin_definition(connection)
-    if definition is None or not definition.mcp_write_url:
+    endpoint = service.builtin_mcp_config(definition, writes=allow) if definition is not None else None
+    if definition is None or not definition.mcp_write_url or endpoint is None:
         raise ValueError("This connector has no write access to turn on")
     with db_readonly() as conn:
         tools = [t for t in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))
@@ -229,7 +242,7 @@ def set_builtin_writes(user_id: str, connection: dict, allow: bool) -> dict:
     refreshed = []
     scans: list = []
     for tool in tools:
-        config = {**(tool.get("config") or {}), **service.builtin_mcp_config(definition, writes=allow)}
+        config = {**(tool.get("config") or {}), **endpoint}
         tool_added, tool_removed, serialized, scan = _rediscover(user_id, connection, tool, config)
         added |= tool_added
         removed |= tool_removed
@@ -364,7 +377,7 @@ def _is_transient(exc: BaseException) -> bool:
     )
 
 
-def _run_coroutine(coroutine: Awaitable[T]) -> T:
+def _run_coroutine(coroutine: Coroutine[Any, Any, T]) -> T:
     """Run ``coroutine`` to the end, on a thread of its own when this one already runs an event loop."""
     try:
         asyncio.get_running_loop()

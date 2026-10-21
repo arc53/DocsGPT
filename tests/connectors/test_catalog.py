@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 import pytest
+import yaml
 
 from docsgpt.connectors import catalog
 
@@ -312,3 +315,77 @@ def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
 
     assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
+
+
+def test_twelvedata_preset_uses_remote_oauth_catalog_contract():
+    twelvedata = catalog.get_definition("mcp:twelvedata")
+
+    assert twelvedata is not None
+    assert twelvedata.name == "Twelve Data"
+    assert twelvedata.icon == "twelvedata"
+    assert twelvedata.category == "business"
+    assert twelvedata.mcp_url == "https://mcp.twelvedata.com/mcp"
+    assert twelvedata.mcp_base_url == "https://mcp.twelvedata.com"
+    assert twelvedata.auth_kind == "mcp_oauth"
+    assert twelvedata.capabilities == ("read",)
+    assert twelvedata.docs_url == "https://twelvedata.com/docs/mcp"
+
+
+def test_presets_have_unique_keys_and_servers():
+    """A repeated key overwrites a preset and a repeated host makes preset_for_url pick one."""
+    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+    keys = [entry["key"] for entry in entries]
+    hosts = [catalog.base_url(entry["mcp_url"]) for entry in entries]
+
+    assert len(keys) == len(set(keys))
+    assert len(hosts) == len(set(hosts))
+
+
+@pytest.mark.parametrize("url, expected", [
+    pytest.param("https://mcp.api.coingecko.com/mcp", "mcp:coingecko", id="coingecko"),
+    pytest.param("https://MCP.api.coingecko.com/mcp/", "mcp:coingecko", id="host-case-and-trailing-slash"),
+    pytest.param("https://mcp.draw.io/mcp", "mcp:drawio", id="drawio"),
+    pytest.param("https://mcp.api.coingecko.com/sse", None, id="other-path"),
+    pytest.param("https://mcp.api.coingecko.com/mcp?x=1", None, id="query"),
+    pytest.param("https://mcp.api.coingecko.com/mcp#a", None, id="fragment"),
+    pytest.param("http://mcp.api.coingecko.com/mcp", None, id="other-scheme"),
+    pytest.param("https://mcp.api.coingecko.com:8443/mcp", None, id="other-port"),
+    pytest.param("https://mcp.twelvedata.com/mcp", None, id="oauth-preset-is-not-keyless"),
+    pytest.param("https://mcp.example.com/mcp", None, id="not-a-preset"),
+    pytest.param("", None, id="empty"),
+    pytest.param(None, None, id="none"),
+    pytest.param("not a url", None, id="not-a-url"),
+])
+def test_keyless_preset_for_endpoint_matches_only_its_own_endpoint(url, expected):
+    """A keyless preset's Connect saves its own endpoint; any other URL at its host is a custom server."""
+    preset = catalog.keyless_preset_for_endpoint(url)
+    assert (preset.key if preset else None) == expected
+
+
+@pytest.mark.parametrize("key, label", [
+    pytest.param("mcp:coingecko", "mcp.api.coingecko.com/mcp", id="coingecko"),
+    pytest.param("mcp:drawio", "mcp.draw.io/mcp", id="drawio"),
+])
+def test_a_keyless_preset_connection_is_labelled_with_its_endpoint(key, label):
+    """Not the bare host a no-auth custom server there is labelled with, so the two never share a row."""
+    definition = catalog.get_definition(key)
+    assert definition is not None
+    assert catalog.preset_account_label(definition) == label
+
+
+def test_every_spelling_of_a_keyless_preset_endpoint_gets_its_label():
+    """A trailing slash or an upper-case host is the same endpoint, so Connect finds the same row."""
+    keyless = [d for d in catalog.all_definitions() if d.publisher == "preset" and d.auth_kind == "mcp"]
+    assert keyless
+    for definition in keyless:
+        assert definition.mcp_url
+        parts = urlsplit(definition.mcp_url)
+        spellings = (
+            definition.mcp_url,
+            definition.mcp_url.rstrip("/") + "/",
+            urlunsplit(parts._replace(netloc=parts.netloc.upper())),
+        )
+        for url in spellings:
+            found = catalog.keyless_preset_for_endpoint(url)
+            assert found is not None and found.key == definition.key, url
+            assert catalog.preset_account_label(found) == catalog.preset_account_label(definition)
