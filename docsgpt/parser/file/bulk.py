@@ -16,8 +16,8 @@ from docsgpt.parser.file.pptx_parser import PPTXParser
 from docsgpt.parser.file.image_parser import ImageParser
 from docsgpt.parser.file.audio_parser import AudioParser
 from docsgpt.parser.schema.base import Document
-from docsgpt.stt.constants import SUPPORTED_AUDIO_EXTENSIONS
 from docsgpt.parser.tokenization import count_tokens_windowed
+from docsgpt.stt.constants import SUPPORTED_AUDIO_EXTENSIONS
 from docsgpt.core.settings import settings
 from docsgpt.core.optional_deps import install_hint
 
