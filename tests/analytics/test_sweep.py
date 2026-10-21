@@ -403,6 +403,20 @@ def _age(conn, cid, days=2):
                           "WHERE conversation_id = CAST(:cid AS uuid)"), {"cid": cid, "days": days})
 
 
+def _parked(conn, cid) -> dict:
+    """The sources of ``cid`` set aside uncounted (a ``_retry`` row with ``parked_since``), to their attempts."""
+    return {key[0]: row.probabilities["attempts"] for key, row in _labels(conn, cid).items()
+            if key[1] == "_retry" and row.probabilities.get("parked_since")}
+
+
+def _park_back(conn, hours):
+    """Move every ``parked_since`` ``hours`` back."""
+    conn.execute(text(
+        "UPDATE conversation_labels SET probabilities = jsonb_set(probabilities, '{parked_since}',"
+        " to_jsonb(CAST(probabilities->>'parked_since' AS timestamptz) - make_interval(hours => :hours)))"
+        " WHERE label = '_retry' AND probabilities->>'parked_since' IS NOT NULL"), {"hours": hours})
+
+
 def _about(prompt):
     """Picks the requests about the user message ``prompt``: its turn and its request type."""
     return lambda r: prompt in (r.state.get("question"), r.state.get("message"))
@@ -495,7 +509,7 @@ class TestStopConditions:
         with installed(failing):
             for _ in range(tasks.ATTEMPTS + 1):  # nothing else answered: no telling it from a failing backend
                 assert tasks.sweep()["stopped"] == "unavailable"
-            assert not [key for key in _labels(db, cid) if key[1].startswith("_")]
+            assert _parked(db, cid) == {only: 0}
             for attempt in range(1, tasks.ATTEMPTS):
                 _message(db, _conversation(db), 0, "and on Windows?", ago_minutes=others)  # traffic it answers
                 report = tasks.sweep()
@@ -517,11 +531,77 @@ class TestStopConditions:
         with installed(_Failing(lambda r: True, "backend_error")):
             for _ in range(tasks.ATTEMPTS + 1):
                 assert tasks.sweep()["stopped"] == "unavailable"
-        assert not [key for cid in cids for key in _labels(db, cid)]
+        rows = [row for cid in cids for row in _labels(db, cid).values()]  # what failed alone, set aside
+        assert all(row.label == "_retry" and row.probabilities["attempts"] == 0 for row in rows)
+        assert all(_parked(db, cid) for cid in cids if any(row for row in _labels(db, cid)))
         with installed(FakeDecider(ANSWERS)):
             report = tasks.sweep()
         assert report["messages"] == 7 and report["conversations"] == 4 and report["stopped"] is None
-        assert not [key for cid in cids for key in _labels(db, cid) if key[1].startswith("_")]
+        assert not [key for cid in cids for key in _labels(db, cid) if key[1] == "_error"]
+
+    def test_messages_the_backend_always_fails_on_never_hold_up_older_ones(self, db, monkeypatch):
+        monkeypatch.setattr(settings, "ANALYTICS_BATCH_STATES", 2)  # a message a call
+        refused = []
+        for i in range(tasks.LONE_FAILURES):  # the newest, so asked first while nothing has failed
+            cid = _conversation(db)
+            refused.append((cid, _message(db, cid, 0, f"Refused {i}?", ago_minutes=60 + i)))
+        older = {}
+        for i in range(3):
+            cid = _conversation(db)
+            older[cid] = _message(db, cid, 0, "How do I install it?", ago_minutes=600 + i)
+        failing = _Failing(lambda r: "Refused" in (r.state.get("question") or r.state.get("message") or ""),
+                           "backend_error", features={"analytics_turn"})
+
+        def attempts():
+            return [_labels(db, cid)[(mid, "_retry")].probabilities for cid, mid in refused]
+
+        with installed(failing):
+            report = tasks.sweep()  # the three alone end the pass; the next asks the older ones, which answer
+            assert all((mid, "request_type") in _labels(db, cid) for cid, mid in older.items())
+            assert attempts() == [{"attempts": 1}] * 3 and report["retries"] == 3 and report["stopped"] is None
+            tasks.sweep()  # asked first, alone again; the older conversations' own calls answer, so they count
+            assert all((None, "goal_met") in _labels(db, cid) for cid in older)
+            assert attempts() == [{"attempts": 2}] * 3
+            for attempt in range(3, tasks.ATTEMPTS + 1):  # nothing else answers: each counts once set aside a day
+                assert tasks.sweep()["stopped"] == "unavailable"
+                assert all(a["attempts"] == attempt - 1 and a["parked_since"] for a in attempts())
+                tasks.sweep()
+                assert all(a["attempts"] == attempt - 1 for a in attempts())  # not a day yet
+                _park_back(db, tasks.PARKED_HOURS + 1)
+                tasks.sweep()
+                if attempt < tasks.ATTEMPTS:
+                    assert attempts() == [{"attempts": attempt}] * 3
+            assert all(_labels(db, cid)[(mid, "_error")].top == "backend_error" for cid, mid in refused)
+            calls = len(failing.calls)
+            tasks.sweep()
+            assert all(c.feature != "analytics_turn" for c in failing.calls[calls:])
+
+    @pytest.mark.parametrize("feature", ["analytics_turn", "analytics_conversation"])
+    def test_what_fails_alone_for_longer_than_the_bound_counts_all_the_same(self, db, feature):
+        cid = _conversation(db)
+        only = _message(db, cid, 0, "How do I install it?", ago_minutes=300)
+        source = only
+        if feature == "analytics_conversation":
+            with installed(FakeDecider(ANSWERS)):
+                tasks.Sweep(VERSION).message_pass()  # its message labelled, its own labels not yet asked
+            source = None
+        with installed(_Failing(lambda r: True, "backend_error", features={feature})):
+            for _ in range(2):  # within the bound: set aside, nothing counted
+                assert tasks.sweep()["stopped"] == "unavailable"
+            assert _parked(db, cid) == {source: 0}
+            for attempt in range(1, tasks.ATTEMPTS + 1):
+                _park_back(db, tasks.PARKED_HOURS - 1)
+                tasks.sweep()
+                assert _parked(db, cid) == {source: attempt - 1}  # not a day yet
+                _park_back(db, 2)
+                report = tasks.sweep()
+                labels = _labels(db, cid)
+                if attempt < tasks.ATTEMPTS:
+                    assert labels[(source, "_retry")].probabilities == {"attempts": attempt}
+                    assert report["retries"] == 1 and not _parked(db, cid)
+                    assert tasks.sweep()["stopped"] == "unavailable"  # set aside again, the day from now
+                    assert _parked(db, cid) == {source: attempt}
+            assert labels[(source, "_error")].top == "backend_error" and report["errors"] == 1
 
     def test_the_time_budget_is_honoured(self, db, fake):
         _two_turns(db)
@@ -917,6 +997,28 @@ class TestBacklog:
             _message(db, cid, 0, "How do I install it?", ago_minutes=100 + i)
         _message(db, bob, 0, "How do I install it?", ago_minutes=500)
         assert [c["conversation_id"] for c in _candidates(db)] == [ann[0], bob, ann[1], ann[2]]
+
+    def test_what_failed_comes_after_the_rest_the_least_recently_tried_first(self, db, fake):
+        cids = [_conversation(db) for _ in range(4)]
+        messages = [_message(db, cid, 0, "How do I install it?", ago_minutes=100 + i) for i, cid in enumerate(cids)]
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        def failed(level):  # the newest two failed, the newest one last
+            for i in (0, 1):
+                ConversationLabelsRepository(db).upsert_many([{
+                    "conversation_id": cids[i], "message_id": messages[i] if level == "message" else None,
+                    "user_id": "owner", "level": level, "label": "_retry", "probabilities": {"attempts": 1},
+                    "schema_hash": schema.SCHEMA_HASH, "model_version": VERSION, "occurred_at": now,
+                    "source_updated_at": now}])
+                db.execute(text("UPDATE conversation_labels SET created_at = now() - make_interval(hours => :h)"
+                                " WHERE conversation_id = CAST(:cid AS uuid) AND label = '_retry'"),
+                           {"h": 1 + i, "cid": cids[i]})
+
+        failed("message")
+        assert [c["conversation_id"] for c in _candidates(db)] == [cids[2], cids[3], cids[1], cids[0]]
+        tasks.Sweep(VERSION).message_pass()  # labelled: their conversations are candidates
+        failed("conversation")
+        assert [c["conversation_id"] for c in _conversation_candidates(db)] == [cids[2], cids[3], cids[1], cids[0]]
 
     def test_a_pending_resolution_settles_under_a_backlog(self, db, fake, monkeypatch):
         cid, _, _ = _two_turns(db)

@@ -36,7 +36,9 @@ from docsgpt.utils import strip_null_bytes
 MARKERS = ("request_type", "_error")
 ERROR = "_error"
 #: Not a marker: how many times the backend failed on a message (or a conversation) as it is now, in
-#: ``probabilities["attempts"]``. The sweep asks it again until the count reaches its limit, then writes ``_error``.
+#: ``probabilities["attempts"]``, and, while it failed alone with nothing vouching for the backend, since when
+#: (``probabilities["parked_since"]``, ISO 8601). The sweep asks it again, after what never failed, until the count
+#: reaches its limit, then writes ``_error``.
 RETRY = "_retry"
 
 _UPSERT_COLUMNS = (
@@ -173,19 +175,39 @@ def _has_tool_calls(m: str) -> str:
     return f"COALESCE({m}.tool_calls NOT IN ({empty}), false)"
 
 
-def _turns(agent: str, user: str, newest: str) -> str:
+def _turns(agent: str, user: str, newest: str, tried: Optional[str] = None) -> str:
     """SQL: an ``ORDER BY`` that takes turns between agents, each one's newest first.
 
     A candidate's rank within its agent (conversations without one, within their user) comes first, so one busy
     agent cannot keep another's older messages at the back until they leave the window.
+
+    Args:
+        agent: SQL for the candidate's agent id.
+        user: SQL for its user id.
+        newest: SQL for its time, newest first.
+        tried: SQL for when the backend last failed on it (its ``RETRY`` row's ``created_at``), ``NULL`` when it
+            never did. Those that failed come after the rest, the least recently tried first, so a few the backend
+            always fails on never keep the others from being asked.
     """
-    return (f"ROW_NUMBER() OVER (PARTITION BY {agent}, CASE WHEN {agent} IS NULL THEN {user} END"
+    first, group = (f"{tried} IS NOT NULL, {tried}, ", f"{tried} IS NULL, ") if tried else ("", "")
+    return (f"{first}ROW_NUMBER() OVER (PARTITION BY {group}{agent}, CASE WHEN {agent} IS NULL THEN {user} END"
             f" ORDER BY {newest} DESC), {newest} DESC")
 
 
 def _attempts(row: str) -> str:
     """SQL: the backend failures a ``RETRY`` row ``row`` (joined only while current) counts; 0 without one."""
     return f"COALESCE(CAST({row}.probabilities->>'attempts' AS integer), 0)"
+
+
+def _parked_since(row: str) -> str:
+    """SQL: since when a ``RETRY`` row ``row`` failed alone uncounted (``timestamptz``); ``NULL`` when it did not."""
+    return f"CAST({row}.probabilities->>'parked_since' AS timestamptz)"
+
+
+def _retry_of(row: str, m: str) -> str:
+    """SQL: ``row`` is message ``m``'s current ``RETRY`` row under the running schema and model, for a join."""
+    return (f"{row}.message_id = {m}.id AND {row}.label = '{RETRY}' AND {row}.schema_hash = :schema_hash"
+            f" AND {row}.model_version = :model_version AND {_fresh(row, f'{m}.updated_at', _message_hash(m))}")
 
 
 # A conversation-level row (no message), written so the unique target index serves the lookup.
@@ -479,7 +501,8 @@ class ConversationLabelsRepository:
         ``settle_seconds``, in a conversation with no agent or whose agent has analytics on, and it has no marker
         (``MARKERS``) under the running schema and model newer than its last edit. Each agent's conversation with
         the newest such message comes first, then each one's second, and so on (``_turns``); conversations
-        without an agent take turns by user.
+        without an agent take turns by user. A conversation whose every such message the backend failed on (a
+        current ``RETRY`` row) comes after the others, the least recently tried first.
 
         Args:
             schema_hash: The running ``schema.SCHEMA_HASH``.
@@ -501,10 +524,12 @@ class ConversationLabelsRepository:
             text(
                 f"""
                 WITH cand AS (
-                    SELECT m.conversation_id, c.user_id, ag.id AS agent_id, MAX(m.timestamp) AS newest
+                    SELECT m.conversation_id, c.user_id, ag.id AS agent_id, MAX(m.timestamp) AS newest,
+                           CASE WHEN bool_and(rt.id IS NOT NULL) THEN MAX(rt.created_at) END AS tried
                     FROM conversation_messages m
                     JOIN conversations c ON c.id = m.conversation_id
                     {_AGENT}
+                    LEFT JOIN conversation_labels rt ON {_retry_of("rt", "m")}
                     WHERE m.timestamp >= NOW() - make_interval(days => :days)
                       AND m.updated_at <= NOW() - make_interval(secs => :settle)
                       AND {_usable("m")} AND {_ENABLED} AND {_unlabelled("m")} {scope}
@@ -513,7 +538,7 @@ class ConversationLabelsRepository:
                 SELECT CAST(conversation_id AS text) AS conversation_id, user_id, CAST(agent_id AS text) AS agent_id,
                        newest
                 FROM cand
-                ORDER BY {_turns("agent_id", "user_id", "newest")}, conversation_id
+                ORDER BY {_turns("agent_id", "user_id", "newest", tried="tried")}, conversation_id
                 LIMIT :limit
                 """
             ),
@@ -551,17 +576,16 @@ class ConversationLabelsRepository:
 
         Returns:
             By message id: its ``timestamp``, ``updated_at`` and ``source_hash`` (``_message_hash``), for a marker
-            written without loading it, and ``attempts``, the backend failures on it as it is now (``RETRY``).
+            written without loading it, ``attempts``, the backend failures on it as it is now (``RETRY``), and
+            ``parked_since``, since when it failed alone uncounted (``None`` when it did not).
         """
         result = self._conn.execute(
             text(
                 f"""
                 SELECT CAST(m.id AS text) AS id, m.timestamp, m.updated_at, {_message_hash("m")} AS source_hash,
-                       {_attempts("rt")} AS attempts
+                       {_attempts("rt")} AS attempts, {_parked_since("rt")} AS parked_since
                 FROM conversation_messages m
-                LEFT JOIN conversation_labels rt
-                    ON rt.message_id = m.id AND rt.label = '{RETRY}' AND rt.schema_hash = :schema_hash
-                   AND rt.model_version = :model_version AND {_fresh("rt", "m.updated_at", _message_hash("m"))}
+                LEFT JOIN conversation_labels rt ON {_retry_of("rt", "m")}
                 WHERE m.conversation_id = CAST(:conversation_id AS uuid)
                   AND m.timestamp >= NOW() - make_interval(days => :days)
                   AND m.updated_at <= NOW() - make_interval(secs => :settle)
@@ -572,7 +596,7 @@ class ConversationLabelsRepository:
              "days": int(days), "settle": float(settle_seconds)},
         )
         return {row.id: {"timestamp": row.timestamp, "updated_at": row.updated_at, "source_hash": row.source_hash,
-                         "attempts": row.attempts}
+                         "attempts": row.attempts, "parked_since": row.parked_since}
                 for row in result.fetchall()}
 
     def source_messages(self, conversation_id: str) -> Dict[str, Any]:
@@ -620,7 +644,8 @@ class ConversationLabelsRepository:
         exclude: Iterable[str] = (),
     ) -> List[dict]:
         """Idle conversations whose own labels (goal met, tags) are missing or stale, taking turns between agents,
-        each one's most recent first (``_turns``).
+        each one's most recent first (``_turns``); those the backend failed on (a current ``RETRY`` row) come after
+        the others, the least recently tried first.
 
         A conversation is a candidate when its last user message is within the last ``days`` and older than
         ``idle_minutes``, every one of its messages in the window is labelled, and it has no ``goal_met`` row
@@ -630,8 +655,9 @@ class ConversationLabelsRepository:
 
         Returns:
             ``conversation_id``, ``user_id``, ``agent_id``, ``last_at``, ``tags_hash``, the value to store
-            as the ``goal_met`` row's ``options_hash``, and ``attempts``, the backend failures on the conversation
-            as it is now (``RETRY``).
+            as the ``goal_met`` row's ``options_hash``, ``attempts``, the backend failures on the conversation
+            as it is now (``RETRY``), and ``parked_since``, since when it failed alone uncounted (``None`` when it
+            did not).
         """
         params: Dict[str, Any] = {"schema_hash": schema_hash, "model_version": model_version, "days": int(days),
                                   "idle": int(idle_minutes), "limit": int(limit)}
@@ -653,7 +679,7 @@ class ConversationLabelsRepository:
                 )
                 SELECT CAST(conv.conversation_id AS text) AS conversation_id, c.user_id,
                        CAST(ag.id AS text) AS agent_id, conv.last_at, {_TAGS_HASH} AS tags_hash,
-                       {_attempts("rt")} AS attempts
+                       {_attempts("rt")} AS attempts, {_parked_since("rt")} AS parked_since
                 FROM conv
                 JOIN conversations c ON c.id = conv.conversation_id
                 {_AGENT}
@@ -677,7 +703,7 @@ class ConversationLabelsRepository:
                         AND m.timestamp >= NOW() - make_interval(days => :days)
                         AND {_usable("m")} AND {_unlabelled("m")}
                   ) {scope}
-                ORDER BY {_turns("ag.id", "c.user_id", "conv.last_at")}, conv.conversation_id
+                ORDER BY {_turns("ag.id", "c.user_id", "conv.last_at", tried="rt.created_at")}, conv.conversation_id
                 LIMIT :limit
                 """
             ),

@@ -29,12 +29,16 @@ It stops starting calls when its time budget is spent, when a call about more th
 A state that could not be built, or that the model called ``bad_item`` while answering the rest of its call, is
 written as an ``_error`` row and not retried until the schema or the model changes. A ``backend_error`` (the runtime
 raised, the server refused the item or answered something else) is the backend's fault more often than the item's:
-the message (or conversation) gets a ``_retry`` row counting the attempt and is asked again by the next sweep, and
+the message (or conversation) gets a ``_retry`` row counting the attempt and is asked again by a later sweep, and
 only its ``ATTEMPTS``-th failure is an ``_error``. A call about a single message (or conversation) that answered
-nothing tells the two apart only by the sweep's other calls: the message is set aside, and the sweep goes on, so one
-message the backend always fails on cannot stop every sweep; it counts as an attempt once a call of the sweep has
-answered something, and not at all while none has, so a backend that fails everything (``LONE_FAILURES``
-conversations of such calls in a row stop the sweep) marks nothing.
+nothing tells the two apart only by the sweep's other calls: the message is set aside, and the sweep goes on; it
+counts as an attempt once a call of the sweep has answered something, and not while none has, so a backend that
+fails everything marks nothing. ``LONE_FAILURES`` conversations of such calls in a row end the pass (the next pass,
+finding the backend still failing, ends at its first such call). What is set aside with no call answering gets a
+``_retry`` row keeping its count and since when it has been set aside (``parked_since``); a candidate the backend
+failed on is asked after those it never failed on, the least recently tried first, so a few messages the backend
+always fails on never keep the rest from being labelled, and are counted once the others answer. One set aside
+for ``PARKED_HOURS`` counts as an attempt all the same, so with nothing else to answer it still ends as ``_error``.
 
 Every row a state yields records what the state was built from (``source_updated_at``, ``source_hash``: the message's,
 or for a conversation's own rows the conversation's, as read), so an edit made while the call ran leaves the labels
@@ -85,9 +89,12 @@ MESSAGE_SHARE = 0.7
 #: nothing while others did) before it is marked ``_error``; each one before is a ``_retry`` row, asked again by the
 #: next sweep.
 ATTEMPTS = 3
-#: Conversations in a row whose calls, each about one message (or conversation), answered nothing before the sweep
-#: stops: past one or two the backend is failing, not the messages.
+#: Conversations in a row whose calls, each about one message (or conversation), answered nothing before the pass
+#: ends: past one or two the backend is failing, not the messages.
 LONE_FAILURES = 3
+#: Hours a message (or conversation) may be set aside uncounted (it failed alone, and no call of its sweeps
+#: answered) before its next such failure counts as an attempt all the same.
+PARKED_HOURS = 24
 #: Seconds between two checks that the sweep still holds its lock, each extending it.
 LOCK_REFRESH_SECONDS = 5
 #: Extends the lock only while it holds this sweep's token, so a sweep whose lock ran out never extends another's.
@@ -129,6 +136,7 @@ class _Item:
     source_updated_at: Any = None  # the source message's (or conversation's) updated_at, as read
     source_hash: Optional[str] = None  # and its content hash, as read
     attempts: int = 0  # backend failures on the source as read (its current _retry row)
+    parked_since: Any = None  # and since when it has failed alone uncounted, as read
 
     @property
     def source(self) -> Optional[str]:
@@ -305,6 +313,7 @@ class Sweep:
         self._answered = False  # a call of this sweep answered something: the backend works
         self._parked: list[tuple[_Item, str]] = []  # failed alone before that, charged once a call answers
         self._failing: set[str] = set()  # conversations failed alone since a call last answered
+        self._cut = False  # LONE_FAILURES of them: the running pass ends
         self._lone_stop: Optional[str] = None  # how the sweep reports parked items no call vouched for
 
     # ---- control --------------------------------------------------------------------------------------------------
@@ -323,8 +332,10 @@ class Sweep:
         return True
 
     def _in_pass(self) -> bool:
-        """``_going``, and the running pass's own share of the budget (``MESSAGE_SHARE``) not spent."""
-        return self._going() and (self._pass_deadline is None or time.monotonic() < self._pass_deadline)
+        """``_going``, the running pass not cut short (``LONE_FAILURES``) and its own share of the budget
+        (``MESSAGE_SHARE``) not spent."""
+        return (self._going() and not self._cut
+                and (self._pass_deadline is None or time.monotonic() < self._pass_deadline))
 
     @staticmethod
     def _cap() -> int:
@@ -333,20 +344,20 @@ class Sweep:
 
     def run(self) -> dict:
         """The passes, each while the sweep is still going: pending resolutions (no model call), messages until
-        ``MESSAGE_SHARE`` of the budget left is spent, conversations, then messages again with what is left."""
+        ``MESSAGE_SHARE`` of the budget left is spent, conversations, then messages again with what is left; then
+        what failed alone with no call answering is set aside (``_park``)."""
         self.pending_pass()
         if self.deadline is not None and self._going():
             now = time.monotonic()
             self._pass_deadline = now + MESSAGE_SHARE * (self.deadline - now)
-        if self._going():
-            self.message_pass()
-        self._pass_deadline = None
-        if self._going():
-            self.conversation_pass()
-        if self._going():
-            self.message_pass()
-        if self._parked and not self.stopped:  # failed alone and no call answered: the backend's fault, as a stop
-            self.stopped = self._lone_stop
+        for step in (self.message_pass, self.conversation_pass, self.message_pass):
+            self._cut = False
+            if self._going():
+                step()
+            self._pass_deadline = None
+        if self._parked:  # failed alone and no call answered: the backend's fault, as a stop, unless told apart later
+            self.stopped = self.stopped or self._lone_stop
+            self._park()
         report = {**{k: self.stats.get(k, 0) for k in (
             "messages", "conversations", "resolutions", "calls", "states", "rows", "errors", "retries", "timeouts",
             "truncated")}, "stopped": self.stopped, "ms": round((time.monotonic() - self._started) * 1000)}
@@ -456,7 +467,8 @@ class Sweep:
                 continue
             base = dict(owner, message_id=m.id, occurred_at=m.timestamp, lang=states.lang(m.prompt),
                         source_updated_at=m.updated_at, source_hash=m.source_hash,
-                        attempts=unlabelled[m.id].get("attempts") or 0)
+                        attempts=unlabelled[m.id].get("attempts") or 0,
+                        parked_since=unlabelled[m.id].get("parked_since"))
             plan: list[tuple[str, Callable[[], Any], dict, dict]] = []
             if m.is_turn:
                 plan.append(("turn", lambda i=i: states.turn(msgs, i), TURN_QUESTIONS, {}))
@@ -525,7 +537,7 @@ class Sweep:
         updated_at, source_hash = self._conversations[cid]
         owner = dict(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
                      level="conversation", message_id=None, source_updated_at=updated_at, source_hash=source_hash,
-                     attempts=candidate.get("attempts") or 0)
+                     attempts=candidate.get("attempts") or 0, parked_since=candidate.get("parked_since"))
         if not msgs:
             logger.warning("Analytics: conversation %s is a candidate but has no user message; marked as an error",
                            cid)
@@ -612,7 +624,8 @@ class Sweep:
 
         A call about one message (or conversation) that answered nothing (``backend_error`` or ``bad_item``) does
         not stop the sweep: the message is charged the attempt if a call of the sweep has answered, else parked and
-        charged when one does (``_charge``). ``LONE_FAILURES`` conversations failing so in a row stop it.
+        charged when one does (``_charge``), or set aside at the end of the sweep (``_park``). ``LONE_FAILURES``
+        conversations failing so in a row end the pass.
         """
         batch = [item for item in batch if item.key not in self._late]
         asked = [item for item in batch if item.state is not None]
@@ -638,12 +651,12 @@ class Sweep:
                     self._failing.add(asked[0].conversation_id)
                     self._lone_stop = stop
                     if len(self._failing) >= LONE_FAILURES:
-                        self.stopped = stop
+                        self._cut = True
                 else:
                     self.stopped = stop
-                if self.stopped:
-                    logger.info("Analytics sweep stopped: the decision model answered nothing (%s)",
-                                ", ".join(sorted(reasons)))
+                if self.stopped or self._cut:
+                    logger.info("Analytics sweep %s: the decision model answered nothing (%s)",
+                                "stopped" if self.stopped else "pass ended", ", ".join(sorted(reasons)))
                 if not lone:
                     return
             version = next((d.model.version for d in result if d is not None), self.model_version)
@@ -685,6 +698,24 @@ class Sweep:
             for conversation_level in (False, True):
                 self._commit([row for row in charged if (row["level"] == "conversation") == conversation_level],
                              conversation_level)
+
+    def _park(self) -> None:
+        """Write what failed alone while no call of the sweep answered: a ``_retry`` row keeping its count, naming
+        since when it has been set aside (``parked_since``), so later sweeps ask it after the rest; or, set aside
+        ``PARKED_HOURS`` already, the attempt counted all the same (``_charge``)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        rows = []
+        for item, reason in self._parked:
+            since = item.parked_since
+            if since is not None and now - since >= datetime.timedelta(hours=PARKED_HOURS):
+                rows.append(self._charge(item, reason))
+            else:  # written again all the same, so its created_at says when it was last tried
+                since = (since or now).isoformat()
+                rows.append(self._marker(item, RETRY, reason, {"attempts": item.attempts, "parked_since": since}))
+        self._parked = []
+        for conversation_level in (False, True):
+            self._commit([row for row in rows if (row["level"] == "conversation") == conversation_level],
+                         conversation_level)
 
     def _charge(self, item: _Item, reason: Optional[str]) -> dict:
         """The row of a failed attempt on ``item``: a ``_retry`` counting it, or at the ``ATTEMPTS``-th an
