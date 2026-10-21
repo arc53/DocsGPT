@@ -72,7 +72,8 @@
         "monitor_paused": "監控已暫停",
         "monitor_expired": "監控已過期",
         "schedule": "排程工作已完成",
-        "default": "新回覆"
+        "default": "新回覆",
+        "docs_gaps": "每週文件缺口摘要"
       },
       "open": "開啟",
       "fallbackTitle": "你的助理有新消息"
@@ -604,7 +605,7 @@
     },
     "analytics": {
       "label": "分析",
-      "subtitle": "追蹤您賃戶的訊息量、Token 使用量和使用者回饋",
+      "subtitle": "追蹤您帳戶的訊息量、Token 使用量和使用者回饋",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "filterOptions": {
@@ -612,7 +613,8 @@
         "last24Hours": "24 小時",
         "last7Days": "7 天",
         "last15Days": "15 天",
-        "last30Days": "30 天"
+        "last30Days": "30 天",
+        "last90Days": "90 天"
       },
       "messages": "訊息",
       "tokenUsage": "Token 使用量",
@@ -656,7 +658,195 @@
           "direct": "不使用代理的聊天",
           "agent": "透過代理"
         }
-      }
+      },
+      "insights": {
+        "description": "由 AI 模型根據每段對話估算。",
+        "learnMore": "了解更多",
+        "coverage": "已分析 {{labelled}}/{{total}} 則回答",
+        "loadError": "無法載入洞察。",
+        "notEnough": "資料還不夠（目前 {{formatted}} 則）",
+        "notEnoughShort": "資料還不夠",
+        "notEnoughReplies": "回覆還不夠",
+        "languageNote": "這些訊息中有 {{share}} 使用{{languages}}，模型對這些語言的理解較不準確。{{labels}}可能較不可靠。",
+        "otherLanguages": "其他語言",
+        "stats": {
+          "fullyAnswered": "完整回答",
+          "fullyAnsweredHint": "回答完整解決的問題。問候與閒聊不計入。",
+          "goalMet": "達成目標",
+          "goalMetHint": "使用者得到所需內容的對話，在對話平靜下來後根據整段對話判斷。",
+          "frustrated": "不滿",
+          "frustratedHint": "明顯表現出不滿的回覆。只計入回答之後送出的訊息，因此對話的第一則訊息永遠不計入。",
+          "asksHuman": "要求真人",
+          "asksHumanHint": "要求真人、工單或其他聯絡方式的回覆。第一則訊息中提出的要求不計入。",
+          "docsGaps": "文件缺口",
+          "docsGapsHint": "因文件未涵蓋該問題或搜尋找不到頁面而不夠完整的回答。下方分組列出。"
+        },
+        "sub": {
+          "ofQuestions_one": "共 {{formatted}} 個問題",
+          "ofQuestions_other": "共 {{formatted}} 個問題",
+          "ofReplies_one": "共 {{formatted}} 則回覆",
+          "ofReplies_other": "共 {{formatted}} 則回覆",
+          "ofConversations_one": "共 {{formatted}} 段對話",
+          "ofConversations_other": "共 {{formatted}} 段對話",
+          "inAnswers_one": "共 {{formatted}} 則回答",
+          "inAnswers_other": "共 {{formatted}} 則回答"
+        },
+        "panels": {
+          "answerStatus": "回答狀態隨時間變化",
+          "sentiment": "情緒隨時間變化",
+          "whyNot": "未完整回答的原因",
+          "requestType": "請求類型",
+          "implicitFeedback": "對回答的回覆",
+          "shareOfAnswers_one": "佔 {{formatted}} 則回答的比例",
+          "shareOfAnswers_other": "佔 {{formatted}} 則回答的比例",
+          "shareOfMessages_one": "佔 {{formatted}} 則訊息的比例",
+          "shareOfMessages_other": "佔 {{formatted}} 則訊息的比例",
+          "shareOfConversations_one": "佔 {{formatted}} 段對話的比例",
+          "shareOfConversations_other": "佔 {{formatted}} 段對話的比例",
+          "ofReplies_one": "共 {{formatted}} 則回覆",
+          "ofReplies_other": "共 {{formatted}} 則回覆",
+          "barLabel": "{{name}}：{{value}}",
+          "barLabelNone": "{{name}}：資料還不夠",
+          "noneOfThese": "不屬於這些主題",
+          "empty": "此期間沒有可顯示的內容。",
+          "tooltipShare": "{{name}}：{{value}}",
+          "ofQuestions_one": "共 {{formatted}} 個問題",
+          "ofQuestions_other": "共 {{formatted}} 個問題",
+          "topics": "主題",
+          "overlapNote": "一段對話可能計入多個主題，因此合計不等於 100%。",
+          "noTopics": {
+            "title": "還沒有主題",
+            "description": "新增主題，看看使用者在問什麼。",
+            "action": "設定主題"
+          }
+        },
+        "labelNamesInline": {
+          "answer_status": "回答狀態",
+          "gap_type": "未完整回答的原因",
+          "topic_effective": "主題",
+          "reaction": "對回答的回覆"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "完整回答",
+            "partiallyAnswered": "部分回答",
+            "declined": "表示不知道",
+            "clarifying": "追問細節"
+          },
+          "gapType": {
+            "docsMissing": "文件缺口",
+            "notRetrieved": "搜尋找不到頁面",
+            "answerMissed": "回答未用上頁面",
+            "outOfScope": "超出範圍",
+            "featureNotSupported": "不支援的功能",
+            "needsAccountData": "需要帳戶權限或真人",
+            "ambiguous": "問題不清楚",
+            "confidentlyUngrounded": "回答缺少文件依據",
+            "other": "其他"
+          },
+          "reaction": {
+            "thanks": "致謝或確認",
+            "reAsk": "再次提問",
+            "pushbackOrComplaint": "反駁或抱怨"
+          },
+          "requestType": {
+            "troubleshooting": "疑難排解",
+            "howTo": "操作方法",
+            "lookup": "查詢資訊",
+            "concept": "概念說明",
+            "comparison": "比較",
+            "featureRequest": "功能需求",
+            "accountBilling": "帳戶或帳單",
+            "chitChat": "閒聊",
+            "other": "其他"
+          },
+          "sentiment": {
+            "positive": "正面",
+            "neutral": "中性",
+            "negative": "負面"
+          }
+        },
+        "off": {
+          "title": "此代理已關閉洞察",
+          "description": "開啟後可估算回答是否有幫助，以及文件哪裡有不足。",
+          "turnOn": "開啟"
+        },
+        "noConversations": {
+          "hour": "過去 1 小時沒有對話",
+          "last24Hours": "過去 24 小時沒有對話",
+          "last7Days": "過去 7 天沒有對話",
+          "last15Days": "過去 15 天沒有對話",
+          "last30Days": "過去 30 天沒有對話"
+        },
+        "noConversationsDescription": "洞察會在每段對話結束幾分鐘後出現。",
+        "analyzing": {
+          "title": "正在分析對話",
+          "progress_one": "已分析 {{labelled}}/{{formatted}} 則回答 · 最新優先",
+          "progress_other": "已分析 {{labelled}}/{{formatted}} 則回答 · 最新優先"
+        },
+        "olderOnly": {
+          "title": "沒有可分析的近期對話",
+          "description": "洞察涵蓋 {{date}} 起的對話。更早的對話不會分析；管理員可以補做分析。"
+        },
+        "failedOnly": {
+          "title": "無法分析任何回答",
+          "description_one": "模型無法分析此期間的 {{formatted}} 則回答。模型或其問題變更後會重新分析。",
+          "description_other": "模型無法分析此期間的 {{formatted}} 則回答。模型或其問題變更後會重新分析。"
+        },
+        "failed_one": "{{formatted}} 則回答無法分析",
+        "failed_other": "{{formatted}} 則回答無法分析",
+        "settings": {
+          "button": "設定",
+          "title": "洞察設定",
+          "saveFailed": "無法儲存洞察設定。請再試一次。"
+        }
+      },
+      "gaps": {
+        "heading": "文件缺口",
+        "description": {
+          "page": "文件無法回答的問題，依搜尋找到的最接近頁面分組。",
+          "source": "文件無法回答的問題，依最接近頁面所屬的來源分組。",
+          "topic": "文件無法回答的問題，依主題分組。"
+        },
+        "groupBy": "文件缺口分組方式",
+        "groups": {
+          "page": "頁面",
+          "source": "來源",
+          "topic": "主題"
+        },
+        "columns": {
+          "gaps": "缺口",
+          "share": "佔問題的比例",
+          "change": "變化",
+          "example": "範例問題",
+          "open": "範例"
+        },
+        "share_one": "{{formatted}} 個中的 {{percent}}",
+        "share_other": "{{formatted}} 個中的 {{percent}}",
+        "gapsCount_one": "{{formatted}} 個缺口",
+        "gapsCount_other": "{{formatted}} 個缺口",
+        "change": {
+          "new": "新增",
+          "none": "沒有變化",
+          "upLabel": "比上一期增加 {{formatted}} 個",
+          "downLabel": "比上一期減少 {{formatted}} 個",
+          "noEarlier": "暫無先前資料"
+        },
+        "noPage": "找不到頁面",
+        "openRow": "查看 {{name}} 的範例",
+        "export": "匯出 CSV",
+        "empty": "此期間沒有文件缺口。",
+        "emptyDescription": "文件無法回答的問題會顯示在這裡。",
+        "loadError": "無法載入文件缺口。",
+        "panel": {
+          "gaps": "缺口",
+          "share": "佔問題的比例",
+          "previous": "上一期",
+          "examples": "範例問題",
+          "allInLogs": "在日誌中查看所有文件缺口"
+        }
+      },
+      "loadError": "無法載入此圖表。"
     },
     "logs": {
       "label": "日誌",
@@ -824,7 +1014,25 @@
       "feedback": {
         "like": "讚",
         "dislike": "倒讚"
-      }
+      },
+      "labels": {
+        "filterAll": "所有標註",
+        "notAnswered": "未完整回答",
+        "docsGap": "文件缺口",
+        "frustrated": "不滿",
+        "asksHuman": "要求真人",
+        "negativeReaction": "再次提問或反駁",
+        "negativeSentiment": "負面情緒",
+        "hint": "標註是估算結果，可能有誤。",
+        "conversation": "對話",
+        "clearConversation": "顯示所有對話",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "沒有符合這些篩選條件的訊息。",
+        "filter": "標註",
+        "topics": "主題"
+      },
+      "levelFilter": "層級",
+      "typeFilter": "事件類型"
     },
     "teams": {
       "label": "團隊",
@@ -1839,6 +2047,9 @@
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       }
+    },
+    "insights": {
+      "label": "洞察"
     }
   },
   "modals": {
@@ -2494,7 +2705,9 @@
       "tabs": {
         "overview": "總覽",
         "logs": "日誌",
-        "schedules": "排程"
+        "insights": "洞察",
+        "schedules": "排程",
+        "analytics": "分析"
       },
       "fallbackName": "未命名代理",
       "subnavAriaLabel": "代理子導覽"
@@ -2559,7 +2772,8 @@
         "preview": "預覽",
         "basics": "基本資訊",
         "knowledge": "知識與行為",
-        "model": "模型"
+        "model": "模型",
+        "analytics": "洞察"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -2779,13 +2993,92 @@
         "audienceTitle_other": "誰可以透過此智慧代理使用它們",
         "stopNote_one": "如果你失去編輯權限，它將停止執行。",
         "stopNote_other": "如果你失去編輯權限，它們將停止執行。"
+      },
+      "analytics": {
+        "enable": "收集洞察",
+        "enableDescription": "在背景讀取已結束的對話，估算回答是否有幫助以及文件哪裡不足。結果會顯示在「洞察」分頁和日誌中。",
+        "learnMore": "了解更多",
+        "serverOff": "此伺服器已關閉洞察，因此這些設定暫不生效。請聯絡管理員開啟。",
+        "topics": "主題",
+        "countOf": "{{count}}/{{max}}",
+        "addTopic": "新增主題",
+        "itemActions": "{{name}} 的操作",
+        "edit": "編輯",
+        "remove": "移除",
+        "modal": {
+          "addTopic": "新增主題",
+          "editTopic": "編輯主題",
+          "name": "名稱",
+          "description": "描述",
+          "submitAdd": "新增",
+          "submitSave": "儲存",
+          "dialogDescription": "名稱和描述告訴模型哪些內容屬於這裡。",
+          "editFolder": "此主題是此代理來源中的資料夾「{{name}}」。儲存後它會成為你自己的主題，不再跟隨該資料夾的頁面。",
+          "namePlaceholder": "帳單",
+          "descriptionHint": "選填。能讓分類更準確：列出幾個頁面、功能或使用者常用的詞。",
+          "descriptionPlaceholder": "價格、方案、席位或發票。",
+          "overlap": "可與其他主題重疊",
+          "overlapDescription": "針對每段完整對話判斷，因此可同時適用多個：適合橫跨整份文件的錯誤回報或價格問題。",
+          "onePickFull": "不重疊的主題最多 {{max}} 個，因此這個主題可重疊。",
+          "overlapFull": "可重疊的主題最多 {{max}} 個，因此這個主題不能重疊。",
+          "overlapOff": "此伺服器不再判斷可重疊的主題，因此這個主題不能重疊。",
+          "reachOnePick": "對新問題進行分類；之前的問題保留原主題。",
+          "reachOverlap": "也會對近期的對話進行判斷。",
+          "kindChangeToOverlap": "變更後其數據將重新開始：它原先用於分類問題，今後將針對對話進行判斷。",
+          "kindChangeToOnePick": "變更後其數據將重新開始：它原先針對對話進行判斷，今後將用於分類問題。"
+        },
+        "errors": {
+          "nameRequired": "請輸入名稱。",
+          "topicNameTooLong": "太長了。請縮短到 {{max}} 個字元以內。",
+          "topicNameTaken": "已有其他主題使用此名稱。",
+          "topicNameReserved": "此名稱保留給不屬於任何主題的問題。",
+          "topicDescriptionTooLong": "太長了。請縮短到 {{max}} 以內（中文、日文和韓文字元以三個計算）。"
+        },
+        "digest": "每週文件缺口摘要",
+        "digestDescription": "每週一次，代理的擁有者會收到一則通知，列出主要的文件缺口。",
+        "off": "關閉",
+        "topicsDescription": "使用者在問什麼。每個問題歸入最合適的一個主題。",
+        "fromSources": "來自來源",
+        "hide": "隱藏",
+        "groups": {
+          "onePick": "每個問題一個",
+          "overlap": "可重疊",
+          "overlapDescription": "針對整段對話判斷；可同時適用多個。"
+        },
+        "notes": {
+          "foldersFailed": "無法載入此代理來源中的資料夾。",
+          "unsaved": "儲存後會顯示此代理來源中的資料夾。",
+          "unlisted": "問題也會歸入此代理來源中的資料夾。",
+          "hidden": "已隱藏的資料夾：{{names}}",
+          "show": "顯示",
+          "cut": "這些較小的資料夾放不下，其問題會歸入「不屬於這些主題」：{{names}}",
+          "single": "只有一個主題無法分類。再新增一個即可開始。",
+          "full": "此代理的主題已達上限：{{topics}} 個不重疊的主題和 {{overlapping}} 個可重疊的主題。",
+          "overOnePick": "此伺服器現在只允許 {{max}} 個不重疊的主題，少於此代理已有的數量，因此只有最先新增的 {{max}} 個會分類問題。刪除一些後才能新增其他主題。",
+          "overOverlapping": "此伺服器現在只允許 {{max}} 個可重疊的主題，少於此代理已有的數量，因此只會判斷最先新增的 {{max}} 個。刪除一些後才能新增其他主題。",
+          "overlapOff": "此伺服器不再判斷可重疊的主題，因此這些主題不會被判斷。可編輯主題改為分類問題，或將其刪除。"
+        },
+        "empty": {
+          "title": "還沒有主題",
+          "workflow": "新增使用者會問的內容。每個問題歸入最合適的一個主題。",
+          "unsaved": "儲存後會顯示此代理來源中的主題。你現在就可以新增自己的主題。",
+          "noFolders": "此代理的來源中沒有可用於分類問題的資料夾。請新增你自己的主題。",
+          "allHidden": "此代理來源中的資料夾已全部隱藏，因此問題不會被分類。",
+          "showFolders": "顯示資料夾"
+        },
+        "removeTopic": {
+          "title": "要移除「{{name}}」嗎？",
+          "description": "它可重疊，因此有自己的結果。這些結果將從洞察和日誌中消失，重新新增後會從頭開始。",
+          "submit": "移除"
+        }
       }
     },
     "logs": {
       "title": "代理日誌",
       "lastUsedAt": "最後使用時間",
       "noUsageHistory": "無使用歷史",
-      "tableHeader": "代理端點日誌"
+      "tableHeader": "代理端點日誌",
+      "description": "此代理的 API 呼叫、排程執行和錯誤。"
     },
     "schedules": {
       "title": "代理排程",
@@ -3013,7 +3306,6 @@
     "guardrailEvents": {
       "heading": "防護機制活動",
       "description": "此代理上觸發的每項控制，以及每項無法執行的控制。",
-      "lastDays": "最近 {{count}} 天",
       "blocked": "已封鎖",
       "redacted": "已遮蔽",
       "flagged": "已標記",
@@ -3255,7 +3547,11 @@
     "showAll_other": "查看全部 {{formatted}} 個",
     "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
     "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
-    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。"
+    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。",
+    "analytics": {
+      "subtitle": "此代理的訊息量、Token 使用量和使用者回饋。"
+    },
+    "loadError": "無法載入此代理。"
   },
   "components": {
     "fileUpload": {
@@ -3352,9 +3648,9 @@
       "groups": {
         "personal": "個人",
         "workspace": "工作區",
-        "insights": "洞察",
         "administration": "管理",
-        "automations": "自動化"
+        "automations": "自動化",
+        "monitoring": "監控"
       }
     },
     "openSidebar": "開啟側邊欄",

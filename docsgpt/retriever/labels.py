@@ -17,9 +17,10 @@ def labels_from_metadata(
 
     Besides ``title``/``source``/``filename`` the result carries the chunk's
     identity, so a citation can find the chunk again: ``source_id`` (the source
-    it belongs to) and ``chunk_key`` (see :func:`chunk_key`). Retrieval drops
-    the raw metadata after this point, so anything a citation needs has to be
-    handed on here.
+    it belongs to: the store it was retrieved from, the metadata's only when no
+    store id is given) and ``chunk_key`` (see :func:`chunk_key`). Retrieval
+    drops the raw metadata after this point, so anything a citation needs has
+    to be handed on here.
 
     Args:
         metadata: The stored chunk's metadata.
@@ -53,7 +54,9 @@ def labels_from_metadata(
         "title": title,
         "source": source,
         "filename": filename,
-        "source_id": normalize_source_id(metadata.get("source_id") or fallback_source),
+        # The store's id, not the chunk's own: chunk metadata can be written through the chunk API, and a
+        # ``source_id`` in it would hand the citation (and the analytics keyed on it) another user's source.
+        "source_id": normalize_source_id(fallback_source or metadata.get("source_id")),
         "chunk_key": chunk_key(text),
     }
 

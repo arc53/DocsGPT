@@ -48,6 +48,8 @@ os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
 # when a request finishes. Off by default so unrelated tests never touch a
 # database through that path; tracing tests switch it on explicitly.
 os.environ.setdefault("TRACES_ENABLED", "false")
+# A dev .env often turns conversation insights on; tests that need them say so.
+os.environ.setdefault("DECISION_ANALYTICS_ENABLED", "false")
 
 import subprocess
 import sys

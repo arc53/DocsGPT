@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { IconButton } from '@/components/ui/icon-button';
@@ -10,8 +11,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn, focusRing } from '@/lib/utils';
+import { selectAnalyticsEnabled } from '@/preferences/preferenceSlice';
 
-import { getSectionItems, type Section } from './sections';
+import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
+import { getVisibleGroups, type Section } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
 
 type SectionRailProps = {
@@ -25,7 +28,9 @@ type SectionRailProps = {
 /**
  * Collapsed-sidebar counterpart to ``SectionNav``: the same destinations as
  * icons, so collapsing the sidebar inside a section still leaves the section
- * navigable instead of stranding the user on one page.
+ * navigable instead of stranding the user on one page. It filters by role
+ * and server feature like ``SectionNav``, so a page the server has switched
+ * off is not offered here either.
  */
 export default function SectionRail({
   section,
@@ -36,7 +41,12 @@ export default function SectionRail({
 }: SectionRailProps) {
   const { t } = useTranslation();
   const { goToLevel } = useSidebarLevel();
-  const items = getSectionItems(section, { isAdmin });
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
+  const items = getVisibleGroups(section, {
+    isAdmin,
+    features: { connectors: connectorsEnabled, analytics: analyticsEnabled },
+  }).flatMap((group) => group.items);
 
   return (
     // Keyed on the section so switching level replays the fade: the rail is

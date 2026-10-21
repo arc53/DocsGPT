@@ -162,6 +162,15 @@ class TestConfigRoute:
         assert data["attachment_budget_share"] == 0.4
 
     @pytest.mark.unit
+    def test_exposes_the_analytics_list_limits(self, client, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ANALYTICS_MAX_TOPICS", 8)
+        monkeypatch.setattr(settings, "ANALYTICS_MAX_OVERLAPPING_TOPICS", 5)
+        data = json.loads(client.get("/api/config").data)
+        assert (data["analytics_max_topics"], data["analytics_max_overlapping_topics"]) == (8, 5)
+
+    @pytest.mark.unit
     def test_decision_model_is_reported_off(self, client):
         data = json.loads(client.get("/api/config").data)
         assert data["decision_available"] is False
@@ -178,6 +187,7 @@ class TestConfigRoute:
             "decision_available": True,
             "decision_relevance_enabled": False,
             "decision_injection_enabled": False,
+            "decision_analytics_enabled": False,
         }
         assert decisions.get_decider()._backend is None
 
@@ -186,7 +196,9 @@ class TestConfigRoute:
         "enabled, mode, expected",
         [(True, None, True), (False, None, False), (True, "none", False)],
     )
-    @pytest.mark.parametrize("switch", ["DECISION_RELEVANCE_ENABLED", "DECISION_INJECTION_ENABLED"])
+    @pytest.mark.parametrize(
+        "switch", ["DECISION_RELEVANCE_ENABLED", "DECISION_INJECTION_ENABLED", "DECISION_ANALYTICS_ENABLED"]
+    )
     def test_the_operator_switches(self, client, monkeypatch, enabled, mode, expected, switch):
         from docsgpt import decisions
         from docsgpt.core.settings import settings

@@ -39,7 +39,12 @@ import { ACTION_KEYS, STAGE_KEYS } from './GuardrailsSection';
 
 /** Decisions per request; older ones load as the table's end scrolls into view. */
 const PAGE_SIZE = 50;
-const WINDOWS = [7, 30, 90];
+/** The windows (days) and their labels, worded as the analytics select's. */
+const WINDOWS = [
+  [7, 'last7Days'],
+  [30, 'last30Days'],
+  [90, 'last90Days'],
+] as const;
 
 /** What an item-level verdict was about: a retrieved chunk, or an attached file. */
 type ItemRef =
@@ -164,17 +169,18 @@ export default function GuardrailEvents({ agentId }: Props) {
             onValueChange={(value) => setDays(Number(value))}
           >
             <SelectTrigger
-              className="w-[150px]"
+              className="min-w-[125px]"
               size="field"
               shape="pill"
+              aria-label={t('activity.history.periodFilter')}
               data-testid="guardrail-events-window"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              {WINDOWS.map((window) => (
+            <SelectContent fit>
+              {WINDOWS.map(([window, labelKey]) => (
                 <SelectItem key={window} value={String(window)}>
-                  {t('agents.guardrailEvents.lastDays', { count: window })}
+                  {t(`settings.analytics.filterOptions.${labelKey}`)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -230,14 +236,15 @@ export default function GuardrailEvents({ agentId }: Props) {
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Select value={checkFilter} onValueChange={setCheckFilter}>
           <SelectTrigger
-            className="w-[170px]"
+            className="min-w-[170px]"
             size="field"
             shape="pill"
+            aria-label={t('agents.guardrailEvents.check')}
             data-testid="guardrail-events-check-filter"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent fit>
             <SelectItem value="all">
               {t('agents.guardrailEvents.allChecks')}
             </SelectItem>
@@ -250,14 +257,15 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
         <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
           <SelectTrigger
-            className="w-[170px]"
+            className="min-w-[170px]"
             size="field"
             shape="pill"
+            aria-label={t('agents.guardrailEvents.outcome')}
             data-testid="guardrail-events-outcome-filter"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent fit>
             <SelectItem value="all">
               {t('agents.guardrailEvents.allOutcomes')}
             </SelectItem>

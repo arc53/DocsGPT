@@ -155,6 +155,9 @@ describe('buildAgentSection', () => {
       'overview',
     );
     expect(getActiveItem(section, '/agents/manage/logs/a1')?.key).toBe('logs');
+    expect(getActiveItem(section, '/agents/manage/analytics/a1')?.key).toBe(
+      'analytics',
+    );
     expect(getActiveItem(section, '/agents/manage/schedules/a1')?.key).toBe(
       'schedules',
     );
@@ -195,20 +198,124 @@ describe('buildAgentSection tabs by role', () => {
     ).map((item) => item.key);
 
   it('shows every tab before the agent has loaded', () => {
-    expect(keys()).toEqual(['overview', 'logs', 'schedules']);
-  });
-
-  it('shows an editor all three tabs', () => {
-    expect(keys(['view', 'view_logs', 'manage_schedules'])).toEqual([
+    expect(keys()).toEqual([
       'overview',
-      'logs',
       'schedules',
+      'analytics',
+      'insights',
+      'logs',
     ]);
   });
 
-  it('shows a viewer no tabs, or Logs when the owner shares them', () => {
+  it('shows an editor every tab', () => {
+    expect(keys(['view', 'view_logs', 'manage_schedules'])).toEqual([
+      'overview',
+      'schedules',
+      'analytics',
+      'insights',
+      'logs',
+    ]);
+  });
+
+  it('shows a viewer no tabs, or Monitoring when the owner shares logs', () => {
     expect(keys(['pin', 'use'])).toEqual([]);
-    expect(keys(['pin', 'use', 'view_logs'])).toEqual(['logs']);
+    expect(keys(['pin', 'use', 'view_logs'])).toEqual([
+      'analytics',
+      'insights',
+      'logs',
+    ]);
+  });
+
+  it('hides Insights while the server labels no conversations', () => {
+    const visible = (analytics: boolean) =>
+      getVisibleGroups(buildAgentSection('a1', 'Bot', false), {
+        features: { analytics },
+      })
+        .flatMap((group) => group.items)
+        .map((item) => item.key);
+    expect(visible(false)).toEqual([
+      'overview',
+      'schedules',
+      'analytics',
+      'logs',
+    ]);
+    expect(visible(true)).toContain('insights');
+  });
+
+  it('owns the agent insights and analytics routes', () => {
+    const section = buildAgentSection('a1', 'Bot', false);
+    expect(getActiveItem(section, '/agents/manage/insights/a1')?.key).toBe(
+      'insights',
+    );
+    expect(getActiveItem(section, '/agents/manage/analytics/a1')?.key).toBe(
+      'analytics',
+    );
+    expect(getSectionForPath('/agents/manage/analytics/a1')?.key).toBe(
+      'agents',
+    );
+  });
+});
+
+describe('buildAgentSection groups', () => {
+  const groups = (actions?: string[]) =>
+    getVisibleGroups(
+      buildAgentSection(
+        'a1',
+        'Bot',
+        false,
+        actions ? { access: 'editor', allowed_actions: actions } : undefined,
+      ),
+    ).map((group) => ({
+      key: group.key,
+      labelKey: group.labelKey,
+      items: group.items.map((item) => item.key),
+    }));
+
+  it('puts the pages that watch the agent under Monitoring', () => {
+    expect(groups()).toEqual([
+      { key: 'agent', labelKey: undefined, items: ['overview', 'schedules'] },
+      {
+        key: 'monitoring',
+        labelKey: 'navigation.sections.groups.monitoring',
+        items: ['analytics', 'insights', 'logs'],
+      },
+    ]);
+  });
+
+  it('drops a group the role leaves empty', () => {
+    expect(groups(['pin', 'use', 'view_logs']).map((g) => g.key)).toEqual([
+      'monitoring',
+    ]);
+    expect(groups(['view']).map((g) => g.key)).toEqual(['agent']);
+  });
+});
+
+describe('SETTINGS_SECTION Monitoring', () => {
+  it('holds Analytics, Insights and Logs', () => {
+    const monitoring = SETTINGS_SECTION.groups.find(
+      (group) => group.key === 'monitoring',
+    );
+    expect(monitoring?.labelKey).toBe('navigation.sections.groups.monitoring');
+    expect(monitoring?.items.map((item) => item.key)).toEqual([
+      'analytics',
+      'insights',
+      'logs',
+    ]);
+    expect(
+      SETTINGS_SECTION.groups.some((group) => group.key === 'insights'),
+    ).toBe(false);
+  });
+
+  it('routes Insights to its own page, hidden while the server has it off', () => {
+    expect(getActiveItem(SETTINGS_SECTION, '/settings/insights')?.key).toBe(
+      'insights',
+    );
+    const keys = (analytics: boolean) =>
+      getVisibleGroups(SETTINGS_SECTION, { features: { analytics } })
+        .find((group) => group.key === 'monitoring')
+        ?.items.map((item) => item.key);
+    expect(keys(false)).toEqual(['analytics', 'logs']);
+    expect(keys(true)).toEqual(['analytics', 'insights', 'logs']);
   });
 });
 

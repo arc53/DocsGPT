@@ -110,6 +110,25 @@ const userService = {
     apiClient.post(endpoints.USER.TOOL_ANALYTICS, data, token),
   getScheduleAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
+  getConversationInsights: (
+    data: { api_key_id?: string; filter_option: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERSATION_INSIGHTS, data, token),
+  getDocsGaps: (
+    data: {
+      api_key_id?: string;
+      filter_option: string;
+      group_by: 'page' | 'source' | 'topic';
+      limit: number;
+    },
+    token: string | null,
+  ): Promise<Response> => apiClient.post(endpoints.USER.DOCS_GAPS, data, token),
+  /** The `auto` topic rule's topics for an agent (needs edit access). */
+  getTopicFolders: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TOPIC_FOLDERS(agentId), token),
+  getAgentTopics: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_TOPICS(agentId), token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   getTraces: (

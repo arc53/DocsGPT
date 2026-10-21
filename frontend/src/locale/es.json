@@ -74,7 +74,8 @@
         "monitor_paused": "Monitor en pausa",
         "monitor_expired": "Monitor caducado",
         "schedule": "Tarea programada terminada",
-        "default": "Nueva respuesta"
+        "default": "Nueva respuesta",
+        "docs_gaps": "Resumen semanal de huecos en la documentación"
       },
       "open": "Abrir",
       "fallbackTitle": "Tu asistente tiene novedades"
@@ -629,18 +630,19 @@
       "selectChatbot": "Seleccionar chatbot",
       "filterOptions": {
         "hour": "Hora",
-        "last24Hours": "24 Horas",
-        "last7Days": "7 Días",
-        "last15Days": "15 Días",
-        "last30Days": "30 Días"
+        "last24Hours": "24 horas",
+        "last7Days": "7 días",
+        "last15Days": "15 días",
+        "last30Days": "30 días",
+        "last90Days": "90 días"
       },
       "messages": "Mensajes",
-      "tokenUsage": "Uso de Tokens",
-      "userFeedback": "Retroalimentación del Usuario",
+      "tokenUsage": "Uso de tokens",
+      "userFeedback": "Retroalimentación del usuario",
       "filterPlaceholder": "Filtrar",
       "none": "Ninguno",
-      "positiveFeedback": "Retroalimentación Positiva",
-      "negativeFeedback": "Retroalimentación Negativa",
+      "positiveFeedback": "Retroalimentación positiva",
+      "negativeFeedback": "Retroalimentación negativa",
       "groupBy": "Agrupar por",
       "groupOptions": {
         "total": "Total",
@@ -649,10 +651,10 @@
         "source": "Por flujo"
       },
       "includeSideChannel": "Tokens en segundo plano",
-      "promptTokens": "Tokens de Prompt",
-      "generatedTokens": "Tokens Generados",
-      "scheduledRuns": "Ejecuciones Programadas",
-      "toolUsage": "Uso de Herramientas",
+      "promptTokens": "Tokens de prompt",
+      "generatedTokens": "Tokens generados",
+      "scheduledRuns": "Ejecuciones programadas",
+      "toolUsage": "Uso de herramientas",
       "completed": "Completadas",
       "failed": "Fallidas",
       "skipped": "Omitidas",
@@ -662,8 +664,8 @@
         "messages": "Mensajes",
         "tokens": "Tokens",
         "tokensHint": "Todos los tokens facturados por el LLM. Los agentes reenvían el contexto de la conversación en cada paso de herramienta, así que los chats que usan muchas herramientas consumen muchos más tokens de los que sugieren los mensajes visibles.",
-        "toolCalls": "Llamadas a Herramientas",
-        "runSuccess": "Éxito de Ejecución",
+        "toolCalls": "Llamadas a herramientas",
+        "runSuccess": "Éxito de ejecución",
         "feedback": "Retroalimentación"
       },
       "quota": {
@@ -676,7 +678,209 @@
           "direct": "Chat sin agente",
           "agent": "A través de agentes"
         }
-      }
+      },
+      "insights": {
+        "description": "Estimado por un modelo de IA a partir de cada conversación.",
+        "learnMore": "Más información",
+        "coverage": "{{labelled}} de {{total}} respuestas analizadas",
+        "loadError": "No se pudo cargar la información.",
+        "notEnough": "Aún no hay datos suficientes ({{formatted}} por ahora)",
+        "notEnoughShort": "Aún no hay datos suficientes",
+        "notEnoughReplies": "Aún no hay suficientes réplicas",
+        "languageNote": "El {{share}} de estos mensajes está en {{languages}}, que el modelo lee con menos precisión. {{labels}} pueden ser menos fiables.",
+        "otherLanguages": "otros idiomas",
+        "stats": {
+          "fullyAnswered": "Respondidas por completo",
+          "fullyAnsweredHint": "Preguntas que la respuesta resolvió por completo. Los saludos y la charla no cuentan.",
+          "goalMet": "Objetivo cumplido",
+          "goalMetHint": "Conversaciones en las que el usuario obtuvo lo que pidió, juzgadas sobre toda la conversación cuando ya no hay actividad.",
+          "frustrated": "Frustración",
+          "frustratedHint": "Réplicas que muestran una frustración clara. Solo cuentan los mensajes enviados después de una respuesta, así que el primer mensaje de una conversación nunca cuenta.",
+          "asksHuman": "Pidió hablar con una persona",
+          "asksHumanHint": "Réplicas que piden una persona, un ticket u otra forma de contactar contigo. Un primer mensaje que lo pide no cuenta.",
+          "docsGaps": "Huecos en la documentación",
+          "docsGapsHint": "Respuestas que se quedaron cortas porque la documentación no cubre la pregunta o la búsqueda no encontró la página. Agrupadas abajo."
+        },
+        "sub": {
+          "ofQuestions_one": "de {{formatted}} pregunta",
+          "ofQuestions_other": "de {{formatted}} preguntas",
+          "ofQuestions_many": "de {{formatted}} preguntas",
+          "ofReplies_one": "de {{formatted}} réplica",
+          "ofReplies_other": "de {{formatted}} réplicas",
+          "ofReplies_many": "de {{formatted}} réplicas",
+          "ofConversations_one": "de {{formatted}} conversación",
+          "ofConversations_other": "de {{formatted}} conversaciones",
+          "ofConversations_many": "de {{formatted}} conversaciones",
+          "inAnswers_one": "en {{formatted}} respuesta",
+          "inAnswers_other": "en {{formatted}} respuestas",
+          "inAnswers_many": "en {{formatted}} respuestas"
+        },
+        "panels": {
+          "answerStatus": "Estado de las respuestas a lo largo del tiempo",
+          "sentiment": "Sentimiento a lo largo del tiempo",
+          "whyNot": "Por qué no se respondió del todo",
+          "requestType": "Tipo de solicitud",
+          "implicitFeedback": "Réplicas a las respuestas",
+          "shareOfAnswers_one": "Porcentaje de {{formatted}} respuesta",
+          "shareOfAnswers_other": "Porcentaje de {{formatted}} respuestas",
+          "shareOfAnswers_many": "Porcentaje de {{formatted}} respuestas",
+          "shareOfMessages_one": "Porcentaje de {{formatted}} mensaje",
+          "shareOfMessages_other": "Porcentaje de {{formatted}} mensajes",
+          "shareOfMessages_many": "Porcentaje de {{formatted}} mensajes",
+          "shareOfConversations_one": "Porcentaje de {{formatted}} conversación",
+          "shareOfConversations_other": "Porcentaje de {{formatted}} conversaciones",
+          "shareOfConversations_many": "Porcentaje de {{formatted}} conversaciones",
+          "ofReplies_one": "De {{formatted}} réplica",
+          "ofReplies_other": "De {{formatted}} réplicas",
+          "ofReplies_many": "De {{formatted}} réplicas",
+          "barLabel": "{{name}}: {{value}}",
+          "barLabelNone": "{{name}}: aún no hay datos suficientes",
+          "noneOfThese": "Ninguno de estos temas",
+          "empty": "No hay nada que mostrar en este periodo.",
+          "tooltipShare": "{{name}}: {{value}}",
+          "ofQuestions_one": "De {{formatted}} pregunta",
+          "ofQuestions_other": "De {{formatted}} preguntas",
+          "ofQuestions_many": "De {{formatted}} preguntas",
+          "topics": "Temas",
+          "overlapNote": "Una conversación puede contar en varios, así que no suman 100 %.",
+          "noTopics": {
+            "title": "Aún no hay temas",
+            "description": "Añade temas para ver sobre qué pregunta la gente.",
+            "action": "Configurar temas"
+          }
+        },
+        "labelNamesInline": {
+          "answer_status": "el estado de las respuestas",
+          "gap_type": "el motivo de no responder del todo",
+          "topic_effective": "el tema",
+          "reaction": "las réplicas a las respuestas"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Respondida por completo",
+            "partiallyAnswered": "Respondida en parte",
+            "declined": "Dijo que no lo sabía",
+            "clarifying": "Pidió más detalles"
+          },
+          "gapType": {
+            "docsMissing": "Hueco en la documentación",
+            "notRetrieved": "La búsqueda no encontró la página",
+            "answerMissed": "La respuesta no usó la página",
+            "outOfScope": "Fuera de alcance",
+            "featureNotSupported": "Función no disponible",
+            "needsAccountData": "Requiere acceso a la cuenta o al equipo",
+            "ambiguous": "Pregunta poco clara",
+            "confidentlyUngrounded": "Respuesta sin respaldo en la documentación",
+            "other": "Otro"
+          },
+          "reaction": {
+            "thanks": "Agradeció o confirmó",
+            "reAsk": "Volvió a preguntar",
+            "pushbackOrComplaint": "Objeción o queja"
+          },
+          "requestType": {
+            "troubleshooting": "Resolución de problemas",
+            "howTo": "Cómo hacerlo",
+            "lookup": "Consulta de un dato",
+            "concept": "Explicación",
+            "comparison": "Comparación",
+            "featureRequest": "Petición de función",
+            "accountBilling": "Cuenta o facturación",
+            "chitChat": "Charla",
+            "other": "Otro"
+          },
+          "sentiment": {
+            "positive": "Positivo",
+            "neutral": "Neutral",
+            "negative": "Negativo"
+          }
+        },
+        "off": {
+          "title": "La recopilación de información está desactivada para este agente",
+          "description": "Actívala para estimar si las respuestas ayudaron y dónde se queda corta la documentación.",
+          "turnOn": "Activar"
+        },
+        "noConversations": {
+          "hour": "No hay conversaciones en la última hora",
+          "last24Hours": "No hay conversaciones en las últimas 24 horas",
+          "last7Days": "No hay conversaciones en los últimos 7 días",
+          "last15Days": "No hay conversaciones en los últimos 15 días",
+          "last30Days": "No hay conversaciones en los últimos 30 días"
+        },
+        "noConversationsDescription": "La información aparece unos minutos después de cada conversación.",
+        "analyzing": {
+          "title": "Analizando conversaciones",
+          "progress_one": "{{labelled}} de {{formatted}} respuesta analizada · primero las más recientes",
+          "progress_other": "{{labelled}} de {{formatted}} respuestas analizadas · primero las más recientes",
+          "progress_many": "{{labelled}} de {{formatted}} respuestas analizadas · primero las más recientes"
+        },
+        "olderOnly": {
+          "title": "No hay conversaciones recientes que analizar",
+          "description": "La información abarca las conversaciones desde el {{date}}. Las anteriores no se analizan; un administrador puede analizarlas a posteriori."
+        },
+        "failedOnly": {
+          "title": "No se pudo analizar ninguna respuesta",
+          "description_one": "El modelo no pudo analizar {{formatted}} respuesta de este periodo. Lo vuelve a intentar cuando cambian el modelo o sus preguntas.",
+          "description_other": "El modelo no pudo analizar {{formatted}} respuestas de este periodo. Lo vuelve a intentar cuando cambian el modelo o sus preguntas.",
+          "description_many": "El modelo no pudo analizar {{formatted}} respuestas de este periodo. Lo vuelve a intentar cuando cambian el modelo o sus preguntas."
+        },
+        "failed_one": "{{formatted}} respuesta no se pudo analizar",
+        "failed_other": "{{formatted}} respuestas no se pudieron analizar",
+        "failed_many": "{{formatted}} respuestas no se pudieron analizar",
+        "settings": {
+          "button": "Configuración",
+          "title": "Configuración de la información",
+          "saveFailed": "No se pudo guardar la configuración de la información. Inténtalo de nuevo."
+        }
+      },
+      "gaps": {
+        "heading": "Huecos en la documentación",
+        "description": {
+          "page": "Preguntas que la documentación no pudo responder, agrupadas por la página más cercana que encontró la búsqueda.",
+          "source": "Preguntas que la documentación no pudo responder, agrupadas por la fuente de la página más cercana.",
+          "topic": "Preguntas que la documentación no pudo responder, agrupadas por tema."
+        },
+        "groupBy": "Agrupar los huecos por",
+        "groups": {
+          "page": "Página",
+          "source": "Fuente",
+          "topic": "Tema"
+        },
+        "columns": {
+          "gaps": "Huecos",
+          "share": "Porcentaje de preguntas",
+          "change": "Cambio",
+          "example": "Pregunta de ejemplo",
+          "open": "Ejemplos"
+        },
+        "share_one": "{{percent}} de {{formatted}}",
+        "share_other": "{{percent}} de {{formatted}}",
+        "share_many": "{{percent}} de {{formatted}}",
+        "gapsCount_one": "{{formatted}} hueco",
+        "gapsCount_other": "{{formatted}} huecos",
+        "gapsCount_many": "{{formatted}} huecos",
+        "change": {
+          "new": "Nuevo",
+          "none": "Sin cambios",
+          "upLabel": "{{formatted}} más que en el periodo anterior",
+          "downLabel": "{{formatted}} menos que en el periodo anterior",
+          "noEarlier": "Sin datos anteriores"
+        },
+        "noPage": "No se encontró ninguna página",
+        "openRow": "Ver ejemplos de {{name}}",
+        "export": "Exportar CSV",
+        "empty": "No hay huecos en la documentación en este periodo.",
+        "emptyDescription": "Aquí aparecen las preguntas que la documentación no pudo responder.",
+        "loadError": "No se pudieron cargar los huecos en la documentación.",
+        "panel": {
+          "gaps": "Huecos",
+          "share": "Porcentaje de preguntas",
+          "previous": "Periodo anterior",
+          "examples": "Preguntas de ejemplo",
+          "allInLogs": "Ver todos los huecos en los registros"
+        }
+      },
+      "loadError": "No se pudo cargar este gráfico."
     },
     "logs": {
       "label": "Registros",
@@ -851,7 +1055,25 @@
       "feedback": {
         "like": "Me gusta",
         "dislike": "No me gusta"
-      }
+      },
+      "labels": {
+        "filterAll": "Todas las etiquetas",
+        "notAnswered": "No respondida del todo",
+        "docsGap": "Hueco en la documentación",
+        "frustrated": "Frustración",
+        "asksHuman": "Pidió una persona",
+        "negativeReaction": "Volvió a preguntar u objetó",
+        "negativeSentiment": "Sentimiento negativo",
+        "hint": "Las etiquetas son estimaciones y pueden equivocarse.",
+        "conversation": "Conversación",
+        "clearConversation": "Mostrar todas las conversaciones",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "Ningún mensaje coincide con estos filtros.",
+        "filter": "Etiqueta",
+        "topics": "Temas"
+      },
+      "levelFilter": "Nivel",
+      "typeFilter": "Tipo de evento"
     },
     "teams": {
       "label": "Equipos",
@@ -1899,6 +2121,9 @@
         "notice_many": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas.",
         "notice_other": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas."
       }
+    },
+    "insights": {
+      "label": "Información"
     }
   },
   "modals": {
@@ -2571,7 +2796,9 @@
       "tabs": {
         "overview": "Resumen",
         "logs": "Registros",
-        "schedules": "Programaciones"
+        "insights": "Información",
+        "schedules": "Programaciones",
+        "analytics": "Analítica"
       },
       "fallbackName": "Agente sin título",
       "subnavAriaLabel": "Subnavegación del agente"
@@ -2636,7 +2863,8 @@
         "preview": "Vista previa",
         "basics": "Básico",
         "knowledge": "Conocimiento y comportamiento",
-        "model": "Modelo"
+        "model": "Modelo",
+        "analytics": "Información"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
@@ -2862,13 +3090,92 @@
         "stopNote_one": "Deja de ejecutarse si pierdes el acceso de edición.",
         "stopNote_other": "Dejan de ejecutarse si pierdes el acceso de edición.",
         "stopNote_many": "Dejan de ejecutarse si pierdes el acceso de edición."
+      },
+      "analytics": {
+        "enable": "Recopilar información",
+        "enableDescription": "Lee en segundo plano las conversaciones terminadas para estimar si las respuestas ayudaron y dónde se queda corta la documentación. Los resultados aparecen en la pestaña Información y en los registros.",
+        "learnMore": "Más información",
+        "serverOff": "La recopilación de información está desactivada en este servidor, así que estos ajustes aún no tienen efecto. Pide a tu administrador que la active.",
+        "topics": "Temas",
+        "countOf": "{{count}} de {{max}}",
+        "addTopic": "Añadir tema",
+        "itemActions": "Acciones de {{name}}",
+        "edit": "Editar",
+        "remove": "Quitar",
+        "modal": {
+          "addTopic": "Añadir tema",
+          "editTopic": "Editar tema",
+          "name": "Nombre",
+          "description": "Descripción",
+          "submitAdd": "Añadir",
+          "submitSave": "Guardar",
+          "dialogDescription": "El nombre y la descripción le indican al modelo qué va aquí.",
+          "editFolder": "Este tema es la carpeta \"{{name}}\" de las fuentes de este agente. Al guardarlo pasa a ser tuyo y deja de seguir las páginas de la carpeta.",
+          "namePlaceholder": "Facturación",
+          "descriptionHint": "Opcional. Hace la clasificación más precisa: nombra algunas páginas, funciones o palabras que escriben los usuarios.",
+          "descriptionPlaceholder": "Precios, planes, puestos o facturas.",
+          "overlap": "Puede solaparse con otros temas",
+          "overlapDescription": "Se comprueba en cada conversación completa, así que pueden aplicarse varios: para un informe de error o una pregunta de precios que atraviesa la documentación.",
+          "onePickFull": "No caben más de {{max}} temas que no se solapan, así que este puede solaparse.",
+          "overlapFull": "No caben más de {{max}} temas que pueden solaparse, así que este no puede.",
+          "overlapOff": "Este servidor ya no comprueba temas que pueden solaparse, así que este no puede.",
+          "reachOnePick": "Clasifica las preguntas nuevas; las anteriores conservan su tema.",
+          "reachOverlap": "También se comprueba en las conversaciones recientes.",
+          "kindChangeToOverlap": "Este cambio reinicia sus cifras: clasificaba preguntas y ahora se comprobará en conversaciones.",
+          "kindChangeToOnePick": "Este cambio reinicia sus cifras: se comprobaba en conversaciones y ahora clasificará preguntas."
+        },
+        "errors": {
+          "nameRequired": "Escribe un nombre.",
+          "topicNameTooLong": "Demasiado largo. Acórtalo hasta {{max}} caracteres.",
+          "topicNameTaken": "Otro tema ya tiene este nombre.",
+          "topicNameReserved": "Este nombre está reservado para las preguntas que no encajan en ningún tema.",
+          "topicDescriptionTooLong": "Demasiado larga. Acórtala hasta {{max}} (los caracteres chinos, japoneses y coreanos cuentan el triple)."
+        },
+        "digest": "Resumen semanal de huecos en la documentación",
+        "digestDescription": "Una vez a la semana, el propietario del agente recibe un aviso con los principales huecos en la documentación.",
+        "off": "Desactivada",
+        "topicsDescription": "Sobre qué pregunta la gente. Cada pregunta va al tema que mejor encaja.",
+        "fromSources": "De las fuentes",
+        "hide": "Ocultar",
+        "groups": {
+          "onePick": "Uno por pregunta",
+          "overlap": "Pueden solaparse",
+          "overlapDescription": "Se comprueban en conversaciones completas; pueden aplicarse varios."
+        },
+        "notes": {
+          "foldersFailed": "No se pudieron cargar las carpetas de las fuentes de este agente.",
+          "unsaved": "Las carpetas de las fuentes de este agente aparecen al guardarlo.",
+          "unlisted": "Las preguntas también se clasifican en las carpetas de las fuentes de este agente.",
+          "hidden": "Carpetas ocultas: {{names}}",
+          "show": "Mostrar",
+          "cut": "Estas carpetas más pequeñas no caben, así que sus preguntas van a Ninguno de estos temas: {{names}}",
+          "single": "Un solo tema no clasifica nada. Añade otro para empezar.",
+          "full": "Este agente tiene el máximo de temas: {{topics}} que no se solapan y {{overlapping}} que pueden solaparse.",
+          "overOnePick": "Este servidor ahora admite {{max}} temas que no se solapan, menos de los que tiene este agente, así que solo los {{max}} primeros que se añadieron clasifican preguntas. Quita algunos para añadir otros.",
+          "overOverlapping": "Este servidor ahora admite {{max}} temas que pueden solaparse, menos de los que tiene este agente, así que solo se comprueban los {{max}} primeros que se añadieron. Quita algunos para añadir otros.",
+          "overlapOff": "Este servidor ya no comprueba temas que pueden solaparse, así que estos no se comprueban. Edita uno para que clasifique preguntas o quítalo."
+        },
+        "empty": {
+          "title": "Aún no hay temas",
+          "workflow": "Añade sobre qué pregunta la gente. Cada pregunta va al tema que mejor encaja.",
+          "unsaved": "Los temas de las fuentes de este agente aparecen al guardarlo. Puedes añadir los tuyos ahora.",
+          "noFolders": "Las fuentes de este agente no tienen carpetas para clasificar las preguntas. Añade tus propios temas.",
+          "allHidden": "Todas las carpetas de las fuentes de este agente están ocultas, así que las preguntas no se clasifican.",
+          "showFolders": "Mostrar carpetas"
+        },
+        "removeTopic": {
+          "title": "¿Quitar \"{{name}}\"?",
+          "description": "Puede solaparse, así que tiene resultados propios. Desaparecen de Información y de los registros, y si vuelves a añadirlo, empieza desde cero.",
+          "submit": "Quitar"
+        }
       }
     },
     "logs": {
       "title": "Registros del Agente",
       "lastUsedAt": "Último uso",
       "noUsageHistory": "Sin historial de uso",
-      "tableHeader": "Registros del endpoint del agente"
+      "tableHeader": "Registros del endpoint del agente",
+      "description": "Llamadas a la API, ejecuciones programadas y errores de este agente."
     },
     "schedules": {
       "title": "Programaciones del Agente",
@@ -3101,7 +3408,6 @@
     "guardrailEvents": {
       "heading": "Actividad de las barreras de protección",
       "description": "Cada control que se activó en este agente y cada uno que no pudo ejecutarse.",
-      "lastDays": "Últimos {{count}} días",
       "blocked": "Bloqueado",
       "redacted": "Censurado",
       "flagged": "Marcado",
@@ -3348,7 +3654,11 @@
     "pageRange_one": "{{from}}–{{to}} de {{formatted}} agente",
     "pageRange_other": "{{from}}–{{to}} de {{formatted}} agentes",
     "pageRange_many": "{{from}}–{{to}} de {{formatted}} agentes",
-    "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer."
+    "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer.",
+    "analytics": {
+      "subtitle": "Volumen de mensajes, uso de tokens y comentarios de usuarios de este agente."
+    },
+    "loadError": "No se pudo cargar este agente."
   },
   "components": {
     "fileUpload": {
@@ -3447,9 +3757,9 @@
       "groups": {
         "personal": "Personal",
         "workspace": "Espacio de trabajo",
-        "insights": "Estadísticas",
         "administration": "Administración",
-        "automations": "Automatizaciones"
+        "automations": "Automatizaciones",
+        "monitoring": "Supervisión"
       }
     },
     "openSidebar": "Abrir barra lateral",

@@ -1,7 +1,7 @@
 ---
 title: Agent Guardrails
 description: Scan user input, attached files, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns, or a local model that withholds only the flagged document or file), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, the rules every agent follows and the defaults for new agents (Admin), and the API reference.
-lastUpdated: 2026-10-18
+lastUpdated: 2026-10-21
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -339,7 +339,7 @@ Writes are validated **strictly**. The request is rejected with HTTP 400 and the
 - the same `(check, stage)` pair appears twice, or there are more than 50 controls;
 - `mode`, `timeout_ms` or `block_message` is out of bounds.
 
-Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
+Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. A save that sends the guardrails back exactly as stored, such as a change to the agent's insights settings, keeps them as they are without validating them again, so such a control neither blocks the save nor is lost: it runs again once its check is allowed. Leaving it out of a save removes it, and counts as a policy change. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
 
 ### What a blocked turn looks like to a client
 
@@ -358,7 +358,7 @@ Every control that **triggers**, and every control that **could not run**, write
 
 ### Guardrail activity panel
 
-Open an agent's **Logs** page. Below the usage logs, the **Guardrail activity** panel shows, for a trailing window of 7, 30 or 90 days:
+Open an agent's **Logs** page (under **Monitoring** in its sidebar). Above its log list, the **Guardrail activity** panel shows, for a trailing window of 7, 30 or 90 days:
 
 - four totals — **Blocked**, **Redacted**, **Flagged** and **Not evaluated** — because "we refused to answer", "we masked something", "we noticed something" and "a check silently stopped working" are four different problems;
 - a per-check breakdown, so you can see which control is doing the firing;

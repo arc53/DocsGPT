@@ -163,3 +163,42 @@ describe('SelectContent capped', () => {
     expect(viewport.className).not.toContain('max-h-75');
   });
 });
+
+describe('SelectContent fit', () => {
+  const open = (fit?: boolean) => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => {
+      root!.render(
+        <Select open value="a">
+          <SelectTrigger aria-label="Filter">a</SelectTrigger>
+          <SelectContent fit={fit}>
+            <SelectItem value="a">A</SelectItem>
+          </SelectContent>
+        </Select>,
+      );
+    });
+    return document
+      .querySelector<HTMLElement>('[data-slot="select-content"]')!
+      .className.split(' ');
+  };
+
+  it('sizes the list to its longest option, never narrower than the trigger nor wider than the window', () => {
+    const classes = open(true);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'w-auto',
+        'min-w-(--radix-select-trigger-width)',
+        'max-w-(--radix-select-content-available-width)',
+      ]),
+    );
+    expect(classes).not.toContain('w-(--radix-select-trigger-width)');
+  });
+
+  it('is as wide as its trigger by default', () => {
+    const classes = open();
+    expect(classes).toContain('w-(--radix-select-trigger-width)');
+    expect(classes).not.toContain('w-auto');
+  });
+});
