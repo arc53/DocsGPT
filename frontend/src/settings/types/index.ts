@@ -345,7 +345,10 @@ export type ConversationInsights = {
   languages: Record<string, number>;
   /** Labels whose share of weaker languages is high enough to say so. */
   language_warnings: string[];
-  tags: { id: string; name: string }[];
+  /** On an agent's page: the options of its topic question (none under two). */
+  one_pick: string[];
+  /** On an agent's page: its topics that can overlap; totals under `tag:<id>`. */
+  overlapping: { id: string; name: string }[];
   totals: Record<string, InsightLabelTotals>;
   series: InsightSeriesBucket[];
 };
@@ -374,4 +377,12 @@ export type DocsGapRow = {
   high: number;
   previous_expected: number;
   examples: DocsGapExample[];
+};
+
+/** GET /api/analytics/topics: one of an agent's topics and the Logs `label` that filters by it. */
+export type AgentTopic = {
+  /** `topic:<name>` for one that doesn't overlap, `tag:<id>` for one that can. */
+  label: string;
+  name: string;
+  overlap: boolean;
 };

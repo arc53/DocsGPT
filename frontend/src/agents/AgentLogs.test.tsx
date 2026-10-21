@@ -7,8 +7,20 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'token' }));
 const agentRead = vi.hoisted(() => ({ ok: true, calls: 0 }));
+const TOPICS = vi.hoisted(() => [
+  { label: 'topic:Setup', name: 'Setup', overlap: false },
+  { label: 'tag:a1b2c3d4', name: 'Pricing', overlap: true },
+]);
+const topicsRead = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../api/services/userService', () => ({
   default: {
+    getAgentTopics: (...args: unknown[]) => {
+      topicsRead.calls.push(args);
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, topics: TOPICS }),
+      });
+    },
     getAgent: () =>
       Promise.resolve({
         ok: (agentRead.calls++, agentRead.ok),
@@ -114,17 +126,9 @@ describe('AgentLogs', () => {
         </MemoryRouter>,
       );
     });
-    expect(seen.logs.at(-1)).toEqual({
-      enabled: true,
-      tags: [
-        {
-          id: 'a1b2c3d4',
-          name: 'Pricing',
-          description: 'Prices',
-          overlap: true,
-        },
-      ],
-    });
+    // Its topics as the server lists them: folders and own, each with its filter.
+    expect(seen.logs.at(-1)).toEqual({ enabled: true, topics: TOPICS });
+    expect(topicsRead.calls.at(-1)).toEqual(['a1', 'token']);
     expect(
       container.querySelector('#logs [data-testid="logs"]'),
     ).not.toBeNull();

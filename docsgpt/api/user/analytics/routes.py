@@ -934,8 +934,8 @@ class GetConversationInsights(Resource):
             "that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' "
             "(from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' "
             "(still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). "
-            "For an agent, 'overlapping' lists its topics that can overlap; each one's totals are under "
-            "'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list."
+            "For an agent, 'one_pick' lists the options of its topic question (empty when it asks none) "
+            "and 'overlapping' its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list."
         )
     )
     def post(self):
@@ -965,6 +965,7 @@ class GetConversationInsights(Resource):
             "coverage": dict(_EMPTY_COVERAGE),
             "languages": {},
             "language_warnings": [],
+            "one_pick": [],
             "overlapping": [],
             "totals": {},
             "series": [],
@@ -979,6 +980,10 @@ class GetConversationInsights(Resource):
                 result["enabled"] = available and (agent is None or config.enabled)
                 if agent is not None:
                     result["overlapping"] = [{"id": topic.id, "name": topic.name} for topic in config.overlapping()]
+                    try:
+                        result["one_pick"] = list(analytics_topics.options(conn, agent, config))
+                    except Exception:  # noqa: BLE001 - a broken source structure costs the list, not the page
+                        current_app.logger.warning("No topic list for agent %s", agent_pg_id, exc_info=True)
                 if not result["enabled"]:
                     return make_response(jsonify(result), 200)
 

@@ -698,8 +698,6 @@
           "sentiment": "Sentiment over time",
           "whyNot": "Why not fully answered",
           "requestType": "Request type",
-          "topic": "Topic",
-          "tags": "Tags",
           "implicitFeedback": "Replies to answers",
           "shareOfAnswers_one": "Share of {{formatted}} answer",
           "shareOfAnswers_other": "Share of {{formatted}} answers",
@@ -715,7 +713,14 @@
           "empty": "Nothing to show for this period.",
           "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "Of {{formatted}} question",
-          "ofQuestions_other": "Of {{formatted}} questions"
+          "ofQuestions_other": "Of {{formatted}} questions",
+          "topics": "Topics",
+          "overlapNote": "A conversation can count under several, so these don't add up to 100%.",
+          "noTopics": {
+            "title": "No topics yet",
+            "description": "Add topics to see what people ask about.",
+            "action": "Set up topics"
+          }
         },
         "labelNamesInline": {
           "answer_status": "answer status",
@@ -1013,13 +1018,13 @@
         "asksHuman": "Asked for a person",
         "negativeReaction": "Asked again or pushed back",
         "negativeSentiment": "Negative sentiment",
-        "tags": "Tags",
         "hint": "Labels are estimates and can be wrong.",
         "conversation": "Conversation",
         "clearConversation": "Show all conversations",
         "more": "+{{formatted}}",
         "emptyForFilter": "No messages match these filters.",
-        "filter": "Label"
+        "filter": "Label",
+        "topics": "Topics"
       },
       "levelFilter": "Level",
       "typeFilter": "Event type"

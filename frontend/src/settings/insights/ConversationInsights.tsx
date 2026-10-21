@@ -74,6 +74,8 @@ type ConversationInsightsProps = {
   agent?: Agent;
   /** Opens the page's insights settings switched on (the off state's Turn on). */
   onTurnOn?: () => void;
+  /** Opens the page's insights settings (an agent without topics). */
+  onSetUpTopics?: () => void;
   filterOption: string;
   onRetry: () => void;
   /**
@@ -142,6 +144,7 @@ export default function ConversationInsights({
   onRetry,
   intro = true,
   onTurnOn,
+  onSetUpTopics,
 }: ConversationInsightsProps) {
   const { t } = useTranslation();
   const canEditAgent = Boolean(agent) && canAgent(agent, 'edit');
@@ -214,7 +217,10 @@ export default function ConversationInsights({
       <>
         <LanguageNote data={data} />
         <InsightTiles data={data} />
-        <InsightPanels data={data} />
+        <InsightPanels
+          data={data}
+          onSetUpTopics={canEditAgent ? onSetUpTopics : undefined}
+        />
       </>
     );
 
@@ -486,7 +492,13 @@ function InsightTiles({ data }: { data: Insights }) {
 }
 
 /** The panel grid: answer status over time, then the share-bar panels. */
-function InsightPanels({ data }: { data: Insights }) {
+function InsightPanels({
+  data,
+  onSetUpTopics,
+}: {
+  data: Insights;
+  onSetUpTopics?: () => void;
+}) {
   const { t } = useTranslation();
   const { totals } = data;
 
@@ -501,28 +513,6 @@ function InsightPanels({ data }: { data: Insights }) {
     (option) => optionName(t, 'request_type', option),
     { last: ['other'] },
   );
-  const topic = totals.topic_effective;
-  const topicRows = optionBars(
-    topic,
-    (option) =>
-      option === NONE_OF_THESE
-        ? t('settings.analytics.insights.panels.noneOfThese')
-        : option,
-    { last: [NONE_OF_THESE] },
-  );
-  const tagN = Math.max(
-    0,
-    ...data.tags.map((tag) => totals[`tag:${tag.id}`]?.n ?? 0),
-  );
-  const tagRows: BarRow[] = data.tags.map((tag) => {
-    const tagTotals = totals[`tag:${tag.id}`];
-    const yes = tagTotals?.options.yes;
-    return {
-      key: tag.id,
-      label: tag.name,
-      rate: yes && (tagTotals?.n ?? 0) >= MIN_SAMPLE ? yes.rate : undefined,
-    };
-  });
 
   const bars: Omit<BarsPanelProps, 'wide'>[] = [
     {
@@ -538,28 +528,10 @@ function InsightPanels({ data }: { data: Insights }) {
       rows: gapRows,
     },
   ];
-  if (data.tags.length > 0)
-    bars.push({
-      title: t('settings.analytics.insights.panels.tags'),
-      n: tagN,
-      denominatorKey: 'shareOfConversations',
-      rows: tagRows,
-      // A tag's own sample is checked per row: a new tag shows "—"
-      // beside older ones.
-      alwaysRows: true,
-    });
-  if (topic && topic.n > 0)
-    bars.push({
-      title: t('settings.analytics.insights.panels.topic'),
-      n: topic.n,
-      denominatorKey: 'shareOfMessages',
-      rows: topicRows,
-    });
 
   // Rows of two with equal heights, paired by length: the three charts
-  // first, the third beside request type's nine rows, then the two short
-  // lists (why not, tags). An odd one out, usually topics, takes the whole
-  // row and lays its bars in two columns.
+  // first, the third beside request type's nine rows, then why not alone,
+  // with its bars in two columns. Topics always spans the grid below them.
   const odd = (CHARTS + bars.length) % 2 === 1;
   return (
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -573,7 +545,130 @@ function InsightPanels({ data }: { data: Insights }) {
           wide={odd && index === bars.length - 1}
         />
       ))}
+      <TopicsPanel data={data} onSetUp={onSetUpTopics} />
     </div>
+  );
+}
+
+/**
+ * What people ask about, across the grid: one half per kind of topic, since
+ * they count different things. Topics that don't overlap are a share of
+ * messages and add up to 100%; those that can overlap are a share of
+ * conversations, each on its own. With one kind only, its bars take both
+ * columns. An agent that asks no topic question and has none that overlap
+ * shows its editors the way to set them up, and nothing to anyone else.
+ */
+function TopicsPanel({
+  data,
+  onSetUp,
+}: {
+  data: Insights;
+  onSetUp?: () => void;
+}) {
+  const { t } = useTranslation();
+  const { totals } = data;
+  const title = t('settings.analytics.insights.panels.topics');
+
+  const topic = totals.topic_effective;
+  const onePickN = topic?.n ?? 0;
+  const onePickRows = optionBars(
+    topic,
+    (option) =>
+      option === NONE_OF_THESE
+        ? t('settings.analytics.insights.panels.noneOfThese')
+        : option,
+    { last: [NONE_OF_THESE] },
+  );
+  const overlapping = data.overlapping ?? [];
+  const overlapN = Math.max(
+    0,
+    ...overlapping.map((item) => totals[`tag:${item.id}`]?.n ?? 0),
+  );
+  // Largest share first, as the other half; one without a figure yet last.
+  const overlapRows: BarRow[] = overlapping.map((item) => {
+    const itemTotals = totals[`tag:${item.id}`];
+    const yes = itemTotals?.options.yes;
+    return {
+      key: item.id,
+      label: item.name,
+      rate: yes && (itemTotals?.n ?? 0) >= MIN_SAMPLE ? yes.rate : undefined,
+    };
+  });
+  overlapRows.sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1));
+
+  const hasOnePick = onePickN > 0;
+  const hasOverlap = overlapping.length > 0;
+  const card = (children: ReactNode) => (
+    <Card variant="subtle" padding="lg" className="w-full xl:col-span-2">
+      <SectionHeader as="h2" size="xs" title={title} />
+      {children}
+    </Card>
+  );
+
+  if (!hasOnePick && !hasOverlap) {
+    // Under two options the agent asks no topic question.
+    if (!onSetUp || (data.one_pick ?? []).length >= 2) return null;
+    return card(
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={t('settings.analytics.insights.panels.noTopics.title')}
+        description={t(
+          'settings.analytics.insights.panels.noTopics.description',
+        )}
+        action={
+          <Button
+            type="button"
+            variant="outline"
+            size="field"
+            shape="pill"
+            onClick={onSetUp}
+          >
+            {t('settings.analytics.insights.panels.noTopics.action')}
+          </Button>
+        }
+      />,
+    );
+  }
+
+  const onePickTitle = t('agents.form.analytics.groups.onePick');
+  const overlapTitle = t('agents.form.analytics.groups.overlap');
+  // A half's list is named by its heading; one kind alone, by the panel's.
+  const onePick = (columns: 1 | 2, ariaLabel = title) => (
+    <ShareBody
+      ariaLabel={ariaLabel}
+      n={onePickN}
+      denominatorKey="shareOfMessages"
+      rows={onePickRows}
+      columns={columns}
+    />
+  );
+  // Each topic that can overlap checks its own sample: a new one shows "—".
+  const overlap = (columns: 1 | 2, ariaLabel = title) => (
+    <ShareBody
+      ariaLabel={ariaLabel}
+      n={overlapN}
+      denominatorKey="shareOfConversations"
+      rows={overlapRows}
+      columns={columns}
+      alwaysRows
+      note={t('settings.analytics.insights.panels.overlapNote')}
+    />
+  );
+
+  if (!hasOverlap) return card(onePick(2));
+  if (!hasOnePick) return card(overlap(2));
+  const half = (heading: string, body: ReactNode) => (
+    <div className="flex min-w-0 flex-col gap-3">
+      <SectionHeader as="h3" size="sm" title={heading} />
+      {body}
+    </div>
+  );
+  return card(
+    <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
+      {half(onePickTitle, onePick(1, onePickTitle))}
+      {half(overlapTitle, overlap(1, overlapTitle))}
+    </div>,
   );
 }
 
@@ -651,11 +746,14 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
   );
 }
 
+type Denominator =
+  'shareOfAnswers' | 'shareOfMessages' | 'shareOfConversations';
+
 type BarsPanelProps = {
   title: string;
   /** What every figure in the panel is a share of. */
   n: number;
-  denominatorKey: 'shareOfAnswers' | 'shareOfMessages' | 'shareOfConversations';
+  denominatorKey: Denominator;
   rows: BarRow[];
   /** Draw the rows even under the sample floor (they check their own). */
   alwaysRows?: boolean;
@@ -671,8 +769,6 @@ function BarsPanel({
   alwaysRows = false,
   wide = false,
 }: BarsPanelProps) {
-  const { t } = useTranslation();
-  const enough = alwaysRows || n >= MIN_SAMPLE;
   return (
     <Card
       variant="subtle"
@@ -680,31 +776,69 @@ function BarsPanel({
       className={cn('w-full', wide && 'xl:col-span-2')}
     >
       <SectionHeader as="h2" size="xs" title={title} />
-      {!enough ? (
-        <EmptyState
-          size="sm"
-          illustration="none"
-          title={t('settings.analytics.insights.notEnoughShort')}
-        />
-      ) : rows.length === 0 ? (
-        <EmptyState
-          size="sm"
-          illustration="none"
-          title={t('settings.analytics.insights.panels.empty')}
-        />
-      ) : (
-        <>
-          {n > 0 && (
-            <p className="text-muted-foreground text-xs">
-              {t(`settings.analytics.insights.panels.${denominatorKey}`, {
-                count: n,
-                formatted: formatCount(n),
-              })}
-            </p>
-          )}
-          <ShareBars rows={rows} ariaLabel={title} columns={wide ? 2 : 1} />
-        </>
-      )}
+      <ShareBody
+        ariaLabel={title}
+        n={n}
+        denominatorKey={denominatorKey}
+        rows={rows}
+        alwaysRows={alwaysRows}
+        columns={wide ? 2 : 1}
+      />
     </Card>
+  );
+}
+
+/**
+ * A share list's body: what it is a share of, then its bars; "Not enough
+ * data yet" under the sample floor, and "Nothing to show" without rows.
+ */
+function ShareBody({
+  ariaLabel,
+  n,
+  denominatorKey,
+  rows,
+  alwaysRows = false,
+  columns,
+  note,
+}: {
+  ariaLabel: string;
+  n: number;
+  denominatorKey: Denominator;
+  rows: BarRow[];
+  alwaysRows?: boolean;
+  columns: 1 | 2;
+  /** A muted line under the bars. */
+  note?: string;
+}) {
+  const { t } = useTranslation();
+  if (!alwaysRows && n < MIN_SAMPLE)
+    return (
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={t('settings.analytics.insights.notEnoughShort')}
+      />
+    );
+  if (rows.length === 0)
+    return (
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={t('settings.analytics.insights.panels.empty')}
+      />
+    );
+  return (
+    <>
+      {n > 0 && (
+        <p className="text-muted-foreground text-xs">
+          {t(`settings.analytics.insights.panels.${denominatorKey}`, {
+            count: n,
+            formatted: formatCount(n),
+          })}
+        </p>
+      )}
+      <ShareBars rows={rows} ariaLabel={ariaLabel} columns={columns} />
+      {note && <p className="text-muted-foreground text-xs">{note}</p>}
+    </>
   );
 }

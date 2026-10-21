@@ -742,8 +742,6 @@
           "sentiment": "Настроение во времени",
           "whyNot": "Почему ответ неполный",
           "requestType": "Тип запроса",
-          "topic": "Тема",
-          "tags": "Теги",
           "implicitFeedback": "Реплики на ответы",
           "shareOfAnswers_one": "Доля от {{formatted}} ответа",
           "shareOfAnswers_other": "Доля от {{formatted}} ответа",
@@ -769,7 +767,14 @@
           "ofQuestions_one": "Из {{formatted}} вопроса",
           "ofQuestions_other": "Из {{formatted}} вопроса",
           "ofQuestions_many": "Из {{formatted}} вопросов",
-          "ofQuestions_few": "Из {{formatted}} вопросов"
+          "ofQuestions_few": "Из {{formatted}} вопросов",
+          "topics": "Темы",
+          "overlapNote": "Один разговор может попасть в несколько тем, поэтому в сумме не 100 %.",
+          "noTopics": {
+            "title": "Тем пока нет",
+            "description": "Добавьте темы, чтобы видеть, о чём спрашивают люди.",
+            "action": "Настроить темы"
+          }
         },
         "labelNamesInline": {
           "answer_status": "статус ответов",
@@ -1087,13 +1092,13 @@
         "asksHuman": "Просил человека",
         "negativeReaction": "Переспросил или возразил",
         "negativeSentiment": "Негативное настроение",
-        "tags": "Теги",
         "hint": "Метки — это оценки, и они могут ошибаться.",
         "conversation": "Разговор",
         "clearConversation": "Показать все разговоры",
         "more": "+{{formatted}}",
         "emptyForFilter": "Нет сообщений, подходящих под эти фильтры.",
-        "filter": "Метка"
+        "filter": "Метка",
+        "topics": "Темы"
       },
       "levelFilter": "Уровень",
       "typeFilter": "Тип события"

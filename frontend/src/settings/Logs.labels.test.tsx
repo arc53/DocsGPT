@@ -124,7 +124,7 @@ describe('Logs label filter and drill-down', () => {
   it('names each filter, and lets each grow to its longest value', async () => {
     await render('/agents/manage/logs/a1', {
       agentId: 'a1',
-      analytics: { enabled: true, tags: [] },
+      analytics: { enabled: true, topics: [] },
     });
     const triggers = Array.from(
       container.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]'),
@@ -162,12 +162,12 @@ describe('Logs label filter and drill-down', () => {
   it("hides it on an agent's Logs while the agent has analytics off", async () => {
     await render('/agents/manage/logs/a1', {
       agentId: 'a1',
-      analytics: { enabled: false, tags: [] },
+      analytics: { enabled: false, topics: [] },
     });
     expect(labelFilter()).toBeNull();
     await render('/agents/manage/logs/a1', {
       agentId: 'a1',
-      analytics: { enabled: true, tags: [] },
+      analytics: { enabled: true, topics: [] },
     });
     expect(labelFilter()).not.toBeNull();
   });
@@ -178,6 +178,34 @@ describe('Logs label filter and drill-down', () => {
     expect(labelFilter()).not.toBeNull();
     expect(lastRequest().label).toBe('docs_gap');
     expect(container.textContent).toContain('settings.logs.labels.hint');
+  });
+
+  it("offers the agent's topics in one group, and keeps a topic from a link", async () => {
+    await render('/agents/manage/logs/a1?label=topic:deploying', {
+      agentId: 'a1',
+      analytics: {
+        enabled: true,
+        topics: [
+          { label: 'topic:billing', name: 'billing', overlap: false },
+          { label: 'tag:a1b2c3d4', name: 'Bug report', overlap: true },
+        ],
+      },
+    });
+    expect(lastRequest().label).toBe('topic:deploying');
+    const trigger = labelFilter() as HTMLElement;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const menu = document.querySelector<HTMLElement>(
+      '[data-slot="select-content"]',
+    )!;
+    expect(menu.textContent).toContain('settings.logs.labels.topics');
+    const options = Array.from(
+      menu.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).map((option) => option.textContent);
+    expect(options.slice(-3)).toEqual(['billing', 'Bug report', 'deploying']);
   });
 
   it('ignores a label the API would refuse', async () => {

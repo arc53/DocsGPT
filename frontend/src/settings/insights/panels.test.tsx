@@ -66,7 +66,8 @@ const insights = (n: number): ConversationInsights => ({
   labelling_from: '2026-10-13T12:00:00Z',
   languages: {},
   language_warnings: [],
-  tags: [],
+  one_pick: [],
+  overlapping: [],
   totals: {
     reaction: {
       tier: 'estimated',

@@ -10,11 +10,19 @@ export const LOG_LABELS = [
   'negative_sentiment',
 ] as const;
 
-export type LogLabel = (typeof LOG_LABELS)[number] | `tag:${string}`;
+export type LogLabel =
+  (typeof LOG_LABELS)[number] | `tag:${string}` | `topic:${string}`;
+
+/** A topic name's longest form (the server's `TOPIC_NAME_CHARS`). */
+const TOPIC_NAME_MAX = 60;
 
 /** Whether a `label` URL value is one the Logs filter can send. */
 export function isLogLabel(value: string | null): value is LogLabel {
   if (!value) return false;
+  if (value.startsWith('topic:')) {
+    const name = value.slice('topic:'.length);
+    return name.trim().length > 0 && name.length <= TOPIC_NAME_MAX;
+  }
   return (
     (LOG_LABELS as readonly string[]).includes(value) ||
     /^tag:[a-z0-9]{8,32}$/.test(value)

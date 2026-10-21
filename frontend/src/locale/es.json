@@ -720,8 +720,6 @@
           "sentiment": "Sentimiento a lo largo del tiempo",
           "whyNot": "Por qué no se respondió del todo",
           "requestType": "Tipo de solicitud",
-          "topic": "Tema",
-          "tags": "Etiquetas",
           "implicitFeedback": "Réplicas a las respuestas",
           "shareOfAnswers_one": "Porcentaje de {{formatted}} respuesta",
           "shareOfAnswers_other": "Porcentaje de {{formatted}} respuestas",
@@ -742,7 +740,14 @@
           "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "De {{formatted}} pregunta",
           "ofQuestions_other": "De {{formatted}} preguntas",
-          "ofQuestions_many": "De {{formatted}} preguntas"
+          "ofQuestions_many": "De {{formatted}} preguntas",
+          "topics": "Temas",
+          "overlapNote": "Una conversación puede contar en varios, así que no suman 100 %.",
+          "noTopics": {
+            "title": "Aún no hay temas",
+            "description": "Añade temas para ver sobre qué pregunta la gente.",
+            "action": "Configurar temas"
+          }
         },
         "labelNamesInline": {
           "answer_status": "el estado de las respuestas",
@@ -1050,13 +1055,13 @@
         "asksHuman": "Pidió una persona",
         "negativeReaction": "Volvió a preguntar u objetó",
         "negativeSentiment": "Sentimiento negativo",
-        "tags": "Etiquetas propias",
         "hint": "Las etiquetas son estimaciones y pueden equivocarse.",
         "conversation": "Conversación",
         "clearConversation": "Mostrar todas las conversaciones",
         "more": "+{{formatted}}",
         "emptyForFilter": "Ningún mensaje coincide con estos filtros.",
-        "filter": "Etiqueta"
+        "filter": "Etiqueta",
+        "topics": "Temas"
       },
       "levelFilter": "Nivel",
       "typeFilter": "Tipo de evento"

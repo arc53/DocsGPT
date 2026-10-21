@@ -87,6 +87,7 @@ export default function AgentInsights() {
             filterOption={timeFilter}
             onRetry={insights.retry}
             onTurnOn={canEdit ? () => openSettings(true) : undefined}
+            onSetUpTopics={canEdit ? () => openSettings(false) : undefined}
           />
         )
       )}

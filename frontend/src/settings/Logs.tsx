@@ -47,7 +47,7 @@ import TraceSheet from './traces/TraceSheet';
 import { isLogLabel, LOG_LABELS, revealElement } from './logsLinks';
 import { mergeLoadedPages, newestFirst, uniqueLogs } from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
-import { LogData, TraceRef } from './types';
+import { AgentTopic, LogData, TraceRef } from './types';
 
 /** How often page 1 reloads while it shows a run: runs by other people on a
  * shared agent send their events to them, not to the owner. */
@@ -76,10 +76,10 @@ type LogsProps = {
   tableHeader?: string;
   /**
    * An agent's analytics: whether its conversations are labelled (the label
-   * filter shows only then) and its tags, offered as filters and named on
-   * the rows' chips. Left out on the account's Logs.
+   * filter shows only then) and its topics, offered as filters; those that
+   * can overlap also name the rows' chips. Left out on the account's Logs.
    */
-  analytics?: { enabled: boolean; tags: { id: string; name: string }[] };
+  analytics?: { enabled: boolean; topics: AgentTopic[] };
 };
 
 export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
@@ -102,12 +102,16 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
   const labelsOn =
     serverLabels && (agentId ? Boolean(analytics?.enabled) : true);
   const showLabelFilter = labelsOn || labelFilter !== null;
-  // Tag names from the agent's settings, then from each page's `tag_names`.
+  // Chip names of the agent's overlapping topics (`tag:<id>`), then from
+  // each page's `tag_names`.
   const [pageTagNames, setPageTagNames] = useState<Record<string, string>>({});
+  const agentTopics = analytics?.topics ?? [];
   const tagNames = {
     ...pageTagNames,
     ...Object.fromEntries(
-      (analytics?.tags ?? []).map((tag) => [tag.id, tag.name]),
+      agentTopics
+        .filter((topic) => topic.label.startsWith('tag:'))
+        .map((topic) => [topic.label.slice('tag:'.length), topic.name]),
     ),
   };
   const [logsByPage, setLogsByPage] = useState<Record<number, LogData[]>>({});
@@ -418,18 +422,22 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
     { label: t('settings.logs.feedback.dislike'), value: 'dislike' },
   ];
 
-  // The agent's tags, and the one in the URL even if it isn't one of them.
-  const tagOptions = [...(analytics?.tags ?? [])];
+  // The agent's topics, and the one in the URL even if it isn't one of them.
+  const topicOptions: { label: string; name: string }[] = [...agentTopics];
   if (
-    labelFilter?.startsWith('tag:') &&
-    !tagOptions.some((tag) => `tag:${tag.id}` === labelFilter)
+    labelFilter &&
+    (labelFilter.startsWith('tag:') || labelFilter.startsWith('topic:')) &&
+    !topicOptions.some((topic) => topic.label === labelFilter)
   ) {
-    const id = labelFilter.slice(4);
-    tagOptions.push({ id, name: tagNames[id] ?? id });
+    const name = labelFilter.startsWith('tag:')
+      ? (tagNames[labelFilter.slice('tag:'.length)] ??
+        labelFilter.slice('tag:'.length))
+      : labelFilter.slice('topic:'.length);
+    topicOptions.push({ label: labelFilter, name });
   }
-  const selectedTagName = labelFilter?.startsWith('tag:')
-    ? tagOptions.find((tag) => `tag:${tag.id}` === labelFilter)?.name
-    : undefined;
+  const selectedTopicName = topicOptions.find(
+    (topic) => topic.label === labelFilter,
+  )?.name;
   const drilledDown = labelFilter !== null || conversationFilter !== null;
 
   return (
@@ -483,7 +491,7 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
                 size="field"
                 shape="pill"
                 aria-label={t('settings.logs.labels.filter')}
-                title={selectedTagName}
+                title={selectedTopicName}
                 data-testid="logs-label-filter"
               >
                 <SelectValue
@@ -499,16 +507,16 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
                     {t(`settings.logs.labels.${LABEL_KEYS[label]}`)}
                   </SelectItem>
                 ))}
-                {tagOptions.length > 0 && (
+                {topicOptions.length > 0 && (
                   <>
                     <SelectSeparator />
                     <SelectGroup>
                       <SelectLabel>
-                        {t('settings.logs.labels.tags')}
+                        {t('settings.logs.labels.topics')}
                       </SelectLabel>
-                      {tagOptions.map((tag) => (
-                        <SelectItem key={tag.id} value={`tag:${tag.id}`}>
-                          {tag.name}
+                      {topicOptions.map((topic) => (
+                        <SelectItem key={topic.label} value={topic.label}>
+                          {topic.name}
                         </SelectItem>
                       ))}
                     </SelectGroup>

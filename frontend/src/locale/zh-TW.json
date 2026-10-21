@@ -696,8 +696,6 @@
           "sentiment": "情緒隨時間變化",
           "whyNot": "未完整回答的原因",
           "requestType": "請求類型",
-          "topic": "主題",
-          "tags": "標籤",
           "implicitFeedback": "對回答的回覆",
           "shareOfAnswers_one": "佔 {{formatted}} 則回答的比例",
           "shareOfAnswers_other": "佔 {{formatted}} 則回答的比例",
@@ -713,7 +711,14 @@
           "empty": "此期間沒有可顯示的內容。",
           "tooltipShare": "{{name}}：{{value}}",
           "ofQuestions_one": "共 {{formatted}} 個問題",
-          "ofQuestions_other": "共 {{formatted}} 個問題"
+          "ofQuestions_other": "共 {{formatted}} 個問題",
+          "topics": "主題",
+          "overlapNote": "一段對話可能計入多個主題，因此合計不等於 100%。",
+          "noTopics": {
+            "title": "還沒有主題",
+            "description": "新增主題，看看使用者在問什麼。",
+            "action": "設定主題"
+          }
         },
         "labelNamesInline": {
           "answer_status": "回答狀態",
@@ -1011,13 +1016,13 @@
         "asksHuman": "要求真人",
         "negativeReaction": "再次提問或反駁",
         "negativeSentiment": "負面情緒",
-        "tags": "自訂標籤",
         "hint": "標註是估算結果，可能有誤。",
         "conversation": "對話",
         "clearConversation": "顯示所有對話",
         "more": "+{{formatted}}",
         "emptyForFilter": "沒有符合這些篩選條件的訊息。",
-        "filter": "標註"
+        "filter": "標註",
+        "topics": "主題"
       },
       "levelFilter": "層級",
       "typeFilter": "事件類型"

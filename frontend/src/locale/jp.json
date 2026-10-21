@@ -696,8 +696,6 @@
           "sentiment": "感情の推移",
           "whyNot": "完全に回答されなかった理由",
           "requestType": "依頼の種類",
-          "topic": "トピック",
-          "tags": "タグ",
           "implicitFeedback": "回答への返信",
           "shareOfAnswers_one": "回答 {{formatted}} 件に占める割合",
           "shareOfAnswers_other": "回答 {{formatted}} 件に占める割合",
@@ -713,7 +711,14 @@
           "empty": "この期間に表示する内容はありません。",
           "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "質問 {{formatted}} 件中",
-          "ofQuestions_other": "質問 {{formatted}} 件中"
+          "ofQuestions_other": "質問 {{formatted}} 件中",
+          "topics": "トピック",
+          "overlapNote": "1つの会話が複数に数えられることがあるため、合計は100%になりません。",
+          "noTopics": {
+            "title": "トピックはまだありません",
+            "description": "トピックを追加すると、ユーザーが何について尋ねているかがわかります。",
+            "action": "トピックを設定"
+          }
         },
         "labelNamesInline": {
           "answer_status": "回答状況",
@@ -1011,13 +1016,13 @@
         "asksHuman": "担当者を希望",
         "negativeReaction": "再質問・反論",
         "negativeSentiment": "否定的な感情",
-        "tags": "タグ",
         "hint": "ラベルは推定であり、誤っていることがあります。",
         "conversation": "会話",
         "clearConversation": "すべての会話を表示",
         "more": "+{{formatted}}",
         "emptyForFilter": "これらのフィルターに一致するメッセージはありません。",
-        "filter": "ラベル"
+        "filter": "ラベル",
+        "topics": "トピック"
       },
       "levelFilter": "レベル",
       "typeFilter": "イベントの種類"

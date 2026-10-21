@@ -698,8 +698,6 @@
           "sentiment": "Stimmung im Zeitverlauf",
           "whyNot": "Warum nicht vollständig beantwortet",
           "requestType": "Art der Anfrage",
-          "topic": "Thema",
-          "tags": "Tags",
           "implicitFeedback": "Reaktionen auf Antworten",
           "shareOfAnswers_one": "Anteil an {{formatted}} Antwort",
           "shareOfAnswers_other": "Anteil an {{formatted}} Antworten",
@@ -715,7 +713,14 @@
           "empty": "In diesem Zeitraum gibt es nichts anzuzeigen.",
           "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "Von {{formatted}} Frage",
-          "ofQuestions_other": "Von {{formatted}} Fragen"
+          "ofQuestions_other": "Von {{formatted}} Fragen",
+          "topics": "Themen",
+          "overlapNote": "Ein Gespräch kann unter mehreren zählen, daher ergeben sie zusammen nicht 100 %.",
+          "noTopics": {
+            "title": "Noch keine Themen",
+            "description": "Füge Themen hinzu, um zu sehen, worüber Leute fragen.",
+            "action": "Themen einrichten"
+          }
         },
         "labelNamesInline": {
           "answer_status": "Antwortstatus",
@@ -1013,13 +1018,13 @@
         "asksHuman": "Nach einem Menschen gefragt",
         "negativeReaction": "Erneut gefragt oder widersprochen",
         "negativeSentiment": "Negative Stimmung",
-        "tags": "Tags",
         "hint": "Labels sind Schätzungen und können falsch sein.",
         "conversation": "Gespräch",
         "clearConversation": "Alle Gespräche anzeigen",
         "more": "+{{formatted}}",
         "emptyForFilter": "Keine Nachrichten passen zu diesen Filtern.",
-        "filter": "Label"
+        "filter": "Label",
+        "topics": "Themen"
       },
       "levelFilter": "Stufe",
       "typeFilter": "Ereignistyp"

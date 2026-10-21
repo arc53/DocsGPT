@@ -1,6 +1,42 @@
 {
+  "gaps": {
+    "enabled": true,
+    "group_by": "topic",
+    "previous_labelled": 4,
+    "rows": [
+      {
+        "examples": [
+          {
+            "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
+            "message_id": "9a4d5bf9-0191-4e54-8de4-aa3f4704d0c1",
+            "p": 0.72,
+            "prompt": "that did not work at all!",
+            "timestamp": "2026-10-18T22:28:29.623784Z"
+          },
+          {
+            "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
+            "message_id": "d35dd0f9-f417-4f20-9457-9e7b0537df37",
+            "p": 0.72,
+            "prompt": "How do I install it?",
+            "timestamp": "2026-10-18T22:27:29.623784Z"
+          }
+        ],
+        "expected_gaps": 1.58,
+        "high": 1.0,
+        "key": "installation",
+        "low": 0.0,
+        "name": "installation",
+        "previous_expected": 0.0,
+        "rate": 0.72,
+        "source": null,
+        "turns": 2
+      }
+    ],
+    "success": true
+  },
   "insights": {
     "available": true,
+    "backfill_days": 7,
     "coverage": {
       "conversations": 2,
       "labelled_conversations": 2,
@@ -11,14 +47,27 @@
       "unlabelled_older_turns": 0,
       "unlabelled_recent_turns": 0
     },
-    "backfill_days": 7,
     "enabled": true,
     "labelling_from": "2026-10-12T21:00:00Z",
-    "language_warnings": ["answer_status", "gap_type", "topic_effective"],
+    "language_warnings": [
+      "answer_status",
+      "gap_type",
+      "topic_effective"
+    ],
     "languages": {
       "en": 2,
       "ru": 2
     },
+    "one_pick": [
+      "auth",
+      "installation"
+    ],
+    "overlapping": [
+      {
+        "id": "a1b2c3d4",
+        "name": "Pricing question"
+      }
+    ],
     "series": [
       {
         "bucket": "2026-10-18",
@@ -174,12 +223,6 @@
       }
     ],
     "success": true,
-    "tags": [
-      {
-        "id": "a1b2c3d4",
-        "name": "Pricing question"
-      }
-    ],
     "totals": {
       "answer_status": {
         "n": 3,
@@ -496,41 +539,6 @@
         "tier": "experimental"
       }
     }
-  },
-  "gaps": {
-    "enabled": true,
-    "group_by": "topic",
-    "previous_labelled": 4,
-    "rows": [
-      {
-        "examples": [
-          {
-            "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
-            "message_id": "9a4d5bf9-0191-4e54-8de4-aa3f4704d0c1",
-            "p": 0.72,
-            "prompt": "that did not work at all!",
-            "timestamp": "2026-10-18T22:28:29.623784Z"
-          },
-          {
-            "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
-            "message_id": "d35dd0f9-f417-4f20-9457-9e7b0537df37",
-            "p": 0.72,
-            "prompt": "How do I install it?",
-            "timestamp": "2026-10-18T22:27:29.623784Z"
-          }
-        ],
-        "expected_gaps": 1.58,
-        "high": 1.0,
-        "key": "installation",
-        "low": 0.0,
-        "name": "installation",
-        "previous_expected": 0.0,
-        "rate": 0.72,
-        "source": null,
-        "turns": 2
-      }
-    ],
-    "success": true
   },
   "logs": {
     "has_more": false,

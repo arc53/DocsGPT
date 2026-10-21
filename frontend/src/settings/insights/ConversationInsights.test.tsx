@@ -92,7 +92,8 @@ const data = (overrides: Partial<Insights> = {}): Insights => ({
   labelling_from: '2026-10-13T12:00:00Z',
   languages: { en: 100, ru: 12, other: 6 },
   language_warnings: [],
-  tags: [],
+  one_pick: ['billing', 'installation'],
+  overlapping: [],
   totals: {
     answer_status: {
       tier: 'dashboard',
@@ -198,12 +199,14 @@ describe('ConversationInsights', () => {
       onRetry = () => undefined,
       filterOption = 'last_30_days',
       onTurnOn,
+      onSetUpTopics,
     }: {
       status?: 'loading' | 'error' | 'ready';
       agentProp?: Agent;
       onRetry?: () => void;
       filterOption?: string;
       onTurnOn?: () => void;
+      onSetUpTopics?: () => void;
     } = {},
   ) => {
     const state: InsightsState = insightsState(status, response);
@@ -218,6 +221,7 @@ describe('ConversationInsights', () => {
             filterOption={filterOption}
             onRetry={onRetry}
             onTurnOn={onTurnOn}
+            onSetUpTopics={onSetUpTopics}
           />
           <LocationProbe />
         </MemoryRouter>,
@@ -644,13 +648,11 @@ describe('ConversationInsights', () => {
     );
   });
 
-  it("lists topics with no badge and an agent's tags, a new one without a figure", () => {
-    const response = data({
-      tags: [
-        { id: 'a1b2c3d4', name: 'Pricing question' },
-        { id: 'deadbeef', name: 'Wants a refund' },
-      ],
-    });
+  const lists = () => Array.from(section()!.querySelectorAll('[role="list"]'));
+  const listNamed = (name: string) =>
+    lists().find((list) => list.getAttribute('aria-label') === name);
+  const P = 'settings.analytics.insights.panels';
+  const topicTotals = (response: Insights) => {
     response.totals.topic_effective = {
       tier: 'experimental',
       n: 118,
@@ -659,6 +661,16 @@ describe('ConversationInsights', () => {
         installation: option(36, 0.31, 0.23, 0.39),
       },
     };
+  };
+
+  it('splits Topics into one half per kind, a new overlapping topic without a figure', () => {
+    const response = data({
+      overlapping: [
+        { id: 'a1b2c3d4', name: 'Pricing question' },
+        { id: 'deadbeef', name: 'Wants a refund' },
+      ],
+    });
+    topicTotals(response);
     response.totals['tag:a1b2c3d4'] = {
       tier: 'dashboard',
       n: 61,
@@ -666,28 +678,23 @@ describe('ConversationInsights', () => {
     };
     render(response, { agentProp: agent(['view', 'edit']) });
     expect(section()!.querySelector('[data-slot="badge"]')).toBeNull();
-    const lists = Array.from(section()!.querySelectorAll('[role="list"]'));
-    const topics = lists.find(
-      (list) =>
-        list.getAttribute('aria-label') ===
-        'settings.analytics.insights.panels.topic',
-    )!;
-    const topicRows = Array.from(topics.querySelectorAll('li'));
-    expect(topicRows[0].textContent).toContain('installation');
-    expect(topicRows[1].textContent).toContain(
-      'settings.analytics.insights.panels.noneOfThese',
+    const onePick = listNamed('agents.form.analytics.groups.onePick')!;
+    const onePickRows = Array.from(onePick.querySelectorAll('li'));
+    expect(onePickRows[0].textContent).toContain('installation');
+    expect(onePickRows[1].textContent).toContain(`${P}.noneOfThese`);
+    const overlap = listNamed('agents.form.analytics.groups.overlap')!;
+    const overlapRows = Array.from(overlap.querySelectorAll('li'));
+    expect(overlapRows[0].textContent).toContain('22%');
+    expect(overlapRows[1].textContent).toContain('—');
+    expect(overlapRows[1].querySelector('.sr-only')!.textContent).toBe(
+      `${P}.barLabelNone(Wants a refund)`,
     );
-    const tags = lists.find(
-      (list) =>
-        list.getAttribute('aria-label') ===
-        'settings.analytics.insights.panels.tags',
-    )!;
-    const tagRows = Array.from(tags.querySelectorAll('li'));
-    expect(tagRows[0].textContent).toContain('22%');
-    expect(tagRows[1].textContent).toContain('—');
-    expect(tagRows[1].querySelector('.sr-only')!.textContent).toBe(
-      'settings.analytics.insights.panels.barLabelNone(Wants a refund)',
-    );
+    // Both halves sit in one panel spanning the grid.
+    const panel = onePick.closest('[data-slot="card"]')!;
+    expect(panel).toBe(overlap.closest('[data-slot="card"]'));
+    expect(panel.className).toContain('xl:col-span-2');
+    expect(panel.querySelector('h2')!.textContent).toBe(`${P}.topics`);
+    expect(panel.textContent).toContain(`${P}.overlapNote`);
     expect(
       container
         .querySelector('[data-testid="docs-gaps-stub"]')!
@@ -695,27 +702,66 @@ describe('ConversationInsights', () => {
     ).toBe('true');
   });
 
-  it('pairs the short lists and gives an odd last panel the whole row', () => {
-    const response = data({ tags: [{ id: 'a1b2c3d4', name: 'Pricing' }] });
-    response.totals.topic_effective = {
-      tier: 'experimental',
-      n: 118,
-      options: { installation: option(36, 0.31, 0.23, 0.39) },
-    };
+  it('lays one kind alone across both columns, without halves', () => {
+    const response = data();
+    topicTotals(response);
     render(response, { agentProp: agent(['view', 'edit']) });
-    const lists = Array.from(section()!.querySelectorAll('[role="list"]'));
-    const names = lists.map((list) =>
+    const topics = listNamed(`${P}.topics`)!;
+    expect(topics.className).toContain('xl:grid-cols-2');
+    expect(listNamed('agents.form.analytics.groups.onePick')).toBeUndefined();
+    expect(section()!.textContent).not.toContain(`${P}.overlapNote`);
+
+    const overlapOnly = data({
+      overlapping: [{ id: 'a1b2c3d4', name: 'Pricing question' }],
+    });
+    render(overlapOnly, { agentProp: agent(['view', 'edit']) });
+    expect(listNamed(`${P}.topics`)!.textContent).toContain('Pricing question');
+    expect(section()!.textContent).toContain(`${P}.overlapNote`);
+  });
+
+  it('shows editors of an agent without topics the way to set them up', () => {
+    const onSetUpTopics = vi.fn();
+    const response = data({ one_pick: [] });
+    render(response, { agentProp: agent(['view', 'edit']), onSetUpTopics });
+    expect(section()!.textContent).toContain(`${P}.noTopics.title`);
+    act(() =>
+      Array.from(section()!.querySelectorAll('button'))
+        .find((b) => b.textContent === `${P}.noTopics.action`)!
+        .click(),
+    );
+    expect(onSetUpTopics).toHaveBeenCalledTimes(1);
+
+    // A viewer, or an agent whose topics just have no figures yet, gets no panel.
+    render(response, { agentProp: agent(['view']), onSetUpTopics });
+    expect(section()!.textContent).not.toContain(`${P}.noTopics.title`);
+    render(data({ one_pick: ['billing', 'setup'] }), {
+      agentProp: agent(['view', 'edit']),
+      onSetUpTopics,
+    });
+    expect(section()!.textContent).not.toContain(`${P}.noTopics.title`);
+    expect(section()!.textContent).not.toContain(`${P}.topics`);
+  });
+
+  it('pairs the short lists, why not alone across the row, then Topics', () => {
+    const response = data({
+      overlapping: [{ id: 'a1b2c3d4', name: 'Pricing' }],
+    });
+    topicTotals(response);
+    render(response, { agentProp: agent(['view', 'edit']) });
+    const names = lists().map((list) =>
       list.getAttribute('aria-label')!.split('.').pop(),
     );
-    expect(names.slice(-4)).toEqual(['requestType', 'whyNot', 'tags', 'topic']);
-    const topics = lists[lists.length - 1];
-    expect(topics.className).toContain('xl:grid-cols-2');
-    expect(topics.closest('.xl\\:col-span-2')).not.toBeNull();
-    expect(lists[lists.length - 2].closest('.xl\\:col-span-2')).toBeNull();
-
-    delete response.totals.topic_effective;
-    render(response, { agentProp: agent(['view', 'edit']) });
-    expect(section()!.querySelector('.xl\\:col-span-2')).toBeNull();
+    expect(names.slice(-4)).toEqual([
+      'requestType',
+      'whyNot',
+      'onePick',
+      'overlap',
+    ]);
+    const whyNot = listNamed(`${P}.whyNot`)!;
+    expect(whyNot.closest('.xl\\:col-span-2')).not.toBeNull();
+    expect(
+      listNamed(`${P}.requestType`)!.closest('.xl\\:col-span-2'),
+    ).toBeNull();
   });
 
   it('says once when weaker languages make some labels less reliable', () => {

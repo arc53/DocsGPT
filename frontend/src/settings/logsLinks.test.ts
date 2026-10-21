@@ -25,11 +25,15 @@ describe('logsDrilldownPath', () => {
 });
 
 describe('isLogLabel', () => {
-  it('accepts the filter labels and tag ids, nothing else', () => {
+  it('accepts the filter labels, tag ids and topic names, nothing else', () => {
     expect(isLogLabel('docs_gap')).toBe(true);
     expect(isLogLabel('negative_reaction')).toBe(true);
     expect(isLogLabel('tag:a1b2c3d4')).toBe(true);
     expect(isLogLabel('tag:short')).toBe(false);
+    expect(isLogLabel('topic:deploying')).toBe(true);
+    expect(isLogLabel('topic:Pricing question')).toBe(true);
+    expect(isLogLabel('topic: ')).toBe(false);
+    expect(isLogLabel(`topic:${'n'.repeat(61)}`)).toBe(false);
     expect(isLogLabel('sentiment')).toBe(false);
     expect(isLogLabel(null)).toBe(false);
   });

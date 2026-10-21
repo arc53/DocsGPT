@@ -696,8 +696,6 @@
           "sentiment": "情绪随时间变化",
           "whyNot": "未完全回答的原因",
           "requestType": "请求类型",
-          "topic": "主题",
-          "tags": "标签",
           "implicitFeedback": "对回答的回复",
           "shareOfAnswers_one": "占 {{formatted}} 条回答的比例",
           "shareOfAnswers_other": "占 {{formatted}} 条回答的比例",
@@ -713,7 +711,14 @@
           "empty": "此期间没有可显示的内容。",
           "tooltipShare": "{{name}}：{{value}}",
           "ofQuestions_one": "共 {{formatted}} 个问题",
-          "ofQuestions_other": "共 {{formatted}} 个问题"
+          "ofQuestions_other": "共 {{formatted}} 个问题",
+          "topics": "主题",
+          "overlapNote": "一段对话可能计入多个主题，因此合计不等于 100%。",
+          "noTopics": {
+            "title": "还没有主题",
+            "description": "添加主题，看看用户在问什么。",
+            "action": "设置主题"
+          }
         },
         "labelNamesInline": {
           "answer_status": "回答状态",
@@ -1011,13 +1016,13 @@
         "asksHuman": "要求人工",
         "negativeReaction": "再次提问或反驳",
         "negativeSentiment": "负面情绪",
-        "tags": "自定义标签",
         "hint": "标注是估算结果，可能有误。",
         "conversation": "对话",
         "clearConversation": "显示全部对话",
         "more": "+{{formatted}}",
         "emptyForFilter": "没有符合这些筛选条件的消息。",
-        "filter": "标注"
+        "filter": "标注",
+        "topics": "主题"
       },
       "levelFilter": "级别",
       "typeFilter": "事件类型"

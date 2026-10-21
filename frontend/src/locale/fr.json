@@ -720,8 +720,6 @@
           "sentiment": "Sentiment au fil du temps",
           "whyNot": "Pourquoi la réponse est incomplète",
           "requestType": "Type de demande",
-          "topic": "Sujet",
-          "tags": "Étiquettes",
           "implicitFeedback": "Réactions aux réponses",
           "shareOfAnswers_one": "Part de {{formatted}} réponse",
           "shareOfAnswers_other": "Part de {{formatted}} réponses",
@@ -742,7 +740,14 @@
           "tooltipShare": "{{name}} : {{value}}",
           "ofQuestions_one": "Sur {{formatted}} question",
           "ofQuestions_other": "Sur {{formatted}} questions",
-          "ofQuestions_many": "Sur {{formatted}} questions"
+          "ofQuestions_many": "Sur {{formatted}} questions",
+          "topics": "Sujets",
+          "overlapNote": "Une conversation peut compter dans plusieurs, la somme ne fait donc pas 100 %.",
+          "noTopics": {
+            "title": "Aucun sujet pour l’instant",
+            "description": "Ajoutez des sujets pour voir ce que les gens demandent.",
+            "action": "Configurer les sujets"
+          }
         },
         "labelNamesInline": {
           "answer_status": "le statut des réponses",
@@ -1050,13 +1055,13 @@
         "asksHuman": "Demande d’un humain",
         "negativeReaction": "Question reposée ou contestation",
         "negativeSentiment": "Sentiment négatif",
-        "tags": "Étiquettes personnalisées",
         "hint": "Les étiquettes sont des estimations et peuvent être fausses.",
         "conversation": "Conversation",
         "clearConversation": "Afficher toutes les conversations",
         "more": "+{{formatted}}",
         "emptyForFilter": "Aucun message ne correspond à ces filtres.",
-        "filter": "Étiquette"
+        "filter": "Étiquette",
+        "topics": "Sujets"
       },
       "levelFilter": "Niveau",
       "typeFilter": "Type d’événement"

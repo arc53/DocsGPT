@@ -1410,6 +1410,7 @@ class TestConversationInsights:
         data = response.json
         assert data["success"] and data["enabled"] and data["available"]
         assert data["overlapping"] == [{"id": _TAG, "name": "Pricing question"}]
+        assert data["one_pick"] == []
         assert data["coverage"] == {"turns": 4, "labelled_turns": 4, "replies": 2, "labelled_replies": 2,
                                     "conversations": 2, "labelled_conversations": 2,
                                     "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0}
@@ -1488,7 +1489,7 @@ class TestConversationInsights:
         mine = _insights(app, pg_conn, "owner-a", {}).json
         assert mine["coverage"]["turns"] == 0
         assert mine["totals"]["frustrated"]["n"] == 0
-        assert mine["overlapping"] == []
+        assert mine["overlapping"] == [] and mine["one_pick"] == []
 
     def test_unknown_agent_is_empty(self, app, pg_conn, analytics_on):
         import uuid as _uuid
@@ -1536,6 +1537,14 @@ class TestConversationInsights:
         assert topic["tier"] == "experimental"
         assert topic["options"]["install"]["expected"] == 1.5
         assert "topic_effective" in data["series"][-1]["labels"]
+
+    def test_one_pick_lists_the_topic_question_the_agent_asks(self, app, pg_conn, analytics_on):
+        agent = _analytics_agent(pg_conn, topics=[
+            {"id": "billing01", "name": "Billing"}, {"id": "setup0001", "name": "setup"},
+            {"id": _TAG, "name": "Pricing question", "overlap": True}])
+        data = _insights(app, pg_conn, "owner", {"api_key_id": str(agent["id"])}).json
+        assert data["one_pick"] == ["Billing", "setup"]
+        assert data["overlapping"] == [{"id": _TAG, "name": "Pricing question"}]
 
     def test_the_account_view_has_no_topics(self, app, pg_conn, analytics_on):
         """Each agent has its own list, so one chart over all of them would mix unrelated lists."""

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   useLocation,
@@ -6,13 +6,20 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+
+import userService from '../api/services/userService';
+import {
+  selectAnalyticsEnabled,
+  selectToken,
+} from '../preferences/preferenceSlice';
+import type { AgentTopic } from '../settings/types';
 
 import Logs from '../settings/Logs';
 import { revealElement } from '../settings/logsLinks';
 import { EmptyState } from '../components/ui/empty-state';
 import { SectionHeader } from '../components/ui/section-header';
 import SectionShell from '../navigation/SectionShell';
-import { analyticsOf } from './analyticsConfig';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import GuardrailEvents from './components/GuardrailEvents';
 import { useAgent } from './hooks/useAgent';
@@ -43,6 +50,8 @@ export default function AgentLogs() {
   }, [location.key, label, conversation, navigationType]);
 
   const analytics = agent?.config?.analytics;
+  const enabled = analytics?.enabled !== false;
+  const topics = useAgentTopics(agentId, Boolean(agent) && enabled);
 
   return (
     <SectionShell>
@@ -78,10 +87,8 @@ export default function AgentLogs() {
                 analytics={
                   agent
                     ? {
-                        enabled: analytics?.enabled !== false,
-                        tags: analyticsOf(analytics).topics.filter(
-                          (topic) => topic.overlap,
-                        ),
+                        enabled,
+                        topics,
                       }
                     : undefined
                 }
@@ -92,4 +99,38 @@ export default function AgentLogs() {
       )}
     </SectionShell>
   );
+}
+
+/**
+ * The agent's topics as Logs filters: its folders and own topics, which
+ * only the server can list (`/api/analytics/topics`). Empty until they load,
+ * while insights are off, and if the request fails.
+ */
+function useAgentTopics(
+  agentId: string | undefined,
+  enabled: boolean,
+): AgentTopic[] {
+  const token = useSelector(selectToken);
+  const serverLabels = useSelector(selectAnalyticsEnabled);
+  const [loaded, setLoaded] = useState<{
+    agentId: string;
+    topics: AgentTopic[];
+  } | null>(null);
+  const wanted = Boolean(agentId) && enabled && serverLabels;
+  useEffect(() => {
+    if (!wanted || !agentId) return;
+    let cancelled = false;
+    userService
+      .getAgentTopics(agentId, token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { success?: boolean; topics?: AgentTopic[] } | null) => {
+        if (!cancelled && body?.success)
+          setLoaded({ agentId, topics: body.topics ?? [] });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [wanted, agentId, token]);
+  return wanted && loaded && loaded.agentId === agentId ? loaded.topics : [];
 }
