@@ -74,6 +74,20 @@ class TestMigration0057RoundTrip:
         assert set(_INDEXES) <= names
         assert "conversation_messages_ts_idx" in names
 
+    def test_rows_record_what_they_were_built_from(self, pg_engine):
+        with pg_engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'conversation_labels' "
+                    "AND column_name IN ('source_updated_at', 'source_hash')"
+                )
+            ).fetchall()
+        assert {row[0]: (row[1], row[2]) for row in rows} == {
+            "source_updated_at": ("timestamp with time zone", "YES"),
+            "source_hash": ("text", "YES"),
+        }
+
     def test_one_row_per_conversation_message_and_label(self, pg_engine):
         with pg_engine.begin() as conn:
             cid, first, _ = _conversation(conn)

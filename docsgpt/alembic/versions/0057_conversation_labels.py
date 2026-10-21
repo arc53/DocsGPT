@@ -11,7 +11,13 @@
   computed from the others without a model call. ``schema_hash`` and
   ``model_version`` say which wording and which model made a row, so labels
   of different wording are never mixed and an older model's are relabelled.
-  ``created_at`` is when the row was last written. Rows hold no user text.
+  ``created_at`` is when the row was last written. ``source_updated_at`` and
+  ``source_hash`` record what a row was built from, as the sweep read it: the
+  message's ``updated_at`` (for a conversation-level row, the latest over its
+  messages) and a hash of what the states read of it. A label stays current
+  while its message is unchanged since then or still hashes the same, so
+  feedback or a finished background job does not have it asked again, and an
+  edit made while the sweep ran does. Rows hold no user text.
   ``conversation_labels_resolution_idx`` keeps the sweep's look for
   resolutions still pending past their window off the rest of the table.
   ``cleanup_conversation_labels`` on beat deletes rows past
@@ -77,7 +83,9 @@ def upgrade() -> None:
             schema_hash       text NOT NULL,
             model_version     text NOT NULL,
             occurred_at       timestamptz NOT NULL,
-            created_at        timestamptz NOT NULL DEFAULT now()
+            created_at        timestamptz NOT NULL DEFAULT now(),
+            source_updated_at timestamptz,
+            source_hash       text
         );
         """
     )

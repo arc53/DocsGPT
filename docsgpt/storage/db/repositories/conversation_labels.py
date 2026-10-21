@@ -114,8 +114,8 @@ def _fresh(row: str, updated_at: str, current_hash: str) -> str:
 
     It is when nothing changed since the sweep read it (``source_updated_at`` is no earlier than ``updated_at``,
     the cheap test), or when something did but the content hashes the same (feedback, a finished background job).
-    ``current_hash`` is only evaluated in that second case. A row written before migration 0058 has no source and
-    keeps the old test: it was written at or after the last change.
+    ``current_hash`` is only evaluated in that second case. A row with no source keeps the plain test: it was
+    written at or after the last change.
 
     Args:
         row: The ``conversation_labels`` alias.
