@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 import threading
 import unicodedata
-from typing import Iterator, List, Optional, Tuple
+from typing import Any, Iterator, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
 from docsgpt.utils import get_encoding
@@ -347,9 +347,14 @@ class TiktokenCounter(TokenCounter):
         self._encoding = get_encoding()
 
     def _count_one(self, text: str) -> int:
+        """Count ``text`` in cl100k tokens with one ``encode_ordinary``."""
         return len(self._encoding.encode_ordinary(text))
 
     def _split_one(self, text: str, first: int, rest: int) -> List[str]:
+        """Split ``text`` at the character offsets of cl100k token windows.
+
+        See :meth:`TokenCounter._split_one` for the arguments and return value.
+        """
         tokens = self._encoding.encode_ordinary(text)
         if len(tokens) <= first:
             return [text]
@@ -394,7 +399,7 @@ class HuggingFaceCounter(TokenCounter):
         return self._tokenizer.encode(text, add_special_tokens=False)
 
     @staticmethod
-    def _weigh(encoding) -> int:
+    def _weigh(encoding: Any) -> int:
         """Tokens an encoding costs, charging collapsed runs by their span.
 
         Args:
@@ -409,9 +414,14 @@ class HuggingFaceCounter(TokenCounter):
         return sum(_token_weight(start, end) for start, end in encoding.offsets)
 
     def _count_one(self, text: str) -> int:
+        """Weigh ``text`` with one encode; see :meth:`_weigh`."""
         return self._weigh(self._encode(text))
 
     def _split_one(self, text: str, first: int, rest: int) -> List[str]:
+        """Split ``text`` at the character offsets of weighted token windows.
+
+        See :meth:`TokenCounter._split_one` for the arguments and return value.
+        """
         # One encode serves both the weight check and the offsets. Counting
         # separately used to hold a second encoding of the same text alive.
         encoding = self._encode(text)
