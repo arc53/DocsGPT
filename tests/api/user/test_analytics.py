@@ -2053,6 +2053,39 @@ class TestSharedAgentLabelVisibility:
         found = _post_logs(app, pg_conn, "owner-a", {"api_key_id": agent_id, "label": f"topic:{self._OWN}"}).json
         assert {row["message_id"] for row in found["logs"]} == {first, second}
 
+    def test_a_deleted_agents_conversations_leave_account_coverage_with_their_labels(self, app, pg_conn,
+                                                                                      analytics_on):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        agent_id, _cid, _first, _second = self._seed(pg_conn)
+        own = _labelled_conversation(pg_conn, "caller-b")
+        AgentsRepository(pg_conn).delete(agent_id, "owner-a")
+        data = _insights(app, pg_conn, "caller-b", {}).json
+        # the deleted agent's labels stay hidden, so its turns are neither counted nor labelled; the caller's own
+        # conversation still is
+        assert own
+        assert data["coverage"]["turns"] == data["coverage"]["labelled_turns"] == 2
+        assert data["coverage"]["conversations"] == data["coverage"]["labelled_conversations"] == 1
+        assert data["coverage"]["replies"] == data["coverage"]["labelled_replies"] == 1
+        assert data["coverage"]["unlabelled_recent_turns"] == 0
+        assert data["totals"]["answer_status"]["n"] == 2
+
+    def test_a_callers_own_agent_logs_show_none_of_the_owners_names(self, app, pg_conn, analytics_on):
+        # A turn naming the caller's own agent, sent into their conversation with the owner's agent, logs under
+        # the caller's agent; that agent's Logs must not read labels written under the owner's agent.
+        own = str(_analytics_agent(pg_conn, owner="caller-b", topics=[])["id"])
+        _agent_id, cid, first, second = self._seed(pg_conn)
+        for message in (first, second):
+            _chat_log(pg_conn, "caller-b", message, cid, own)
+        logs = _post_logs(app, pg_conn, "caller-b", {"api_key_id": own, "event_type": "chat"}).json
+        assert {row["message_id"] for row in logs["logs"]} >= {first, second}
+        assert all(row["labels"] == [] for row in logs["logs"])
+        assert logs["tag_names"] == {}
+        assert self._OVERLAP not in self._names(logs)
+        for label in (f"topic:{self._OWN}", f"tag:{_TAG}", "frustrated"):
+            found = _post_logs(app, pg_conn, "caller-b", {"api_key_id": own, "label": label}).json
+            assert found["logs"] == [], label
+
     def test_the_owner_sees_their_own_chats_with_their_agent_in_the_account_view(self, app, pg_conn,
                                                                                  analytics_on):
         _agent_id, _cid, first, second = self._seed(pg_conn, user="owner-a")

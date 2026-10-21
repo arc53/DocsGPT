@@ -49,7 +49,7 @@ _UPSERT_COLUMNS = (
 
 _PROJECTION = (
     "CAST(l.message_id AS text) AS message_id, CAST(l.reply_message_id AS text) AS reply_message_id, "
-    "l.level, l.label, l.top, l.p_top, l.probabilities, l.derived, l.lang, l.options_hash, l.occurred_at, "
+    "CAST(l.agent_id AS text) AS agent_id, l.level, l.label, l.top, l.p_top, l.probabilities, l.derived, l.lang, l.options_hash, l.occurred_at, "
     "l.created_at"
 )
 
@@ -269,7 +269,15 @@ def _visible_to(alias: str, param: str) -> str:
             f" WHERE va.id = {alias}.agent_id AND va.user_id = :{param}))")
 
 
-def log_label_exists(key: str, message_expr: str, visible_to: Optional[str] = None) -> str:
+def _label_filter(alias: str, visible_to: Optional[str], of_agent: Optional[str]) -> str:
+    """SQL: `` AND`` the Logs label filter of a user's own Logs (``visible_to``) or an agent's (``of_agent``)."""
+    if of_agent:
+        return f" AND {alias}.agent_id = CAST(:{of_agent} AS uuid)"
+    return f" AND {_visible_to(alias, visible_to)}" if visible_to else ""
+
+
+def log_label_exists(key: str, message_expr: str, visible_to: Optional[str] = None,
+                     of_agent: Optional[str] = None) -> str:
     """SQL: the Logs row whose message id is ``message_expr`` carries ``key`` at even odds or better.
 
     Binds ``:schema_hash`` and ``:label_min``, ``:label_name`` for a tag and ``:topic_name`` for a topic.
@@ -280,12 +288,14 @@ def log_label_exists(key: str, message_expr: str, visible_to: Optional[str] = No
         message_expr: SQL for the Logs row's message id.
         visible_to: The bind parameter holding the viewing user's id, for a user's own Logs: only labels of no
             agent or of the user's own agents match, so the filter cannot probe another owner's topic names.
-            ``None`` (an agent's Logs, already access-checked) matches every label row.
+        of_agent: The bind parameter holding the agent's id, for an agent's Logs: only labels written under that
+            agent match. A turn logged under it can sit in a conversation of another agent, whose labels name
+            that agent's owner's topics.
 
     Returns:
         An ``EXISTS (...)`` SQL condition.
     """
-    visible = f" AND {_visible_to('cl', visible_to)}" if visible_to else ""
+    visible = _label_filter("cl", visible_to, of_agent)
     if key.startswith(TOPIC_PREFIX):
         return f"""EXISTS (
             SELECT 1 FROM conversation_labels cl
@@ -380,6 +390,14 @@ class Scope:
             f" AND COALESCE({alias}.api_key, '') <> '' AND va.key = CAST({alias}.api_key AS citext)))"
             " AND va.user_id <> :scope_user)"
         )
+
+    def hidden(self, alias: str) -> str:
+        """SQL: ``conversation_labels`` row ``alias``, joined to a scoped conversation, is one ``labels`` leaves
+        out: in a user's view, a row of a deleted agent (its conversation then has no agent). ``conversations``
+        binds the parameters it reads."""
+        if self.agent_id:
+            return "FALSE"
+        return f"({alias}.id IS NOT NULL AND NOT {_visible_to(alias, 'scope_user')})"
 
 
 #: What a docs-gap group is keyed and named by: the effective topic, or the turn's first stored source (its
@@ -872,6 +890,9 @@ class ConversationLabelsRepository:
                                   "labelling_from": labelling_from,
                                   "placeholder": TERMINATED_RESPONSE_PLACEHOLDER}
         where = scope.conversations("c", params)
+        # A labelled message whose labels the scope hides (a deleted agent's, in a user's view) is out of the
+        # scope, not unlabelled: the sweep sees it as done, so it would never leave the count.
+        shown = {alias: f"NOT {scope.hidden(alias)}" for alias in ("a", "r", "g")}
         row = self._conn.execute(
             text(
                 f"""
@@ -899,14 +920,15 @@ class ConversationLabelsRepository:
                     WHERE {_usable("m")}
                 )
                 SELECT
-                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND (s.enabled OR a.id IS NOT NULL)) AS turns,
-                    COUNT(a.id) FILTER (WHERE s.in_window AND s.is_turn) AS labelled_turns,
-                    COUNT(*) FILTER (WHERE s.in_window AND s.after_turn AND (s.enabled OR r.id IS NOT NULL))
-                        AS replies,
-                    COUNT(r.id) FILTER (WHERE s.in_window AND s.after_turn) AS labelled_replies,
-                    COUNT(*) FILTER (WHERE s.in_window AND s.is_last AND (s.enabled OR g.id IS NOT NULL))
-                        AS conversations,
-                    COUNT(g.id) FILTER (WHERE s.in_window AND s.is_last) AS labelled_conversations,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND (s.enabled OR a.id IS NOT NULL)
+                                     AND {shown["a"]}) AS turns,
+                    COUNT(a.id) FILTER (WHERE s.in_window AND s.is_turn AND {shown["a"]}) AS labelled_turns,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.after_turn AND (s.enabled OR r.id IS NOT NULL)
+                                     AND {shown["r"]}) AS replies,
+                    COUNT(r.id) FILTER (WHERE s.in_window AND s.after_turn AND {shown["r"]}) AS labelled_replies,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_last AND (s.enabled OR g.id IS NOT NULL)
+                                     AND {shown["g"]}) AS conversations,
+                    COUNT(g.id) FILTER (WHERE s.in_window AND s.is_last AND {shown["g"]}) AS labelled_conversations,
                     COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND NOT s.failed
                                      AND s.recent) AS unlabelled_recent_turns,
                     COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND NOT s.failed
@@ -1193,7 +1215,8 @@ class ConversationLabelsRepository:
         )
         return {row.id: row.name for row in result.fetchall() if row.name}
 
-    def log_rows(self, message_ids: Iterable[str], schema_hash: str, viewer: Optional[str] = None) -> List[dict]:
+    def log_rows(self, message_ids: Iterable[str], schema_hash: str, viewer: Optional[str] = None,
+                 agent_id: Optional[str] = None) -> List[dict]:
         """The label rows behind Logs chips for the given messages: their own turn labels, the reactions they
         made, and their conversation's tags.
 
@@ -1201,7 +1224,8 @@ class ConversationLabelsRepository:
             message_ids: The Logs page's message ids.
             schema_hash: The running label schema.
             viewer: For a user's own Logs, that user: only rows of no agent or of an agent they own are read.
-                ``None`` (an agent's Logs, already access-checked) reads every row.
+            agent_id: For an agent's Logs, the agent: only rows written under it are read (see
+                ``log_label_exists``).
 
         Returns:
             ``target`` (the message the row describes), ``agent_id``, ``label`` and ``probabilities``.
@@ -1209,7 +1233,7 @@ class ConversationLabelsRepository:
         ids = sorted({str(i) for i in message_ids})
         if not ids:
             return []
-        visible = f" AND {_visible_to('l', 'viewer')}" if viewer else ""
+        visible = _label_filter("l", "viewer" if viewer else None, "agent" if agent_id else None)
         own = sorted({label for side, label, _ in LOG_LABELS.values() if side == "message"})
         replies = sorted({label for side, label, _ in LOG_LABELS.values() if side == "reply"})
         result = self._conn.execute(
@@ -1234,7 +1258,8 @@ class ConversationLabelsRepository:
                 WHERE m.id = ANY(CAST(:ids AS uuid[])){visible}
                 """
             ),
-            {"ids": ids, "own": own, "replies": replies, "schema_hash": schema_hash, "viewer": viewer},
+            {"ids": ids, "own": own, "replies": replies, "schema_hash": schema_hash, "viewer": viewer,
+             "agent": agent_id},
         )
         return [dict(row._mapping) for row in result.fetchall()]
 

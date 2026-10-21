@@ -1408,7 +1408,9 @@ def _attach_message_feedback(conn: Connection, items: list) -> None:
             item["conversation_id"] = message["conversation_id"]
 
 
-def _attach_labels(conn: Connection, items: list, viewer: Optional[str] = None) -> dict:
+def _attach_labels(
+    conn: Connection, items: list, viewer: Optional[str] = None, agent_id: Optional[str] = None
+) -> dict:
     """Add each finished chat row's analytics ``labels`` (chip keys at even odds or better), in one lookup.
 
     Reaction labels (frustrated, asked for a person, negative reaction) sit on
@@ -1420,8 +1422,10 @@ def _attach_labels(conn: Connection, items: list, viewer: Optional[str] = None) 
         items: The Logs page's rows, changed in place.
         viewer: For the caller's own Logs, the caller: labels of another
             owner's (shared or public) agent are left out, since they name
-            that owner's topics. ``None`` for an agent's Logs, which the
-            caller's ``view_logs`` already gates.
+            that owner's topics.
+        agent_id: For an agent's Logs, the agent: only labels written under
+            it, as a turn logged under it can sit in a conversation of
+            another owner's agent.
 
     Returns:
         ``{tag id: name}`` for the tags on the page, from each row's agent.
@@ -1439,7 +1443,7 @@ def _attach_labels(conn: Connection, items: list, viewer: Optional[str] = None) 
     if not ids:
         return {}
     repo = ConversationLabelsRepository(conn)
-    rows = repo.log_rows(ids, analytics_schema.SCHEMA_HASH, viewer=viewer)
+    rows = repo.log_rows(ids, analytics_schema.SCHEMA_HASH, viewer=viewer, agent_id=agent_id)
     by_message: dict = {}
     for row in rows:
         by_message.setdefault(row["target"], []).append(row)
@@ -1981,7 +1985,12 @@ class GetUserLogs(Resource):
                     params["label_name"] = filters["label"]
                     if filters["label"].startswith(TOPIC_PREFIX):
                         params["topic_name"] = filters["label"][len(TOPIC_PREFIX):]
-                    if not api_key_id:
+                    if api_key_id:
+                        # An agent's Logs read its own labels only: a turn
+                        # logged under it can sit in another agent's
+                        # conversation, labelled under that agent's topics.
+                        params["label_agent"] = agent_pg_id
+                    else:
                         # The caller's own Logs: another owner's agent's labels
                         # must not answer a guessed topic name.
                         params["label_viewer"] = user
@@ -2017,6 +2026,7 @@ class GetUserLogs(Resource):
                         where.append(log_label_exists(
                             filters["label"], branch["label"],
                             visible_to=None if api_key_id else "label_viewer",
+                            of_agent="label_agent" if api_key_id else None,
                         ))
                     if filters["date_from"]:
                         where.append(f"{branch['ts']} >= :date_from")
@@ -2184,7 +2194,9 @@ class GetUserLogs(Resource):
                     try:
                         with db_readonly() as conn:
                             tag_names = _attach_labels(
-                                conn, results, viewer=None if api_key_id else user
+                                conn, results,
+                                viewer=None if api_key_id else user,
+                                agent_id=agent_pg_id if api_key_id else None,
                             )
                     except Exception:
                         current_app.logger.warning(

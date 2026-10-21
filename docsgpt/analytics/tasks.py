@@ -812,6 +812,19 @@ class Sweep:
         return {(row["message_id"], row["label"]): row for row in rows}
 
     @staticmethod
+    def _owned(ref: dict, labels: dict) -> dict:
+        """``ref`` under the agent its conversation's labels were written under, once that agent is gone.
+
+        A deleted agent leaves its conversations with no agent, but their labels keep its id, so a user's own
+        views hide them (they name its owner's topics). Rows derived from them later keep that id too, rather
+        than turn into rows of no agent that those views read.
+        """
+        if ref["agent_id"]:
+            return ref
+        owner = next((row["agent_id"] for row in labels.values() if row.get("agent_id")), None)
+        return {**ref, "agent_id": owner} if owner else ref
+
+    @staticmethod
     def _replies(labels: dict, label: str) -> dict[str, dict[str, float]]:
         """Reaction-level probabilities by the reply message they describe."""
         return {row["reply_message_id"]: row["probabilities"] for (_, name), row in labels.items()
@@ -820,6 +833,7 @@ class Sweep:
     def _message_rows(self, conn, cid: str, ref: dict, msgs: list[states.Message]) -> list[dict]:
         """``gap_type`` of every labelled turn and ``topic_effective`` of every message with a topic."""
         labels = self._labels(conn, cid)
+        ref = self._owned(ref, labels)
         out = []
         for m in msgs:
             status = labels.get((m.id, "answer_status"))
@@ -881,7 +895,7 @@ class Sweep:
                                            confidently_ungrounded=ungrounded)
         resolution = derive.resolution(conversation)
         experience = derive.experience(conversation, resolution)
-        ref = {**ref, "occurred_at": last}
+        ref = {**self._owned(ref, labels), "occurred_at": last}
         return [
             self._derived(ref, None, "conversation", "resolution", resolution, goal["lang"]),
             # not a distribution: the score and each component's contribution

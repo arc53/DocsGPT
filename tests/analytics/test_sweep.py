@@ -277,6 +277,23 @@ class TestTopicsAndTags:
         question = fake.calls[0].requests[1].questions["topic"]
         assert question == schema.topic_question({"auth": None, "install": "Setting it up"})
 
+    def test_derived_rows_keep_a_deleted_agents_ownership(self, db, fake):
+        # topic_effective names the agent's topics: rewritten after the agent is gone (here for a new turn), it
+        # must stay the agent's row, hidden from the chatting user's own views, not become a row of no agent.
+        agent = _agent(db, topics=TOPICS)
+        agent_id = str(agent["id"])
+        cid, first, second = _two_turns(db, agent_id=agent_id)
+        tasks.sweep()
+        AgentsRepository(db).delete(agent_id, "owner")
+        third = _message(db, cid, 2, "and then?", ago_minutes=60)
+        tasks.sweep()
+        labels = _labels(db, cid)
+        assert (third, "answer_status") in labels
+        effective = {key: row for key, row in labels.items() if key[1] == "topic_effective"}
+        assert {key[0] for key in effective} >= {first, second}
+        assert {row.agent_id for row in effective.values()} == {agent_id}
+        assert labels[(None, "resolution")].agent_id == agent_id
+
     def test_a_new_overlapping_topic_relabels_the_conversation_and_a_removed_one_goes(self, db, fake):
         agent = _agent(db, enabled=True)
         cid, _, _ = _two_turns(db, agent_id=str(agent["id"]))
