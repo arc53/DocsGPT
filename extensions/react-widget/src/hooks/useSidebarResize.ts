@@ -93,7 +93,11 @@ export function useSidebarResize({
   React.useEffect(() => {
     if (!active) endDrag();
   }, [active]);
-  React.useEffect(() => () => dragRef.current?.style?.remove(), []);
+  // Unmounted mid-drag (destroy, route change): unlock the page and keep the
+  // width, through the latest endDrag so it writes under the current key.
+  const endDragRef = React.useRef(endDrag);
+  endDragRef.current = endDrag;
+  React.useEffect(() => () => endDragRef.current(), []);
 
   // A drag whose handle lost the pointer without telling us.
   const isStale = (drag: Drag) =>
