@@ -98,6 +98,7 @@ class TestDevCommand:
         from docsgpt.deploy import dev as dev_module
 
         self._checkout(monkeypatch, tmp_path)
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: False)
         started = []
         monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
         port = self._free_port()

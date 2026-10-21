@@ -12,12 +12,49 @@ import json
 import logging
 import os
 import sys
+import time
+import uuid
 from typing import Optional, Sequence
 
 from docsgpt.version import __version__
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7091
+
+# How often ``docsgpt analytics backfill`` retries while a scheduled sweep holds the lock; tests replace _sleep.
+BACKFILL_POLL_SECONDS = 10
+_sleep = time.sleep
+
+# Where ``docsgpt worker`` defaults to Celery's solo pool: one task at a time, in the worker process itself.
+SOLO_POOL_PLATFORMS = ("darwin", "win32")
+
+
+def default_pool(platform: Optional[str] = None) -> Optional[str]:
+    """The pool ``docsgpt worker`` picks when ``--pool`` is not given: solo on macOS and Windows, else Celery's.
+
+    Args:
+        platform: A ``sys.platform`` value; this machine's when omitted.
+
+    Returns:
+        ``"solo"``, or ``None`` for Celery's default (prefork).
+    """
+    return "solo" if (platform or sys.platform) in SOLO_POOL_PLATFORMS else None
+
+
+def needs_analytics_worker(platform: Optional[str] = None) -> bool:
+    """Whether a default ``docsgpt worker`` here leaves the analytics queue to ``docsgpt worker --analytics``.
+
+    A solo pool runs one task at a time, and an analytics sweep holds it for minutes, so the query embeddings
+    behind it would time out. ``docsgpt dev`` and ``docsgpt up --native`` start the analytics worker where this
+    holds.
+
+    Args:
+        platform: A ``sys.platform`` value; this machine's when omitted.
+
+    Returns:
+        True where the default pool is solo.
+    """
+    return default_pool(platform) == "solo"
 
 
 def _announce_home() -> None:
@@ -122,22 +159,51 @@ def _celery(argv: list[str]) -> int:
 
 
 def _worker(args: argparse.Namespace) -> int:
-    """Run the Celery worker, with the beat scheduler embedded unless ``--no-beat`` (or on Windows)."""
+    """Run the Celery worker, with the beat scheduler embedded unless ``--no-beat`` (or on Windows).
+
+    A solo-pool worker with no ``-Q`` consumes every queue but ``ANALYTICS_QUEUE``: a sweep would hold its one
+    slot for minutes. ``--analytics`` runs the worker that takes that queue instead, without the scheduler.
+
+    Args:
+        args: The parsed ``docsgpt worker`` options.
+
+    Returns:
+        Celery's exit code.
+    """
+    from docsgpt.core.settings import settings
+
     _announce_home()
     windows = sys.platform == "win32"
+    pool = args.pool or default_pool()
     argv = ["worker", "-l", args.loglevel]
-    if args.queues:
+    if args.analytics:
+        argv += ["-Q", settings.ANALYTICS_QUEUE]
+    elif args.queues:
         argv += ["-Q", args.queues]
-    if args.concurrency:
-        argv += ["--concurrency", str(args.concurrency)]
-    if args.beat and windows:
+    elif pool == "solo" and settings.ANALYTICS_QUEUE not in _shared_queues(settings):
+        argv += ["-X", settings.ANALYTICS_QUEUE]
+        if settings.DECISION_ANALYTICS_ENABLED:
+            print(
+                "docsgpt: the solo pool leaves conversation analytics to `docsgpt worker --analytics`; run it "
+                "next to this one (docsgpt dev and docsgpt up --native do).",
+                file=sys.stderr,
+            )
+    concurrency = args.concurrency or (1 if args.analytics and pool != "solo" else None)
+    if concurrency:
+        argv += ["--concurrency", str(concurrency)]
+    beat = args.beat and not args.analytics  # One scheduler is enough; the main worker embeds it.
+    if beat and windows:
         print("docsgpt: the embedded scheduler is not available on Windows; run `docsgpt beat` separately.", file=sys.stderr)
-    elif args.beat:
+    elif beat:
         argv.append("-B")
-    pool = args.pool or ("solo" if sys.platform in ("darwin", "win32") else None)
     if pool:
         argv += ["--pool", pool]
     return _celery(argv)
+
+
+def _shared_queues(settings) -> set[str]:
+    """The queues other than analytics a worker consumes; excluding analytics must not drop one of them."""
+    return {"docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE}
 
 
 def _beat(args: argparse.Namespace) -> int:
@@ -406,8 +472,14 @@ def _analytics(args: argparse.Namespace) -> int:
     ``--dry-run`` prints the unlabelled messages and a time estimate instead.
     """
     if getattr(args, "analytics_action", None) != "backfill":
-        print("usage: docsgpt analytics backfill --days N [--agent ID] [--dry-run]", file=sys.stderr)
+        print("usage: docsgpt analytics backfill --days N [--agent ID] [--dry-run] [--no-wait]", file=sys.stderr)
         return 2
+    if args.agent:
+        try:
+            uuid.UUID(args.agent)
+        except ValueError:
+            print("docsgpt: --agent must be an agent id", file=sys.stderr)
+            return 2
     from docsgpt.core.settings import settings
 
     days = args.days or settings.ANALYTICS_BACKFILL_DAYS
@@ -428,9 +500,41 @@ def _analytics(args: argparse.Namespace) -> int:
     if not tasks.enabled():
         print("docsgpt: DECISION_ANALYTICS_ENABLED is off (or DECISION_MODE=none); nothing to label", file=sys.stderr)
         return 1
-    report = tasks.sweep(budget_seconds=None, days=days, agent_id=args.agent)
+    report = _sweep_when_free(tasks, days, args.agent, wait=not args.no_wait)
     print(json.dumps(report, indent=2))
     return 0 if report.get("stopped") in (None, "budget") and "skipped" not in report else 1
+
+
+def _sweep_when_free(tasks, days: int, agent_id: Optional[str], wait: bool) -> dict:
+    """Run the backfill sweep, waiting while a scheduled sweep holds the lock.
+
+    The wait is bounded by one scheduled sweep's lease (its budget, one model call, and a minute), after which
+    a lock still held is reported rather than waited on.
+
+    Args:
+        tasks: ``docsgpt.analytics.tasks``.
+        days: Days back to label.
+        agent_id: Only this agent's conversations, or every agent's.
+        wait: Retry while the lock is held; ``False`` returns the first ``{"skipped": "locked"}``.
+
+    Returns:
+        The sweep's report.
+    """
+    from docsgpt.core.settings import settings
+
+    bound = settings.ANALYTICS_SWEEP_BUDGET_SECONDS + settings.DECISION_BACKGROUND_TIMEOUT + 60
+    waited = 0
+    while True:
+        report = tasks.sweep(budget_seconds=None, days=days, agent_id=agent_id)
+        if report.get("skipped") != "locked" or not wait:
+            return report
+        if waited >= bound:
+            print(f"docsgpt: a sweep is still running after {waited} s; try again later", file=sys.stderr)
+            return report
+        if not waited:
+            print("docsgpt: a scheduled sweep is running; waiting for it to finish", file=sys.stderr)
+        _sleep(BACKFILL_POLL_SECONDS)
+        waited += BACKFILL_POLL_SECONDS
 
 
 def _decide_server(args: argparse.Namespace) -> int:
@@ -456,7 +560,15 @@ def build_parser() -> argparse.ArgumentParser:
     api.set_defaults(func=_api)
 
     worker = commands.add_parser("worker", help="run the Celery worker (and the scheduler)")
-    worker.add_argument("-Q", "--queues", help="queues to consume (default: every configured queue)")
+    queues = worker.add_mutually_exclusive_group()
+    queues.add_argument(
+        "-Q", "--queues",
+        help="queues to consume (default: every configured queue; on the solo pool, all but ANALYTICS_QUEUE)",
+    )
+    queues.add_argument(
+        "--analytics", action="store_true",
+        help="consume only ANALYTICS_QUEUE, without the scheduler: the worker that runs next to a solo-pool one",
+    )
     worker.add_argument("--concurrency", type=int, help="worker processes (default: one per CPU)")
     worker.add_argument("--pool", help="celery pool (default: prefork; solo on macOS and Windows)")
     worker.add_argument("-l", "--loglevel", default="INFO")
@@ -507,6 +619,9 @@ def build_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--agent", help="only this agent's conversations (its id)")
     backfill.add_argument(
         "--dry-run", action="store_true", help="print the unlabelled messages and a time estimate; label nothing"
+    )
+    backfill.add_argument(
+        "--no-wait", action="store_true", help="exit at once if a scheduled sweep is running, instead of waiting"
     )
     analytics.set_defaults(func=_analytics)
 

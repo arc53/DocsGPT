@@ -32,8 +32,18 @@ class TestAdminDecisions:
         from docsgpt import decisions
         from docsgpt.core.settings import settings
 
-        monkeypatch.setattr(settings, "DECISION_MODE", None)
-        monkeypatch.setattr(settings, "DECISION_MODEL", None)
+        # Every setting the status reads, pinned to its default, so a developer's .env cannot change the answer.
+        for name, value in {
+            "DECISION_MODE": None,
+            "DECISION_MODEL": None,
+            "DECISION_BASE_URL": None,
+            "DECISION_INJECTION_ENABLED": False,
+            "DECISION_ANALYTICS_ENABLED": False,
+            "DECISION_RELEVANCE_ENABLED": False,
+            "DECISION_BACKGROUND_TIMEOUT": 120.0,
+            "DECISION_RELEVANCE_TIMEOUT": 2.0,
+        }.items():
+            monkeypatch.setattr(settings, name, value)
         with patch("docsgpt.app.handle_auth", return_value={"sub": "admin1"}), patch(
             "docsgpt.app.resolve_roles", return_value=["admin", "user"]
         ):

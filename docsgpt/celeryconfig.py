@@ -37,8 +37,11 @@ task_default_routing_key = "docsgpt"
 task_routes = {
     "docsgpt.api.user.tasks.parse_document": {"queue": settings.DOCUMENT_PARSE_QUEUE},
     "docsgpt.vectorstore.embeddings_tasks.embed_texts": {"queue": settings.EMBEDDINGS_QUEUE},
-    # The analytics sweep waits on decision-model calls for minutes; its own
-    # queue keeps it off the ``docsgpt`` slots chat-side tasks need.
+    # The analytics sweep waits on decision-model calls for minutes. A bare
+    # prefork worker still consumes this queue, giving up one process to it
+    # during a backlog; a solo pool must not (``docsgpt worker`` excludes it
+    # there and ``docsgpt worker --analytics`` takes it), and a dedicated
+    # ``-Q analytics -c 1`` worker isolates it.
     "docsgpt.analytics.tasks.analytics_sweep": {"queue": settings.ANALYTICS_QUEUE},
     "docsgpt.analytics.tasks.analytics_gap_digest": {"queue": settings.ANALYTICS_QUEUE},
 }

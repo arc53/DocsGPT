@@ -6,9 +6,13 @@ settings); which agents are labelled, and with which topics, is each agent's own
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import Field, model_validator
 
 from docsgpt.core.settings._shared import SettingsGroup
+
+logger = logging.getLogger(__name__)
 
 
 class AnalyticsSettings(SettingsGroup):
@@ -17,9 +21,10 @@ class AnalyticsSettings(SettingsGroup):
     ANALYTICS_QUEUE: str = Field(
         default="analytics",
         description=(
-            "Celery queue of the analytics sweep. A sweep waits on decision-model calls for minutes, so its own "
-            "queue keeps it from holding a `docsgpt` or `parsing` slot; a bare worker still consumes it, and "
-            "operators can isolate it with `-Q analytics -c 1`."
+            "Celery queue of the analytics sweep and the docs-gap digest. A sweep waits on decision-model calls for "
+            "minutes: a bare prefork worker still consumes the queue and gives up one process to it during a "
+            "backlog, `docsgpt worker` on the solo pool (macOS, Windows) leaves it to `docsgpt worker --analytics`, "
+            "and a dedicated `-Q analytics -c 1` worker isolates it."
         ),
     )
     ANALYTICS_SWEEP_SECONDS: int = Field(
@@ -63,8 +68,8 @@ class AnalyticsSettings(SettingsGroup):
         default=7,
         ge=1,
         description=(
-            "Days back the sweep labels, newest first; also how far rows from an older model are relabelled. Must "
-            "not exceed ANALYTICS_RETENTION_DAYS."
+            "Days back the sweep labels, newest first; also how far rows from an older model are relabelled. A value "
+            "past ANALYTICS_RETENTION_DAYS is cut to it, with a warning."
         ),
     )
     ANALYTICS_RETENTION_DAYS: int = Field(
@@ -104,8 +109,20 @@ class AnalyticsSettings(SettingsGroup):
     )
 
     @model_validator(mode="after")
-    def _backfill_within_retention(self):
-        # Rows past retention are purged; a longer backfill would label them again on every sweep.
+    def _backfill_within_retention(self) -> "AnalyticsSettings":
+        """Cut ANALYTICS_BACKFILL_DAYS to ANALYTICS_RETENTION_DAYS, with a warning, rather than refuse to start.
+
+        Rows past retention are purged, so a longer backfill would label them again on every sweep. The
+        mismatch must not stop the API, the worker or the CLI, which load these settings whether analytics is on
+        or not.
+
+        Returns:
+            These settings, with the backfill no longer than retention.
+        """
         if self.ANALYTICS_BACKFILL_DAYS > self.ANALYTICS_RETENTION_DAYS:
-            raise ValueError("ANALYTICS_BACKFILL_DAYS must not exceed ANALYTICS_RETENTION_DAYS")
+            logger.warning(
+                "ANALYTICS_BACKFILL_DAYS (%d) exceeds ANALYTICS_RETENTION_DAYS (%d); labelling %d days back",
+                self.ANALYTICS_BACKFILL_DAYS, self.ANALYTICS_RETENTION_DAYS, self.ANALYTICS_RETENTION_DAYS,
+            )
+            self.ANALYTICS_BACKFILL_DAYS = self.ANALYTICS_RETENTION_DAYS
         return self

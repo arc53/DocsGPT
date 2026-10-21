@@ -189,6 +189,66 @@ class TestWorker:
         assert argv[argv.index("--pool") + 1] == "solo"
         assert "docsgpt beat" in capsys.readouterr().err
 
+    def test_the_solo_pool_leaves_the_analytics_queue_alone(self, monkeypatch, capsys):
+        """A sweep holds a solo worker for minutes, and query embeddings queued behind it time out."""
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_ANALYTICS_ENABLED", True)
+        assert cli.main(["worker"]) == 0
+        argv = celery.start.call_args.args[0]
+        assert argv[argv.index("--pool") + 1] == "solo"
+        assert argv[argv.index("-X") + 1] == "analytics"
+        assert "-Q" not in argv, "every other queue is still consumed"
+        assert "-B" in argv, "the scheduler still runs embedded"
+        assert "docsgpt worker --analytics" in capsys.readouterr().err
+
+    def test_a_shared_prefork_pool_keeps_the_analytics_queue(self, monkeypatch):
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "linux")
+        assert cli.main(["worker"]) == 0
+        assert "-X" not in celery.start.call_args.args[0]
+
+    def test_explicit_queues_on_the_solo_pool_are_left_as_given(self, monkeypatch):
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        assert cli.main(["worker", "-Q", "docsgpt,analytics"]) == 0
+        argv = celery.start.call_args.args[0]
+        assert "-X" not in argv
+        assert argv[argv.index("-Q") + 1] == "docsgpt,analytics"
+
+    def test_an_analytics_queue_shared_with_another_is_not_excluded(self, monkeypatch):
+        """Excluding it would drop the queue it shares, such as ``docsgpt``."""
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_QUEUE", "docsgpt")
+        assert cli.main(["worker"]) == 0
+        assert "-X" not in celery.start.call_args.args[0]
+
+    def test_the_analytics_worker_consumes_only_its_queue_without_the_scheduler(self, monkeypatch):
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_QUEUE", "labels")
+        assert cli.main(["worker", "--analytics"]) == 0
+        argv = celery.start.call_args.args[0]
+        assert argv[argv.index("-Q") + 1] == "labels"
+        assert "-B" not in argv, "one scheduler is enough, and the main worker embeds it"
+        assert "-X" not in argv
+        assert argv[argv.index("--pool") + 1] == "solo"
+
+    def test_the_analytics_worker_runs_one_process_on_prefork(self, monkeypatch):
+        """Sweeps are single-flight under a lock, so more processes would only hold memory."""
+        celery = self._celery(monkeypatch)
+        monkeypatch.setattr(sys, "platform", "linux")
+        assert cli.main(["worker", "--analytics"]) == 0
+        argv = celery.start.call_args.args[0]
+        assert argv[argv.index("--concurrency") + 1] == "1"
+
+    def test_the_analytics_worker_takes_no_queue_list(self, monkeypatch, capsys):
+        self._celery(monkeypatch)
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["worker", "--analytics", "-Q", "docsgpt"])
+        assert exc.value.code == 2
+
     def test_the_worker_exit_code_is_returned(self, monkeypatch):
         self._celery(monkeypatch, start=MagicMock(return_value=1))
         monkeypatch.setattr(sys, "platform", "linux")
@@ -260,6 +320,9 @@ class TestConnectorsReencrypt:
         assert "tool and custom-model secrets" in help_text
 
 
+AGENT = "5f0c8a52-3f3e-4f55-9a0e-6f8d2c1b7a90"
+
+
 class TestAnalyticsBackfill:
     @pytest.fixture(autouse=True)
     def _restore_the_worker_flag(self, monkeypatch):
@@ -287,13 +350,25 @@ class TestAnalyticsBackfill:
 
         monkeypatch.setattr(tasks, "backfill_estimate", estimate)
         monkeypatch.setattr(tasks, "sweep", lambda **kwargs: pytest.fail("a dry run labels nothing"))
-        assert cli.main(["analytics", "backfill", "--days", "3", "--agent", "a1", "--dry-run"]) == 0
+        assert cli.main(["analytics", "backfill", "--days", "3", "--agent", AGENT, "--dry-run"]) == 0
         assert json.loads(capsys.readouterr().out) == {"messages": 3}
-        assert seen == [(3, "a1", True)]
+        assert seen == [(3, AGENT, True)]
+
+    @pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])
+    def test_an_agent_that_is_not_an_id_is_refused(self, monkeypatch, capsys, dry_run):
+        """It would reach the database as a failed uuid cast and a traceback."""
+        from docsgpt.analytics import tasks
+
+        monkeypatch.setattr(tasks, "enabled", lambda: True)
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: pytest.fail("not an agent id"))
+        monkeypatch.setattr(tasks, "backfill_estimate", lambda *args: pytest.fail("not an agent id"))
+        assert cli.main(["analytics", "backfill", "--agent", "support-bot", *dry_run]) == 2
+        assert "docsgpt: --agent must be an agent id" in capsys.readouterr().err
 
     def test_does_nothing_while_the_switch_is_off(self, monkeypatch, capsys):
         from docsgpt.analytics import tasks
 
+        monkeypatch.setattr(tasks, "enabled", lambda: False)
         monkeypatch.setattr(tasks, "sweep", lambda **kwargs: pytest.fail("the switch is off"))
         assert cli.main(["analytics", "backfill"]) == 1
         assert "DECISION_ANALYTICS_ENABLED is off" in capsys.readouterr().err
@@ -303,11 +378,53 @@ class TestAnalyticsBackfill:
 
         calls = []
         monkeypatch.setattr(tasks, "enabled", lambda: True)
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_BACKFILL_DAYS", 7)
         monkeypatch.setattr(tasks, "sweep", lambda **kwargs: calls.append(kwargs) or {"messages": 2, "stopped": None})
-        assert cli.main(["analytics", "backfill", "--agent", "a1"]) == 0
-        assert calls == [{"budget_seconds": None, "days": 7, "agent_id": "a1"}]
+        assert cli.main(["analytics", "backfill", "--agent", AGENT]) == 0
+        assert calls == [{"budget_seconds": None, "days": 7, "agent_id": AGENT}]
         monkeypatch.setattr(tasks, "sweep", lambda **kwargs: {"stopped": "unavailable"})
         assert cli.main(["analytics", "backfill"]) == 1
+
+    def test_waits_for_a_scheduled_sweep_to_finish(self, monkeypatch, capsys):
+        """The scheduled sweep holds the lock for minutes during a backlog, which is when a backfill is run."""
+        import json
+
+        from docsgpt.analytics import tasks
+
+        reports = iter([{"skipped": "locked"}, {"skipped": "locked"}, {"messages": 5, "stopped": None}])
+        slept = []
+        monkeypatch.setattr(tasks, "enabled", lambda: True)
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: next(reports))
+        monkeypatch.setattr(cli, "_sleep", slept.append)
+        assert cli.main(["analytics", "backfill"]) == 0
+        captured = capsys.readouterr()
+        assert json.loads(captured.out) == {"messages": 5, "stopped": None}
+        assert captured.err.count("a scheduled sweep is running; waiting") == 1, "said once, not per retry"
+        assert slept == [cli.BACKFILL_POLL_SECONDS] * 2
+
+    def test_no_wait_gives_up_while_a_sweep_runs(self, monkeypatch, capsys):
+        from docsgpt.analytics import tasks
+
+        monkeypatch.setattr(tasks, "enabled", lambda: True)
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: {"skipped": "locked"})
+        monkeypatch.setattr(cli, "_sleep", lambda seconds: pytest.fail("--no-wait does not wait"))
+        assert cli.main(["analytics", "backfill", "--no-wait"]) == 1
+        assert '"skipped": "locked"' in capsys.readouterr().out
+
+    def test_the_wait_is_bounded_by_one_scheduled_sweep(self, monkeypatch, capsys):
+        """A lock still held after a whole sweep's lease means something else is wrong; say so and stop."""
+        from docsgpt.analytics import tasks
+
+        slept = []
+        monkeypatch.setattr(tasks, "enabled", lambda: True)
+        monkeypatch.setattr(tasks, "sweep", lambda **kwargs: {"skipped": "locked"})
+        monkeypatch.setattr(cli, "_sleep", slept.append)
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_SWEEP_BUDGET_SECONDS", 240)
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_BACKGROUND_TIMEOUT", 120)
+        assert cli.main(["analytics", "backfill"]) == 1
+        assert sum(slept) >= 240 + 120 + 60
+        assert sum(slept) < 240 + 120 + 60 + cli.BACKFILL_POLL_SECONDS
+        assert "still running" in capsys.readouterr().err
 
 
 class TestDecisions:

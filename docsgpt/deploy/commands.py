@@ -312,9 +312,32 @@ def _port_number(value: object, source: str) -> int:
     return int(text)
 
 
-def _service_names(directory: Path) -> tuple[str, str]:
+def _service_names(directory: Path) -> tuple[str, ...]:
     """This install's service names; an install elsewhere gets its own, so the two cannot collide."""
     return native.service_names(directory, stack.stack_dir(None))
+
+
+def _installed_names(services, names: tuple[str, ...], report: bool = True) -> tuple[str, ...]:
+    """The services in ``names`` whose unit is installed.
+
+    A newer version can add a service (the analytics worker) that an install made by an older one has
+    no unit for until ``up`` writes it. Starting or stopping that one would fail, so the lifecycle
+    commands work on the installed ones and say what is missing.
+
+    Args:
+        services: The service manager.
+        names: This install's service names, in order.
+        report: Whether to print a note to stderr for each service that is not installed.
+
+    Returns:
+        The installed services, in the order of ``names``.
+    """
+    installed = tuple(name for name in names if services.is_installed(name))
+    if report:
+        for name in names:
+            if name not in installed:
+                print(native.not_installed(name), file=sys.stderr)
+    return installed
 
 
 def _port_is_free(port: int) -> bool:
@@ -327,7 +350,7 @@ def _port_is_free(port: int) -> bool:
     return True
 
 
-def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, str]) -> None:
+def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, ...]) -> None:
     """Whatever holds the port would answer the health check while these services failed to bind.
 
     The one exception is this install's own API holding the port it is recorded on. Ownership is not
@@ -627,7 +650,7 @@ def down(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native":
         services = context.service_manager()
         # The worker goes first: it talks to the API, not the other way round.
-        for name in reversed(_service_names(directory)):
+        for name in reversed(_installed_names(services, _service_names(directory))):
             services.stop(name)
         return 0
     context.docker.compose(directory, *_EVERY_PROFILE, "down")
@@ -648,7 +671,11 @@ def status(args, context: Optional[Context] = None) -> int:
         port = _native_port(env)
         print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
         print(f"Address: {_native_address(env)}")
+        installed = _installed_names(services, _service_names(directory), report=False)
         for name in _service_names(directory):
+            if name not in installed:
+                print(f"  {name}: not installed yet; {native.INSTALL_HINT}")
+                continue
             print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
         healthy = context.wait(f"http://127.0.0.1:{port}/api/health", 0)
         print("API: answering" if healthy else "API: not answering (see `docsgpt logs`)")
@@ -671,7 +698,7 @@ def logs(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         logs_dir = directory / "logs"
-        wanted = args.services or ["api", "worker"]
+        wanted = args.services or [native.log_name(name) for name in _service_names(directory)]
         # Opened before the first read and kept: a line written between printing what is there and
         # starting to follow would otherwise appear in neither.
         handles = {}
@@ -779,7 +806,7 @@ def env(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native" and getattr(args, "restart", True):
         context = context or Context.default(args)
         services = context.service_manager()
-        names = _service_names(directory)
+        names = _installed_names(services, _service_names(directory))
         if any(services.is_running(name) for name in names):
             for name in reversed(names):
                 services.stop(name)
@@ -824,7 +851,7 @@ def dev(args, context: Optional[Context] = None) -> int:
     children = dev_module.plan(args, checkout)
     print(f"DocsGPT from {checkout}")
     for child in children:
-        print(f"  {child.name:<6} {' '.join(child.command)}")
+        print(f"  {child.name:<{dev_module.WIDTH}} {' '.join(child.command)}")
     print(f"\nAPI     http://{args.host}:{args.port}")
     if getattr(args, "ui", False):
         print(f"UI      http://localhost:{dev_module.UI_PORT}")
@@ -1273,10 +1300,14 @@ def doctor(args, context: Optional[Context] = None) -> int:
 
     if _mode(directory) == "native":
         services = context.service_manager() if context else native.services_for_platform()
-        names = _service_names(directory)
+        every = _service_names(directory)
+        names = _installed_names(services, every, report=False)
         running = [name for name in names if services.is_running(name)]
         level = "ok" if len(running) == len(names) else "warn"
-        checks.append(Check("services", level, f"{len(running)} of {len(names)} running ({', '.join(names)})"))
+        detail = f"{len(running)} of {len(names)} running ({', '.join(names)})"
+        # A service only a newer version runs is a hint, not a fault: the rest work without it.
+        detail += "".join(f"; {native.not_installed(name)}" for name in every if name not in names)
+        checks.append(Check("services", level, detail))
 
     for check in checks:
         print(f"[{MARKS[check.level]}] {check.name:<9} {check.detail}")
@@ -1286,7 +1317,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
     return 1 if failed else 0
 
 
-def _chosen_services(names: tuple[str, str], wanted: list) -> list:
+def _chosen_services(names: tuple[str, ...], wanted: list) -> list:
     """The services the user asked for, given either short names (api) or full ones."""
     if not wanted:
         return list(names)
@@ -1307,7 +1338,14 @@ def restart(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         services = context.service_manager()
-        chosen = _chosen_services(_service_names(directory), list(args.services))
+        names = _service_names(directory)
+        if args.services:
+            chosen = _chosen_services(names, list(args.services))
+            missing = [name for name in chosen if not services.is_installed(name)]
+            if missing:
+                raise DeployError(" ".join(native.not_installed(name) for name in missing))
+        else:
+            chosen = list(_installed_names(services, names))
         for name in reversed(chosen):
             services.stop(name)
         for name in chosen:

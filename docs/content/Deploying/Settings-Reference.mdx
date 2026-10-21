@@ -709,7 +709,7 @@ How the analytics sweep runs; none of these are shown in the UI.
 
 Type `str`, default `analytics`.
 
-Celery queue of the analytics sweep. A sweep waits on decision-model calls for minutes, so its own queue keeps it from holding a `docsgpt` or `parsing` slot; a bare worker still consumes it, and operators can isolate it with `-Q analytics -c 1`.
+Celery queue of the analytics sweep and the docs-gap digest. A sweep waits on decision-model calls for minutes: a bare prefork worker still consumes the queue and gives up one process to it during a backlog, `docsgpt worker` on the solo pool (macOS, Windows) leaves it to `docsgpt worker --analytics`, and a dedicated `-Q analytics -c 1` worker isolates it.
 
 ### `ANALYTICS_SWEEP_SECONDS`
 
@@ -751,7 +751,7 @@ Hours of silence after which a conversation's resolution is no longer pending.
 
 Type `int`, default `7`, must be `>= 1`.
 
-Days back the sweep labels, newest first; also how far rows from an older model are relabelled. Must not exceed ANALYTICS_RETENTION_DAYS.
+Days back the sweep labels, newest first; also how far rows from an older model are relabelled. A value past ANALYTICS_RETENTION_DAYS is cut to it, with a warning.
 
 ### `ANALYTICS_RETENTION_DAYS`
 

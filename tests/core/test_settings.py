@@ -6,6 +6,7 @@ validators from every group applied) and that the generated reference page
 tracks the definitions.
 """
 
+import logging
 import types
 import typing
 import warnings
@@ -316,10 +317,24 @@ class TestCrossFieldRules:
     def test_scim_disabled_needs_no_token(self):
         assert Settings.model_validate({"SCIM_ENABLED": False}).SCIM_TOKEN is None
 
-    def test_analytics_backfill_must_fit_in_retention(self):
-        with pytest.raises(ValidationError, match="ANALYTICS_BACKFILL_DAYS must not exceed ANALYTICS_RETENTION_DAYS"):
-            Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14})
-        assert Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 14, "ANALYTICS_RETENTION_DAYS": 14})
+    def test_analytics_backfill_past_retention_is_cut_to_it(self, caplog):
+        """Labels past retention are purged, so a longer backfill would relabel them; it must not stop startup."""
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            loaded = Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14})
+        assert loaded.ANALYTICS_BACKFILL_DAYS == 14
+        assert "ANALYTICS_BACKFILL_DAYS (30) exceeds ANALYTICS_RETENTION_DAYS (14)" in caplog.text
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            fits = Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 14, "ANALYTICS_RETENTION_DAYS": 14})
+        assert fits.ANALYTICS_BACKFILL_DAYS == 14
+        assert caplog.text == ""
+
+    def test_validation_errors_do_not_echo_the_value(self):
+        """A secret in the environment must not land in a startup traceback or a log."""
+        with pytest.raises(ValidationError) as exc:
+            Settings.model_validate({"ANALYTICS_RETENTION_DAYS": "sk-secret-value-123"})
+        assert "ANALYTICS_RETENTION_DAYS" in str(exc.value)
+        assert "sk-secret-value-123" not in str(exc.value)
 
 
 @pytest.mark.unit

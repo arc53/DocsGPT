@@ -42,7 +42,7 @@ directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
 | `docsgpt env` | Print the path of the stack's `.env`. |
 | `docsgpt env get KEY` | Print one setting from it. |
 | `docsgpt env set KEY=VALUE ... [--no-restart]` | Change settings. A running native install restarts by itself unless `--no-restart`; on Docker, run `docsgpt up` to apply. |
-| `docsgpt restart [service ...]` | Restart the services without changing anything else. |
+| `docsgpt restart [service ...]` | Restart the services without changing anything else. On a native install made by an older version, a service this version adds, such as `docsgpt-analytics` on macOS, has no unit yet: `restart`, `down`, `status` and `doctor` skip it with a note, and `docsgpt upgrade` (or `docsgpt up`) installs and starts it. |
 | `docsgpt down` | Stop the stack. Settings and data stay. |
 | `docsgpt upgrade [--version X.Y.Z]` | Upgrade the package and restart the stack on the new version. For a `uv tool` install it does both; otherwise it prints the `pipx` or `pip` command to run, then run `docsgpt up`. |
 | `docsgpt backup [--out DIR] [--with-settings]` | Write an archive of the database and the data volumes (Docker installs). See [Backups](/Deploying/Docker-Deploying#backups). |
@@ -77,10 +77,10 @@ and print the data home and env file they use.
 | Command | What it does |
 | --- | --- |
 | `docsgpt api [--host H] [--port P] [--workers N] [--reload]` | Serve the API and the web UI (gunicorn; uvicorn with auto-reload under `--reload`). Listens on `127.0.0.1:7091` by default. |
-| `docsgpt worker [-Q QUEUES] [--concurrency N] [--pool POOL] [-l LEVEL] [--no-beat]` | Run the Celery worker with the beat scheduler embedded. The worker is required: query embedding runs on it. |
+| `docsgpt worker [-Q QUEUES \| --analytics] [--concurrency N] [--pool POOL] [-l LEVEL] [--no-beat]` | Run the Celery worker with the beat scheduler embedded. The worker is required: query embedding runs on it. On macOS and Windows it runs the solo pool, one task at a time, and without `-Q` it consumes every queue except `analytics`, since an [analytics sweep](/Deploying/Background-Jobs#the-analytics-queue) would hold it for minutes. `--analytics` runs the worker that takes that queue, alone and without the scheduler; run it next to the main worker there (`docsgpt dev` and `docsgpt up --native` do). |
 | `docsgpt beat [-l LEVEL]` | Run the scheduler on its own, on Windows or next to workers started with `--no-beat`. |
 | `docsgpt decide-server [--host H] [--port P] [--device cpu\|mps\|cuda]` | Serve the decision model over `/v1/decide` for the API and the worker, as the Docker stacks' opt-in `decider` does. Listens on `127.0.0.1:7095`; any other interface needs `DECISION_KEY`. Loads nothing until a decision feature calls. `mps` and `cuda` need the `decisions-torch` extra. See [The Decision Model](/Models/decision-model#the-decider). |
-| `docsgpt dev [--ui] [--mock-llm] [--no-worker] [--no-reload]` | Run a checkout's API, worker and, with `--ui`, the frontend dev server, with reload. See [Development Environment](/Deploying/Development-Environment). |
+| `docsgpt dev [--ui] [--mock-llm] [--no-worker] [--no-reload]` | Run a checkout's API, worker and, with `--ui`, the frontend dev server, with reload; on macOS and Windows also `docsgpt worker --analytics`. See [Development Environment](/Deploying/Development-Environment). |
 
 ## Database and maintenance commands
 
@@ -97,7 +97,7 @@ container from the stack directory, for example
 | `docsgpt reembed [--dry-run] [--sources IDS] [--batch-size N]` | Re-embed every index after changing `EMBEDDINGS_NAME`. See [Upgrading](/upgrading). |
 | `docsgpt prefetch-models [MODEL ...]` | Download the embedding models and their tokenizers ahead of time. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
 | `docsgpt decisions prefetch [--runtime onnx\|torch]` | Download the decision model's pinned files into `DECISION_CACHE_DIR` ahead of time (`torch`: the weights `decide-server --device mps\|cuda` reads). Every decision feature ships off, and nothing downloads until one is turned on. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
-| `docsgpt analytics backfill [--days N] [--agent ID] [--dry-run]` | Label the last N days of conversations (`ANALYTICS_BACKFILL_DAYS`, 7, by default; at most `ANALYTICS_RETENTION_DAYS`) for [Insights](/Using/analytics-and-logs#conversation-insights) now, in the foreground, through the same sweep the worker runs. Run it where the worker runs. `--dry-run` prints the unlabelled messages and an estimated time instead. Does nothing while `DECISION_ANALYTICS_ENABLED` is off. See [Labelling past conversations](/Deploying/Background-Jobs#labelling-past-conversations). |
+| `docsgpt analytics backfill [--days N] [--agent ID] [--dry-run] [--no-wait]` | Label the last N days of conversations (`ANALYTICS_BACKFILL_DAYS`, 7, by default; at most `ANALYTICS_RETENTION_DAYS`) for [Insights](/Using/analytics-and-logs#conversation-insights) now, in the foreground, through the same sweep the worker runs. Run it where the worker runs. `--dry-run` prints the unlabelled messages and an estimated time instead. While a scheduled sweep runs it waits for it, up to one sweep's length; `--no-wait` exits instead. Does nothing while `DECISION_ANALYTICS_ENABLED` is off. See [Labelling past conversations](/Deploying/Background-Jobs#labelling-past-conversations). |
 | `docsgpt decisions status` | Show the decision model settings, each feature's mode and whether the model files are downloaded, without loading it. In API mode it asks the decision server what it runs. A running server's load state and measured speed are at `GET /api/admin/decisions` (admins only). |
 | `docsgpt verify-offline [MODEL ...]` | Check that a prepared install serves its defaults with networking off. |
 | `docsgpt ocr-check [--engine tesseract\|deepseek] [--file PATH]` | Send one page to the configured OCR engine and report the endpoint, time, text and token usage. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |

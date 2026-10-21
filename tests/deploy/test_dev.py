@@ -41,7 +41,7 @@ class FakeProcess:
 class TestPlan:
     def test_the_api_and_worker_run_from_the_checkout(self, tmp_path, monkeypatch):
         monkeypatch.delenv("DOCSGPT_HOME", raising=False)
-        children = dev.plan(_args(), tmp_path, watching=False)
+        children = dev.plan(_args(), tmp_path, watching=False, platform="linux")
         assert _named(children) == ["api", "worker"]
         api, worker = children
         assert api.command[-6:-1] == ["api", "--host", "127.0.0.1", "--port", "7091"]
@@ -78,11 +78,35 @@ class TestPlan:
     def test_no_worker(self, tmp_path):
         assert _named(dev.plan(_args(worker=False), tmp_path, watching=False)) == ["api"]
 
+    def test_a_solo_pool_worker_gets_an_analytics_worker_next_to_it(self, tmp_path):
+        """macOS and Windows run the solo pool, which a minutes-long sweep would hold while searches time out."""
+        children = dev.plan(_args(), tmp_path, watching=False, platform="darwin")
+        assert _named(children) == ["api", "worker", "analytics"]
+        analytics = children[2]
+        assert analytics.command[-4:] == ["worker", "--analytics", "-l", "INFO"]
+        assert analytics.cwd == tmp_path
+        assert analytics.env == children[1].env
+
+    def test_the_analytics_worker_restarts_on_save_like_the_worker(self, tmp_path):
+        analytics = dev.plan(_args(), tmp_path, watching=True, platform="win32")[2]
+        assert "watchfiles" in analytics.command
+        assert "docsgpt worker --analytics" in " ".join(analytics.command)
+
+    def test_a_prefork_worker_keeps_the_analytics_queue(self, tmp_path):
+        assert _named(dev.plan(_args(), tmp_path, watching=False, platform="linux")) == ["api", "worker"]
+
+    def test_no_worker_means_no_analytics_worker(self, tmp_path):
+        assert _named(dev.plan(_args(worker=False), tmp_path, watching=False, platform="darwin")) == ["api"]
+
+    def test_every_label_lines_up(self):
+        lines = [dev._line(name, "x", colour=False) for name in ("api", "worker", "analytics", "ui", "llm")]
+        assert len({line.index("|") for line in lines}) == 1, lines
+
     def test_the_mock_llm_starts_first_and_the_others_are_pointed_at_it(self, tmp_path):
         """A dev loop that needs no API key: the mock has to be up before the API asks it anything."""
         (tmp_path / "scripts").mkdir()
         (tmp_path / "scripts" / "mock_llm.py").write_text("", encoding="utf-8")
-        children = dev.plan(_args(mock_llm=True), tmp_path, watching=False)
+        children = dev.plan(_args(mock_llm=True), tmp_path, watching=False, platform="linux")
         assert _named(children) == ["llm", "api", "worker"]
         api = children[1]
         assert api.env["LLM_PROVIDER"] == "openai"
@@ -129,7 +153,7 @@ class TestRun:
         children = [dev.Child(name="api", command=["true"], cwd=tmp_path)]
         code = dev.run(children, out=out, spawn=self._spawn([FakeProcess(["hello\n"], code=0)]),
                        sleep=lambda _: None, colour=False)
-        assert "api    | hello" in out.getvalue()
+        assert f"{'api'.ljust(dev.WIDTH)} | hello" in out.getvalue()
         assert code == 1, "a child that ends by itself ends the session, however it exited"
 
     def test_output_in_flight_is_not_lost_when_run_returns(self, tmp_path):

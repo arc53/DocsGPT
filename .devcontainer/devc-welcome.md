@@ -32,7 +32,7 @@ artifact downloads. See "ASGI-only features" in
 ### Celery (Task Queue)
 
 ```bash
-celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,analytics
 ```
 
 `-B` embeds the beat scheduler, which fires scheduled agent runs, source syncs,
@@ -42,6 +42,9 @@ The `embeddings` queue serves every search query, so retrieval needs this worker
 The `parsing` queue serves document parsing (the `read_document` tool / workflow
 native-file parse); without it those calls hang `DOCUMENT_PARSE_TIMEOUT` then
 error. A dedicated `-Q parsing` worker can be GPU-enabled for heavier parsers.
+
+The `analytics` queue runs the conversation-analytics sweep when
+`DECISION_ANALYTICS_ENABLED` is on; leave it out and Insights never fills.
 
 ## Github Codespaces Instructions
 

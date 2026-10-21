@@ -1,7 +1,7 @@
 ---
 title: Setting Up a Development Environment
 description: Guide to setting up a development environment for DocsGPT, including backend and frontend setup.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-21
 ---
 
 import { Callout } from 'nextra/components'
@@ -154,7 +154,9 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     ```
 
     Both run as children of that terminal, with their output interleaved and labelled, and Ctrl-C stops
-    them together. Useful flags:
+    them together. On macOS and Windows a third child, `analytics`, runs `docsgpt worker --analytics`: the
+    worker there uses the solo pool, which a [conversation-analytics sweep](/Deploying/Background-Jobs#the-analytics-queue)
+    would hold for minutes. Useful flags:
 
     | Flag | What it does |
     | --- | --- |
@@ -233,8 +235,12 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     `docsgpt worker` picks it automatically on macOS and Windows. With raw Celery, pass it yourself:
 
     ```bash
-    python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
+    python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo -X analytics
     ```
+
+    `-X analytics` keeps the [analytics sweep](/Deploying/Background-Jobs#the-analytics-queue) off the solo
+    worker, which it would hold for minutes. With `DECISION_ANALYTICS_ENABLED` on, run `docsgpt worker --analytics`
+    in another terminal for it; `docsgpt worker` leaves the queue out by itself.
 
     The solo pool makes each query embedding take roughly 350 ms instead of about 55 ms on prefork, almost all
     of it spent waiting for the worker to pick up the message. That only affects local development; production

@@ -103,7 +103,8 @@ class SettingsGroup(BaseSettings):
     stripped. Fields typed ``str`` keep whatever they are given.
     """
 
-    model_config = SettingsConfigDict(extra="ignore")
+    # hide_input_in_errors: a validation error must not echo an environment value, which may be a secret.
+    model_config = SettingsConfigDict(extra="ignore", hide_input_in_errors=True)
 
     @model_validator(mode="before")
     @classmethod

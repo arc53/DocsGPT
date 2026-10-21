@@ -336,9 +336,11 @@ class TestSetupPeriodicTasks:
         assert names[:3] == ["schedule-syncs-daily", "schedule-syncs-weekly", "schedule-syncs-monthly"]
 
     @pytest.mark.unit
-    def test_registers_periodic_tasks(self):
+    def test_registers_periodic_tasks(self, monkeypatch):
         from docsgpt.api.user.tasks import setup_periodic_tasks
 
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_ANALYTICS_ENABLED", True)
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_SWEEP_SECONDS", 300)
         sender = MagicMock()
 
         setup_periodic_tasks(sender)
@@ -406,10 +408,28 @@ class TestSetupPeriodicTasks:
         assert calls[21][1].get("name") == "cleanup-conversation-labels"
         assert calls[22][0][0] == timedelta(weeks=1)
         assert calls[22][1].get("name") == "analytics-gap-digest"
-        # The analytics queue is optional: a message no worker takes within its interval is dropped, not queued up.
+        # A sweep or digest a worker receives after its interval is dropped rather than run late, back to back.
         assert calls[20][1].get("expires") == 300
         assert calls[21][1].get("expires") == 24 * 3600
         assert calls[22][1].get("expires") == 6 * 3600
+
+    @pytest.mark.unit
+    def test_the_analytics_queue_gets_nothing_while_analytics_is_off(self, monkeypatch):
+        """Redis keeps an expired message until a worker takes it, so a worker without the queue would pile them up.
+
+        Retention still runs: labels made while analytics was on must still be purged after it goes off.
+        """
+        from docsgpt.api.user.tasks import setup_periodic_tasks
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_ANALYTICS_ENABLED", False)
+        sender = MagicMock()
+        setup_periodic_tasks(sender)
+
+        names = [call.kwargs.get("name") for call in sender.add_periodic_task.call_args_list]
+        assert "analytics-sweep" not in names
+        assert "analytics-gap-digest" not in names
+        assert "cleanup-conversation-labels" in names
+        assert sender.add_periodic_task.call_count == 21
 
 
 class TestMcpOauthTask:

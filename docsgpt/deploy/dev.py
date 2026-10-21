@@ -27,9 +27,9 @@ UI_PORT = 5173
 STOP_GRACE = 10.0
 
 # One colour per child so a glance at the terminal says who is talking.
-COLOURS = {"api": "\033[36m", "worker": "\033[35m", "ui": "\033[32m", "llm": "\033[33m"}
+COLOURS = {"api": "\033[36m", "worker": "\033[35m", "analytics": "\033[34m", "ui": "\033[32m", "llm": "\033[33m"}
 RESET = "\033[0m"
-WIDTH = 6
+WIDTH = max(len(name) for name in COLOURS)
 
 
 @dataclass
@@ -62,8 +62,24 @@ def plan(
     *,
     watching: Optional[bool] = None,
     launcher: Optional[list[str]] = None,
+    platform: Optional[str] = None,
 ) -> list[Child]:
-    """The children to run, in the order they should start."""
+    """The children to run, in the order they should start.
+
+    Where the worker runs Celery's solo pool (macOS, Windows) it leaves the analytics queue alone, so an
+    ``analytics`` child, ``docsgpt worker --analytics``, runs next to it.
+
+    Args:
+        args: The parsed ``docsgpt dev`` options.
+        checkout: The repository checkout the children run from.
+        watching: Whether watchfiles can restart the workers on save; detected when omitted.
+        launcher: How to start ``docsgpt``; this interpreter's ``-m docsgpt`` when omitted.
+        platform: A ``sys.platform`` value; this machine's when omitted.
+
+    Returns:
+        The children, in start order.
+    """
+    from docsgpt.cli import needs_analytics_worker
     from docsgpt.deploy import stack
 
     launcher = launcher or [sys.executable, "-m", "docsgpt"]
@@ -100,6 +116,11 @@ def plan(
         if getattr(args, "reload", True) and watching:
             worker = _reloading_command(worker, package)
         children.append(Child(name="worker", command=worker, cwd=checkout, env=dict(environment)))
+        if needs_analytics_worker(platform):
+            analytics = [*launcher, "worker", "--analytics", "-l", getattr(args, "loglevel", "INFO")]
+            if getattr(args, "reload", True) and watching:
+                analytics = _reloading_command(analytics, package)
+            children.append(Child(name="analytics", command=analytics, cwd=checkout, env=dict(environment)))
 
     if getattr(args, "ui", False):
         frontend = checkout / "frontend"
