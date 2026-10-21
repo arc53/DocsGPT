@@ -12,6 +12,7 @@ export const ja = {
   expandChat: 'チャットを拡大',
   collapseChat: 'チャットを縮小',
   closeChat: 'チャットを閉じる',
+  resizeSidebar: 'Resize chat', // TODO(translate)
   newChat: '新しいチャット',
   chatHistory: 'チャット履歴',
   historyHeading: '履歴',

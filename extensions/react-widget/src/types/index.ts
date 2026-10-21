@@ -118,6 +118,20 @@ export interface WidgetProps extends LocaleProps {
           maxHeight?: string;
         };
       };
+  /**
+   * `'floating'` (the default) opens a panel above the launcher; `'sidebar'`
+   * docks a full-height panel to the window's edge, over the page. `size`
+   * doesn't apply to the sidebar. Below 769px wide both go full screen.
+   */
+  layout?: 'floating' | 'sidebar';
+  /** The edge the sidebar docks to. Default `'right'`. */
+  sidebarSide?: 'left' | 'right';
+  /**
+   * The sidebar's width in pixels before the visitor resizes it, between 320
+   * and `min(720, 70vw)`. Default 420. The visitor's width is remembered
+   * unless `persistConversations` is false.
+   */
+  sidebarWidth?: number;
   theme?: THEME;
   buttonIcon?: string;
   buttonText?: string;

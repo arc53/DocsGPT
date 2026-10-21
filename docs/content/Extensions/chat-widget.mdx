@@ -178,7 +178,10 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`buttonIcon`**   | `string`         | a chat-bubble icon                                          | URL for the icon image used in the widget's launch button. Defaults to a chat-bubble icon drawn inline. |
 | **`buttonText`**   | `string`         | `"Ask a question"`                                          | Label of the widget's launch button.                                                                 |
 | **`buttonBg`**     | `string`         | the theme's brand colour                                    | Background of the widget's launch button: `#7d54d1` in the light theme, `#8855f1` in the dark one. Accepts any CSS background value. |
-| **`size`**         | `"small" \| "medium" \| "large" \| { custom: { width, height, maxWidth?, maxHeight? } }` | `"medium"` | Size of the chat panel: `small` is 320px × 400px, `medium` is 400px × 80vh, and `large` opens a centered 666px × 75vh modal. `custom` takes CSS sizes. |
+| **`size`**         | `"small" \| "medium" \| "large" \| { custom: { width, height, maxWidth?, maxHeight? } }` | `"medium"` | Size of the chat panel: `small` is 320px × 400px, `medium` is 400px × 80vh, and `large` opens a centered 666px × 75vh modal. `custom` takes CSS sizes. Ignored when `layout` is `"sidebar"`. |
+| **`layout`**       | `"floating" \| "sidebar"` | `"floating"`                                     | `floating` opens a panel above the launch button. `sidebar` docks a full-height panel to the edge of the window, over the page. See [Sidebar layout](#sidebar-layout). |
+| **`sidebarSide`**  | `"left" \| "right"` | `"right"`                                              | The window edge the sidebar docks to.                                                                |
+| **`sidebarWidth`** | `number`         | `420`                                                       | The sidebar's width in pixels until the visitor resizes it, kept between 320 and the smaller of 720 and 70% of the window. |
 | **`showSources`**  | `boolean`        | `true`                                                      | Shows the sources an answer was based on, and turns the answer's `[n]` citations into links to them. Set `false` to hide both. See [Sources and citations](#sources-and-citations). |
 | **`collectFeedback`** | `boolean`     | `true`                                                      | Shows like/dislike buttons on answers and sends the feedback to DocsGPT.                             |
 | **`defaultOpen`**  | `boolean`        | `false`                                                     | Opens the chat panel on page load instead of showing only the launch button.                         |
@@ -186,7 +189,7 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
 | **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT" in the widget's language, `false` hides it, and an object replaces it. See [Branding](#branding). |
 | **`passthrough`**  | `Record<string, string \| number \| boolean \| null>` | _unset_                 | Values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}`, and they appear on each turn in Logs. See [Passing who is asking](#passing-who-is-asking). |
-| **`persistConversations`** | `boolean` | `true`                                             | Keeps the visitor's conversations in the browser's `localStorage`, so a reload continues the chat and earlier chats are listed under History. `false` stores nothing and removes what an earlier visit stored. See [Conversation history](#conversation-history). |
+| **`persistConversations`** | `boolean` | `true`                                             | Keeps the visitor's conversations in the browser's `localStorage`, so a reload continues the chat and earlier chats are listed under History. The sidebar width the visitor chose is kept the same way. `false` stores nothing and removes what an earlier visit stored. See [Conversation history](#conversation-history). |
 | **`locale`**       | `string`         | `"auto"`                                                    | Language of the widget's own text. `"auto"` follows the visitor's browser; or set one of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. See [Languages](#languages). |
 | **`translations`** | `Partial<Messages>` | _unset_                                                  | Replaces individual strings of the widget's own text, by key, e.g. `{ composerPlaceholder: 'Ask our team' }`. See [Languages](#languages). |
 | **`onEvent`**      | `(event: WidgetEvent) => void` | _unset_                                       | Called with every event the chat fires, such as a question sent or an answer finished. See [JavaScript API](#javascript-api). |
@@ -291,6 +294,39 @@ The list shows every question you pass, each on its own row, so keep it to a han
 
 ---
 
+## Sidebar layout
+
+`layout="sidebar"` docks the chat to the edge of the window at full height, like a docs assistant, instead of floating it above the launch button. It opens over the page, so your layout doesn't move. The launch button opens it as usual, `defaultOpen` opens it on load, and the [JavaScript API](#javascript-api) works the same in both layouts.
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  layout="sidebar"
+  sidebarSide="right"
+  sidebarWidth={440}
+/>
+```
+
+The script tag takes the same options:
+
+```js
+renderDocsGPTWidget('app', {
+  apiKey: 'your-agent-api-key',
+  layout: 'sidebar',
+  sidebarSide: 'left',
+});
+```
+
+- **Resizing:** visitors drag the sidebar's inner edge to make it wider or narrower, from 320px up to 720px or 70% of the window, whichever is smaller. With the keyboard, they tab to the edge and use the arrow keys (16px a step, 64px with Shift), or Home and End for the narrowest and widest.
+- **Remembered width:** the width a visitor picks is kept per agent under `docsgpt-widget:v1:<hash>:width` and used on their next visit in place of `sidebarWidth`. With `persistConversations={false}` it isn't stored. If the window gets narrower, the sidebar shrinks with it and grows back when there is room again.
+- **Size and expand:** `size` doesn't apply, and the header has no expand button.
+- **Phones:** at 768px wide and below, the sidebar opens full screen, like the floating panel.
+- **Motion:** the sidebar slides in from its edge, and simply appears when the visitor's system asks for reduced motion.
+
+On an iPhone in landscape, add `viewport-fit=cover` to your page's viewport meta tag so the sidebar can keep its content clear of the notch and home indicator.
+
+---
+
 ## Conversation history
 
 The widget remembers the visitor's conversations in their browser. After a reload, or on the next page of your site, the chat opens where they left off, and a follow-up question continues the same conversation on the server. An answer that was still arriving when the page closed comes back as an error with a **Retry** button.
@@ -314,7 +350,7 @@ To keep nothing in the browser, turn it off. This also removes what an earlier v
 <DocsGPTWidget apiKey="your-agent-api-key" persistConversations={false} />
 ```
 
-On computers that several people share, such as an internal site behind a login, clear the history when someone signs out. `clearHistory()` removes everything stored for this agent and starts a new chat:
+On computers that several people share, such as an internal site behind a login, clear the history when someone signs out. `clearHistory()` removes every conversation stored for this agent and starts a new chat:
 
 ```js
 const widget = renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });

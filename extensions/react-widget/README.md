@@ -59,6 +59,8 @@ Pass a `ref` to drive the widget from your page (`open()`, `close()`, `toggle()`
 
 Conversations are kept in the visitor's `localStorage` (per agent, the 30 most recent), so a reload continues the chat, and the header has **New chat** and **Chat history** buttons. Set `persistConversations={false}` to store nothing, and call `clearHistory()` on logout where computers are shared. See [Conversation history](https://docs.docsgpt.cloud/Extensions/chat-widget#conversation-history).
 
+Set `layout="sidebar"` to dock the chat to the edge of the window at full height instead of floating it above the button. `sidebarSide` picks the edge (`'right'` by default) and `sidebarWidth` the starting width (420px). Visitors can drag the inner edge, or use the arrow keys on it, to resize it between 320px and `min(720px, 70vw)`, and their width is remembered unless `persistConversations` is false. `size` doesn't apply to the sidebar, and on phones it opens full screen. See [Sidebar layout](https://docs.docsgpt.cloud/Extensions/chat-widget#sidebar-layout).
+
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
 ### Html

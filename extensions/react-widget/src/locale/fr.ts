@@ -12,6 +12,7 @@ export const fr = {
   expandChat: 'Agrandir la conversation',
   collapseChat: 'Réduire la conversation',
   closeChat: 'Fermer la conversation',
+  resizeSidebar: 'Resize chat', // TODO(translate)
   newChat: 'Nouvelle conversation',
   chatHistory: 'Historique des conversations',
   historyHeading: 'Historique',

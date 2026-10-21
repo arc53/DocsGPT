@@ -28,6 +28,7 @@ import {
 } from '../hooks/useAttachments';
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
+import { SIDEBAR_WIDTH_VAR, useSidebarResize } from '../hooks/useSidebarResize';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
 import { isTouchPrimary, isWebSource, sourceLabel } from '../utils/helper';
 import { renderAnswer } from '../utils/markdown';
@@ -45,6 +46,10 @@ import {
   type StoredConversation,
   type StoredTurn,
 } from '../utils/conversationStore';
+import {
+  parseSidebarWidth,
+  SIDEBAR_DEFAULT_WIDTH,
+} from '../utils/sidebarWidth';
 import { I18nProvider, useMessages } from '../locale/context';
 import {
   AttachButton,
@@ -100,6 +105,9 @@ import {
 
 /** How long a source a citation opened stays highlighted. */
 const SOURCE_HIGHLIGHT_MS = 2000;
+
+/** Below this a sidebar gets the small panel's two-row header. */
+const SIDEBAR_COMPACT_WIDTH = 400;
 
 /** `example.com/faq` for a source's URL; the URL itself if it won't parse. */
 const sourceHost = (source: string) => {
@@ -249,6 +257,37 @@ const settleIn = keyframes`
     transform: none;
   }
 `;
+type SidebarSide = 'left' | 'right';
+// Past the edge by the shadow's reach, so none of it lingers on screen.
+const sidebarOffscreen = {
+  right: 'translateX(calc(100% + 40px))',
+  left: 'translateX(calc(-100% - 40px))',
+};
+const sidebarIn = {
+  right: keyframes`
+    from {
+      transform: ${sidebarOffscreen.right};
+    }
+  `,
+  left: keyframes`
+    from {
+      transform: ${sidebarOffscreen.left};
+    }
+  `,
+};
+const sidebarOut = {
+  right: keyframes`
+    to {
+      transform: ${sidebarOffscreen.right};
+    }
+  `,
+  left: keyframes`
+    to {
+      transform: ${sidebarOffscreen.left};
+    }
+  `,
+};
+
 const Overlay = styled.div`
   position: fixed;
   top: 0;
@@ -260,7 +299,11 @@ const Overlay = styled.div`
   transition: opacity 0.5s;
 `;
 
-const WidgetContainer = styled.div<{ $modal?: boolean }>`
+const WidgetContainer = styled.div<{
+  $modal?: boolean;
+  $sidebar?: SidebarSide;
+  $isOpen?: boolean;
+}>`
   all: initial;
   position: fixed;
   right: ${(props) => (props.$modal ? '50%' : '10px')};
@@ -281,9 +324,42 @@ const WidgetContainer = styled.div<{ $modal?: boolean }>`
       transform: none;
     }
   }
+
+  /* Docked to the window's edge, over the page. Top and bottom follow the
+     visual viewport, so a tablet's keyboard doesn't cover the composer. */
+  ${({ $sidebar, $isOpen }) =>
+    $sidebar &&
+    css`
+      top: var(--dgpt-vv-top, 0px);
+      bottom: var(--dgpt-vv-bottom, 0px);
+      ${$sidebar}: 0;
+      ${$sidebar === 'right' ? 'left' : 'right'}: auto;
+      width: calc(
+        var(${SIDEBAR_WIDTH_VAR}, ${SIDEBAR_DEFAULT_WIDTH}px) +
+          env(safe-area-inset-${$sidebar}, 0px)
+      );
+      animation: ${
+        $isOpen
+          ? css`
+              ${sidebarIn[$sidebar]} 280ms cubic-bezier(0.16, 1, 0.3, 1)
+            `
+          : css`
+              ${sidebarOut[$sidebar]} 200ms cubic-bezier(0.4, 0, 1, 1) forwards
+            `
+      };
+
+      @media (prefers-reduced-motion: reduce) {
+        animation: none;
+        /* Gone at once rather than after the unmount delay. */
+        visibility: ${$isOpen ? 'visible' : 'hidden'};
+      }
+    `}
 `;
 
-const StyledContainer = styled.div<{ $isOpen: boolean }>`
+const StyledContainer = styled.div<{
+  $isOpen: boolean;
+  $sidebar?: SidebarSide;
+}>`
   all: initial;
   box-sizing: border-box;
   max-height: ${(props) => props.theme.dimensions!.maxHeight};
@@ -348,6 +424,75 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
     border-radius: 0;
     /* Expanding is desktop-only; easing after the keyboard reads as lag. */
     transition: none;
+  }
+
+  /* Fills the docked container, which does the sliding. Safe-area padding
+     keeps the header and composer clear of a notch or home indicator. */
+  ${({ $sidebar, theme }) =>
+    $sidebar &&
+    css`
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      padding: env(safe-area-inset-top, 0px)
+        ${$sidebar === 'right' ? 'env(safe-area-inset-right, 0px)' : '0'}
+        env(safe-area-inset-bottom, 0px)
+        ${$sidebar === 'left' ? 'env(safe-area-inset-left, 0px)' : '0'};
+      border-radius: 0;
+      border-${$sidebar === 'right' ? 'left' : 'right'}: 1px solid
+        ${theme.border};
+      box-shadow: ${shadows.sidebar};
+      animation: none;
+      transition: none;
+
+      @media (prefers-reduced-motion: reduce) {
+        animation: none;
+      }
+    `}
+`;
+
+// A wide hit area over the sidebar's inner edge; the line inside it lights
+// up on hover, while dragging and on keyboard focus.
+const ResizeHandle = styled.div<{ $side: SidebarSide; $dragging: boolean }>`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  ${(props) => (props.$side === 'right' ? 'left' : 'right')}: -5px;
+  z-index: 6;
+  width: 11px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 3px;
+    background-color: ${(props) =>
+      props.$dragging ? props.theme.ring : 'transparent'};
+    transition: background-color 0.15s ease;
+  }
+
+  &:hover::after {
+    background-color: ${(props) => props.theme.ring};
+    /* A pointer passing over the edge doesn't flash it. */
+    transition-delay: 0.15s;
+  }
+
+  &:focus-visible::after {
+    background-color: ${(props) => props.theme.ring};
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::after,
+    &:hover::after {
+      transition: none;
+    }
   }
 `;
 
@@ -436,15 +581,23 @@ const HeaderActions = styled.div<{ $compact?: boolean }>`
   gap: 4px;
   flex-shrink: 0;
   margin: -4px -8px 0 0;
-  /* The small panel can't spare four buttons' width from the title: two per
-     row. */
+  /* A narrow panel can't spare every button's width from the title: the
+     panel's own buttons on top, the chat's below. */
   ${(props) =>
     props.$compact &&
     css`
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      max-width: 68px;
+      flex-direction: column;
+      align-items: flex-end;
     `}
+`;
+
+const HeaderActionsRow = styled.div`
+  display: flex;
+  gap: 4px;
+
+  &:empty {
+    display: none;
+  }
 `;
 
 const Title = styled.h3`
@@ -1772,7 +1925,10 @@ export const WidgetCore = ({
   heroDescription,
   suggestedQuestions,
   suggestedQuestionsLabel,
-  size = 'medium',
+  size: sizeProp = 'medium',
+  layout = 'floating',
+  sidebarSide,
+  sidebarWidth,
   theme = 'dark',
   collectFeedback = true,
   isOpen = false,
@@ -1789,6 +1945,9 @@ export const WidgetCore = ({
   coreRef,
 }: WidgetCoreProps) => {
   const { locale, t, plural } = useMessages();
+  const sidebarLayout = layout === 'sidebar';
+  // The sidebar has one size of its own.
+  const size = sidebarLayout ? 'medium' : sizeProp;
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
   const [status, setStatus] = React.useState<Status>('idle');
@@ -2064,6 +2223,24 @@ export const WidgetCore = ({
     isMobileWidth,
     () => false,
   );
+
+  // Below the mobile width the sidebar is the full-screen panel too.
+  const docked: SidebarSide | undefined =
+    sidebarLayout && !mobileWidth
+      ? sidebarSide === 'left'
+        ? 'left'
+        : 'right'
+      : undefined;
+  const sidebar = useSidebarResize({
+    active: Boolean(docked) && isOpen,
+    side: docked ?? 'right',
+    defaultWidth: parseSidebarWidth(sidebarWidth) ?? SIDEBAR_DEFAULT_WIDTH,
+    storageKey:
+      sidebarLayout && persistence === 'on'
+        ? storageKey(apiHost, apiKey, 'width')
+        : null,
+    containerRef,
+  });
 
   // The node exists only once mounted.
   useVisualViewportBounds(isOpen && mounted, containerRef);
@@ -2852,16 +3029,19 @@ export const WidgetCore = ({
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
-  const canExpand = size !== 'large';
+  const canExpand = size !== 'large' && !sidebarLayout;
   const dimensions =
     canExpand && isExpanded
       ? expandedDimensions(baseDimensions)
       : baseDimensions;
   if (!mounted) return null;
 
-  // Two rows in the small panel, Expand and Close on top; the DOM follows
-  // what's on screen so Tab does too. Full screen has room for one row.
-  const compactHeader = size === 'small' && !mobileWidth;
+  // Two rows in the small panel and a narrow sidebar, Expand and Close on
+  // top; the DOM follows what's on screen so Tab does too. Full screen has
+  // room for one row.
+  const narrowSidebar =
+    Boolean(docked) && sidebar.width < SIDEBAR_COMPACT_WIDTH;
+  const compactHeader = (size === 'small' && !mobileWidth) || narrowSidebar;
   const chatActions = (
     <>
       {queries.length > 0 && (
@@ -2927,9 +3107,19 @@ export const WidgetCore = ({
           lang={locale}
           className={`${size !== 'large' ? (isOpen ? 'open' : 'close') : 'modal'}`}
           $modal={size === 'large'}
+          $sidebar={docked}
+          $isOpen={isOpen}
+          style={
+            docked
+              ? ({
+                  [SIDEBAR_WIDTH_VAR]: `${sidebar.width}px`,
+                } as React.CSSProperties)
+              : undefined
+          }
         >
           <StyledContainer
             $isOpen={isOpen}
+            $sidebar={docked}
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -2952,8 +3142,8 @@ export const WidgetCore = ({
               <HeaderActions $compact={compactHeader}>
                 {compactHeader ? (
                   <>
-                    {panelActions}
-                    {chatActions}
+                    <HeaderActionsRow>{panelActions}</HeaderActionsRow>
+                    <HeaderActionsRow>{chatActions}</HeaderActionsRow>
                   </>
                 ) : (
                   <>
@@ -3262,9 +3452,11 @@ export const WidgetCore = ({
                       {dictation.available && (
                         <MicButton
                           state={dictation.state}
-                          // The small panel's row can't fit two labelled
-                          // buttons in every language.
-                          variant={size === 'small' ? 'icon' : 'pill'}
+                          // A 320px row can't fit two labelled buttons in
+                          // every language.
+                          variant={
+                            size === 'small' || narrowSidebar ? 'icon' : 'pill'
+                          }
                           // Enabled while recording: it is how dictation stops.
                           disabled={
                             status === 'loading' && dictation.state === 'idle'
@@ -3296,6 +3488,15 @@ export const WidgetCore = ({
               </DropOverlay>
             )}
           </StyledContainer>
+          {/* After the panel, so Tab reaches the chat first. */}
+          {docked && (
+            <ResizeHandle
+              {...sidebar.handleProps}
+              aria-label={t('resizeSidebar')}
+              $side={docked}
+              $dragging={sidebar.dragging}
+            />
+          )}
         </WidgetContainer>
       }
     </ThemeProvider>

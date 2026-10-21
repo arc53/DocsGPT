@@ -27,6 +27,8 @@ export const en = {
   collapseChat: 'Collapse chat',
   // Header icon button: close the chat panel.
   closeChat: 'Close chat',
+  // The docked sidebar's inner edge (screen readers): drag it or use the arrow keys to change the width.
+  resizeSidebar: 'Resize chat',
   // Header icon button (screen readers and tooltip): clear the chat and start over.
   newChat: 'New chat',
   // Header icon button (screen readers and tooltip): show the saved conversations.

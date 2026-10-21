@@ -12,6 +12,7 @@ export const zh = {
   expandChat: '展开聊天',
   collapseChat: '收起聊天',
   closeChat: '关闭聊天',
+  resizeSidebar: 'Resize chat', // TODO(translate)
   newChat: '新聊天',
   chatHistory: '聊天记录',
   historyHeading: '历史',

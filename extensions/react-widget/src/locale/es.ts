@@ -12,6 +12,7 @@ export const es = {
   expandChat: 'Ampliar chat',
   collapseChat: 'Contraer chat',
   closeChat: 'Cerrar chat',
+  resizeSidebar: 'Resize chat', // TODO(translate)
   newChat: 'Nuevo chat',
   chatHistory: 'Historial de conversaciones',
   historyHeading: 'Historial',
