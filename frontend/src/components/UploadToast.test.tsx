@@ -100,6 +100,17 @@ describe('UploadToast', () => {
     expect(message?.className).toContain('text-destructive');
   });
 
+  it('still says the upload failed when the server gave no reason', async () => {
+    store.dispatch(addUploadTask(task({ status: 'failed' })));
+    await render();
+    expect(
+      container.querySelector('[data-slot="toast-title"]')?.textContent,
+    ).toBe('modals.uploadDoc.progress.failed');
+    const row = container.querySelector('[data-slot="toast-item"]');
+    expect(row?.querySelector('[data-status="destructive"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="toast-message"]')).toBeNull();
+  });
+
   it('collapses the rows and dismisses every task', async () => {
     store.dispatch(addUploadTask(task({})));
     await render();

@@ -6,6 +6,7 @@ import {
   getFileExtension,
   hasAttachmentParser,
   looksLikeText,
+  parseSourceUploadErrorMessage,
   parseUploadErrorMessage,
   partitionAttachmentFiles,
 } from './fileUpload';
@@ -208,5 +209,56 @@ describe('parseUploadErrorMessage', () => {
     expect(parseUploadErrorMessage('<html>502</html>')).toBeUndefined();
     expect(parseUploadErrorMessage('{"ok":1}')).toBeUndefined();
     expect(parseUploadErrorMessage('')).toBeUndefined();
+  });
+
+  it('ignores an error key, so chat keeps its own failure text', () => {
+    expect(
+      parseUploadErrorMessage(
+        '{"success":false,"error":"Failed to store attachment"}',
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe('parseSourceUploadErrorMessage', () => {
+  it('returns the server message when present', () => {
+    expect(
+      parseSourceUploadErrorMessage(
+        '{"success":false,"message":"evil.zip: ZIP archive failed safety validation"}',
+      ),
+    ).toBe('evil.zip: ZIP archive failed safety validation');
+  });
+
+  it('returns the error when there is no message', () => {
+    expect(
+      parseSourceUploadErrorMessage(
+        '{"success":false,"error":"Invalid or unauthorized session"}',
+      ),
+    ).toBe('Invalid or unauthorized session');
+  });
+
+  it('prefers the message over an error code', () => {
+    expect(
+      parseSourceUploadErrorMessage(
+        '{"message":"Authentication error: token expired","error":"token_expired"}',
+      ),
+    ).toBe('Authentication error: token expired');
+  });
+
+  it('falls back to the error when the message is empty or not text', () => {
+    expect(parseSourceUploadErrorMessage('{"message":"","error":"x"}')).toBe(
+      'x',
+    );
+    expect(parseSourceUploadErrorMessage('{"message":42,"error":"x"}')).toBe(
+      'x',
+    );
+  });
+
+  it('returns undefined for non-JSON bodies or no text at all', () => {
+    expect(parseSourceUploadErrorMessage('<html>502</html>')).toBeUndefined();
+    expect(parseSourceUploadErrorMessage('{"success":false}')).toBeUndefined();
+    expect(parseSourceUploadErrorMessage('{"error":7}')).toBeUndefined();
+    expect(parseSourceUploadErrorMessage('null')).toBeUndefined();
+    expect(parseSourceUploadErrorMessage('')).toBeUndefined();
   });
 });

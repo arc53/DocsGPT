@@ -715,6 +715,46 @@ describe('Upload source-type tiles', () => {
     expect(train!.className).not.toContain('bg-gray-300');
     expect(train!.className).toContain('bg-primary');
   });
+
+  it.each(['message', 'error', 'nothing'] as const)(
+    'gives a failed remote source the reason from the response (%s)',
+    async (kind) => {
+      vi.stubGlobal('XMLHttpRequest', AnswerableXhr);
+      const dispatch = spyOnDispatch();
+      await render();
+      const crawler = tiles().find((tile) =>
+        tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      )!;
+      await act(async () => crawler.click());
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      const type = async (input: HTMLInputElement, value: string) => {
+        await act(async () => {
+          setter.call(input, value);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      };
+      await type(
+        document.body.querySelector<HTMLInputElement>('input[type="text"]')!,
+        'Docs site',
+      );
+      await type(
+        document.body.querySelector<HTMLInputElement>('input[name="url"]')!,
+        'https://docs.example',
+      );
+      const train = Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'modals.uploadDoc.train',
+      )!;
+      await act(async () => train.click());
+      expect(await failUpload(dispatch, FAILED_UPLOADS[kind])).toEqual({
+        status: 'failed',
+        errorMessage: FAILED_UPLOADS[kind].reason,
+      });
+      vi.unstubAllGlobals();
+    },
+  );
 });
 
 // A service connected from Connect your data syncs its content like an upload
@@ -831,6 +871,84 @@ describe('Upload connected-service sync', () => {
     expect(onSuccessfulUpload).not.toHaveBeenCalled();
   });
 });
+
+// An upload request the test answers itself, through failUpload.
+class AnswerableXhr {
+  static last: AnswerableXhr | undefined;
+  upload = { addEventListener() {} };
+  status = 0;
+  statusText = '';
+  responseText = '';
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  addEventListener() {}
+  open() {}
+  setRequestHeader() {}
+  send() {
+    AnswerableXhr.last = this;
+  }
+}
+
+// The error responses a failed upload is tested with, and the reason the
+// task should end up with. The body is read first; the status text is the
+// fallback for a body with no message (over HTTP/2 it is always empty).
+type FailedUpload = {
+  status: number;
+  statusText: string;
+  responseText: string;
+  reason: string | undefined;
+};
+const FAILED_UPLOADS: Record<
+  'message' | 'error' | 'statusText' | 'nothing',
+  FailedUpload
+> = {
+  message: {
+    status: 413,
+    statusText: '',
+    responseText:
+      '{"success":false,"message":"evil.zip: ZIP archive failed safety validation"}',
+    reason: 'evil.zip: ZIP archive failed safety validation',
+  },
+  error: {
+    status: 401,
+    statusText: '',
+    responseText: '{"success":false,"error":"Invalid or unauthorized session"}',
+    reason: 'Invalid or unauthorized session',
+  },
+  statusText: {
+    status: 502,
+    statusText: 'Bad Gateway',
+    responseText: '<html>502</html>',
+    reason: 'Bad Gateway',
+  },
+  nothing: {
+    status: 400,
+    statusText: '',
+    responseText: '{"success":false}',
+    reason: undefined,
+  },
+};
+
+// Upload reads dispatch when it renders, so spy on it before rendering.
+const spyOnDispatch = () => vi.spyOn(fakeStore, 'dispatch');
+
+// Answers the pending upload with an error and returns the last update
+// Upload made to the task.
+async function failUpload(
+  dispatch: ReturnType<typeof spyOnDispatch>,
+  response: FailedUpload,
+) {
+  const xhr = AnswerableXhr.last!;
+  xhr.status = response.status;
+  xhr.statusText = response.statusText;
+  xhr.responseText = response.responseText;
+  await act(async () => xhr.onload!());
+  const update = dispatch.mock.calls
+    .map(([action]) => action)
+    .findLast((action) => action.type === 'upload/updateUploadTask');
+  dispatch.mockRestore();
+  return (update?.payload as { updates: unknown } | undefined)?.updates;
+}
 
 function makeFile(name: string, type: string, bytes = 10): File {
   return new File([new Uint8Array(bytes)], name, { type });
@@ -1055,4 +1173,23 @@ describe('Upload local file step', () => {
     expect(sent[0].get('name')).toBe('Handbook');
     vi.unstubAllGlobals();
   });
+
+  it.each(['message', 'error', 'statusText'] as const)(
+    'gives a failed file upload the reason from the response (%s)',
+    async (kind) => {
+      vi.stubGlobal('XMLHttpRequest', AnswerableXhr);
+      const dispatch = spyOnDispatch();
+      await openLocalFile();
+      await pick([makeFile('evil.zip', 'application/zip')]);
+      const train = Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent === 'modals.uploadDoc.train')!;
+      await act(async () => train.click());
+      expect(await failUpload(dispatch, FAILED_UPLOADS[kind])).toEqual({
+        status: 'failed',
+        errorMessage: FAILED_UPLOADS[kind].reason,
+      });
+      vi.unstubAllGlobals();
+    },
+  );
 });
