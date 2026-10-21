@@ -1,7 +1,7 @@
 ---
 title: Install with pip
 description: Run the DocsGPT backend from the PyPI package, inside your own Python environment.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-15
 ---
 
 import { Callout } from 'nextra/components'
@@ -37,6 +37,7 @@ Extras add the optional engines:
 ```bash
 pip install "docsgpt[docling]"   # DOC_PARSER_ENGINE=docling: OCR backend, structured output
 pip install "docsgpt[milvus]"    # VECTOR_STORE=milvus
+pip install "docsgpt[decisions-torch]"  # the decision model on a GPU: docsgpt decide-server --device mps
 ```
 
 The `docling` extra pulls in PyTorch, and on Linux the PyPI torch wheels bring the CUDA stack with them. On a CPU-only machine install the CPU build first, then the extra; pip keeps the torch it already has:

@@ -41,8 +41,9 @@ from docsgpt.storage.db.repositories.wiki_pages import (
     _content_hash,
     rebuild_wiki_directory_structure,
 )
+from docsgpt.storage.db import source_defaults
 from docsgpt.storage.db.session import db_readonly, db_session
-from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
 from docsgpt.vectorstore.vector_creator import VectorCreator
@@ -659,7 +660,9 @@ class SourceConfigResource(Resource):
     @api.doc(
         description="Edit a source's behavior config. Retrieval-time fields "
         "take effect live; chunking changes require an explicit re-ingest "
-        "(surfaced as requires_reingest)."
+        "(surfaced as requires_reingest). A section the body leaves out "
+        "(chunking, retrieval, graph) keeps its saved value, so a body with "
+        "only `retrieval` saves just that."
     )
     def patch(self, source_id):
         decoded_token = request.decoded_token
@@ -677,16 +680,9 @@ class SourceConfigResource(Resource):
         # before submitting.
         try:
             new_config = SourceConfig.model_validate(body)
-        except ValidationError:
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Invalid config: one or more fields failed validation.",
-                    }
-                ),
-                400,
-            )
+        except ValidationError as err:
+            message = validation_message(err, "Invalid config: one or more fields failed validation.")
+            return make_response(jsonify({"success": False, "message": message}), 400)
 
         try:
             with db_session() as conn:
@@ -717,6 +713,11 @@ class SourceConfigResource(Resource):
                         400,
                     )
                 new_config.kind = current_config.kind
+                # A section the body leaves out keeps its saved value (the
+                # retrieval test saves only ``retrieval``).
+                for section in ("chunking", "retrieval", "graph"):
+                    if section not in body:
+                        setattr(new_config, section, getattr(current_config, section))
                 requires_reingest = (
                     new_config.chunking.model_dump()
                     != current_config.chunking.model_dump()
@@ -743,6 +744,22 @@ class SourceConfigResource(Resource):
             ),
             200,
         )
+
+
+@sources_ns.route("/sources/defaults")
+class SourceDefaultsResource(Resource):
+    @api.doc(
+        description="The retrieval settings a new source starts with (set by "
+        "an admin under Admin > Defaults), for prefilling create forms: "
+        "`{retrieval: {...}}`, the built-in defaults when none are set."
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        with db_readonly() as conn:
+            retrieval = source_defaults.load(conn)
+        return make_response(jsonify({"success": True, "retrieval": retrieval}), 200)
 
 
 def _unsupported_retrieval_warnings(config) -> list:
@@ -850,8 +867,9 @@ class CreateWikiSource(Resource):
                     user_id=user,
                     type="wiki",
                     # Same config as a converted wiki: browsed through the
-                    # tool (``agentic_tool``), not pre-fetched.
-                    config=SourceConfig().wiki_enabled(),
+                    # tool (``agentic_tool``), not pre-fetched, starting from
+                    # the admin's default retrieval settings.
+                    config=SourceConfig.parse(source_defaults.seed(conn, None)).wiki_enabled(),
                     directory_structure={},
                     tokens=0,
                     # Wiki pages are embedded like any other source, so record

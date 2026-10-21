@@ -34,6 +34,17 @@ def _is_optional_str(annotation: Any) -> bool:
     )
 
 
+def _a_choice(annotation: Any, value: Any) -> bool:
+    """Whether ``value`` is one of an optional ``Literal``'s choices, such as ``none`` in ``DECISION_MODE``.
+
+    Such a value is meant, not a spelling of "unset".
+    """
+    if not isinstance(value, str):
+        return False
+    (member,) = set(typing.get_args(annotation)) - {type(None)}
+    return value.strip().lower() in {str(choice).lower() for choice in typing.get_args(member)}
+
+
 @dataclass(frozen=True)
 class EnvList:
     """Marks a list setting that reads a JSON list or comma-separated values from the environment.
@@ -87,7 +98,8 @@ class SettingsGroup(BaseSettings):
     Every ``Optional[str]`` field (and optional string ``Literal``) treats the spellings an unset value has in a
     ``.env`` file (``KEY=``, ``KEY=None``, whitespace) as ``None``, so a check
     like ``if settings.OIDC_ISSUER`` or a fallback like ``settings.X or default``
-    sees "unset" rather than a truthy placeholder string. Real values are
+    sees "unset" rather than a truthy placeholder string; ``none`` stays a value
+    where the ``Literal`` offers it (``DECISION_MODE=none``). Real values are
     stripped. Fields typed ``str`` keep whatever they are given.
     """
 
@@ -100,7 +112,7 @@ class SettingsGroup(BaseSettings):
             return data
         data = dict(data)
         for name, field in cls.model_fields.items():
-            if name in data and _is_optional_str(field.annotation):
+            if name in data and _is_optional_str(field.annotation) and not _a_choice(field.annotation, data[name]):
                 data[name] = normalize_secret(data[name])
         return data
 

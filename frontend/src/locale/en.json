@@ -31,10 +31,12 @@
     "dismiss": "Dismiss",
     "toolApprovalTitle": "Tool approval needed",
     "toolApprovalReview": "Review",
-    "toolApprovalFallbackName": "Conversation"
+    "toolApprovalFallbackName": "Conversation",
+    "moreToasts_one": "{{count}} more",
+    "moreToasts_other": "{{count}} more",
+    "fewerToasts": "Show less"
   },
   "backgroundJobs": {
-    "unread": "Unread",
     "card": {
       "status": {
         "working": "In background",
@@ -351,11 +353,12 @@
         "queryPlaceholder": "Ask something this source should answer...",
         "run": "Run",
         "notSavedHint": "These settings are only used for this test — they are not saved to the source. Change them in Source settings to make them permanent.",
+        "notSavedHintEditor": "These settings are only used for this test until you save them to the source.",
         "resultSummary_one": "{{count}} chunk retrieved · {{retriever}}",
         "resultSummary_other": "{{count}} chunks retrieved · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No chunks retrieved for this query.",
-        "emptyWithThreshold": "No chunks scored at or above the score threshold ({{threshold}}). Lower it to see near misses.",
+        "emptyWithThreshold": "No chunks scored at or above the similarity threshold ({{threshold}}). Lower it to see near misses.",
         "showMore": "Show full chunk",
         "showLess": "Show less",
         "noScore": "no score",
@@ -367,7 +370,31 @@
         },
         "errors": {
           "failed": "Retrieval test failed. Please try again."
-        }
+        },
+        "relevance": "relevance",
+        "compare": "Compare with retriever order",
+        "compareHint": "Also list every candidate in retriever order, with its relevance and whether the relevance model kept, promoted or dropped it.",
+        "relevanceRun": {
+          "applied": "ordered by relevance in {{ms}} ms",
+          "fallback": "relevance model not used ({{reason}}), retriever order kept"
+        },
+        "compareTitle": "Retriever order",
+        "compareDescription": "Every candidate the relevance stages received, in the order the retriever ranked them.",
+        "compareColumns": {
+          "before": "Rank",
+          "chunk": "Chunk",
+          "relevance": "Relevance",
+          "outcome": "Result"
+        },
+        "compareStatus": {
+          "promoted": "Promoted to #{{rank}}",
+          "kept": "Kept as #{{rank}}",
+          "dropped": "Dropped",
+          "notKept": "Not kept"
+        },
+        "strictness": "Relevance for this test",
+        "saveToSource": "Save to source",
+        "savedToSource": "Saved. The source now uses the settings you tested."
       },
       "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
@@ -396,14 +423,15 @@
       "searchAlt": "Search",
       "retrievalOptions": {
         "title": "Advanced settings",
+        "advanced": "Advanced",
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",
           "tag": "no re-ingest",
           "chunks": "Chunks to retrieve (top-k)",
-          "scoreThreshold": "Score threshold",
-          "scoreThresholdPlaceholder": "None",
-          "scoreThresholdHint": "Only return chunks above this relevance score (0–1); higher is stricter.",
+          "similarityThreshold": "Similarity threshold",
+          "similarityThresholdPlaceholder": "None",
+          "similarityThresholdHint": "Drops chunks whose similarity score from the retriever is below this (0–1). It filters on the retriever's score, not the relevance model.",
           "rephraseQuery": "Rephrase query before search",
           "retriever": "Retriever",
           "retrievers": {
@@ -433,13 +461,14 @@
           "agentToolHint": "Agents can also follow these relationships themselves when this source's exposure is “On-demand search tool”, or when an agentic agent uses it."
         },
         "prescreen": {
-          "enable": "Enable LLM prescreen",
-          "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
+          "enable": "LLM screening",
+          "warning": "An LLM screens a larger set of candidates and keeps the ones that answer the query. This adds latency and cost to each query.",
           "candidateK": "Candidates to fetch",
           "maxKeep": "Max chunks to keep",
           "batchSize": "Batch size",
           "model": "Model (optional)",
-          "modelPlaceholder": "Defaults to the request model"
+          "modelPlaceholder": "Defaults to the request model",
+          "exclusiveHint": "It replaces relevance: turning one on turns the other off."
         },
         "graph": {
           "title": "Graph extraction",
@@ -464,8 +493,32 @@
             "semantic": "Semantic"
           },
           "maxTokens": "Max tokens per chunk",
+          "maxTokensHint": "Maximum 4,096 tokens.",
           "minTokens": "Min tokens per chunk",
           "duplicateHeaders": "Duplicate headers across chunks"
+        },
+        "relevance": {
+          "title": "Relevance",
+          "tag": "no re-ingest",
+          "mode": "Relevance model",
+          "modeHint": "Scores each retrieved chunk against the query. Reorder puts the most relevant first; Reorder and filter also drops the weak ones.",
+          "modes": {
+            "off": "Off",
+            "reorder": "Reorder",
+            "filter": "Reorder and filter"
+          },
+          "strictness": "Filter strictness",
+          "strictnessHint": "Stricter keeps fewer chunks: fewer tokens per answer, but a better chance of dropping one that mattered.",
+          "presets": {
+            "loose": "Loose",
+            "balanced": "Balanced",
+            "strict": "Strict",
+            "custom": "Custom ({{value}})"
+          },
+          "minRelevance": "Minimum relevance",
+          "minRelevanceHint": "The exact relevance (0–1) a chunk needs to be kept. Loose is 0.1, Balanced 0.3, Strict 0.5.",
+          "candidates": "Candidates to score",
+          "candidatesHint": "How many chunks the retriever fetches for the relevance model to score, up to {{max}}. Default: {{default}}."
         }
       },
       "configModal": {
@@ -474,7 +527,7 @@
         "subtitleGeneric": "Configure how this source is chunked and retrieved.",
         "save": "Save",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
-        "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "prescreenInvalidHint": "Check the LLM screening values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
         "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
         "reingestLater": "Later",
         "errors": {
@@ -537,7 +590,19 @@
       "deleteFileConsequence": "Its chunks are deleted too. This can't be undone.",
       "deleteDirectoryConsequence": "Everything inside it is deleted too. This can't be undone.",
       "syncConsequence": "Its content is updated from your cloud storage, which may overwrite edits you made to individual chunks.",
-      "deleteItemFailed": "Could not delete \"{{name}}\"."
+      "deleteItemFailed": "Could not delete \"{{name}}\".",
+      "injection": {
+        "flaggedOnly": "Flagged only",
+        "high": "Likely prompt injection",
+        "suspected": "Possible prompt injection",
+        "markedSafe": "Marked safe",
+        "markSafe": "Mark as safe",
+        "undo": "Undo",
+        "flaggedNotice": "This chunk reads like a prompt injection (score {{percent}}%). Agents that screen retrieved sources flag it, or leave it out of their answers.",
+        "safeNotice": "Marked safe: agents using this source treat this chunk as clean. Editing its text removes the mark.",
+        "reviewFailed": "Could not update this chunk. Please try again.",
+        "noFlagged": "No chunk in this source has been flagged. A chunk is scored once a chat retrieves it."
+      }
     },
     "analytics": {
       "label": "Analytics",
@@ -639,7 +704,9 @@
         "activity": "Activity",
         "steps": "Steps",
         "result": "Result",
-        "source": "Source"
+        "source": "Source",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "View trace",
@@ -670,7 +737,8 @@
           "chunks_other": "{{count}} chunks",
           "hits_one": "{{count}} hit",
           "hits_other": "{{count}} hits",
-          "cached": "cached"
+          "cached": "cached",
+          "answered": "{{answered}}/{{total}} answered"
         },
         "status": {
           "ok": "OK",
@@ -684,6 +752,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "LLM call",
+          "decision": "Decision model call",
           "tool": "Tool call",
           "retrieval": "Retrieval",
           "search": "Vector search",
@@ -745,7 +814,19 @@
           "allAttributes": "All attributes"
         }
       },
-      "loadError": "Could not load the logs."
+      "loadError": "Could not load the logs.",
+      "running": "running",
+      "failedAtStep": "failed at step {{step}}",
+      "failedAtStepOf": "failed at step {{step}} of {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Shared",
+        "chat": "Chat"
+      },
+      "feedback": {
+        "like": "Liked",
+        "dislike": "Disliked"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -761,7 +842,6 @@
       "save": "Save",
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
-      "noDescription": "No description",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",
@@ -1202,6 +1282,8 @@
       "savedSecretPlaceholder": "Saved · enter a new value to replace",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} tool",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} tools",
+      "triggerLabel_one": "Tools, {{formatted}} selected",
+      "triggerLabel_other": "Tools, {{formatted}} selected",
       "manageInConnectors": "Manage in Connectors",
       "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
@@ -1286,7 +1368,7 @@
       "deleteWarning": "Delete \"{{modelName}}\"?",
       "actionsMenuAria": "Actions for {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT Models",
+        "builtin": "Built-in",
         "user": "My Models"
       },
       "actions": {
@@ -1435,7 +1517,10 @@
         "tokenLabel": "Your token",
         "usageTitle": "How to use it",
         "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
-        "done": "Done"
+        "done": "Done",
+        "createTool": "Create tool for agents",
+        "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
+        "toolFailed": "Could not create the tool."
       },
       "regenerate": {
         "action": "Regenerate",
@@ -1503,6 +1588,7 @@
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
         "mcp_drawio": "Create editable flowcharts and other diagrams with draw.io.",
+        "mcp_coingecko": "Look up live crypto prices, market caps, volumes, trending coins and price history.",
         "mcp_clickup": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
@@ -1510,6 +1596,7 @@
         "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
         "mcp_context7": "Look up up-to-date documentation and code examples for libraries.",
+        "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -1754,6 +1841,11 @@
       "capabilityChip": {
         "sync": "Syncs into Knowledge",
         "tools": "Gives agents tools"
+      },
+      "injection": {
+        "flagged": "Possible prompt injection",
+        "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
+        "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
       }
     }
   },
@@ -1773,6 +1865,7 @@
       "dropzoneText": "Click to upload or drag and drop",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON or ZIP, up to 25 MB each",
       "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
+      "selectFolder": "Select a folder",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Add to Knowledge",
@@ -1842,8 +1935,8 @@
           "connect": "Connect to Google Drive",
           "validateFailed": "Could not check the sign-in. Try again.",
           "pickerFailed": "Could not open the file picker. Try again.",
-          "selectedFiles": "Selected files",
-          "selectFiles": "Select files",
+          "selectedFiles": "Selected items",
+          "selectFiles": "Select files or folders",
           "noFilesSelected": "No files or folders selected yet.",
           "removeItem": "Remove {{name}}"
         }
@@ -1887,8 +1980,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Search conversations",
-      "noResults": "No results found",
-      "loading": "Loading..."
+      "noResults": "No results found"
     },
     "configTool": {
       "title": "Tool Config",
@@ -2093,6 +2185,8 @@
       "view_more_other": "{{count}} more sources",
       "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
+      "triggerLabel_one": "Knowledge, {{formatted}} selected",
+      "triggerLabel_other": "Knowledge, {{formatted}} selected",
       "groupOwn": "Yours",
       "groupTeam": "Shared with team",
       "fromConnector": "From {{name}}",
@@ -2115,8 +2209,17 @@
         "forbidden": "This source was removed, or you no longer have access to it. Showing the excerpt saved with the answer.",
         "loadFailed": "Couldn't load this passage.",
         "openLink": "Open link",
-        "openInKnowledge": "Open in Knowledge"
-      }
+        "openInKnowledge": "Open in Knowledge",
+        "withheld": "This agent's guardrails left this source out of the answer because it may contain a prompt injection. The AI did not read this passage."
+      },
+      "relevance": {
+        "strong": "Strong match",
+        "possible": "Possible match",
+        "weak": "Weak match",
+        "tooltip": "Relevance {{percent}}%"
+      },
+      "withheld": "Withheld",
+      "withheldNote": "Left out of the answer by this agent's guardrails: it may contain a prompt injection."
     },
     "attachments": {
       "attach": "Attach",
@@ -2144,13 +2247,15 @@
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",
+    "stoppedTitle": "Stopped",
     "errors": {
       "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
       "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
       "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
       "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
       "serverError": "Please try again later. We apologize for any inconvenience.",
-      "clientDisconnect": "The response stopped before anything was produced. Try again."
+      "clientDisconnect": "The response stopped before anything was produced. Try again.",
+      "stopped": "You stopped this answer before it wrote anything. Try again to get one."
     },
     "reasoning": "Reasoning",
     "wikiWrite": {
@@ -2278,7 +2383,6 @@
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
     },
     "send": "Send",
-    "viewArtifact": "View artifact",
     "stopSpeaking": "Stop speaking",
     "loadingAudio": "Loading audio",
     "voice": {
@@ -2350,6 +2454,33 @@
     "stepGroup": {
       "title": "Tools",
       "failed": "{{count}} failed"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML page",
+        "pdf": "PDF",
+        "slides": "Slides",
+        "document": "Document",
+        "spreadsheet": "Spreadsheet",
+        "data": "Data file",
+        "image": "Image",
+        "file": "File"
+      },
+      "version": "v{{version}}",
+      "download": "Download {{title}}",
+      "more_one": "{{count}} more file",
+      "more_other": "{{count}} more files",
+      "fileCount_one": "{{count}} file",
+      "fileCount_other": "{{count}} files",
+      "showAll": "Show all {{count}}",
+      "listTitle": "Files from this answer",
+      "backToList": "Back to files",
+      "group": {
+        "documents": "Documents",
+        "images": "Images",
+        "data": "Data",
+        "other": "Other files"
+      }
     }
   },
   "agents": {
@@ -2566,7 +2697,8 @@
           "input": "User input",
           "retrieval": "Retrieved sources",
           "toolResult": "Tool result",
-          "output": "Answer"
+          "output": "Answer",
+          "attachment": "Attached files"
         },
         "actions": {
           "flag": "Flag only",
@@ -2576,7 +2708,13 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        }
+        },
+        "itemLevelHint": "Block withholds only the flagged source or file.",
+        "advanced": "Advanced",
+        "threshold": "Action threshold",
+        "thresholdHint": "The control's action applies from this score (0 to 1, default 0.9).",
+        "flagThreshold": "Flag threshold",
+        "flagThresholdHint": "From this score the text is flagged and recorded, but nothing is blocked (default 0.5)."
       },
       "byline": {
         "new": "Set up the agent, then publish it to chat with it."
@@ -2738,6 +2876,7 @@
           "dec": "Dec"
         },
         "frequencyLabel": "Frequency",
+        "customTiming": "This schedule runs on a custom timing: {{pattern}}. Change the timing below to replace it.",
         "dayOfWeek": "Day of the week"
       },
       "status": {
@@ -2768,7 +2907,8 @@
         "error": "Error",
         "errorWithType": "Error ({{type}})",
         "output": "Output",
-        "truncated": "(truncated)"
+        "truncated": "(truncated)",
+        "openConversation": "Open conversation"
       },
       "toolCard": {
         "cancelFailed": "Cancel failed",
@@ -2807,7 +2947,18 @@
           "oct": "October",
           "nov": "November",
           "dec": "December"
-        }
+        },
+        "weekdays": "Every weekday at {{time}}",
+        "weekends": "Every weekend day at {{time}}",
+        "days": "Every {{days}} at {{time}}",
+        "hourly": "Every hour",
+        "hourlyAt": "Every hour at :{{minute}}",
+        "hourlyRange": "Every hour from {{from}} to {{to}}",
+        "hourlyRangeWeekdays": "Every hour from {{from}} to {{to}} on weekdays",
+        "everyMinutes_one": "Every {{formatted}} minute",
+        "everyMinutes_other": "Every {{formatted}} minutes",
+        "everyHours_one": "Every {{formatted}} hour",
+        "everyHours_other": "Every {{formatted}} hours"
       },
       "runLog": {
         "when": "When",
@@ -2837,7 +2988,8 @@
         "overdue": "Overdue"
       },
       "deleteFailed": "Couldn't delete this schedule.",
-      "deleteConsequence": "Its run history is deleted too. This can't be undone."
+      "deleteConsequence": "Its run history is deleted too. This can't be undone.",
+      "allSchedules": "All schedules"
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared.",
@@ -2894,7 +3046,11 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "loadError": "Could not load guardrail activity",
+      "score": "Score",
+      "openChunk": "Open chunk",
+      "attachedFile": "Attached file",
+      "chunkUnavailable": "This chunk is no longer in its source, or you can't open that source."
     },
     "workflow": {
       "expressionRow": "Expression {{index}}",
@@ -2912,15 +3068,8 @@
       "removeAssignment": "Remove assignment {{index}}",
       "removeCondition": "Remove condition {{index}}",
       "artifacts": {
-        "previewUnsupported": "This artifact cannot be previewed",
         "loadListFailed": "Failed to load artifacts",
-        "loadFailed": "Failed to load artifact",
-        "loading": "Loading artifacts...",
-        "inProgress": "Run in progress — artifacts appear here as nodes produce them.",
-        "empty": "No artifacts produced by this run.",
-        "back": "Back to artifacts",
-        "untitled": "Artifact {{id}}",
-        "fileKind": "file"
+        "untitled": "Artifact {{id}}"
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
@@ -3053,8 +3202,8 @@
         "extract": "Extract"
       },
       "mobileBlocker": {
-        "title": "Desktop Required",
-        "body": "The Workflow Builder requires a larger screen for the best experience. Please open this page on a desktop or laptop computer."
+        "title": "Open on a larger screen",
+        "body": "The workflow builder needs a wider screen. Use a computer, or turn your tablet sideways."
       },
       "nodes": {
         "start": "Start",
@@ -3086,10 +3235,10 @@
         "stepCount_other": "({{count}} steps)",
         "outputLabel": "Output:",
         "errorLabel": "Error:",
-        "artifacts": "Artifacts",
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",
-        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview."
+        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
+        "backToRun": "Back to the run"
       },
       "documents": {
         "modeAll": "All input docs",
@@ -3171,9 +3320,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Page not found",
+    "message": "The page you're looking for doesn't exist.",
+    "goHome": "Go home"
   },
   "filePicker": {
     "searchPlaceholder": "Search files and folders",
@@ -3220,7 +3369,8 @@
         "personal": "Personal",
         "workspace": "Workspace",
         "insights": "Insights",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automations"
       }
     },
     "openSidebar": "Open sidebar",
@@ -3259,8 +3409,10 @@
       "admins": "Admins",
       "usage": "Usage",
       "quotas": "Quotas",
-      "audit": "Activity",
-      "connectors": "Connectors"
+      "audit": "Audit log",
+      "connectors": "Connectors",
+      "defaults": "Defaults",
+      "guardrails": "Guardrails"
     },
     "quotas": {
       "unpriced": {
@@ -3319,7 +3471,6 @@
     "loadError": "Couldn't load your monitors",
     "actionError": "That didn't work. Try again.",
     "untitled": "Monitor",
-    "watching": "Watching for changes",
     "every": "Every {{interval}}",
     "onEvent": "When it happens",
     "openConversation": "Open conversation",
@@ -3396,5 +3547,282 @@
       "conversationGone": "Ended: its conversation can no longer be resumed"
     },
     "endedBecause": "Ended: {{reason}}"
+  },
+  "activity": {
+    "label": "Activity",
+    "schedules": {
+      "label": "Schedules",
+      "subtitle": "Every recurring run and one-time task across your agents, plus the ones the assistant set up in a chat.",
+      "search": "Search schedules",
+      "createdInChat": "Created in chat",
+      "createdInChatHint": "No agent. Each one belongs to the chat that made it.",
+      "agentSchedules": "Agent schedules",
+      "openChat": "Open chat",
+      "noMatches": "No schedules match your search.",
+      "loadError": "Couldn't load your schedules",
+      "empty": "No schedules yet",
+      "emptyHint": "Create one here, or ask the assistant in a chat to do something on a schedule.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Choose an agent",
+      "agentSearch": "Search agents",
+      "agentEmpty": "No agents you can schedule",
+      "teamAgent": "A teammate's agent you manage through a team"
+    },
+    "marks": {
+      "failed": "Something failed",
+      "needsYou": "Waiting for your approval",
+      "working": "Working",
+      "unread": "Unread",
+      "watching": "Watching for changes"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Background job",
+      "code": "Code execution",
+      "schedule": "Scheduled run",
+      "workflow": "Workflow",
+      "webhook": "Webhook run",
+      "ingest": "Knowledge",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} running",
+      "running_other": "{{formatted}} running",
+      "needsYou_one": "{{formatted}} needs you",
+      "needsYou_other": "{{formatted}} need you"
+    },
+    "now": {
+      "label": "Now",
+      "subtitle": "What is running, what is waiting for you, and what runs next. Updates live.",
+      "loadError": "Couldn't load your activity",
+      "stopFailed": "Couldn't stop the answer. Try again, or open the chat and stop it there.",
+      "thinking": "thinking",
+      "writing": "writing the answer",
+      "ranByHand": "run now",
+      "due": "due {{time}}",
+      "chunks": "{{done}} of {{total}} chunks embedded",
+      "background": "Background",
+      "running": "Running",
+      "stop": "Stop",
+      "cancel": "Cancel",
+      "open": "Open",
+      "approve": "Approve {{tools}}",
+      "approveAction": "Approve a tool action",
+      "expires": "expires {{time}}",
+      "approval": "Approval",
+      "review": "Review",
+      "pausedAfter_one": "{{name}} paused after {{formatted}} failure",
+      "pausedAfter_other": "{{name}} paused after {{formatted}} failures",
+      "errorType": {
+        "auth_expired": "a sign-in expired",
+        "tool_not_allowed": "a tool was not allowed",
+        "budget_exceeded": "over its token budget",
+        "timeout": "timed out",
+        "agent_error": "the agent failed",
+        "internal": "an internal error",
+        "missed": "missed its time",
+        "overlap": "the previous run was still going",
+        "stream_error": "the answer stream broke",
+        "empty_output": "it produced nothing"
+      },
+      "viewRuns": "View runs",
+      "fromChat": "From {{name}}",
+      "timesToday_one": "{{formatted}} run in the next 24 hours",
+      "timesToday_other": "{{formatted}} runs in the next 24 hours",
+      "oneTime": "one-time",
+      "stats": {
+        "running": "Running",
+        "background_one": "{{formatted}} in the background",
+        "background_other": "{{formatted}} in the background",
+        "needsYou": "Needs you",
+        "approvalExpires": "An approval expires {{time}}",
+        "next24h": "Next 24 hours",
+        "nextAt": "Next at {{time}}, {{name}}",
+        "failed": "Failed, last 24 hours",
+        "viewInHistory": "View in History"
+      },
+      "needsYou": "Needs you",
+      "reconnect": "{{name}} needs reconnecting",
+      "reconnectAction": "Reconnect",
+      "runningTitle": "Running",
+      "filter": "Show",
+      "filters": {
+        "all": "All",
+        "chats": "Chats",
+        "automations": "Automations",
+        "knowledge": "Knowledge"
+      },
+      "nothingRunning": "Nothing is running",
+      "upNext": "Up next",
+      "nothingPlanned": "Nothing runs in the next 24 hours",
+      "watching": "Watching",
+      "allMonitors": "All monitors",
+      "nothingWatched": "Nothing is being watched",
+      "checked": "checked {{time}}",
+      "openCalendar": "Open calendar",
+      "step": "step {{step}}",
+      "stepOf": "step {{step}} of {{total}}",
+      "apiRequests_one": "{{formatted}} request",
+      "apiRequests_other": "{{formatted}} requests",
+      "reading": "reading the content",
+      "operation": {
+        "upload": "Upload",
+        "sync": "Sync",
+        "reingest": "Re-index"
+      },
+      "syncBatch": {
+        "daily": "Daily sync",
+        "weekly": "Weekly sync",
+        "monthly": "Monthly sync"
+      },
+      "syncSources_one": "{{formatted}} source",
+      "syncSources_other": "{{formatted}} sources",
+      "syncBlocked_one": "{{formatted}} needs reconnecting",
+      "syncBlocked_other": "{{formatted}} need reconnecting"
+    },
+    "calendar": {
+      "label": "Calendar",
+      "subtitle": "Planned runs, past runs by how they went, and what is being watched.",
+      "loadError": "Couldn't load the calendar",
+      "runLoadError": "Couldn't open the run. Try again.",
+      "runNowError": "Couldn't start the run. Try again.",
+      "todayButton": "Today",
+      "previous": "Previous",
+      "next": "Next",
+      "agentFilter": "Agent",
+      "allAgents": "All agents",
+      "viewLabel": "View",
+      "views": {
+        "day": "Day",
+        "week": "Week",
+        "month": "Month",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitors",
+      "knowledgeSyncs": "Knowledge syncs",
+      "hidePast": "Hide past runs",
+      "legend": {
+        "planned": "Planned",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "paused": "Paused or skipped",
+        "missed": "Missed",
+        "sync": "Knowledge sync"
+      },
+      "truncated": "Some very frequent schedules show only their first runs in this range.",
+      "watching": "Watching",
+      "state": {
+        "planned": "Planned",
+        "paused": "Paused",
+        "pending": "Starting",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "timeout": "Timed out",
+        "missed": "Missed"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} more",
+      "more_other": "+{{formatted}} more",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "empty": "Nothing is planned in these days",
+      "blockDone_one": "{{done}} of {{formatted}} run done",
+      "blockDone_other": "{{done}} of {{formatted}} runs done",
+      "slotCount_one": "{{formatted}} run",
+      "slotCount_other": "{{formatted}} runs",
+      "oneTime": "One-time",
+      "recurring": "Recurring",
+      "when": "When",
+      "repeats": "Repeats",
+      "fromChat": "From chat",
+      "pausedNote": "This schedule is paused, so this run will not happen. Resume it on its schedule page.",
+      "dayRuns": "This day's runs",
+      "queued": "Run started. It shows in Now and in the run log.",
+      "openSchedule": "Open schedule",
+      "timezone": "Schedule time zone",
+      "missedNote": "This run never started: the scheduler was down or behind at the time. Run now to catch up, or check that the worker runs with beat.",
+      "syncRepeats": {
+        "daily": "Every day, counted from when the scheduler started",
+        "weekly": "Every week, counted from when the scheduler started",
+        "monthly": "Every 30 days, counted from when the scheduler started"
+      },
+      "sources": "Sources",
+      "needsReconnecting": "Needs reconnecting",
+      "lastSynced": "Synced {{time}}",
+      "notSyncedYet": "Not synced yet",
+      "openKnowledge": "Open Knowledge"
+    },
+    "history": {
+      "label": "History",
+      "subtitle": "Finished runs of your schedules, webhooks, workflows, background jobs and monitors. Settings › Logs keeps the full technical log.",
+      "search": "Search runs",
+      "statusFilter": "Status",
+      "kindFilter": "Kind",
+      "statusFilters": {
+        "all": "All statuses",
+        "failed": "Failed",
+        "success": "Succeeded",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled"
+      },
+      "kindFilters": {
+        "all": "All",
+        "schedule": "Schedules",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Background",
+        "monitor": "Monitor wakes"
+      },
+      "kind": {
+        "schedule": "Schedule",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Background",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled"
+      },
+      "trigger": {
+        "cron": "Schedule",
+        "manual": "Run now",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Change found",
+        "trigger": "Webhook link",
+        "approval": "Approval link",
+        "monitor_paused": "Monitor paused",
+        "monitor_expired": "Monitor expired"
+      },
+      "columns": {
+        "when": "When",
+        "run": "Run",
+        "owner": "Agent / chat",
+        "kind": "Kind",
+        "trigger": "Trigger",
+        "status": "Status",
+        "duration": "Duration",
+        "tokens": "Tokens"
+      },
+      "yesterday": "Yesterday",
+      "loadError": "Couldn't load the history",
+      "runLoadError": "Couldn't open the run. Try again.",
+      "noMatches": "No runs match these filters",
+      "empty": "No finished runs yet",
+      "emptyHint": "Runs of your schedules, webhooks, workflows, background jobs and monitors show up here when they finish.",
+      "loadMore": "Load more",
+      "retention": "By default, scheduled runs are kept for 90 days, webhook runs for 30, and background jobs and monitor wakes for 7. Workflow runs stay listed, and their trace is kept for 30 days.",
+      "period_one": "Last {{formatted}} day",
+      "period_other": "Last {{formatted}} days",
+      "periodFilter": "Period"
+    }
   }
 }

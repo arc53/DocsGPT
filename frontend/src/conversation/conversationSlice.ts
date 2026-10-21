@@ -1,5 +1,6 @@
 import { envVar } from '@/env';
 import {
+  AsyncThunkPayloadCreator,
   createAsyncThunk,
   createListenerMiddleware,
   createSlice,
@@ -7,14 +8,18 @@ import {
 } from '@reduxjs/toolkit';
 
 import type { Agent } from '../agents/types';
+import activityService from '../api/services/activityService';
 import conversationService from '../api/services/conversationService';
 import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import { isPageAttended } from '../backgroundJobs/usePageVisible';
+import { shownConversationId } from '../backgroundJobs/usePresence';
 import { getConversations } from '../preferences/preferenceApi';
 import {
   receiveConversations,
+  renameConversation,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
@@ -165,6 +170,102 @@ export function handleAbort() {
   }
 }
 
+/**
+ * A thunk that streams into the chat. It gets the stream's signal; once it
+ * settles there is no stream left for Stop to close.
+ */
+function streamed<Arg, Result, Api>(
+  body: (arg: Arg, api: Api, signal: AbortSignal) => Promise<Result>,
+): (arg: Arg, api: Api) => Promise<Result> {
+  return async (arg, api) => {
+    if (abortController) abortController.abort();
+    const controller = new AbortController();
+    abortController = controller;
+    try {
+      return await body(arg, api, controller.signal);
+    } finally {
+      if (abortController === controller) abortController = null;
+    }
+  };
+}
+
+/** How long the chat's Stop waits for the server to take it before closing. */
+export const STOP_REQUEST_TIMEOUT_MS = 1000;
+
+/** Whether a Stop is out: another press while it is would send it again. */
+let stopping = false;
+
+/**
+ * The chat's Stop. Tells the server first, so the answer is saved as stopped
+ * rather than as a dropped connection, then closes the stream. An answer
+ * stopped before it wrote anything says so at once, as it will after a
+ * reload.
+ */
+export const stopAnswer = createAsyncThunk<void, void>(
+  'conversation/stopAnswer',
+  async (_arg, { dispatch, getState }) => {
+    stopping = true;
+    try {
+      await stop(dispatch, getState);
+    } finally {
+      stopping = false;
+    }
+  },
+  { condition: () => !stopping },
+);
+
+async function stop(
+  dispatch: (action: unknown) => unknown,
+  getState: () => unknown,
+): Promise<void> {
+  const controller = abortController;
+  const { conversation, preference } = getState() as RootState;
+  const conversationId = conversation.conversationId;
+  const index = conversation.queries.length - 1;
+  const messageId = conversation.queries[index]?.messageId;
+  let taken = false;
+  // Not only a stream of this tab's: an answer picked back up after a
+  // reload is followed by polling, and only the server can stop it.
+  if (messageId && conversation.status === 'loading') {
+    taken = await Promise.race([
+      activityService.stopMessage(messageId, preference.token).then(
+        () => true,
+        () => false,
+      ),
+      new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), STOP_REQUEST_TIMEOUT_MS),
+      ),
+    ]);
+  }
+  if (abortController === controller) {
+    handleAbort();
+    // A closed stream never gets its terminal event, which is what ends
+    // loading. An answer picked back up is left to its tail, which ends it
+    // once the server has saved the stop.
+    if (
+      controller &&
+      (getState() as RootState).conversation.conversationId === conversationId
+    )
+      dispatch(conversationSlice.actions.setStatus('idle'));
+  }
+  // The user may have opened another chat while the request was out: mark
+  // only the answer that was stopped, in the chat it belongs to.
+  const after = (getState() as RootState).conversation;
+  if (!taken || after.conversationId !== conversationId) return;
+  const at = after.queries.findIndex((query) => query.messageId === messageId);
+  const query = after.queries[at];
+  if (query && !query.response && !query.error) {
+    dispatch(
+      conversationSlice.actions.raiseError({
+        conversationId,
+        index: at,
+        message: 'Stopped before any response was produced.',
+        code: 'stopped',
+      }),
+    );
+  }
+}
+
 // Loads a conversation and applies it to the slice. Returns
 // ``{data, stale}``: ``stale`` true means a newer load has superseded
 // this one (or Redux already matches), so callers should not react to
@@ -188,6 +289,9 @@ export type LoadConversationArgs = {
   // so its messages and agent card change in one render. Without it the
   // selected agent is left alone.
   resolveAgent?: (data: ConversationAgentFields) => Promise<Agent | null>;
+  // A refresh nobody asked for (an event): dropped when this tab starts
+  // streaming an answer before it lands, which it would otherwise overwrite.
+  unlessStreaming?: boolean;
 };
 
 let loadSeq = 0;
@@ -196,7 +300,7 @@ export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
 >('loadConversation', async (args, { dispatch, getState }) => {
-  const { id, force, resolveAgent } = args;
+  const { id, force, resolveAgent, unlessStreaming } = args;
   const seq = ++loadSeq;
   const state = getState() as RootState;
   const token = state.preference.token;
@@ -224,6 +328,12 @@ export const loadConversation = createAsyncThunk<
   if (seq !== loadSeq) {
     return { data: null, stale: true };
   }
+  if (
+    unlessStreaming &&
+    (getState() as RootState).conversation.status === 'loading'
+  ) {
+    return { data: null, stale: true };
+  }
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
   if (agent !== undefined) dispatch(setSelectedAgent(agent));
@@ -249,14 +359,26 @@ export const loadConversation = createAsyncThunk<
   return { data, stale: false };
 });
 
-export const fetchAnswer = createAsyncThunk<
-  Answer,
-  { question: string; indx?: number; attachmentIds?: string[] }
->('fetchAnswer', async (arg, { dispatch, getState }) => {
+type FetchAnswerArgs = {
+  question: string;
+  indx?: number;
+  attachmentIds?: string[];
+};
+
+export const fetchAnswer = createAsyncThunk<Answer, FetchAnswerArgs>(
+  'fetchAnswer',
+  streamed(answerQuestion),
+);
+
+async function answerQuestion(
+  arg: FetchAnswerArgs,
+  {
+    dispatch,
+    getState,
+  }: Parameters<AsyncThunkPayloadCreator<Answer, FetchAnswerArgs>>[1],
+  signal: AbortSignal,
+): Promise<Answer> {
   const { question, indx } = arg;
-  if (abortController) abortController.abort();
-  abortController = new AbortController();
-  const { signal } = abortController;
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
@@ -322,13 +444,9 @@ export const fetchAnswer = createAsyncThunk<
           ) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(receiveConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -467,13 +585,9 @@ export const fetchAnswer = createAsyncThunk<
                   }),
                 );
               }
-              getConversations(state.preference.token)
-                .then((fetchedConversations) => {
-                  dispatch(receiveConversations(fetchedConversations));
-                })
-                .catch((error) => {
-                  console.error('Failed to fetch conversations: ', error);
-                });
+              // Through the shared refresh, so a generated title announced while
+              // it runs gets a list read after it (see refreshConversationList).
+              void refreshConversationList(getState, dispatch);
               if (!isSourceUpdated) {
                 dispatch(
                   updateStreamingSource({
@@ -669,13 +783,9 @@ export const fetchAnswer = createAsyncThunk<
             query: { conversationId: answer.conversationId },
           }),
         );
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(receiveConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
         dispatch(conversationSlice.actions.setStatus('idle'));
       }
     }
@@ -690,7 +800,7 @@ export const fetchAnswer = createAsyncThunk<
     sources: [],
     tool_calls: [],
   };
-});
+}
 
 // Tail-polls the placeholder until terminal status, navigation away,
 // or hard timeout. First poll fires immediately so rows that are
@@ -716,6 +826,9 @@ export function isWaitingOnUser(toolCalls: unknown): boolean {
   );
 }
 
+/** Messages whose tail found them deleted and reloaded their chat for it. */
+const reloadedForGoneMessage = new Set<string>();
+
 export const tailInFlightMessage = createAsyncThunk<
   void,
   { messageId: string; index: number; conversationId: string }
@@ -739,9 +852,33 @@ export const tailInFlightMessage = createAsyncThunk<
         continue;
       }
 
-      // 404 → row deleted (e.g. conversation wiped); bail quietly.
+      // 404 → row deleted: the conversation was wiped, or a continuation
+      // ended silent or failed and took its message back out. Reload the
+      // chat if it is still open, so the message does not linger.
       if (resp.status === 404) {
+        // A newer answer started in this chat meanwhile: it owns the status now.
+        const now = (getState() as RootState).conversation;
+        if (
+          now.conversationId !== conversationId ||
+          now.queries[now.queries.length - 1]?.messageId !== messageId
+        )
+          return;
         dispatch(conversationSlice.actions.setStatus('idle'));
+        // Once per message: a reload that still lists it must not tail it again and again.
+        if (
+          !reloadedForGoneMessage.has(messageId) &&
+          (getState() as RootState).conversation.conversationId ===
+            conversationId
+        ) {
+          reloadedForGoneMessage.add(messageId);
+          dispatch(
+            loadConversation({
+              id: conversationId,
+              force: true,
+              unlessStreaming: true,
+            }),
+          );
+        }
         return;
       }
 
@@ -778,21 +915,28 @@ export const tailInFlightMessage = createAsyncThunk<
   },
 );
 
-export const submitToolActions = createAsyncThunk<
-  void,
-  {
-    toolActions: {
-      call_id: string;
-      decision?: 'approved' | 'denied';
-      comment?: string;
-      result?: Record<string, any>;
-    }[];
-  }
->('submitToolActions', async ({ toolActions }, { dispatch, getState }) => {
-  if (abortController) abortController.abort();
-  abortController = new AbortController();
-  const { signal } = abortController;
+type SubmitToolActionsArgs = {
+  toolActions: {
+    call_id: string;
+    decision?: 'approved' | 'denied';
+    comment?: string;
+    result?: Record<string, any>;
+  }[];
+};
 
+export const submitToolActions = createAsyncThunk<void, SubmitToolActionsArgs>(
+  'submitToolActions',
+  streamed(sendToolActions),
+);
+
+async function sendToolActions(
+  { toolActions }: SubmitToolActionsArgs,
+  {
+    dispatch,
+    getState,
+  }: Parameters<AsyncThunkPayloadCreator<void, SubmitToolActionsArgs>>[1],
+  signal: AbortSignal,
+): Promise<void> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
   if (!conversationId) {
@@ -826,13 +970,9 @@ export const submitToolActions = createAsyncThunk<
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
-        getConversations(state.preference.token)
-          .then((fetchedConversations) => {
-            dispatch(receiveConversations(fetchedConversations));
-          })
-          .catch((error) => {
-            console.error('Failed to fetch conversations: ', error);
-          });
+        // Through the shared refresh, so a generated title announced while
+        // it runs gets a list read after it (see refreshConversationList).
+        void refreshConversationList(getState, dispatch);
       } else if (data.type === 'id') {
         // conversation ID already set
       } else if (data.type === 'message_id') {
@@ -914,7 +1054,7 @@ export const submitToolActions = createAsyncThunk<
     },
     idempotencyKey,
   );
-});
+}
 
 export const conversationSlice = createSlice({
   name: 'conversation',
@@ -951,6 +1091,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
       delete state.queries[index].research;
+      // A new run answers it; the old run's files are not this answer's.
+      delete state.queries[index].workflow_run_id;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;
@@ -1054,7 +1196,7 @@ export const conversationSlice = createSlice({
       recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     // Records the workflow run id so the answer bubble can render the run's
-    // produced artifacts (WorkflowRunArtifacts fetches by this id).
+    // produced artifacts (useRunArtifacts lists them by this id).
     setWorkflowRunId(
       state,
       action: PayloadAction<{ index: number; workflowRunId: string }>,
@@ -1360,6 +1502,51 @@ export const CONTINUATION_REFRESH_WAIT_MS = 10 * 60 * 1000;
 
 export const conversationListenerMiddleware = createListenerMiddleware();
 
+let listRefresh: Promise<void> | null = null;
+let listRefreshAgain = false;
+
+/**
+ * Refresh the sidebar list for an event or an answer's end, one fetch at a
+ * time. A refresh asked for while one runs folds into a single follow-up
+ * fetch, so a burst of events (a replayed backlog, several chats finishing)
+ * costs two requests and an older list never lands over a newer one; a
+ * `conversation.renamed` that arrives meanwhile gets a list read after the
+ * title. A failed fetch keeps the list on screen.
+ *
+ * Args:
+ *   getState: The store's state getter; the token is read at each fetch.
+ *   dispatch: The store's dispatch.
+ *
+ * Returns:
+ *   A promise that settles once the list is current, follow-up included.
+ */
+function refreshConversationList(
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  if (listRefresh) {
+    listRefreshAgain = true;
+    return listRefresh;
+  }
+  listRefresh = (async () => {
+    try {
+      do {
+        listRefreshAgain = false;
+        const { token } = (getState() as RootState).preference;
+        try {
+          const fetched = await getConversations(token);
+          if (fetched.data) dispatch(receiveConversations(fetched));
+        } catch (error) {
+          console.error('conversations refresh failed', error);
+        }
+      } while (listRefreshAgain);
+    } finally {
+      listRefresh = null;
+    }
+  })();
+  return listRefresh;
+}
+
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
@@ -1377,7 +1564,6 @@ conversationListenerMiddleware.startListening({
     if (!conversationId) return;
 
     const state = listenerApi.getState() as RootState;
-    const token = state.preference.token;
 
     // Skip mid-stream: loadConversation -> updateConversationId flips status
     // to 'idle', and the next SSE chunk dies on the 'idle' guard in
@@ -1395,12 +1581,7 @@ conversationListenerMiddleware.startListening({
     }
 
     // Refresh sidebar; server reorders by updated_at which just bumped.
-    try {
-      const fetched = await getConversations(token);
-      listenerApi.dispatch(receiveConversations(fetched));
-    } catch (error) {
-      console.error(`${envelope.type}: conversations refresh failed`, error);
-    }
+    await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
 
     // A continuation that landed while the user's own answer streamed shows
     // once that stream ends, if the chat is still open.
@@ -1447,5 +1628,118 @@ conversationListenerMiddleware.startListening({
         return;
     }
     listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
+  },
+});
+
+// A new chat is on the server, named after its question, from its answer's
+// first event: list it in the sidebar then, so it shows with its working mark
+// while it answers, not only once the answer ends. This tab's stream names it
+// (setConversationId); a chat started in another tab arrives as
+// `message.started`. One list refresh per chat, whichever comes first.
+const listingConversations = new Set<string>();
+
+async function listNewConversation(
+  conversationId: string,
+  getState: () => unknown,
+  dispatch: (action: ReturnType<typeof receiveConversations>) => unknown,
+): Promise<void> {
+  const state = getState() as RootState;
+  const listed = state.preference.conversations.data?.some(
+    (chat) => chat.id === conversationId,
+  );
+  if (listed || listingConversations.has(conversationId)) return;
+  listingConversations.add(conversationId);
+  try {
+    await refreshConversationList(getState, dispatch);
+  } finally {
+    listingConversations.delete(conversationId);
+  }
+}
+
+conversationListenerMiddleware.startListening({
+  actionCreator: conversationSlice.actions.setConversationId,
+  effect: async (action, listenerApi) => {
+    if (!action.payload) return;
+    await listNewConversation(
+      action.payload,
+      listenerApi.getState,
+      listenerApi.dispatch,
+    );
+  },
+});
+
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    const conversationId = String(payload.conversation_id ?? '');
+    if (!conversationId) return;
+    if (envelope.type === 'message.started') {
+      // An answer this tab is not streaming started in the chat it shows: a
+      // continuation after a background job, or a turn from another tab.
+      // Loading the chat picks its in-flight message up and tails it, so it
+      // streams here and can be stopped. Never mid-stream (see above).
+      const state = listenerApi.getState() as RootState;
+      const messageId = String(payload.message_id ?? '');
+      if (
+        messageId &&
+        state.conversation.conversationId === conversationId &&
+        state.conversation.status !== 'loading' &&
+        !state.conversation.queries.some(
+          (query) => query.messageId === messageId,
+        )
+      ) {
+        listenerApi.dispatch(
+          loadConversation({
+            id: conversationId,
+            force: true,
+            unlessStreaming: true,
+          }),
+        );
+      }
+      await listNewConversation(
+        conversationId,
+        listenerApi.getState,
+        listenerApi.dispatch,
+      );
+    } else if (envelope.type === 'message.finished') {
+      // An answer that ended while the user was elsewhere is marked unread
+      // on the server; refresh the list for its mark. The chat this tab
+      // shows needs none while the user looks at it: nothing was marked.
+      // Unwatched, it may have been, by an answer from another tab or device
+      // that this tab never streamed. "Shows" is what presence reports (the
+      // route), not the last chat in state: on /settings that one is unwatched.
+      const state = listenerApi.getState() as RootState;
+      const shown = shownConversationId(
+        typeof window === 'undefined' ? '/' : window.location.pathname,
+        state.conversation.conversationId,
+        state.conversation.status === 'loading',
+      );
+      if (shown === conversationId && isPageAttended()) return;
+      await refreshConversationList(listenerApi.getState, listenerApi.dispatch);
+    } else if (envelope.type === 'conversation.renamed') {
+      // The generated title, saved after the answer ended. It replaces the
+      // question-prefix name it names as `previous`: a chat the user renamed
+      // meanwhile (an event replayed after the stream dropped) keeps its
+      // name. A chat not listed yet, or a list fetch that read before the
+      // title, gets a list that holds it.
+      const name = String(payload.name ?? '');
+      if (!name) return;
+      const previous =
+        typeof payload.previous === 'string' ? payload.previous : null;
+      const chat = (
+        listenerApi.getState() as RootState
+      ).preference.conversations.data?.find((c) => c.id === conversationId);
+      if (chat && (previous === null || chat.name === previous)) {
+        listenerApi.dispatch(renameConversation({ id: conversationId, name }));
+      }
+      if (!chat || listRefresh) {
+        await refreshConversationList(
+          listenerApi.getState,
+          listenerApi.dispatch,
+        );
+      }
+    }
   },
 });

@@ -1,7 +1,7 @@
 ---
 title: Triggering Agents with Webhooks
 description: Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-17
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -38,7 +38,7 @@ Send an HTTP `POST` request to the agent's unique webhook URL with the required 
 -   **Method:** `POST`, with a JSON body and `Content-Type: application/json`. Another content type returns `415`; a body that isn't valid JSON, or is `null`, returns `400`.
 -   **Response:** `{"success": true, "task_id": "a1b2c3d4-e5f6-..."}`
 
-The whole JSON body becomes the agent's input, serialized as JSON text; no field has a special meaning to the agent. (The agent's sources are searched with the body's text fields; see [How a webhook run behaves](#how-a-webhook-run-behaves).) The request `{"question": "Summarize order 4567"}` reaches the agent as the message `{"question": "Summarize order 4567"}`, so write the agent's prompt to expect the payload your system sends.
+The whole JSON body becomes the agent's input, serialized as JSON text; no field has a special meaning to the agent. (The agent's sources are searched with the body's text fields; see [How a webhook run behaves](#how-a-webhook-run-behaves).) The request `{"question": "Summarize order 4567"}` reaches the agent as the message `{"question": "Summarize order 4567"}`, so write the agent's prompt to expect the payload your system sends. Non-ASCII text reaches it as written (`{"question": "Résumé"}`), not as `\u00e9` escapes; the agent's `input` [guardrails](/Agents/guardrails) scan the payload as that message.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
   <Tabs.Tab>
@@ -235,7 +235,7 @@ Two more cases to handle:
 
 ## How a webhook run behaves
 
-A webhook run happens in the background, with nobody watching it:
+A webhook run happens in the background, with nobody watching it. While it runs, the agent's owner sees it under **Running** in [Activity → Now](/Using/activity#now):
 
 - **It acts as the agent's owner.** Tools use the owner's connected accounts and saved credentials. A webhook is the owner's own automation, so the [API write allowlist](/API/agent-api#letting-api-callers-make-changes) that limits API-key and widget callers does not apply to it.
 - **Nobody can approve.** A tool action that needs approval is refused, and the agent is told so and carries on. So are client-side tools and tools whose connection needs signing in again.

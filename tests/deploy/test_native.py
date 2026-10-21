@@ -234,11 +234,13 @@ class TestNativeUp:
             _run([*base, "--domain", "docs.example.com"], _native_context())
         with pytest.raises(DeployError, match=r"docsgpt\[docling\]"):
             _run([*base, "--docling"], _native_context())
+        with pytest.raises(DeployError, match="decide-server"):
+            _run([*base, "--decider"], _native_context())
         assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
 
     def test_the_options_that_describe_what_native_already_does_are_kept(self, tmp_path):
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
-                "--expose", "local", "--no-docling"]
+                "--expose", "local", "--no-docling", "--no-decider"]
         assert _run(argv, _native_context()) == 0
 
     def test_a_redis_url_keeps_its_credentials_tls_and_query(self, tmp_path):

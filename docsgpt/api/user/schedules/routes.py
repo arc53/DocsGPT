@@ -27,7 +27,13 @@ from docsgpt.agents.scheduler_utils import (
     resolve_timezone,
 )
 from docsgpt.api import api
-from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    allowed_actions,
+    require,
+    settings_many,
+)
+from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -36,6 +42,7 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.utils import generate_image_url
 
 
 logger = logging.getLogger(__name__)
@@ -97,8 +104,18 @@ def _format_schedule(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _format_run(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Render a schedule_run row for the API."""
+def _format_run(row: Dict[str, Any], caller: Optional[str] = None) -> Dict[str, Any]:
+    """Render a schedule_run row for the API.
+
+    Args:
+        row: The run.
+        caller: Who asked. A teammate managing the owner's schedule gets no
+            ``conversation_id``/``message_id``: the run's chat is the
+            owner's, and the link would open nothing.
+
+    Returns:
+        The run as JSON-ready fields.
+    """
     if not row:
         return {}
     out = dict(row)
@@ -107,6 +124,10 @@ def _format_run(row: Dict[str, Any]) -> Dict[str, Any]:
     ):
         if out.get(key) is not None:
             out[key] = str(out[key])
+    if caller is not None and "user_id" in out and out["user_id"] != caller:
+        for key in ("conversation_id", "message_id"):
+            if key in out:
+                out[key] = None
     out.pop("_id", None)
     return out
 
@@ -250,6 +271,72 @@ def _publish_schedule_event(
         logger.exception(
             "schedules: publish %s failed for %s", event_type, schedule_id,
         )
+
+
+def _team_schedule_agents(conn, user_id: str) -> list[str]:
+    """Agents shared to the caller's teams on which their role may manage schedules.
+
+    Args:
+        conn: Open database connection.
+        user_id: The caller.
+
+    Returns:
+        Agent ids (the caller's own agents are not included).
+    """
+    grants = visible_with_access(conn, user_id, "agent")
+    if not grants:
+        return []
+    switches = settings_many(conn, "agent", grants.keys())
+    return [
+        agent_id
+        for agent_id, access in grants.items()
+        if "manage_schedules" in allowed_actions("agent", access, switches.get(agent_id))
+    ]
+
+
+@schedules_ns.route("/schedules")
+class UserSchedules(Resource):
+    @api.doc(
+        description=(
+            "List the caller's schedules across every agent: their own, agentless ones created in "
+            "chat, and those of teammates' agents they manage through a team (team: true). "
+            "Monitors are not included."
+        ),
+    )
+    @_safe_route
+    def get(self):
+        """Return the caller's schedules with agent and origin-chat names.
+
+        Returns:
+            A Flask response with ``schedules``: schedule rows plus
+            ``agent_name``, ``agent_image`` (a signed URL, never a storage
+            path), ``origin_conversation_name`` and ``team`` (a schedule of a
+            teammate's agent the caller manages through a team).
+        """
+        user_id = _user_id()
+        if not user_id:
+            return _err("unauthorized", 401)
+        with db_readonly() as conn:
+            repo = SchedulesRepository(conn)
+            own = repo.list_owned_with_context(user_id)
+            team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
+        seen = {str(row["id"]) for row in own}
+        rows = [{**row, "team": False} for row in own] + [
+            {**row, "team": True} for row in team if str(row["id"]) not in seen
+        ]
+        out = []
+        for row in rows:
+            image = row.get("agent_image")
+            agent_owner = row.pop("agent_user_id", None)
+            # A storage path never leaves the server: sign it as the agents
+            # API does, or drop it.
+            row["agent_image"] = (
+                generate_image_url(image, row.get("agent_id"), agent_owner)
+                if image and row.get("agent_id")
+                else None
+            )
+            out.append(_format_schedule(row))
+        return _ok({"schedules": out})
 
 
 @schedules_ns.route("/agents/<string:agent_id>/schedules")
@@ -474,7 +561,7 @@ class AgentScheduleStats(Resource):
                 "runs": stats["runs"],
                 "failed": stats["failed"],
                 "tokens": stats["tokens"],
-                "latest_failure": _format_run(latest) if latest else None,
+                "latest_failure": _format_run(latest, user_id) if latest else None,
             }
         )
 
@@ -751,7 +838,7 @@ class ScheduleRunNow(Resource):
                 "run-now enqueue failed: %s", exc, exc_info=True,
             )
             return _err("enqueue failed", 500)
-        return _ok({"run": _format_run(run)}, status=202)
+        return _ok({"run": _format_run(run, user_id)}, status=202)
 
 
 @schedules_ns.route("/schedules/<string:schedule_id>/runs")
@@ -785,7 +872,7 @@ class ScheduleRunList(Resource):
             )
         return _ok(
             {
-                "runs": [_format_run(r) for r in rows],
+                "runs": [_format_run(r, user_id) for r in rows],
                 "limit": limit,
                 "offset": offset,
             }
@@ -812,4 +899,4 @@ class ScheduleRunDetail(Resource):
                 schedule["id"]
             ):
                 return _err("run not found", 404)
-        return _ok({"run": _format_run(run)})
+        return _ok({"run": _format_run(run, user_id)})

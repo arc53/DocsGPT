@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Auto-Resume
 description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-20
 ---
 
 import { Callout } from 'nextra/components';
@@ -72,7 +72,9 @@ is resumed with a note that the work may or may not have taken effect and should
 When a job finishes in a conversation auto-resume applies to (see below for the poll-only ones), the
 conversation is resumed with a **continuation turn**: a headless turn of the same agent
 and model, given the result as an event that is marked as not coming from the user. It answers in the same
-conversation, and a `conversation.continued` event tells open tabs about the new message.
+conversation, and its message is written as it runs, as a chat answer is: an open chat streams it, the sidebar
+marks the chat working, a reload picks it up where it is, and Stop ends it. A `conversation.continued` event
+tells open tabs once it is done.
 
 - **One delivery.** A result reaches the model once. If the model already read it with `check_job`, or the user
   wrote before it was delivered, the continuation does not repeat it.
@@ -82,7 +84,12 @@ conversation, and a `conversation.continued` event tells open tabs about the new
   the model (their message itself is stored unchanged).
 - **Batched.** Results that land together, up to eight, are answered in one turn.
 - **Silence is allowed.** If nothing is worth telling the user, the model answers `NO_REPLY` and nothing is
-  added to the conversation.
+  added to the conversation. The answer is not shown while it could still be `NO_REPLY`; the message that
+  showed the turn working is removed.
+- **Stop means stop.** Pressing Stop on a turn (a chat answer or a continuation) cancels the background jobs
+  that turn started, so none of them resumes the conversation; a job that had already finished has its
+  pending result withdrawn. A call still in its foreground window is handed off at once and cancelled. Closing
+  the tab is not a Stop: jobs keep running and resume the conversation as usual.
 - **A turn like any other.** A continuation's tool calls and files belong to its own message, a slow call in it
   becomes a background job too, and it has `check_job` (to cancel a failing job a watch pattern reported, for
   example). Chains stay bounded by `AUTO_RESUME_MAX_CONSECUTIVE` and the job caps.
@@ -180,16 +187,20 @@ through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_job
 When a continuation answers (never for `NO_REPLY`), or a one-time scheduled task (a reminder) answers in its
 conversation, the user is notified according to where they are:
 
-1. **Watching the conversation** (a visible tab shows it): nothing; the chat updates.
-2. **A DocsGPT tab open elsewhere**: a toast with an **Open** button that goes to the conversation. A hidden tab
-   also shows a system notification, if the browser allows it.
+1. **Watching the conversation** (a tab shows it, is visible, and its window has focus): nothing; the chat
+   updates.
+2. **A DocsGPT tab open elsewhere**, or the conversation open in a window that is behind another app or not
+   focused: a toast with an **Open** button that goes to the conversation. A tab nobody is looking at (hidden, or
+   its window not focused) also shows a system notification, if the browser allows it.
 3. **No tab open**: a Web Push notification to the browsers the user turned it on in, if the operator set it
    up (below).
 
-Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it.
+Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it, or
+until they come back to the window that already shows it. The tab title counts the chats that need the user, unread, failed or waiting for an approval: `(2) DocsGPT`. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
 
 Tabs report what they show to `POST /api/presence` (`{tab_id, conversation_id, visible, closing?}`) when their
-route or visibility changes and every 20 seconds while visible; a report counts for 45 seconds, and a closing
+route, visibility or window focus changes and every 20 seconds while visible; `visible` is true only while the
+tab is visible and its window has focus; a report counts for 45 seconds, and a closing
 tab says so. When Redis is unavailable, the user counts as away, so the notification still goes out.
 
 The toast and the push lead with the kind of event:

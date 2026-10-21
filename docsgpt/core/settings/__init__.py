@@ -23,6 +23,7 @@ from docsgpt.core.settings.auth import AuthSettings
 from docsgpt.core.settings.background import BackgroundSettings
 from docsgpt.core.settings.connectors import ConnectorSettings
 from docsgpt.core.settings.database import DatabaseSettings
+from docsgpt.core.settings.decisions import DecisionSettings
 from docsgpt.core.settings.embeddings import EmbeddingsSettings
 from docsgpt.core.settings.events import EventsSettings
 from docsgpt.core.settings.guardrails import GuardrailSettings
@@ -47,6 +48,7 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Authentication", AuthSettings),
     ("LLM providers", LLMSettings),
     ("Embeddings", EmbeddingsSettings),
+    ("Decision model", DecisionSettings),
     ("Retrieval", RetrievalSettings),
     ("Vector stores", VectorStoreSettings),
     ("User-data database", DatabaseSettings),

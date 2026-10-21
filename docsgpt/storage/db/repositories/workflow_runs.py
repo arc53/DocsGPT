@@ -87,6 +87,27 @@ class WorkflowRunsRepository:
         res = self._conn.execute(stmt)
         return res.rowcount > 0
 
+    def set_progress(self, run_id: str, user_id: str, progress: dict) -> bool:
+        """Record the step a running run is on; owner-scoped.
+
+        Args:
+            run_id: The run.
+            user_id: The run's owner (the person who started it).
+            progress: ``{done, total, current: {node_id, title, type, started_at}}``.
+
+        Returns:
+            True when a running run was updated. A finished run keeps its
+            last progress.
+        """
+        stmt = (
+            workflow_runs_table.update()
+            .where(workflow_runs_table.c.id == run_id)
+            .where(workflow_runs_table.c.user_id == user_id)
+            .where(workflow_runs_table.c.status == "running")
+            .values(progress=progress)
+        )
+        return self._conn.execute(stmt).rowcount > 0
+
     def mark_stale_running_failed(self, older_than: datetime) -> int:
         """Fail runs left in ``running`` (no ``ended_at``) since before ``older_than``.
 
