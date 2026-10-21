@@ -14,6 +14,7 @@ from docsgpt.parser.tokenization import (
     get_token_counter,
     split_to_token_limit,
 )
+from tests.parser.counter_fakes import CharTokenizer, RecordingTokenizer, real_cl100k, spy_cl100k
 
 SAMPLES = [
     "Hello World: DocsGPT ANSWERS Questions.",
@@ -37,67 +38,6 @@ class _StubEncoding:
     def decode_with_offsets(self, ids):
         # One token per character, so each token starts where the last ended.
         return self.decode(ids), list(range(len(ids)))
-
-
-class _RecordingEncoding:
-    """Wraps a tiktoken-like encoding and records how much each call is handed.
-
-    #3130: one ``encode_ordinary`` over a whole document materialises per-token
-    data for all of it at once, so the size of every single call is what bounds
-    the worker's peak memory.
-    """
-
-    def __init__(self, inner):
-        self._inner = inner
-        self.encode_lengths = []
-        self.decode_lengths = []
-
-    def encode_ordinary(self, text):
-        self.encode_lengths.append(len(text))
-        return self._inner.encode_ordinary(text)
-
-    def decode(self, ids):
-        return self._inner.decode(ids)
-
-    def decode_with_offsets(self, ids):
-        self.decode_lengths.append(len(ids))
-        return self._inner.decode_with_offsets(ids)
-
-
-class _CharEncoded:
-    def __init__(self, offsets):
-        self.offsets = offsets
-        self.ids = list(range(len(offsets)))
-
-
-class _CharTokenizer:
-    """Fake HF tokenizer: one token per character, with true offsets.
-
-    With ``skip_whitespace`` whitespace yields no token at all, the way
-    WordPiece's pre-tokenizer drops it, so a long blank run weighs nothing.
-    """
-
-    def __init__(self, skip_whitespace=False):
-        self.skip_whitespace = skip_whitespace
-        self.encode_lengths = []
-
-    def encode(self, text, add_special_tokens=False):
-        self.encode_lengths.append(len(text))
-        return _CharEncoded(
-            [(i, i + 1) for i, c in enumerate(text) if not (self.skip_whitespace and c.isspace())]
-        )
-
-
-class _RecordingTokenizer:
-    """Wraps a real HF tokenizer and records the length of every encode."""
-
-    def __init__(self, inner):
-        self._inner = inner
-        self.encode_lengths = []
-
-    def encode(self, text, add_special_tokens=False):
-        self.encode_lengths.append(len(text))
-        return self._inner.encode(text, add_special_tokens=add_special_tokens)
 
 
 @pytest.fixture(autouse=True)
@@ -156,6 +96,9 @@ class TestCounting:
 
     def test_empty_text_counts_zero(self, hf_counter):
         assert hf_counter.count("") == 0
+
+    def test_windowed_helper_counts_empty_as_zero(self):
+        assert tokenization.count_tokens_windowed("") == 0
 
 
 class TestSelection:
@@ -443,150 +386,89 @@ class TestTokenizerFile:
         assert cache_dirs == ["/models", "/models"]
 
 
-# ---------------------------------------------------------------------------
-# #3130: bounded per-call tokenization.
-#
-# Ingesting one 80 MiB Chinese .txt peaked the worker at 10.3 GiB, roughly
-# 180-430 bytes of RAM per character, because every count and split handed the
-# whole document to a single encode. The counters now walk the text in windows
-# of ``tokenization._WINDOW_CHARS`` characters, so no tokenizer call sees more
-# than ``2 * _WINDOW_CHARS`` of it. The window is read at call time, which lets
-# these tests shrink it and exercise many seams on small inputs.
-# ---------------------------------------------------------------------------
 
+# The tokenizer window is read at call time, so tests shrink it to cross many seams.
 _SMALL_WINDOW = 256
 
-# Mixed lines of English and unbroken CJK: the shape of the #3130 document.
 _MIXED = ("The quick brown fox jumps over the lazy dog.\n" "検索は自然言語でできます。絵文字も🎉あります。\n") * 120
 
-_GLUE_CATEGORIES = {"Mn", "Mc", "Me", "Cf"}
+_PROSE = "\n".join(f"Sentence {i} explains how chunk {i % 7} is retrieved, ranked and cited." for i in range(200))
 
 
 def _is_glue(char):
     """Characters a cut must not land in front of: they attach to the previous one."""
     code = ord(char)
     return (
-        unicodedata.category(char) in _GLUE_CATEGORIES
+        unicodedata.category(char) in {"Mn", "Mc", "Me", "Cf"}
         or 0xD800 <= code <= 0xDFFF
         or 0x1F3FB <= code <= 0x1F3FF
     )
 
 
 def _shrink_window(monkeypatch, size):
-    # ``raising=False`` so code without the constant fails on the behaviour
-    # under test rather than on the setattr itself.
     monkeypatch.setattr(tokenization, "_WINDOW_CHARS", size, raising=False)
 
 
-def _real_cl100k():
-    try:
-        encoding = tokenization.get_encoding()
-        encoding.encode_ordinary("probe")
-    except Exception as exc:  # offline CI, same policy as the HF fixture
-        pytest.skip(f"cl100k encoding unavailable: {exc}")
-    return encoding
-
-
 class TestEncodeCallsAreBounded:
-    """The #3130 regression: no single tokenizer call sees the whole document."""
+    """No single tokenizer call sees more than two windows of the text."""
 
-    def _tiktoken(self, monkeypatch):
-        encoding = _RecordingEncoding(_StubEncoding())
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
-        return TiktokenCounter(), encoding
-
-    def test_text_is_many_windows_long(self):
-        assert len(_MIXED) >= 20 * _SMALL_WINDOW
-
-    def test_tiktoken_count_is_windowed(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        counter, encoding = self._tiktoken(monkeypatch)
+    @pytest.mark.parametrize(
+        "max_tokens, first", [(40, None), (1000, 300), (10**9, None)], ids=["small", "first-budget", "huge"]
+    )
+    @pytest.mark.parametrize("kind", ["tiktoken", "hf"])
+    def test_count_and_split(self, kind, max_tokens, first, monkeypatch):
+        if kind == "tiktoken":
+            spy = spy_cl100k(monkeypatch, inner=_StubEncoding(), window=_SMALL_WINDOW)
+            counter = TiktokenCounter()
+        else:
+            _shrink_window(monkeypatch, _SMALL_WINDOW)
+            spy = CharTokenizer()
+            counter = HuggingFaceCounter(spy, "spy")
+        # Both fakes are one token per character.
         assert counter.count(_MIXED) == len(_MIXED)
-        assert max(encoding.encode_lengths) <= 2 * _SMALL_WINDOW
-
-    def test_tiktoken_split_is_windowed_and_lossless(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        counter, encoding = self._tiktoken(monkeypatch)
-        pieces = counter.split(_MIXED, 40)
+        pieces = counter.split(_MIXED, max_tokens, first_max_tokens=first)
         assert "".join(pieces) == _MIXED
-        assert all(len(piece) <= 40 for piece in pieces)
-        assert max(encoding.encode_lengths) <= 2 * _SMALL_WINDOW
-        assert max(encoding.decode_lengths) <= 2 * _SMALL_WINDOW
-
-    def test_hf_count_is_windowed(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        tokenizer = _CharTokenizer()
-        counter = HuggingFaceCounter(tokenizer, "spy")
-        assert counter.count(_MIXED) == len(_MIXED)
-        assert max(tokenizer.encode_lengths) <= 2 * _SMALL_WINDOW
-
-    def test_hf_split_is_windowed_and_lossless(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        tokenizer = _CharTokenizer()
-        counter = HuggingFaceCounter(tokenizer, "spy")
-        pieces = counter.split(_MIXED, 40)
-        assert "".join(pieces) == _MIXED
-        assert all(len(piece) <= 40 for piece in pieces)
-        assert max(tokenizer.encode_lengths) <= 2 * _SMALL_WINDOW
+        assert len(pieces[0]) <= (first or max_tokens)
+        assert all(len(piece) <= max_tokens for piece in pieces)
+        assert max(spy.encode_lengths) <= 2 * _SMALL_WINDOW
+        if kind == "tiktoken":
+            assert max(spy.decode_lengths, default=0) <= 2 * _SMALL_WINDOW
 
 
 class TestHuggingFaceSplitEncodesOnce:
-    """Splitting used to encode for offsets and then again inside ``count``,
-    holding two full encodings of the same text alive at once."""
-
-    def test_over_budget_text_is_encoded_once(self):
-        tokenizer = _CharTokenizer()
-        counter = HuggingFaceCounter(tokenizer, "spy")
-        text = "abcdefghij" * 10
-        pieces = counter.split(text, 10)
-        assert "".join(pieces) == text
-        assert len(tokenizer.encode_lengths) == 1
-
-    def test_within_budget_text_is_encoded_once(self):
-        tokenizer = _CharTokenizer()
-        counter = HuggingFaceCounter(tokenizer, "spy")
-        assert counter.split("short", 100) == ["short"]
+    @pytest.mark.parametrize("text, max_tokens", [("abcdefghij" * 10, 10), ("short", 100)], ids=["over", "within"])
+    def test_text_is_encoded_once(self, text, max_tokens):
+        tokenizer = CharTokenizer()
+        assert "".join(HuggingFaceCounter(tokenizer, "spy").split(text, max_tokens)) == text
         assert len(tokenizer.encode_lengths) == 1
 
 
 class TestZeroTokenRunsAreCarried:
-    """A long blank run weighs nothing, so a segment holding only it never
-    splits. The carried remainder must still be capped, or the next encode
-    grows with the run and the bound is lost (and the work goes quadratic)."""
+    """A blank run weighs nothing, so its carried remainder must be capped to keep the bound."""
 
     def test_whitespace_run_keeps_the_bound_and_stays_linear(self, monkeypatch):
         _shrink_window(monkeypatch, _SMALL_WINDOW)
-        tokenizer = _CharTokenizer(skip_whitespace=True)
-        counter = HuggingFaceCounter(tokenizer, "spy")
+        tokenizer = CharTokenizer(skip_whitespace=True)
         text = ("  \n\t " * 260 + "alpha beta gamma") * 10
-        assert len(text) >= 50 * _SMALL_WINDOW
-        pieces = counter.split(text, 3)
+        pieces = HuggingFaceCounter(tokenizer, "spy").split(text, 3)
         assert "".join(pieces) == text
         assert max(tokenizer.encode_lengths) <= 2 * _SMALL_WINDOW
         assert len(tokenizer.encode_lengths) <= 4 * len(text) // _SMALL_WINDOW + 4
 
     def test_whitespace_run_counts_only_the_words(self, monkeypatch):
         _shrink_window(monkeypatch, _SMALL_WINDOW)
-        tokenizer = _CharTokenizer(skip_whitespace=True)
-        counter = HuggingFaceCounter(tokenizer, "spy")
-        text = " " * (20 * _SMALL_WINDOW) + "word"
-        assert counter.count(text) == 4
+        tokenizer = CharTokenizer(skip_whitespace=True)
+        assert HuggingFaceCounter(tokenizer, "spy").count(" " * (20 * _SMALL_WINDOW) + "word") == 4
         assert max(tokenizer.encode_lengths) <= 2 * _SMALL_WINDOW
 
     def test_blank_run_within_budget_comes_back_whole(self):
-        """Within one window a text that fits is returned as is; the character
-        cap is only for pieces a split actually produced."""
-        counter = HuggingFaceCounter(_CharTokenizer(skip_whitespace=True), "spy")
+        counter = HuggingFaceCounter(CharTokenizer(skip_whitespace=True), "spy")
         text = "a" + " " * 200 + "b"
         assert counter.split(text, 5) == [text]
 
 
 class TestTextWindows:
-    """Where the windows fall decides whether a seam changes tokenization.
-
-    Cuts prefer places every supported pre-tokenizer already breaks at, so a
-    windowed count equals the one-shot count on ordinary prose.
-    """
+    """Cuts fall where pre-tokenizers already break, and never before a joining character."""
 
     @staticmethod
     def _windows(text, size):
@@ -607,7 +489,7 @@ class TestTextWindows:
 
     @pytest.mark.parametrize(
         "text",
-        [_MIXED, "a" * 1000, " " * 1000, "x\n" * 500, "é" * 500, "́" * 1000],
+        [_MIXED, "a" * 1000, " " * 1000, "x\n" * 500, "é" * 500, "́" * 1000],
         ids=["mixed", "no-break", "blank", "newlines", "combining", "all-glue"],
     )
     def test_windows_tile_the_text(self, text):
@@ -616,40 +498,35 @@ class TestTextWindows:
         for start, end in windows[:-1]:
             assert end - start > 32, "a non-final window covers more than half the size"
 
-    def test_cuts_after_a_newline_before_text(self):
-        """cl100k and whitespace pre-tokenizers end a pretoken at ``\\n`` + non-space."""
-        text = "a" * 12 + "\n" + "b" * 30
-        assert self._windows(text, 20)[0] == (0, 13)
+    @pytest.mark.parametrize(
+        "text, size, end",
+        [
+            ("a" * 12 + "\n" + "b" * 30, 20, 13),
+            ("a" * 12 + "\nb" + "aaa" + "\n " + "c" * 30, 20, 13),
+            ("a" * 11 + "\n" + "bb cc" + "d" * 30, 20, 12),
+            ("a" * 14 + " " + "b" * 30, 20, 14),
+            ("a" * 13 + "  " + "b" * 30, 20, 13),
+            ("a" * 32 + " " + "a" * 100, 64, 64),
+            ("x" * 17 + "́" * 4 + "y" * 40, 20, 16),
+            ("x" * 5 + "́" * 100, 20, 20),
+        ],
+        ids=[
+            "after-newline-before-text",
+            "skips-newline-before-space",
+            "newline-beats-later-space",
+            "before-space",
+            "space-must-follow-text",
+            "space-at-half-is-not-a-cut",
+            "steps-back-over-glue-run",
+            "all-glue-back-half-takes-hard-cut",
+        ],
+    )
+    def test_first_window_end(self, text, size, end):
+        windows = self._windows(text, size)
+        assert windows[0] == (0, end)
+        self._assert_tiles(text, windows, size)
 
-    def test_skips_a_newline_followed_by_whitespace(self):
-        """``\\n `` belongs to one cl100k ``\\s+`` run, so cutting there changes a token."""
-        text = "a" * 12 + "\nb" + "aaa" + "\n " + "c" * 30
-        assert self._windows(text, 20)[0] == (0, 13)
-
-    def test_newline_beats_a_later_space(self):
-        text = "a" * 11 + "\n" + "bb cc" + "d" * 30
-        assert self._windows(text, 20)[0] == (0, 12)
-
-    def test_cuts_before_a_space(self):
-        """`` word`` is one token in cl100k and SentencePiece; cutting after the
-        space would split it."""
-        text = "a" * 14 + " " + "b" * 30
-        windows = self._windows(text, 20)
-        assert windows[0] == (0, 14)
-        assert text[windows[0][1]] == " "
-
-    def test_space_must_follow_text(self):
-        text = "a" * 13 + "  " + "b" * 30
-        assert self._windows(text, 20)[0] == (0, 13)
-
-    def test_space_exactly_at_half_is_not_a_cut(self):
-        """A cut at ``size // 2`` would leave a window no longer than half."""
-        text = "a" * 32 + " " + "a" * 100
-        (_, end), *_ = self._windows(text, 64)
-        assert end > 32
-
-    # Combining acute, ZWJ, VS16, a lone surrogate, a Devanagari vowel sign
-    # (a spacing mark, Mc) and an emoji skin-tone modifier.
+    # Combining acute, ZWJ, VS16, lone surrogate, Devanagari vowel sign (Mc), skin-tone modifier.
     @pytest.mark.parametrize("glue", ["́", "‍", "️", "\ud800", "ि", "\U0001F3FD"])
     def test_hard_cut_never_lands_before_glue(self, glue):
         text = "x" * 20 + glue + "y" * 40
@@ -657,19 +534,9 @@ class TestTextWindows:
         assert windows[0] == (0, 19)
         self._assert_tiles(text, windows, 20)
 
-    def test_hard_cut_steps_back_over_a_glue_run(self):
-        text = "x" * 17 + "́" * 4 + "y" * 40
-        assert self._windows(text, 20)[0] == (0, 16)
-
-    def test_all_glue_back_half_takes_the_hard_cut(self):
-        text = "x" * 5 + "́" * 100
-        windows = self._windows(text, 20)
-        assert windows[0] == (0, 20)
-        self._assert_tiles(text, windows, 20)
-
     @pytest.mark.parametrize(
         "text",
-        ["é́" * 400, "👨‍👩‍👧‍👦🏳️‍🌈" * 200, "a⃝" * 500, "किताबें" * 200, "👍🏽👋🏿" * 300],
+        ["é́" * 400, "👨‍👩‍👧‍👦🏳️‍🌈" * 200, "a⃝" * 500, "किताबें" * 200, "👍🏽👋🏿" * 300],
         ids=["combining", "zwj", "enclosing", "devanagari", "skin-tone"],
     )
     def test_no_cut_lands_before_glue(self, text):
@@ -688,11 +555,9 @@ _SEAM_CORPORA = {
     * 40,
     "cjk": "検索は自然言語でできます。絵文字も含まれています。日本語のテキストです。" * 120,
     "zwj": "👨‍👩‍👧‍👦👩🏽‍💻🏳️‍🌈" * 300,
-    "combining": "café résumé naïve ééé\n" * 150,
+    "combining": "café résumé naïve ééé\n" * 150,
     "crlf": "line one\r\nline two\n\n\n  indented line\r\n\r\n\n" * 100,
-    # No whitespace at all, so every seam is a hard cut. Punctuated rather than
-    # one unbroken word: a run WordPiece collapses to ``[UNK]`` already
-    # overshoots small budgets on main (see TestUnknownTokenCollapse).
+    # Only hard cuts; punctuated, since one unbroken word collapses to [UNK] in WordPiece.
     "one-line": "https://docs.example.com/guides/setup_v2.html?lang=en&page=3#install;" * 80,
 }
 
@@ -702,19 +567,20 @@ _SEAM_WINDOW = 512
 class TestSeamFidelity:
     """Real tokenizers at a small window: many seams, nothing lost or rewritten."""
 
-    @pytest.fixture
-    def cl100k_counter(self, monkeypatch):
-        encoding = _RecordingEncoding(_real_cl100k())
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
-        return TiktokenCounter(), encoding
+    @pytest.fixture(params=["cl100k", "mpnet"])
+    def spied_counter(self, request, monkeypatch):
+        if request.param == "cl100k":
+            encoding = spy_cl100k(monkeypatch)
+            return TiktokenCounter(), encoding.encode_lengths
+        hf_counter = request.getfixturevalue("hf_counter")
+        tokenizer = RecordingTokenizer(hf_counter._tokenizer)
+        return HuggingFaceCounter(tokenizer, hf_counter.name), tokenizer.encode_lengths
 
-    @pytest.fixture
-    def mpnet_counter(self, hf_counter):
-        tokenizer = _RecordingTokenizer(hf_counter._tokenizer)
-        return HuggingFaceCounter(tokenizer, hf_counter.name), tokenizer
-
-    @staticmethod
-    def _check(counter, encode_lengths, text, budget, monkeypatch):
+    @pytest.mark.parametrize("budget", [7, 64])
+    @pytest.mark.parametrize("name", list(_SEAM_CORPORA))
+    def test_split(self, spied_counter, name, budget, monkeypatch):
+        counter, encode_lengths = spied_counter
+        text = _SEAM_CORPORA[name]
         assert len(text) > 4 * _SEAM_WINDOW
         _shrink_window(monkeypatch, _SEAM_WINDOW)
         pieces = counter.split(text, budget)
@@ -727,80 +593,36 @@ class TestSeamFidelity:
         for piece in pieces:
             assert counter.count(piece) <= budget + 2
 
-    @pytest.mark.parametrize("budget", [7, 64])
-    @pytest.mark.parametrize("name", list(_SEAM_CORPORA))
-    def test_cl100k(self, cl100k_counter, name, budget, monkeypatch):
-        counter, encoding = cl100k_counter
-        self._check(counter, encoding.encode_lengths, _SEAM_CORPORA[name], budget, monkeypatch)
-
-    @pytest.mark.parametrize("budget", [7, 64])
-    @pytest.mark.parametrize("name", list(_SEAM_CORPORA))
-    def test_mpnet(self, mpnet_counter, name, budget, monkeypatch):
-        counter, tokenizer = mpnet_counter
-        self._check(counter, tokenizer.encode_lengths, _SEAM_CORPORA[name], budget, monkeypatch)
-
 
 class TestWindowedCountIsExactOnProse:
-    """Newline cuts fall where every pre-tokenizer already breaks, so a
-    windowed count of newline-separated prose equals the one-shot count."""
+    """Newline cuts fall where every pre-tokenizer already breaks, so prose counts match one-shot."""
 
-    TEXT = "\n".join(
-        f"Sentence {i} explains how chunk {i % 7} is retrieved, ranked and cited." for i in range(200)
-    )
-
-    def test_cl100k(self, monkeypatch):
-        encoding = _real_cl100k()
-        one_shot = len(encoding.encode_ordinary(self.TEXT))
-        _shrink_window(monkeypatch, _SEAM_WINDOW)
-        assert len(self.TEXT) > 10 * _SEAM_WINDOW
-        assert TiktokenCounter().count(self.TEXT) == one_shot
-
-    def test_mpnet(self, hf_counter, monkeypatch):
-        one_shot = hf_counter.count(self.TEXT)
-        _shrink_window(monkeypatch, _SEAM_WINDOW)
-        assert hf_counter.count(self.TEXT) == one_shot
-
-
-class TestFirstBudgetAcrossWindows:
-    """The header budget applies to the first piece even when the first
-    window fits whole and is carried into the next one."""
-
-    FIRST, REST = 300, 1000
-
-    def _text(self):
-        return "word " * (2 * _SMALL_WINDOW)
-
-    def test_tiktoken(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        encoding = _RecordingEncoding(_StubEncoding())
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
-        text = self._text()
-        pieces = TiktokenCounter().split(text, self.REST, first_max_tokens=self.FIRST)
-        assert "".join(pieces) == text
-        assert len(pieces[0]) <= self.FIRST
-        assert all(len(piece) <= self.REST for piece in pieces)
-
-    def test_hf(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        counter = HuggingFaceCounter(_CharTokenizer(), "spy")
-        text = self._text()
-        pieces = counter.split(text, self.REST, first_max_tokens=self.FIRST)
-        assert "".join(pieces) == text
-        assert len(pieces[0]) <= self.FIRST
-        assert all(len(piece) <= self.REST for piece in pieces)
+    @pytest.mark.parametrize("kind", ["tiktoken", "count_tokens_windowed", "mpnet"])
+    def test_matches_one_shot_and_is_bounded(self, kind, request, monkeypatch):
+        assert len(_PROSE) > 10 * _SMALL_WINDOW
+        if kind == "mpnet":
+            hf_counter = request.getfixturevalue("hf_counter")
+            one_shot = hf_counter.count(_PROSE)
+            spy = RecordingTokenizer(hf_counter._tokenizer)
+            count = HuggingFaceCounter(spy, hf_counter.name).count
+            _shrink_window(monkeypatch, _SMALL_WINDOW)
+        else:
+            one_shot = len(real_cl100k().encode_ordinary(_PROSE))
+            spy = spy_cl100k(monkeypatch, window=_SMALL_WINDOW)
+            count = TiktokenCounter().count if kind == "tiktoken" else tokenization.count_tokens_windowed
+        assert count(_PROSE) == one_shot
+        assert max(spy.encode_lengths) <= 2 * _SMALL_WINDOW
 
 
 class TestWindowedPiecesStayFull:
-    """Bounded is not enough: streaming must not leave a short piece at every
-    seam, or a document splits into more chunks than a one-shot split gives."""
+    """Streaming must not leave a short piece at every seam."""
 
     PROSE = "The quick brown fox jumps over the lazy dog.\n" * 400
 
-    # Budgets that don't divide the ~50 tokens a 256-char window holds, so a
-    # piece that should run across a seam is visibly cut short if it isn't.
+    # Budgets that don't divide the ~50 tokens a window holds, so a seam-cut piece shows.
     @pytest.mark.parametrize("budget", [37, 60])
     def test_piece_count_matches_one_shot(self, budget, monkeypatch):
-        _real_cl100k()
+        real_cl100k()
         counter = TiktokenCounter()
         one_shot = counter.split(self.PROSE, budget, first_max_tokens=10)
         _shrink_window(monkeypatch, _SMALL_WINDOW)
@@ -809,9 +631,8 @@ class TestWindowedPiecesStayFull:
         assert len(windowed) <= len(one_shot) + 2
 
     def test_tiktoken_pieces_are_not_character_capped(self, monkeypatch):
-        """The 16-chars-per-token cap is a WordPiece ``[UNK]`` guard; a cl100k
-        token can legitimately span a long whitespace run."""
-        _real_cl100k()
+        """The chars-per-token cap guards WordPiece [UNK]; a cl100k token may span a long blank run."""
+        real_cl100k()
         counter = TiktokenCounter()
         text = ("x" + " " * 60 + "\n") * 40
         _shrink_window(monkeypatch, _SMALL_WINDOW)
@@ -819,26 +640,6 @@ class TestWindowedPiecesStayFull:
         assert "".join(pieces) == text
         assert all(counter.count(piece) == 1 for piece in pieces)
         assert any(len(piece) > 16 for piece in pieces)
-
-
-class TestHugeBudgetIsStillBounded:
-    """A budget no window can fill means every segment comes back whole; the
-    carry cap is what keeps the next encode from growing to the full text."""
-
-    def test_tiktoken(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        encoding = _RecordingEncoding(_StubEncoding())
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
-        text = _MIXED[: 10 * _SMALL_WINDOW]
-        assert "".join(TiktokenCounter().split(text, 10**9)) == text
-        assert max(encoding.encode_lengths) <= 2 * _SMALL_WINDOW
-
-    def test_hf(self, monkeypatch):
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        tokenizer = _CharTokenizer()
-        text = _MIXED[: 10 * _SMALL_WINDOW]
-        assert "".join(HuggingFaceCounter(tokenizer, "spy").split(text, 10**9)) == text
-        assert max(tokenizer.encode_lengths) <= 2 * _SMALL_WINDOW
 
 
 # Recorded on main before windowing: per sample, ``count`` and the lengths of
@@ -894,49 +695,20 @@ _GOLDEN = {
 _GOLDEN_BUDGETS = [(7, None), (50, None), (20, 5)]
 
 
+
 class TestSmallTextsAreUnchanged:
-    """Within the default window, windowing must be invisible: the same counts
-    and the same chunk boundaries as before, so existing indexes stay valid."""
+    """Within the default window, counts and chunk boundaries match the pre-windowing output."""
 
-    @pytest.fixture
-    def cl100k(self):
-        _real_cl100k()
-        return TiktokenCounter()
-
-    def _check(self, counter, name):
+    @pytest.mark.parametrize("name", ["cl100k", "mpnet"])
+    def test_matches_golden(self, name, request):
+        if name == "cl100k":
+            real_cl100k()
+            counter = TiktokenCounter()
+        else:
+            counter = request.getfixturevalue("hf_counter")
         assert [counter.count(text) for text in SAMPLES] == _GOLDEN[(name, "count")]
         for max_tokens, first in _GOLDEN_BUDGETS:
             splits = [counter.split(text, max_tokens, first_max_tokens=first) for text in SAMPLES]
             for text, pieces in zip(SAMPLES, splits):
                 assert "".join(pieces) == text
             assert [[len(p) for p in pieces] for pieces in splits] == _GOLDEN[(name, max_tokens, first)]
-
-    def test_cl100k(self, cl100k):
-        self._check(cl100k, "cl100k")
-
-    def test_mpnet(self, hf_counter):
-        self._check(hf_counter, "mpnet")
-
-
-class TestCountTokensWindowed:
-    """#3130 W2: ingest's whole-file counts (bulk ``token_count``, markdown's
-    chunk check) go through a windowed cl100k count, not one encode of the file."""
-
-    def test_prose_count_matches_one_shot_and_is_bounded(self, monkeypatch):
-        from docsgpt.parser.tokenization import count_tokens_windowed
-
-        text = TestWindowedCountIsExactOnProse.TEXT
-        inner = _real_cl100k()
-        expected = len(inner.encode_ordinary(text))
-        encoding = _RecordingEncoding(inner)
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: encoding)
-        _shrink_window(monkeypatch, _SMALL_WINDOW)
-        assert len(text) > 4 * _SMALL_WINDOW
-
-        assert count_tokens_windowed(text) == expected
-        assert max(encoding.encode_lengths) <= 2 * _SMALL_WINDOW
-
-    def test_empty_text_is_zero(self):
-        from docsgpt.parser.tokenization import count_tokens_windowed
-
-        assert count_tokens_windowed("") == 0
