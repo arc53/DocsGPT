@@ -459,12 +459,17 @@ _SMALL_WINDOW = 256
 # Mixed lines of English and unbroken CJK: the shape of the #3130 document.
 _MIXED = ("The quick brown fox jumps over the lazy dog.\n" "検索は自然言語でできます。絵文字も🎉あります。\n") * 120
 
-_GLUE_CATEGORIES = {"Mn", "Me", "Cf"}
+_GLUE_CATEGORIES = {"Mn", "Mc", "Me", "Cf"}
 
 
 def _is_glue(char):
     """Characters a cut must not land in front of: they attach to the previous one."""
-    return unicodedata.category(char) in _GLUE_CATEGORIES or 0xD800 <= ord(char) <= 0xDFFF
+    code = ord(char)
+    return (
+        unicodedata.category(char) in _GLUE_CATEGORIES
+        or 0xD800 <= code <= 0xDFFF
+        or 0x1F3FB <= code <= 0x1F3FF
+    )
 
 
 def _shrink_window(monkeypatch, size):
@@ -643,7 +648,9 @@ class TestTextWindows:
         (_, end), *_ = self._windows(text, 64)
         assert end > 32
 
-    @pytest.mark.parametrize("glue", ["́", "‍", "️", "\ud800"])
+    # Combining acute, ZWJ, VS16, a lone surrogate, a Devanagari vowel sign
+    # (a spacing mark, Mc) and an emoji skin-tone modifier.
+    @pytest.mark.parametrize("glue", ["́", "‍", "️", "\ud800", "ि", "\U0001F3FD"])
     def test_hard_cut_never_lands_before_glue(self, glue):
         text = "x" * 20 + glue + "y" * 40
         windows = self._windows(text, 20)
@@ -662,8 +669,8 @@ class TestTextWindows:
 
     @pytest.mark.parametrize(
         "text",
-        ["é́" * 400, "👨‍👩‍👧‍👦🏳️‍🌈" * 200, "a⃝" * 500],
-        ids=["combining", "zwj", "enclosing"],
+        ["é́" * 400, "👨‍👩‍👧‍👦🏳️‍🌈" * 200, "a⃝" * 500, "किताबें" * 200, "👍🏽👋🏿" * 300],
+        ids=["combining", "zwj", "enclosing", "devanagari", "skin-tone"],
     )
     def test_no_cut_lands_before_glue(self, text):
         windows = self._windows(text, 16)

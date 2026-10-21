@@ -193,9 +193,8 @@ class TestNumTokens:
 
     @pytest.mark.unit
     def test_stays_one_shot_beyond_the_chunking_window(self, monkeypatch):
-        # #3130 windows the chunking counters only. Attachment code takes
-        # offsets from one encode of the whole text, so this helper must keep
-        # counting in a single call however small the chunking window is.
+        # #3130 windows the chunking counters only; this general-purpose helper
+        # keeps its exact one-shot count however small the chunking window is.
         from docsgpt.parser import tokenization
 
         monkeypatch.setattr(tokenization, "_WINDOW_CHARS", 64, raising=False)
