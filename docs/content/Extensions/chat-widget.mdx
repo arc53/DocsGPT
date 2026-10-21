@@ -374,11 +374,11 @@ You can call the controller as soon as you have it, before the chat has opened o
 | `isOpen()` | `true` while the panel is open. |
 | `focus()` | Opens the panel and puts the cursor in the message field. |
 | `ask(question, { send })` | Opens the panel and sends `question`. With `{ send: false }` it only puts the question in the message field, for the visitor to edit and send. If the visitor couldn't send right now either, because an answer is still streaming, a file is uploading or the microphone is on, the question goes into the message field instead of being sent. |
-| `on(type, handler)` | Calls `handler` for each event of that type. Returns a function that removes it. |
+| `on(type, handler)` | Calls `handler` for each event of that type. Returns a function that removes it. Adding the same handler twice for one type keeps it once. |
 | `off(type, handler)` | Removes a handler added with `on`. |
 | `destroy()` | Script tag only: removes the widget from the page and drops its handlers. Calling it again does nothing. In React, stop rendering the component instead. |
 
-Every event has a `type` and a `conversationId`: the server's id for the conversation, or `null` before the first answer has started.
+Every event has a `type` and a `conversationId`: the server's id for the conversation. It is `null` until the server assigns one as the first answer starts, so the first `question_submitted` has `null`.
 
 | **Event** | **Fields** | **When** |
 |---|---|---|
@@ -392,7 +392,7 @@ Every event has a `type` and a `conversationId`: the server's id for the convers
 | `answer_copied` | `question`, `answer` | The visitor copied an answer. |
 | `code_copied` | `question`, `code`, `language` | The visitor copied a code block from an answer. |
 
-Each question ends in exactly one of `answer_completed`, `answer_failed` or `answer_stopped`. An error thrown by your handler is logged to the console and doesn't affect the widget or other handlers. In TypeScript, `WidgetController`, `WidgetInstance` (the script tag's controller, with `destroy`), `WidgetEvent` and the related types are exported from the package.
+Each question ends in exactly one of `answer_completed`, `answer_failed` or `answer_stopped`, unless the widget is removed mid-answer. An error thrown by your handler is logged to the console and doesn't affect the widget or other handlers. In TypeScript, `WidgetController`, `WidgetInstance` (the script tag's controller, with `destroy`), `WidgetEvent` and the related types are exported from the package.
 
 ---
 

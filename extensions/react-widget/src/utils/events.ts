@@ -53,8 +53,12 @@ export const createEmitter = (): Emitter => {
     off,
     emit: (event) => {
       const set = handlers.get(event.type);
-      // A copy, so a handler that unsubscribes mid-dispatch skips no one.
-      if (set) [...set].forEach((handler) => callSafely(handler, event));
+      // A copy, so a handler that unsubscribes mid-dispatch skips no one;
+      // one removed by an earlier handler is skipped, as in the DOM.
+      if (set)
+        [...set].forEach((handler) => {
+          if (set.has(handler)) callSafely(handler, event);
+        });
     },
     clear: () => handlers.clear(),
   };

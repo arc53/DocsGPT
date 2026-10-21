@@ -2165,8 +2165,12 @@ export const WidgetCore = ({
                 query.thought = '';
               });
             },
-            // Recorded server-side; nothing to render.
-            message_id: () => undefined,
+            // Sent before any token, so even a first answer that is stopped
+            // or fails reports its conversation.
+            message_id: (d) => {
+              if (typeof d.conversation_id === 'string')
+                updateConversationId(d.conversation_id);
+            },
           };
 
           // Unknown types are ignored; untyped frames are answer deltas.
@@ -2185,10 +2189,25 @@ export const WidgetCore = ({
       //setEventInterrupt(false)
       return;
     }
-    // The stream closed without an end or error frame.
+    // The stream closed without an end or error frame: keep partial text,
+    // but an empty turn becomes a failure the visitor can retry.
     if (!settled && !controller.signal.aborted) {
       setStatus('idle');
-      settle({ type: 'answer_completed' });
+      if (answer) {
+        settle({ type: 'answer_completed' });
+        return;
+      }
+      setQueries((prev: Query[]) => {
+        if (prev.length === 0) return prev;
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          error: t('connectionError'),
+          errorKey: 'connectionError',
+        };
+        return updated;
+      });
+      settle({ type: 'answer_failed', error: t('connectionError') });
     }
   }
 
@@ -2546,8 +2565,11 @@ export const WidgetCore = ({
       : null;
 
   const sendControl =
+    // Distinct keys: reusing the node would turn Stop into a submit button
+    // mid-click and send the draft.
     status === 'loading' ? (
       <StyledButton
+        key="stop"
         type="button"
         onClick={stopGenerating}
         aria-label={t('stopGenerating')}
@@ -2556,6 +2578,7 @@ export const WidgetCore = ({
       </StyledButton>
     ) : (
       <StyledButton
+        key="send"
         disabled={!canSubmit}
         aria-label={t('sendMessage')}
         title={sendBlockedReason ?? undefined}

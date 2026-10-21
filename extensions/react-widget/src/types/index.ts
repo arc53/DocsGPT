@@ -224,8 +224,9 @@ export interface AnswerSource {
 
 /**
  * Something the visitor did in the chat, or that happened to an answer.
- * `conversationId` is the server's id for the chat, null until the first
- * answer starts.
+ * `conversationId` is the server's id for the chat. It is null until the
+ * server assigns one as the first answer starts, so the first
+ * `question_submitted` has null.
  */
 export type WidgetEvent = { conversationId: string | null } & (
   | { type: 'open' }
