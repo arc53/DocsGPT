@@ -48,6 +48,8 @@ def test_kernel_launch_scrubs_secrets_keeps_runtime_env(tmp_path):
     env = {
         "PATH": f"{tmp_path}:{os.environ.get('PATH', '')}",
         "HOME": str(tmp_path),
+        # kernel-env.sh gives kernels a writable HOME here (default /tmp/home).
+        "SANDBOX_KERNEL_HOME": str(tmp_path),
         "LANG": "C.UTF-8",
         "JUPYTER_RUNTIME_DIR": str(tmp_path / "runtime"),
         "JUPYTER_DATA_DIR": str(tmp_path / "data"),

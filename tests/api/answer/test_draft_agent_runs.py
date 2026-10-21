@@ -18,8 +18,8 @@ OWNER = "owner-1"
 AGENT_MODEL = "agent-model"
 
 
-def _seed(pg_engine) -> dict:
-    """A draft agentic agent with a custom prompt, one source and no tools."""
+def _seed(pg_engine, agent_type: str = "agentic") -> dict:
+    """A draft agent (agentic by default) with a custom prompt, one source and no tools."""
     from docsgpt.storage.db.repositories.agents import AgentsRepository
     from docsgpt.storage.db.repositories.prompts import PromptsRepository
     from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -33,7 +33,7 @@ def _seed(pg_engine) -> dict:
             user_id=OWNER,
             name="draft",
             status="draft",
-            agent_type="agentic",
+            agent_type=agent_type,
             prompt_id=str(prompt["id"]),
             source_id=str(source["id"]),
             default_model_id=AGENT_MODEL,
@@ -57,14 +57,14 @@ def _fake_agent() -> MagicMock:
 
 @pytest.mark.unit
 class TestDraftAgentThroughAnswerRoute:
-    def test_draft_agent_runs_as_itself(self, pg_engine, monkeypatch):
+    @staticmethod
+    def _answer(pg_engine, monkeypatch, seeded: dict) -> tuple:
+        """Ask the draft one question through ``/api/answer``; return the response and the agent kwargs."""
         from flask import Flask, request
 
         from docsgpt.api.answer.routes.answer import AnswerResource
         from docsgpt.api.answer.services import stream_processor as sp
 
-        monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
-        seeded = _seed(pg_engine)
         agent_id = str(seeded["agent"]["id"])
 
         built: dict = {}
@@ -87,6 +87,13 @@ class TestDraftAgentThroughAnswerRoute:
                 patch("docsgpt.api.answer.routes.base.QuotaService.check", return_value=None):
             request.decoded_token = {"sub": OWNER}
             response = AnswerResource().post()
+        return response, built
+
+    def test_draft_agent_runs_as_itself(self, pg_engine, monkeypatch):
+        monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
+        seeded = _seed(pg_engine)
+        agent_id = str(seeded["agent"]["id"])
+        response, built = self._answer(pg_engine, monkeypatch, seeded)
 
         assert response.status_code == 200, response.get_data(as_text=True)
         payload = json.loads(response.get_data(as_text=True))
@@ -105,3 +112,12 @@ class TestDraftAgentThroughAnswerRoute:
                 {"id": payload["conversation_id"]},
             ).scalar()
         assert str(saved) == agent_id
+
+    def test_draft_with_blank_type_runs_as_classic(self, pg_engine, monkeypatch):
+        # Legacy drafts carried Mongo's ``""`` over in the backfill.
+        monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
+        seeded = _seed(pg_engine, agent_type="")
+        response, built = self._answer(pg_engine, monkeypatch, seeded)
+
+        assert response.status_code == 200, response.get_data(as_text=True)
+        assert built["agent_type"] == "classic"

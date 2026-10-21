@@ -619,3 +619,65 @@ class TestPGVectorStoreGetChunkByKey:
         with pytest.raises(RuntimeError):
             store.get_chunk_by_key("a" * 32)
         mock_conn.rollback.assert_called_once()
+
+
+@pytest.fixture
+def _remote_embeddings_settings(monkeypatch):
+    """A remote, authenticated embeddings endpoint and a fresh embeddings cache."""
+    from docsgpt.core.settings import settings
+    from docsgpt.vectorstore.base import EmbeddingsSingleton
+
+    monkeypatch.setattr(settings, "EMBEDDINGS_BASE_URL", "http://embed:8080")
+    monkeypatch.setattr(settings, "EMBEDDINGS_KEY", "sk-real")
+    monkeypatch.setattr(settings, "EMBEDDINGS_NAME", "remote-model")
+    monkeypatch.setattr(settings, "PGVECTOR_CONNECTION_STRING", "postgresql://u:p@localhost/db")
+    monkeypatch.setattr(EmbeddingsSingleton, "_instances", {})
+    return settings
+
+
+@pytest.mark.unit
+class TestStoreEmbeddingsKey:
+    """A store built without a key must embed with the configured one.
+
+    The stores used to default to the placeholder ``"embeddings"``; the first
+    such store in a process cached a remote client sending ``Bearer
+    embeddings``, and every later retrieval on that process got a 401.
+    """
+
+    def test_default_key_resolves_settings_key(self, _remote_embeddings_settings):
+        from docsgpt.vectorstore.pgvector import PGVectorStore
+
+        store = PGVectorStore(source_id="src")
+
+        assert store._embedding.headers["Authorization"] == "Bearer sk-real"
+
+    def test_delete_path_store_does_not_poison_retrieval(self, _remote_embeddings_settings):
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        settings = _remote_embeddings_settings
+        # ``delete_source`` builds its store with no key, only to drop the index.
+        VectorCreator.create_vectorstore("pgvector", source_id="deleted")
+        # ``ClassicRAG`` builds its stores with the configured key.
+        retrieval = VectorCreator.create_vectorstore(
+            "pgvector", "other", settings.EMBEDDINGS_KEY
+        )
+
+        assert retrieval._embedding.headers["Authorization"] == "Bearer sk-real"
+
+    @pytest.mark.parametrize(
+        "module, cls",
+        [
+            ("docsgpt.vectorstore.pgvector", "PGVectorStore"),
+            ("docsgpt.vectorstore.mongodb", "MongoDBVectorStore"),
+            ("docsgpt.vectorstore.milvus", "MilvusStore"),
+            ("docsgpt.vectorstore.qdrant", "QdrantStore"),
+        ],
+    )
+    def test_default_embeddings_key_is_none(self, module, cls):
+        import importlib
+        import inspect
+
+        store_cls = getattr(importlib.import_module(module), cls)
+        default = inspect.signature(store_cls.__init__).parameters["embeddings_key"].default
+
+        assert default is None

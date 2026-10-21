@@ -100,7 +100,11 @@ class TestValidators:
         loaded = Settings.model_validate({name: " None " for name in names})
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            assert [name for name in names if getattr(loaded, name) is not None] == []
+            assert [name for name in names if getattr(loaded, name) is not None] == ["DECISION_MODE"]
+
+    def test_none_is_a_value_where_the_choices_offer_it(self):
+        assert Settings.model_validate({"DECISION_MODE": " None "}).DECISION_MODE == "none"
+        assert Settings.model_validate({"DECISION_MODE": ""}).DECISION_MODE is None
 
     def test_plain_strings_keep_empty_values(self):
         assert Settings.model_validate({"MILVUS_TOKEN": "", "JWT_SECRET_KEY": ""}).MILVUS_TOKEN == ""
@@ -132,7 +136,7 @@ class TestValidators:
         assert loaded.OCR_MIN_CHARS_PER_PAGE == 7
 
 
-DEFAULT_TOOLS = ["memory", "read_webpage", "scheduler"]
+DEFAULT_TOOLS = ["memory", "read_webpage", "scheduler", "monitor"]
 
 
 def _list_fields() -> list[str]:

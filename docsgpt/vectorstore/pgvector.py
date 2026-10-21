@@ -33,7 +33,7 @@ class PGVectorStore(BaseVectorStore):
     def __init__(
         self,
         source_id: str = "",
-        embeddings_key: str = "embeddings",
+        embeddings_key: Optional[str] = None,
         table_name: str = "documents",
         decoded_token: Optional[str] = None,
         vector_column: str = "embedding",

@@ -20,10 +20,26 @@ async function selectFiles(container: HTMLElement, files: File[]) {
   await act(async () => {
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  // react-dropzone resolves the selected files asynchronously.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+}
+
+/**
+ * Wait until `predicate` holds, yielding a macrotask between checks.
+ *
+ * react-dropzone resolves dropped files over its own promise chain, so the
+ * work a `change` event kicks off is not done when `selectFiles` returns and
+ * takes an unknown number of ticks. Waiting a fixed tick made the preview
+ * assertions below fail on most runs; wait for the effect instead.
+ */
+async function waitFor(predicate: () => boolean, timeout = 2000) {
+  const deadline = Date.now() + timeout;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error('waitFor: condition still false after 2000ms');
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
 }
 
 describe('FileUpload', () => {
@@ -112,9 +128,9 @@ describe('FileUpload', () => {
         root.render(<FileUpload onUpload={vi.fn()} size={size} showPreview />);
       });
       await selectFiles(container, [makeFile('logo.png', 'image/png')]);
-      const remove = container.querySelector<HTMLButtonElement>(
-        'button[aria-label="components.fileUpload.remove"]',
-      );
+      const selector = 'button[aria-label="components.fileUpload.remove"]';
+      await waitFor(() => container.querySelector(selector) !== null);
+      const remove = container.querySelector<HTMLButtonElement>(selector);
       expect(remove).not.toBeNull();
       expect(remove!.className).toContain('focus-visible:ring-3');
       expect(remove!.className).toContain('outline-none');
@@ -128,6 +144,7 @@ describe('FileUpload', () => {
     });
     const file = makeFile('logo.png', 'image/png');
     await selectFiles(container, [file]);
+    await waitFor(() => onUpload.mock.calls.length > 0);
     expect(onUpload).toHaveBeenCalledWith([file]);
   });
 
@@ -142,6 +159,7 @@ describe('FileUpload', () => {
       );
     });
     await selectFiles(container, [makeFile('logo.png', 'image/png')]);
+    await waitFor(() => container.querySelector('.text-destructive') !== null);
     expect(onUpload).not.toHaveBeenCalled();
     const error = container.querySelector('.text-destructive');
     expect(error?.textContent).toContain('Bad image');

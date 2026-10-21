@@ -52,6 +52,11 @@ class ModelCapabilities:
     # "follow_up" (a user message after the tool results), or None for what
     # the wire API supports (see ``docsgpt.llm.tool_images``).
     tool_result_images: Optional[str] = None
+    # Responses API only: mark explicit prompt-cache breakpoints on user
+    # messages (``prompt_cache_breakpoint``). GPT-5.6 and later cache only at
+    # breakpoints, so a turn that resends its history unchained reads the
+    # cache back only through them; earlier models reject the field with a 400.
+    prompt_cache_breakpoints: bool = False
 
 
 @dataclass

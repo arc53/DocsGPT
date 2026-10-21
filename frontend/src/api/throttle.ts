@@ -201,11 +201,16 @@ export function withThrottle(
     if (dedupeAllowed) {
       const promise = run();
       state.inflightGets.set(dedupeKey, promise);
-      promise.finally(() => {
-        if (state.inflightGets.get(dedupeKey) === promise) {
-          state.inflightGets.delete(dedupeKey);
-        }
-      });
+      promise
+        .finally(() => {
+          if (state.inflightGets.get(dedupeKey) === promise) {
+            state.inflightGets.delete(dedupeKey);
+          }
+        })
+        .catch(() => {
+          // `finally` re-rejects on failure; the caller gets the rejection
+          // through the promise returned below.
+        });
       return promise.then((r) => r.clone());
     }
 

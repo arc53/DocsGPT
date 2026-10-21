@@ -172,6 +172,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/template_agents", "GET"): _rule("agents:read", open=True),
     ("/api/export_agent", "GET"): _rule("agents:read", (QUERY, "id")),
     ("/api/guardrails/catalog", "GET"): _rule("agents:read", open=True),
+    # The admin's defaults for new agents: no agent's data, so open to restricted tokens.
+    ("/api/agents/defaults", "GET"): _rule("agents:read", open=True),
     ("/api/guardrails/events", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/guardrails/summary", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
@@ -207,6 +209,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/<string:agent_id>/schedules", "POST"): _rule(
         "schedules:write", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Lists schedules of every agent, so a token limited to some agents can't use it.
+    ("/api/schedules", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs/<string:run_id>", "GET"): _rule(
@@ -220,6 +224,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources", "GET"): _rule("sources:read", listing=True),
     # Counted and paged in SQL, so it cannot be narrowed here; restricted tokens use /api/sources.
     ("/api/sources/paginated", "GET"): _rule("sources:read"),
+    # The admin's defaults for new sources: no source's data, so open to restricted tokens.
+    ("/api/sources/defaults", "GET"): _rule("sources:read", open=True),
     ("/api/directory_structure", "GET"): _rule("sources:read", (QUERY, "id")),
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
     # The chunk behind a citation; scoped to its source like get_chunks.
@@ -245,6 +251,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources/reingest", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/manage_source_files", "POST"): _rule("sources:write", (FORM, "source_id")),
     ("/api/sources/<string:source_id>/config", "PATCH"): _rule("sources:write", (VIEW, "source_id")),
+    ("/api/sources/<string:source_id>/injection_review", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "PUT"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/convert", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/graphrag/enable", "POST"): _rule(
@@ -270,6 +277,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/update_tool_status", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/delete_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/mcp_server/test", "POST"): _rule("tools:write", open=True),
+    # Cancels a sign-in the caller started; the route checks it is theirs.
+    ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
     # Models
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
@@ -301,6 +310,18 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/delete_all_conversations", "GET"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
     ("/api/update_conversation_name", "POST"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
     ("/api/feedback", "POST"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
+    # Background jobs of the caller's conversations (the chat's job card).
+    ("/api/background_jobs", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/background_jobs/<string:job_id>", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/background_jobs/<string:job_id>/cancel", "POST"): _rule(
+        "conversations:write", blocked_by=_ALL_FAMILIES
+    ),
+    # Monitors of the caller's conversations (Settings > Monitors).
+    ("/api/monitors", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/monitors/<string:monitor_id>", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/monitors/<string:monitor_id>/<string:action>", "POST"): _rule(
+        "conversations:write", blocked_by=_ALL_FAMILIES
+    ),
     ("/api/get_message_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_token_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_feedback_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
@@ -334,6 +355,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/user/tokens": ("*",),
     "/api/user/tokens/<string:token_id>": ("*",),
     "/api/user/tokens/<string:token_id>/regenerate": ("*",),
+    "/api/user/tokens/<string:token_id>/tool": ("*",),
     "/api/generate_token": ("*",),
     "/api/combine": ("*",),
     "/api/download": ("*",),
@@ -342,6 +364,17 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/shared_agent": ("*",),
     "/api/shared_conversation/<string:identifier>": ("*",),
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
+    # Spans every chat, agent and run of the user, like conversations do.
+    "/api/activity/now": ("*",),
+    "/api/activity/planned": ("*",),
+    "/api/activity/history": ("*",),
+    "/api/messages/<string:message_id>/cancel": ("*",),
+    # Monitor links: public, the token in the path is the credential (no session or PAT).
+    "/api/triggers/<string:token>": ("*",),
+    "/api/approvals/<string:token>": ("*",),
+    # A webhook's signing secret is shown to its owner in the app only.
+    "/api/monitors/<string:monitor_id>/secret": ("*",),
+    "/api/monitors/<string:monitor_id>/secret/exposure": ("*",),
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
@@ -366,6 +399,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/sources/<string:source_id>/wiki/settings": ("PUT",),
     "/swagger.json": ("*",),
     "/api/docs": ("*",),
+    # Notifications: the web app reporting on its own tab and browser.
+    "/api/presence": ("*",),
+    "/api/push/public_key": ("*",),
+    "/api/push/subscriptions": ("*",),
+    "/api/conversations/<string:conversation_id>/read": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",
@@ -373,6 +411,7 @@ DENIED_PREFIXES = (
     "/api/connectors/",
     "/api/connections",
     "/api/devices",
+    "/api/internal/",
     "/scim/",
     "/static/",
     "/swaggerui/",

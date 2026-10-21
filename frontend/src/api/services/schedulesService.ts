@@ -8,6 +8,7 @@ import type {
   ScheduleRunResponse,
   ScheduleStats,
   ScheduleUpdatePayload,
+  UserScheduleListResponse,
 } from '../../agents/types/schedule';
 
 const json = async (response: Response | unknown) => {
@@ -43,6 +44,15 @@ const savedOrThrow = async (response: Response | unknown) => {
 };
 
 const schedulesService = {
+  /** The caller's own schedules across every agent, agentless ones included. */
+  listAll: async (token: string | null): Promise<UserScheduleListResponse> => {
+    const r = await apiClient.get(endpoints.USER.USER_SCHEDULES, token);
+    if (!(r as Response).ok) {
+      throw new Error(`Schedules failed: ${(r as Response).status}`);
+    }
+    return (await json(r)) as UserScheduleListResponse;
+  },
+
   listForAgent: async (
     agentId: string,
     token: string | null,
@@ -108,7 +118,7 @@ const schedulesService = {
       { action },
       token,
     );
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   remove: async (
@@ -128,7 +138,7 @@ const schedulesService = {
       {},
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await savedOrThrow(r)) as ScheduleRunResponse;
   },
 
   listRuns: async (
@@ -153,7 +163,7 @@ const schedulesService = {
       endpoints.USER.SCHEDULE_RUN(id, runId),
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await savedOrThrow(r)) as ScheduleRunResponse;
   },
 };
 

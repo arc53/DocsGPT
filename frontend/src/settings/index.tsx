@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
+import { ACTIVITY_MONITORS_PATH } from '../activity/paths';
 import userService from '../api/services/userService';
 import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
@@ -96,6 +97,11 @@ export default function Settings() {
         />
         <Route path="analytics" element={<Analytics />} />
         <Route path="logs" element={<Logs />} />
+        {/* Monitors moved to Activity; old links keep working. */}
+        <Route
+          path="monitors"
+          element={<Navigate to={ACTIVITY_MONITORS_PATH} replace />}
+        />
         <Route path="connectors" element={<Connectors />} />
         <Route path="tools" element={<Tools />} />
         <Route

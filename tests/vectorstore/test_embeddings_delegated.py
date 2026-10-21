@@ -33,6 +33,24 @@ class TestDispatch:
         assert celery.send_task.call_args.args[0] == EMBED_TASK
         assert celery.send_task.call_args.kwargs["args"] == [["hello"], "some/model"]
 
+    def test_a_long_query_is_clipped_before_it_is_dispatched(self, not_in_worker, monkeypatch):
+        """The worker embeds what it is sent as a document, so the API clips first."""
+        from docsgpt.parser.tokenization import TiktokenCounter
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        monkeypatch.setattr(
+            "docsgpt.parser.tokenization.get_token_counter", lambda *_a, **_k: TiktokenCounter()
+        )
+        celery = MagicMock()
+        celery.send_task.return_value.get.return_value = [[0.1]]
+        long_query = " ".join(["word"] * 1000)
+        with patch("docsgpt.celery_init.celery", celery):
+            DelegatedEmbeddings("some/model").embed_query(long_query)
+
+        ((sent,), _name) = celery.send_task.call_args.kwargs["args"]
+        assert TiktokenCounter().count(sent) <= 10
+        assert long_query.startswith(sent)
+
     def test_routed_to_the_embeddings_queue(self, not_in_worker):
         celery = MagicMock()
         celery.send_task.return_value.get.return_value = [[0.0]]

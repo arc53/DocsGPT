@@ -1,6 +1,8 @@
+import hashlib
 import logging
+import threading
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 import requests
 
@@ -11,6 +13,57 @@ from docsgpt.vectorstore.model_registry import (
     max_input_tokens_for,
     resolve,
 )
+
+
+def _key_fingerprint(api_key: Optional[str]) -> str:
+    """Non-reversible tag for an API key, so it can be named without being exposed.
+
+    Part of every cached client's identity: the cache used to be keyed without
+    the key, so the first caller's key served every later caller in the
+    process. Also what an auth failure logs in place of the key.
+
+    Args:
+        api_key: The key, or ``None``/empty for none.
+
+    Returns:
+        str: The first 16 hex characters of the key's SHA-256, or ``"nokey"``.
+    """
+    if not api_key:
+        return "nokey"
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+
+
+def clip_query(text: str, counter_for: Callable[[], Any]) -> str:
+    """Clip a search query to ``EMBEDDINGS_MAX_QUERY_TOKENS``.
+
+    Every embedder's ``embed_query`` runs its input through here, so each
+    query path -- chat retrieval, ``/api/search``, the search tools, GraphRAG
+    -- is bounded whatever the embedder. Documents are not: ``embed_documents``
+    never calls this.
+
+    Args:
+        text: The query.
+        counter_for: Returns the token counter of the embedding model. Called
+            only for a query that might be over the limit, so a short query
+            never loads a tokenizer.
+
+    Returns:
+        str: ``text``, or its leading part that fits the limit. A limit of 0
+        leaves it unchanged.
+    """
+    limit = settings.EMBEDDINGS_MAX_QUERY_TOKENS
+    if not limit or not isinstance(text, str):
+        return text
+    # Every token covers at least one byte, so a query no longer in bytes
+    # than the limit cannot exceed it.
+    if len(text.encode("utf-8")) <= limit:
+        return text
+    counter = counter_for()
+    if counter.count(text) <= limit:
+        return text
+    logging.info("Clipping a %d-character search query to %d tokens", len(text), limit)
+    pieces = counter.split(text, limit)
+    return pieces[0] if pieces else text
 
 
 def _embeddings_name_is_explicit() -> bool:
@@ -41,6 +94,7 @@ class RemoteEmbeddings:
     def __init__(self, api_url: str, model_name: str, api_key: str = None):
         self.api_url = api_url.rstrip("/")
         self.model_name = model_name
+        self.key_fingerprint = _key_fingerprint(api_key)
         self.headers = {"Content-Type": "application/json"}
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
@@ -135,6 +189,21 @@ class RemoteEmbeddings:
 
         url = f"{self.api_url}/v1/embeddings"
         response = requests.post(url, headers=self.headers, json=payload, timeout=180)
+        if response.status_code in (401, 403):
+            # A rejected key is configuration, not a transient fault: every
+            # later request fails the same way until the key is fixed.
+            logging.error(
+                "embeddings_auth_failed status_code=%s model=%s key_fingerprint=%s: "
+                "the embeddings endpoint rejected this process's key; check EMBEDDINGS_KEY",
+                response.status_code,
+                self.model_name,
+                self.key_fingerprint,
+                extra={
+                    "event": "embeddings_auth_failed",
+                    "status_code": response.status_code,
+                    "key_fingerprint": self.key_fingerprint,
+                },
+            )
         response.raise_for_status()
         result = response.json()
 
@@ -155,8 +224,8 @@ class RemoteEmbeddings:
             )
 
     def embed_query(self, query: str):
-        """Embed a single query string."""
-        embeddings_list = self._embed(query)
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        embeddings_list = self._embed(clip_query(query, self._token_counter))
         if (
             isinstance(embeddings_list, list)
             and len(embeddings_list) == 1
@@ -195,7 +264,14 @@ def _get_embeddings_wrapper():
 
 
 class EmbeddingsSingleton:
+    """Process-wide cache of embedding runners, one per model (or remote endpoint).
+
+    Each runner is built once, under ``_lock``: concurrent first requests
+    would otherwise each load the model, holding several copies in memory.
+    """
+
     _instances = {}
+    _lock = threading.Lock()
 
     @staticmethod
     def _remote_instance(embeddings_name, embeddings_key=None):
@@ -213,27 +289,53 @@ class EmbeddingsSingleton:
                 ``settings.EMBEDDINGS_KEY`` when not provided.
 
         Returns:
-            RemoteEmbeddings: Shared instance keyed by base URL and model name.
+            RemoteEmbeddings: Shared instance keyed by base URL, model name and
+            a fingerprint of the key, so a caller holding a different key never
+            gets a client that authenticates with someone else's.
         """
         api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
-        cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
-        if cache_key not in EmbeddingsSingleton._instances:
-            EmbeddingsSingleton._instances[cache_key] = RemoteEmbeddings(
+        cache_key = (
+            f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}_{_key_fingerprint(api_key)}"
+        )
+        return EmbeddingsSingleton._get_or_create(
+            cache_key,
+            lambda: RemoteEmbeddings(
                 api_url=settings.EMBEDDINGS_BASE_URL,
                 model_name=embeddings_name,
                 api_key=api_key,
-            )
-        return EmbeddingsSingleton._instances[cache_key]
+            ),
+        )
+
+    @staticmethod
+    def _get_or_create(cache_key, factory):
+        """Return the cached runner for ``cache_key``, building it once under the lock."""
+        instance = EmbeddingsSingleton._instances.get(cache_key)
+        if instance is not None:
+            return instance
+        with EmbeddingsSingleton._lock:
+            instance = EmbeddingsSingleton._instances.get(cache_key)
+            if instance is None:
+                instance = factory()
+                EmbeddingsSingleton._instances[cache_key] = instance
+            return instance
 
     @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
         if settings.EMBEDDINGS_BASE_URL:
-            return EmbeddingsSingleton._remote_instance(embeddings_name)
-        if embeddings_name not in EmbeddingsSingleton._instances:
-            EmbeddingsSingleton._instances[embeddings_name] = (
-                EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs)
+            # A direct caller hands its key over positionally or as
+            # ``openai_api_key``; either wins over EMBEDDINGS_KEY.
+            explicit = kwargs.get("openai_api_key", args[0] if args else None)
+            return EmbeddingsSingleton._remote_instance(
+                embeddings_name, explicit if isinstance(explicit, str) else None
             )
-        return EmbeddingsSingleton._instances[embeddings_name]
+        # A keyed runner (OpenAI) is cached per key. A local model takes no key
+        # and stays under its bare name, which the boot hook evicts it by.
+        key = kwargs.get("openai_api_key")
+        cache_key = embeddings_name if key is None else f"{embeddings_name}_{_key_fingerprint(key)}"
+        return EmbeddingsSingleton._get_or_create(
+            cache_key,
+            lambda: EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs),
+        )
 
     @staticmethod
     def _create_instance(embeddings_name, *args, **kwargs):
@@ -303,14 +405,20 @@ def get_embeddings(
     """
     embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
     if not settings.EMBEDDINGS_BASE_URL and _delegation_enabled():
-        cache_key = f"delegated_{embeddings_name}"
-        if cache_key not in EmbeddingsSingleton._instances:
+        # Keyed by the key too: inside a worker the client embeds locally with
+        # the key it was built with. A dispatched embed carries no key -- the
+        # worker embeds with its own EMBEDDINGS_KEY, which it shares with this
+        # process -- so no secret ever travels over the broker.
+        api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
+
+        def _delegated():
             from docsgpt.vectorstore.embeddings_delegated import DelegatedEmbeddings
 
-            EmbeddingsSingleton._instances[cache_key] = DelegatedEmbeddings(
-                embeddings_name, embeddings_key
-            )
-        return EmbeddingsSingleton._instances[cache_key]
+            return DelegatedEmbeddings(embeddings_name, api_key)
+
+        return EmbeddingsSingleton._get_or_create(
+            f"delegated_{embeddings_name}_{_key_fingerprint(api_key)}", _delegated
+        )
     return build_local_embeddings(embeddings_name, embeddings_key)
 
 

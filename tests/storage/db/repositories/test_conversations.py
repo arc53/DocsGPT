@@ -107,6 +107,16 @@ def _set_date(conn, conv_id: str, when: datetime) -> None:
     )
 
 
+class TestSearchForUser:
+    def test_matches_text_literally(self, pg_conn):
+        # A search box takes a substring: "_" and "%" are not wildcards.
+        repo = _repo(pg_conn)
+        repo.create("u1", "q4_report")
+        repo.create("u1", "q4-report")
+        assert [c["name"] for c in repo.search_for_user("u1", "q4_report")] == ["q4_report"]
+        assert repo.search_for_user("u1", "%") == []
+
+
 class TestListForUserKeyset:
     def test_orders_by_date_then_id_desc(self, pg_conn):
         repo = _repo(pg_conn)
@@ -1008,3 +1018,35 @@ class TestReassignApiKey:
         repo = _repo(pg_conn)
         assert repo.reassign_api_key(old_key="", new_key="x") == 0
         assert repo.reassign_api_key(old_key="x", new_key="") == 0
+
+
+class TestPatchToolCall:
+    def _message(self, conn, tool_calls):
+        repo = _repo(conn)
+        conv = repo.create("u1", "c")
+        msg = repo.append_message(str(conv["id"]), {"prompt": "p", "response": "r", "tool_calls": tool_calls})
+        return repo, str(msg["id"])
+
+    def test_merges_into_the_job_entry_only(self, pg_conn):
+        repo, message_id = self._message(
+            pg_conn,
+            [
+                {"call_id": "c1", "status": "completed", "result": "a"},
+                {"call_id": "c1", "job_id": "j1", "status": "pending", "result": "running"},
+                {"call_id": "c2", "status": "completed"},
+            ],
+        )
+        assert repo.patch_tool_call(message_id, "j1", {"status": "completed", "job_status": "completed"}) is True
+        row = pg_conn.execute(
+            text("SELECT tool_calls FROM conversation_messages WHERE id = CAST(:id AS uuid)"), {"id": message_id}
+        ).fetchone()[0]
+        assert row[0] == {"call_id": "c1", "status": "completed", "result": "a"}
+        assert row[1] == {
+            "call_id": "c1", "job_id": "j1", "status": "completed", "result": "running", "job_status": "completed",
+        }
+        assert row[2] == {"call_id": "c2", "status": "completed"}
+
+    def test_no_matching_entry_leaves_the_row(self, pg_conn):
+        repo, message_id = self._message(pg_conn, [{"call_id": "c1"}])
+        assert repo.patch_tool_call(message_id, "j9", {"status": "error"}) is False
+        assert repo.patch_tool_call("not-a-uuid", "j9", {"status": "error"}) is False

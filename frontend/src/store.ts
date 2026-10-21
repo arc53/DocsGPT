@@ -1,6 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import activityReducer, {
+  activityListenerMiddleware,
+} from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
+import backgroundReducer from './backgroundJobs/backgroundSlice';
 import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
@@ -17,6 +22,7 @@ import {
   prefListenerMiddleware,
   prefSlice,
 } from './preferences/preferenceSlice';
+import monitorsReducer from './monitors/monitorsSlice';
 import graphBuildReducer from './settings/graphBuildSlice';
 import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
@@ -60,6 +66,7 @@ const preloadedState: { preference: Preference } = {
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    authRequired: false,
     attachmentBudgetShare: null,
   },
 };
@@ -78,11 +85,16 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    monitors: monitorsReducer,
+    background: backgroundReducer,
+    activity: activityReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
+      backgroundListenerMiddleware.middleware,
+      activityListenerMiddleware.middleware,
     ),
 });
 

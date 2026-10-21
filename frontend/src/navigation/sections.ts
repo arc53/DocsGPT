@@ -1,20 +1,26 @@
 import {
+  Activity,
   BarChart3,
   Blocks,
   CalendarClock,
+  CalendarDays,
   ChartNoAxesColumn,
   Database,
   FileClock,
   Gauge,
   Globe,
+  History,
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
   LayoutTemplate,
   Plug,
+  Radar,
   ScrollText,
   Settings2,
+  Shield,
   ShieldCheck,
+  SlidersHorizontal,
   SquarePen,
   User,
   UserCog,
@@ -22,6 +28,14 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import {
+  ACTIVITY_CALENDAR_PATH,
+  ACTIVITY_HISTORY_PATH,
+  ACTIVITY_MONITORS_PATH,
+  ACTIVITY_NOW_PATH,
+  ACTIVITY_ROOT,
+  ACTIVITY_SCHEDULES_PATH,
+} from '../activity/paths';
 import {
   AGENTS_MANAGE_ROOT,
   agentEditPath,
@@ -182,6 +196,61 @@ export const SETTINGS_SECTION: Section = {
   ],
 };
 
+/**
+ * What runs and what is planned. Schedules and monitors are the rules that
+ * produce the work, grouped as Automations.
+ */
+export const ACTIVITY_SECTION: Section = {
+  key: 'activity',
+  rootPath: ACTIVITY_ROOT,
+  titleKey: 'activity.label',
+  matches: [ACTIVITY_ROOT],
+  groups: [
+    {
+      key: 'activity',
+      items: [
+        {
+          key: 'now',
+          path: ACTIVITY_NOW_PATH,
+          labelKey: 'activity.now.label',
+          icon: Activity,
+          aliases: [ACTIVITY_ROOT],
+        },
+        {
+          key: 'calendar',
+          path: ACTIVITY_CALENDAR_PATH,
+          labelKey: 'activity.calendar.label',
+          icon: CalendarDays,
+        },
+        {
+          key: 'history',
+          path: ACTIVITY_HISTORY_PATH,
+          labelKey: 'activity.history.label',
+          icon: History,
+        },
+      ],
+    },
+    {
+      key: 'automations',
+      labelKey: 'navigation.sections.groups.automations',
+      items: [
+        {
+          key: 'schedules',
+          path: ACTIVITY_SCHEDULES_PATH,
+          labelKey: 'activity.schedules.label',
+          icon: CalendarClock,
+        },
+        {
+          key: 'monitors',
+          path: ACTIVITY_MONITORS_PATH,
+          labelKey: 'monitors.label',
+          icon: Radar,
+        },
+      ],
+    },
+  ],
+};
+
 export const ADMIN_SECTION: Section = {
   key: 'admin',
   rootPath: '/admin',
@@ -228,6 +297,18 @@ export const ADMIN_SECTION: Section = {
           labelKey: 'admin.tabs.connectors',
           icon: Plug,
           feature: 'connectors',
+        },
+        {
+          key: 'guardrails',
+          path: '/admin/guardrails',
+          labelKey: 'admin.tabs.guardrails',
+          icon: Shield,
+        },
+        {
+          key: 'defaults',
+          path: '/admin/defaults',
+          labelKey: 'admin.tabs.defaults',
+          icon: SlidersHorizontal,
         },
         {
           key: 'audit',
@@ -349,6 +430,7 @@ export function buildAgentSection(
 }
 
 export const SECTIONS: Section[] = [
+  ACTIVITY_SECTION,
   SETTINGS_SECTION,
   ADMIN_SECTION,
   AGENTS_SECTION,

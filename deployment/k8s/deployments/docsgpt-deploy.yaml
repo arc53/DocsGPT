@@ -10,6 +10,14 @@
 #
 # Uploads are stored in the bucket named in docsgpt-secrets (STORAGE_TYPE=s3)
 # and vectors in pgvector, so any number of API and worker replicas share them.
+#
+# The API holds the decision model, and the worker calls it there through
+# WORKER_API_URL; each API replica loads its own copy (~1 GB) the first time a
+# decision feature is on, into the emptyDir at /app/models/decision, and
+# downloads it again (~0.5 GB) whenever the pod is recreated. The worker keeps
+# only the tokenizer (11 MB). The optional-decider component moves the model
+# into a Deployment of its own; to call a vLLM server instead, add its address
+# as DECISION_BASE_URL and DECISION_PROTOCOL: vllm to docsgpt-secrets.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,7 +35,7 @@ spec:
       initContainers:
       # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -72,7 +80,7 @@ spec:
       # to the schema this image needs. On an upgrade, the old pods keep
       # serving until then.
       - name: wait-for-migrations
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -113,7 +121,7 @@ spec:
                 time.sleep(5)
       containers:
       - name: docsgpt-api
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         ports:
         - containerPort: 7091
         readinessProbe:
@@ -140,6 +148,14 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      # The model in local mode (0.5 GB), or only its tokenizer with the decider.
+      - name: decision-models
+        emptyDir:
+          sizeLimit: 1Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -158,7 +174,7 @@ spec:
       initContainers:
       # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -203,7 +219,7 @@ spec:
       # to the schema this image needs. On an upgrade, the old pods keep
       # serving until then.
       - name: wait-for-migrations
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -244,16 +260,18 @@ spec:
                 time.sleep(5)
       containers:
       - name: docsgpt-worker
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         # -B embeds the beat scheduler, which fires scheduled agent runs, source
         # syncs, reconciliation and cleanups. It is safe on every replica: the
         # RedBeat lock in Redis lets only one of them schedule at a time.
-        # The queues: docsgpt (ingestion and app tasks), parsing (read_document)
-        # and embeddings (query embedding for the API; without it every search
-        # times out). For heavy or OCR parsing, run a separate Deployment with
-        # `-Q parsing`.
+        # The queues: docsgpt (app and beat tasks, attachments), parsing
+        # (read_document), embeddings (query embedding for the API; without it
+        # every search times out) and ingest (uploads, remote and connector
+        # ingests, syncs; without it no source is ever indexed). For heavy or OCR
+        # parsing, run a separate Deployment with `-Q parsing`; to keep long
+        # ingests off the beat tasks, one with `-Q ingest`.
         command: ["celery", "-A", "docsgpt.app.celery", "worker", "-B", "-l", "INFO", "-n", "worker.%h",
-                  "-Q", "docsgpt,parsing,embeddings"]
+                  "-Q", "docsgpt,parsing,embeddings,ingest"]
         resources:
           limits:
             memory: "4Gi"
@@ -267,10 +285,18 @@ spec:
         env:
         - name: DEPLOYMENT_TYPE
           value: "cloud"
-        # The worker hands finished indexes to the API over the in-cluster Service.
-        - name: API_URL
+        # Keep API_URL from the Secret for public links and OAuth callbacks.
+        # Index handoff uses the in-cluster Service instead.
+        - name: WORKER_API_URL
           value: "http://docsgpt-api-service"
         - name: AUTO_MIGRATE
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      - name: decision-models
+        emptyDir:
+          sizeLimit: 64Mi

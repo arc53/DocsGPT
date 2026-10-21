@@ -47,7 +47,10 @@ def _isolate_mcp_module(monkeypatch):
 
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
     # The stub listens on 127.0.0.1, which the SSRF guard refuses.
-    monkeypatch.setattr(mcp_mod, "validate_url", lambda u, **kw: u)
+    from mcp.shared._httpx_utils import create_mcp_http_client
+
+    monkeypatch.setattr(mcp_mod, "validate_user_base_url", lambda u: None)
+    monkeypatch.setattr(mcp_mod, "_mcp_http_client", create_mcp_http_client)
 
 
 class _Recorder:

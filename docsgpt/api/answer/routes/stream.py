@@ -10,7 +10,10 @@ from docsgpt.api import api
 from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
 
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
+    ContinuationNotPendingError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
@@ -137,6 +140,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             model_id=processor.model_id,
                             model_user_id=processor.model_user_id,
                             trace=processor.handoff_trace(),
+                            passthrough=processor.passthrough,
                             _continuation={
                                 "messages": messages,
                                 "tools_dict": tools_dict,
@@ -145,6 +149,7 @@ class StreamResource(Resource, BaseAnswerResource):
                                 "reserved_message_id": processor.reserved_message_id,
                                 "request_id": processor.request_id,
                                 "reasoning_content": reasoning_content,
+                                "prior_tool_calls": processor.prior_tool_calls,
                             },
                         ),
                     ),
@@ -190,6 +195,7 @@ class StreamResource(Resource, BaseAnswerResource):
                         model_user_id=processor.model_user_id,
                         request_id=processor.request_id,
                         trace=processor.handoff_trace(),
+                        passthrough=processor.passthrough,
                     ),
                 ),
                 mimetype="text/event-stream",
@@ -201,6 +207,19 @@ class StreamResource(Resource, BaseAnswerResource):
             return Response(
                 self.curated_error_stream_generate(e),
                 status=400,
+                mimetype="text/event-stream",
+            )
+        except ContinuationNotPendingError:
+            # A decision for a pause that is over: decided already, moved past
+            # by a new turn, or expired (a stale tab). Nothing ran; the code
+            # lets the chat reload the turn instead of showing a failure.
+            logger.info(
+                "/stream - tool actions for a pause no longer pending in conversation %s",
+                data.get("conversation_id"),
+            )
+            return Response(
+                self.error_stream_generate(NOT_PENDING_MESSAGE, code=NOT_PENDING_CODE),
+                status=409,
                 mimetype="text/event-stream",
             )
         except ResumeInProgressError as e:

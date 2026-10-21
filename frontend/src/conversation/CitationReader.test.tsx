@@ -252,6 +252,39 @@ describe('CitationReader', () => {
     expect(rows).toContain('conversation.sources.reader.page');
     expect(body().textContent).toContain('/guide/leave.md');
   });
+  it('shows the relevance label beside the number only for a scored source', async () => {
+    service.getSourceChunk.mockReturnValue(json(200, CHUNK));
+    await render({ ...FILE, relevance: 0.45 });
+    expect(header().textContent).toContain(
+      'conversation.sources.relevance.possible',
+    );
+    await render(FILE);
+    expect(header().textContent).not.toContain(
+      'conversation.sources.relevance',
+    );
+  });
+
+  it('says a withheld source was left out, and looks it up by its key alone', async () => {
+    service.getSourceChunk.mockReturnValue(json(200, CHUNK));
+    await render({
+      ...FILE,
+      text: '[Withheld by a content policy.]...',
+      withheld: 'policy',
+    });
+    // The placeholder is not the passage's start, so it is not searched.
+    expect(service.getSourceChunk).toHaveBeenCalledWith(
+      'src-1',
+      'a'.repeat(32),
+      'tok',
+      undefined,
+    );
+    const note = container.querySelector<HTMLElement>(
+      '[data-testid="citation-withheld"]',
+    )!;
+    expect(note.textContent).toBe('conversation.sources.reader.withheld');
+    expect(note.className).toContain('text-warning');
+    expect(header().textContent).toContain('conversation.sources.withheld');
+  });
 });
 
 describe('CitationReader › Open in Knowledge', () => {

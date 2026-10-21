@@ -113,75 +113,114 @@ class TestConnectorAuth:
         assert r.json["authorization_url"] == "https://ex/auth?state=x"
 
 
+def _start_flow(pg_conn, user="u-callback", provider="google_drive", return_origin="https://app.example.com"):
+    """A sign-in started by ``user``: its pending connection and the ``state`` sent to the provider."""
+    from docsgpt.connectors import oauth_flows
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    session = ConnectorSessionsRepository(pg_conn).upsert(user, provider, status="pending")
+    return session, oauth_flows.start(pg_conn, user, provider, str(session["id"]), return_origin)
+
+
 class TestConnectorsCallback:
-    def test_invalid_provider_redirects_to_error(self, app):
+    @pytest.fixture(autouse=True)
+    def _app_origin_allowed(self):
+        from docsgpt.core.settings import settings
+
+        with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", "https://app.example.com"):
+            yield
+
+    def test_unknown_state_redirects_to_error(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorsCallback
 
-        state = _encode_state({"provider": "bogus", "object_id": "x"})
-        with patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
-            return_value=False,
-        ), app.test_request_context(f"/api/connectors/callback?state={state}"):
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/connectors/callback?state=never-issued&code=auth-code"
+        ):
+            r = ConnectorsCallback().get()
+        assert r.status_code == 302
+        assert "callback-status" in r.location
+        assert "status=error" in r.location
+
+    def test_legacy_base64_state_is_refused(self, app, pg_conn):
+        from docsgpt.api.connector.routes import ConnectorsCallback
+
+        session, _ = _start_flow(pg_conn)
+        state = _encode_state({"provider": "google_drive", "object_id": str(session["id"])})
+        with _patch_db(pg_conn), app.test_request_context(f"/api/connectors/callback?state={state}&code=auth-code"):
             r = ConnectorsCallback().get()
         assert r.status_code == 302
         assert "callback-status" in r.location
 
-    def test_access_denied_redirects_cancelled(self, app):
+    @pytest.mark.parametrize(
+        "query",
+        ["code=auth-code", "error=access_denied", "error=other", "code=c&installation_id=1&setup_action=install"],
+    )
+    def test_forwards_the_providers_answer_to_the_app(self, app, pg_conn, query):
+        from urllib.parse import parse_qs, urlsplit
+
         from docsgpt.api.connector.routes import ConnectorsCallback
 
-        state = _encode_state({"provider": "google_drive", "object_id": "x"})
-        with patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
-            return_value=True,
-        ), app.test_request_context(
-            f"/api/connectors/callback?state={state}&error=access_denied"
+        _, state = _start_flow(pg_conn)
+        with _patch_db(pg_conn), app.test_request_context(f"/api/connectors/callback?{query}&state={state}"):
+            r = ConnectorsCallback().get()
+        target = urlsplit(r.location)
+        assert r.status_code == 302
+        assert f"{target.scheme}://{target.netloc}{target.path}" == "https://app.example.com/connectors/callback"
+        assert parse_qs(target.query) == parse_qs(f"{query}&state={state}")
+
+    def test_forwards_only_the_parameters_the_app_reads(self, app, pg_conn):
+        from urllib.parse import parse_qs, urlsplit
+
+        from docsgpt.api.connector.routes import ConnectorsCallback
+
+        _, state = _start_flow(pg_conn)
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/connectors/callback?code=c&state={state}&next=https://evil.example.net&scope=x"
         ):
             r = ConnectorsCallback().get()
-        assert r.status_code == 302
-        assert "cancelled" in r.location
+        assert set(parse_qs(urlsplit(r.location).query)) == {"code", "state"}
 
-    def test_error_redirects_error(self, app):
+    def test_refuses_a_return_origin_no_longer_allowed(self, app, pg_conn):
+        """The allowlist is checked again when forwarding, in case it changed since the sign-in started."""
         from docsgpt.api.connector.routes import ConnectorsCallback
 
-        state = _encode_state({"provider": "google_drive", "object_id": "x"})
-        with patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
-            return_value=True,
-        ), app.test_request_context(
-            f"/api/connectors/callback?state={state}&error=other"
-        ):
+        _, state = _start_flow(pg_conn, return_origin="https://removed.example.com")
+        with _patch_db(pg_conn), app.test_request_context(f"/api/connectors/callback?code=c&state={state}"):
             r = ConnectorsCallback().get()
         assert r.status_code == 302
-        assert "status=error" in r.location
+        assert r.location.startswith("/api/connectors/callback-status?")
+        assert "removed.example.com" not in r.location
 
-    def test_missing_code_redirects_error(self, app):
+    def test_github_install_without_state_renders_the_installed_page(self, app):
         from docsgpt.api.connector.routes import ConnectorsCallback
 
-        state = _encode_state({"provider": "google_drive", "object_id": "x"})
-        with patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
-            return_value=True,
-        ), app.test_request_context(
-            f"/api/connectors/callback?state={state}"
-        ):
+        with app.test_request_context("/api/connectors/callback?installation_id=1&setup_action=install"):
             r = ConnectorsCallback().get()
-        assert r.status_code == 302
-        assert "status=error" in r.location
+        assert r.status_code == 200
+        assert "GitHub App is installed" in r.get_data(as_text=True)
 
-    def test_successful_callback_updates_session(self, app, pg_conn):
-        from docsgpt.api.connector.routes import ConnectorsCallback
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
+
+class TestConnectorAuthComplete:
+    def _complete(self, app, pg_conn, fake_auth, body, user="u-callback"):
+        from contextlib import nullcontext
+
+        from flask import request
+
+        from docsgpt.api.connector.routes import ConnectorAuthComplete
+
+        auth = nullcontext() if fake_auth is None else patch(
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth", return_value=fake_auth,
         )
+        with _patch_db(pg_conn), auth, app.test_request_context(
+            "/api/connectors/auth/complete", method="POST", json=body,
+        ):
+            request.decoded_token = {"sub": user}
+            return ConnectorAuthComplete().post()
 
-        session = ConnectorSessionsRepository(pg_conn).upsert(
-            "u-callback", "google_drive", status="pending",
-        )
-        state = _encode_state({
-            "provider": "google_drive",
-            "object_id": str(session["id"]),
-        })
+    def test_connects_the_pending_row(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 
+        _, state = _start_flow(pg_conn)
         fake_auth = MagicMock()
         fake_auth.exchange_code_for_tokens.return_value = {
             "access_token": "at", "refresh_token": "rt",
@@ -195,40 +234,34 @@ class TestConnectorsCallback:
             RuntimeError("no creds")
         )
 
-        with _patch_db(pg_conn), patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
-            return_value=True,
-        ), patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
-            return_value=fake_auth,
-        ), app.test_request_context(
-            f"/api/connectors/callback?state={state}&code=auth-code"
-        ):
-            r = ConnectorsCallback().get()
-        token = ConnectorSessionsRepository(pg_conn).get_by_user_provider(
-            "u-callback", "google_drive",
-        )["session_token"]
+        r = self._complete(app, pg_conn, fake_auth, {"code": "auth-code", "state": state})
+
         assert r.status_code == 200
-        assert token and token in r.get_data(as_text=True)
+        assert r.json["user_email"] == "Connected User"
+        assert r.json["return_origin"] == "https://app.example.com"
+        row = ConnectorSessionsRepository(pg_conn).get(r.json["connection_id"])
+        assert row["user_id"] == "u-callback"
+        assert row["status"] == "connected"
+        assert row["encrypted_credentials"]
 
-    def test_token_exchange_failure_redirects_error(self, app, pg_conn):
-        from docsgpt.api.connector.routes import ConnectorsCallback
+    @pytest.mark.parametrize("body", [{}, {"code": "c"}, {"state": "s"}, {"code": 1, "state": "s"}])
+    def test_requires_code_and_state(self, app, pg_conn, body):
+        r = self._complete(app, pg_conn, MagicMock(), body)
+        assert r.status_code == 400
 
-        state = _encode_state({"provider": "google_drive", "object_id": ""})
+    def test_unsupported_provider_is_refused(self, app, pg_conn):
+        _, state = _start_flow(pg_conn, provider="bogus")
+        r = self._complete(app, pg_conn, None, {"code": "c", "state": state})
+        assert r.status_code == 400
+
+    def test_token_exchange_failure_is_reported(self, app, pg_conn):
+        _, state = _start_flow(pg_conn)
         fake_auth = MagicMock()
         fake_auth.exchange_code_for_tokens.side_effect = RuntimeError("fail")
 
-        with _patch_db(pg_conn), patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
-            return_value=True,
-        ), patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
-            return_value=fake_auth,
-        ), app.test_request_context(
-            f"/api/connectors/callback?state={state}&code=auth-code"
-        ):
-            r = ConnectorsCallback().get()
-        assert r.status_code == 302
+        r = self._complete(app, pg_conn, fake_auth, {"code": "auth-code", "state": state})
+        assert r.status_code == 400
+        assert r.json["provider"] == "google_drive"
 
 
 class TestConnectorFiles:

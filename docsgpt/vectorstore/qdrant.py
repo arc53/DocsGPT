@@ -17,7 +17,7 @@ class QdrantStore(BaseVectorStore):
 
     score_kind = "cosine_similarity"
 
-    def __init__(self, source_id: str = "", embeddings_key: str = "embeddings"):
+    def __init__(self, source_id: str = "", embeddings_key: Optional[str] = None):
         super().__init__()
         from qdrant_client import QdrantClient, models
 

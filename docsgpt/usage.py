@@ -91,6 +91,7 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     # Count structured-output/schema payloads when provided.
     prompt_tokens += _count_tokens(kwargs.get("response_format"))
     prompt_tokens += _count_tokens(kwargs.get("response_schema"))
+    prompt_tokens += _count_tokens(kwargs.get("output_format"))
 
     # Optional usage-only attachment context (not forwarded to provider).
     prompt_tokens += _count_tokens(usage_attachments)
@@ -275,6 +276,22 @@ def _prefer_provider_usage(llm: Any, call_usage: Dict[str, int]) -> Dict[str, in
     return merged
 
 
+def _add_to_running_total(llm, call_usage):
+    """Add one call's tokens to the LLM's turn total (``llm.token_usage``).
+
+    The prompt-cache sub-bins are summed only when the provider reported
+    them, so a total without ``cached_tokens`` means "not reported", never
+    "no cache hit".
+    """
+    total = llm.token_usage
+    total["prompt_tokens"] += call_usage["prompt_tokens"]
+    total["generated_tokens"] += call_usage["generated_tokens"]
+    for key in ("cached_tokens", "cache_write_tokens"):
+        value = call_usage.get(key)
+        if value is not None:
+            total[key] = int(total.get(key) or 0) + int(value)
+
+
 def gen_token_usage(func):
     """Accumulate per-call token counts and write a ``token_usage`` row.
 
@@ -310,8 +327,7 @@ def gen_token_usage(func):
             duration_ms = int((time.monotonic() - started_at) * 1000)
             estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
-            self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
-            self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
+            _add_to_running_total(self, call_usage)
             # A non-streaming call has no first-token moment; ttft stays NULL.
             cost = _persist_call_usage(self, call_usage, duration_ms=duration_ms)
             finish_llm_call(
@@ -413,8 +429,7 @@ def stream_token_usage(func):
                     call_usage["generated_tokens"] += _count_tokens(line)
             estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
-            self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
-            self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
+            _add_to_running_total(self, call_usage)
             cost = _persist_call_usage(
                 self, call_usage, duration_ms=duration_ms, ttft_ms=ttft_ms
             )

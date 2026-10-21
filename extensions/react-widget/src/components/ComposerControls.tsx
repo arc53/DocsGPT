@@ -1,108 +1,9 @@
 import React from 'react';
-import styled, { keyframes, useTheme } from 'styled-components';
+import styled, { css, keyframes, useTheme } from 'styled-components';
 
 import { Attachment } from '../types/index';
-import { radii } from './tokens';
-
-const ClipIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M13 7.5 8.1 12.4a3.04 3.04 0 0 1-4.3-4.3l5.3-5.3a2.03 2.03 0 0 1 2.87 2.87l-5.3 5.3a1.01 1.01 0 0 1-1.44-1.44l4.6-4.6" />
-  </svg>
-);
-
-const MicIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <rect x="5.75" y="1.5" width="4.5" height="8" rx="2.25" />
-    <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" />
-  </svg>
-);
-
-const SquareIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="currentColor"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <rect x="4" y="4" width="8" height="8" rx="1.5" />
-  </svg>
-);
-
-const DocumentIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M9 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.5L9 1.5Z" />
-    <path d="M9 1.5V5.5H13" />
-  </svg>
-);
-
-const AlertIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M8 2 1.8 13h12.4L8 2Z" />
-    <path d="M8 6.5v3M8 11.5h.01" />
-  </svg>
-);
-
-const CrossIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="10"
-    height="10"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M4 4l8 8M12 4l-8 8" />
-  </svg>
-);
+import { CircleAlert, LoaderCircle, Mic, Paperclip, X } from './icons';
+import { focusRing, radii, shadows } from './tokens';
 
 const spin = keyframes`
   to { transform: rotate(360deg); }
@@ -115,6 +16,7 @@ const spin = keyframes`
 const ProgressRing = styled.svg<{ $indeterminate?: boolean }>`
   width: 14px;
   height: 14px;
+  color: ${(props) => props.theme.primary};
   transform: rotate(-90deg);
   animation: ${(props) => (props.$indeterminate ? spin : 'none')} 900ms linear
     infinite;
@@ -159,83 +61,90 @@ const AttachmentProgress = ({ attachment }: { attachment: Attachment }) => {
   );
 };
 
+// Compact chips: a muted pill per file, sized to fit three on a row.
 const ChipList = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 2px 2px 0 2px;
+  padding: 8px 8px 0 8px;
 `;
 
 const FailureList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px 2px 0 2px;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: ${(props) => props.theme.danger!.text};
+  padding: 4px 12px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: ${(props) => props.theme.destructive};
   overflow-wrap: anywhere;
 `;
 
-const Chip = styled.div<{ $failed?: boolean }>`
+const Chip = styled.div<{ $failed?: boolean; $pending?: boolean }>`
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: min(100%, 200px);
-  padding: 4px 4px 4px 8px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 2px 0 10px;
   border-radius: ${radii.full};
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1;
   border: 1px solid
     ${(props) =>
-      props.$failed ? props.theme.danger!.border : props.theme.hairline};
+      props.$failed ? props.theme.destructiveBorder : 'transparent'};
   background: ${(props) =>
-    props.$failed ? props.theme.danger!.soft : props.theme.primary.bg};
+    props.$failed ? props.theme.destructiveSoft : props.theme.muted};
   color: ${(props) =>
-    props.$failed ? props.theme.danger!.text : props.theme.primary.text};
+    props.$failed ? props.theme.destructive : props.theme.foreground};
+  opacity: ${(props) => (props.$pending ? 0.7 : 1)};
 `;
 
-const ChipGlyph = styled.span`
+const ChipGlyph = styled.span<{ $failed?: boolean }>`
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  color: ${(props) => props.theme.accent!.base};
+  color: ${(props) =>
+    props.$failed ? props.theme.destructive : props.theme.primary};
 `;
 
 const ChipLabel = styled.span`
   min-width: 0;
+  max-width: 140px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-weight: 500;
 `;
 
-const ChipRemove = styled.button`
+const ChipRemove = styled.button<{ $failed?: boolean }>`
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: ${radii.full};
   background: transparent;
-  color: inherit;
-  opacity: 0.65;
+  color: ${(props) =>
+    props.$failed ? 'inherit' : props.theme.mutedForeground};
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 
   &:hover {
-    opacity: 1;
+    background-color: ${(props) => props.theme.accent};
+    color: ${(props) =>
+      props.$failed ? props.theme.destructive : props.theme.foreground};
   }
 
-  &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
-    outline-offset: 1px;
-    opacity: 1;
-  }
+  ${focusRing}
 `;
 
 const statusLabel = (attachment: Attachment): string => {
@@ -267,13 +176,14 @@ export const AttachmentChips = ({
             <Chip
               key={attachment.id}
               $failed={failed}
+              $pending={!failed && attachment.status !== 'completed'}
               title={`${attachment.fileName} — ${statusLabel(attachment)}`}
             >
-              <ChipGlyph aria-hidden="true">
+              <ChipGlyph aria-hidden="true" $failed={failed}>
                 {failed ? (
-                  <AlertIcon />
+                  <CircleAlert size={14} />
                 ) : attachment.status === 'completed' ? (
-                  <DocumentIcon />
+                  <Paperclip size={14} />
                 ) : (
                   <AttachmentProgress attachment={attachment} />
                 )}
@@ -281,10 +191,11 @@ export const AttachmentChips = ({
               <ChipLabel>{attachment.fileName}</ChipLabel>
               <ChipRemove
                 type="button"
+                $failed={failed}
                 onClick={() => onRemove(attachment.id)}
                 aria-label={`Remove ${attachment.fileName}`}
               >
-                <CrossIcon />
+                <X size={14} />
               </ChipRemove>
             </Chip>
           );
@@ -307,8 +218,8 @@ export const AttachmentChips = ({
 export const ControlBar = styled.div`
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 2px;
+  gap: 8px;
+  padding: 0 12px 8px 12px;
 `;
 
 export const ControlGroup = styled.div`
@@ -317,56 +228,94 @@ export const ControlGroup = styled.div`
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 `;
 
+const spinner = keyframes`
+  to { transform: rotate(360deg); }
+`;
+
+const Spinner = styled(LoaderCircle)`
+  animation: ${spinner} 0.9s linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
+// Button outline sm pill; recording is destructive-outline.
 const ControlButton = styled.button<{
   $recording?: boolean;
   $iconOnly?: boolean;
 }>`
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: ${(props) => (props.$iconOnly ? '32px' : '28px')};
+  gap: 6px;
+  height: 32px;
+  margin: 0;
   padding: ${(props) => (props.$iconOnly ? '0' : '0 10px')};
   ${(props) =>
     props.$iconOnly
       ? 'width: 32px; flex-shrink: 0; justify-content: center;'
       : ''}
   border-radius: ${radii.full};
-  border: 1px solid
-    ${(props) =>
-      props.$recording ? props.theme.danger!.border : props.theme.hairline};
-  background: ${(props) =>
-    props.$recording ? props.theme.danger!.soft : 'transparent'};
-  color: ${(props) =>
-    props.$recording ? props.theme.danger!.text : props.theme.secondary.text};
   font-family: inherit;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
+  outline: none;
   transition:
     background-color 0.15s ease,
     color 0.15s ease,
     border-color 0.15s ease;
 
-  &:hover:not(:disabled) {
-    background: ${(props) =>
-      props.$recording ? props.theme.danger!.soft : props.theme.secondary.bg};
-    color: ${(props) =>
-      props.$recording ? props.theme.danger!.text : props.theme.primary.text};
-  }
+  ${(props) =>
+    props.$recording
+      ? css`
+          border: 1px solid ${props.theme.destructive};
+          background: transparent;
+          color: ${props.theme.destructive};
 
-  &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
-    outline-offset: 2px;
-  }
+          &:hover:not(:disabled) {
+            background: ${props.theme.destructive};
+            color: ${props.theme.destructiveForeground};
+          }
+
+          &:focus-visible {
+            box-shadow: 0 0 0 3px ${props.theme.destructiveRing};
+          }
+        `
+      : css`
+          border: 1px solid ${props.theme.border};
+          background: ${props.theme.controlFill};
+          color: ${props.theme.foreground};
+          box-shadow: ${shadows.xs};
+
+          &:hover:not(:disabled) {
+            background: ${props.theme.controlHover};
+          }
+
+          &:focus-visible {
+            border-color: ${props.theme.ring};
+            box-shadow: 0 0 0 3px ${props.theme.ringSoft};
+          }
+        `}
 
   &:disabled {
     opacity: 0.5;
     cursor: default;
   }
+`;
+
+const SquareGlyph = styled.span`
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 3px;
+  border-radius: 2px;
+  background-color: currentColor;
 `;
 
 export const AttachButton = ({
@@ -382,9 +331,8 @@ export const AttachButton = ({
     onClick={onClick}
     disabled={disabled}
     aria-label="Attach files"
-    title="Attach files"
   >
-    <ClipIcon aria-hidden="true" />
+    <Paperclip size={16} />
     Attach
   </ControlButton>
 );
@@ -421,25 +369,26 @@ export const MicButton = ({
     $recording={state === 'recording'}
     $iconOnly={variant === 'icon'}
     aria-label={MIC_TITLES[state]}
-    title={MIC_TITLES[state]}
   >
     {state === 'recording' ? (
-      <SquareIcon aria-hidden="true" />
+      <SquareGlyph aria-hidden="true" />
+    ) : state === 'transcribing' ? (
+      <Spinner size={16} />
     ) : (
-      <MicIcon aria-hidden="true" />
+      <Mic size={16} />
     )}
     {variant === 'pill' && MIC_LABELS[state]}
   </ControlButton>
 );
 
 export const ComposerNote = styled.div<{ $tone?: 'danger' }>`
-  padding: 2px 4px 0 4px;
-  font-size: 11.5px;
+  padding: 4px 4px 0 4px;
+  font-size: 12px;
   line-height: 1.5;
   color: ${(props) =>
     props.$tone === 'danger'
-      ? props.theme.danger!.text
-      : props.theme.secondary.text};
+      ? props.theme.destructive
+      : props.theme.mutedForeground};
 `;
 
 const SentList = styled.div`
@@ -450,17 +399,23 @@ const SentList = styled.div`
 `;
 
 const SentChip = styled.span`
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: min(100%, 200px);
-  padding: 3px 10px;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px;
   border-radius: ${radii.full};
-  border: 1px solid ${(props) => props.theme.hairline};
-  background: ${(props) => props.theme.secondary.bg};
-  color: ${(props) => props.theme.secondary.text};
-  font-size: 11.5px;
-  line-height: 1.6;
+  background: ${(props) => props.theme.muted};
+  color: ${(props) => props.theme.foreground};
+  font-size: 12px;
+  line-height: 1;
+
+  svg {
+    flex-shrink: 0;
+    color: ${(props) => props.theme.primary};
+  }
 `;
 
 export const SentAttachments = ({
@@ -471,7 +426,7 @@ export const SentAttachments = ({
   <SentList>
     {attachments.map((attachment) => (
       <SentChip key={attachment.id} title={attachment.fileName}>
-        <DocumentIcon width={12} height={12} aria-hidden="true" />
+        <Paperclip size={14} />
         <ChipLabel>{attachment.fileName}</ChipLabel>
       </SentChip>
     ))}
@@ -491,7 +446,7 @@ const WaveformRow = styled.div<{ $minHeight: string }>`
   min-width: 0;
   align-items: center;
   gap: 10px;
-  padding: 0 10px;
+  padding: 0 16px;
   min-height: ${(props) => props.$minHeight};
 `;
 
@@ -504,9 +459,9 @@ const WaveformCanvas = styled.canvas`
 
 const ListeningLabel = styled.span`
   flex-shrink: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
-  color: ${(props) => props.theme.secondary.text};
+  color: ${(props) => props.theme.mutedForeground};
 `;
 
 /**
@@ -525,7 +480,7 @@ export const VoiceWaveform = ({
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const theme = useTheme();
-  const barColor = theme.accent!.base;
+  const barColor = theme.primary;
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -616,11 +571,11 @@ export const DropOverlay = styled.div`
   pointer-events: none;
   padding: 16px;
   box-sizing: border-box;
-  background: ${(props) => props.theme.primary.bg};
+  background: ${(props) => props.theme.background};
   opacity: 0.94;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  color: ${(props) => props.theme.secondary.text};
+  color: ${(props) => props.theme.mutedForeground};
 `;
 
 export const DropTarget = styled.div`
@@ -628,10 +583,8 @@ export const DropTarget = styled.div`
   align-items: center;
   gap: 8px;
   padding: 18px 22px;
-  border-radius: ${radii.md};
-  border: 1px dashed ${(props) => props.theme.accent!.base};
-  background: ${(props) => props.theme.accent!.soft};
-  color: ${(props) => props.theme.primary.text};
+  border-radius: ${radii.xl};
+  border: 1px dashed ${(props) => props.theme.primary};
+  background: ${(props) => props.theme.secondary};
+  color: ${(props) => props.theme.foreground};
 `;
-
-export { ClipIcon };

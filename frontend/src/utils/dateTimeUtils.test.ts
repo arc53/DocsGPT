@@ -6,7 +6,11 @@ import {
   formatDate,
   formatDateOnly,
   formatDateTime,
+  formatDeadline,
+  formatClock,
   formatTimestamp,
+  headingLocale,
+  intlLocale,
 } from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
@@ -92,7 +96,7 @@ describe('formatRelative', () => {
 
   it("maps the app's language codes to BCP 47", async () => {
     const { formatRelative } = await import('./dateTimeUtils');
-    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'jp' })).toBe(
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'ja' })).toBe(
       '3 分前',
     );
   });
@@ -113,9 +117,9 @@ describe('formatCount', () => {
     expect(formatCount(1234, 'ru')).toBe('1\u00a0234');
   });
 
-  it('maps the app codes Intl does not know', () => {
-    expect(formatCount(1234, 'jp')).toBe('1,234');
-    expect(formatCount(1234, 'zhTW')).toBe('1,234');
+  it('groups in the Japanese and Traditional Chinese style', () => {
+    expect(formatCount(1234, 'ja')).toBe('1,234');
+    expect(formatCount(1234, 'zh-TW')).toBe('1,234');
   });
 
   it('leaves small numbers alone', () => {
@@ -135,5 +139,73 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(null)).toBe('—');
     expect(formatTimestamp(undefined)).toBe('—');
     expect(formatTimestamp('')).toBe('—');
+  });
+});
+
+describe('formatDeadline', () => {
+  it("uses the reader's locale and names the time zone", () => {
+    const us = formatDeadline('2026-10-20T09:44:00Z', 'en-US');
+    expect(us).toMatch(/^Oct 20, 2026/);
+    expect(us).toMatch(/(UTC|GMT|[A-Z]{2,5})/);
+    expect(formatDeadline('2026-10-20T09:44:00Z', 'en-GB')).toMatch(
+      /^20 Oct 2026/,
+    );
+  });
+
+  it('leaves a value that does not parse unchanged', () => {
+    expect(formatDeadline('soon')).toBe('soon');
+  });
+});
+
+describe('intlLocale', () => {
+  it('passes the app codes through as BCP 47 tags', () => {
+    expect(intlLocale('ru-RU')).toBe('ru-RU');
+    expect(intlLocale('ja')).toBe('ja');
+    expect(intlLocale('zh-TW')).toBe('zh-TW');
+  });
+
+  it('falls back to en for values Intl rejects', () => {
+    // Old builds stored the string "undefined" as the language.
+    expect(intlLocale('undefined')).toBe('en');
+    expect(intlLocale('')).toBe('en');
+    expect(intlLocale('not a tag')).toBe('en');
+    expect(() => new Intl.ListFormat(intlLocale('undefined'))).not.toThrow();
+    expect(formatCount(1234, 'undefined')).toBe('1,234');
+  });
+});
+
+describe('formatClock', () => {
+  it('reads a time of day as en-GB 24-hour, in every language', () => {
+    expect(formatClock(new Date(2026, 9, 12, 15, 0))).toBe('15:00');
+    expect(formatClock(new Date(2026, 9, 12, 8, 5))).toBe('08:05');
+    expect(formatClock(new Date(2026, 9, 12, 0, 30))).toBe('00:30');
+  });
+});
+
+describe('headingLocale', () => {
+  // Mon 12 Oct 2026, local time.
+  const DAY = new Date(2026, 9, 12);
+  const heading = (language: string) =>
+    new Intl.DateTimeFormat(headingLocale(language), {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(DAY);
+
+  it('spells English headings day before month, as en-GB', () => {
+    expect(headingLocale('en')).toBe('en-GB');
+    expect(heading('en')).toBe('Monday 12 October');
+  });
+
+  it("names days and months in the reader's language otherwise", () => {
+    expect(headingLocale('de')).toBe('de');
+    expect(headingLocale('ja')).toBe('ja');
+    expect(headingLocale('zh-TW')).toBe('zh-TW');
+    expect(heading('de')).toBe('Montag, 12. Oktober');
+    expect(heading('fr')).toBe('lundi 12 octobre');
+  });
+
+  it('falls back to en-GB for a language Intl rejects', () => {
+    expect(headingLocale('undefined')).toBe('en-GB');
   });
 });

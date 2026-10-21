@@ -20,13 +20,17 @@ from docsgpt.core.paths import env_file, home_dir
 from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
 from docsgpt.core.settings.agents import AgentSettings
 from docsgpt.core.settings.auth import AuthSettings
+from docsgpt.core.settings.background import BackgroundSettings
 from docsgpt.core.settings.connectors import ConnectorSettings
 from docsgpt.core.settings.database import DatabaseSettings
+from docsgpt.core.settings.decisions import DecisionSettings
 from docsgpt.core.settings.embeddings import EmbeddingsSettings
 from docsgpt.core.settings.events import EventsSettings
 from docsgpt.core.settings.guardrails import GuardrailSettings
 from docsgpt.core.settings.ingestion import IngestionSettings
 from docsgpt.core.settings.llm import LLMSettings
+from docsgpt.core.settings.monitors import MonitorSettings
+from docsgpt.core.settings.notifications import NotificationSettings
 from docsgpt.core.settings.ocr import OCRSettings
 from docsgpt.core.settings.quotas import QuotaSettings
 from docsgpt.core.settings.retrieval import RetrievalSettings
@@ -44,6 +48,7 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Authentication", AuthSettings),
     ("LLM providers", LLMSettings),
     ("Embeddings", EmbeddingsSettings),
+    ("Decision model", DecisionSettings),
     ("Retrieval", RetrievalSettings),
     ("Vector stores", VectorStoreSettings),
     ("User-data database", DatabaseSettings),
@@ -54,11 +59,14 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Connectors", ConnectorSettings),
     ("Server", ServerSettings),
     ("Events and devices", EventsSettings),
+    ("Notifications", NotificationSettings),
     ("Agents", AgentSettings),
     ("Guardrails", GuardrailSettings),
     ("Execution traces", TracingSettings),
     ("Quotas", QuotaSettings),
     ("Scheduler", SchedulerSettings),
+    ("Background jobs", BackgroundSettings),
+    ("Monitors and trigger links", MonitorSettings),
     ("Sandbox", SandboxSettings),
     ("Speech", SpeechSettings),
 )

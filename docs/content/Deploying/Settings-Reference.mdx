@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-19
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -258,6 +258,12 @@ Type `str`, default unset.
 
 Base URL for OpenAI-compatible model servers.
 
+### `LLM_ALLOW_PLAINTEXT_ENDPOINTS`
+
+Type `bool`, default `false`.
+
+Allow a configured LLM API key to be sent over plain http to any endpoint already in that key's configured scope. Off, plain http is accepted only for loopback, private and link-local addresses, single-label hosts (Docker service names), host.docker.internal and names ending in .local, .svc, .internal or .localhost; every other endpoint needs https.
+
 ### `FALLBACK_LLM_PROVIDER`
 
 Type `str`, default unset.
@@ -274,7 +280,7 @@ Model name for the fallback LLM.
 
 Type `str`, default unset.
 
-API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs from LLM_PROVIDER, or the primary provider's key goes to the fallback provider.
+API key for the fallback LLM. Unset uses the fallback provider's own key (e.g. ANTHROPIC_API_KEY), or API_KEY when FALLBACK_LLM_PROVIDER is LLM_PROVIDER; the primary provider's key never goes to another provider.
 
 ### `TITLE_MODEL_ID`
 
@@ -389,6 +395,18 @@ Type `int`, default unset.
 
 Truncate each remote embed input to N tokens (overflow is lost).
 
+### `EMBEDDINGS_MAX_QUERY_TOKENS`
+
+Type `int`, default `512`, must be `>= 0`.
+
+Clip a search query to N tokens before embedding it (0 disables). Embedder memory grows with the square of input length, and a query needs a few hundred tokens: one 9k-token query (a webhook payload, pasted logs) OOM-killed a 12 GB embeddings server. Documents are not affected.
+
+### `EMBEDDINGS_LOCAL_MAX_TOKENS`
+
+Type `int`, default unset, must be `>= 1`.
+
+Hard ceiling, in tokens, on every input a local FastEmbed model embeds, documents included (the overflow is dropped). Unset keeps the model's own maximum, which is 32,768 for granite; its memory grows with the square of input length, so 4096 caps one input at about 3 GB.
+
 ### `EMBEDDINGS_BATCH_SIZE`
 
 Type `int`, default `32`, must be `>= 1`.
@@ -442,6 +460,239 @@ Celery queue the embed task is routed to.
 Type `int`, default `60`, must be `> 0`.
 
 Seconds the API waits for the worker to return an embedding.
+
+
+## Decision model
+
+The small classifier that answers typed questions about a state; every feature that uses it ships off.
+
+### `DECISION_MODE`
+
+Type `"none" | "local" | "api"`, default unset.
+
+`none` turns the decision model off everywhere; `local` runs it inside the API process, which Celery workers call with `INTERNAL_KEY`; `api` calls the server at `DECISION_BASE_URL`. Unset means `api` when `DECISION_BASE_URL` is set and `local` otherwise; neither loads anything until a feature asks for it.
+
+### `DECISION_BASE_URL`
+
+Type `str`, default unset.
+
+A decision server to call instead of running the model here: a `docsgpt decide-server`, `arcd serve` or stock vLLM (with `DECISION_PROTOCOL=vllm`). It receives the text of every state it is asked about.
+
+### `DECISION_PROTOCOL`
+
+Type `"decide" | "vllm"`, default `decide`.
+
+How `DECISION_BASE_URL` is called: `decide` for the `/v1/decide` contract, `vllm` for stock vLLM's `/v1/completions` (served with `--logprobs-mode processed_logprobs --max-logprobs 16`).
+
+### `DECISION_KEY`
+
+Type `str`, default unset.
+
+Bearer key sent to `DECISION_BASE_URL`, and only there. Unset sends no key; `INTERNAL_KEY` is never sent to the decision server.
+
+### `DECISION_MODEL`
+
+Type `str`, default unset.
+
+Decision model repository. Unset follows the runtime: arc53/arc-decide-0.4b-v0.2 on ONNX, arc53/arc-decide-0.6b-v0.1 on vLLM; a `decide` server answers with the model it reports.
+
+### `DECISION_MODEL_REVISION`
+
+Type `str`, default unset.
+
+Hub commit to download instead of the pinned one. The pin keeps question wording and calibration from changing under stored scores.
+
+### `DECISION_MODEL_PATH`
+
+Type `str`, default unset.
+
+A local copy of the model (a snapshot folder or its onnx folder). Nothing is downloaded; for air-gapped installs.
+
+### `DECISION_CACHE_DIR`
+
+Type `str`, default `<DOCSGPT_HOME>/models/decision`.
+
+Where the decision model is downloaded, at its pinned revision, the first time it is needed or by `docsgpt decisions prefetch`.
+
+### `DECISION_DEVICE`
+
+Type `"cpu" | "mps" | "cuda"`, default `cpu`.
+
+Where `docsgpt decide-server` runs the model: `cpu` (ONNX) or, with the `decisions-torch` extra, `mps` (a Mac's GPU) or `cuda` (PyTorch). Read by `decide-server` only; the API and the worker never load PyTorch, which cannot share a macOS process with faiss.
+
+### `DECISION_THREADS`
+
+Type `int`, default unset, must be `>= 1`.
+
+Threads for the decision model. Unset uses the CPUs this process may use (affinity, cgroup quota, physical cores); onnxruntime's own default counts every host core, which is far slower in a container.
+
+### `DECISION_LOCAL_QUEUE`
+
+Type `int`, default `32`, must be `>= 1`.
+
+Calls that may wait for the model in the interactive lane before new ones fail.
+
+### `DECISION_BACKGROUND_QUEUE`
+
+Type `int`, default `8`, must be `>= 1`.
+
+Calls that may wait for the model in the background lane before new ones fail.
+
+### `DECISION_BACKGROUND_SHARE`
+
+Type `float`, default `0.25`, must be `>= 0.05` and `<= 1.0`.
+
+Largest share of wall time background decision work may keep the CPU busy; interactive calls are never throttled.
+
+### `DECISION_PRELOAD`
+
+Type `bool`, default `false`.
+
+Download, load and time the decision model when an API process starts (under gunicorn, as the image and `docsgpt api` run it), even with every feature off.
+
+### `DECISION_LOAD_RETRY_SECONDS`
+
+Type `int`, default `300`, must be `>= 1`.
+
+Seconds before a failed download or load of the decision model is retried.
+
+### `DECISION_MIN_FREE_MB`
+
+Type `int`, default unset, must be `>= 0`.
+
+Refuse to load the decision model with less free memory than this, in MB. Unset uses the model's own figure: 1200 for v0.2 (it peaks under 1 GB).
+
+### `DECISION_HOT_TIMEOUT`
+
+Type `float`, default `3.0`, must be `> 0`.
+
+Default deadline, in seconds, of a decision someone is waiting for.
+
+### `DECISION_BACKGROUND_TIMEOUT`
+
+Type `float`, default `120.0`, must be `> 0`.
+
+Default deadline, in seconds, of a background decision.
+
+### `DECISION_MAX_BATCH_STATES`
+
+Type `int`, default `128`, must be `>= 1` and `<= 1000`.
+
+Most states one decision call may carry; more is a caller bug.
+
+### `DECISION_MAX_TEXT_CHARS`
+
+Type `int`, default `4500`, must be `>= 200` and `<= 20000`.
+
+Characters a long state field is cut to before the decision model's tokenizer has loaded.
+
+### `DECISION_CACHE_SIZE`
+
+Type `int`, default `2048`, must be `>= 0`.
+
+Decision answers kept in memory per process; 0 disables the cache.
+
+### `DECISION_PROBE_SECONDS`
+
+Type `int`, default `30`, must be `>= 5`.
+
+API mode: seconds between two reads of the server's `/v1/models` (its model, status, speed and the round trip).
+
+### `DECISION_BATCH_SIZE`
+
+Type `int`, default `32`, must be `>= 1` and `<= 256`.
+
+API mode: states per `/v1/decide/batch` request.
+
+### `DECISION_API_CONCURRENCY`
+
+Type `int`, default `4`, must be `>= 1`.
+
+API mode: requests in flight at once for decisions someone is waiting for.
+
+### `DECISION_BACKGROUND_CONCURRENCY`
+
+Type `int`, default `1`, must be `>= 1`.
+
+API mode: requests in flight at once for background decisions; they never take interactive slots.
+
+### `DECISION_API_RETRIES`
+
+Type `int`, default `1`, must be `>= 0` and `<= 1`.
+
+API mode: retries of a request after a connection error or a 502, 503 or 504, made only while 30% of the call's deadline remains. Timeouts and other errors are not retried.
+
+### `DECISION_BREAKER_FAILURES`
+
+Type `int`, default `3`, must be `>= 1`.
+
+API mode: consecutive transport failures after which calls are skipped for the cooldown.
+
+### `DECISION_BREAKER_COOLDOWN`
+
+Type `float`, default `30.0`, must be `>= 0`.
+
+API mode: seconds calls are skipped after the failures above; then one is let through.
+
+### `DECISION_VLLM_PRIORITY`
+
+Type `bool`, default `false`.
+
+vLLM protocol: send request priorities (interactive before background). Only valid when vLLM runs with `--scheduling-policy priority`.
+
+### `DECISION_USAGE_RETENTION_DAYS`
+
+Type `int`, default `90`, must be `>= 1`.
+
+Days the per-day counts of decision-model calls (`decision_usage`) are kept before the cleanup task removes them.
+
+### `DECISION_INJECTION_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model score text for prompt injection: the `injection_model` guardrail check of agents and of the floor (Admin > Guardrails), chat attachments once uploaded, and MCP tool descriptions when Admin > Guardrails warns on them. While false nothing loads or calls the model for guardrails, those controls are not evaluated, and the UI marks the check unavailable. While true, the API process (or the decide server) loads the model at start.
+
+### `DECISION_RELEVANCE_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model score retrieved chunks for the sources whose relevance setting is on (their `reranker`). While false, no source's setting calls or loads the model, retrieval returns what it would without it, and the source settings hide the relevance controls. While true, the API process (or the decide server) loads the model at start, so the first answer does not fall back while it loads. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false.
+
+### `DECISION_RELEVANCE_ROLLOUT_PERCENT`
+
+Type `int`, default `100`, must be `>= 0` and `<= 100`.
+
+Share of conversations, by a hash of the conversation id, in which sources with relevance on are scored; the rest are the `control` arm and keep the retriever's output. The decision record and the trace carry the arm. The retrieval test ignores it.
+
+### `DECISION_RELEVANCE_CANDIDATE_TOKENS`
+
+Type `int`, default `60000`, must be `>= 1`.
+
+Token budget of the candidate fetch for relevance, so a small model context does not cut the candidates in retriever order; the request's own document budget applies after the scoring.
+
+### `DECISION_RELEVANCE_MIN_KEEP`
+
+Type `int`, default `1`, must be `>= 0`.
+
+Chunks a relevance threshold always keeps from a non-empty retrieval, most relevant first.
+
+### `DECISION_RELEVANCE_MAX_PASSAGES`
+
+Type `int`, default `100`, must be `>= 1` and `<= 128`.
+
+Most chunks one relevance call scores; later candidates are not considered.
+
+### `DECISION_RELEVANCE_TIMEOUT`
+
+Type `float`, default `2.0`, must be `> 0`.
+
+Deadline, in seconds, of one relevance call; past it the retrieval returns what it would without the model.
+
+### `DECISION_RELEVANCE_CPU_PASSAGE_TOKENS`
+
+Type `int`, default `256`, must be `>= 128` and `<= 2048`.
+
+Where the decision model runs on a CPU, each chunk is scored on its first 64 tokens plus the window sharing the most words with the query, this many tokens in all; GPU and API-mode servers score whole chunks.
 
 
 ## Retrieval
@@ -930,6 +1181,12 @@ Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
 
+### `INGEST_QUEUE`
+
+Type `str`, default `ingest`.
+
+Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in every worker's explicit -Q list, or nothing runs ingests.
+
 ### `DOCUMENT_PARSE_QUEUE`
 
 Type `str`, default `parsing`.
@@ -1165,13 +1422,13 @@ Google OAuth client secret.
 
 Type `str`, default `http://127.0.0.1:7091/api/connectors/callback`.
 
-OAuth callback URL; register it as-is in your provider's console (e.g. GCP).
+OAuth callback URL; register it as-is in your provider's console (e.g. GCP). Either the API's /api/connectors/callback, which forwards to the app, or the app's own &lt;app origin>/connectors/callback.
 
 ### `CONNECTOR_ALLOWED_ORIGINS`
 
 Type `str`, default unset.
 
-Comma-separated frontend origins allowed to receive connector OAuth results, e.g. https://docsgpt.example.com. The callback origin and OIDC_FRONTEND_URL are always allowed; a loopback callback also allows localhost:5173.
+Comma-separated frontend origins connector sign-ins may start from and return to, e.g. https://docsgpt.example.com. The origin of CONNECTOR_REDIRECT_BASE_URI and OIDC_FRONTEND_URL are always allowed; a loopback callback also allows localhost:5173. The request's Host never is.
 
 ### `MICROSOFT_CLIENT_ID`
 
@@ -1272,7 +1529,7 @@ Outbound version check for security advisories: the worker sends its version, a 
 
 Type `str`, default unset.
 
-Public base URL for user-facing endpoint references in prompts.
+Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact download URLs API responses carry (relative paths when unset).
 
 ### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
 
@@ -1394,6 +1651,35 @@ Type `int`, default `10000`.
 Cap on buffered output entries per remote-device invocation stream.
 
 
+## Notifications
+
+The VAPID key pair Web Push is signed with, and which push services may be sent to.
+
+### `WEBPUSH_VAPID_PUBLIC_KEY`
+
+Type `str`, default unset.
+
+VAPID public key for Web Push, raw base64url (the uncompressed P-256 point, as `npx web-push generate-vapid-keys` prints it). Browsers subscribe with it. Derived from the private key when unset; when both are set they must belong together.
+
+### `WEBPUSH_VAPID_PRIVATE_KEY`
+
+Type `str`, default unset.
+
+VAPID private key for Web Push, raw base64url. Unset, Web Push is off: users with no tab open get only the unread mark. Changing the key pair invalidates every browser's subscription; browsers subscribe again on their next visit.
+
+### `WEBPUSH_VAPID_SUBJECT`
+
+Type `str`, default unset.
+
+Contact the push services can reach the operator at: a `mailto:` or `https:` URL. Apple rejects pushes without a real one. Unset, the public API URL is used when it is https.
+
+### `WEBPUSH_EXTRA_ALLOWED_HOSTS`
+
+Type `list[str]`, default `[]`.
+
+Push service hosts to accept besides the known ones (Google FCM, Mozilla, Apple, Windows), as a comma list or JSON list. `*.example.com` matches subdomains. Subscription endpoints must be https on an allowed host, so the server never posts to an arbitrary URL; this is for self-hosted push services and tests.
+
+
 ## Agents
 
 What an agent may do per turn and how its context is kept within budget.
@@ -1412,9 +1698,15 @@ Per-agent default quotas: tokens and requests.
 
 ### `DEFAULT_CHAT_TOOLS`
 
-Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
+Type `list[str]`, default `["memory", "read_webpage", "scheduler", "monitor"]`.
 
-Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): every turn that can hand calls off to a background job gets it. monitor is offered only while MONITORS_ENABLED is on.
+
+### `WEBHOOK_RUN_TIMEOUT`
+
+Type `int`, default `600`, must be `> 0`.
+
+Wall-clock cap on one agent webhook run, in seconds (at least 30). Past it the run stops and its task ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.
 
 ### `ENABLE_TOOL_PREFETCH`
 
@@ -1521,7 +1813,7 @@ Cap on a user's total stored artifact bytes (0 disables).
 
 ## Guardrails
 
-Input/output checks every agent runs, and the floor no agent may weaken.
+Input/output checks every agent runs; the floor no agent may weaken is edited in Admin > Guardrails.
 
 ### `GUARDRAILS_ENABLED`
 
@@ -1539,7 +1831,7 @@ Allowlist of GuardrailCreator.checks keys, as a JSON list or comma-separated nam
 
 Type `dict[str, Any]`, default `{}`.
 
-A GuardrailsConfig fragment every agent inherits and cannot weaken; agents may add controls or make an action stricter, never looser. "enabled" is required; without it the floor parses but applies to nothing. Example: \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
+Deprecated: the rules every agent follows are edited in Admin > Guardrails and stored in the database. On the first start with this set and no stored floor, its value is imported once, with a warning; after that it is ignored. It is the same GuardrailsConfig fragment the page edits, e.g. \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
 
 ### `GUARDRAILS_JUDGE_MODEL`
 
@@ -1558,6 +1850,42 @@ Persist scanned text alongside guardrail_events. Off by default: pre-redaction t
 Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
+
+### `GUARDRAILS_INJECTION_MAX_WINDOWS`
+
+Type `int`, default `24`, must be `>= 1` and `<= 64`.
+
+Windows (512 model tokens each) the `injection_model` check reads of one text at chat time: the user's message, a tool result, a retrieved document or an attached file. Past it the first window and the last ones are read, and a text that scored clean is not evaluated.
+
+### `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS`
+
+Type `int`, default `64`, must be `>= 1` and `<= 256`.
+
+Windows (512 model tokens each) read of a chat attachment's text when it is scored for prompt injection in the background after upload, about 30,000 tokens at the default. Past it the first window and the last ones are read.
+
+### `GUARDRAILS_INJECTION_LIVE_ITEMS`
+
+Type `int | "auto"`, default `auto`.
+
+Retrieved documents or attached files the `injection_model` check scores with the model during a turn when no score is cached; the rest are scored in the background for the next turn that uses them. `auto` is 4 where the decision model is measured to score four full chunks within the stage deadline (a GPU), else 0; or a number from 0 to 40.
+
+### `GUARDRAILS_INJECTION_BATCH_STATES`
+
+Type `int`, default `8`, must be `>= 1` and `<= 64`.
+
+Windows sent to the decision model per call when texts are scored in the background.
+
+### `GUARDRAILS_INJECTION_LAZY`
+
+Type `bool`, default `true`.
+
+Score in the background the retrieved documents and attached files a turn could not score in time, so the next turn finds their scores cached.
+
+### `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS`
+
+Type `int`, default `180`, must be `>= 1`.
+
+Days a cached prompt-injection score is kept after its text was last scored or seen.
 
 
 ## Execution traces
@@ -1671,6 +1999,202 @@ Type `int`, default `90`, must be `> 0`.
 Days scheduled-run output is kept.
 
 
+## Background jobs
+
+How long a turn waits on a tool call, what a handed-off job may use, and when the agent is resumed.
+
+### `BACKGROUND_JOBS_ENABLED`
+
+Type `bool`, default `true`.
+
+Hand a slow tool call off to a background job instead of keeping the turn waiting on it. Off, every call runs in the foreground until its own timeout, as before.
+
+### `BACKGROUND_YIELD_SECONDS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Seconds a chat turn waits on a server-side tool call before handing it off to a background job. A call that finishes sooner behaves exactly as before.
+
+### `BACKGROUND_JOB_MAX_SECONDS`
+
+Type `int`, default `1000`, must be `>= 1`.
+
+Hard lifetime of one background job in seconds; past it the job is failed. Matches SANDBOX_EXEC_MAX_TIMEOUT by default.
+
+### `DEVICE_JOB_MAX_SECONDS`
+
+Type `int`, default `3600`, must be `>= 60`.
+
+Hard lifetime of a background job running a command on a paired remote device, in seconds. A command started with background=true may run this long (a foreground one keeps its 600 s cap); a job whose device never reports back before then is marked lost.
+
+### `BACKGROUND_MAX_JOBS_PER_CONVERSATION`
+
+Type `int`, default `2`, must be `>= 0`.
+
+Running background jobs one conversation may have. Over the cap a slow call keeps running in the foreground; it never fails because of the cap.
+
+### `BACKGROUND_MAX_JOBS_PER_USER`
+
+Type `int`, default `5`, must be `>= 0`.
+
+Running background jobs one user may have, across conversations; same over-cap rule.
+
+### `BACKGROUND_RESULT_RETENTION_DAYS`
+
+Type `int`, default `7`, must be `> 0`.
+
+Days a finished background job and its result are kept.
+
+### `BACKGROUND_LEASE_STALE_SECONDS`
+
+Type `int`, default `60`, must be `>= 20`.
+
+Heartbeat age after which a job whose process stopped reporting is marked lost. Jobs are stamped every 10 s, so this allows several missed beats.
+
+### `BACKGROUND_RECONCILE_INTERVAL_SECONDS`
+
+Type `int`, default `60`, must be `>= 10`.
+
+Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline and resume conversations whose results were not delivered.
+
+### `BACKGROUND_POOL_SIZE`
+
+Type `int`, default `16`, must be `>= 1`.
+
+Threads per API or worker process that run tool calls a turn may hand off. A call that finds the pool full runs inline, as before.
+
+### `AUTO_RESUME_ENABLED`
+
+Type `bool`, default `true`.
+
+Resume the agent in the same conversation when a background job finishes, so the result reaches the user without them asking. Off, results wait for check_job or the user's next message.
+
+### `AUTO_RESUME_MAX_RESULT_CHARS`
+
+Type `int`, default `16000`, must be `>= 500`.
+
+Characters of one job result a continuation turn sees; longer results keep their head and tail.
+
+### `AUTO_RESUME_MAX_CONSECUTIVE`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Continuation turns a conversation may get in a row without a user message in between. Past it, results wait for check_job or the user's next message, so a job that starts a job cannot loop.
+
+
+## Monitors and trigger links
+
+What the ``monitor`` tool may watch, how often, for how long, and how trigger and approval links behave.
+
+### `MONITORS_ENABLED`
+
+Type `bool`, default `true`.
+
+Offer the monitor tool: polled checks of a webpage or any tool, ingest events, webhook trigger links and human approval links that resume the conversation when something happens. Needs AUTO_RESUME_ENABLED, since a monitor reports back by resuming the conversation.
+
+### `MONITOR_JUDGE_MODEL`
+
+Type `str`, default unset.
+
+Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset uses the deployment's default model.
+
+### `MONITOR_DEFAULT_INTERVAL_SECONDS`
+
+Type `int`, default `900`, must be `>= 60`.
+
+Seconds between checks of a polled monitor that names no interval.
+
+### `MONITOR_MIN_INTERVAL_SECONDS`
+
+Type `int`, default `300`, must be `>= 60`.
+
+Shortest interval a polled monitor may use, in seconds; a shorter request is raised to it.
+
+### `MONITOR_DEFAULT_TTL_DAYS`
+
+Type `int`, default `7`, must be `>= 1`.
+
+Days a monitor (and its trigger or approval link) lives when none is named.
+
+### `MONITOR_MAX_TTL_DAYS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Longest lifetime a monitor may ask for, in days.
+
+### `MONITOR_DEFAULT_MAX_WAKES`
+
+Type `int`, default `1`, must be `>= 1`.
+
+Times a monitor may wake the agent when none is named; at 0 left it finishes.
+
+### `MONITOR_MAX_WAKES`
+
+Type `int`, default `20`, must be `>= 1`.
+
+Most wakes one monitor may ask for.
+
+### `MONITOR_MAX_ACTIVE_PER_USER`
+
+Type `int`, default `5`, must be `>= 0`.
+
+Active or paused monitors one user may have; 0 turns creating them off.
+
+### `MONITOR_MAX_WAKES_PER_HOUR`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Circuit breaker: a monitor that would wake the agent more often than this in an hour is paused, and the conversation is told why.
+
+### `MONITOR_UNREACHABLE_GRACE_SECONDS`
+
+Type `int`, default `3600`, must be `>= 60`.
+
+How long a monitor's source may stay unreachable (device offline, server down, timeout, 5xx) before the agent is told once and the monitor pauses. Unreachable checks are skipped, never a change.
+
+### `MONITOR_JUDGE_TOKEN_BUDGET`
+
+Type `int`, default `100000`, must be `>= 0`.
+
+Tokens one monitor's condition judge may use over its lifetime; past it the monitor pauses and says so. 0 means no limit.
+
+### `PUBLIC_APP_URL`
+
+Type `str`, default unset.
+
+Public address of the web UI, used for human approval links (/approve/&lt;token>). Unset uses PUBLIC_API_BASE_URL, then API_URL: the API serves the UI itself when SERVE_UI is on. Set it when the UI runs elsewhere, e.g. http://localhost:5173 for the Vite dev server.
+
+### `TRIGGER_RATE_PER_MINUTE`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Requests one trigger link accepts per minute; more get 429.
+
+### `TRIGGER_MAX_PAYLOAD_BYTES`
+
+Type `int`, default `65536`, must be `>= 1024`.
+
+Largest request body a trigger link accepts, in bytes; larger gets 413.
+
+### `TRIGGER_GET_MAX_HITS`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Calls a webhook link that also accepts GET takes over its lifetime (a POST-only link takes 1000). Lower, since a GET link can be fired by anything that opens it.
+
+### `TRIGGER_GET_DEFAULT_TTL_HOURS`
+
+Type `int`, default `24`, must be `>= 1`.
+
+Default lifetime, in hours, of a webhook link that also accepts GET, when monitor_create asks for none (a POST-only link defaults to MONITOR_DEFAULT_TTL_DAYS). An explicit expires_in still applies, up to MONITOR_MAX_TTL_DAYS.
+
+### `TRIGGER_DEDUPE_WINDOW_SECONDS`
+
+Type `int`, default `600`, must be `>= 1`.
+
+Seconds in which a trigger link delivery with the same body as an earlier one (and no Idempotency-Key, webhook-id or X-GitHub-Delivery) counts as a repeat. The same body sent later, such as a nightly job's, is a new event.
+
+
 ## Sandbox
 
 The app is a CLIENT of an always-on runner; defaults are safe so app import never fails unconfigured.
@@ -1717,6 +2241,12 @@ Type `int`, default `60`.
 
 Default wall-clock cap (s) per exec call.
 
+### `SANDBOX_EXEC_MAX_TIMEOUT`
+
+Type `int`, default `1000`, must be `>= 1`.
+
+Longest wall-clock cap (s) the model may ask for on one run_code call, for long jobs such as video renders or OCR of many pages; a larger request is clamped to it. Never below SANDBOX_EXEC_TIMEOUT. On the Jupyter runner keep SANDBOX_KERNEL_IDLE_TIMEOUT above SANDBOX_MAX_TTL; a busy kernel is never culled.
+
 ### `SANDBOX_HTTP_TIMEOUT`
 
 Type `int`, default `10`.
@@ -1743,9 +2273,15 @@ Cap on an input document staged into a sandbox session.
 
 ### `SANDBOX_MEMORY`
 
+Type `str`, default `4g`.
+
+Docker mem_limit for the runner container: the gateway, the warm session kernels and the LibreOffice and Chromium processes they start. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+
+### `SANDBOX_HOME_SIZE`
+
 Type `str`, default `1g`.
 
-Docker mem_limit for the runner container. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+Size of the runner's /sandbox-home tmpfs: the kernels' HOME, where runtime pip installs and caches go. It allows exec so compiled packages load (/tmp stays noexec) and counts against SANDBOX_MEMORY as it fills. Consumed by the docsgpt-sandbox compose service, not the app.
 
 ### `SANDBOX_CPUS`
 
@@ -1775,7 +2311,7 @@ Daytona region/target, e.g. "us".
 
 Type `str`, default unset.
 
-Image for new sandboxes; build one with the render and spreadsheet libs via scripts/build_daytona_snapshot.py.
+Snapshot for new sandboxes; build one with the sandbox's libraries, tools and fonts via scripts/build_daytona_snapshot.py (default name docsgpt-sandbox-py312-v3).
 
 ### `DAYTONA_LANGUAGE`
 
@@ -1812,11 +2348,23 @@ Type `"google_tts" | "elevenlabs" | "none"`, default `google_tts`.
 
 Text-to-speech provider; none switches it off.
 
+### `TTS_MAX_CHARS`
+
+Type `int`, default `10000`.
+
+Cap on the characters one text-to-speech request may speak, after markdown is stripped.
+
 ### `ELEVENLABS_API_KEY`
 
 Type `str`, default unset.
 
 ElevenLabs API key.
+
+### `ELEVENLABS_VOICE_ID`
+
+Type `str`, default `nPczCjzI2devNBz1zQrb`.
+
+ElevenLabs voice to speak with; an ID from your ElevenLabs voice library.
 
 ### `STT_PROVIDER`
 

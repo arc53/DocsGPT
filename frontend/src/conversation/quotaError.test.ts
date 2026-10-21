@@ -50,4 +50,13 @@ describe('quotaErrorMessage', () => {
     );
     expect(message.endsWith('|')).toBe(true);
   });
+
+  it('formats with the UI language tag', () => {
+    const message = quotaErrorMessage(
+      { dimension: 'tokens', usage: 1234, limit: 1000 },
+      t,
+      'zh-TW',
+    );
+    expect(message).toBe('conversation.quotaExceeded.tokens|1,234|1,000|');
+  });
 });

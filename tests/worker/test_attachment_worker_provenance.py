@@ -420,6 +420,28 @@ def _blank_pdf_bytes(pages: int) -> bytes:
     return buffer.getvalue()
 
 
+def _pdf_with_image_pages(pages: int, image_pages: int) -> bytes:
+    """A PDF of ``pages`` text pages whose first ``image_pages`` also carry a raster image (a scan's page)."""
+    import io
+
+    from PIL import Image
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    page = canvas.Canvas(buffer, pagesize=(612, 792))
+    for index in range(pages):
+        if index < image_pages:
+            image = io.BytesIO()
+            Image.new("RGB", (64, 64), (240, 240, 240)).save(image, "PNG")
+            image.seek(0)
+            page.drawImage(ImageReader(image), 0, 0, 612, 792)
+        page.drawString(72, 720, f"page {index + 1} text")
+        page.showPage()
+    page.save()
+    return buffer.getvalue()
+
+
 @pytest.mark.usefixtures("wired_engine")
 class TestFingerprintProvenance:
     """The planner dedupes and sizes attachments from what the worker records."""
@@ -465,6 +487,23 @@ class TestFingerprintProvenance:
 
         row = _fetch(info["attachment_id"])
         assert row["metadata"]["page_count"] == 3
+        assert row["metadata"]["image_page_count"] == 0
+
+    def test_pdf_records_how_many_pages_carry_an_image(self, storage_dir, monkeypatch):
+        # Providers read every page that carries an image as a page image, so
+        # an OCR'd scan costs far more than its text; the planner needs the count.
+        payload = _pdf_with_image_pages(5, 3)
+        info = _file_info(storage_dir, filename="scan.pdf", content=payload)
+        monkeypatch.setattr(
+            "docsgpt.worker.SimpleDirectoryReader",
+            lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc("ocr text")]})(),
+        )
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["metadata"]["page_count"] == 5
+        assert row["metadata"]["image_page_count"] == 3
 
     def test_unreadable_pdf_still_gets_a_hash(self, storage_dir, monkeypatch):
         # A file pypdfium2 cannot open keeps its hash; the page count is
@@ -481,6 +520,7 @@ class TestFingerprintProvenance:
         row = _fetch(info["attachment_id"])
         assert row["metadata"]["content_hash"]
         assert "page_count" not in row["metadata"]
+        assert "image_page_count" not in row["metadata"]
 
 
 def _counting_reader(monkeypatch, text="parsed once"):

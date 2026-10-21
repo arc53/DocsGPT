@@ -1,7 +1,7 @@
 ---
 title: Docker Deployment of DocsGPT
 description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-16
 ---
 
 import { Callout } from 'nextra/components'
@@ -92,7 +92,7 @@ The [docsgpt CLI reference](/Deploying/cli) lists every command, including
 ### Backups
 
 `docsgpt backup` writes one archive holding a dump of the database and a tar of
-each data volume (`indexes`, `inputs`, `vectors`). It is new after 0.21.0; on
+each data volume (`indexes`, `inputs`, `vectors`). It is new in 1.0.0; on
 0.21.0, [back up by hand](/upgrading#back-up-and-restore-by-hand-0210).
 
 ```bash
@@ -183,12 +183,12 @@ run them:
     keeps it and `down -v` removes it.
 
 **Tags and variants.** `DOCSGPT_IMAGE_TAG` picks the version: a release such
-as `0.21.0`, `latest` (the newest release, the default here) or `develop`
+as `1.0.0`, `latest` (the newest release, the default here) or `develop`
 (follows the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
 slim default image, or `-docling` for the image with the docling parser
 engine, its models and tesseract baked in (needed for OCR of scanned
 documents, see the [OCR guide](/Sources/ocr)). Both are read from `.env` or
-the shell, e.g. `DOCSGPT_IMAGE_TAG=0.21.0 DOCSGPT_IMAGE_VARIANT=-docling`.
+the shell, e.g. `DOCSGPT_IMAGE_TAG=1.0.0 DOCSGPT_IMAGE_VARIANT=-docling`.
 The same two variables drive `deployment/docker-compose-hub.yaml` in a
 checkout, but there the default tag is `develop`; see
 [Using the Source Checkout](#using-the-source-checkout).
@@ -303,7 +303,7 @@ defaults to the `develop` images, built from the `main` branch, not to the
 latest release. For anything beyond trying DocsGPT out, pin a release in `.env`:
 
 ```bash
-DOCSGPT_IMAGE_TAG=0.21.0
+DOCSGPT_IMAGE_TAG=1.0.0
 ```
 
 Pin it through the variable, not by editing `image:` in the file: the variable
@@ -462,6 +462,34 @@ There are two Ollama optional files:
 
 *   **NVIDIA Container Toolkit (for NVIDIA GPUs):** If you are using NVIDIA GPUs, you need to have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed and configured on your system for Docker to access your GPU.
 *   **Docker GPU Configuration:** Ensure Docker is configured to utilize your GPU. Refer to the [Ollama Docker Hub page](https://hub.docker.com/r/ollama/ollama) and Docker documentation for GPU setup instructions specific to your GPU type (NVIDIA, AMD, Intel).
+
+## The Decision Model Container
+
+The [decision model](/Models/decision-model) runs inside the backend, and the worker calls it there. It downloads and
+loads nothing until you turn a decision feature on in `.env`; the first one downloads the model (about 0.5 GB) into the
+`decision_models` volume, and the backend then holds up to 1 GB more memory.
+
+Every Compose file (and the stack `docsgpt up` runs) also has a `decider` service, off by default: the same
+`arc53/docsgpt` image running `docsgpt decide-server`, which serves the model to the backend and the worker from a
+container of its own. Use it with several backends or workers, to keep the model's memory apart from the backend's, or
+so the model is not reloaded each time gunicorn recycles the backend process (see
+[The decider](/Models/decision-model#the-decider)). Turn it on with three lines in `.env`, or with
+`docsgpt up --decider`, which writes them (a random key included):
+
+```env
+COMPOSE_PROFILES=decider
+DECISION_BASE_URL=http://decider:7095
+DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+```
+
+It idles at about 100 MB, is limited to 2 GB of memory (`DECISION_MEMORY` in `.env`), and the backend never waits for
+it. It refuses to start without `DECISION_KEY`, which the backend and the worker send it; `INTERNAL_KEY` never keys it.
+
+- On a Mac, Docker cannot use the GPU: run the model natively on it instead, as in
+  [On a Mac's GPU](/Models/decision-model#on-a-macs-gpu).
+- On an NVIDIA GPU, layer `deployment/optional/docker-compose.optional.decide-vllm.yaml` on a checkout's Compose
+  file to serve the model with vLLM: see [On an NVIDIA GPU](/Models/decision-model#on-an-nvidia-gpu).
+- `deployment/docker-compose-dev.yaml` builds a decider from the checkout only with `--profile decider`.
 
 ## Optional Code Execution Sandbox
 

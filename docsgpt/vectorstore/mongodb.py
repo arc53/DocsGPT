@@ -1,5 +1,6 @@
 import logging
 from functools import cached_property
+from typing import Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.vectorstore.base import BaseVectorStore, InvalidChunkMetadataError
@@ -22,7 +23,7 @@ class MongoDBVectorStore(BaseVectorStore):
     def __init__(
         self,
         source_id: str = "",
-        embeddings_key: str = "embeddings",
+        embeddings_key: Optional[str] = None,
         collection: str = "documents",
         index_name: str = "vector_search_index",
         text_key: str = "text",

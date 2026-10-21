@@ -15,8 +15,12 @@ import reducer, {
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
+  selectTtsAvailable,
+  setAuthRequired,
   setRoles,
   setSourceDocs,
+  setSpeechAvailability,
+  setToken,
 } from './preferenceSlice';
 
 const baseState = () => reducer(undefined, { type: '@@INIT' });
@@ -185,5 +189,33 @@ describe('conversation list paging', () => {
     const chat = state.conversations.data?.find((c) => c.id === id);
     expect(chat?.name).toBe('Renamed');
     expect(ids(state)).toHaveLength(full + 5);
+  });
+});
+
+describe('text-to-speech availability', () => {
+  const ttsFor = (actions: Parameters<typeof reducer>[1][]) =>
+    selectTtsAvailable({
+      preference: actions.reduce(reducer, baseState()),
+    } as RootState);
+
+  it('is offered on an instance without auth', () => {
+    expect(ttsFor([setAuthRequired(false)])).toBe(true);
+  });
+
+  it('is hidden from a signed-out viewer when the server requires auth', () => {
+    expect(ttsFor([setAuthRequired(true)])).toBe(false);
+  });
+
+  it('is offered to a signed-in user when the server requires auth', () => {
+    expect(ttsFor([setAuthRequired(true), setToken('tok')])).toBe(true);
+  });
+
+  it('stays hidden when the server has it switched off', () => {
+    expect(
+      ttsFor([
+        setToken('tok'),
+        setSpeechAvailability({ tts: false, stt: true }),
+      ]),
+    ).toBe(false);
   });
 });

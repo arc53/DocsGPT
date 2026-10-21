@@ -185,6 +185,40 @@ class TestEmbedding:
         wrapper = EmbeddingsWrapper(MPNET.name)
         assert wrapper.embed_query("hello") == [0.5, 0.6]
 
+    def test_embed_query_clips_long_query(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.tokenization import TiktokenCounter
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        monkeypatch.setattr(
+            "docsgpt.parser.tokenization.get_token_counter", lambda *_a, **_k: TiktokenCounter()
+        )
+        wrapper = EmbeddingsWrapper(MPNET.name)
+        instance.embed.reset_mock()
+        instance.embed.return_value = iter([np.array([0.5])])
+
+        long_query = " ".join(["word"] * 1000)
+        wrapper.embed_query(long_query)
+
+        (sent,) = instance.embed.call_args.args[0]
+        assert TiktokenCounter().count(sent) <= 10
+        assert long_query.startswith(sent)
+
+    def test_embed_documents_are_not_clipped_by_the_query_limit(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        wrapper = EmbeddingsWrapper(MPNET.name)
+        instance.embed.reset_mock()
+        instance.embed.return_value = iter([np.array([0.5])])
+
+        long_text = " ".join(["word"] * 1000)
+        wrapper.embed_documents([long_text])
+
+        assert instance.embed.call_args.args[0] == [long_text]
+
     def test_call_dispatches_on_input_type(self, fake_fastembed):
         _, instance = fake_fastembed
         wrapper = EmbeddingsWrapper(MPNET.name)
@@ -296,6 +330,67 @@ class TestTokenizerPadding:
 
     def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed):
         _, instance = fake_fastembed
+        instance.model = None
+        EmbeddingsWrapper(GRANITE_97M.name)
+
+
+class TestLocalInputCeiling:
+    """``EMBEDDINGS_LOCAL_MAX_TOKENS`` lowers the tokenizer's truncation length.
+
+    FastEmbed truncates only at the model's own maximum -- 32,768 tokens for
+    granite -- and attention memory grows with the square of the input, so a
+    single long input can take far more memory than the host has.
+    """
+
+    def _load(self, fake_fastembed, monkeypatch, limit, truncation):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_LOCAL_MAX_TOKENS", limit)
+        tokenizer = MagicMock()
+        tokenizer.padding = None
+        tokenizer.truncation = truncation
+        instance.model.tokenizer = tokenizer
+        EmbeddingsWrapper(GRANITE_97M.name)
+        return tokenizer
+
+    def test_unset_leaves_the_tokenizer_alone(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, None, {"max_length": 32768})
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_lowers_the_models_own_ceiling(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(
+            fake_fastembed,
+            monkeypatch,
+            4096,
+            {"max_length": 32768, "stride": 0, "strategy": "longest_first", "direction": "right"},
+        )
+
+        tokenizer.enable_truncation.assert_called_once_with(
+            max_length=4096, stride=0, strategy="longest_first", direction="right"
+        )
+
+    def test_never_raises_a_lower_ceiling(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, {"max_length": 512})
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_a_tokenizer_without_truncation_gets_one(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, None)
+
+        tokenizer.enable_truncation.assert_called_once_with(max_length=4096)
+
+    def test_an_unreadable_truncation_config_is_left_alone(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, "not-a-dict")
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_LOCAL_MAX_TOKENS", 4096)
         instance.model = None
         EmbeddingsWrapper(GRANITE_97M.name)
 

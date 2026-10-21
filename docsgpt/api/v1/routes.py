@@ -18,9 +18,13 @@ from flask import Blueprint, current_app, jsonify, make_response, request, Respo
 from docsgpt.api.answer.routes.base import BaseAnswerResource
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
+    ContinuationNotPendingError,
     ContinuationService,
     RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
+    answered_call_ids,
 )
 from docsgpt import tracing
 from docsgpt.api.answer.services.stream_processor import (
@@ -55,6 +59,10 @@ from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 logger = logging.getLogger(__name__)
 
 v1_bp = Blueprint("v1", __name__, url_prefix="/v1")
+
+# ``docsgpt.attachments_mode``: ``auto`` plans what fits into the prompt (the
+# default); ``reference`` keeps the files out of it for the tools to work on.
+ATTACHMENTS_MODES = ("auto", "reference")
 
 
 def _extract_bearer_token() -> Optional[str]:
@@ -223,6 +231,13 @@ def _validate_request_options(data: Dict[str, Any], agent: Dict[str, Any]) -> Op
     stream_options = data.get("stream_options")
     if stream_options is not None and not isinstance(stream_options, dict):
         return _invalid_request("stream_options must be an object.")
+    docsgpt = data.get("docsgpt")
+    mode = docsgpt.get("attachments_mode") if isinstance(docsgpt, dict) else None
+    if mode is not None and mode not in ATTACHMENTS_MODES:
+        return _invalid_request(
+            f"docsgpt.attachments_mode must be one of {', '.join(ATTACHMENTS_MODES)}.",
+            code="invalid_attachments_mode",
+        )
     return None
 
 
@@ -253,16 +268,27 @@ def _response_usage(agent: Any) -> Dict[str, Any]:
     Reads the per-instance accumulator so multi-round tool turns report
     the sum of every LLM call, matching what ``token_usage`` rows bill;
     the accumulator carries provider-exact counts whenever the upstream
-    reported them (see ``_prefer_provider_usage``).
+    reported them (see ``_prefer_provider_usage``), including
+    ``prompt_tokens_details.cached_tokens`` and ``cache_write_tokens``.
     """
     tokens = getattr(getattr(agent, "llm", None), "token_usage", {}) or {}
     prompt = int(tokens.get("prompt_tokens", 0) or 0)
     completion = int(tokens.get("generated_tokens", 0) or 0)
-    return {
+    usage: Dict[str, Any] = {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
     }
+    # The prompt-cache bins, when the provider reported them: how much of
+    # ``prompt_tokens`` was read from the cache, and written to it.
+    details = {
+        key: int(tokens[key])
+        for key in ("cached_tokens", "cache_write_tokens")
+        if tokens.get(key) is not None
+    }
+    if details:
+        usage["prompt_tokens_details"] = details
+    return usage
 
 
 def _answered_by(agent: Any) -> List[Dict[str, Any]]:
@@ -419,7 +445,9 @@ def chat_completions():
             conversation_id = internal_data.get("conversation_id")
             pending_state = (
                 ContinuationService().claim_state(
-                    conversation_id, decoded_token["sub"]
+                    conversation_id,
+                    decoded_token["sub"],
+                    call_ids=answered_call_ids(internal_data["tool_actions"]),
                 )
                 if conversation_id
                 else None
@@ -480,6 +508,7 @@ def chat_completions():
                 # leaving the initial message permanently ``streaming``.
                 "reserved_message_id": processor.reserved_message_id,
                 "request_id": processor.request_id,
+                "prior_tool_calls": getattr(processor, "prior_tool_calls", []),
             }
             question = ""
         else:
@@ -606,6 +635,21 @@ def chat_completions():
                 }),
                 409,
             )
+        except ContinuationNotPendingError:
+            # Results for calls whose pause is over (a new turn moved past it,
+            # or it expired) while another pause waits: nothing ran.
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            return make_response(
+                jsonify({
+                    "error": {
+                        "message": NOT_PENDING_MESSAGE,
+                        "type": "conflict_error",
+                        "code": NOT_PENDING_CODE,
+                    }
+                }),
+                409,
+            )
         except ContextOverflowError as e:
             if idem_key:
                 v1_idempotency.release(idem_key)
@@ -699,6 +743,7 @@ def _stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     translation_state = StreamTranslationState()
@@ -789,6 +834,7 @@ def _non_stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     result = helper.process_response_stream(stream)
@@ -817,6 +863,8 @@ def _non_stream_response(
         usage=_response_usage(agent),
         finish_reason_override=_response_finish_reason(agent),
         answered_by=_answered_by(agent),
+        artifacts=result.get("artifacts"),
+        attachments=result.get("attachments"),
     )
     return make_response(jsonify(response), 200)
 

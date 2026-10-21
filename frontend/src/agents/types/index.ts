@@ -161,7 +161,8 @@ export type Agent = {
   config?: AgentConfig;
 };
 
-export type GuardrailStage = 'input' | 'retrieval' | 'tool_result' | 'output';
+export type GuardrailStage =
+  'input' | 'retrieval' | 'tool_result' | 'output' | 'attachment';
 
 export type GuardrailAction = 'flag' | 'redact' | 'block';
 
@@ -198,6 +199,11 @@ export type GuardrailCheckInfo = {
   supports_redaction: boolean;
   latency_hint_ms: number;
   remote: boolean;
+  /**
+   * Scores each retrieved document or attached file on its own, so `block`
+   * at those stages withholds only the flagged item.
+   */
+  item_level?: boolean;
   available: boolean;
 };
 
@@ -206,7 +212,7 @@ export type GuardrailCatalog = {
   checks: GuardrailCheckInfo[];
   stages: GuardrailStage[];
   modes: GuardrailMode[];
-  actions_by_stage: Record<GuardrailStage, GuardrailAction[]>;
+  actions_by_stage: Partial<Record<GuardrailStage, GuardrailAction[]>>;
   default_block_message: string;
   pii_entities: string[];
   default_pii_entities: string[];
@@ -238,6 +244,11 @@ export type GuardrailEvent = {
   score: number | null;
   match_count: number;
   detail: string | null;
+  /**
+   * The item an item-level verdict is about: `chunk:<source_id>:<chunk_key>`
+   * for a retrieved document, `attachment:<id>` for an attached file.
+   */
+  item_ref?: string | null;
   created_at: string;
 };
 

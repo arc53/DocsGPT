@@ -14,6 +14,7 @@ const endpoints = {
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
     GUARDRAIL_CATALOG: '/api/guardrails/catalog',
+    AGENT_DEFAULTS: '/api/agents/defaults',
     GUARDRAIL_EVENTS: (
       agentId: string,
       limit = 100,
@@ -79,6 +80,7 @@ const endpoints = {
     SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
+    SOURCE_DEFAULTS: '/api/sources/defaults',
     SOURCE_CHUNK: (id: string, chunkKey: string, excerpt?: string) => {
       const params = new URLSearchParams({ chunk_key: chunkKey });
       if (excerpt) params.set('excerpt', excerpt);
@@ -125,6 +127,7 @@ const endpoints = {
       `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
         connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
       }${install ? '&install=1' : ''}`,
+    CONNECTOR_AUTH_COMPLETE: '/api/connectors/auth/complete',
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
@@ -161,10 +164,15 @@ const endpoints = {
       per_page: number,
       path?: string,
       search?: string,
+      injection?: 'flagged',
     ) =>
       `/api/get_chunks?id=${docId}&page=${page}&per_page=${per_page}${
         path ? `&path=${encodeURIComponent(path)}` : ''
-      }${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+      }${search ? `&search=${encodeURIComponent(search)}` : ''}${
+        injection ? `&injection=${injection}` : ''
+      }`,
+    INJECTION_REVIEW: (sourceId: string) =>
+      `/api/sources/${encodeURIComponent(sourceId)}/injection_review`,
     ADD_CHUNK: '/api/add_chunk',
     DELETE_CHUNK: (docId: string, chunkId: string) =>
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
@@ -180,6 +188,7 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
+    MCP_OAUTH_CANCEL: '/api/mcp_server/oauth_cancel',
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
@@ -208,6 +217,13 @@ const endpoints = {
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
+    ACTIVITY_NOW: '/api/activity/now',
+    ACTIVITY_HISTORY: (params: string) => `/api/activity/history?${params}`,
+    ACTIVITY_PLANNED: (from: string, to: string, tz: string) =>
+      `/api/activity/planned?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&tz=${encodeURIComponent(tz)}`,
+    MESSAGE_CANCEL: (messageId: string) =>
+      `/api/messages/${encodeURIComponent(messageId)}/cancel`,
+    USER_SCHEDULES: '/api/schedules',
     AGENT_SCHEDULES: (agentId: string) => `/api/agents/${agentId}/schedules`,
     AGENT_SCHEDULE_STATS: (agentId: string, days?: number) =>
       `/api/agents/${agentId}/schedules/stats?days=${days ?? 30}`,
@@ -229,6 +245,18 @@ const endpoints = {
     ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
     ACCESS_TOKEN_REGENERATE: (id: string) =>
       `/api/user/tokens/${id}/regenerate`,
+    ACCESS_TOKEN_TOOL: (id: string) => `/api/user/tokens/${id}/tool`,
+    MONITORS: (conversationId?: string) =>
+      conversationId
+        ? `/api/monitors?conversation_id=${encodeURIComponent(conversationId)}`
+        : '/api/monitors',
+    MONITOR_ACTION: (id: string, action: 'pause' | 'resume' | 'cancel') =>
+      `/api/monitors/${encodeURIComponent(id)}/${action}`,
+    MONITOR_SECRET: (id: string) =>
+      `/api/monitors/${encodeURIComponent(id)}/secret`,
+    MONITOR_SECRET_EXPOSURE: (id: string) =>
+      `/api/monitors/${encodeURIComponent(id)}/secret/exposure`,
+    APPROVAL: (token: string) => `/api/approvals/${encodeURIComponent(token)}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
@@ -255,6 +283,9 @@ const endpoints = {
       `/api/admin/quotas/teams/${encodeURIComponent(id)}`,
     QUOTA_USER: (id: string) =>
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
+    SOURCE_DEFAULTS: '/api/admin/defaults/sources',
+    AGENT_DEFAULTS: '/api/admin/defaults/agents',
+    GUARDRAILS: '/api/admin/guardrails',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

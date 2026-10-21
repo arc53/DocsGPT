@@ -17,14 +17,17 @@ class ConnectorSettings(SettingsGroup):
     GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, description="Google OAuth client secret.")
     CONNECTOR_REDIRECT_BASE_URI: str = Field(
         default="http://127.0.0.1:7091/api/connectors/callback",
-        description="OAuth callback URL; register it as-is in your provider's console (e.g. GCP).",
+        description=(
+            "OAuth callback URL; register it as-is in your provider's console (e.g. GCP). Either the API's "
+            "/api/connectors/callback, which forwards to the app, or the app's own <app origin>/connectors/callback."
+        ),
     )
     CONNECTOR_ALLOWED_ORIGINS: Optional[str] = Field(
         default=None,
         description=(
-            "Comma-separated frontend origins allowed to receive connector OAuth results, e.g. "
-            "https://docsgpt.example.com. The callback origin and OIDC_FRONTEND_URL are always allowed; a "
-            "loopback callback also allows localhost:5173."
+            "Comma-separated frontend origins connector sign-ins may start from and return to, e.g. "
+            "https://docsgpt.example.com. The origin of CONNECTOR_REDIRECT_BASE_URI and OIDC_FRONTEND_URL are "
+            "always allowed; a loopback callback also allows localhost:5173. The request's Host never is."
         ),
     )
 

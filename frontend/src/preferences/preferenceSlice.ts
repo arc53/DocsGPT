@@ -64,6 +64,8 @@ export interface Preference {
   // config loads, so a backend without these flags keeps showing the controls.
   ttsAvailable: boolean;
   sttAvailable: boolean;
+  // The server rejects unauthenticated calls (/api/config ``requires_auth``).
+  authRequired: boolean;
   // Share of the model's window a turn's attached files may take
   // (/api/config ``attachment_budget_share``); null until the config loads.
   attachmentBudgetShare: number | null;
@@ -99,6 +101,7 @@ const initialState: Preference = {
   rolesResolved: false,
   ttsAvailable: true,
   sttAvailable: true,
+  authRequired: false,
   attachmentBudgetShare: null,
 };
 
@@ -157,6 +160,7 @@ export const prefSlice = createSlice({
       action: PayloadAction<{
         data: ConversationSummary[] | null;
         loading: boolean;
+        requestedAt?: number;
       }>,
     ) => {
       if (!action.payload.data) {
@@ -168,25 +172,42 @@ export const prefSlice = createSlice({
         payload: action.payload.data,
       });
     },
-    /** An older page, loaded as the sidebar's end scrolls into view. */
-    appendConversations: (
-      state,
-      action: PayloadAction<ConversationSummary[]>,
-    ) => {
-      const existing = state.conversations.data ?? [];
-      const seen = new Set(existing.map((c) => c.id));
-      state.conversations.data = [
-        ...existing,
-        ...action.payload.filter((c) => !seen.has(c.id)),
-      ];
-      state.conversations.hasMore =
-        action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+    /**
+     * An older page, loaded as the sidebar's end scrolls into view.
+     * `requestedAt`, when its request went out, orders its unread marks.
+     */
+    appendConversations: {
+      reducer: (
+        state,
+        action: PayloadAction<
+          ConversationSummary[],
+          string,
+          { requestedAt?: number }
+        >,
+      ) => {
+        const existing = state.conversations.data ?? [];
+        const seen = new Set(existing.map((c) => c.id));
+        state.conversations.data = [
+          ...existing,
+          ...action.payload.filter((c) => !seen.has(c.id)),
+        ];
+        state.conversations.hasMore =
+          action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+      },
+      prepare: (list: ConversationSummary[], requestedAt?: number) => ({
+        payload: list,
+        meta: { requestedAt },
+      }),
     },
     removeConversation: (state, action: PayloadAction<string>) => {
       if (!state.conversations.data) return;
       state.conversations.data = state.conversations.data.filter(
         (c) => c.id !== action.payload,
       );
+    },
+    /** Every conversation was deleted: the list is empty, with no more pages. */
+    removeAllConversations: (state) => {
+      state.conversations = { data: [], loading: false, hasMore: false };
     },
     /** A rename keeps the chat's place, so it is applied here, not refetched. */
     renameConversation: (
@@ -252,6 +273,9 @@ export const prefSlice = createSlice({
       state.ttsAvailable = action.payload.tts;
       state.sttAvailable = action.payload.stt;
     },
+    setAuthRequired: (state, action: PayloadAction<boolean>) => {
+      state.authRequired = action.payload;
+    },
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
     },
@@ -267,6 +291,7 @@ export const {
   receiveConversations,
   appendConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversationsLoading,
   setToken,
@@ -286,6 +311,7 @@ export const {
   setRoles,
   clearRoles,
   setSpeechAvailability,
+  setAuthRequired,
   setAttachmentBudgetShare,
 } = prefSlice.actions;
 export default prefSlice.reducer;
@@ -435,8 +461,11 @@ export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;
 export const selectIsAdmin = (state: RootState) =>
   state.preference.roles.includes('admin');
+// Speech needs a signed-in user wherever the server requires auth, so a
+// signed-out viewer of a shared conversation gets no Speak button.
 export const selectTtsAvailable = (state: RootState) =>
-  state.preference.ttsAvailable;
+  state.preference.ttsAvailable &&
+  (!state.preference.authRequired || !!state.preference.token);
 export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
 export const selectAttachmentBudgetShare = (state: RootState) =>

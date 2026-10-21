@@ -8,7 +8,7 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 _ALLOWED_UPDATES = frozenset(
@@ -19,6 +19,9 @@ _ALLOWED_UPDATES = frozenset(
         "origin_conversation_id",
     }
 )
+
+#: The columns that decide when a schedule fires, with their SQL types.
+_PLAN_FIELDS = {"cron": "text", "timezone": "text", "run_at": "timestamptz"}
 
 
 class SchedulesRepository:
@@ -158,6 +161,9 @@ class SchedulesRepository:
         if trigger_type:
             sql += " AND trigger_type = :trigger_type"
             params["trigger_type"] = trigger_type
+        else:
+            # Monitors live on their own page (Settings -> Monitors).
+            sql += " AND trigger_type <> 'monitor'"
         sql += " ORDER BY created_at DESC"
         rows = self._conn.execute(text(sql), params).fetchall()
         return [row_to_dict(r) for r in rows]
@@ -207,24 +213,104 @@ class SchedulesRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def list_owned_with_context(self, user_id: str, *, limit: int = 500) -> list[dict]:
+        """Owned schedules across every agent, agentless ones included, newest first.
+
+        Monitors are left out (they have their own page). Each row also
+        carries ``agent_name`` / ``agent_image`` / ``agent_user_id`` (the
+        agent's owner, who an image URL is signed for) and the originating
+        chat's ``origin_conversation_name``, so a cross-agent list can group
+        and label rows without a lookup per agent. ``agent_image`` is the raw
+        storage value: callers must turn it into a URL before returning it.
+
+        Live (active and paused) schedules come first, newest first, then
+        finished ones: finished tasks are kept, so the newest of them would
+        otherwise fill ``limit`` and hide an older live schedule. Live ones
+        are capped per user (``SCHEDULE_MAX_PER_USER``), so they fit.
+
+        Args:
+            user_id: The owner.
+            limit: Maximum rows returned.
+
+        Returns:
+            Schedule rows with the extra keys (``None`` when absent).
+        """
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                       a.user_id AS agent_user_id,
+                       c.name AS origin_conversation_name
+                FROM schedules s
+                LEFT JOIN agents a ON a.id = s.agent_id
+                LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+                WHERE s.user_id = :user_id AND s.trigger_type <> 'monitor'
+                ORDER BY s.status IN ('active', 'paused') DESC, s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"user_id": user_id, "limit": int(limit)},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
+    def list_for_agents_with_context(self, agent_ids: Iterable[str], *, limit: int = 500) -> list[dict]:
+        """The agent owners' schedules of these agents, with the same extra keys.
+
+        For a team editor's cross-agent list: a schedule created on an agent's
+        Schedules tab is stored under the agent's owner. A member's own chat
+        task on the agent (stored under that member) is not returned.
+        ``origin_conversation_name`` is always ``None``: the chat a schedule
+        came from is the owner's own, and its title stays with them. Live
+        schedules come first, as in ``list_owned_with_context``.
+
+        Args:
+            agent_ids: Agent UUIDs.
+            limit: Maximum rows returned.
+
+        Returns:
+            Rows shaped like ``list_owned_with_context``.
+        """
+        ids = [str(a) for a in agent_ids if looks_like_uuid(str(a))]
+        if not ids:
+            return []
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                       a.user_id AS agent_user_id,
+                       NULL AS origin_conversation_name
+                FROM schedules s
+                JOIN agents a ON a.id = s.agent_id AND a.user_id = s.user_id
+                WHERE s.agent_id = ANY(CAST(:ids AS uuid[]))
+                  AND s.trigger_type <> 'monitor'
+                ORDER BY s.status IN ('active', 'paused') DESC, s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"ids": ids, "limit": int(limit)},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     def count_active_for_user(self, user_id: str) -> int:
-        """Active+paused schedules for quota enforcement."""
+        """Active+paused schedules for quota enforcement (monitors have their own cap)."""
         scalar = self._conn.execute(
             text(
                 "SELECT COUNT(*) FROM schedules "
-                "WHERE user_id = :user_id AND status IN ('active', 'paused')"
+                "WHERE user_id = :user_id AND status IN ('active', 'paused') "
+                "AND trigger_type <> 'monitor'"
             ),
             {"user_id": user_id},
         ).scalar()
         return int(scalar or 0)
 
     def list_due(self, *, limit: int = 100) -> list[dict]:
-        """Lock and return schedules with ``next_run_at <= now()``."""
+        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch)."""
         rows = self._conn.execute(
             text(
                 """
                 SELECT * FROM schedules
                 WHERE status = 'active'
+                  AND trigger_type <> 'monitor'
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= now()
                   AND (end_at IS NULL OR next_run_at <= end_at)
@@ -277,6 +363,22 @@ class SchedulesRepository:
             else:
                 set_parts.append(f"{key} = :{key}")
                 params[key] = val
+        # A new timing, or a resume, starts a new plan: the calendar's
+        # missed slots count from here (the dispatcher writes through
+        # ``update_internal`` and never moves it). Compared with the stored
+        # row (``SET`` reads the old values): the edit form resends the
+        # timezone and cron it loaded, and a rename is no new plan.
+        changes = [
+            f"{key} IS DISTINCT FROM CAST(:{key} AS {_PLAN_FIELDS[key]})"
+            for key in _PLAN_FIELDS.keys() & filtered.keys()
+        ]
+        if filtered.get("status") == "active":
+            changes.append("status <> 'active'")
+        if changes:
+            set_parts.append(
+                "plan_changed_at = CASE WHEN " + " OR ".join(changes) +
+                " THEN now() ELSE plan_changed_at END"
+            )
         guard = ""
         if pending_once_status is not None:
             guard = " AND trigger_type = 'once' AND status = :pending_status"
@@ -317,12 +419,17 @@ class SchedulesRepository:
         self._conn.execute(text(sql), params)
 
     def cancel(self, schedule_id: str, user_id: str) -> bool:
-        """Soft-cancel — flips ``status`` to ``cancelled`` and clears ``next_run_at``."""
+        """Soft-cancel — flips ``status`` to ``cancelled`` and clears ``next_run_at``.
+
+        Never a monitor's schedule: a monitor is cancelled through
+        ``/api/monitors`` or ``monitor_cancel``, which also revoke its links
+        and its approval.
+        """
         result = self._conn.execute(
             text(
                 "UPDATE schedules SET status = 'cancelled', next_run_at = NULL "
                 "WHERE id = CAST(:id AS uuid) AND user_id = :user_id "
-                "AND status NOT IN ('cancelled', 'completed')"
+                "AND status NOT IN ('cancelled', 'completed') AND trigger_type <> 'monitor'"
             ),
             {"id": str(schedule_id), "user_id": user_id},
         )

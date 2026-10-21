@@ -45,6 +45,7 @@ import ShareToTeamModal, {
 import { can, isOwner, roleOf } from '../utils/accessUtils';
 import {
   canAddToolToOwn,
+  isChatToolVisible,
   isSharedOAuthMcp,
   toolInChat,
 } from '../utils/toolUtils';
@@ -284,8 +285,9 @@ export default function Tools() {
         // added to an agent, so hide them from the management page. Dual-
         // registered tools (``scheduler``: builtin + default) stay visible
         // here so the user can toggle the default off in agentless chats.
-        const filtered = (data.tools || []).filter(
-          (tool: UserToolType) => tool.default || !tool.builtin,
+        // Server-attached tools (check_job) are not the user's to toggle.
+        const filtered = (data.tools || []).filter((tool: UserToolType) =>
+          isChatToolVisible(tool),
         );
         setUserTools(filtered);
         setLoadFailed(false);

@@ -20,10 +20,11 @@ from sqlalchemy import text
 
 from docsgpt.agents.tools.artifact_ref import make_ref
 from docsgpt.core.settings import settings
+from docsgpt.sandbox.base import FileTooLargeError, SandboxGoneError
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
-from docsgpt.utils import safe_filename
+from docsgpt.utils import display_filename, safe_filename
 
 logger = logging.getLogger(__name__)
 
@@ -119,12 +120,20 @@ def _matches_outputs(rel_path: str, outputs: List[str]) -> bool:
 
 
 def snapshot_signatures(manager: Any, session_id: str) -> Dict[str, Tuple[int, Optional[str]]]:
-    """Map each non-input, non-scratch workspace file to a (size, sha256) signature."""
+    """Map each non-input, non-scratch workspace file to a (size, sha256) signature.
+
+    Raises:
+        SandboxGoneError: The session's runtime no longer exists.
+    """
     signatures: Dict[str, Tuple[int, Optional[str]]] = {}
     try:
         files = manager.list_files(session_id)
+    except SandboxGoneError:
+        # The runtime itself is gone (and the manager dropped the session), so the
+        # run that follows could not start either; let the caller decide.
+        raise
     except Exception:
-        # Best-effort: a listing failure (sandbox auto-stopped/deleted) just means no
+        # Best-effort: a listing failure (sandbox auto-stopped) just means no
         # pre-image, so change detection falls back to "capture everything". Swallowed
         # and recoverable -> WARN, not ERROR (an ERROR here false-alarms monitoring).
         logger.warning("artifacts_capture: pre-exec listing failed", exc_info=True)
@@ -139,6 +148,10 @@ def snapshot_signatures(manager: Any, session_id: str) -> Dict[str, Tuple[int, O
     for rel_path in candidates[:MAX_SCANNED_FILES]:
         try:
             data = manager.get_file(session_id, rel_path)
+        except FileTooLargeError as exc:
+            # Too big to read: its size stands for it, so an unchanged big file isn't reported after the run.
+            signatures[rel_path] = (exc.size, None)
+            continue
         except Exception:
             logger.exception("artifacts_capture: pre-exec signature read failed")
             continue
@@ -157,6 +170,7 @@ def capture_artifacts(
     message_id: Optional[str] = None,
     produced_by: Optional[Dict[str, Any]] = None,
     outputs: Optional[List[str]] = None,
+    too_large: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Persist workspace files that are new or whose content changed.
 
@@ -166,7 +180,9 @@ def capture_artifacts(
     ``_is_scratch``). A file re-saved under a name the same tool already used in this
     parent becomes a new version of that artifact (see ``persist_artifact``).
     Returns one artifact reference per captured file: ``{artifact_id, version,
-    filename, mime_type, size}`` (JSON primitives only; never bytes).
+    filename, mime_type, size}`` (JSON primitives only; never bytes). A file over
+    the sandbox's file cap (``SANDBOX_MAX_FILE_BYTES``) is not saved; it is added
+    to ``too_large`` as ``{path, size, limit}`` so the caller can say so.
     """
     try:
         post_files = set(manager.list_files(session_id))
@@ -193,6 +209,17 @@ def capture_artifacts(
         scanned += 1
         try:
             data = manager.get_file(session_id, rel_path)
+        except FileTooLargeError as exc:
+            if pre_signatures.get(rel_path) == (exc.size, None):
+                continue
+            logger.warning(
+                "artifacts_capture: a produced file (%d bytes) is over the %d-byte file cap; not saved",
+                exc.size,
+                exc.limit,
+            )
+            if too_large is not None:
+                too_large.append({"path": rel_path, "size": exc.size, "limit": exc.limit})
+            continue
         except Exception:
             logger.exception("artifacts_capture: get_file failed during capture")
             continue
@@ -259,7 +286,7 @@ def persist_artifact(
     # The sandbox filename is display-only; mime/kind are inferred from it, and
     # the storage key is derived from server-controlled values downstream.
     display_name = rel_path.rsplit("/", 1)[-1]
-    filename = safe_filename(display_name)
+    filename = display_filename(display_name)
     mime_type = infer_mime(filename)
     tool = produced_by.get("tool") if isinstance(produced_by, dict) else None
     if tool and user_id and (conversation_id or workflow_run_id):
@@ -321,7 +348,7 @@ def _find_same_name_artifact(
     """Find the artifact a re-saved file belongs to.
 
     Args:
-        filename: The sanitized filename the current version must carry.
+        filename: The cleaned display filename the current version must carry.
         user_id: The owner the artifact must belong to.
         tool: The ``produced_by.tool`` the current version must carry.
         conversation_id: Conversation parent.
@@ -362,10 +389,23 @@ def _find_same_name_artifact(
 
 
 def _storage_key(user_id: str, artifact_id: str, version: int, filename: str) -> str:
-    """Build the server-controlled storage key (``inputs/{user}/artifacts/{id}/v{n}/{file}``)."""
+    """Build the server-controlled storage key (``inputs/{user}/artifacts/{id}/v{n}/{file}``).
+
+    The key's filename is ASCII whatever script the display name uses.
+    """
     # ``inputs/{user}/artifacts/...`` is the project storage-namespace convention
     # (matches attachments + spec §4); ``inputs/`` is the user's namespace root.
-    return f"inputs/{user_id}/artifacts/{artifact_id}/v{version}/{filename}"
+    return f"inputs/{user_id}/artifacts/{artifact_id}/v{version}/{_storage_filename(filename)}"
+
+
+def _storage_filename(filename: str) -> str:
+    """An ASCII filename for a storage key; a non-ASCII extension is dropped."""
+    name = safe_filename(filename)
+    if name.isascii():
+        return name
+    # ``safe_filename`` keeps the original extension after its UUID stem.
+    stem, extension = os.path.splitext(name)
+    return stem if stem.isascii() and stem else safe_filename(None)
 
 
 def _set_version_storage_path(conn: Any, artifact_id: str, version: int, storage_path: str) -> None:
@@ -475,7 +515,7 @@ def persist_new_artifact(
     the row back (bytes are never orphaned). The only remaining window is a commit
     that fails after a successful write; that key is deleted best-effort.
     """
-    safe_name = safe_filename(filename)
+    safe_name = display_filename(filename)
     size = len(data)
     sha256 = hashlib.sha256(data).hexdigest()
     storage = StorageCreator.get_storage()
@@ -548,7 +588,7 @@ def append_artifact_version(
     workflow_run_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Append a new version (new spec + new bytes) to an existing artifact; return its reference."""
-    safe_name = safe_filename(filename)
+    safe_name = display_filename(filename)
     size = len(data)
     sha256 = hashlib.sha256(data).hexdigest()
     storage = StorageCreator.get_storage()

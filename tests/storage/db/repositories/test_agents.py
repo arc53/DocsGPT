@@ -266,6 +266,12 @@ class TestListForUser:
         assert all(r["user_id"] == "alice" for r in results)
 
 
+class TestAgentTypeDefault:
+    def test_create_without_type_is_classic(self, pg_conn):
+        created = _repo(pg_conn).create("alice", "a", "draft")
+        assert created["agent_type"] == "classic"
+
+
 class TestUpdate:
     def test_updates_name(self, pg_conn):
         repo = _repo(pg_conn)

@@ -1600,6 +1600,118 @@ class TestBaseAgentDocumentBudgetOrdering:
         assert info.value.stage == "build"
 
 
+def _scored(name, relevance=None, words=5):
+    doc = {"title": f"{name}.md", "source": f"{name}.md", "filename": f"{name}.md", "text": f"{name} " * words}
+    if relevance is not None:
+        doc["relevance"] = relevance
+    return doc
+
+
+@pytest.mark.unit
+class TestDropLeastRelevant:
+    """The prompt budget sheds the least relevant document first when the model scored them all."""
+
+    def test_all_scored_drops_the_lowest_and_keeps_the_order(self):
+        from docsgpt.agents.base import drop_least_relevant
+
+        docs = [_scored("a", 0.9), _scored("b", 0.1), _scored("c", 0.5)]
+        assert [d["title"] for d in drop_least_relevant(docs)] == ["a.md", "c.md"]
+        assert len(docs) == 3, "the input list is not changed"
+
+    def test_a_tie_drops_the_later_one(self):
+        from docsgpt.agents.base import drop_least_relevant
+
+        docs = [_scored("a", 0.2), _scored("b", 0.9), _scored("c", 0.2)]
+        assert [d["title"] for d in drop_least_relevant(docs)] == ["a.md", "b.md"]
+
+    @pytest.mark.parametrize("relevance", [[0.9, None, 0.1], [None, None, None], [0.9, True, 0.1], [0.9, "0.1", 0.5]])
+    def test_partly_scored_drops_the_tail(self, relevance):
+        from docsgpt.agents.base import drop_least_relevant
+
+        docs = [_scored(name, p) for name, p in zip("abc", relevance)]
+        assert drop_least_relevant(docs) == docs[:-1]
+
+    def test_empty_stays_empty(self):
+        from docsgpt.agents.base import drop_least_relevant
+
+        assert drop_least_relevant([]) == []
+
+
+@pytest.mark.unit
+class TestRelevanceShedding:
+    """A middle drop keeps the prompt's indices, the citation registry and the sources in one numbering."""
+
+    @staticmethod
+    def _agent(params, monkeypatch, docs, limit=1500):
+        params["retrieved_docs"] = docs
+        agent = ClassicAgent(**params)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_token_limit", lambda *a, **k: limit)
+        return agent
+
+    def test_the_least_relevant_document_goes_first(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        docs = [_scored("a", 0.9), _scored("big", 0.05, words=1200), _scored("c", 0.6)]
+        agent = self._agent(agent_base_params, monkeypatch, docs)
+        user = agent._build_messages("short system", "Q?")[-1]["content"]
+
+        assert [d["title"] for d in agent.retrieved_docs] == ["a.md", "c.md"]
+        assert '<document index="1">\n<source>a.md</source>' in user
+        assert '<document index="2">\n<source>c.md</source>' in user
+        assert "big.md" not in user and 'index="3"' not in user
+
+    def test_citations_and_sources_follow_the_documents_the_model_saw(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        from docsgpt.agents.citations import register_citation
+
+        docs = [_scored("a", 0.9), _scored("big", 0.05, words=1200), _scored("c", 0.6)]
+        agent = self._agent(agent_base_params, monkeypatch, docs)
+        agent._build_messages("short system", "Q?")
+        agent._attach_citation_registry()
+        registry = agent.tool_executor.citation_registry
+        assert [d["title"] for d in registry] == ["a.md", "c.md"]
+
+        # A search-tool hit continues the numbering: [2] is still c, the new hit is [3].
+        assert register_citation(registry, _scored("c", 0.6)) == 2
+        assert register_citation(registry, _scored("hit", 0.7)) == 3
+        agent._collect_internal_sources()
+
+        # The ``sources`` event lists ``retrieved_docs``: the n-th source is the n-th document.
+        assert [d["title"] for d in agent.retrieved_docs] == ["a.md", "c.md", "hit.md"]
+
+    def test_unscored_documents_shed_from_the_tail_as_before(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        docs = [_scored("a"), _scored("big", words=1200), _scored("c")]
+        agent = self._agent(agent_base_params, monkeypatch, [dict(d) for d in docs])
+        agent._build_messages("short system", "Q?")
+
+        # Tail first: c goes, then big, exactly as ``retrieved_docs[:-1]`` did.
+        assert agent.retrieved_docs == docs[:1]
+
+    def test_the_attachment_reservation_still_counts(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        from docsgpt.agents.context_overflow import turn_message_budget
+        from docsgpt.utils import num_tokens_from_string
+
+        docs = [_scored("a", 0.9), _scored("b", 0.1, words=40), _scored("c", 0.6, words=40)]
+        agent = self._agent(agent_base_params, monkeypatch, docs)
+        full = num_tokens_from_string(agent._compose_user_turn(agent._build_document_block(), "Q?"))
+        agent._build_messages("short system", "Q?")
+        assert len(agent.retrieved_docs) == 3, "everything fits without a reservation"
+
+        # Files hold one token more than the documents leave: the least relevant one makes room.
+        reserve = turn_message_budget(1500, num_tokens_from_string("short system")) - full + 1
+        agent = self._agent(agent_base_params, monkeypatch, [dict(d) for d in docs])
+        monkeypatch.setattr(agent, "_plan_attachments", lambda **_: SimpleNamespace(reserved_tokens=reserve))
+        agent._build_messages("short system", "Q?")
+        assert [d["title"] for d in agent.retrieved_docs] == ["a.md", "c.md"]
+
+
 # ---------------------------------------------------------------------------
 # _llm_gen — structured-output provider gating
 # ---------------------------------------------------------------------------
@@ -1714,13 +1826,11 @@ class TestLLMGenStructuredOutputProviderGating:
         assert "response_format" not in call_kwargs
         assert "response_schema" not in call_kwargs
 
-    def test_non_openai_wire_llm_gets_neither(
+    def test_anthropic_llm_gets_output_format(
         self, agent_base_params, mock_llm_handler_creator, log_context
     ):
-        """Even a capability-claiming Anthropic LLM takes no format kwarg."""
+        """Anthropic takes the schema on its own kwarg, sent as output_config.format."""
         llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
-        llm._supports_structured_output = Mock(return_value=True)
-        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
         agent = _build_agent_with_llm(
             agent_base_params, llm, "anthropic", json_schema=SCHEMA
         )
@@ -1728,8 +1838,24 @@ class TestLLMGenStructuredOutputProviderGating:
         agent._llm_gen([{"role": "user", "content": "test"}], log_context)
 
         call_kwargs = llm.gen_stream.call_args[1]
+        assert call_kwargs["output_format"]["type"] == "json_schema"
+        assert call_kwargs["output_format"]["schema"]["additionalProperties"] is False
         assert "response_format" not in call_kwargs
         assert "response_schema" not in call_kwargs
+
+    def test_anthropic_answer_is_marked_structured(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """Workflow nodes read ``structured`` to parse the answer as JSON."""
+        llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "anthropic", json_schema=SCHEMA
+        )
+
+        events = list(agent._handle_response('{"a": 1}', {}, [], log_context))
+
+        answers = [event for event in events if "answer" in event]
+        assert answers and all(event.get("structured") for event in answers)
 
     def test_non_openai_wire_llm_gets_no_json_object_mode(
         self, agent_base_params, mock_llm_handler_creator, log_context
@@ -1773,17 +1899,13 @@ class TestLLMGenStructuredOutputProviderGating:
         """``BaseLLM.structured_output_kwarg`` is the single source of truth —
         the agent no longer isinstance-checks provider classes."""
         llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
-        llm._supports_structured_output = Mock(return_value=True)
-        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
         agent = _build_agent_with_llm(
             agent_base_params, llm, "anthropic", json_schema=SCHEMA
         )
-        assert agent._structured_output_kwarg() is None
+        assert agent._structured_output_kwarg() == "output_format"
 
-        with patch.object(
-            type(llm), "structured_output_kwarg", "response_format", create=True
-        ):
-            assert agent._structured_output_kwarg() == "response_format"
+        with patch.object(type(llm), "structured_output_kwarg", None):
+            assert agent._structured_output_kwarg() is None
 
     def test_capability_flag_still_vetoes_openai_compatible(
         self, agent_base_params, mock_llm_handler_creator, log_context

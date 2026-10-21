@@ -201,7 +201,6 @@ def test_every_durable_task_carries_the_parse_failure_guard():
         "reembed_wiki_page",
         "convert_source_to_wiki",
         "extract_graph",
-        "process_agent_webhook",
         "ingest_connector_task",
         "store_attachment",
     )

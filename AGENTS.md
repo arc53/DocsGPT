@@ -108,7 +108,7 @@ celery -A docsgpt.app.celery worker -l INFO -B
 `docsgpt worker` (or `python -m docsgpt worker`) runs the same thing: it adds
 `-B` itself (`--no-beat` drops it) and picks the solo pool on macOS and Windows.
 
-**Beat must run somewhere.** It fires scheduled agent runs, source syncs,
+**Beat must run somewhere.** It fires scheduled agent runs, source syncs, background-job sweeps,
 reconciliation, retention cleanups and the version check; without it they
 silently never happen. Extra beat instances are safe (RedBeat holds a lock in
 Redis). Celery rejects `-B` on Windows: drop it there and run
@@ -133,13 +133,17 @@ default prefork pool — nearly all of it the solo worker picking the message up
 the embedding itself. That only affects local dev; production runs prefork.
 
 A bare worker (no `-Q`) consumes every configured queue, so one worker does the
-whole job — app tasks, query embedding, and document parsing (the `read_document`
-tool / workflow native-file parse) alike. Use `-Q` only to split load: run the main
-worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
-`-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
-pool. Note the main `ingest` task parses in-process on `docsgpt`; only
-`read_document` is routed to `parsing`. When you split workers, keep `-B` on
-at least one of them.
+whole job — app tasks, ingests, query embedding, and document parsing (the
+`read_document` tool / workflow native-file parse) alike. Use `-Q` only to split load:
+run the main worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker
+with `-Q parsing` for heavy OCR, `-Q embeddings` to keep query latency off the ingest
+pool, and `-Q ingest` for whole-source jobs (`INGEST_QUEUE`: uploads, remote and
+connector ingests, re-ingests, syncs, graph builds, wiki conversion). One of those can
+hold a slot for hours, so on a shared worker they starve beat tasks; attachments and
+single wiki-page re-embeds stay on `docsgpt`. The ingest tasks parse in-process; only
+`read_document` is routed to `parsing`. A worker started with an explicit `-Q` list
+consumes only that list, so every queue must be covered by some worker. When you split
+workers, keep `-B` on at least one of them.
 
 ### Frontend
 
@@ -248,7 +252,7 @@ vale .
 - Follow `frontend/DESIGN.md`: compose `components/ui/` parts and pick their look with props, use theme tokens, and
   keep typography, spacing, radius and motion on its roles.
 - Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
-  key in all seven locales under `frontend/src/locale/` (`de en es jp ru zh zh-TW`). Admin pages stay English.
+  key in all eight locales under `frontend/src/locale/` (`de en es fr jp ru zh zh-TW`). Admin pages stay English.
 
 #### Icons
 

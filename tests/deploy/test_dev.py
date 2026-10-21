@@ -39,7 +39,8 @@ class FakeProcess:
 
 
 class TestPlan:
-    def test_the_api_and_worker_run_from_the_checkout(self, tmp_path):
+    def test_the_api_and_worker_run_from_the_checkout(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("DOCSGPT_HOME", raising=False)
         children = dev.plan(_args(), tmp_path, watching=False)
         assert _named(children) == ["api", "worker"]
         api, worker = children
@@ -49,6 +50,14 @@ class TestPlan:
         for child in children:
             assert child.cwd == tmp_path
             assert child.env["DOCSGPT_HOME"] == str(tmp_path), "the checkout is the data home, not ~/.docsgpt"
+
+    def test_a_data_home_set_in_the_shell_reaches_the_children(self, tmp_path, monkeypatch):
+        """``DOCSGPT_HOME`` moves the data home; the checkout is only the fallback."""
+        home = tmp_path / "elsewhere"
+        monkeypatch.setenv("DOCSGPT_HOME", str(home))
+        children = dev.plan(_args(), tmp_path, watching=False)
+        for child in children:
+            assert child.env["DOCSGPT_HOME"] == str(home)
 
     def test_the_worker_restarts_on_save_when_watchfiles_is_there(self, tmp_path):
         """Celery has no reloader of its own, so it is wrapped in one."""

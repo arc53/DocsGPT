@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: First checks for a DocsGPT install that misbehaves - docsgpt doctor, the logs to read, and the common symptoms with their causes, from searches that ignore your documents to notifications that never arrive.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 # Troubleshooting
@@ -23,6 +23,7 @@ lastUpdated: 2026-09-30
 | Notifications still don't arrive under ASGI | Redis, the event stream or the client | Follow the [SSE notifications runbook](/Deploying/Troubleshooting/sse-notifications). |
 | Other machines can't open DocsGPT | The ports are published on `127.0.0.1` only | See [Decide who can reach it](/Deploying/Security#decide-who-can-reach-it) for the setting each install uses. |
 | Everyone is signed out after a container is recreated | `JWT_SECRET_KEY` isn't set, so each container generates its own | Set `JWT_SECRET_KEY` on every API and worker process. See [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live). |
+| A chat fails with `Model '<id>' is not available` or `Refusing to send a <provider> request to <host>` | The model has no endpoint of its own, or a key would reach a host it wasn't configured for, so DocsGPT refused to send it | Set the model's key (for example `DEEPSEEK_API_KEY`) or pick another model. See [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider). |
 | Answers come from the wrong provider, or the model list is empty | `LLM_PROVIDER`, `LLM_NAME` or the provider's key doesn't match | `docsgpt doctor` reports the resolved default model. See [Cloud providers](/Models/cloud-providers) or [Local inference](/Models/local-inference). |
 
 ## Guides with their own troubleshooting

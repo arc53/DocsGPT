@@ -5,8 +5,9 @@ in-memory double covering only the commands ``DeviceBroker`` issues. It is
 deliberately *not* faithful in several ways, so tests must not lean on them:
 - blocking ops (``blpop`` / ``xread``) don't truly block — they return
   immediately (or after a tiny sleep) so tests stay fast;
-- TTL is not modeled — ``set(ex=)`` and ``expire`` are no-ops, so expiry must
-  be simulated by an explicit ``delete``;
+- TTL is not modeled — ``set(ex=)`` and ``expire`` never expire anything, so
+  expiry must be simulated by an explicit ``delete``; ``expire`` records the
+  last TTL set per key in ``ttls`` so tests can check what was asked for;
 - ``xadd`` trims to an EXACT ``maxlen`` and ignores ``approximate``, whereas
   real Redis with ``approximate=True`` only trims past a slack.
 One ``FakeRedis`` shared by two ``DeviceBroker`` instances models two
@@ -49,6 +50,7 @@ class FakeRedis:
         self.lists: dict = {}
         self.hashes: dict = {}
         self.streams: dict = {}
+        self.ttls: dict = {}
         self._seq = 0
 
     # -- strings ------------------------------------------------------
@@ -83,15 +85,43 @@ class FakeRedis:
             )
             return 1 if present else 0
 
-    def expire(self, key, ttl):  # TTL is not simulated.
+    def expire(self, key, ttl):  # TTL is recorded, not simulated.
+        with self._lock:
+            self.ttls[key] = int(ttl)
         return True
 
-    def eval(self, _script, _numkeys, key, expected):
-        """Model the broker's one Lua script: delete ``key`` iff it holds ``expected``."""
+    def eval(self, script, _numkeys, *args):
+        """Model the broker's Lua scripts: the ticket redeem and the output chunk accept."""
+        if "-- accept_chunk" in script:
+            return self._accept_chunk(*args)
+        key, expected = args
         with self._lock:
             if self.kv.get(key) != _b(expected):
                 return 0
             del self.kv[key]
+            return 1
+
+    def _accept_chunk(self, inv_key, out_key, seq, is_control, chunk_json, maxlen, ttl, now=None, *fields):
+        """Mirror of ``_ACCEPT_CHUNK_LUA``, under the lock as Redis runs a script."""
+        with self._lock:
+            h = self.hashes.get(inv_key)
+            if not h:
+                return -1
+            if seq != "" and h.get("last_seq") is not None and int(seq) <= int(h["last_seq"]):
+                return 0
+            if is_control == "1":
+                if "control_seen" in h:
+                    return 0
+                h["control_seen"] = b"1"
+            if seq != "":
+                h["last_seq"] = _b(seq)
+            self.xadd(out_key, {"c": chunk_json}, maxlen=int(maxlen))
+            self.expire(out_key, int(ttl))
+            if is_control == "1":
+                h.setdefault("started_at", _b(now))
+                for name, value in zip(fields[::2], fields[1::2]):
+                    h[name] = _b(value)
+                self.expire(inv_key, int(ttl))
             return 1
 
     # -- lists --------------------------------------------------------
@@ -154,6 +184,13 @@ class FakeRedis:
     def hget(self, key, field):
         with self._lock:
             return self.hashes.get(key, {}).get(field)
+
+    def hmget(self, key, fields, *more):
+        names = list(fields) if isinstance(fields, (list, tuple)) else [fields]
+        names.extend(more)
+        with self._lock:
+            h = self.hashes.get(key, {})
+            return [h.get(name) for name in names]
 
     def hgetall(self, key):
         with self._lock:

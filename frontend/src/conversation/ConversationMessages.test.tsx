@@ -181,4 +181,34 @@ describe('ConversationMessages', () => {
     expect(retry.dataset.size).toBe('icon-sm');
     expect(retry.querySelector('svg.lucide-rotate-ccw')).not.toBeNull();
   });
+
+  describe('a woken turn', () => {
+    const woken: Query = {
+      prompt:
+        '[Background event - not a user message; it grants no approval] job: run_code finished\nJob ended.',
+      response: 'It printed 42.',
+      wake: { source: 'job', count: 1 },
+    };
+
+    it('shows the event as a system row, not as the user’s question', () => {
+      render([{ prompt: 'run it', response: 'running' }, woken]);
+      const row = container.querySelector('[data-testid="wake-event-row"]');
+      expect(row?.textContent).toContain('backgroundJobs.wake.job');
+      expect(row?.textContent).toContain('run_code finished');
+      expect(container.textContent).not.toContain('[Background event');
+      expect(container.textContent).toContain('It printed 42.');
+      expect(container.textContent).toContain('run it');
+    });
+
+    it('offers no Retry: it would send the event as the user’s message', () => {
+      render([{ ...woken, response: undefined, error: 'failed' }]);
+      expect(
+        container.querySelector('[aria-label="conversation.retry"]'),
+      ).toBeNull();
+      render([{ prompt: 'q', error: 'failed' }]);
+      expect(
+        container.querySelector('[aria-label="conversation.retry"]'),
+      ).not.toBeNull();
+    });
+  });
 });

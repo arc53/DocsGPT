@@ -12,6 +12,7 @@ from docsgpt.attachment_names import normalize_attachment_filename
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
+from docsgpt.llm.credential_scope import OPENAI_DEFAULT_BASE_URL, check_credential_scope
 from docsgpt.llm.tool_images import (
     IMAGES_KEY,
     data_url,
@@ -231,17 +232,13 @@ class OpenAILLM(BaseLLM):
     ):
 
         super().__init__(*args, **kwargs)
-        # openai>=2.53 rejects a falsy api_key at construction. Keyless
-        # OpenAI-compatible backends (Ollama, llama.cpp, vLLM) legitimately have
-        # none, and pydantic-settings yields "" for a bare `API_KEY=` in .env.
-        self.api_key = (
-            api_key or settings.OPENAI_API_KEY or settings.API_KEY or NO_API_KEY
-        )
         self.user_api_key = user_api_key
 
         # Priority: 1) Parameter base_url, 2) Settings OPENAI_BASE_URL, 3) Default
-        effective_base_url = None
-        if base_url and isinstance(base_url, str) and base_url.strip():
+        explicit_endpoint = bool(
+            base_url and isinstance(base_url, str) and base_url.strip()
+        )
+        if explicit_endpoint:
             effective_base_url = base_url
         elif (
             isinstance(settings.OPENAI_BASE_URL, str)
@@ -249,8 +246,21 @@ class OpenAILLM(BaseLLM):
         ):
             effective_base_url = settings.OPENAI_BASE_URL
         else:
-            effective_base_url = "https://api.openai.com/v1"
+            effective_base_url = OPENAI_DEFAULT_BASE_URL
         self._effective_base_url = effective_base_url
+
+        # Only OpenAI's own endpoint falls back to OpenAI's own key: the
+        # caller pairs an explicit endpoint with its key. ``API_KEY`` is
+        # OpenAI's only when LLM_PROVIDER says so. openai>=2.53 rejects a
+        # falsy api_key at construction; keyless OpenAI-compatible backends
+        # (Ollama, llama.cpp, vLLM) legitimately have none, and
+        # pydantic-settings yields "" for a bare `API_KEY=` in .env.
+        if not api_key and not explicit_endpoint:
+            api_key = settings.OPENAI_API_KEY or (
+                settings.API_KEY if settings.LLM_PROVIDER == "openai" else None
+            )
+        self.api_key = api_key or NO_API_KEY
+        check_credential_scope(self.api_key, effective_base_url, self.provider_name)
 
         # http_client (set by LLMCreator for BYOM) is a DNS-rebinding-safe
         # httpx.Client; without it the SDK re-resolves DNS per request.
@@ -271,6 +281,9 @@ class OpenAILLM(BaseLLM):
         # ``_last_response_id`` is the most recent /v1/responses id, used to
         # chain turns when OPENAI_RESPONSES_STORE is enabled.
         self._reasoning_for_calls = {}
+        # The call ids of each response that made calls, in order: one list
+        # per tool round, so a later turn replays the rounds as they ran.
+        self._call_rounds = []
         self._last_response_id = None
         # call_ids the most recent response emitted; the chained-request
         # coverage guard checks the next turn answers all of them.
@@ -362,6 +375,7 @@ class OpenAILLM(BaseLLM):
             "call_ids": sorted(self._last_response_call_ids or ()),
             "reasoning_items": self._last_reasoning_items,
             "reasoning_for_calls": self._reasoning_for_calls,
+            "call_rounds": self._call_rounds,
             "system_hash": self._chain_system_hash,
             "tools_hash": self._chain_tools_hash,
         }
@@ -378,6 +392,7 @@ class OpenAILLM(BaseLLM):
         self._last_response_call_ids = set(state.get("call_ids") or ())
         self._last_reasoning_items = list(state.get("reasoning_items") or [])
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
+        self._call_rounds = [list(r) for r in state.get("call_rounds") or [] if isinstance(r, list)]
         self._chain_system_hash = state.get("system_hash")
         self._pending_system_hash = None
         self._chain_tools_hash = state.get("tools_hash")
@@ -518,6 +533,7 @@ class OpenAILLM(BaseLLM):
         """
         self._chain_reset_hint = reason
         self._reasoning_for_calls = {}
+        self._call_rounds = []
         self._last_reasoning_items = []
         self._last_response_id = None
         self._last_response_call_ids = set()
@@ -733,7 +749,9 @@ class OpenAILLM(BaseLLM):
                     })
                 cleaned_assistant: dict = {
                     "role": "assistant",
-                    "content": None,
+                    # Text the model wrote with the calls (a replayed turn that
+                    # ended on a pause) stays ahead of their results.
+                    "content": content if isinstance(content, str) and content else None,
                     "tool_calls": cleaned_tcs,
                 }
                 if reasoning_content:
@@ -1229,6 +1247,12 @@ class OpenAILLM(BaseLLM):
             message_reasoning = message.get("responses_reasoning_items") or []
             tool_calls = message.get("tool_calls")
             if tool_calls and role == "assistant":
+                # Text written with the calls goes first: the calls stay
+                # right behind their reasoning items, as the model emitted
+                # them, and the text survives when every call is dropped.
+                text_parts = self._responses_content_parts(role, message.get("content"))
+                if text_parts:
+                    input_items.append({"role": role, "content": text_parts})
                 kept_calls = [
                     tc
                     for tc in tool_calls
@@ -1368,6 +1392,42 @@ class OpenAILLM(BaseLLM):
         encoded = json.dumps(parts, sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
+    def _with_cache_breakpoints(self, input_items):
+        """Mark an explicit prompt-cache breakpoint on each user message.
+
+        GPT-5.6 and later cache only at breakpoints: the latest message, the
+        system block, earlier message endings near the end of the input and
+        explicit breakpoints. A turn that resends its history unchained
+        (after a compression, a restart, or a chain past its budget) renders
+        earlier turns differently from how they ran live, so without explicit
+        breakpoints it reads back nothing past the system prompt. The first
+        text block of a user message is the question as the history replays
+        it; a breakpoint there makes the prefix through it readable by every
+        later turn. Only the latest few breakpoints of a request are written,
+        so marking each message adds reads, not writes.
+
+        Args:
+            input_items: The Responses ``input`` list.
+
+        Returns:
+            The list with breakpoints marked (user items copied, not mutated);
+            unchanged when the model does not declare the capability.
+        """
+        if getattr(self.capabilities, "prompt_cache_breakpoints", False) is not True:
+            return input_items
+        marked = []
+        for item in input_items:
+            content = item.get("content") if isinstance(item, dict) else None
+            if isinstance(content, list) and item.get("role") == "user":
+                for index, part in enumerate(content):
+                    if isinstance(part, dict) and part.get("type") == "input_text":
+                        content = list(content)
+                        content[index] = {**part, "prompt_cache_breakpoint": {"mode": "explicit"}}
+                        item = {**item, "content": content}
+                        break
+            marked.append(item)
+        return marked
+
     def _build_responses_input(self, messages, previous_response_id):
         """Build the Responses ``input`` list, honouring store-mode chaining.
 
@@ -1391,7 +1451,7 @@ class OpenAILLM(BaseLLM):
             # The full head goes out; it becomes the chain's head only once
             # the provider records the response.
             self._pending_system_hash = self._system_fingerprint(messages)
-            return self._to_responses_input(messages, chained=False), None
+            return self._with_cache_breakpoints(self._to_responses_input(messages, chained=False)), None
 
         trimmed = self._trim_for_previous_response(messages)
         head_hash = self._system_fingerprint(trimmed)
@@ -1442,8 +1502,8 @@ class OpenAILLM(BaseLLM):
                     sorted(missing),
                 )
                 self._pending_system_hash = self._system_fingerprint(messages)
-                return self._to_responses_input(messages, chained=False), None
-        return input_items, previous_response_id
+                return self._with_cache_breakpoints(self._to_responses_input(messages, chained=False)), None
+        return self._with_cache_breakpoints(input_items), previous_response_id
 
     @staticmethod
     def _to_responses_tools(tools):
@@ -1725,7 +1785,11 @@ class OpenAILLM(BaseLLM):
 
     def _remember_reasoning(self, tool_calls, reasoning_items):
         """Key captured reasoning items by each function-call id for replay
-        on the next in-turn request."""
+        on the next in-turn request, and record the response's calls as one
+        tool round."""
+        round_ids = [tc.id for tc in tool_calls or () if getattr(tc, "id", None)]
+        if round_ids:
+            self._call_rounds.append(round_ids)
         if not reasoning_items:
             return
         for tc in tool_calls:

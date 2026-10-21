@@ -257,7 +257,7 @@ class TestHandleAuthPatBranch:
         verifier.assert_called_once()
 
     def test_jwt_cannot_smuggle_pat_claims(self):
-        from jose import jwt
+        import jwt
 
         from docsgpt import auth
 

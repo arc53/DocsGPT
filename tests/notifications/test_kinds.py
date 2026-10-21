@@ -1,0 +1,106 @@
+"""Notification kinds: the heading each kind gets, and the text a push shows."""
+
+from __future__ import annotations
+
+import pytest
+
+from docsgpt.notifications import kinds, push
+
+JOB_ID = "5f0c2a8e-1b7d-4e6a-9c3f-2d8b7a6e5f41"
+
+
+class TestHeading:
+    @pytest.mark.parametrize(
+        ("kind", "heading"),
+        [
+            ("job", "Background job finished"),
+            ("lost", "Background job interrupted"),
+            ("monitor", "Monitor matched"),
+            ("monitor_paused", "Monitor paused"),
+            ("monitor_expired", "Monitor expired"),
+            ("trigger", "Webhook received"),
+            ("approval", "Approval received"),
+            ("schedule", "Scheduled task finished"),
+        ],
+    )
+    def test_known_kinds(self, kind, heading):
+        assert kinds.heading(kind) == heading
+
+    def test_unknown_kinds_have_none(self):
+        assert kinds.heading("something_else") is None
+        assert kinds.heading("") is None
+
+    def test_every_wake_source_is_a_known_kind(self):
+        from docsgpt.background.wake import WAKE_SOURCES
+
+        assert set(WAKE_SOURCES) <= set(kinds.KIND_HEADINGS)
+
+
+class TestPlainPreview:
+    def test_strips_markdown_to_plain_text(self):
+        text = (
+            "## Done\n\n**ACMEB dropped below $90.**\n\n- **Price:** $88.00 (`ACMEB`)\n"
+            "| Field | Value |\n|---|---|\n| price | 88 |\n\nSee [the page](https://x.example/p) for more."
+        )
+        assert kinds.plain_preview(text) == (
+            "Done ACMEB dropped below $90. Price: $88.00 (ACMEB) See the page for more."
+        )
+
+    def test_a_code_block_keeps_its_first_line_and_snake_case_survives(self):
+        """Dropping the block left "the script printed: One thing worth flagging…", a broken sentence."""
+        text = "Ran it:\n```python\nprint('x')\n```\nThe file_name is out_put.csv."
+        assert kinds.plain_preview(text) == "Ran it: print('x') The file_name is out_put.csv."
+        printed = "The script printed:\n```\nDONE: report.pdf rendered (5 chunks)\nbye\n```\nOne thing worth flagging."
+        assert kinds.plain_preview(printed) == (
+            "The script printed: DONE: report.pdf rendered (5 chunks) … One thing worth flagging."
+        )
+        assert kinds.plain_preview("Here:\n```\n\n```\nDone.") == "Here: Done."
+
+    def test_cuts_at_a_word_boundary(self):
+        text = "word " * 100
+        preview = kinds.plain_preview(text, limit=23)
+        assert preview == "word word word word…"
+        assert len(preview) <= 23
+
+    def test_short_and_empty(self):
+        assert kinds.plain_preview("Hi there.") == "Hi there."
+        assert kinds.plain_preview("") == ""
+        assert kinds.plain_preview(None) == ""
+
+
+class TestUserTitle:
+    def test_drops_the_job_id_the_model_needs_but_the_user_does_not(self):
+        assert kinds.user_title(f"code_executor finished (job {JOB_ID})") == "code_executor finished"
+        assert kinds.user_title(f"run_code lost (job {JOB_ID}) (+2 more)") == "run_code lost (+2 more)"
+
+    def test_leaves_other_titles_alone(self):
+        assert kinds.user_title("BTC below $50k") == "BTC below $50k"
+        assert kinds.user_title("  spaced  ") == "spaced"
+        assert kinds.user_title("") == ""
+        assert kinds.user_title(None) == ""
+
+
+class TestPushText:
+    def test_a_known_kind_leads_with_its_heading(self):
+        assert kinds.push_text("monitor", "BTC below $50k", "It is $49,800.") == (
+            "Monitor matched",
+            "BTC below $50k: It is $49,800.",
+        )
+
+    def test_title_or_body_alone(self):
+        assert kinds.push_text("job", "run_code finished", "") == ("Background job finished", "run_code finished")
+        assert kinds.push_text("approval", "", "Approved.") == ("Approval received", "Approved.")
+
+    def test_an_unknown_kind_keeps_the_callers_title(self):
+        assert kinds.push_text("custom", "Your export is ready", "3 files") == ("Your export is ready", "3 files")
+        assert kinds.push_text("custom", "", "3 files") == ("DocsGPT", "3 files")
+
+
+class TestPushPayloadUsesIt:
+    def test_build_payload_words_a_known_kind(self):
+        payload = push.build_payload(
+            kind="lost", title=f"run_code lost (job {JOB_ID})", body="Verify first.", url="/c/c1", conversation_id="c1"
+        )
+        assert payload["title"] == "Background job interrupted"
+        assert payload["body"] == "run_code lost: Verify first."
+        assert payload["kind"] == "lost"

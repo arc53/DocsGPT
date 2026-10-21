@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ACTIVITY_SECTION,
   ADMIN_SECTION,
   AGENTS_SECTION,
   buildAgentSection,
@@ -73,6 +74,33 @@ describe('getActiveItem', () => {
         expect(getActiveItem(section, item.path)?.key).toBe(item.key);
       }
     }
+  });
+});
+
+describe('activity section', () => {
+  it('owns /activity and lists schedules and monitors as automations', () => {
+    expect(getSectionForPath('/activity')?.key).toBe('activity');
+    expect(getSectionForPath('/activity/monitors')?.key).toBe('activity');
+    const groups = getVisibleGroups(ACTIVITY_SECTION, { isAdmin: false });
+    expect(groups[0].items.map((i) => i.key)).toEqual([
+      'now',
+      'calendar',
+      'history',
+    ]);
+    const automations = groups.find((group) => group.key === 'automations');
+    expect(automations?.items.map((i) => i.key)).toEqual([
+      'schedules',
+      'monitors',
+    ]);
+  });
+
+  it('marks Now active on the section root', () => {
+    expect(getActiveItem(ACTIVITY_SECTION, '/activity')?.key).toBe('now');
+  });
+
+  it('leaves monitors out of settings', () => {
+    const keys = getSectionItems(SETTINGS_SECTION).map((i) => i.key);
+    expect(keys).not.toContain('monitors');
   });
 });
 

@@ -96,6 +96,52 @@ def test_reversion_without_title_falls_back_to_generic(monkeypatch):
     assert captured["filename"] == "artifact.pptx"
 
 
+def _patch_create(monkeypatch: pytest.MonkeyPatch, tool: ArtifactGeneratorTool) -> dict:
+    """Stub render + persist so _create runs without a sandbox or DB; capture kwargs."""
+    captured: dict = {}
+
+    def _fake_persist(**kwargs):
+        captured.update(kwargs)
+        return {"artifact_id": "art-1", "version": 1, "filename": kwargs["filename"]}
+
+    monkeypatch.setattr("docsgpt.agents.tools.artifact_generator.persist_new_artifact", _fake_persist)
+    monkeypatch.setattr(tool, "_render", lambda kind, spec: {"data": b"x"})
+    return captured
+
+
+def test_create_names_the_file_from_the_spec_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A model that puts the title only inside the spec still gets it as the file name."""
+    tool = _tool()
+    captured = _patch_create(monkeypatch, tool)
+
+    spec = {"title": "Отчёт о продажах", "blocks": [{"type": "paragraph", "text": "x"}]}
+    result = tool._create(kind="document", spec=spec)
+
+    assert result["status"] == "ok"
+    assert captured["filename"] == "Отчёт о продажах.docx"
+    assert captured["title"] == "Отчёт о продажах"
+
+
+def test_create_ignores_a_blank_spec_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = _tool()
+    captured = _patch_create(monkeypatch, tool)
+
+    tool._create(kind="document", spec={"title": "   ", "blocks": [{"type": "paragraph", "text": "x"}]})
+
+    assert captured["filename"] == "artifact.docx"
+    assert captured["title"] is None
+
+
+def test_create_prefers_the_title_argument_over_the_spec_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = _tool()
+    captured = _patch_create(monkeypatch, tool)
+
+    spec = {"title": "Inner", "blocks": [{"type": "paragraph", "text": "x"}]}
+    tool._create(kind="document", title="Outer", spec=spec)
+
+    assert captured["filename"] == "Outer.docx"
+
+
 def test_validate_rejects_wrong_type():
     _spec, err = _tool()._validate("spreadsheet", {"sheets": "not-a-list"})
     assert err["status"] == "error"
@@ -284,6 +330,48 @@ def test_pdf_renderer_escapes_markup_and_does_not_execute():
     assert os.path.getsize(out_path) > 0
 
 
+def _pdf_font_names(path: str) -> set:
+    from pypdf import PdfReader
+
+    names = set()
+    for page in PdfReader(path).pages:
+        for font in page["/Resources"]["/Font"].values():
+            names.add(str(font.get_object()["/BaseFont"]).lstrip("/").split("+")[-1])
+    return names
+
+
+def test_pdf_renderer_draws_non_latin_text_in_a_font_that_has_it():
+    """Helvetica drew CJK, Cyrillic and symbols as blanks; the renderer now picks fonts per script."""
+    from pypdf import PdfReader
+
+    spec = {"title": "Report", "blocks": [{"type": "paragraph", "text": "季度报告 summary"}]}
+    out_path = _render_in_process("pdf", spec)
+    assert "STSong-Light" in _pdf_font_names(out_path)
+    assert "季度报告" in PdfReader(out_path).pages[0].extract_text()
+
+
+def test_pdf_renderer_hands_the_manifest_font_table_to_the_sandbox():
+    from docsgpt.sandbox.manifest import PDF_FONTS
+
+    program = _RENDERERS["pdf"].format(spec_path="artifacts/t/spec.json", out_path="artifacts/t/out.pdf")
+    assert "['render_pdf_spec']('artifacts/t/spec.json', 'artifacts/t/out.pdf'," in program
+    for entry in PDF_FONTS:
+        assert repr(entry["regular"]) in program
+    compile(program, "<pdf renderer>", "exec")
+
+
+def test_pdf_renderer_leaves_the_shared_kernel_namespace_alone(tmp_path):
+    """The session kernel is shared with run_code: the renderer must not leave its helpers behind."""
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({"blocks": [{"type": "paragraph", "text": "x"}]}))
+    program = _RENDERERS["pdf"].format(spec_path=str(spec_path), out_path=str(tmp_path / "out.pdf"))
+    namespace: dict = {"spec": "the model's own variable"}
+    exec(compile(program, "<renderer>", "exec"), namespace, namespace)  # noqa: S102
+    assert set(namespace) == {"__builtins__", "spec"}
+    assert namespace["spec"] == "the model's own variable"
+    assert (tmp_path / "out.pdf").stat().st_size > 0
+
+
 # ---------------------------------------------------------------------------
 # html kind: schema, renderer injection safety, output escaping
 # ---------------------------------------------------------------------------
@@ -405,6 +493,13 @@ def test_create_and_rewrite_metadata_embed_spec_synopsis():
     rewrite_spec = actions["rewrite_artifact"]["parameters"]["properties"]["spec"]
     assert _SPEC_SYNOPSIS in create_spec["description"]
     assert _SPEC_SYNOPSIS in rewrite_spec["description"]
+
+
+def test_create_description_leaves_conversions_and_data_files_to_run_code():
+    """The two sandbox tools split the work the same way in both descriptions."""
+    description = {a["name"]: a for a in _tool().get_actions_metadata()}["create_artifact"]["description"]
+    assert "run_code" in description
+    assert "convert" in description.lower()
 
 
 # ---------------------------------------------------------------------------

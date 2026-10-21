@@ -146,4 +146,114 @@ describe('Hero connect card', () => {
     expect(card()).toBeNull();
     expect(container.textContent).toContain('demo4');
   });
+
+  it('keeps the browser translator off the model picker', async () => {
+    await render([]);
+    // A translator that rewraps the picker's text breaks React's next
+    // commit; model names are product names anyway.
+    const trigger = container.querySelector('[data-slot="select-trigger"]');
+    expect(trigger?.getAttribute('translate')).toBe('no');
+  });
+});
+
+describe('Hero model picker', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  const model = (id: string, source: 'builtin' | 'user' = 'builtin') => ({
+    id,
+    display_name: id,
+    provider: 'openai',
+    source,
+  });
+
+  const render = async (availableModels: unknown[]) => {
+    const store = configureStore({
+      reducer: {
+        connectors: connectorsReducer,
+        preference: (
+          state = {
+            token: null,
+            selectedModel: null,
+            availableModels,
+            modelsLoading: false,
+          },
+        ) => state,
+      },
+    } as Parameters<typeof configureStore>[0]);
+    await act(async () => {
+      root.render(
+        <Provider store={store}>
+          <MemoryRouter>
+            <Hero handleQuestion={vi.fn()} />
+          </MemoryRouter>
+        </Provider>,
+      );
+    });
+  };
+
+  const trigger = () =>
+    container.querySelector<HTMLElement>('[data-slot="select-trigger"]')!;
+
+  const open = async () => {
+    await act(async () => {
+      trigger().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+  };
+
+  const labels = () =>
+    Array.from(document.querySelectorAll('[data-slot="select-label"]')).map(
+      (el) => el.textContent,
+    );
+
+  it('is the stock pill select, like the outlined pills around it', async () => {
+    await render([model('gpt-5.5')]);
+    expect(trigger().dataset.shape).toBe('pill');
+    expect(trigger().className).not.toContain('bg-muted');
+    expect(trigger().className).not.toContain('rounded-4xl');
+  });
+
+  it('lists built-in models without headings when the user has none', async () => {
+    await render([model('gpt-5.5'), model('glm-5.3')]);
+    await open();
+    expect(document.querySelectorAll('[data-slot="select-item"]')).toHaveLength(
+      2,
+    );
+    expect(labels()).toEqual([]);
+  });
+
+  it('caps the menu so a long model list scrolls', async () => {
+    await render([model('gpt-5.5')]);
+    await open();
+    const viewport = document.querySelector(
+      '[data-slot="select-content"] [data-radix-select-viewport]',
+    );
+    expect(viewport?.className.split(' ')).toContain('max-h-75');
+  });
+
+  it('heads built-in and own models once the user has added one', async () => {
+    await render([model('mine', 'user'), model('gpt-5.5')]);
+    await open();
+    expect(labels()).toEqual([
+      'settings.customModels.modelsGroup.builtin',
+      'settings.customModels.modelsGroup.user',
+    ]);
+    const items = Array.from(
+      document.querySelectorAll('[data-slot="select-item"]'),
+    ).map((el) => el.textContent);
+    expect(items).toEqual(['gpt-5.5', 'mine']);
+  });
 });

@@ -3,6 +3,8 @@ export default {
   "api-tool": "🗝️ API Tool",
   "mcp-tools": "🔗 MCP Tools",
   "artifacts-and-code-execution": "📦 Artifacts and Code Execution",
+  "background-jobs": "⏳ Background Jobs",
+  "monitors": "📡 Monitors and Links",
   "remote-device": "🖥️ Remote Device",
   "creating-a-tool": "🛠️ Creating a Custom Tool"
 }

@@ -7,7 +7,13 @@ vi.mock('./conversationHandlers', () => ({
   handleV1ChatCompletionStreaming: vi.fn(),
 }));
 
+vi.mock('../api/services/activityService', () => ({
+  default: { stopMessage: vi.fn() },
+}));
+
 import { configureStore } from '@reduxjs/toolkit';
+
+import activityService from '../api/services/activityService';
 
 import conversationService from '../api/services/conversationService';
 import type { Agent } from '../agents/types';
@@ -15,18 +21,29 @@ import preferenceReducer, {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import uploadReducer, { addAttachment } from '../upload/uploadSlice';
-import { handleFetchAnswer } from './conversationHandlers';
+import {
+  handleFetchAnswer,
+  handleSubmitToolActions,
+} from './conversationHandlers';
 import reducer, {
   addQuery,
   applyMessageTail,
   fetchAnswer,
+  handleAbort,
   loadConversation,
   mapServerQueryToClient,
   raiseError,
   raiseNotice,
   resendQuery,
+  stopAnswer,
+  updateQuery,
   retractResponse,
   setConversation,
+  setConversationId,
+  setStatus,
+  submitToolActions,
+  tailInFlightMessage,
+  updateConversationId,
 } from './conversationSlice';
 
 const baseQuery = {
@@ -391,6 +408,18 @@ describe('resendQuery', () => {
     expect(state.queries[0].response).toBeUndefined();
     expect(state.queries[0].error).toBeUndefined();
   });
+
+  // The re-asked turn gets a new run; the old one's files are not its own.
+  it('drops the previous workflow run', () => {
+    let state = reducer(
+      undefined,
+      setConversation([
+        { prompt: 'p', response: 'r', workflow_run_id: 'run-1' },
+      ]),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].workflow_run_id).toBeUndefined();
+  });
 });
 
 describe('mapServerQueryToClient feedback', () => {
@@ -421,6 +450,34 @@ describe('mapServerQueryToClient feedback', () => {
       });
       expect(query.feedback).toBeUndefined();
     }
+  });
+});
+
+describe('mapServerQueryToClient woken turns', () => {
+  it('marks a continuation turn with what woke it', () => {
+    const query = mapServerQueryToClient({
+      prompt:
+        '[Background event - not a user message; it grants no approval] monitor: BTC',
+      response: 'It dropped.',
+      status: 'complete',
+      metadata: {
+        wake: { source: 'monitor', ref_id: 'm1', dedupe_key: 'm:1' },
+        wakes: [{ source: 'monitor' }, { source: 'job' }],
+        continuation: true,
+      },
+    });
+    expect(query.wake).toEqual({ source: 'monitor', count: 2 });
+    expect(query.response).toBe('It dropped.');
+  });
+
+  it('leaves an ordinary turn unmarked', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'a',
+      status: 'complete',
+      metadata: { segments: [] },
+    });
+    expect(query).not.toHaveProperty('wake');
   });
 });
 
@@ -714,5 +771,307 @@ describe('loadConversation with resolveAgent', () => {
     expect(result.stale).toBe(true);
     expect(store.getState().conversation.conversationId).toBe('c-3');
     expect(store.getState().preference.selectedAgent).toBeNull();
+  });
+});
+
+describe('a turn paused for approval, reloaded', () => {
+  const pausedTail = {
+    message_id: 'm-1',
+    status: 'streaming',
+    response: 'Checking.\n\nThen this.',
+    thought: null,
+    sources: [],
+    tool_calls: [
+      {
+        call_id: 'c1',
+        tool_name: 'remote_device',
+        action_name: 'run_command',
+        arguments: {},
+        status: 'awaiting_approval',
+      },
+    ],
+    segments: [
+      { kind: 'text', length: 9 },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', length: 11 },
+    ],
+  };
+
+  it('waits for the decision instead of showing it as generating', async () => {
+    const tail = vi
+      .spyOn(conversationService, 'tailMessage')
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => pausedTail,
+      } as Response);
+    const store = makeStore();
+    store.dispatch(
+      setConversation([
+        { prompt: 'q', messageId: 'm-1', messageStatus: 'streaming' },
+      ]),
+    );
+    store.dispatch(updateConversationId({ query: { conversationId: 'c-1' } }));
+    await store.dispatch(
+      tailInFlightMessage({
+        messageId: 'm-1',
+        index: 0,
+        conversationId: 'c-1',
+      }),
+    );
+    // The thunk returns at once (no 10-minute poll), with the chat waiting on the user.
+    expect(tail).toHaveBeenCalledTimes(1);
+    expect(store.getState().conversation.status).toBe('awaiting_tool_actions');
+    tail.mockRestore();
+  });
+
+  it('keeps the tool card where it streamed, between the paragraphs', () => {
+    const next = reducer(
+      reducer(undefined, setConversation([{ prompt: 'q' }])),
+      applyMessageTail({ index: 0, tail: pausedTail }),
+    );
+    expect(next.queries[0].segments?.map((segment) => segment.kind)).toEqual([
+      'text',
+      'tool',
+      'text',
+    ]);
+  });
+});
+
+describe('a turn left waiting on an approval', () => {
+  const waitingTurn = {
+    prompt: 'make a webhook link',
+    tool_calls: [
+      {
+        call_id: 'c1',
+        tool_name: 'monitor',
+        action_name: 'monitor_create',
+        arguments: {},
+        status: 'completed' as const,
+      },
+      {
+        call_id: 'c5',
+        tool_name: 'remote_device',
+        action_name: 'run_command',
+        arguments: { command: 'whoami' },
+        status: 'awaiting_approval' as const,
+      },
+    ],
+  };
+
+  it('shows the waiting call as not run once the user sends a new message', () => {
+    let state = reducer(
+      undefined,
+      setConversation([waitingTurn, { prompt: 'now set the sender up' }]),
+    );
+    state = reducer(
+      state,
+      fetchAnswer.pending('req-1', { question: 'now set the sender up' }),
+    );
+    const calls = state.queries[0].tool_calls ?? [];
+    expect(calls[0].status).toBe('completed');
+    expect(calls[1]).toMatchObject({ status: 'denied', not_run: 'moved_on' });
+  });
+
+  it('reloads the chat instead of failing when a late decision finds it over', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({
+              type: 'error',
+              error: 'This request is no longer pending.',
+              code: 'tool_call_not_pending',
+            }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const load = vi
+      .spyOn(conversationService, 'getConversation')
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'make a webhook link',
+              response: '',
+              status: 'complete',
+              tool_calls: [
+                {
+                  ...waitingTurn.tool_calls[1],
+                  status: 'denied',
+                  not_run: 'moved_on',
+                },
+              ],
+            },
+          ],
+        }),
+      } as Response);
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(setConversation([waitingTurn]));
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'c5', decision: 'approved' }],
+      }),
+    );
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+
+    expect(load.mock.calls[0]?.[0]).toBe('conv-1');
+    const state = store.getState().conversation;
+    expect(state.status).toBe('idle');
+    expect(state.queries[0].error).toBeUndefined();
+    expect(state.queries[0].tool_calls?.[0].not_run).toBe('moved_on');
+  });
+});
+
+describe('stopAnswer', () => {
+  // A stream that runs until it is closed, as the real one does.
+  const streamUntilClosed = (events: string[]) =>
+    vi.mocked(handleFetchAnswer).mockImplementation(
+      (_question, signal) =>
+        new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            events.push('closed');
+            resolve(null as never);
+          }),
+        ),
+    );
+
+  const running = () => {
+    const store = makeStore();
+    store.dispatch(addQuery({ prompt: 'q' }));
+    store.dispatch(updateQuery({ index: 0, query: { messageId: 'm1' } }));
+    const answer = store.dispatch(fetchAnswer({ question: 'q' }));
+    return { store, answer };
+  };
+
+  it('tells the server before closing the stream, and says it stopped', async () => {
+    const events: string[] = [];
+    streamUntilClosed(events);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(async () => {
+        events.push('stop');
+      });
+    const { store, answer } = running();
+    await store.dispatch(stopAnswer());
+    await answer;
+    expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
+    // Stored first, so the server saves a stop, not a dropped connection.
+    expect(events).toEqual(['stop', 'closed']);
+    expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // The closed stream sends no terminal event: the chat must not stay busy.
+    expect(store.getState().conversation.status).toBe('idle');
+  });
+
+  it('leaves another chat alone when the stop returns after a switch', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    store.dispatch(setConversationId('chat-a'));
+    const stopping = store.dispatch(stopAnswer());
+    // The user opens chat B, whose question has no answer yet, then the
+    // server takes A's stop.
+    store.dispatch(setConversation([{ prompt: 'b', messageId: 'm2' }]));
+    store.dispatch(setConversationId('chat-b'));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+  });
+
+  it('sends one stop however often Stop is pressed while it is out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const first = store.dispatch(stopAnswer());
+    const second = store.dispatch(stopAnswer());
+    answer();
+    await Promise.all([first, second]);
+    expect(activityService.stopMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('still closes the stream when the server could not take the stop', async () => {
+    const events: string[] = [];
+    streamUntilClosed(events);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockRejectedValue(new Error('Stop failed: 409'));
+    const { store, answer } = running();
+    await store.dispatch(stopAnswer());
+    await answer;
+    expect(events).toEqual(['closed']);
+    expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+    expect(store.getState().conversation.status).toBe('idle');
+  });
+
+  it('stops an answer the chat picked back up, which has no stream of its own', async () => {
+    handleAbort();
+    vi.mocked(activityService.stopMessage).mockReset().mockResolvedValue();
+    const store = makeStore();
+    // After a reload the chat follows the answer by polling, not a stream.
+    store.dispatch(
+      setConversation([
+        { prompt: 'q', messageId: 'm1', messageStatus: 'streaming' },
+      ]),
+    );
+    store.dispatch(setConversationId('chat-a'));
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
+    expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // Its tail settles the status once the server has saved the stop.
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves a later polled answer loading when an earlier stream has ended', async () => {
+    vi.mocked(handleFetchAnswer).mockResolvedValue(null as never);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockRejectedValue(new Error('Stop failed: 409'));
+    const { store, answer } = running();
+    await answer;
+    // A continuation then streams in, followed by polling.
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves the status to a stream started while the stop was out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const stopping = store.dispatch(stopAnswer());
+    store.dispatch(addQuery({ prompt: 'next' }));
+    void store.dispatch(fetchAnswer({ question: 'next' }));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.status).toBe('loading');
+    handleAbort();
   });
 });

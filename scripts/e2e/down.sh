@@ -22,6 +22,17 @@ log() {
     echo "[down.sh] $*" >&2
 }
 
+# Print every descendant pid of $1, deepest last. A pidfile can hold a
+# wrapper: `npm run dev` forks `sh -c vite`, which forks the node process that
+# owns the port, and killing only the wrapper leaves that one running.
+descendants() {
+    local child
+    for child in $(pgrep -P "$1" 2>/dev/null || true); do
+        echo "$child"
+        descendants "$child"
+    done
+}
+
 # Stop a single service given its pidfile. Best-effort; never fatal.
 stop_one() {
     local pidfile="$1"
@@ -50,8 +61,13 @@ stop_one() {
         return 0
     fi
 
-    log "$svc: sending SIGTERM to pid $pid"
-    kill "$pid" 2>/dev/null || true
+    # Collected before the wrapper dies: its children are re-parented then.
+    local children
+    children="$(descendants "$pid")"
+
+    log "$svc: sending SIGTERM to pid $pid${children:+ and its children}"
+    # shellcheck disable=SC2086 # word splitting is the point: one pid per word
+    kill "$pid" $children 2>/dev/null || true
 
     # Poll up to 3 seconds for graceful exit.
     local waited=0
@@ -69,6 +85,13 @@ stop_one() {
     else
         log "$svc: pid $pid exited gracefully"
     fi
+    local child
+    for child in $children; do
+        if kill -0 "$child" 2>/dev/null; then
+            log "$svc: child pid $child still alive — SIGKILL"
+            kill -9 "$child" 2>/dev/null || true
+        fi
+    done
 
     rm -f "$pidfile"
 }

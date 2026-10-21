@@ -26,7 +26,7 @@ from mcp.client.auth.utils import (
     issuers_match,
     validate_metadata_issuer,
 )
-from mcp.shared._httpx_utils import create_mcp_http_client
+from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
 from mcp.shared.inbound import (
     MCP_PARAM_HEADER_PREFIX,
     decode_header_value,
@@ -50,13 +50,24 @@ from docsgpt.llm.tool_images import image_ref
 from docsgpt.api.user.tasks import mcp_oauth_task
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
-from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.events.keys import stream_key
 from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.safe_url import UnsafeUserUrlError, guarded_async_client, validate_user_base_url
 
 logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
+
+
+def _mcp_http_client(
+    headers: Optional[Dict[str, str]] = None,
+    timeout: Optional[httpx2.Timeout] = None,
+    auth: Optional[httpx2.Auth] = None,
+) -> httpx2.AsyncClient:
+    """The MCP SDK's HTTP client, with every host it is sent to SSRF-checked and pinned to the checked IP."""
+    if timeout is None:
+        timeout = httpx2.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT)
+    return guarded_async_client(headers=headers, timeout=timeout, auth=auth)
 
 
 def forget_cached_clients(*identities: str) -> None:
@@ -76,6 +87,11 @@ def forget_cached_clients(*identities: str) -> None:
 _EXPIRED = 1.0
 
 _ANNOTATION_HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+
+# How long a sign-in's owner and cancel marks are kept: past the worker's
+# 5-minute wait for the callback, plus time spent queued.
+OAUTH_TASK_KEY_TTL = 900
+OAUTH_CANCELLED = "1"
 
 
 def _secret_fingerprint(secret: str) -> str:
@@ -253,9 +269,10 @@ class MCPTool(Tool):
             ValueError: If the URL points to a private/internal address.
         """
         try:
-            return validate_url(server_url)
-        except SSRFError as exc:
+            validate_user_base_url(server_url)
+        except UnsafeUserUrlError as exc:
             raise ValueError(f"Invalid MCP server URL: {exc}") from exc
+        return server_url
 
     def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
         # The operator's setting wins over the page's own origin: a page opened
@@ -306,7 +323,12 @@ class MCPTool(Tool):
         global _mcp_clients_cache
         if not hasattr(self, "_param_headers"):
             self._param_headers = {}
-        if self._cache_key in _mcp_clients_cache:
+        # A sign-in's client belongs to its task: its OAuth handler carries the
+        # task's id and event publisher. Shared, the next sign-in would run as
+        # the previous one (publishing its redirect to the old task, or
+        # stopping on that task's cancel), so it is never cached.
+        shareable = not (self.auth_type == "oauth" and self.oauth_task_id and not self.query_mode)
+        if shareable and self._cache_key in _mcp_clients_cache:
             cached_data = _mcp_clients_cache[self._cache_key]
             if time.time() - cached_data["created_at"] < 300:
                 self._client = cached_data["client"]
@@ -349,6 +371,8 @@ class MCPTool(Tool):
             if token:
                 auth = BearerAuth(token)
         self._client = Client(transport, auth=auth)
+        if not shareable:
+            return
         _mcp_clients_cache[self._cache_key] = {
             "client": self._client,
             "created_at": time.time(),
@@ -411,7 +435,7 @@ class MCPTool(Tool):
             auth: Any = None,
             **_kwargs: Any,
         ):
-            client = create_mcp_http_client(headers=headers, timeout=timeout, auth=auth)
+            client = _mcp_http_client(headers=headers, timeout=timeout, auth=auth)
             client.event_hooks.setdefault("request", []).append(_param_header_hook(header_maps))
             return client
 
@@ -675,6 +699,11 @@ class MCPTool(Tool):
                 content_list.append({"type": "audio", "mimeType": mime_type, "note": "audio, not shown"})
             else:
                 content_list.append({"type": "unknown", "content": str(item)})
+        if not content_list:
+            # Some servers (Airtable) answer only in structured content and leave ``content`` empty.
+            structured = getattr(result, "structured_content", None) or getattr(result, "structuredContent", None)
+            if structured:
+                content_list.append({"type": "text", "text": json.dumps(structured, default=str)})
         # FastMCP's client result names it ``is_error``; the MCP type ``isError``.
         is_error = getattr(result, "is_error", None)
         if not isinstance(is_error, bool):
@@ -845,20 +874,20 @@ class MCPTool(Tool):
                 "required": [],
             }
 
-            if input_schema:
-                if isinstance(input_schema, dict):
-                    if "properties" in input_schema:
-                        parameters_schema = {
-                            "type": input_schema.get("type", "object"),
-                            "properties": input_schema.get("properties", {}),
-                            "required": input_schema.get("required", []),
-                        }
+            if input_schema and isinstance(input_schema, dict):
+                if "properties" in input_schema or input_schema.get("type") == "object":
+                    properties = input_schema.get("properties")
+                    parameters_schema = {
+                        "type": input_schema.get("type", "object"),
+                        "properties": properties if isinstance(properties, dict) else {},
+                        "required": input_schema.get("required", []),
+                    }
 
-                        for key in ["additionalProperties", "description"]:
-                            if key in input_schema:
-                                parameters_schema[key] = input_schema[key]
-                    else:
-                        parameters_schema["properties"] = input_schema
+                    for key in ["additionalProperties", "description"]:
+                        if key in input_schema:
+                            parameters_schema[key] = input_schema[key]
+                else:
+                    parameters_schema["properties"] = input_schema
             action = {
                 "name": tool.get("name", ""),
                 "description": tool.get("description", ""),
@@ -1092,7 +1121,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         """
         server_url = self.context.server_url
         try:
-            async with create_mcp_http_client(timeout=httpx2.Timeout(10.0)) as client:
+            async with _mcp_http_client(timeout=httpx2.Timeout(10.0)) as client:
                 auth_server_url = None
                 for url in build_protected_resource_metadata_discovery_urls(None, server_url):
                     prm = await handle_protected_resource_response(
@@ -1136,8 +1165,21 @@ class DocsGPTOAuth(OAuthClientProvider):
         except Exception as e:
             raise Exception(f"Failed to process auth URL: {e}")
 
+    def _cancelled(self) -> bool:
+        """Whether the user cancelled this sign-in (``MCPOAuthManager.cancel``)."""
+        if not self.redis_client or not self.task_id:
+            return False
+        try:
+            mark = self.redis_client.get(f"{self.redis_prefix}cancel:{self.task_id}")
+        except Exception:
+            return False
+        return mark in (OAUTH_CANCELLED, OAUTH_CANCELLED.encode())
+
     async def redirect_handler(self, authorization_url: str) -> None:
         """Store auth URL and state in Redis for frontend to use."""
+        # A sign-in cancelled while queued never sends the user to the provider.
+        if self._cancelled():
+            raise Exception("OAuth cancelled")
         auth_url, state = self._process_auth_url(authorization_url)
         logger.info("Processed auth_url: %s, state: %s", auth_url, state)
         self.auth_url = auth_url
@@ -1209,6 +1251,15 @@ class DocsGPTOAuth(OAuthClientProvider):
                     f"{self.redis_prefix}state:{self.extracted_state}"
                 )
                 raise Exception(f"OAuth error: {error_msg}")
+            if self._cancelled():
+                # The user cancelled: free the worker instead of waiting out the timeout.
+                self.redis_client.delete(
+                    f"{self.redis_prefix}auth_url:{self.extracted_state}"
+                )
+                self.redis_client.delete(
+                    f"{self.redis_prefix}state:{self.extracted_state}"
+                )
+                raise Exception("OAuth cancelled")
             await asyncio.sleep(poll_interval)
         self.redis_client.delete(f"{self.redis_prefix}auth_url:{self.extracted_state}")
         self.redis_client.delete(f"{self.redis_prefix}state:{self.extracted_state}")
@@ -1404,6 +1455,44 @@ class MCPOAuthManager:
     def __init__(self, redis_client: Redis | None, redis_prefix: str = "mcp_oauth:"):
         self.redis_client = redis_client
         self.redis_prefix = redis_prefix
+
+    def register_task(self, task_id: str, user_id: str) -> None:
+        """Remember who started sign-in ``task_id``, so only they can cancel it.
+
+        Args:
+            task_id: The ``mcp_oauth_task`` id handed to the browser.
+            user_id: The user who started the sign-in.
+        """
+        if not self.redis_client or not task_id or not user_id:
+            return
+        try:
+            self.redis_client.setex(f"{self.redis_prefix}owner:{task_id}", OAUTH_TASK_KEY_TTL, user_id)
+        except Exception as e:
+            logger.warning("Could not record the owner of OAuth task %s: %s", task_id, e)
+
+    def cancel(self, task_id: str, user_id: str) -> bool:
+        """Mark ``user_id``'s sign-in ``task_id`` cancelled.
+
+        The worker stops waiting for the callback within a second, and a
+        sign-in still queued stops before it sends the user anywhere, so the
+        worker is free for the next attempt.
+
+        Args:
+            task_id: The ``mcp_oauth_task`` id.
+            user_id: The user cancelling it.
+
+        Returns:
+            True when the sign-in was the user's and is now marked cancelled.
+        """
+        if not self.redis_client or not task_id or not user_id:
+            return False
+        owner = self.redis_client.get(f"{self.redis_prefix}owner:{task_id}")
+        if isinstance(owner, bytes):
+            owner = owner.decode()
+        if owner != user_id:
+            return False
+        self.redis_client.setex(f"{self.redis_prefix}cancel:{task_id}", OAUTH_TASK_KEY_TTL, OAUTH_CANCELLED)
+        return True
 
     def handle_oauth_callback(
         self, state: str, code: str, error: Optional[str] = None, iss: Optional[str] = None

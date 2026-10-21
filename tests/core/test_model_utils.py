@@ -128,13 +128,14 @@ class TestGetApiKeyForProvider:
             assert get_api_key_for_provider("docsgpt") == "sk-fallback"
 
     @pytest.mark.unit
-    def test_unknown_provider_returns_fallback(self):
+    def test_unknown_provider_gets_no_key(self):
+        # API_KEY belongs to LLM_PROVIDER; an unknown name must not receive it.
         with patch("docsgpt.core.settings.settings") as mock_settings:
             mock_settings.API_KEY = "sk-fallback"
 
             from docsgpt.core.model_utils import get_api_key_for_provider
 
-            assert get_api_key_for_provider("unknown_provider") == "sk-fallback"
+            assert get_api_key_for_provider("unknown_provider") is None
 
 # ── get_all_available_models ─────────────────────────────────────────────────
 

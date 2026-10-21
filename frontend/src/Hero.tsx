@@ -11,7 +11,9 @@ import { cn } from './lib/utils';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from './components/ui/select';
@@ -96,6 +98,18 @@ function HeroModelSelect() {
   }, [availableModels?.length, dispatch, selectedModel, token]);
 
   const hasModels = availableModels && (availableModels?.length ?? 0) > 0;
+  const builtinModels = (availableModels ?? []).filter(
+    (m: Model) => m.source !== 'user',
+  );
+  const userModels = (availableModels ?? []).filter(
+    (m: Model) => m.source === 'user',
+  );
+  const modelItems = (models: Model[]) =>
+    models.map((model) => (
+      <SelectItem key={model.id} value={model.id}>
+        {model.display_name}
+      </SelectItem>
+    ));
 
   return (
     <Select
@@ -107,36 +121,39 @@ function HeroModelSelect() {
       disabled={!hasModels}
     >
       <SelectTrigger
-        /* eslint-disable-next-line shadcn/no-restyle --
-           The landing page's one focal control keeps its own look: a
-           borderless muted pill at 16px whose menu joins it (DESIGN.md,
-           Approved exceptions). */
-        className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none md:text-base"
-        size="field"
+        shape="pill"
+        className="w-full"
+        /* Model names are product names, and a page translator rewrapping
+           this text as the model list loads breaks React's next commit. */
+        translate="no"
       >
         <SelectValue placeholder={t('conversation.selectModel')} />
       </SelectTrigger>
-      <SelectContent
-        /* eslint-disable-next-line shadcn/no-restyle --
-           The hero picker's menu hangs from its trigger as one muted
-           shape (DESIGN.md, Approved exceptions). */
-        className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0"
-      >
-        {hasModels ? (
-          availableModels?.map((model: Model) => (
-            <SelectItem
-              key={model.id}
-              value={model.id}
-              /* eslint-disable-next-line shadcn/no-restyle -- hero menu rows match its 16px trigger */
-              className="px-5 py-3 text-base [&_[data-slot=select-item-indicator]]:right-5"
-            >
-              {model.display_name}
-            </SelectItem>
-          ))
-        ) : (
-          <div className="text-muted-foreground px-5 py-3 text-base">
+      <SelectContent capped translate="no">
+        {!hasModels ? (
+          <div className="text-muted-foreground px-2 py-1.5 text-sm">
             {t('agents.form.modelsPopup.noOptionsMessage')}
           </div>
+        ) : userModels.length === 0 ? (
+          modelItems(builtinModels)
+        ) : (
+          // Headings only once the user has models of their own to tell apart.
+          <>
+            {builtinModels.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>
+                  {t('settings.customModels.modelsGroup.builtin')}
+                </SelectLabel>
+                {modelItems(builtinModels)}
+              </SelectGroup>
+            )}
+            <SelectGroup>
+              <SelectLabel>
+                {t('settings.customModels.modelsGroup.user')}
+              </SelectLabel>
+              {modelItems(userModels)}
+            </SelectGroup>
+          </>
         )}
       </SelectContent>
     </Select>

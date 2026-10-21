@@ -61,6 +61,15 @@ const LINEAR = {
   sync_ingestor: 'linear',
 } as unknown as ConnectorDefinition;
 
+const DRAWIO = {
+  key: 'mcp:drawio',
+  name: 'draw.io',
+  auth_kind: 'mcp',
+  mcp_url: 'https://mcp.draw.io/mcp',
+  publisher: 'preset',
+  sync_ingestor: null,
+} as unknown as ConnectorDefinition;
+
 const DRIVE = {
   key: 'google_drive',
   name: 'Google Drive',
@@ -144,6 +153,11 @@ describe('useConnectorLauncher', () => {
       launchRef!(LINEAR, { mode: 'reconnect', connectionId: 'c1' }),
     );
     expect(wizard()).toBe('reconnect:c1');
+  });
+
+  it('opens a no-auth MCP preset in the wizard, not the server form', async () => {
+    await act(async () => launchRef!(DRAWIO));
+    expect(wizard()).toBe('connect:');
   });
 
   const purpose = () =>

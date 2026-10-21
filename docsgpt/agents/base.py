@@ -11,6 +11,7 @@ from docsgpt.agents.attachment_budget import (
     _attachment_id,
     compute_attachment_budget,
     plan_attachments,
+    plan_listing,
 )
 from docsgpt.agents.attachment_dispatch import AttachmentDispatch
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
@@ -27,6 +28,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.llm.handlers.base import (
     ToolCall,
     _bound_tool_response_for_llm,
@@ -98,6 +100,115 @@ def _epoch_text(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _tool_call_rounds(source_call_ids: List[str], state: Optional[Dict[str, Any]]) -> List[List[int]]:
+    """Group a turn's persisted tool calls into the rounds they ran in.
+
+    Persistence flattens a turn's calls into one list. Replayed as one batch
+    they render differently from the live turn, which ran them round by round,
+    and a GPT-5.6+ prompt cache written live then never matches the replay.
+    The rounds come from the Responses state: ``call_rounds`` (the call ids of
+    each response, recorded since it exists), else the reasoning items each
+    call carries (the calls of one response share them). A call neither knows
+    stays in the round before it.
+
+    Args:
+        source_call_ids: The calls' persisted ids, in the order they ran.
+        state: The turn's Responses state, or None.
+
+    Returns:
+        Lists of call positions, one per round, in order; a single round
+        holding every call when there is no state to tell them apart.
+    """
+    if not source_call_ids:
+        return []
+    if not isinstance(state, dict):
+        return [list(range(len(source_call_ids)))]
+    recorded: Dict[str, int] = {}
+    for number, round_ids in enumerate(state.get("call_rounds") or []):
+        for call_id in round_ids if isinstance(round_ids, list) else ():
+            recorded.setdefault(str(call_id), number)
+    reasoning = state.get("reasoning_for_calls") or {}
+    rounds: List[List[int]] = []
+    previous_key: Any = None
+    for position, call_id in enumerate(source_call_ids):
+        key: Any = None
+        if call_id in recorded:
+            key = ("round", recorded[call_id])
+        else:
+            items = reasoning.get(call_id) if isinstance(reasoning, dict) else None
+            ids = tuple(item.get("id") for item in items or () if isinstance(item, dict))
+            if ids:
+                key = ("reasoning", ids)
+        if rounds and (key is None or key == previous_key):
+            rounds[-1].append(position)
+        else:
+            rounds.append([position])
+        if key is not None:
+            previous_key = key
+    return rounds
+
+
+def _unique_reasoning_items(items: List[Any]) -> List[Any]:
+    """Responses reasoning items in order, each id once (an item without an id is kept as is).
+
+    Args:
+        items: Reasoning items gathered for one replayed assistant message.
+
+    Returns:
+        The items without repeats; the provider rejects a duplicated id.
+    """
+    seen: set = set()
+    unique: List[Any] = []
+    for item in items:
+        item_id = item.get("id") if isinstance(item, dict) else None
+        if item_id and item_id in seen:
+            continue
+        if item_id:
+            seen.add(item_id)
+        unique.append(item)
+    return unique
+
+
+def _chunk_ref(doc: Dict) -> str:
+    """``chunk:<source_id>:<chunk_key>``, the ref a retrieved document's guardrail verdicts carry."""
+    from docsgpt.retriever.labels import chunk_key
+
+    return f"chunk:{doc.get('source_id') or ''}:{doc.get('chunk_key') or chunk_key(doc.get('text'))}"
+
+
+def _retrieval_hints(docs: List[Dict]) -> Optional[List[Dict]]:
+    """Per document, whether its own source's owner marked the text safe from injection screening."""
+    if not settings.DECISION_INJECTION_ENABLED:
+        return None
+    from docsgpt.guardrails import injection_scoring
+
+    allowed = injection_scoring.allowed_hashes(d.get("source_id") for d in docs)
+    return [
+        {"allowed": injection_scoring.content_hash(d["text"]) in allowed.get(str(d.get("source_id") or ""), ())}
+        for d in docs
+    ]
+
+
+def drop_least_relevant(docs: List[Dict]) -> List[Dict]:
+    """The documents with the one the prompt budget sheds first removed, the rest in their order.
+
+    When every document carries a numeric ``relevance`` (the decision model
+    scored them all), that is the lowest-scored one, the later one on a tie.
+    Otherwise it is the last one: retriever order is best first.
+
+    Args:
+        docs: This turn's retrieved documents, in prompt order.
+
+    Returns:
+        A new list one document shorter (empty for an empty one).
+    """
+    scores = [doc.get("relevance") if isinstance(doc, dict) else None for doc in docs]
+    if docs and all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in scores):
+        victim = min(range(len(docs)), key=lambda i: (scores[i], -i))
+        return docs[:victim] + docs[victim + 1:]
+    return docs[:-1]
+
+
 class BaseAgent(ABC):
     # Inert defaults: an instance built without __init__ still resolves these.
     _guardrail_engine = None
@@ -109,10 +220,14 @@ class BaseAgent(ABC):
     attachment_planning = False
     attachment_plan: Optional[AttachmentPlan] = None
     earlier_attachments: List[Dict] = []
+    reference_attachments = False
     _current_turn_message: Optional[Dict] = None
     _attachments_merged = False
     _attachment_token_correction = 0
     _attachments_tool_config: Optional[Dict] = None
+    # A resumed turn's file listing, as the paused turn's plan made it.
+    paused_attachment_listing: Optional[List[Dict]] = None
+    withheld_attachments: frozenset = frozenset()
 
     def __init__(
         self,
@@ -152,6 +267,7 @@ class BaseAgent(ABC):
         attachment_planning: bool = False,
         earlier_attachments: Optional[List[Dict]] = None,
         skipped_attachments: Optional[List[Dict]] = None,
+        attachments_mode: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -253,6 +369,10 @@ class BaseAgent(ABC):
         self.context_limit_reached = False
         self.conversation_id: Optional[str] = None
         self.initial_user_id: Optional[str] = None
+        # What started this turn: the chat or API answer's message id, a
+        # scheduled run's id, a webhook's task id. A workflow run records it,
+        # so Activity shows the run's step on the right one.
+        self.started_by: Optional[str] = None
 
         self.request_id = request_id
         # The turn came through ``/v1/chat/completions``: the client owns the
@@ -271,6 +391,9 @@ class BaseAgent(ABC):
         # file too large, of an unreadable type, or not parsed in time):
         # named in the manifest with the reason.
         self.skipped_attachments = [s for s in (skipped_attachments or []) if isinstance(s, dict)]
+        # ``attachments_mode: "reference"``: this turn's files are listed for
+        # the attachments tool and the sandbox, never inlined.
+        self.reference_attachments = attachments_mode == "reference"
         self.attachment_plan = None
         # The user message ``_build_messages`` built for this turn; the
         # handler merges the plan into it and compression keeps it whole.
@@ -284,6 +407,9 @@ class BaseAgent(ABC):
         self._guardrail_engine = None
         self._guardrail_engine_built = False
         self._guardrail_cache: Dict = {}
+        # Attachment ids an attachment control withheld this turn; every plan
+        # of the turn (a fallback's re-plan included) leaves them out.
+        self.withheld_attachments = frozenset()
 
 
     # ---- Guardrails ----
@@ -676,6 +802,9 @@ class BaseAgent(ABC):
                 }
 
             if action.get("decision") == "approved":
+                approved = getattr(self.tool_executor, "approved_call_ids", None)
+                if isinstance(approved, set):
+                    approved.add(call_id)
                 # Execute the tool server-side
                 tc = ToolCall(
                     id=call_id,
@@ -815,8 +944,18 @@ class BaseAgent(ABC):
         # A vision model can look at the images its tools point to.
         if self._llm_supports_tools() and reads_images(self.llm):
             add_view_image_tool(tools_dict)
-        # The executor gates tool calls itself, so it needs this run's engine.
+        # A turn that can hand calls off to background jobs can also check on
+        # them, whatever the user's or agent's tool settings say.
+        if self._llm_supports_tools() and getattr(self.tool_executor, "background", None) is not None:
+            from docsgpt.agents.tools.check_job import add_check_job_tool
+            from docsgpt.background.handoff import eligible
+
+            if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
+                add_check_job_tool(tools_dict)
+        # The executor gates tool calls itself, so it needs this run's engine,
+        # and the search tools screen their hits as retrieved documents.
         self.tool_executor.guardrail_engine = self.guardrails
+        self.tool_executor.retrieval_screen = self._screen_docs
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
@@ -960,7 +1099,11 @@ class BaseAgent(ABC):
         # matching the manifest's refs; only the caller's own (user-scoped)
         # attachments are passed and the bridge re-checks the owner.
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
-        self.tool_executor.attachments = earlier + list(self.attachments or [])
+        withheld = self.withheld_attachments
+        self.tool_executor.attachments = [
+            a for a in earlier + list(self.attachments or [])
+            if not (isinstance(a, dict) and _attachment_id(a) in withheld)
+        ]
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )
@@ -985,6 +1128,7 @@ class BaseAgent(ABC):
         )
 
         tokens = TokenCounter.count_message_tokens(messages)
+        tokens += self._pending_reasoning_tokens(messages)
         plan = getattr(self, "attachment_plan", None)
         carrier = getattr(self, "_current_turn_message", None)
         if not isinstance(plan, AttachmentPlan) or carrier is None:
@@ -994,6 +1138,38 @@ class BaseAgent(ABC):
         if not getattr(self, "_attachments_merged", False):
             return tokens + plan.reserved_tokens
         return tokens + max(int(getattr(self, "_attachment_token_correction", 0) or 0), 0)
+
+    def _pending_reasoning_tokens(self, messages: List[Dict]) -> int:
+        """Tokens of this turn's reasoning the LLM adds to its calls on the Responses API.
+
+        The tool loop's own calls carry no reasoning on their messages: the
+        LLM keeps it and puts it back in front of each call when it builds the
+        request (``reasoning_for_calls``). Counted here so a long tool loop's
+        context check sees what is sent.
+
+        Args:
+            messages: The messages the next request is built from.
+
+        Returns:
+            The estimate; 0 off the Responses API.
+        """
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        uses_responses = getattr(self.llm, "_uses_responses_api", None)
+        held = getattr(self.llm, "_reasoning_for_calls", None)
+        if not (callable(uses_responses) and uses_responses()) or not isinstance(held, dict) or not held:
+            return 0
+        items: List[Any] = []
+        for message in messages:
+            if message.get("role") != "assistant" or message.get("responses_reasoning_items"):
+                continue
+            for tool_call in message.get("tool_calls") or ():
+                call_id = tool_call.get("id") if isinstance(tool_call, dict) else None
+                if call_id in held:
+                    items.extend(held[call_id])
+        return TokenCounter.count_reasoning_items(items)
 
     def note_attachments_merged(self, carrier: Dict, native_estimate: int) -> None:
         """Record that the handler merged the plan into the turn's message.
@@ -1270,11 +1446,7 @@ class BaseAgent(ABC):
         # The template placed the documents somewhere this cannot reach. Fail
         # the turn rather than send the model text a control just rejected.
         if decision.blocked:
-            raise ValueError(
-                "Retrieved sources were withheld by a content policy and this "
-                "agent's prompt embeds them directly, so the request cannot be "
-                "completed."
-            )
+            raise ValueError(self.EMBEDDED_WITHHELD_ERROR)
         logger.warning(
             "Retrieval redaction could not be applied to an embedding prompt; "
             "the sources shown to the user were scrubbed but the prompt was not"
@@ -1318,6 +1490,104 @@ class BaseAgent(ABC):
                 {**doc, "text": per_doc.text} if per_doc.redacted else doc
             )
         self.retrieved_docs = scrubbed
+
+    EMBEDDED_WITHHELD_ERROR = (
+        "Retrieved sources were withheld by a content policy and this "
+        "agent's prompt embeds them directly, so the request cannot be "
+        "completed."
+    )
+
+    def _screen_docs(self, docs: List[Dict]) -> List[Dict]:
+        """Withhold, one by one, the documents a retrieval control blocks.
+
+        Item-level checks (the injection model) score each document's text on
+        its own before anything is formatted, so ``block`` withholds that
+        document alone: its text becomes ``RETRIEVAL_WITHHELD_TEXT`` and it
+        carries ``withheld: "policy"`` for the client. It keeps its place, so
+        ``<document index>``, ``[n]`` citations and the sources list still
+        agree. Verdicts are cached per text for the run, so the token-shed loop
+        and a search tool returning the same chunk never score it twice. The
+        search tools call this on their hits (``retrieval_screen``).
+
+        Args:
+            docs: Retrieved documents.
+
+        Returns:
+            The documents, the withheld ones replaced.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.RETRIEVAL, item_level=True):
+            return docs
+        cache = self._guardrail_cache
+
+        def key(doc: Dict) -> tuple:
+            # By source too: an owner's allowance makes the text clean for that source only.
+            return (Stage.RETRIEVAL, "item", str(doc.get("source_id") or ""), doc.get("text"))
+
+        first: Dict[tuple, Dict] = {}
+        for doc in docs:
+            text = doc.get("text") if isinstance(doc, dict) and not doc.get("withheld") else None
+            if isinstance(text, str) and key(doc) not in cache:
+                first.setdefault(key(doc), doc)
+        if first:
+            todo = list(first.values())
+            decisions = engine.evaluate_items(
+                [d["text"] for d in todo], Stage.RETRIEVAL, [_chunk_ref(d) for d in todo], _retrieval_hints(todo)
+            )
+            for doc, decision in zip(todo, decisions):
+                cache[key(doc)] = decision
+        screened = []
+        for doc in docs:
+            text = doc.get("text") if isinstance(doc, dict) else None
+            decision = cache.get(key(doc)) if isinstance(text, str) else None
+            if decision is not None and decision.blocked and not doc.get("withheld"):
+                doc = {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT, "withheld": "policy"}
+            screened.append(doc)
+        return screened
+
+    def _screen_retrieved_docs(self) -> int:
+        """Screen this turn's documents (``_screen_docs``) in place; returns how many were newly withheld."""
+        docs = list(getattr(self, "retrieved_docs", None) or [])
+        if not docs:
+            return 0
+        screened = self._screen_docs(docs)
+        self.retrieved_docs = screened
+        return sum(1 for before, after in zip(docs, screened) if after is not before)
+
+    def _screen_attachments(self) -> None:
+        """Withhold, one by one, the attached files an attachment control blocks.
+
+        This turn's files are scored by their stored text; a file from an
+        earlier turn (loaded without its text) only by the score stored with
+        it. A score stored with the file (``metadata.injection``) is used
+        first, then the cache, the model and background scoring, as for
+        retrieved documents. Withheld ids land in ``withheld_attachments``.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.ATTACHMENT, item_level=True):
+            return
+        # This turn's rows first: a file sent again carries its text there.
+        rows = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        rows += [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        cache = self._guardrail_cache
+        items: Dict[str, tuple] = {}
+        for row in rows:
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            text = row.get("content") if isinstance(row.get("content"), str) else ""
+            if not text.strip() and not isinstance(metadata.get("injection"), dict):
+                continue
+            items.setdefault(_attachment_id(row), (text, {"injection": metadata.get("injection")}))
+        todo = [i for i in items if (Stage.ATTACHMENT, "item", i, items[i][0]) not in cache]
+        if todo:
+            decisions = engine.evaluate_items(
+                [items[i][0] for i in todo], Stage.ATTACHMENT, [f"attachment:{i}" for i in todo],
+                [items[i][1] for i in todo],
+            )
+            for attachment_id, decision in zip(todo, decisions):
+                cache[(Stage.ATTACHMENT, "item", attachment_id, items[attachment_id][0])] = decision
+        self.withheld_attachments = frozenset(
+            i for i, (text, _) in items.items() if cache[(Stage.ATTACHMENT, "item", i, text)].blocked
+        )
 
     def _search_tool_docs(self) -> List[Dict]:
         """Documents this run's search tools read: internal search and the graph tool.
@@ -1404,10 +1674,25 @@ class BaseAgent(ABC):
         from docsgpt.core.model_utils import get_token_limit
         from docsgpt.utils import num_tokens_from_string
 
-        # Retrieval controls run inside _build_document_block for the usual
-        # path; a prompt that embeds the documents skips that block entirely,
-        # so its scan happens here instead.
-        if getattr(self, "prompt_embeds_documents", False):
+        from docsgpt.api.answer.services.prompt_renderer import (
+            format_docs_for_prompt,
+        )
+
+        # Item-level retrieval controls screen each document first, so a
+        # withheld one is replaced before anything renders it. A prompt that
+        # embeds the documents was rendered before the agent ran: the screened
+        # documents are swapped in for the ones it holds, and a template that
+        # formats them itself cannot be patched, so the turn fails.
+        embeds = getattr(self, "prompt_embeds_documents", False)
+        before = format_docs_for_prompt(getattr(self, "retrieved_docs", None)) if embeds else None
+        if self._screen_retrieved_docs() and embeds and before:
+            if before not in system_prompt:
+                raise ValueError(self.EMBEDDED_WITHHELD_ERROR)
+            system_prompt = system_prompt.replace(before, format_docs_for_prompt(self.retrieved_docs) or "")
+        # Whole-text retrieval controls run inside _build_document_block for
+        # the usual path; a prompt that embeds the documents skips that block
+        # entirely, so its scan happens here instead.
+        if embeds:
             system_prompt = self._guard_embedded_documents(system_prompt)
 
         if self.compressed_summary:
@@ -1458,9 +1743,11 @@ class BaseAgent(ABC):
                 stage="build",
             )
 
-        # Then shed whole documents, lowest-ranked first: a middle-truncated
-        # document block would corrupt its XML, and retriever order is
-        # relevance-descending so the tail is the least useful.
+        # Then shed whole documents, least relevant first: a middle-truncated
+        # document block would corrupt its XML. The survivors keep their
+        # order and are renumbered on each pass, and the citation registry is
+        # seeded from the final list, so ``<document index>``, a tool hit's
+        # ``[n]`` and the sources the client lists still agree.
         document_block = self._build_document_block()
 
         # Plan the turn's files against what is left once the system prompt
@@ -1481,7 +1768,7 @@ class BaseAgent(ABC):
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
             > max_query_tokens - reserved
         ):
-            self.retrieved_docs = self.retrieved_docs[:-1]
+            self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
             document_block = self._build_document_block()
 
         user_content = self._compose_user_turn(document_block, query)
@@ -1494,6 +1781,8 @@ class BaseAgent(ABC):
             available_for_history,
         )
 
+        from docsgpt.api.answer.services.continuation_service import ended_on_retired_pause
+
         messages = [{"role": "system", "content": system_prompt}]
 
         for i in working_history:
@@ -1502,14 +1791,18 @@ class BaseAgent(ABC):
                 messages.append({"role": "user", "content": i["prompt"]})
             state = self._compatible_responses_state(i.get("metadata"))
             historical_tool_calls = i.get("tool_calls") or []
+            # A turn retired while it waited on an approval has no answer
+            # written after its tools: its text came before its calls. It
+            # rides on the message carrying the calls, ahead of their results;
+            # replayed after them, models read it as a plan that never ran.
+            narrated_before_calls = (
+                has_completed_turn
+                and bool(historical_tool_calls)
+                and ended_on_retired_pause(i)
+            )
             if historical_tool_calls:
-                tool_message: Dict[str, Any] = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [],
-                }
-                call_reasoning: List[Dict[str, Any]] = []
-                seen_reasoning_ids = set()
+                emitted_calls: List[Dict[str, Any]] = []
+                source_call_ids: List[str] = []
                 used_replay_call_ids: set[str] = set()
                 call_id_occurrences: Dict[str, int] = {}
                 for tool_call in historical_tool_calls:
@@ -1530,13 +1823,14 @@ class BaseAgent(ABC):
                             f"{source_call_id}:{occurrence}",
                         ))
                     used_replay_call_ids.add(call_id)
+                    source_call_ids.append(source_call_id)
                     args = tool_call.get("arguments")
                     args_str = (
                         json.dumps(args)
                         if isinstance(args, dict)
                         else (args or "{}")
                     )
-                    tool_message["tool_calls"].append({
+                    emitted_calls.append({
                         "id": call_id,
                         "type": "function",
                         "function": {
@@ -1544,34 +1838,42 @@ class BaseAgent(ABC):
                             "arguments": args_str,
                         },
                     })
+                # The rounds replay as they ran: each round's calls, behind
+                # their reasoning, then its results. That is the shape the
+                # live turn sent, so a prompt cache it wrote still matches.
+                rounds = _tool_call_rounds(source_call_ids, state)
+                for number, positions in enumerate(rounds):
+                    tool_message: Dict[str, Any] = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [emitted_calls[p] for p in positions],
+                    }
+                    reasoning_items: List[Any] = []
                     if state:
-                        for reasoning_item in (
-                            state.get("reasoning_for_calls", {}).get(
-                                source_call_id, []
+                        for p in positions:
+                            reasoning_items.extend(
+                                state.get("reasoning_for_calls", {}).get(source_call_ids[p], [])
                             )
-                        ):
-                            reasoning_id = (
-                                reasoning_item.get("id")
-                                if isinstance(reasoning_item, dict)
-                                else None
-                            )
-                            if reasoning_id and reasoning_id in seen_reasoning_ids:
-                                continue
-                            if reasoning_id:
-                                seen_reasoning_ids.add(reasoning_id)
-                            call_reasoning.append(reasoning_item)
-                if call_reasoning:
-                    tool_message["responses_reasoning_items"] = call_reasoning
-                messages.append(tool_message)
-                for tool_call, emitted_call in zip(
-                    historical_tool_calls, tool_message["tool_calls"]
-                ):
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": emitted_call["id"],
-                        "content": replayed_result(tool_call),
-                    })
-            if has_completed_turn:
+                    if narrated_before_calls and number == len(rounds) - 1:
+                        if i["response"]:
+                            tool_message["content"] = i["response"]
+                        if i.get("thought"):
+                            tool_message["reasoning_content"] = i["thought"]
+                        # The turn's last response is the one that made the
+                        # calls it paused on, so its reasoning precedes them.
+                        if state:
+                            reasoning_items.extend(state.get("reasoning_items") or [])
+                    call_reasoning = _unique_reasoning_items(reasoning_items)
+                    if call_reasoning:
+                        tool_message["responses_reasoning_items"] = call_reasoning
+                    messages.append(tool_message)
+                    for p in positions:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": emitted_calls[p]["id"],
+                            "content": replayed_result(historical_tool_calls[p]),
+                        })
+            if has_completed_turn and not narrated_before_calls:
                 asst_msg: Dict[str, Any] = {
                     "role": "assistant",
                     "content": i["response"],
@@ -1622,8 +1924,10 @@ class BaseAgent(ABC):
             TokenCounter,
         )
 
+        uses_responses = getattr(self.llm, "_uses_responses_api", None)
         return TokenCounter.count_query_tokens(
-            [h for h in (self.chat_history or []) if isinstance(h, dict)]
+            [h for h in (self.chat_history or []) if isinstance(h, dict)],
+            include_reasoning=bool(callable(uses_responses) and uses_responses()),
         )
 
     def _plan_attachments(
@@ -1654,6 +1958,7 @@ class BaseAgent(ABC):
             return None
         if self.turn_capabilities is None:
             self.turn_capabilities = self._compute_turn_capabilities({})
+        self._screen_attachments()
         budget = compute_attachment_budget(
             window=context_limit,
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
@@ -1668,6 +1973,8 @@ class BaseAgent(ABC):
             budget=budget,
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
         )
         plan.skipped = skipped
         logger.info(
@@ -1713,12 +2020,15 @@ class BaseAgent(ABC):
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
             system_tokens=TokenCounter.count_message_tokens(messages),
         )
+        self._screen_attachments()
         self.attachment_plan = plan_attachments(
             current,
             self.turn_capabilities,
             budget=budget,
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
         )
         self.attachment_plan.skipped = skipped
         self._current_turn_message = carrier
@@ -1726,11 +2036,81 @@ class BaseAgent(ABC):
         self._attachment_token_correction = 0
         self._sync_attachments_tool()
 
+    def paused_turn_state(self) -> Dict[str, Any]:
+        """What a paused turn saves so its resume rebuilds the same turn.
+
+        The resume builds a new agent from the saved state alone; without
+        these it would lose the turn's files (``run_code`` could not load an
+        ``F`` ref, the response would list no refs), the compression point the
+        turn's metadata is stamped with, the agent's backup models and the
+        decision model's entries so far. Files are saved by id: the resume
+        reads them again as their owner.
+
+        Returns:
+            ``attachments`` (None when the turn has no files; its ``withheld``
+            lists the ids an attachment control withheld, which the resume
+            keeps out of every tool), ``last_compression_at``,
+            ``backup_models`` and ``decisions`` (None when nothing was
+            recorded); all JSON-safe.
+        """
+        current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [
+            _attachment_id(a) for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)
+        ]
+        skipped = [dict(s) for s in (getattr(self, "skipped_attachments", None) or []) if isinstance(s, dict)]
+        files = None
+        if current or earlier or skipped:
+            plan = getattr(self, "attachment_plan", None)
+            if isinstance(plan, AttachmentPlan) and plan.files:
+                listing = plan_listing(plan)
+            else:
+                listing = list(self.paused_attachment_listing or [])
+            files = {
+                "current": current,
+                "earlier": earlier,
+                "skipped": skipped,
+                "mode": "reference" if self.reference_attachments else None,
+                "planning": bool(self.attachment_planning),
+                "listing": listing,
+                "withheld": sorted(self.withheld_attachments),
+            }
+        backup_models = getattr(self.llm, "_backup_models", None)
+        return {
+            "attachments": files,
+            "last_compression_at": _epoch_text(getattr(self, "last_compression_at", None)),
+            "backup_models": (
+                [m for m in backup_models if isinstance(m, str)] if isinstance(backup_models, list) else []
+            ),
+            "decisions": decision_record.snapshot(),
+        }
+
+    def resume_paused_attachments(self, listing: Optional[List[Dict]], withheld: Optional[List[str]] = None) -> None:
+        """Take back a paused turn's files on the agent that resumes it.
+
+        The saved messages already carry the files as the paused round sent
+        them (inlined, natively or listed), so the handler must not merge
+        them in again. The listing is what the paused turn told the client;
+        the resumed turn has no plan of its own, so it reports that one. The
+        files the paused turn withheld stay withheld: the paused tool calls
+        run before anything is screened again, and a sandbox tool must not
+        load one of them by its ``F`` ref.
+
+        Args:
+            listing: The paused turn's ``F`` ref listing.
+            withheld: The attachment ids the paused turn withheld.
+        """
+        self._attachments_merged = True
+        self.paused_attachment_listing = [entry for entry in listing or [] if isinstance(entry, dict)] or None
+        self.withheld_attachments = frozenset(str(i) for i in withheld or () if i)
+
     def _truncate_history_to_fit(
         self,
         history: List[Dict],
         max_tokens: int,
     ) -> List[Dict]:
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
         from docsgpt.utils import num_tokens_from_string
 
         if not history or max_tokens <= 0:
@@ -1755,6 +2135,10 @@ class BaseAgent(ABC):
                         f"Response: {tool_call.get('result')}"
                     )
                     message_tokens += num_tokens_from_string(tool_str)
+            # The reasoning the turn replays on the Responses API is sent
+            # with it and billed in full.
+            if self._compatible_responses_state(message.get("metadata")):
+                message_tokens += TokenCounter.replayed_reasoning_tokens(message)
 
             if current_tokens + message_tokens <= max_tokens:
                 current_tokens += message_tokens
@@ -1811,13 +2195,14 @@ class BaseAgent(ABC):
         declaration so the cross-provider fallback adapter can read it too.
 
         Returns:
-            ``"response_format"``, ``"response_schema"``, or None when the
-            provider has no structured-output kwarg.
+            ``"response_format"``, ``"response_schema"``,
+            ``"output_format"``, or None when the provider has no
+            structured-output kwarg.
         """
         # ``type(self.llm)`` — an instance attribute on a test double would
         # otherwise leak a truthy Mock into the gen kwargs.
         kwarg = getattr(type(self.llm), "structured_output_kwarg", None)
-        return kwarg if kwarg in ("response_format", "response_schema") else None
+        return kwarg if kwarg in ("response_format", "response_schema", "output_format") else None
 
     def _llm_gen(
         self,

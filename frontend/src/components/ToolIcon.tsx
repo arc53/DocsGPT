@@ -1,3 +1,4 @@
+import { ListChecks, type LucideIcon, Radar } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
@@ -18,6 +19,13 @@ for (const [filePath, Component] of Object.entries(iconModules)) {
   if (match) iconByToolName[match[1]] = Component;
 }
 
+// Built-in tools drawn with a lucide icon rather than a bundled SVG. The
+// monitor shares the sidebar's watching mark (Radar), so the two read as one thing.
+const lucideByToolName: Record<string, LucideIcon> = {
+  check_job: ListChecks,
+  monitor: Radar,
+};
+
 type ToolIconProps = {
   /** Backend tool name, e.g. ``mcp_tool`` (resolves to ``tool_<name>.svg``). */
   name: string;
@@ -31,7 +39,7 @@ type ToolIconProps = {
  * adapt to light/dark themes. Branded icons keep their own colors.
  */
 export default function ToolIcon({ name, className, title }: ToolIconProps) {
-  const Icon = iconByToolName[name];
+  const Icon = iconByToolName[name] ?? lucideByToolName[name];
   if (!Icon) return null;
   const a11y = title
     ? { role: 'img' as const, 'aria-label': title }

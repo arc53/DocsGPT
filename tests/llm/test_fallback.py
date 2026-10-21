@@ -1417,9 +1417,20 @@ class _GoogleFake(FakeLLM):
 
 
 class _AnthropicFake(FakeLLM):
-    """Provider with no structured-output kwarg at all."""
+    """Anthropic double: real declaration + real preparer, fake transport."""
 
     provider_name = "anthropic"
+    structured_output_kwarg = "output_format"
+    prepare_structured_output_format = AnthropicLLM.prepare_structured_output_format
+
+    def _supports_structured_output(self):
+        return True
+
+
+class _UnstructuredFake(FakeLLM):
+    """Provider with no structured-output kwarg at all."""
+
+    provider_name = "custom"
 
 
 def _openai_envelope(schema=SCHEMA, strict=True):
@@ -1447,8 +1458,13 @@ class TestStructuredOutputDeclarations:
     def test_google_declares_response_schema(self):
         assert GoogleLLM.structured_output_kwarg == "response_schema"
 
-    def test_anthropic_declares_nothing(self):
-        assert AnthropicLLM.structured_output_kwarg is None
+    def test_anthropic_declares_output_format(self):
+        assert AnthropicLLM.structured_output_kwarg == "output_format"
+
+    def test_anthropic_prepare_records_source(self):
+        llm = _AnthropicFake()
+        llm.prepare_structured_output_format(SCHEMA, strict=False)
+        assert llm._structured_output_source == (SCHEMA, False)
 
     def test_base_declares_nothing(self):
         assert BaseLLM.structured_output_kwarg is None
@@ -1725,10 +1741,86 @@ class TestCrossProviderStructuredOutputFallback:
         assert "response_format" not in fallback.last_kwargs_received
         assert "response_schema" not in fallback.last_kwargs_received
 
-    def test_anthropic_fallback_gets_neither_kwarg(self):
-        """Anthropic has no structured-output kwarg: unstructured, not broken."""
+    def test_gen_openai_primary_anthropic_fallback_gets_output_format(self):
         primary = _OpenAIWireFake(fail_at=0)
-        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4")
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4-6")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, response_format=response_format)
+
+        assert result == "fb"
+        received = fallback.last_kwargs_received
+        assert "response_format" not in received
+        assert received["output_format"]["type"] == "json_schema"
+        assert set(received["output_format"]["schema"]["properties"]) == {
+            "answer",
+            "score",
+        }
+
+    def test_stream_google_primary_anthropic_fallback_gets_output_format(self):
+        primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
+        fallback = _AnthropicFake(stream_chunks=["fb"], model_id="claude-sonnet-4-6")
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        chunks = list(primary.gen_stream(**CALL_ARGS, response_schema=response_schema))
+
+        assert chunks == ["fb"]
+        received = fallback.last_kwargs_received
+        assert "response_schema" not in received
+        assert received["output_format"]["schema"]["additionalProperties"] is False
+
+    def test_gen_anthropic_primary_openai_fallback_gets_response_format(self):
+        primary = _AnthropicFake(fail_at=0)
+        fallback = _OpenAIWireFake(responses=["fb"], model_id="gpt-4o-mini")
+        primary._fallback_llm = fallback
+        output_format = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, output_format=output_format)
+
+        assert result == "fb"
+        received = fallback.last_kwargs_received
+        assert "output_format" not in received
+        assert received["response_format"]["type"] == "json_schema"
+
+    def test_gen_anthropic_primary_google_fallback_gets_response_schema(self):
+        primary = _AnthropicFake(fail_at=0)
+        fallback = _GoogleFake(responses=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+        output_format = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(**CALL_ARGS, output_format=output_format)
+
+        received = fallback.last_kwargs_received
+        assert "output_format" not in received
+        assert received["response_schema"] == _google_schema()
+
+    def test_same_wire_family_passes_output_format_verbatim(self):
+        primary = _AnthropicFake(fail_at=0)
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-haiku-4-5")
+        primary._fallback_llm = fallback
+        output_format = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(**CALL_ARGS, output_format=output_format)
+
+        assert fallback.last_kwargs_received["output_format"] is output_format
+
+    def test_json_object_mode_dropped_for_anthropic_fallback(self):
+        """Anthropic has no schema-less JSON mode wired — drop, don't crash."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4-6")
+        primary._fallback_llm = fallback
+
+        result = primary.gen(**CALL_ARGS, response_format={"type": "json_object"})
+
+        assert result == "fb"
+        assert fallback.last_kwargs_received == {}
+
+    def test_unstructured_fallback_gets_no_kwarg(self):
+        """A provider with no structured-output kwarg: unstructured, not broken."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _UnstructuredFake(responses=["fb"], model_id="custom-model")
         primary._fallback_llm = fallback
         response_format = primary.prepare_structured_output_format(SCHEMA)
 
@@ -1737,9 +1829,9 @@ class TestCrossProviderStructuredOutputFallback:
         assert result == "fb"
         assert fallback.last_kwargs_received == {}
 
-    def test_anthropic_fallback_gets_neither_kwarg_streaming(self):
+    def test_unstructured_fallback_gets_no_kwarg_streaming(self):
         primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
-        fallback = _AnthropicFake(stream_chunks=["fb"], model_id="claude-sonnet-4")
+        fallback = _UnstructuredFake(stream_chunks=["fb"], model_id="custom-model")
         primary._fallback_llm = fallback
         response_schema = primary.prepare_structured_output_format(SCHEMA)
 

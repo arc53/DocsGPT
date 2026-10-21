@@ -494,7 +494,7 @@ class ConnectionReconnect(Resource):
         )
     )
     def post(self, connection_id: str):
-        from docsgpt.api.connector.routes import build_authorization
+        from docsgpt.api.connector.routes import OriginNotAllowed, build_authorization, origin_not_allowed_response
 
         user_id = _user_id()
         if not user_id:
@@ -509,7 +509,10 @@ class ConnectionReconnect(Resource):
             definition = catalog.get_definition(key)
             auth_kind = row.get("auth_kind") or (definition.auth_kind if definition else None)
             if auth_kind == "oauth":
-                started = build_authorization(row["provider"], user_id, connection_id)
+                try:
+                    started = build_authorization(row["provider"], user_id, connection_id)
+                except OriginNotAllowed as err:
+                    return origin_not_allowed_response(err)
                 return make_response(jsonify({"success": True, "kind": "oauth", **started}), 200)
             if auth_kind == "mcp_oauth":
                 # The MCP client runs the OAuth dance (dynamic registration,

@@ -1,11 +1,14 @@
+import { configureStore } from '@reduxjs/toolkit';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
+import { Provider } from 'react-redux';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import en from '../locale/en.json';
 import { AnswerSegment } from './answerSegments';
 import AnswerFlow from './AnswerFlow';
+import { ToolCallDetail } from './StepGroup';
 import { ToolCallsType } from './types';
 
 const testI18n = i18n.createInstance();
@@ -46,6 +49,37 @@ const render = (props: {
   );
 
 describe('AnswerFlow', () => {
+  it('shows the webhook link a monitor made as its link card, with Reveal secret when signed', () => {
+    const store = configureStore({
+      reducer: { preference: () => ({ token: null }) },
+    });
+    const call = search({
+      tool_name: 'monitor',
+      action_name: 'monitor_create',
+      result: {
+        monitor_id: 'm-1',
+        url: 'https://docs.example.com/api/triggers/trg_abc',
+        signature: 'github',
+        secret:
+          'hidden from you; the user reveals it on the link card in this chat',
+      },
+    });
+    const html = renderToStaticMarkup(
+      <Provider store={store}>
+        <I18nextProvider i18n={testI18n}>
+          <AnswerFlow
+            toolCalls={[call]}
+            renderApproval={() => null}
+            renderWikiWrite={() => null}
+          />
+        </I18nextProvider>
+      </Provider>,
+    );
+    expect(html).toContain('Webhook link');
+    expect(html).toContain('https://docs.example.com/api/triggers/trg_abc');
+    expect(html).toContain('Reveal secret');
+  });
+
   it('renders the same markup whether the steps arrived live or were fetched', () => {
     const live = render({
       message: 'part one part two',
@@ -145,6 +179,49 @@ describe('AnswerFlow', () => {
     });
     expect(html).toContain('Searching the web');
     expect(html).not.toContain('slide-in-from-bottom-1.5');
+  });
+});
+
+describe('calls that never ran', () => {
+  const detail = (toolCall: ToolCallsType): string =>
+    renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <ToolCallDetail toolCall={toolCall} />
+      </I18nextProvider>,
+    );
+
+  it('marks a call the user moved past as not run, not as ran', () => {
+    const html = render({
+      toolCalls: [search({ status: 'denied', not_run: 'moved_on' })],
+      segments: [{ kind: 'tool', call_id: 'c1' }],
+    });
+    expect(html).not.toContain('APPROVAL_BAR');
+    expect(html).toContain('not run');
+  });
+
+  it('says why it never ran', () => {
+    expect(detail(search({ status: 'denied', not_run: 'moved_on' }))).toContain(
+      'Not run: the conversation moved on before this was approved.',
+    );
+    expect(detail(search({ status: 'denied', not_run: 'expired' }))).toContain(
+      'Not run: the approval request expired.',
+    );
+    expect(detail(search({ status: 'denied' }))).toContain('Denied by user');
+  });
+
+  it('shows a refused call as failed with the reason, after a reload too', () => {
+    const refused = search({
+      status: 'error',
+      error: 'memory never receives secrets.',
+      result: 'Tool denied: memory never receives secrets.' as never,
+    });
+    expect(
+      render({
+        toolCalls: [refused],
+        segments: [{ kind: 'tool', call_id: 'c1' }],
+      }),
+    ).toContain('failed');
+    expect(detail(refused)).toContain('memory never receives secrets.');
   });
 });
 

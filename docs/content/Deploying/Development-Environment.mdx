@@ -1,7 +1,7 @@
 ---
 title: Setting Up a Development Environment
 description: Guide to setting up a development environment for DocsGPT, including backend and frontend setup.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-19
 ---
 
 import { Callout } from 'nextra/components'
@@ -212,8 +212,9 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
       process, or point `EMBEDDINGS_BASE_URL` at an embeddings service.
     </Callout>
 
-    The beat scheduler fires scheduled agent runs, source syncs, the reconciliation of stuck tasks, retention
-    cleanups and the version check. If no scheduler runs, none of these happen and nothing reports it. At least
+    The beat scheduler fires scheduled agent runs, source syncs, the reconciliation of stuck tasks, the
+    [background job](/Tools/background-jobs) sweeps, retention cleanups and the version check. If no scheduler
+    runs, none of these happen and nothing reports it. At least
     one scheduler must run. Running more than one is safe, because a lock in Redis lets only one of them schedule
     at a time. `docsgpt worker --no-beat` leaves the scheduler out, and `docsgpt beat` runs it on its own.
     On Windows the scheduler cannot run inside the worker, so run `docsgpt beat` in a third terminal.
@@ -331,6 +332,8 @@ Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and 
 
 - **Searches hang for up to a minute or fail at once, and answers ignore your documents.** No worker is consuming the `embeddings`
   queue. Start one as in step 5. A worker started with an explicit `-Q` must list `embeddings`.
+- **A new source stays in "processing" and the worker log shows nothing.** The worker was started with an explicit `-Q`
+  list that leaves out `ingest`. Add it, or start the worker without `-Q`.
 - **Scheduled agent runs and source syncs never fire.** No beat scheduler is running. Start the worker with
   `docsgpt worker` or add `-B` to the `celery` command. On Windows, also run `docsgpt beat`.
 - **Notifications never appear, a dropped answer doesn't resume, a paired device never receives commands, or

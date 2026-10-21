@@ -48,6 +48,8 @@ To link the widget to your api and your documents you can pass parameters to the
     };
 ```
 
+`avatar` sets the header image and `heroIcon` the image on the welcome card (the DocsGPT mark by default). `poweredBy` controls the credit line under the input: `false` hides it, and `{ label, href }` replaces it.
+
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
 ### Html
@@ -63,7 +65,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
@@ -86,7 +88,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', {
@@ -144,7 +146,7 @@ import { SearchBar } from "docsgpt";
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SearchBar Embedding</title>
-  <script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
+  <script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
 </head>
 <body>
   <!-- Element where the SearchBar will render -->
@@ -174,9 +176,14 @@ import { SearchBar } from "docsgpt";
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | The theme of the search bar. Accepts `"dark"` or `"light"`.                                     |
 | **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
-| **`buttonText`** | `string` | `"Search here"`                     | Label of the button that opens the search panel.                                                 |
+| **`buttonText`** | `string` | `"Search here"`                     | Text in the search field on the page: the button label (`modal`) or the field's placeholder (`dropdown`). |
+| **`variant`**   | `"modal" \| "dropdown"` | `"modal"` | `modal` opens a search dialog from a button; `dropdown` is a field you type into, with results in a panel under it. |
+| **`shape`**     | `"pill" \| "rounded"` | `"pill"` | Corners of the search field: fully rounded, or 8px. |
+| **`avatar`**    | `string`  | a person on the brand-colour circle | Image beside "Ask the AI", also used by the chat it opens. |
+| **`poweredBy`** | `boolean \| { label, href? }` | `true` | Credit line under the results: `false` hides it, an object replaces it. |
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. |
+| **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}` and they appear in the agent's Logs. |
 
 
 Feel free to reach out if you need help customizing or extending the `SearchBar`!

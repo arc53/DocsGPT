@@ -1,7 +1,7 @@
 ---
 title: Google Drive Connector
 description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components'
@@ -57,7 +57,7 @@ VITE_GOOGLE_PICKER_API_KEY=your-google-api-key
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from GCP Credentials | Yes |
 | `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend for Google's file picker | No |
 | `VITE_GOOGLE_PICKER_API_KEY` | API key (**APIs & Services** > **Credentials** > **Create Credentials** > **API key**) passed to Google's file picker as its developer key | No |
-| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins a sign-in may start from and return to, e.g. `https://docsgpt.example.com`. Not needed when the frontend is on the origin of `CONNECTOR_REDIRECT_BASE_URI` or `OIDC_FRONTEND_URL`, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 <Callout type="warning" emoji="⚠️">
 If you set `VITE_GOOGLE_CLIENT_ID`, use the same Client ID as the backend. Publish the OAuth consent screen (or use an internal Workspace app): apps left in Testing get refresh tokens that expire after seven days, which stops background sync.
@@ -69,15 +69,29 @@ DocsGPT requests the `https://www.googleapis.com/auth/drive.readonly` scope, whi
 
 ### Step 4: Restart and Use
 
-Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files to process.
+Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files and folders to process.
 
 </Steps>
+
+## Files, folders and shared drives
+
+- **Folders**: a selected folder is ingested with everything inside it, the folders inside it included, and keeps its layout. A sync picks up files added to it later.
+- **Shared drives**: Google's file picker has a **Shared drives** tab, and DocsGPT's own picker lists shared drives you are a member of.
+- **Shortcuts**: a shortcut is followed to the file or folder it points to, and saved under the shortcut's name. Something reached twice, such as a shortcut to a folder that is already selected, is read once.
+- **Names**: two files with the same name in one folder are kept apart as `report.pdf` and `report_1.pdf`. Google Docs, Sheets and Slides are converted to `.docx`, `.xlsx` and `.pptx`.
+- **Skipped files**: types DocsGPT cannot read (Forms, Drawings, archives, video) are left out. So are files Google will not export, such as a Google Doc over Google's 10 MB export limit. One skipped or failed file does not stop the rest of the folder.
+
+Calls to Google are retried, waiting longer after each attempt, when Google rate-limits them or has a temporary error.
+
+### Sync
+
+A scheduled sync, or **Sync now**, first compares each file's name, location and modified time with the last ingest. When nothing changed, it keeps the existing index and downloads nothing. Otherwise it downloads and indexes the whole selection again. Changing the source's chunking settings also counts as a change. If a file could not be downloaded last time, the next sync reprocesses the source in full. The exception is a file Google will never export, such as one over the size limit: it does not force a full sync until it is edited.
 
 ## Troubleshooting
 
 - **Google Drive is not offered** — `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing from the backend `.env`, so the connector stays off. Admin > Connectors lists which one.
 - **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters. Ensure the Google Drive API is enabled.
-- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
+- **Sign-in fails with "not an allowed origin"** — The frontend runs on an origin the sign-in may not return to. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Verify the OAuth consent screen is configured and the user has access to the target files.
 - **Files not processing** — Check backend logs and verify that backend environment variables are correctly set.
 

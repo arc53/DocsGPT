@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  * @param meta - A muted one-line extra after the title (an arguments preview).
  * @param state - The call's state, a Badge.
  * @param children - The body: a sentence, the arguments well.
- * @param actions - The row of `xs` pill buttons.
+ * @param actions - The row of `xs` pill buttons; none drops the row.
  */
 export default function ToolCallCard({
   icon,
@@ -60,7 +60,9 @@ export default function ToolCallCard({
       {children && (
         <div className="min-w-0 text-sm wrap-break-word">{children}</div>
       )}
-      <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      )}
     </div>
   );
 }

@@ -34,7 +34,8 @@ interface ConnectorAuthProps extends ConnectorAuthOptions {
 /**
  * The OAuth pop-up sign-in: returns the function to call from a click. It
  * opens the pop-up inside the gesture, points it at the provider and reports
- * the connection it created (or an error) once the callback page answers.
+ * the connection (or an error) once the app's callback page answers. That
+ * page finishes the sign-in with the user's own login (see ConnectorCallback).
  */
 export function useConnectorAuth({
   provider,
@@ -82,7 +83,9 @@ export function useConnectorAuth({
     }
     const successGeneric = event.data?.type === 'connector_auth_success';
     const successProvider = event.data?.type === `${provider}_auth_success`;
-    const errorProvider = event.data?.type === `${provider}_auth_error`;
+    const errorProvider =
+      event.data?.type === `${provider}_auth_error` ||
+      event.data?.type === 'connector_auth_error';
 
     if (successGeneric || successProvider) {
       completedRef.current = true;

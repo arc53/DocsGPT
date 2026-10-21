@@ -69,7 +69,7 @@ def plan(
     launcher = launcher or [sys.executable, "-m", "docsgpt"]
     watching = watchfiles_available() if watching is None else watching
     package = checkout / "docsgpt"
-    environment = {"DOCSGPT_HOME": str(checkout)}
+    environment = {"DOCSGPT_HOME": os.environ.get("DOCSGPT_HOME") or str(checkout)}
     children: list[Child] = []
 
     if getattr(args, "mock_llm", False):

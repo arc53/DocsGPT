@@ -1,38 +1,8 @@
 import 'styled-components';
+import type { WidgetTheme } from '../components/tokens';
 
 declare module 'styled-components' {
-  export interface DefaultTheme {
-    bg: string;
-    text: string;
-    primary: {
-      text: string;
-      bg: string;
-    };
-    secondary: {
-      text: string;
-      bg: string;
-    };
-    /** Gradient stops for the swept status text. */
-    shimmer?: {
-      base: string;
-      highlight: string;
-    };
-    accent?: {
-      base: string;
-      hover: string;
-      strong: string;
-      contrast: string;
-      soft: string;
-      /** Background behind a search keyword match. */
-      mark: string;
-      link: string;
-    };
-    hairline?: string;
-    danger?: {
-      text: string;
-      soft: string;
-      border: string;
-    };
+  export interface DefaultTheme extends WidgetTheme {
     /** Present only in DocsGPTWidget theme (always provided when these styled components render) */
     dimensions?: {
       size: string;
@@ -51,10 +21,7 @@ export type Status = 'idle' | 'loading' | 'failed';
 export type FEEDBACK = 'LIKE' | 'DISLIKE';
 
 export type AttachmentStatus =
-  | 'uploading'
-  | 'processing'
-  | 'completed'
-  | 'failed';
+  'uploading' | 'processing' | 'completed' | 'failed';
 
 export interface Attachment {
   /** Client-side key for the chip; never sent to the server. */
@@ -94,10 +61,23 @@ export interface Query {
   attachments?: SentAttachment[];
 }
 
+/**
+ * The credit line under the chat and the search results. `true` (the
+ * default) shows "Powered by DocsGPT", `false` hides it, and an object
+ * replaces it, e.g. `{ label: 'Powered by Acme', href: 'https://acme.com' }`.
+ */
+export type PoweredBy = boolean | { label: string; href?: string };
+
+/** A value sent in `passthrough`: nested objects and arrays are dropped by the server. */
+export type PassthroughValue = string | number | boolean | null;
+
 export interface WidgetProps {
   apiHost?: string;
   apiKey?: string;
+  /** Image in the header. Without one, a person on the brand circle. */
   avatar?: string;
+  /** Image on the empty-state card. Without one, the DocsGPT mark. */
+  heroIcon?: string;
   title?: string;
   description?: string;
   heroTitle?: string;
@@ -134,6 +114,13 @@ export interface WidgetProps {
    * sent to the browser vendor's speech service.
    */
   showMicButton?: boolean;
+  poweredBy?: PoweredBy;
+  /**
+   * Values sent with every question, e.g. `{ user_id: 'emp-42' }`. The agent's
+   * prompt reads them as `{{ passthrough.user_id }}`, and its owner sees them on
+   * each turn in Logs. Set by the embedding page, so treat them as unverified.
+   */
+  passthrough?: Record<string, PassthroughValue>;
 }
 export interface WidgetCoreProps extends WidgetProps {
   widgetRef?: React.RefObject<HTMLDivElement> | null;
@@ -148,7 +135,11 @@ export interface WidgetCoreProps extends WidgetProps {
  */
 export interface SearchBarProps extends Pick<
   WidgetProps,
-  'allowedFileExtensions' | 'showMicButton'
+  | 'allowedFileExtensions'
+  | 'showMicButton'
+  | 'avatar'
+  | 'poweredBy'
+  | 'passthrough'
 > {
   apiHost?: string;
   apiKey?: string;
@@ -156,6 +147,13 @@ export interface SearchBarProps extends Pick<
   placeholder?: string;
   width?: string;
   buttonText?: string;
+  /** `pill` (default) or `rounded`, the app's 8px field corners. */
+  shape?: 'pill' | 'rounded';
+  /**
+   * `modal` (default) opens a search dialog from a button; `dropdown` is a
+   * field you type into, with the results in a panel under it.
+   */
+  variant?: 'modal' | 'dropdown';
 }
 
 export interface Result {

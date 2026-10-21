@@ -70,7 +70,7 @@ export interface Query {
   // or no longer fits, ``getAnswerSegments`` synthesizes one.
   segments?: AnswerSegment[];
   // Set when this answer came from a workflow agent run; lets the chat render
-  // the run's produced artifacts via WorkflowRunArtifacts.
+  // the run's produced artifacts as cards (useRunArtifacts).
   workflow_run_id?: string;
   error?: string;
   // Why the turn failed, when the backend says (``context_length_exceeded``);
@@ -96,6 +96,14 @@ export interface Query {
   lastHeartbeatAt?: string;
   // Persisted so Retry can re-send the same key for server-side dedup.
   idempotencyKey?: string;
+  // Set on a continuation turn: its prompt is the background event that woke
+  // the agent, shown as a system row instead of a user bubble.
+  wake?: {
+    source: string;
+    count: number;
+    /** Each event as a person reads it (label, status, short detail). */
+    events?: { label?: string; status?: string; detail?: string }[];
+  };
 }
 
 export interface RetrievalPayload {

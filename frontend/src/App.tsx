@@ -20,6 +20,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { LoadingState } from '@/components/ui/loading-state';
 import { Button } from './components/ui/button';
 import { ToastViewport } from './components/ui/toast';
+import {
+  createToastAvoidRegistry,
+  ToastAvoidContext,
+} from './components/ui/toast-layout';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -27,6 +31,8 @@ import { EventStreamProvider } from './events/EventStreamProvider';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
+import ConnectorCallback from './connectors/ConnectorCallback';
+import ApprovalPage from './monitors/ApprovalPage';
 import Navigation from './Navigation';
 import { outletBoundaryKey } from './navigation/outletBoundaryKey';
 import { getSectionForPath } from './navigation/sections';
@@ -38,6 +44,7 @@ import PageNotFound from './PageNotFound';
 const DesignSystem = import.meta.env.DEV
   ? lazy(() => import('./design/DesignSystem'))
   : null;
+import Activity from './activity';
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
@@ -45,6 +52,7 @@ import ToolApprovalToast from './notifications/ToolApprovalToast';
 import TeamNotificationToast from './notifications/TeamNotificationToast';
 import ActionToast from './notifications/ActionToast';
 import ConnectionHealthToast from './notifications/ConnectionHealthToast';
+import BackgroundNotifications from './backgroundJobs/BackgroundNotifications';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -104,41 +112,47 @@ function MainLayout() {
   // stack to the bottom-left while it's open so it stays visible without
   // covering the drawer's attach/send controls.
   const previewOpen = useSelector(selectWorkflowPreviewOpen);
+  // The composers the toast stack keeps clear of (see useAvoidToasts).
+  const [toastAvoid] = useState(createToastAvoidRegistry);
 
   return (
     <SidebarLevelProvider>
-      <div className="bg-background relative h-dvh overflow-hidden">
-        <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
-        <ActionButtons showShare={!inSection} />
-        <div
-          className={cn(
-            'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
-            !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
-          )}
-        >
-          {/* Contain route render crashes so navigation stays usable;
-            any navigation clears a crash, and leaving a page remounts it. */}
-          <ErrorBoundary
-            key={outletBoundaryKey(location.pathname)}
-            resetKey={location.pathname}
+      <ToastAvoidContext.Provider value={toastAvoid}>
+        <div className="bg-background relative h-dvh overflow-hidden">
+          <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
+          <ActionButtons showShare={!inSection} />
+          <div
+            className={cn(
+              'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
+              !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
+            )}
           >
-            <Outlet />
-          </ErrorBoundary>
-        </div>
-        {/* The one toast stack (and live region) for the app. Each toast
+            {/* Contain route render crashes so navigation stays usable;
+            any navigation clears a crash, and leaving a page remounts it. */}
+            <ErrorBoundary
+              key={outletBoundaryKey(location.pathname)}
+              resetKey={location.pathname}
+            >
+              <Outlet />
+            </ErrorBoundary>
+          </div>
+          {/* The one toast stack (and live region) for the app. Each toast
           renders only its cards, top to bottom: team notifications, tool
-          approvals, uploads, action results. */}
-        <ToastViewport
-          className={cn(previewOpen && 'right-auto left-4')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <TeamNotificationToast />
-          <ConnectionHealthToast />
-          <ToolApprovalToast />
-          <UploadToast />
-          <ActionToast />
-        </ToastViewport>
-      </div>
+          approvals, uploads, action results. It rises above a composer it
+          would cover. */}
+          <ToastViewport
+            className={cn(previewOpen && 'right-auto left-2')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <TeamNotificationToast />
+            <BackgroundNotifications />
+            <ConnectionHealthToast />
+            <ToolApprovalToast />
+            <UploadToast />
+            <ActionToast />
+          </ToastViewport>
+        </div>
+      </ToastAvoidContext.Provider>
     </SidebarLevelProvider>
   );
 }
@@ -152,10 +166,13 @@ export default function App() {
   const notificationText = envVar('VITE_NOTIFICATION_TEXT');
   const notificationLink = envVar('VITE_NOTIFICATION_LINK');
   // Hide the changelog banner on public share routes — those pages are
-  // embedded / shared externally and shouldn't carry product chrome.
+  // embedded / shared externally and shouldn't carry product chrome — and in
+  // the connector sign-in pop-up.
   const isPublicShareRoute =
     location.pathname.startsWith('/share/') ||
-    location.pathname.startsWith('/shared/');
+    location.pathname.startsWith('/shared/') ||
+    location.pathname.startsWith('/approve/') ||
+    location.pathname.startsWith('/connectors/callback');
   if (!componentMounted) {
     return <div />;
   }
@@ -190,6 +207,7 @@ export default function App() {
             path="/agents/:agentId/c/:conversationId"
             element={<Conversation />}
           />
+          <Route path="/activity/*" element={<Activity />} />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />
@@ -204,6 +222,17 @@ export default function App() {
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
+        {/* Where connector OAuth sign-ins return; finished with the user's login. */}
+        <Route
+          path="/connectors/callback"
+          element={
+            <AuthWrapper>
+              <ConnectorCallback />
+            </AuthWrapper>
+          }
+        />
+        {/* Public: a human approval link (the token is the credential). */}
+        <Route path="/approve/:token" element={<ApprovalPage />} />
         {DesignSystem && (
           <Route
             path="/design"

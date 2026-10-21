@@ -21,6 +21,7 @@ import {
   setConversationsLoading,
   setPrompts,
   setAttachmentBudgetShare,
+  setAuthRequired,
   setSourceDocs,
   setSpeechAvailability,
 } from '../preferences/preferenceSlice';
@@ -55,6 +56,7 @@ export default function useDataInitializer(isAuthLoading: boolean) {
             stt: config?.stt_available !== false,
           }),
         );
+        dispatch(setAuthRequired(config?.requires_auth === true));
         // A backend from before connectors has no flag: hide the page.
         dispatch(setConnectorsEnabled(config?.connectors_enabled === true));
         const share = Number(config?.attachment_budget_share);

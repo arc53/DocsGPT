@@ -192,10 +192,11 @@ test.describe('tier-c · UI smoke', () => {
       const page = await context.newPage();
       await gotoSettings(page);
 
-      // The prompt picker is a Popover + cmdk list (settings/Prompts.tsx), not
-      // a Select, so pickDropdown does not apply: the trigger is a button with
-      // aria-label="Toggle prompt list" and the entries are cmdk options.
-      await page.getByRole('button', { name: 'Toggle prompt list' }).click();
+      // The prompt picker is the shared Combobox (a Popover + cmdk list), not
+      // a Select, so pickDropdown does not apply: the trigger is
+      // role="combobox", labelled "Active prompt" by its settings row, and
+      // the entries are cmdk options.
+      await page.getByRole('combobox', { name: 'Active prompt' }).click();
       await page.getByRole('option', { name: 'creative' }).first().click();
 
       await expect
@@ -258,24 +259,22 @@ test.describe('tier-c · UI smoke', () => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto('/');
 
-      // Sidebar open: the toggle is a button carrying
-      // aria-label="Collapse sidebar" (Navigation.tsx:415). It used to be an
-      // <img alt=...>, which is why this was getByAltText before.
-      const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
+      // Sidebar open: its header toggle is labelled "Close sidebar"
+      // (Navigation.tsx, navigation.closeSidebar).
+      const collapse = page.getByRole('button', { name: 'Close sidebar' });
       await expect(collapse).toBeVisible();
       await collapse.click();
 
-      // When collapsed, Navigation.tsx renders a floating reopen button at
-      // `absolute top-3 left-3` with aria-label="Open navigation menu"
-      // (Navigation.tsx:329). The off-screen nav's own toggle flips to
-      // "Expand sidebar" but that one is outside the viewport. We target
-      // the visible floating button for the re-open interaction.
-      const reopen = page.getByRole('button', { name: 'Open navigation menu' });
-      await expect(reopen).toBeVisible();
+      // Collapsed on desktop, Navigation.tsx renders an icon rail whose top
+      // button reopens the sidebar ("Open sidebar"). The nav slid off-screen
+      // keeps its own toggle under the same label; the rail comes first in
+      // the DOM, and it is the one on screen.
+      const reopen = page.getByRole('button', { name: 'Open sidebar' }).first();
+      await expect(reopen).toBeInViewport();
       await reopen.click();
 
-      // Collapse button visible again — toggle is symmetric.
-      await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
+      // Close button visible again — toggle is symmetric.
+      await expect(page.getByRole('button', { name: 'Close sidebar' })).toBeVisible();
     } finally {
       await context.close();
     }

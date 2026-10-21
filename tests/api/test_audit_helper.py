@@ -93,9 +93,13 @@ class TestCategories:
             ("team.member_add", "access"),
             ("quota_policy_set", "config"),
             ("connector_policy_set", "config"),
+            ("source_defaults_set", "config"),
+            ("agent_defaults_set", "config"),
+            ("guardrails_settings_set", "config"),
             ("source.deleted", "data"),
             ("agent.created", "data"),
             ("conversation.deleted", "data"),
+            ("monitor.secret_revealed", "data"),
         ],
     )
     def test_known_events(self, event, expected):

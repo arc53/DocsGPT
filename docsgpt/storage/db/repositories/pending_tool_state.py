@@ -5,7 +5,8 @@ Provides the continuation lifecycle operations for ``pending_tool_state``:
 - save_state  → upsert (INSERT ... ON CONFLICT DO UPDATE)
 - load_state  → fetch live pending state by (conversation_id, user_id)
 - claim_state → atomically transition live pending state to ``resuming``
-- delete_state → delete_one by (conversation_id, user_id)
+- delete_state → delete_one by (conversation_id, user_id), optionally one message's
+- abandon     → delete a still-pending pause a new turn moved past
 
 Retains ``mark_resuming`` for compatibility; new resume paths use the atomic
 claim. A separate ``revert_stale_resuming`` flips abandoned
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Sequence
 
 from sqlalchemy import Connection, text
 
@@ -132,35 +133,111 @@ class PendingToolStateRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def claim_state(self, conversation_id: str, user_id: str) -> Optional[dict]:
-        """Atomically claim one live pending continuation and return it."""
+    def claim_state(
+        self, conversation_id: str, user_id: str, call_ids: Optional[Sequence[str]] = None,
+    ) -> Optional[dict]:
+        """Atomically claim one live pending continuation and return it.
+
+        Args:
+            conversation_id: The conversation.
+            user_id: The owner of the state.
+            call_ids: When given, claim only a pause that waits on every one
+                of these calls, so a decision meant for an earlier pause can
+                never take (and resolve) the one waiting now.
+
+        Returns:
+            The claimed row, or None.
+        """
+        call_filter = ""
+        params: dict = {"conv_id": conversation_id, "user_id": user_id}
+        if call_ids is not None:
+            call_filter = """
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM unnest(CAST(:call_ids AS text[])) AS wanted(call_id)
+                      WHERE NOT EXISTS (
+                          SELECT 1
+                          FROM json_array_elements(pending_tool_calls) AS waiting
+                          WHERE waiting->>'call_id' = wanted.call_id
+                      )
+                  )"""
+            params["call_ids"] = [str(call_id) for call_id in call_ids]
         result = self._conn.execute(
             text(
-                """
+                f"""
                 UPDATE pending_tool_state
                 SET status = 'resuming', resumed_at = clock_timestamp()
                 WHERE conversation_id = CAST(:conv_id AS uuid)
                   AND user_id = :user_id
                   AND status = 'pending'
-                  AND expires_at > clock_timestamp()
+                  AND expires_at > clock_timestamp(){call_filter}
                 RETURNING *
+                """
+            ),
+            params,
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def delete_state(
+        self, conversation_id: str, user_id: str, message_id: Optional[str] = None,
+    ) -> bool:
+        """Delete the conversation's pause state.
+
+        The row is keyed per conversation, so a later turn that paused while
+        an earlier one was resuming owns it now. ``message_id`` limits the
+        delete to the pause of that message (its ``reserved_message_id``).
+
+        Args:
+            conversation_id: The conversation.
+            user_id: The owner of the state.
+            message_id: Delete only the pause of this message.
+
+        Returns:
+            True if a row was deleted.
+        """
+        sql = (
+            "DELETE FROM pending_tool_state "
+            "WHERE conversation_id = CAST(:conv_id AS uuid) "
+            "AND user_id = :user_id"
+        )
+        params = {"conv_id": conversation_id, "user_id": user_id}
+        if message_id:
+            sql += " AND agent_config->>'reserved_message_id' = :message_id"
+            params["message_id"] = str(message_id)
+        result = self._conn.execute(text(sql), params)
+        return result.rowcount > 0
+
+    def abandon(self, conversation_id: str, user_id: str) -> Optional[dict]:
+        """Take a pause nobody answered off the conversation, for a new turn.
+
+        Deletes the row only while it is ``pending``: a decision that already
+        claimed it (``resuming``) wins, and the new turn leaves it alone. The
+        delete and :meth:`claim_state` lock the same row, so exactly one of
+        them gets it. An expired row not yet reaped is taken too.
+
+        Args:
+            conversation_id: The conversation the new turn is in.
+            user_id: The owner of the state.
+
+        Returns:
+            The deleted row with ``expired`` (whether its TTL had run out), or
+            None when no pause was waiting.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                DELETE FROM pending_tool_state
+                WHERE conversation_id = CAST(:conv_id AS uuid)
+                  AND user_id = :user_id
+                  AND status = 'pending'
+                RETURNING *, (expires_at <= clock_timestamp()) AS expired
                 """
             ),
             {"conv_id": conversation_id, "user_id": user_id},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
-
-    def delete_state(self, conversation_id: str, user_id: str) -> bool:
-        result = self._conn.execute(
-            text(
-                "DELETE FROM pending_tool_state "
-                "WHERE conversation_id = CAST(:conv_id AS uuid) "
-                "AND user_id = :user_id"
-            ),
-            {"conv_id": conversation_id, "user_id": user_id},
-        )
-        return result.rowcount > 0
 
     def mark_resuming(self, conversation_id: str, user_id: str) -> bool:
         """Flip a pending row to ``resuming`` and stamp ``resumed_at``."""
@@ -256,20 +333,26 @@ class PendingToolStateRepository:
         return result.rowcount
 
     def cleanup_expired(self) -> list[dict]:
-        """Delete TTL-expired rows; return their ``(conversation_id, user_id)``.
+        """Delete TTL-expired pauses; return what the caller needs to retire them.
 
         Replaces Mongo's ``expireAfterSeconds=0`` TTL index. Intended to
         be called from a Celery beat task every 60 seconds. The deleted
-        rows are returned so the caller can revoke any approval prompt
-        tied to the now-gone resumable state.
+        rows are returned (with the calls that were waiting) so the caller
+        can finalize their messages and revoke the approval prompts.
+
+        Only ``pending`` rows: a ``resuming`` row is a decision running now,
+        and its own stream finalizes the message; one stuck past the grace is
+        handed back to ``pending`` with a fresh TTL by
+        :meth:`revert_stale_resuming` instead.
         """
         # clock_timestamp() — not now() — since the latter is frozen to the
         # start of the transaction, which would let state that has just
         # expired survive one more cleanup tick.
         result = self._conn.execute(
             text(
-                "DELETE FROM pending_tool_state WHERE expires_at < clock_timestamp() "
-                "RETURNING conversation_id, user_id, agent_config"
+                "DELETE FROM pending_tool_state "
+                "WHERE expires_at < clock_timestamp() AND status = 'pending' "
+                "RETURNING conversation_id, user_id, agent_config, pending_tool_calls"
             )
         )
         return [row_to_dict(r) for r in result.fetchall()]

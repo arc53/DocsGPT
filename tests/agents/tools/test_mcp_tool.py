@@ -35,7 +35,7 @@ def _patch_mcp_globals(monkeypatch):
 
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
     # Bypass DNS-resolving URL validation for tests using fake hostnames.
-    monkeypatch.setattr(mcp_mod, "validate_url", lambda u, **kw: u)
+    monkeypatch.setattr(mcp_mod, "validate_user_base_url", lambda u: None)
 
 
 @pytest.fixture
@@ -141,30 +141,78 @@ class TestMCPToolInit:
 
     def test_rejects_metadata_ip(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://169.254.169.254/latest/meta-data", "auth_type": "none"})
 
     def test_rejects_localhost(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://localhost:8080/mcp", "auth_type": "none"})
 
     def test_rejects_private_ip(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://10.0.0.1/mcp", "auth_type": "none"})
+
+    def test_rejects_host_with_a_private_aaaa_record(self, monkeypatch):
+        # The client prefers IPv6, so a public A record beside AAAA ::1 dials loopback.
+        import socket
+
+        from docsgpt.security.safe_url import validate_user_base_url
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
+        answers = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("104.18.6.192", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0)),
+        ]
+        monkeypatch.setattr("socket.getaddrinfo", lambda *a, **kw: answers)
+        with pytest.raises(ValueError, match="Invalid MCP server URL"):
+            mcp_mod.MCPTool(config={"server_url": "https://mcp.attacker.example/mcp", "auth_type": "none"})
+
+    def test_transport_client_checks_every_request(self):
+        from docsgpt.security.safe_url import _GuardedAsyncTransport
+
+        tool = _make_tool({"server_url": "https://mcp.example.com/mcp", "transport_type": "http"})
+        # FastMCP passes follow_redirects=True; the SDK follows same-origin redirects itself.
+        client = tool._http_client_factory()(headers={"X-A": "1"}, auth=None, follow_redirects=True)
+        try:
+            assert isinstance(client._transport, _GuardedAsyncTransport)
+            assert client.follow_redirects is False
+            assert client.headers["X-A"] == "1"
+            assert client.timeout.read == 300.0
+        finally:
+            asyncio.run(client.aclose())
+
+    def test_transport_refuses_a_host_rebound_to_a_private_address(self, monkeypatch):
+        import socket
+
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        tool = _make_tool({"server_url": "https://mcp.attacker.example/mcp", "transport_type": "http"})
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))],
+        )
+
+        async def call():
+            async with tool._http_client_factory()(headers=None, auth=None) as client:
+                await client.post("https://mcp.attacker.example/mcp", json={})
+
+        with pytest.raises(UnsafeUserUrlError):
+            asyncio.run(call())
 
     def test_accepts_public_url(self):
         tool = _make_tool({
@@ -201,11 +249,14 @@ class TestResolveRedirectUri:
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "API_URL", "https://api.docsgpt.co")
+        monkeypatch.setattr(settings, "WORKER_API_URL", "http://worker.docsgpt.co")
+        monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
+        monkeypatch.setattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
             "auth_type": "none",
         })
-        assert "/api/mcp_server/callback" in tool.redirect_uri
+        assert tool.redirect_uri == "https://api.docsgpt.co/api/mcp_server/callback"
 
 
 # =====================================================================
@@ -460,6 +511,25 @@ class TestFormatResult:
         assert result["content"][0]["type"] == "text"
         assert result["content"][0]["text"] == "Hello"
         assert result["isError"] is False
+
+    def test_structured_content_is_used_when_content_is_empty(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        result = SimpleNamespace(content=[], structured_content={"bases": [{"name": "Deals"}]}, is_error=False)
+
+        formatted = tool._format_result(result)
+        assert formatted["isError"] is False
+        assert json.loads(formatted["content"][0]["text"]) == {"bases": [{"name": "Deals"}]}
+
+    def test_text_content_is_kept_when_structured_content_is_also_sent(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        text = SimpleNamespace(type="text", text="one base")
+        result = SimpleNamespace(content=[text], structured_content={"bases": []}, is_error=False)
+
+        assert tool._format_result(result)["content"] == [{"type": "text", "text": "one base"}]
 
     def test_an_image_is_shown_to_the_model_not_inlined(self, mcp_config):
         import base64
@@ -819,6 +889,31 @@ class TestGetActionsMetadata:
         tool.available_tools = [{"name": "ping", "description": "Ping"}]
         meta = tool.get_actions_metadata()
         assert meta[0]["parameters"]["properties"] == {}
+
+    @pytest.mark.parametrize(
+        "input_schema",
+        [
+            {"type": "object"},
+            {"type": "object", "properties": None},
+        ],
+    )
+    def test_tools_without_property_definitions(self, mcp_config, input_schema):
+        tool = _make_tool(mcp_config)
+        tool.available_tools = [
+            {
+                "name": "no_args",
+                "description": "Takes no arguments",
+                "inputSchema": input_schema,
+            }
+        ]
+
+        meta = tool.get_actions_metadata()
+
+        assert meta[0]["parameters"] == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
 
     def test_tools_with_flat_schema(self, mcp_config):
         tool = _make_tool(mcp_config)
@@ -1407,7 +1502,7 @@ class TestStoredSignInRenewal:
         def client(**kwargs):
             return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
 
-        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool.create_mcp_http_client", client)
+        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool._mcp_http_client", client)
         return seen
 
     @staticmethod
@@ -1460,6 +1555,37 @@ class TestStoredSignInRenewal:
             asyncio.run(oauth._initialize())
         assert oauth.context.oauth_metadata is None
         assert "Could not read OAuth metadata" in caplog.text
+
+    def test_discovery_does_not_reach_a_private_authorization_server(self, monkeypatch):
+        # The MCP server picks the authorization server; it must not be able to
+        # point the backend at internal addresses.
+        import socket
+        import time
+
+        import httpx2
+
+        seen = []
+
+        async def handler(transport, request):
+            seen.append(request.url.host)
+            if request.url.path.startswith("/.well-known/oauth-protected-resource"):
+                return httpx2.Response(200, json={
+                    "resource": "https://mcp.example.com/mcp",
+                    "authorization_servers": ["http://169.254.169.254/latest"],
+                })
+            return httpx2.Response(404)
+
+        monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", handler)
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("104.18.6.192", 0))],
+        )
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        assert seen and set(seen) == {"104.18.6.192"}
+        assert oauth.context.oauth_metadata is None
 
     def test_a_valid_token_needs_no_discovery(self, monkeypatch):
         import time
@@ -3010,3 +3136,170 @@ class TestMCPToolExecuteActionErrorHandling:
         )
         with pytest.raises(Exception, match="Failed to execute action"):
             tool.execute_action("some_action", key="value")
+
+
+# =====================================================================
+# Cancelling a sign-in frees the worker
+# =====================================================================
+
+
+class _FakeRedis:
+    """The few Redis calls the sign-in makes, kept in a dict."""
+
+    def __init__(self):
+        self.data: dict = {}
+
+    def get(self, key):
+        value = self.data.get(key)
+        return value.encode() if isinstance(value, str) else value
+
+    def setex(self, key, _ttl, value):
+        self.data[key] = value
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+def _oauth(redis, task_id="task-1", redirect_publish=None):
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    return DocsGPTOAuth(
+        mcp_url="https://mcp.example.com/mcp",
+        redirect_uri="http://localhost:7091/api/mcp_server/callback",
+        redis_client=redis,
+        task_id=task_id,
+        user_id="alice",
+        redirect_publish=redirect_publish,
+    )
+
+
+@pytest.mark.unit
+class TestCancelOAuth:
+    def test_only_the_user_who_started_a_sign_in_can_cancel_it(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+
+        assert manager.cancel("task-1", "mallory") is False
+        assert "mcp_oauth:cancel:task-1" not in redis.data
+        assert manager.cancel("task-1", "alice") is True
+        assert redis.data["mcp_oauth:cancel:task-1"] == "1"
+
+    def test_an_unknown_sign_in_is_not_cancelled(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        assert MCPOAuthManager(_FakeRedis()).cancel("missing", "alice") is False
+        assert MCPOAuthManager(None).cancel("task-1", "alice") is False
+
+    def test_the_wait_for_the_callback_ends_when_cancelled(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        oauth = _oauth(redis)
+        oauth.extracted_state = "state-1"
+        redis.setex("mcp_oauth:auth_url:state-1", 600, "https://provider.example/authorize")
+        manager.cancel("task-1", "alice")
+
+        with patch("docsgpt.agents.tools.mcp_tool.asyncio.sleep") as sleep:
+            with pytest.raises(Exception, match="OAuth cancelled"):
+                asyncio.run(oauth.callback_handler())
+        sleep.assert_not_called()
+        assert "mcp_oauth:auth_url:state-1" not in redis.data
+
+    def test_a_sign_in_cancelled_while_queued_never_redirects(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+        publish = MagicMock()
+        oauth = _oauth(redis, redirect_publish=publish)
+
+        with pytest.raises(Exception, match="OAuth cancelled"):
+            asyncio.run(oauth.redirect_handler("https://provider.example/authorize?state=s"))
+        publish.assert_not_called()
+
+    def test_another_sign_in_is_not_affected(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+        publish = MagicMock()
+        oauth = _oauth(redis, task_id="task-2", redirect_publish=publish)
+
+        asyncio.run(oauth.redirect_handler("https://provider.example/authorize?state=s"))
+        publish.assert_called_once()
+
+
+def _sign_in_tool(task_id, publish):
+    """A worker's sign-in ``MCPTool`` for one task, as ``mcp_oauth`` builds it."""
+    from docsgpt.agents.tools.mcp_tool import MCPTool
+
+    tool = MCPTool.__new__(MCPTool)
+    tool.server_url = "https://mcp.example.com/mcp"
+    tool.transport_type = "http"
+    tool.auth_type = "oauth"
+    tool.custom_headers = {}
+    tool.auth_credentials = {}
+    tool.oauth_scopes = []
+    tool.oauth_task_id = task_id
+    tool.oauth_client_name = "DocsGPT-MCP"
+    tool.oauth_redirect_publish = publish
+    tool.redirect_uri = "http://localhost:7091/api/mcp_server/callback"
+    tool.query_mode = False
+    tool.user_id = "alice"
+    tool.connection_id = None
+    tool._client = None
+    tool._cache_key = tool._generate_cache_key()
+    return tool
+
+
+@pytest.mark.unit
+class TestSignInClientsAreNotShared:
+    """The worker keeps one process; each sign-in task needs its own OAuth handler."""
+
+    def _setup(self, tool, redis):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        with patch("docsgpt.agents.tools.mcp_tool.get_redis_instance", return_value=redis), \
+                patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
+                patch("docsgpt.agents.tools.mcp_tool.Client",
+                      side_effect=lambda transport, auth=None: MagicMock(auth=auth)):
+            tool._setup_client()
+
+    def test_a_retry_after_a_cancel_reaches_the_provider(self):
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        first = _sign_in_tool("task-1", MagicMock())
+        self._setup(first, redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+
+        publish = MagicMock()
+        retry = _sign_in_tool("task-2", publish)
+        self._setup(retry, redis)
+
+        assert retry._client is not first._client
+        assert retry._client.auth.task_id == "task-2"
+        asyncio.run(retry._client.auth.redirect_handler("https://provider.example/authorize?state=s2"))
+        publish.assert_called_once_with("https://provider.example/authorize?state=s2")
+        assert retry._cache_key not in mcp_mod._mcp_clients_cache
+
+    def test_clients_without_a_sign_in_task_are_still_shared(self):
+        redis = _FakeRedis()
+        first = _sign_in_tool(None, None)
+        self._setup(first, redis)
+        second = _sign_in_tool(None, None)
+        self._setup(second, redis)
+
+        assert second._client is first._client

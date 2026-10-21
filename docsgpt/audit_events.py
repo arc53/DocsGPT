@@ -42,6 +42,9 @@ _EXACT: dict[str, str] = {
     "quota_policy_set": "config",
     "quota_policy_deleted": "config",
     "connector_policy_set": "config",
+    "source_defaults_set": "config",
+    "agent_defaults_set": "config",
+    "guardrails_settings_set": "config",
 }
 
 # Dotted namespaces, matched on the part before the first ``.``.
@@ -50,6 +53,7 @@ _NAMESPACES: dict[str, str] = {
     "source": "data",
     "agent": "data",
     "conversation": "data",
+    "monitor": "data",
     "device": "device",
     "guardrail": "safety",
 }

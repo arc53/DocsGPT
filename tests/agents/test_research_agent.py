@@ -325,16 +325,19 @@ class TestResearchAgentClarification:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        response = Mock()
-        response.choices = [Mock()]
-        response.choices[0].message = Mock()
-        response.choices[0].message.content = json.dumps(
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        # The Choice object OpenAI's gen returns when tools are passed.
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = json.dumps(
             {"needs_clarification": False, "reason": "Clear enough"}
         )
         mock_llm.gen = Mock(return_value=response)
         mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
 
         agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
         result = agent._clarification_phase("What is Python?")
         assert result is None
 
@@ -456,14 +459,16 @@ class TestResearchAgentPlanning:
             "complexity": "simple",
             "steps": [{"query": f"q{i}", "rationale": f"r{i}"} for i in range(10)],
         })
-        response = Mock()
-        response.choices = [Mock()]
-        response.choices[0].message = Mock()
-        response.choices[0].message.content = plan_json
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = plan_json
         mock_llm.gen = Mock(return_value=response)
         mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
 
         agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
         steps, complexity = agent._planning_phase("Simple question")
 
         assert complexity == "simple"
@@ -534,66 +539,74 @@ class TestResearchAgentPlanning:
 
 @pytest.mark.unit
 class TestResearchAgentExtractText:
-
-    def _make_agent(
-        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
-    ):
-        return ResearchAgent(**agent_base_params)
+    """``_extract_text`` reads a reply with the handler of the model that answered,
+    as the chat loop does, instead of sniffing provider shapes itself."""
 
     def test_extract_from_string(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
+        agent = ResearchAgent(**agent_base_params)
         assert agent._extract_text("hello") == "hello"
 
-    def test_extract_from_openai_response(
+    def test_extract_from_openai_choice(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
-        response = Mock()
-        response.choices = [Mock()]
-        response.choices[0].message = Mock()
-        response.choices[0].message.content = "OpenAI content"
-        response.message = None
-        response.content = None
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = "OpenAI content"
         assert agent._extract_text(response) == "OpenAI content"
 
-    def test_extract_from_anthropic_response(
+    def test_extract_from_anthropic_message(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
+        from types import SimpleNamespace
+
+        from docsgpt.llm.handlers.anthropic import AnthropicLLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = AnthropicLLMHandler()
+        response = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Anthropic content")], stop_reason="end_turn"
         )
-        text_block = Mock()
-        text_block.text = "Anthropic content"
-        response = Mock()
-        response.content = [text_block]
-        response.message = None
-        response.choices = None
         assert agent._extract_text(response) == "Anthropic content"
 
-    def test_extract_from_message_content(
-        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    def test_extract_uses_the_responding_providers_parser(
+        self, agent_base_params, mock_llm, mock_llm_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
-        response = Mock()
-        response.message = Mock()
-        response.message.content = "From message"
-        assert agent._extract_text(response) == "From message"
+        """A fallback to another provider returns that provider's shape."""
+        from google.genai import types as gt
+
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        mock_llm._responding_provider = "google"
+        response = gt.GenerateContentResponse(candidates=[gt.Candidate(content=gt.Content(
+            role="model", parts=[gt.Part(text="Gemini content")],
+        ))])
+        assert agent._extract_text(response) == "Gemini content"
 
     def test_extract_from_none(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
+        agent = ResearchAgent(**agent_base_params)
         assert agent._extract_text(None) == ""
+
+    def test_extract_without_text_is_empty(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = None
+        assert agent._extract_text(response) == ""
 
 
 # =====================================================================
@@ -1134,7 +1147,7 @@ class TestResearchStep:
             finish_reason="stop",
             raw_response=mock_response,
         )
-        mock_llm_handler.parse_response = Mock(return_value=parsed)
+        mock_llm_handler._parse_for_response = Mock(return_value=parsed)
 
         report = agent._research_step("What is Python?", {})
         assert report == "Direct answer to the question"
@@ -1171,7 +1184,7 @@ class TestResearchStep:
             finish_reason="stop",
             raw_response=mock_response2,
         )
-        mock_llm_handler.parse_response = Mock(side_effect=[parsed_with_tool, parsed_final])
+        mock_llm_handler._parse_for_response = Mock(side_effect=[parsed_with_tool, parsed_final])
 
         # Mock tool execution
         with patch.object(agent, "_execute_step_tools_with_refinement",
@@ -1263,7 +1276,7 @@ class TestResearchStep:
             finish_reason="tool_calls",
             raw_response=mock_response1,
         )
-        mock_llm_handler.parse_response = Mock(return_value=parsed_with_tool)
+        mock_llm_handler._parse_for_response = Mock(return_value=parsed_with_tool)
 
         # First gen returns tool call, second gen (summary request) returns text
         mock_llm.gen = Mock(side_effect=[mock_response1, "Final summary after max iters"])
@@ -1292,6 +1305,58 @@ class TestResearchStep:
 
         report = agent._research_step("query", {})
         assert report == "Research step completed."
+
+    def test_research_step_summary_reads_a_fallback_providers_reply(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+    ):
+        """The closing summary is read like every other reply: with the parser of the model that answered."""
+        from google.genai import types as gt
+
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(max_sub_iterations=0, **agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm._responding_provider = "google"
+        mock_llm.gen = Mock(return_value=gt.GenerateContentResponse(candidates=[gt.Candidate(content=gt.Content(
+            role="model", parts=[gt.Part(text="Summary from the backup model.")],
+        ))]))
+
+        assert agent._research_step("query", {}) == "Summary from the backup model."
+
+    def test_research_step_parses_a_fallback_providers_reply(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+    ):
+        """An OpenAI-primary step whose call fell back to Gemini still reads Gemini's tool call."""
+        from google.genai import types as gt
+
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm._responding_provider = "google"
+
+        gemini_reply = gt.GenerateContentResponse(candidates=[gt.Candidate(content=gt.Content(
+            role="model",
+            parts=[gt.Part(function_call=gt.FunctionCall(name="internal__search", args={"query": "x"}))],
+        ))])
+        mock_llm.gen = Mock(side_effect=[gemini_reply, "Findings from the backup model."])
+
+        with patch.object(agent, "_execute_step_tools_with_refinement",
+                          return_value=([], False)) as run_tools:
+            report = agent._research_step("query", {})
+
+        assert [c.name for c in run_tools.call_args.args[0]] == ["internal__search"]
+        assert report == "Findings from the backup model."
 
 
 # =====================================================================
@@ -1403,6 +1468,217 @@ class TestExecuteStepToolsWithRefinement:
         )
 
         assert was_empty is False
+
+    def test_raising_tool_becomes_error_result_and_batch_continues(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """A tool that raises answers its call with an error; the next call still runs."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        broken = ToolCall(id="tc1", name="api__fetch", arguments={"url": "x"})
+        working = ToolCall(id="tc2", name="internal__search", arguments={"query": "q"})
+
+        def gen_execute(tools_dict, tc, llm_class):
+            yield {"type": "tool_call", "data": {"action_name": tc.name, "status": "pending"}}
+            if tc.id == "tc1":
+                raise RuntimeError("upstream 502")
+            return ("Search result text", "tc2")
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [broken, working], {}, [{"role": "user", "content": "query"}], agent.tool_executor, False
+        )
+
+        declared = [tc["id"] for m in messages if m.get("role") == "assistant" for tc in m["tool_calls"]]
+        tool_msgs = [m for m in messages if m.get("role") == "tool"]
+        assert declared == ["tc1", "tc2"]
+        assert [m["tool_call_id"] for m in tool_msgs] == ["tc1", "tc2"]
+        assert "upstream 502" in tool_msgs[0]["content"]
+        assert tool_msgs[1]["content"] == "Search result text"
+
+    def test_raising_tool_without_call_id_gets_a_matching_id(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """A provider call with no id still gets the same id on its call and its error result."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        call = ToolCall(id="", name="api__fetch", arguments={})
+
+        def gen_execute(tools_dict, tc, llm_class):
+            raise RuntimeError("boom")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        assistant_id = messages[0]["tool_calls"][0]["id"]
+        assert assistant_id
+        assert messages[1]["tool_call_id"] == assistant_id
+
+    def test_raising_tool_does_not_carry_queued_images(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """Images a tool queued before it raised are dropped, not attached to the error result."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+        from docsgpt.llm.tool_images import IMAGES_KEY
+
+        call = ToolCall(id="tc1", name="api__fetch", arguments={})
+
+        def gen_execute(tools_dict, tc, llm_class):
+            agent.tool_executor.pending_native_parts = [{"ref": "img-1"}]
+            raise RuntimeError("failed after queuing an image")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        assert IMAGES_KEY not in messages[1]
+        assert agent.tool_executor.pending_native_parts == []
+
+    def test_oversized_tool_result_is_capped_for_the_llm(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+    ):
+        """A huge result is cut to TOOL_RESULT_MAX_TOKENS before it enters the step's messages."""
+        monkeypatch.setattr("docsgpt.core.settings.settings.TOOL_RESULT_MAX_TOKENS", 30, raising=False)
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        call = ToolCall(id="tc1", name="api__fetch", arguments={})
+        big = "word " * 2000
+
+        def gen_execute(tools_dict, tc, llm_class):
+            return (big, "tc1")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        content = messages[1]["content"]
+        assert "tool result truncated" in content
+        assert len(content) < len(big)
+
+    @pytest.mark.parametrize("signature", ["c2lnbmF0dXJl", None])
+    def test_tool_call_message_keeps_gemini_thought_signature(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        signature,
+    ):
+        """Gemini 3 needs each call's thought_signature echoed back; it's left off when there is none."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        call = ToolCall(id="tc1", name="internal__search", arguments={}, thought_signature=signature)
+
+        def gen_execute(tools_dict, tc, llm_class):
+            return ("result", "tc1")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(return_value={"role": "tool", "content": "result"})
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        declared = messages[0]["tool_calls"][0]
+        if signature:
+            assert declared["thought_signature"] == signature
+        else:
+            assert "thought_signature" not in declared
+
+    def test_parallel_calls_share_one_assistant_message_before_their_results(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """Gemini 3 400s on "FC1+sig, FR1, FC2, FR2"; the batch goes back as "FC1+sig, FC2, FR1, FR2"."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        calls = [
+            ToolCall(id="tc1", name="internal__search", arguments={"query": "a"}, thought_signature="c2ln"),
+            ToolCall(id="tc2", name="internal__search", arguments={"query": "b"}),
+        ]
+
+        def gen_execute(tools_dict, tc, llm_class):
+            return (f"result {tc.id}", tc.id)
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        history = [{"role": "user", "content": "query"}]
+        messages, _ = agent._execute_step_tools_with_refinement(
+            calls, {}, history, agent.tool_executor, False
+        )
+
+        assert [m["role"] for m in messages] == ["user", "assistant", "tool", "tool"]
+        declared = messages[1]["tool_calls"]
+        assert [tc["id"] for tc in declared] == ["tc1", "tc2"]
+        assert declared[0]["thought_signature"] == "c2ln"
+        assert "thought_signature" not in declared[1]
+        assert [m["tool_call_id"] for m in messages[2:]] == ["tc1", "tc2"]
 
 
 # =====================================================================
@@ -1734,8 +2010,8 @@ class TestResearchStepPauseGates:
         assert ran == ["wiki_view"]
         assert "approval" in results["c1"].lower() and "not run" in results["c1"].lower()
         assert results["c2"] == "ran wiki_view"
-        # Each call, refused or not, still gets its assistant tool_call turn.
-        assert [m["tool_calls"][0]["id"] for m in messages if m.get("role") == "assistant"] == ["c1", "c2"]
+        # Each call, refused or not, is still declared on the batch's assistant message.
+        assert [tc["id"] for m in messages if m.get("role") == "assistant" for tc in m["tool_calls"]] == ["c1", "c2"]
 
     def test_external_caller_owner_credential_write_is_refused_read_runs(
         self, agent_base_params, mock_llm, mock_llm_handler, mock_llm_creator, mock_llm_handler_creator, monkeypatch,
@@ -1809,3 +2085,34 @@ class TestResearchStepPauseGates:
         assert ran == []
         assert results["c1"].startswith("Tool denied")
         assert [d["action_name"] for d in executor.headless_denials] == ["delete_all"]
+
+
+@pytest.mark.unit
+class TestResearchThinkTool:
+    """The think tool research adds has no DB row, so it needs its sentinel id to load."""
+
+    def test_think_call_runs_through_the_real_executor(
+        self, agent_base_params, mock_llm, mock_llm_creator, monkeypatch,
+    ):
+        # Pre-import to stabilise the ToolManager.load_tools walk's import order.
+        import docsgpt.api.user.tools.mcp  # noqa: F401
+        from docsgpt.agents import tool_executor as te_mod
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.llm.handlers.base import ToolCall
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        # Journal writes need a database.
+        monkeypatch.setattr(te_mod, "_record_proposed", lambda *a, **kw: False)
+        executor = ToolExecutor(user="owner", decoded_token={"sub": "owner"})
+        monkeypatch.setattr(executor, "get_tools", lambda: {})
+        agent = ResearchAgent(tool_executor=executor, **agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+
+        tools_dict = agent._setup_tools()
+        assert "reason" in [t["function"]["name"] for t in agent.tools]
+        call = ToolCall(id="c1", name="reason", arguments={"reasoning": "plan the search"})
+
+        messages, _ = agent._execute_step_tools_with_refinement([call], tools_dict, [], executor, False)
+
+        assert messages[-1]["content"] == "Continue."
+        assert executor.tool_calls[-1]["status"] != "error"

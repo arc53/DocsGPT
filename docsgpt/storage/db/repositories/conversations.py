@@ -23,7 +23,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import conversations_table, conversation_messages_table
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
@@ -168,6 +168,7 @@ class ConversationsRepository:
         shared_token: str | None = None,
         visibility: str = "listed",
         legacy_mongo_id: str | None = None,
+        passthrough: dict | None = None,
     ) -> dict:
         """Create a new conversation.
 
@@ -195,6 +196,8 @@ class ConversationsRepository:
             values["shared_token"] = shared_token
         if legacy_mongo_id:
             values["legacy_mongo_id"] = legacy_mongo_id
+        if passthrough:
+            values["passthrough"] = passthrough
 
         stmt = pg_insert(conversations_table).values(**values).returning(conversations_table)
         result = self._conn.execute(stmt)
@@ -334,17 +337,17 @@ class ConversationsRepository:
                 "  SELECT field AS match_field, txt AS match_text "
                 "  FROM ( "
                 "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
-                "    WHERE c.name ILIKE :pattern "
+                "    WHERE c.name ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'prompt'::text, m.prompt, 1 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.prompt ILIKE :pattern "
+                "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.response ILIKE :pattern "
+                "      AND m.response ILIKE :pattern ESCAPE '\\' "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
@@ -355,7 +358,7 @@ class ConversationsRepository:
             ),
             {
                 "user_id": user_id,
-                "pattern": f"%{query}%",
+                "pattern": f"%{like_escape(query)}%",
                 "limit": limit,
             },
         )
@@ -768,7 +771,9 @@ class ConversationsRepository:
         Uses ``SELECT ... FOR UPDATE`` to allocate the next position
         atomically. The caller must be inside a transaction.
 
-        Mirrors Mongo's ``$push`` on the ``queries`` array.
+        Mirrors Mongo's ``$push`` on the ``queries`` array. ``message["id"]``,
+        when given, is the new row's id (a turn that reserved its id while it
+        ran, such as a continuation).
         """
         # Lock the parent conversation row to serialize concurrent appends.
         self._conn.execute(
@@ -799,6 +804,8 @@ class ConversationsRepository:
             "model_id": message.get("model_id"),
             "message_metadata": message.get("metadata") or {},
         }
+        if message.get("id"):
+            values["id"] = str(message["id"])
         # Callers that know the turn failed (e.g. an agent that yielded a
         # terminal error) must be able to say so; without this the column
         # default silently made every appended row "complete".
@@ -948,6 +955,29 @@ class ConversationsRepository:
             {"id": conversation_id},
         )
         return _message_row_to_dict(result.fetchone())
+
+    def delete_in_flight_message(self, message_id: str) -> bool:
+        """Delete a message that is still being written; a finished one is left alone.
+
+        A continuation reserves its row before it runs and takes it back out
+        when it ends silent or fails; its journal goes with it (cascade).
+
+        Args:
+            message_id: The message.
+
+        Returns:
+            True when a row was deleted.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid) "
+                "AND status IN ('pending', 'streaming')"
+            ),
+            {"id": message_id},
+        )
+        return (result.rowcount or 0) > 0
 
     def update_message_by_id(
         self, message_id: str, fields: dict,
@@ -1220,6 +1250,46 @@ class ConversationsRepository:
         """Stamp the heartbeat; True when an in-flight row was updated."""
         return self.heartbeat_message_state(message_id) is HeartbeatState.STAMPED
 
+    def patch_tool_call(self, message_id: str, job_id: str, patch: dict) -> bool:
+        """Merge ``patch`` into the message's tool-call entry for a background job.
+
+        A turn that handed a call off persisted its entry as running; when the
+        job finishes the entry takes the outcome, so a reload shows it. The
+        entry is matched by ``job_id``, which is unique, never by the call id,
+        which providers reuse.
+
+        Args:
+            message_id: The turn's message.
+            job_id: The job the entry carries.
+            patch: Keys to set on the entry.
+
+        Returns:
+            True when an entry was updated.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE conversation_messages SET tool_calls = (
+                    SELECT jsonb_agg(
+                        CASE WHEN elem->>'job_id' = :job_id THEN elem || CAST(:patch AS jsonb) ELSE elem END
+                        ORDER BY ord
+                    )
+                    FROM jsonb_array_elements(tool_calls) WITH ORDINALITY AS t(elem, ord)
+                )
+                WHERE id = CAST(:mid AS uuid)
+                  AND jsonb_typeof(tool_calls) = 'array'
+                  AND EXISTS (
+                      SELECT 1 FROM jsonb_array_elements(tool_calls) AS e(elem)
+                      WHERE e.elem->>'job_id' = :job_id
+                  )
+                """
+            ),
+            {"mid": message_id, "job_id": str(job_id), "patch": json.dumps(patch, cls=PGNativeJSONEncoder)},
+        )
+        return (result.rowcount or 0) > 0
+
     def confirm_executed_tool_calls(self, message_id: str) -> int:
         """Flip ``tool_call_attempts.status='executed' → 'confirmed'`` for the message."""
         if not looks_like_uuid(message_id):
@@ -1382,6 +1452,19 @@ class ConversationsRepository:
             {"days": days},
         )
         return result.rowcount or 0
+
+    def set_passthrough(self, conversation_id: str, passthrough: dict | None) -> bool:
+        """Store the latest turn's ``passthrough`` values on a conversation; ``None`` clears them."""
+        if not looks_like_uuid(conversation_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE conversations SET passthrough = CAST(:passthrough AS jsonb) "
+                "WHERE id = CAST(:conv_id AS uuid)"
+            ),
+            {"conv_id": conversation_id, "passthrough": json.dumps(passthrough) if passthrough else None},
+        )
+        return result.rowcount > 0
 
     def set_feedback(
         self, conversation_id: str, position: int, feedback: dict | None,

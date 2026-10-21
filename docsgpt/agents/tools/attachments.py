@@ -27,6 +27,7 @@ from docsgpt.agents.attachment_budget import (
     PAGE_IMAGE_TOKENS,
     SPREADSHEET_EXTENSIONS,
     SPREADSHEET_MIME_TYPES,
+    FileStatus,
     PlannedFile,
     _attachment_id,
     assign_refs,
@@ -239,6 +240,8 @@ def sync_attachments_tool(
             }
             for planned in plan.files
         }
+        # Refs a guardrail withheld: the tool refuses to read or search them.
+        config["withheld_refs"] = [p.ref for p in plan.files if p.status is FileStatus.WITHHELD]
     if max_native_parts is not None:
         config["max_native_parts"] = max(int(max_native_parts), 0)
 
@@ -914,6 +917,15 @@ class AttachmentsTool(Tool):
         cap = int(self.config.get("max_native_parts") or 0)
         return f"The image limit for this turn ({cap}) is reached; no more images can be shown."
 
+    def _withheld(self, planned: PlannedFile) -> bool:
+        return planned.ref in (self.config.get("withheld_refs") or ())
+
+    def _withheld_note(self, planned: PlannedFile) -> str:
+        return (
+            f"{planned.ref} {sanitize_filename(planned.filename)} was withheld by a content policy and cannot be "
+            "read. Tell the user it could not be used."
+        )
+
     def _plan_info(self, planned: PlannedFile) -> Dict[str, Any]:
         info = (self.config.get("plan") or {}).get(planned.ref)
         return info if isinstance(info, dict) else {}
@@ -923,6 +935,8 @@ class AttachmentsTool(Tool):
     def _status(self, planned: PlannedFile) -> str:
         info = self._plan_info(planned)
         status = info.get("status") or ("available" if planned.current else "earlier")
+        if self._withheld(planned):
+            return "withheld by a content policy (cannot be read)"
         if status == "partial" and int(info.get("shown_pages") or 0):
             pages = int(info["shown_pages"])
             return f"partial (pages 1–{pages:,} are in your context as images)"
@@ -1033,6 +1047,8 @@ class AttachmentsTool(Tool):
         planned, wanted = self._find(ref)
         if planned is None:
             return self._unknown(wanted)
+        if self._withheld(planned):
+            return self._withheld_note(planned)
         if self._no_room(RESULT_OVERHEAD_TOKENS + MIN_READ_TOKENS):
             return self._no_room_note()
         # The same read twice in a turn only re-adds what the context holds;
@@ -1147,6 +1163,8 @@ class AttachmentsTool(Tool):
             unsearchable: List[PlannedFile] = []
             room = SEARCH_MAX_INDEX_TOKENS
             for planned in self.files():
+                if self._withheld(planned):
+                    continue
                 row = self._content(planned) if self._has_text(planned) else None
                 text = self._text(planned, row) if row else ""
                 if not text.strip():

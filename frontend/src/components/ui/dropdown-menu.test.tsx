@@ -210,3 +210,38 @@ describe('ActionMenu trigger', () => {
     expect(content.className).not.toContain('min-w-36');
   });
 });
+
+describe('ActionMenu tooltip', () => {
+  it('does not reopen its tooltip when closing the menu hands focus back', async () => {
+    const { useState } = await import('react');
+    const { TooltipProvider } = await import('./tooltip');
+    const control: { setOpen?: (open: boolean) => void } = {};
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      control.setOpen = setOpen;
+      return (
+        <TooltipProvider delayDuration={0}>
+          <ActionMenu
+            options={options()}
+            triggerLabel="Actions for row"
+            open={open}
+            onOpenChange={setOpen}
+          />
+        </TooltipProvider>
+      );
+    }
+    await render(<Harness />);
+    const tooltip = () =>
+      document.querySelector('[data-slot="tooltip-content"]');
+    // Focus alone shows it (the baseline this test relies on)...
+    await act(async () => trigger().focus());
+    expect(tooltip()).not.toBeNull();
+    await act(async () => trigger().blur());
+    expect(tooltip()).toBeNull();
+    // ...but not the focus a closing menu hands back.
+    await act(async () => control.setOpen?.(true));
+    await act(async () => items()[0].click());
+    await act(async () => trigger().focus());
+    expect(tooltip()).toBeNull();
+  });
+});

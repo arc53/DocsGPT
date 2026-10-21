@@ -101,6 +101,74 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_drawio_preset_connects_without_oauth(self):
+        definition = catalog.get_definition("mcp:drawio")
+
+        assert definition.publisher == "preset"
+        assert definition.icon == "drawio"
+        assert definition.category == "projects"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.draw.io/mcp"
+        assert definition.capabilities == ("read",)
+        assert definition.docs_url == "https://github.com/jgraph/drawio-mcp"
+        assert definition.configured
+
+    def test_coingecko_preset_connects_without_oauth(self):
+        definition = catalog.get_definition("mcp:coingecko")
+
+        assert definition.name == "CoinGecko"
+        assert definition.publisher == "preset"
+        assert definition.icon == "coingecko"
+        assert definition.category == "business"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.api.coingecko.com/mcp"
+        assert definition.capabilities == ("read",)
+        assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
+        assert definition.configured
+
+    def test_trello_preset(self):
+        definition = catalog.get_definition("mcp:trello")
+
+        assert definition.name == "Trello"
+        assert definition.description == "Find Trello boards and cards, and create and update cards."
+        assert definition.icon == "trello"
+        assert definition.category == "projects"
+        assert definition.mcp_url == "https://mcp.trello.com/v1"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == (
+            "https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/"
+        )
+
+
+    def test_miro_preset_uses_the_catalog_contract(self):
+        definition = catalog.get_definition("mcp:miro")
+
+        assert definition is not None
+        assert definition.name == "Miro"
+        assert definition.icon == "miro"
+        assert definition.category == "projects"
+        assert definition.mcp_url == "https://mcp.miro.com/"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://developers.miro.com/docs/miro-mcp"
+
+    def test_miro_preset_is_listed_with_the_other_remote_servers(self):
+        presets = [d for d in catalog.all_definitions() if d.publisher == "preset"]
+
+        assert "mcp:miro" in {preset.key for preset in presets}
+
+
+    def test_resend_preset_exposes_email_actions(self):
+        definition = catalog.get_definition("mcp:resend")
+
+        assert definition.name == "Resend"
+        assert definition.category == "messaging"
+        assert definition.mcp_url == "https://mcp.resend.com/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://resend.com/docs/knowledge-base/mcp-server"
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(
@@ -165,3 +233,82 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_clickup_is_a_remote_oauth_preset():
+    clickup = catalog.get_definition("mcp:clickup")
+
+    assert clickup.name == "ClickUp"
+    assert clickup.icon == "clickup"
+    assert clickup.category == "projects"
+    assert clickup.auth_kind == "mcp_oauth"
+    assert clickup.mcp_base_url == "https://mcp.clickup.com"
+    assert clickup.capabilities == ("read", "write")
+    assert clickup.docs_url == (
+        "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
+    )
+
+
+def test_zapier_preset_uses_remote_oauth_catalog_contract():
+    zapier = catalog.get_definition("mcp:zapier")
+
+    assert zapier.name == "Zapier"
+    assert zapier.icon == "zapier"
+    assert zapier.category == "business"
+    assert zapier.mcp_url == "https://mcp.zapier.com/api/v1/connect"
+    assert zapier.auth_kind == "mcp_oauth"
+    assert zapier.capabilities == ("read", "write")
+    assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
+
+
+def test_calcom_preset_uses_remote_oauth_catalog_contract():
+    calcom = catalog.get_definition("mcp:calcom")
+
+    assert calcom.name == "Cal.com"
+    assert calcom.icon == "calcom"
+    assert calcom.category == "business"
+    assert calcom.mcp_url == "https://mcp.cal.com/mcp"
+    assert calcom.auth_kind == "mcp_oauth"
+    assert calcom.capabilities == ("read", "write")
+    assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_alphavantage_preset_uses_remote_oauth_catalog_contract():
+    alphavantage = catalog.get_definition("mcp:alphavantage")
+
+    assert alphavantage.name == "Alpha Vantage"
+    assert alphavantage.icon == "alphavantage"
+    assert alphavantage.category == "business"
+    assert alphavantage.mcp_url == "https://mcp.alphavantage.co/mcp"
+    assert alphavantage.auth_kind == "mcp_oauth"
+    assert alphavantage.capabilities == ("read",)
+    assert alphavantage.docs_url == "https://github.com/alphavantage/alpha_vantage_mcp"
+
+
+def test_alphavantage_starts_with_core_tools_under_the_openai_limit():
+    """133 tools exceed OpenAI's 128 per request; the core ones and the TOOL_CALL fallback start on."""
+    default_actions = catalog.get_definition("mcp:alphavantage").default_actions
+
+    assert 0 < len(default_actions) <= 32
+    assert len(set(default_actions)) == len(default_actions)
+    assert {"GLOBAL_QUOTE", "SYMBOL_SEARCH", "COMPANY_OVERVIEW", "EARNINGS", "CPI", "TOOL_CALL"} <= set(
+        default_actions
+    )
+
+
+def test_presets_without_default_actions_turn_every_action_on():
+    assert catalog.get_definition("mcp:notion").default_actions == ()
+
+
+def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
+    presets = tmp_path / "mcp.yaml"
+    presets.write_text(
+        "- key: mcp:example\n"
+        "  name: Example\n"
+        "  description: Example records.\n"
+        "  mcp_url: https://mcp.example.com/mcp\n"
+        "  default_actions: [search, fetch]\n"
+    )
+    monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
+
+    assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")

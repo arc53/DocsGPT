@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
+  Activity as ActivityIcon,
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
@@ -13,6 +14,9 @@ import {
   SquarePen,
 } from 'lucide-react';
 
+import ActivityNavBadge, { RAIL_STATUS_ID } from './activity/ActivityNavBadge';
+import { ACTIVITY_ROOT } from './activity/paths';
+import useActivityLoader from './activity/useActivityLoader';
 import {
   AGENTS_MANAGE_ROOT,
   agentChatPath,
@@ -51,6 +55,7 @@ import { LoadMoreStatus } from './components/ui/load-more-status';
 import { Skeleton } from './components/ui/skeleton';
 import { useScrollSentinel } from './hooks/useLoadMore';
 import { getConversations } from './preferences/preferenceApi';
+import useMonitorsLoader from './monitors/useMonitorsLoader';
 import MobileTopBar from './navigation/MobileTopBar';
 import SectionNav from './navigation/SectionNav';
 import SectionRail from './navigation/SectionRail';
@@ -60,7 +65,6 @@ import {
   getSectionForPath,
   type Section,
 } from './navigation/sections';
-import ConnectionHealthDot from './connectors/ConnectionHealthDot';
 import { useSidebarLevel } from './navigation/SidebarLevelProvider';
 import { useSectionContext } from './navigation/useSectionContext';
 import { useLastAppPath } from './navigation/useLastAppPath';
@@ -77,6 +81,7 @@ import {
   appendConversations,
   receiveConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversations,
   setConversationsLoading,
@@ -100,6 +105,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const { t } = useTranslation();
 
   const token = useSelector(selectToken);
+  useMonitorsLoader();
+  useActivityLoader();
   const queries = useSelector(selectQueries);
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
@@ -167,6 +174,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const closeNavOnMobile = () => {
     if (isMobile) setNavOpen(false);
+  };
+
+  const openManageAgents = () => {
+    dispatch(setSelectedAgent(null));
+    closeNavOnMobile();
+    goToLevel(AGENTS_MANAGE_ROOT);
   };
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
@@ -256,7 +269,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setOlderError(false);
     getConversations(token, { date: last.date, id: last.id })
       .then((result) => {
-        if (result.data) dispatch(appendConversations(result.data));
+        if (result.data)
+          dispatch(appendConversations(result.data, result.requestedAt));
         else setOlderError(true);
       })
       .finally(() => setOlderLoading(false));
@@ -298,6 +312,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setIsDeletingConversation(true);
     return conversationService.deleteAll(token).then((response: Response) => {
       if (!response.ok) throw new Error('Failed to delete conversations');
+      dispatch(removeAllConversations());
       fetchConversations();
     });
   };
@@ -492,6 +507,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 </IconButton>
               )}
               <IconButton
+                label={t('activity.label')}
+                aria-describedby={RAIL_STATUS_ID}
+                side="right"
+                variant="ghost-muted"
+                size="icon"
+                className="relative"
+                onClick={() => goToLevel(ACTIVITY_ROOT)}
+              >
+                <ActivityIcon aria-hidden />
+                <ActivityNavBadge variant="rail" />
+              </IconButton>
+              <IconButton
                 label={t('manageAgents')}
                 side="right"
                 variant="ghost-muted"
@@ -599,6 +626,24 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 {t('newChat')}
               </p>
             </NavLink>
+            <Button variant="sidebar-item" asChild className="mx-4 mt-2 flex">
+              <NavLink
+                to={ACTIVITY_ROOT}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  closeNavOnMobile();
+                  goToLevel(ACTIVITY_ROOT);
+                }}
+              >
+                <ActivityIcon
+                  className="text-muted-foreground size-5 shrink-0"
+                  aria-hidden
+                />
+                <span className="truncate">{t('activity.label')}</span>
+                <ActivityNavBadge />
+              </NavLink>
+            </Button>
             <div
               id="conversationsMainDiv"
               className="scrollbar-overlay min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
@@ -612,10 +657,20 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               )}
               {recentAgents?.length > 0 ? (
                 <div>
-                  <div className="mx-4 my-auto mt-2 flex h-6 items-center">
+                  <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
                     <p className="mt-1 ml-4 text-sm font-semibold">
                       {t('navigation.agents')}
                     </p>
+                    <IconButton
+                      label={t('manageAgents')}
+                      variant="ghost-muted"
+                      size="icon"
+                      shape="pill"
+                      className="mr-1"
+                      onClick={openManageAgents}
+                    >
+                      <LayoutGrid aria-hidden />
+                    </IconButton>
                   </div>
                   <div>
                     <div>
@@ -686,32 +741,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         );
                       })}
                     </div>
-                    <Button
-                      variant="sidebar-item"
-                      asChild
-                      className="mx-4 my-auto mt-2 flex"
-                    >
-                      <NavLink
-                        to={AGENTS_MANAGE_ROOT}
-                        end
-                        onClick={(event) => {
-                          if (event.metaKey || event.ctrlKey || event.shiftKey)
-                            return;
-                          event.preventDefault();
-                          dispatch(setSelectedAgent(null));
-                          closeNavOnMobile();
-                          goToLevel(AGENTS_MANAGE_ROOT);
-                        }}
-                      >
-                        <div className="flex w-6 justify-center">
-                          <LayoutGrid
-                            className="text-muted-foreground size-5"
-                            aria-hidden
-                          />
-                        </div>
-                        <span className="truncate">{t('manageAgents')}</span>
-                      </NavLink>
-                    </Button>
                   </div>
                 </div>
               ) : (
@@ -873,7 +902,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   aria-hidden
                 />
                 <p className="text-foreground text-sm">{t('settings.label')}</p>
-                <ConnectionHealthDot />
               </Link>
             </Button>
           </div>

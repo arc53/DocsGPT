@@ -47,6 +47,7 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import (
+    clean_text_for_tts,
     get_agent_image_content_type,
     is_external_image_url,
     is_safe_agent_image_path,
@@ -347,6 +348,10 @@ class StoreAttachment(Resource):
 
 _STT_DISABLED_MESSAGE = "Speech-to-text is disabled on this server."
 _TTS_DISABLED_MESSAGE = "Text-to-speech is disabled on this server."
+# Raw body cap for /api/tts, checked before parsing. The spoken-text cap
+# (TTS_MAX_CHARS) applies after markdown is stripped, so it cannot bound the
+# work of parsing and cleaning an oversized body.
+_TTS_MAX_REQUEST_BYTES = 1024 * 1024
 
 
 def _feature_disabled(message: str):
@@ -834,10 +839,44 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
+        # Before anything reads the body: resolving the caller parses a form body.
+        # Also bounds a body sent without Content-Length while it is read.
+        request.max_content_length = _TTS_MAX_REQUEST_BYTES
+        if request.content_length is not None and request.content_length > _TTS_MAX_REQUEST_BYTES:
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "message": f"Request is larger than the {_TTS_MAX_REQUEST_BYTES}-byte limit",
+                }), 413
+            )
+        # Each call spends the operator's provider quota, so callers must be known.
+        auth_user = _resolve_authenticated_user()
+        if hasattr(auth_user, "status_code"):
+            return auth_user
+        if not auth_user:
+            return make_response(
+                jsonify({"success": False, "message": "Authentication required"}),
+                401,
+            )
         if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
             return _feature_disabled(_TTS_DISABLED_MESSAGE)
-        data = request.get_json()
-        text = data["text"]
+        data = request.get_json(silent=True)
+        text = data.get("text") if isinstance(data,dict) else None
+        if not isinstance(text,str) or not text.strip():
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "message": "Text is required"
+                }), 400
+            )
+        text = clean_text_for_tts(text)
+        if len(text) > settings.TTS_MAX_CHARS:
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "message": f"Text is longer than the {settings.TTS_MAX_CHARS}-character limit",
+                }), 413
+            )
         try:
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
             audio_base64, detected_language = tts_instance.text_to_speech(text)

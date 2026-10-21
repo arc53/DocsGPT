@@ -230,6 +230,23 @@ class TestProcessAgentWebhookTask:
         mock_worker.assert_called_once_with(ANY, "agent123", {"event": "test"})
         assert result == {"status": "ok"}
 
+    @pytest.mark.unit
+    def test_time_limits_follow_webhook_run_timeout(self):
+        from docsgpt.api.user.tasks import process_agent_webhook
+        from docsgpt.core.settings import settings
+
+        assert process_agent_webhook.soft_time_limit == max(30, settings.WEBHOOK_RUN_TIMEOUT)
+        assert process_agent_webhook.time_limit == process_agent_webhook.soft_time_limit + 60
+
+    @pytest.mark.unit
+    def test_run_is_never_retried(self):
+        """A webhook run has side effects, so a failure must not re-run the agent."""
+        from docsgpt.api.user.tasks import process_agent_webhook
+
+        assert process_agent_webhook.acks_late is True
+        assert not getattr(process_agent_webhook, "autoretry_for", None)
+        assert process_agent_webhook.max_retries == 0
+
 
 class TestIngestConnectorTask:
     @pytest.mark.unit
@@ -326,7 +343,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 15
+        assert sender.add_periodic_task.call_count == 20
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -353,23 +370,34 @@ class TestSetupPeriodicTasks:
         # guardrail_events retention sweep (24h)
         assert calls[8][0][0] == timedelta(hours=24)
         assert calls[8][1].get("name") == "cleanup-guardrail-events"
-        # request_traces retention sweep (24h)
+        # decision_usage retention sweep (24h)
         assert calls[9][0][0] == timedelta(hours=24)
-        assert calls[9][1].get("name") == "cleanup-traces"
-        # orphan memories sweep (24h)
+        assert calls[9][1].get("name") == "cleanup-decision-usage"
+        # content_scores retention sweep (24h)
         assert calls[10][0][0] == timedelta(hours=24)
-        assert calls[10][1].get("name") == "cleanup-orphan-memories"
-        # scheduler dispatcher
-        assert calls[11][1].get("name") == "dispatch-scheduled-runs"
-        # schedule runs cleanup (24h)
+        assert calls[10][1].get("name") == "cleanup-content-scores"
+        # request_traces retention sweep (24h)
+        assert calls[11][0][0] == timedelta(hours=24)
+        assert calls[11][1].get("name") == "cleanup-traces"
+        # orphan memories sweep (24h)
         assert calls[12][0][0] == timedelta(hours=24)
-        assert calls[12][1].get("name") == "cleanup-schedule-runs"
+        assert calls[12][1].get("name") == "cleanup-orphan-memories"
+        # scheduler dispatcher
+        assert calls[13][1].get("name") == "dispatch-scheduled-runs"
+        # schedule runs cleanup (24h)
+        assert calls[14][0][0] == timedelta(hours=24)
+        assert calls[14][1].get("name") == "cleanup-schedule-runs"
         # sandbox session reaper (60s)
-        assert calls[13][0][0] == timedelta(seconds=60)
-        assert calls[13][1].get("name") == "reap-sandbox-sessions"
+        assert calls[15][0][0] == timedelta(seconds=60)
+        assert calls[15][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[14][0][0] == timedelta(seconds=300)
-        assert calls[14][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[16][0][0] == timedelta(seconds=300)
+        assert calls[16][1].get("name") == "reap-stale-workflow-runs"
+        # background jobs: lost leases and deadlines (60s), retention (24h)
+        assert calls[17][0][0] == timedelta(seconds=60)
+        assert calls[17][1].get("name") == "sweep-background-jobs"
+        assert calls[18][0][0] == timedelta(hours=24)
+        assert calls[18][1].get("name") == "cleanup-background-jobs"
 
 
 class TestMcpOauthTask:
@@ -444,7 +472,6 @@ class TestDurableTaskRetryPolicy:
             "ingest_remote",
             "reingest_source_task",
             "store_attachment",
-            "process_agent_webhook",
             "ingest_connector_task",
             "reembed_wiki_page",
             "convert_source_to_wiki",
@@ -583,18 +610,18 @@ class TestCleanupPendingToolState:
             "docsgpt.storage.db.engine.get_engine",
             return_value=fake_engine,
         ), patch(
-            "docsgpt.api.answer.services.conversation_service."
-            "ConversationService.finalize_message",
-        ) as finalize_expired:
+            "docsgpt.api.answer.services.continuation_service.retire_paused_message",
+        ) as retire_expired:
             result = cleanup_pending_tool_state.run()
 
         assert result["reverted"] == 1
         assert result["deleted"] == 1
-        finalize_expired.assert_called_once()
-        assert finalize_expired.call_args.args[0] == (
+        retire_expired.assert_called_once()
+        retired_row = retire_expired.call_args.args[1]
+        assert retired_row["agent_config"]["reserved_message_id"] == (
             "22222222-2222-2222-2222-222222222222"
         )
-        assert finalize_expired.call_args.kwargs["status"] == "failed"
+        assert retire_expired.call_args.args[2] == "expired"
 
         # Final state assertions.
         assert repo.load_state(c1["id"], "u")["status"] == "pending"
@@ -604,6 +631,84 @@ class TestCleanupPendingToolState:
         c4_row = repo.load_state(c4["id"], "u")
         assert c4_row["status"] == "pending"
         assert c4_row["resumed_at"] is None
+
+    @pytest.mark.unit
+    def test_an_expired_pause_keeps_its_calls_and_says_it_expired(self, pg_conn):
+        """The turn that waited out its approval is finalized with what it did, not failed."""
+        from contextlib import contextmanager
+
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_pending_tool_state
+        from tests.api.answer.services.test_abandoned_pause_pg import USER, _paused_turn
+
+        turn = _paused_turn(pg_conn)
+        pg_conn.execute(
+            _text(
+                "UPDATE pending_tool_state SET expires_at = clock_timestamp() - interval '1 second' "
+                "WHERE conversation_id = CAST(:c AS uuid)"
+            ),
+            {"c": turn["conversation_id"]},
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+        published = []
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine), patch(
+            "docsgpt.events.publisher.publish_user_event",
+            side_effect=lambda *a, **kw: published.append((a, kw)),
+        ), patch("docsgpt.monitors.secret_refs.exposed_values", return_value={}):
+            result = cleanup_pending_tool_state.run()
+
+        assert result["deleted"] == 1
+        row = pg_conn.execute(
+            _text("SELECT status, tool_calls FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+            {"id": turn["message_id"]},
+        ).fetchone()
+        assert row.status == "complete"
+        assert [c["call_id"] for c in row.tool_calls] == ["call-1", "call-2", "call-3", "call-4", "call-5"]
+        assert row.tool_calls[-1]["not_run"] == "expired"
+        ((user, kind, payload), _) = published[0]
+        assert (user, kind) == (USER, "tool.approval.cleared")
+        assert payload == {
+            "conversation_id": turn["conversation_id"],
+            "message_id": turn["message_id"],
+            "reason": "expired",
+        }
+
+    @pytest.mark.unit
+    def test_a_failed_retire_still_clears_the_approval(self, pg_conn):
+        from contextlib import contextmanager
+
+        from docsgpt.api.user.tasks import cleanup_pending_tool_state
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+        from docsgpt.storage.db.repositories.pending_tool_state import PendingToolStateRepository
+
+        conv = ConversationsRepository(pg_conn).create("u-x", "expired")
+        PendingToolStateRepository(pg_conn).save_state(
+            conv["id"], "u-x", messages=[], pending_tool_calls=[], tools_dict={}, tool_schemas=[],
+            agent_config={"reserved_message_id": "33333333-3333-3333-3333-333333333333"}, ttl_seconds=0,
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine), patch(
+            "docsgpt.api.answer.services.continuation_service.retire_paused_message",
+            side_effect=RuntimeError("db blip"),
+        ), patch("docsgpt.events.publisher.publish_user_event") as publish:
+            result = cleanup_pending_tool_state.run()
+
+        assert result["deleted"] == 1
+        publish.assert_called_once()
+        assert publish.call_args.args[2]["reason"] == "expired"
 
     @pytest.mark.unit
     def test_skips_when_postgres_uri_missing(self, monkeypatch):
@@ -707,6 +812,95 @@ class TestCleanupMessageEventsTask:
         # Only the fresh row survives.
         rows = repo.read_after(str(msg_id))
         assert [r["sequence_no"] for r in rows] == [1]
+
+
+class TestCleanupDecisionUsageTask:
+    """Retention janitor for ``decision_usage``."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from docsgpt.api.user.tasks import cleanup_decision_usage
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        assert cleanup_decision_usage.run() == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_days_past_retention_window(self, pg_conn, monkeypatch):
+        import datetime
+
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_decision_usage
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.decision_usage import DecisionUsageRepository
+
+        today = datetime.date.today()
+        DecisionUsageRepository(pg_conn).add([
+            {"day": day, "feature": "injection_input", "mode": "local", "model_version": "v", "status": "ok",
+             "calls": 1, "states": 1, "answered": 1, "ms_total": 1.0, "queue_ms_total": 0.0}
+            for day in (today - datetime.timedelta(days=120), today)
+        ])
+        monkeypatch.setattr(settings, "POSTGRES_URI", "postgresql://stub", raising=False)
+        monkeypatch.setattr(settings, "DECISION_USAGE_RETENTION_DAYS", 90)
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine):
+            result = cleanup_decision_usage.run()
+
+        assert result == {"deleted": 1, "ttl_days": 90}
+        assert pg_conn.execute(_text("SELECT day FROM decision_usage")).scalars().all() == [today]
+
+
+class TestCleanupContentScoresTask:
+    """Retention janitor for ``content_scores``."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from docsgpt.api.user.tasks import cleanup_content_scores
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        assert cleanup_content_scores.run() == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_rows_unseen_past_the_retention_window(self, pg_conn, monkeypatch):
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_content_scores
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.content_scores import ContentScoresRepository
+
+        ContentScoresRepository(pg_conn).upsert_many([
+            {"content_hash": h, "scorer": "s", "p": 0.1, "windows_scored": 1, "windows_total": 1}
+            for h in ("old", "recent")
+        ])
+        pg_conn.execute(_text(
+            "UPDATE content_scores SET last_seen_at = now() - interval '200 days' WHERE content_hash = 'old'"
+        ))
+        monkeypatch.setattr(settings, "POSTGRES_URI", "postgresql://stub", raising=False)
+        monkeypatch.setattr(settings, "GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS", 180)
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine):
+            result = cleanup_content_scores.run()
+
+        assert result == {"deleted": 1, "ttl_days": 180}
+        assert pg_conn.execute(_text("SELECT content_hash FROM content_scores")).scalars().all() == ["recent"]
 
 
 class TestCleanupTracesTask:
@@ -874,6 +1068,13 @@ class TestIngestPoisonEvent:
     upload toast resolves instead of hanging on "training".
     """
 
+    @pytest.fixture(autouse=True)
+    def _no_progress_close(self):
+        # Closing the progress row opens a DB session; covered in
+        # tests/worker/test_ingest_failure_progress.py.
+        with patch("docsgpt.worker.close_failed_ingest_progress"):
+            yield
+
     @pytest.mark.unit
     def test_publishes_failed_event(self):
         from docsgpt.api.user.tasks import _emit_ingest_poison_event
@@ -940,6 +1141,77 @@ def test_bare_worker_consumes_app_and_parsing_queues():
     names = {queue.name for queue in celeryconfig.task_queues}
     assert "docsgpt" in names
     assert settings.DOCUMENT_PARSE_QUEUE in names
+
+
+# Whole-source jobs: each can hold a worker slot for minutes to hours.
+INGEST_LANE_TASKS = (
+    "docsgpt.api.user.tasks.ingest",
+    "docsgpt.api.user.tasks.ingest_remote",
+    "docsgpt.api.user.tasks.ingest_connector_task",
+    "docsgpt.api.user.tasks.reingest_source_task",
+    "docsgpt.api.user.tasks.sync_source",
+    "docsgpt.api.user.tasks.sync_connector_source",
+    "docsgpt.api.user.tasks.extract_graph",
+    "docsgpt.api.user.tasks.convert_source_to_wiki",
+)
+
+# Work a user or the scheduler is waiting on; it must never queue behind an ingest.
+CONTROL_LANE_TASKS = (
+    "docsgpt.api.user.tasks.reconciliation_task",
+    "docsgpt.api.user.tasks.dispatch_scheduled_runs",
+    "docsgpt.api.user.tasks.schedule_syncs",
+    "docsgpt.api.user.tasks.store_attachment",
+    "docsgpt.api.user.tasks.store_archive_member",
+    "docsgpt.api.user.tasks.reembed_wiki_page",
+    "docsgpt.api.user.tasks.sweep_background_jobs",
+)
+
+
+def _routed_queue(task_name):
+    """Return the queue name Celery's router picks for ``task_name``."""
+    from docsgpt.celery_init import celery
+
+    return celery.amqp.router.route({}, task_name)["queue"].name
+
+
+@pytest.mark.unit
+def test_bare_worker_consumes_ingest_queue():
+    """A -Q-less worker must still run ingests, or a default install strands every upload."""
+    import docsgpt.celeryconfig as celeryconfig
+    from docsgpt.core.settings import settings
+
+    names = {queue.name for queue in celeryconfig.task_queues}
+    assert settings.INGEST_QUEUE in names
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("task_name", INGEST_LANE_TASKS)
+def test_whole_source_tasks_route_to_ingest_queue(task_name):
+    from docsgpt.core.settings import settings
+
+    assert _routed_queue(task_name) == settings.INGEST_QUEUE
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("task_name", CONTROL_LANE_TASKS)
+def test_interactive_and_beat_tasks_stay_on_default_queue(task_name):
+    assert _routed_queue(task_name) == "docsgpt"
+
+
+@pytest.mark.unit
+def test_every_ingest_route_names_a_registered_task():
+    """A typo in a route key silently leaves that task on the default queue."""
+    from docsgpt.api.user.tasks import ingest  # noqa: F401  (importing the module registers the tasks)
+    import docsgpt.celeryconfig as celeryconfig
+    from docsgpt.celery_init import celery
+    from docsgpt.core.settings import settings
+
+    # Select by task name, not by destination queue: INGEST_QUEUE may share a
+    # name with another queue (e.g. parsing), which is a valid configuration.
+    assert sorted(celeryconfig.INGEST_TASKS) == sorted(INGEST_LANE_TASKS)
+    for name in INGEST_LANE_TASKS:
+        assert celeryconfig.task_routes[name] == {"queue": settings.INGEST_QUEUE}
+    assert set(INGEST_LANE_TASKS) <= set(celery.tasks)
 
 
 class TestParseTimeoutForSize:
