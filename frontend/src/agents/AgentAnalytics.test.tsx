@@ -86,8 +86,9 @@ describe('AgentAnalytics', () => {
     expect(container.textContent).not.toContain('settings.analytics.subtitle');
   });
 
-  // DESIGN › Load errors.
-  it('says the agent failed to load and reads it again on Retry', async () => {
+  // DESIGN › Load errors: the agent's name fails, its usage (which needs
+  // only its id) stays.
+  it('says the agent failed to load, keeps its usage, and reads it again on Retry', async () => {
     agentRead.ok = false;
     await act(async () => {
       root.render(
@@ -103,7 +104,7 @@ describe('AgentAnalytics', () => {
     });
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('agents.loadError');
-    expect(container.querySelector('[data-testid="analytics"]')).toBeNull();
+    expect(container.querySelector('[data-testid="analytics"]')).not.toBeNull();
     agentRead.ok = true;
     await act(async () => alert.querySelector('button')!.click());
     await act(async () => undefined);

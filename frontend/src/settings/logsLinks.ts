@@ -16,12 +16,29 @@ export type LogLabel =
 /** A topic name's longest form (the server's `TOPIC_NAME_CHARS`). */
 const TOPIC_NAME_MAX = 60;
 
+/**
+ * Python's whitespace (`str.isspace`), which the server strips a topic name
+ * of. Not `String.prototype.trim`'s: Python also strips U+001C to U+001F and
+ * U+0085, and keeps U+FEFF.
+ */
+const PY_SPACE =
+  '\\t\\n\\v\\f\\r\\u001c-\\u001f \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
+const PY_STRIP = new RegExp(`^[${PY_SPACE}]+|[${PY_SPACE}]+$`, 'g');
+
+/**
+ * A topic name's length as the server measures it (`len(name.strip())`):
+ * code points, not UTF-16 units, once stripped.
+ */
+function topicNameLength(name: string): number {
+  return Array.from(name.replace(PY_STRIP, '')).length;
+}
+
 /** Whether a `label` URL value is one the Logs filter can send. */
 export function isLogLabel(value: string | null): value is LogLabel {
   if (!value) return false;
   if (value.startsWith('topic:')) {
-    const name = value.slice('topic:'.length);
-    return name.trim().length > 0 && name.length <= TOPIC_NAME_MAX;
+    const length = topicNameLength(value.slice('topic:'.length));
+    return length > 0 && length <= TOPIC_NAME_MAX;
   }
   return (
     (LOG_LABELS as readonly string[]).includes(value) ||

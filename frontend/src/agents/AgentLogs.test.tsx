@@ -176,8 +176,9 @@ describe('AgentLogs', () => {
   });
 
   // DESIGN › Load errors: an agent that fails to load says so, with Retry,
-  // in place of its guardrail activity and logs.
-  it('says the agent failed to load and reads it again on Retry', async () => {
+  // in place of what it fills (the toolbar's byline); its guardrail
+  // activity and logs need only its id, so they stay.
+  it('says the agent failed to load, keeps its logs, and reads it again on Retry', async () => {
     agentRead.ok = false;
     await act(async () => {
       root.render(
@@ -193,7 +194,8 @@ describe('AgentLogs', () => {
     });
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('agents.loadError');
-    expect(container.querySelector('[data-testid="logs"]')).toBeNull();
+    expect(container.querySelector('[data-testid="logs"]')).not.toBeNull();
+    expect(container.querySelector('section#logs')).not.toBeNull();
     agentRead.ok = true;
     await act(async () => alert.querySelector('button')!.click());
     await act(async () => undefined);

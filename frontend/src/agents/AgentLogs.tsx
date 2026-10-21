@@ -55,47 +55,50 @@ export default function AgentLogs() {
 
   return (
     <SectionShell>
-      {agent && (
+      {agent ? (
         <AgentPageToolbar
           name={agent.name}
           meta={<LastUsedMeta lastUsedAt={agent.last_used_at} />}
         />
-      )}
-      {error ? (
-        <EmptyState
-          tone="destructive"
-          size="sm"
-          illustration="none"
-          title={t('agents.loadError')}
-          onRetry={reload}
-        />
       ) : (
-        agentId && (
-          <>
-            <GuardrailEvents agentId={agentId} />
-            {/* The drill-down target (`#logs`): a named section, the peer of
-              Guardrail activity. */}
-            <section ref={logsRef} id="logs" className="mt-8 scroll-mt-4">
-              <SectionHeader
-                title={t('agents.pageHeader.tabs.logs')}
-                description={t('agents.logs.description')}
-                className="mb-4"
-              />
-              <Logs
-                agentId={agentId}
-                tableHeader={t('agents.logs.tableHeader')}
-                analytics={
-                  agent
-                    ? {
-                        enabled,
-                        topics,
-                      }
-                    : undefined
-                }
-              />
-            </section>
-          </>
+        // The record only fills the byline (and the label filter's topics):
+        // its failure stands in for the byline, and the guardrail activity
+        // and logs below, which need only the id, stay.
+        error && (
+          <EmptyState
+            tone="destructive"
+            size="sm"
+            illustration="none"
+            title={t('agents.loadError')}
+            onRetry={reload}
+          />
         )
+      )}
+      {agentId && (
+        <>
+          <GuardrailEvents agentId={agentId} />
+          {/* The drill-down target (`#logs`): a named section, the peer of
+            Guardrail activity. */}
+          <section ref={logsRef} id="logs" className="mt-8 scroll-mt-4">
+            <SectionHeader
+              title={t('agents.pageHeader.tabs.logs')}
+              description={t('agents.logs.description')}
+              className="mb-4"
+            />
+            <Logs
+              agentId={agentId}
+              tableHeader={t('agents.logs.tableHeader')}
+              analytics={
+                agent
+                  ? {
+                      enabled,
+                      topics,
+                    }
+                  : undefined
+              }
+            />
+          </section>
+        </>
       )}
     </SectionShell>
   );

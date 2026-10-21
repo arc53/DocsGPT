@@ -23,8 +23,14 @@ vi.mock('../hooks', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks')>()),
   useLoaderState: (initial: boolean) => useState(initial),
 }));
+// `sentinel.reach()` stands for the list's end coming into view: like an
+// IntersectionObserver's report, it can land while a page is on its way.
+const sentinel = vi.hoisted(() => ({ reach: () => undefined as void }));
 vi.mock('../hooks/useLoadMore', () => ({
-  useScrollSentinel: () => vi.fn(),
+  useScrollSentinel: (onReach: () => void) => {
+    sentinel.reach = onReach;
+    return vi.fn();
+  },
 }));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
@@ -301,6 +307,38 @@ describe('Logs label filter and drill-down', () => {
         '[data-log-id="p3-4"] button[aria-expanded]',
       )!;
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    // The seek and the sentinel both load the next page: a page still on
+    // its way is not asked for again when an earlier one lands.
+    it('asks for each page once when the sentinel fires while one is loading', async () => {
+      const answers = new Map<number, () => void>();
+      getLogs.mockImplementation(
+        (params: { page: number }) =>
+          new Promise((resolve) => {
+            answers.set(params.page, () =>
+              resolve(page({ logs: rows(params.page), has_more: true })),
+            );
+          }),
+      );
+      const answer = (pageNumber: number) =>
+        act(async () => answers.get(pageNumber)!());
+      await render(
+        `/settings/logs?conversation=${CONVERSATION}&message=${TARGET}`,
+      );
+      await answer(1);
+      await settle();
+      expect(requestedPages()).toEqual([1, 2]);
+      // The list's end is in view while page 2 loads.
+      await act(async () => sentinel.reach());
+      expect(requestedPages()).toEqual([1, 2, 3]);
+      await answer(2);
+      await settle();
+      const pages = requestedPages();
+      expect(pages).toEqual([...new Set(pages)]);
+      await answer(3);
+      await settle();
+      expect(new Set(requestedPages()).size).toBe(requestedPages().length);
     });
 
     it('gives up after ten pages', async () => {

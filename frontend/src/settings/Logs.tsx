@@ -165,6 +165,11 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
   // read past them): a Load more still out asked for a page of the old
   // paging, and its rows and has_more no longer fit.
   const generationRef = useRef(0);
+  // The pages on their way, by paging generation, filters and page. The
+  // fetch effect runs again whenever a page lands, and the seek and the
+  // scroll sentinel can each move on while one loads, so without this a
+  // page still loading would be asked for again.
+  const inFlightRef = useRef(new Set<string>());
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), 400);
@@ -254,6 +259,9 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
     const issuedKey = filterKey;
     const issuedPage = page;
     const issuedGeneration = generationRef.current;
+    const flight = `${issuedGeneration}|${issuedPage}|${issuedKey}`;
+    if (inFlightRef.current.has(flight)) return;
+    inFlightRef.current.add(flight);
     setLoadingLogs(true);
     setLoadFailed(false);
     try {
@@ -281,6 +289,7 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
       )
         setLoadFailed(true);
     } finally {
+      inFlightRef.current.delete(flight);
       if (issuedKey === filterKeyRef.current) setLoadingLogs(false);
     }
   };

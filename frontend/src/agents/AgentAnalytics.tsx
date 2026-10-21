@@ -33,7 +33,9 @@ export default function AgentAnalytics() {
           <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
         }
       />
-      {error ? (
+      {/* The record only fills the byline: its failure says so here, and
+          the usage below, which needs only the id, stays. */}
+      {error && (
         <EmptyState
           tone="destructive"
           size="sm"
@@ -41,14 +43,11 @@ export default function AgentAnalytics() {
           title={t('agents.loadError')}
           onRetry={reload}
         />
-      ) : (
-        <>
-          <p className="text-muted-foreground mb-4 text-sm leading-6">
-            {t('agents.analytics.subtitle')}
-          </p>
-          {agentId && <Analytics agentId={agentId} filterOption={timeFilter} />}
-        </>
       )}
+      <p className="text-muted-foreground mb-4 text-sm leading-6">
+        {t('agents.analytics.subtitle')}
+      </p>
+      {agentId && <Analytics agentId={agentId} filterOption={timeFilter} />}
     </SectionShell>
   );
 }

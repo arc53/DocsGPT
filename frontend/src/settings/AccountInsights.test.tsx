@@ -17,7 +17,18 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('./AnalyticsChart', () => ({ default: () => <div /> }));
-vi.mock('./DocsGaps', () => ({ default: () => null }));
+const gaps = vi.hoisted(() => ({ mounts: 0 }));
+vi.mock('./DocsGaps', async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: function DocsGapsStub() {
+      useEffect(() => {
+        gaps.mounts += 1;
+      }, []);
+      return null;
+    },
+  };
+});
 
 const insights = vi.hoisted(() => ({ body: {} as object }));
 vi.mock('../api/services/userService', () => ({
@@ -30,6 +41,7 @@ vi.mock('../api/services/userService', () => ({
 
 import userService from '../api/services/userService';
 import AccountInsights from './AccountInsights';
+import { INSIGHTS_REFRESH_MS } from './insights/useConversationInsights';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -111,5 +123,44 @@ describe('Settings Insights', () => {
     expect(toolbar.textContent).not.toContain(
       'settings.analytics.insights.description',
     );
+  });
+
+  // While the sweep is still labelling the window the page asks again on
+  // its own; the figures and the docs-gap report stay put meanwhile, so the
+  // refresh neither flashes the skeleton nor reloads the report.
+  it('refreshes partial figures in place, keeping the docs-gap report mounted', async () => {
+    vi.useFakeTimers();
+    try {
+      const partial = (labelled: number, unlabelled: number) => ({
+        ...examples.insights,
+        coverage: {
+          ...examples.insights.coverage,
+          turns: labelled + unlabelled,
+          labelled_turns: labelled,
+          unlabelled_recent_turns: unlabelled,
+        },
+      });
+      vi.mocked(userService.getConversationInsights).mockClear();
+      gaps.mounts = 0;
+      insights.body = partial(12, 8);
+      await render();
+      expect(gaps.mounts).toBe(1);
+
+      insights.body = partial(16, 4);
+      const section = () => container.querySelector('[data-testid="insights"]');
+      const before = section();
+      await act(async () => {
+        vi.advanceTimersByTime(INSIGHTS_REFRESH_MS);
+      });
+      expect(userService.getConversationInsights).toHaveBeenCalledTimes(2);
+      expect(section()).toBe(before);
+      const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+      expect(toolbar.textContent).toContain(
+        'settings.analytics.insights.coverage',
+      );
+      expect(gaps.mounts).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

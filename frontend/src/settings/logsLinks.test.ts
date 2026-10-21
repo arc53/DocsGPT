@@ -37,4 +37,17 @@ describe('isLogLabel', () => {
     expect(isLogLabel('sentiment')).toBe(false);
     expect(isLogLabel(null)).toBe(false);
   });
+
+  // The server counts a topic name in code points once stripped (Python's
+  // `len(name.strip())`), so an emoji is one and padding doesn't count.
+  it('measures a topic name as the server does: code points, stripped', () => {
+    expect(isLogLabel(`topic:${'🚚'.repeat(60)}`)).toBe(true);
+    expect(isLogLabel(`topic:${'🚚'.repeat(61)}`)).toBe(false);
+    expect(isLogLabel(`topic:  ${'n'.repeat(60)}  `)).toBe(true);
+    expect(isLogLabel(`topic: ${'n'.repeat(61)} `)).toBe(false);
+    // Python's whitespace, not JavaScript's: it strips the separator
+    // controls (U+001C to U+001F) and U+0085, and keeps U+FEFF.
+    expect(isLogLabel('topic:\u001f\u0085')).toBe(false);
+    expect(isLogLabel('topic:\ufeff')).toBe(true);
+  });
 });
