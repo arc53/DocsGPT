@@ -176,8 +176,14 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/defaults", "GET"): _rule("agents:read", open=True),
     ("/api/guardrails/events", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/guardrails/summary", "GET"): _rule("agents:read", (QUERY, "agent_id")),
-    ("/api/analytics/topic_folders", "GET"): _rule("agents:read", (QUERY, "agent_id")),
-    ("/api/analytics/topics", "GET"): _rule("analytics:read", (QUERY, "agent_id")),
+    # Both read one agent's topics and its sources' folder names, so they prove the agent and
+    # are closed to tokens restricted on the families an agent's sources hang off.
+    ("/api/analytics/topic_folders", "GET"): _rule(
+        "agents:read", (QUERY, "agent_id"), blocked_by=_NON_AGENT_FAMILIES
+    ),
+    ("/api/analytics/topics", "GET"): _rule(
+        "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
+    ),
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),

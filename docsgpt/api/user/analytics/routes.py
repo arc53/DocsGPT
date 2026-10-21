@@ -980,12 +980,14 @@ class GetConversationInsights(Resource):
                 result["enabled"] = available and (agent is None or config.enabled)
                 if agent is not None:
                     result["overlapping"] = [{"id": topic.id, "name": topic.name} for topic in config.overlapping()]
+                if not result["enabled"]:
+                    return make_response(jsonify(result), 200)
+                if agent is not None:
+                    # Reads every source of the agent, so only once there is something to show it with.
                     try:
                         result["one_pick"] = list(analytics_topics.options(conn, agent, config))
                     except Exception:  # noqa: BLE001 - a broken source structure costs the list, not the page
                         current_app.logger.warning("No topic list for agent %s", agent_pg_id, exc_info=True)
-                if not result["enabled"]:
-                    return make_response(jsonify(result), 200)
 
                 scope = _label_scope(user, api_key, agent_pg_id)
                 repo = ConversationLabelsRepository(conn)
@@ -1363,12 +1365,20 @@ def _attach_message_feedback(conn: Connection, items: list) -> None:
             item["conversation_id"] = message["conversation_id"]
 
 
-def _attach_labels(conn: Connection, items: list) -> dict:
+def _attach_labels(conn: Connection, items: list, viewer: Optional[str] = None) -> dict:
     """Add each finished chat row's analytics ``labels`` (chip keys at even odds or better), in one lookup.
 
     Reaction labels (frustrated, asked for a person, negative reaction) sit on
     the user message that showed them; tags on every turn of their
     conversation. Rows with none get an empty list.
+
+    Args:
+        conn: A read-only connection.
+        items: The Logs page's rows, changed in place.
+        viewer: For the caller's own Logs, the caller: labels of another
+            owner's (shared or public) agent are left out, since they name
+            that owner's topics. ``None`` for an agent's Logs, which the
+            caller's ``view_logs`` already gates.
 
     Returns:
         ``{tag id: name}`` for the tags on the page, from each row's agent.
@@ -1386,7 +1396,7 @@ def _attach_labels(conn: Connection, items: list) -> dict:
     if not ids:
         return {}
     repo = ConversationLabelsRepository(conn)
-    rows = repo.log_rows(ids, analytics_schema.SCHEMA_HASH)
+    rows = repo.log_rows(ids, analytics_schema.SCHEMA_HASH, viewer=viewer)
     by_message: dict = {}
     for row in rows:
         by_message.setdefault(row["target"], []).append(row)
@@ -1399,7 +1409,7 @@ def _attach_labels(conn: Connection, items: list) -> dict:
     if not tags:
         return {}
     agents = {row["agent_id"] for row in rows if row["agent_id"] and row["label"].startswith(TAG_PREFIX)}
-    names = repo.tag_names(agents)
+    names = repo.tag_names(agents, owner=viewer)
     return {tag: names[tag] for tag in sorted(tags) if tag in names}
 
 
@@ -1928,6 +1938,10 @@ class GetUserLogs(Resource):
                     params["label_name"] = filters["label"]
                     if filters["label"].startswith(TOPIC_PREFIX):
                         params["topic_name"] = filters["label"][len(TOPIC_PREFIX):]
+                    if not api_key_id:
+                        # The caller's own Logs: another owner's agent's labels
+                        # must not answer a guessed topic name.
+                        params["label_viewer"] = user
 
                 branch_sqls = []
                 for branch in branches:
@@ -1957,7 +1971,10 @@ class GetUserLogs(Resource):
                     if filters["feedback"]:
                         where.append(branch["feedback"])
                     if filters["label"]:
-                        where.append(log_label_exists(filters["label"], branch["label"]))
+                        where.append(log_label_exists(
+                            filters["label"], branch["label"],
+                            visible_to=None if api_key_id else "label_viewer",
+                        ))
                     if filters["date_from"]:
                         where.append(f"{branch['ts']} >= :date_from")
                     if filters["date_to"]:
@@ -2118,13 +2135,18 @@ class GetUserLogs(Resource):
                     current_app.logger.warning(
                         "Could not attach feedback to the logs page", exc_info=True
                     )
-                try:
-                    with db_readonly() as conn:
-                        tag_names = _attach_labels(conn, results)
-                except Exception:
-                    current_app.logger.warning(
-                        "Could not attach labels to the logs page", exc_info=True
-                    )
+                # Label chips show while insights are on; the label filter
+                # above keeps working, for a link that carries a label.
+                if settings.DECISION_ANALYTICS_ENABLED:
+                    try:
+                        with db_readonly() as conn:
+                            tag_names = _attach_labels(
+                                conn, results, viewer=None if api_key_id else user
+                            )
+                    except Exception:
+                        current_app.logger.warning(
+                            "Could not attach labels to the logs page", exc_info=True
+                        )
                 try:
                     with db_readonly() as conn:
                         _attach_trace_summaries(

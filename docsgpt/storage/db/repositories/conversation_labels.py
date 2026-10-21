@@ -135,31 +135,59 @@ def _mass(alias: str, options: Iterable[str]) -> str:
     return "(" + " + ".join(parts) + ")"
 
 
-def log_label_exists(key: str, message_expr: str) -> str:
+def _visible_to(alias: str, param: str) -> str:
+    """SQL: label row ``alias`` belongs to no agent, or to an agent the user bound as ``:param`` owns.
+
+    A label row carries the chatting user's id but was written under its agent's owner's topics and sources, so a
+    user's own (account) views read only these: a shared or public agent's topic and source names stay its
+    owner's. A deleted agent's rows (no agent left to own them) are hidden too.
+
+    Args:
+        alias: The ``conversation_labels`` alias.
+        param: The name of the bind parameter holding the viewing user's id.
+
+    Returns:
+        A parenthesised SQL condition.
+    """
+    return (f"({alias}.agent_id IS NULL OR EXISTS (SELECT 1 FROM agents va"
+            f" WHERE va.id = {alias}.agent_id AND va.user_id = :{param}))")
+
+
+def log_label_exists(key: str, message_expr: str, visible_to: Optional[str] = None) -> str:
     """SQL: the Logs row whose message id is ``message_expr`` carries ``key`` at even odds or better.
 
-    Binds ``:schema_hash`` and ``:label_min``, ``:label_name`` for a tag and ``:topic_name`` for a topic. ``key``
-    must be a ``LOG_LABELS`` key, ``tag:<id>`` (the conversation's overlapping topic) or ``topic:<name>`` (the turn's
-    own effective topic).
+    Binds ``:schema_hash`` and ``:label_min``, ``:label_name`` for a tag and ``:topic_name`` for a topic.
+
+    Args:
+        key: A ``LOG_LABELS`` key, ``tag:<id>`` (the conversation's overlapping topic) or ``topic:<name>`` (the
+            turn's own effective topic).
+        message_expr: SQL for the Logs row's message id.
+        visible_to: The bind parameter holding the viewing user's id, for a user's own Logs: only labels of no
+            agent or of the user's own agents match, so the filter cannot probe another owner's topic names.
+            ``None`` (an agent's Logs, already access-checked) matches every label row.
+
+    Returns:
+        An ``EXISTS (...)`` SQL condition.
     """
+    visible = f" AND {_visible_to('cl', visible_to)}" if visible_to else ""
     if key.startswith(TOPIC_PREFIX):
         return f"""EXISTS (
             SELECT 1 FROM conversation_labels cl
             WHERE cl.message_id = {message_expr} AND cl.label = 'topic_effective' AND cl.schema_hash = :schema_hash
-              AND COALESCE((cl.probabilities->>CAST(:topic_name AS text))::float8, 0) >= :label_min)"""
+              AND COALESCE((cl.probabilities->>CAST(:topic_name AS text))::float8, 0) >= :label_min{visible})"""
     if key.startswith(TAG_PREFIX):
         return f"""EXISTS (
             SELECT 1 FROM conversation_messages lm
             JOIN conversation_labels cl
               ON cl.conversation_id = lm.conversation_id AND {_conversation_level("cl")} AND cl.label = :label_name
             WHERE lm.id = {message_expr} AND cl.schema_hash = :schema_hash
-              AND {_mass("cl", ("yes",))} >= :label_min)"""
+              AND {_mass("cl", ("yes",))} >= :label_min{visible})"""
     side, label, options = LOG_LABELS[key]
     column = "message_id" if side == "message" else "reply_message_id"
     return f"""EXISTS (
         SELECT 1 FROM conversation_labels cl
         WHERE cl.{column} = {message_expr} AND cl.label = '{label}' AND cl.schema_hash = :schema_hash
-          AND {_mass("cl", options)} >= :label_min)"""
+          AND {_mass("cl", options)} >= :label_min{visible})"""
 
 
 def log_label_keys(rows: Iterable[dict], min_probability: float) -> List[str]:
@@ -181,6 +209,9 @@ def log_label_keys(rows: Iterable[dict], min_probability: float) -> List[str]:
 class Scope:
     """Whose labels a dashboard reads: an agent's, all its traffic (its owner's view), or else one user's.
 
+    One user's view holds their conversations with no agent or with an agent they own: those with another owner's
+    (shared or public) agent are that owner's to read, since their labels name the owner's topics and sources.
+
     Attributes:
         agent_id: The agent's id; labels match on their own ``agent_id``, resolved when they were written (also
             for conversations asked with the agent's key only).
@@ -194,19 +225,45 @@ class Scope:
     user_id: Optional[str] = None
 
     def labels(self, alias: str, params: Dict[str, Any]) -> str:
+        """SQL: ``conversation_labels`` row ``alias`` is in scope, binding its parameters.
+
+        Args:
+            alias: The ``conversation_labels`` alias.
+            params: The query's parameters, extended in place.
+
+        Returns:
+            The SQL condition.
+        """
         if self.agent_id:
             params["scope_agent"] = self.agent_id
             return f"{alias}.agent_id = CAST(:scope_agent AS uuid)"
         params["scope_user"] = self.user_id
-        return f"{alias}.user_id = :scope_user"
+        return f"{alias}.user_id = :scope_user AND {_visible_to(alias, 'scope_user')}"
 
     def conversations(self, alias: str, params: Dict[str, Any]) -> str:
+        """SQL: ``conversations`` row ``alias`` is in scope, binding its parameters.
+
+        A user's conversation with another owner's agent (by id, or by key when it has no id) is left out, as
+        its labels are in ``labels``.
+
+        Args:
+            alias: The ``conversations`` alias.
+            params: The query's parameters, extended in place.
+
+        Returns:
+            The SQL condition.
+        """
         if self.agent_id:
             params["scope_agent"] = self.agent_id
             params["scope_key"] = self.api_key
             return f"({alias}.api_key = :scope_key OR {alias}.agent_id = CAST(:scope_agent AS uuid))"
         params["scope_user"] = self.user_id
-        return f"{alias}.user_id = :scope_user"
+        return (
+            f"{alias}.user_id = :scope_user AND NOT EXISTS (SELECT 1 FROM agents va"
+            f" WHERE (va.id = {alias}.agent_id OR ({alias}.agent_id IS NULL"
+            f" AND COALESCE({alias}.api_key, '') <> '' AND va.key = {alias}.api_key))"
+            " AND va.user_id <> :scope_user)"
+        )
 
 
 #: What a docs-gap group is keyed and named by: the effective topic, or the turn's first stored source (its
@@ -889,9 +946,15 @@ class ConversationLabelsRepository:
         )
         return {row.id: row.name for row in result.fetchall() if row.name}
 
-    def log_rows(self, message_ids: Iterable[str], schema_hash: str) -> List[dict]:
+    def log_rows(self, message_ids: Iterable[str], schema_hash: str, viewer: Optional[str] = None) -> List[dict]:
         """The label rows behind Logs chips for the given messages: their own turn labels, the reactions they
         made, and their conversation's tags.
+
+        Args:
+            message_ids: The Logs page's message ids.
+            schema_hash: The running label schema.
+            viewer: For a user's own Logs, that user: only rows of no agent or of an agent they own are read.
+                ``None`` (an agent's Logs, already access-checked) reads every row.
 
         Returns:
             ``target`` (the message the row describes), ``agent_id``, ``label`` and ``probabilities``.
@@ -899,6 +962,7 @@ class ConversationLabelsRepository:
         ids = sorted({str(i) for i in message_ids})
         if not ids:
             return []
+        visible = f" AND {_visible_to('l', 'viewer')}" if viewer else ""
         own = sorted({label for side, label, _ in LOG_LABELS.values() if side == "message"})
         replies = sorted({label for side, label, _ in LOG_LABELS.values() if side == "reply"})
         result = self._conn.execute(
@@ -908,27 +972,36 @@ class ConversationLabelsRepository:
                        l.probabilities
                 FROM conversation_labels l
                 WHERE l.message_id = ANY(CAST(:ids AS uuid[])) AND l.label = ANY(CAST(:own AS text[]))
-                  AND l.schema_hash = :schema_hash
+                  AND l.schema_hash = :schema_hash{visible}
                 UNION ALL
                 SELECT CAST(l.reply_message_id AS text), CAST(l.agent_id AS text), l.label, l.probabilities
                 FROM conversation_labels l
                 WHERE l.reply_message_id = ANY(CAST(:ids AS uuid[])) AND l.label = ANY(CAST(:replies AS text[]))
-                  AND l.schema_hash = :schema_hash
+                  AND l.schema_hash = :schema_hash{visible}
                 UNION ALL
                 SELECT CAST(m.id AS text), CAST(l.agent_id AS text), l.label, l.probabilities
                 FROM conversation_messages m
                 JOIN conversation_labels l
                     ON l.conversation_id = m.conversation_id AND {_conversation_level("l")}
                    AND l.label LIKE 'tag:%' AND l.schema_hash = :schema_hash
-                WHERE m.id = ANY(CAST(:ids AS uuid[]))
+                WHERE m.id = ANY(CAST(:ids AS uuid[])){visible}
                 """
             ),
-            {"ids": ids, "own": own, "replies": replies, "schema_hash": schema_hash},
+            {"ids": ids, "own": own, "replies": replies, "schema_hash": schema_hash, "viewer": viewer},
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
-    def tag_names(self, agent_ids: Iterable[str]) -> Dict[str, str]:
-        """``{tag id: name}`` over the given agents' current topics that can overlap (their ``tag:<id>`` labels)."""
+    def tag_names(self, agent_ids: Iterable[str], owner: Optional[str] = None) -> Dict[str, str]:
+        """``{tag id: name}`` over the given agents' current topics that can overlap (their ``tag:<id>`` labels).
+
+        Args:
+            agent_ids: The agents whose tags are on the page.
+            owner: For a user's own Logs, that user: only the agents they own are named. ``None`` (an agent's
+                Logs, already access-checked) names every given agent's tags.
+
+        Returns:
+            The names by tag id.
+        """
         ids = sorted({str(i) for i in agent_ids if i})
         if not ids:
             return {}
@@ -936,8 +1009,9 @@ class ConversationLabelsRepository:
             text(
                 "SELECT jsonb_path_query_array(a.config->'analytics'->'topics', '$[*] ? (@.overlap == true)') AS tags "
                 "FROM agents a WHERE a.id = ANY(CAST(:ids AS uuid[]))"
+                + (" AND a.user_id = :owner" if owner else "")
             ),
-            {"ids": ids},
+            {"ids": ids, "owner": owner},
         )
         names: Dict[str, str] = {}
         for row in result.fetchall():

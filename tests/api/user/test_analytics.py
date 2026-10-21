@@ -1733,7 +1733,7 @@ class TestLogsLabels:
             _chat_log(pg_conn, "owner", message, conversation, agent_id)
         return agent_id, cid, first, second, calm_second
 
-    def test_rows_carry_labels_and_tag_names(self, app, pg_conn):
+    def test_rows_carry_labels_and_tag_names(self, app, pg_conn, analytics_on):
         agent_id, _cid, first, second, calm_second = self._seed(pg_conn)
         data = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, "event_type": "chat"}).json
         labels = {row["message_id"]: row["labels"] for row in data["logs"]}
@@ -1789,7 +1789,7 @@ class TestLogsLabels:
             response = _post_logs(app, pg_conn, "owner", {"label": label})
             assert response.status_code == 400
 
-    def test_rows_without_labels_get_an_empty_list(self, app, pg_conn):
+    def test_rows_without_labels_get_an_empty_list(self, app, pg_conn, analytics_on):
         from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
         cid = str(ConversationsRepository(pg_conn).create("u-none", "c")["id"])
@@ -1873,3 +1873,118 @@ class TestAgentTopics:
         agent = AgentsRepository(pg_conn).create("owner", "a", "published")
         assert self._get(app, pg_conn, "stranger", str(agent["id"])).json == {"success": True, "topics": []}
         assert self._get(app, pg_conn, "owner", None).status_code == 400
+
+
+class TestSharedAgentLabelVisibility:
+    """Labels of a shared agent's conversations are written under its owner's topics and sources; a caller's own
+    (account) views must not hand those names back, while the owner's per-agent views still show them."""
+
+    _OWN = "Secret roadmap"
+    _OVERLAP = "Acquisition talks"
+    _SOURCE = "Confidential handbook"
+
+    def _seed(self, pg_conn, *, user="caller-b"):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        source = SourcesRepository(pg_conn).create(self._SOURCE, user_id="owner-a")
+        agent = _analytics_agent(pg_conn, owner="owner-a", topics=[
+            {"id": "roadmap01", "name": self._OWN},
+            {"id": _TAG, "name": self._OVERLAP, "overlap": True}])
+        agent_id = str(agent["id"])
+        stored = [{"title": "Plans", "source": "internal/plans.md", "source_id": str(source["id"]), "text": "x"}]
+        cid, first, second = _labelled_conversation(
+            pg_conn, user, agent_id=agent_id, sources=stored, gap={"docs missing": 0.9},
+            topics={self._OWN: 0.9, "none of these": 0.1})
+        for message in (first, second):
+            _chat_log(pg_conn, user, message, cid, agent_id)
+        return agent_id, cid, first, second
+
+    def _names(self, payload) -> str:
+        import json
+
+        return json.dumps(payload)
+
+    def test_a_caller_sees_none_of_the_owners_names(self, app, pg_conn, analytics_on):
+        self._seed(pg_conn)
+        for group_by in ("topic", "source", "page"):
+            data = _gaps(app, pg_conn, "caller-b", {"group_by": group_by}).json
+            assert data["rows"] == [], group_by
+        logs = _post_logs(app, pg_conn, "caller-b", {"event_type": "chat"}).json
+        assert len(logs["logs"]) == 2
+        assert all(row["labels"] == [] for row in logs["logs"])
+        assert logs["tag_names"] == {}
+        text = self._names(logs)
+        assert self._OVERLAP not in text and self._SOURCE not in text
+        totals = _insights(app, pg_conn, "caller-b", {}).json
+        assert totals["totals"]["frustrated"]["n"] == 0
+        assert totals["coverage"]["labelled_turns"] == totals["coverage"]["turns"] == 0
+
+    def test_the_label_filter_is_no_topic_oracle(self, app, pg_conn, analytics_on):
+        self._seed(pg_conn)
+        for label in (f"topic:{self._OWN}", f"tag:{_TAG}", "docs_gap", "frustrated"):
+            data = _post_logs(app, pg_conn, "caller-b", {"label": label}).json
+            assert data["logs"] == [], label
+
+    def test_the_owner_still_sees_them_on_the_agent(self, app, pg_conn, analytics_on):
+        agent_id, _cid, first, second = self._seed(pg_conn)
+        topics = _gaps(app, pg_conn, "owner-a", {"api_key_id": agent_id, "group_by": "topic"}).json
+        assert [row["key"] for row in topics["rows"]] == [self._OWN]
+        sources = _gaps(app, pg_conn, "owner-a", {"api_key_id": agent_id, "group_by": "source"}).json
+        assert [row["name"] for row in sources["rows"]] == [self._SOURCE]
+        pages = _gaps(app, pg_conn, "owner-a", {"api_key_id": agent_id, "group_by": "page"}).json
+        assert [row["source"] for row in pages["rows"]] == [self._SOURCE]
+        logs = _post_logs(app, pg_conn, "owner-a", {"api_key_id": agent_id, "event_type": "chat"}).json
+        assert {row["message_id"] for row in logs["logs"] if f"tag:{_TAG}" in row["labels"]} == {first, second}
+        assert logs["tag_names"] == {_TAG: self._OVERLAP}
+        found = _post_logs(app, pg_conn, "owner-a", {"api_key_id": agent_id, "label": f"topic:{self._OWN}"}).json
+        assert {row["message_id"] for row in found["logs"]} == {first, second}
+
+    def test_the_owner_sees_their_own_chats_with_their_agent_in_the_account_view(self, app, pg_conn,
+                                                                                 analytics_on):
+        _agent_id, _cid, first, second = self._seed(pg_conn, user="owner-a")
+        topics = _gaps(app, pg_conn, "owner-a", {"group_by": "topic"}).json
+        assert [row["key"] for row in topics["rows"]] == [self._OWN]
+        logs = _post_logs(app, pg_conn, "owner-a", {"event_type": "chat"}).json
+        assert all(f"tag:{_TAG}" in row["labels"] for row in logs["logs"])
+        assert logs["tag_names"] == {_TAG: self._OVERLAP}
+        found = _post_logs(app, pg_conn, "owner-a", {"label": f"topic:{self._OWN}"}).json
+        assert {row["message_id"] for row in found["logs"]} == {first, second}
+        assert _insights(app, pg_conn, "owner-a", {}).json["totals"]["frustrated"]["n"] == 1
+
+
+class TestLabelsFollowTheServerSwitch:
+    def test_logs_carry_no_label_chips_while_insights_are_off(self, app, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.conversation_labels import ConversationLabelsRepository
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+        agent_id, _cid, first, second, _calm = TestLogsLabels()._seed(pg_conn)
+
+        def no_lookup(*_args, **_kwargs):
+            raise AssertionError("label rows were read with insights off")
+
+        monkeypatch.setattr(ConversationLabelsRepository, "log_rows", no_lookup)
+        data = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, "event_type": "chat"}).json
+        assert data["logs"] and all("labels" not in row for row in data["logs"])
+        assert data["tag_names"] == {}
+        # the filter still works, for a link that carries a label
+        monkeypatch.undo()
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+        found = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, "label": "frustrated"}).json
+        assert {row["message_id"] for row in found["logs"]} == {second}
+
+    def test_insights_read_no_topic_list_while_off(self, app, pg_conn, analytics_on, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        agent = _analytics_agent(pg_conn, topics=[{"id": "billing01", "name": "Billing"}])
+
+        calls = []
+        monkeypatch.setattr("docsgpt.analytics.topics.options", lambda *args, **kwargs: calls.append(args) or [])
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+        data = _insights(app, pg_conn, "owner", {"api_key_id": str(agent["id"])}).json
+        assert (data["enabled"], data["one_pick"]) == (False, [])
+        off = _analytics_agent(pg_conn, owner="owner-off", enabled=False)
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        assert _insights(app, pg_conn, "owner-off", {"api_key_id": str(off["id"])}).json["one_pick"] == []
+        # the agent's sources are read only once the agent's insights are on
+        assert calls == []
