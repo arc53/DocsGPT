@@ -336,6 +336,12 @@ export type ConversationInsights = {
     unlabelled_recent_turns: number;
     /** Unlabelled answers older than the labelling window: never labelled without a backfill. */
     unlabelled_older_turns: number;
+    /**
+     * Answers whose labelling failed for good, in neither unlabelled count:
+     * not retried until the model or its questions change. Absent from an
+     * older server, which reads as none.
+     */
+    failed_turns?: number;
   };
   /** How many days back the sweep labels (`ANALYTICS_BACKFILL_DAYS`). */
   backfill_days: number;

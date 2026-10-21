@@ -818,6 +818,15 @@
           "title": "Aucune conversation récente à analyser",
           "description": "Les analyses couvrent les conversations à partir du {{date}}. Les plus anciennes ne sont pas analysées ; un administrateur peut les rattraper."
         },
+        "failedOnly": {
+          "title": "Aucune réponse n’a pu être analysée",
+          "description_one": "Le modèle n’a pas pu analyser {{formatted}} réponse de cette période. Il réessaie quand le modèle ou ses questions changent.",
+          "description_other": "Le modèle n’a pas pu analyser {{formatted}} réponses de cette période. Il réessaie quand le modèle ou ses questions changent.",
+          "description_many": "Le modèle n’a pas pu analyser {{formatted}} réponses de cette période. Il réessaie quand le modèle ou ses questions changent."
+        },
+        "failed_one": "{{formatted}} réponse n’a pas pu être analysée",
+        "failed_other": "{{formatted}} réponses n’ont pas pu être analysées",
+        "failed_many": "{{formatted}} réponses n’ont pas pu être analysées",
         "settings": {
           "button": "Paramètres",
           "title": "Paramètres des analyses",

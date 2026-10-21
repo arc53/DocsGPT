@@ -236,6 +236,7 @@ describe('ConversationInsights', () => {
     labelled: number,
     recent: number,
     older: number,
+    failed = 0,
   ) =>
     data({
       coverage: {
@@ -244,6 +245,7 @@ describe('ConversationInsights', () => {
         labelled_turns: labelled,
         unlabelled_recent_turns: recent,
         unlabelled_older_turns: older,
+        failed_turns: failed,
       },
     });
 
@@ -339,6 +341,33 @@ describe('ConversationInsights', () => {
     expect(empty.querySelector('[data-slot="progress"]')).toBeNull();
   });
 
+  // Answers whose labelling failed for good are not still to come: the
+  // page does not wait on them, and says how many there are.
+  it('says so when no answer in the window could be analyzed', () => {
+    render(unlabelled(3, 0, 0, 0, 3));
+    const empty = emptyState()!;
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.failedOnly.title',
+    );
+    expect(empty.textContent).toContain(
+      'settings.analytics.insights.failedOnly.description(3)',
+    );
+    expect(empty.textContent).not.toContain('analyzing');
+    expect(empty.textContent).not.toContain('olderOnly');
+    expect(empty.querySelector('[data-slot="progress"]')).toBeNull();
+    expect(container.querySelector('[data-testid="insight-tiles"]')).toBeNull();
+  });
+
+  it('counts answers that could not be analyzed while analyzing', () => {
+    render(unlabelled(40, 6, 30, 0, 4));
+    expect(emptyState()!.textContent).toContain(
+      'settings.analytics.insights.analyzing.progress(6|36)',
+    );
+    expect(emptyState()!.textContent).toContain(
+      'settings.analytics.insights.failed(4)',
+    );
+  });
+
   it('shows the error with Retry instead of an empty message', () => {
     const onRetry = vi.fn();
     render(null, { status: 'error', onRetry });
@@ -420,6 +449,23 @@ describe('ConversationInsights', () => {
     expect(
       container.querySelector('[data-testid="insight-tiles"]'),
     ).not.toBeNull();
+  });
+
+  it('notes answers that could not be analyzed beside the figures', () => {
+    render(unlabelled(12, 11, 0, 0, 1));
+    expect(
+      container.querySelector('[data-testid="insight-tiles"]'),
+    ).not.toBeNull();
+    expect(intro()).not.toContain('settings.analytics.insights.coverage');
+    expect(intro()).toContain('settings.analytics.insights.failed(1)');
+    render(unlabelled(120, 100, 5, 0, 15));
+    expect(intro()).toContain('settings.analytics.insights.coverage(100|105)');
+    expect(intro()).toContain('settings.analytics.insights.failed(15)');
+    // None failed, or an older server that does not say: no note.
+    render(unlabelled(120, 100, 0, 20));
+    expect(intro()).not.toContain('settings.analytics.insights.failed');
+    render(data());
+    expect(intro()).not.toContain('settings.analytics.insights.failed');
   });
 
   it('gives every headline tile a rate and its own denominator, no range', () => {

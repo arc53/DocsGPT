@@ -790,6 +790,13 @@
           "title": "No recent conversations to analyze",
           "description": "Insights cover conversations from {{date}} onwards. Older ones aren't analyzed; an admin can backfill them."
         },
+        "failedOnly": {
+          "title": "No answers could be analyzed",
+          "description_one": "The model couldn't analyze {{formatted}} answer in this period. It tries again once the model or its questions change.",
+          "description_other": "The model couldn't analyze {{formatted}} answers in this period. It tries again once the model or its questions change."
+        },
+        "failed_one": "{{formatted}} answer couldn't be analyzed",
+        "failed_other": "{{formatted}} answers couldn't be analyzed",
         "settings": {
           "button": "Settings",
           "title": "Insights settings",

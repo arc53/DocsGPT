@@ -39,6 +39,7 @@
     "backfill_days": 7,
     "coverage": {
       "conversations": 2,
+      "failed_turns": 0,
       "labelled_conversations": 2,
       "labelled_replies": 2,
       "labelled_turns": 4,

@@ -45,13 +45,18 @@ const insights = (
 const coverage = (
   turns: number,
   labelled: number,
-  { recent = turns - labelled, older = 0 } = {},
+  {
+    failed = 0,
+    recent = turns - labelled - failed,
+    older = 0,
+  }: { failed?: number; recent?: number; older?: number } = {},
 ) => ({
   ...insights().coverage,
   turns,
   labelled_turns: labelled,
   unlabelled_recent_turns: recent,
   unlabelled_older_turns: older,
+  failed_turns: failed,
 });
 
 describe('insightsState', () => {
@@ -138,11 +143,66 @@ describe('insightsState', () => {
     ).toBe('partial');
   });
 
+  // Answers whose labelling failed for good are not still to come: they
+  // neither hold the section on "analyzing" nor keep it partial.
+  it('does not wait on answers that could not be analyzed', () => {
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(12, 11, { failed: 1 }) }),
+      ),
+    ).toBe('ready');
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(120, 100, { failed: 15, recent: 5 }) }),
+      ),
+    ).toBe('partial');
+  });
+
+  it('says so when no answer in the window could be analyzed', () => {
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(3, 0, { failed: 3 }) }),
+      ),
+    ).toBe('failedOnly');
+    // Failures name the problem over older answers, which are expected.
+    expect(
+      insightsState(
+        'ready',
+        insights({
+          coverage: coverage(12, 0, { failed: 2, recent: 0, older: 10 }),
+        }),
+      ),
+    ).toBe('failedOnly');
+    // Some still to come: analyzing, whatever failed.
+    expect(
+      insightsState(
+        'ready',
+        insights({ coverage: coverage(12, 0, { failed: 2, recent: 10 }) }),
+      ),
+    ).toBe('analyzing');
+  });
+
+  // An older server sends no failed_turns: the states read as before.
+  it('reads a coverage without failed_turns as none failed', () => {
+    const { failed_turns: _failed, ...older } = coverage(12, 0, {
+      recent: 0,
+      older: 12,
+    });
+    void _failed;
+    expect(insightsState('ready', insights({ coverage: older }))).toBe(
+      'olderOnly',
+    );
+  });
+
   it('shows figures only with labels', () => {
     expect(showsFigures('partial')).toBe(true);
     expect(showsFigures('ready')).toBe(true);
     expect(showsFigures('analyzing')).toBe(false);
     expect(showsFigures('olderOnly')).toBe(false);
+    expect(showsFigures('failedOnly')).toBe(false);
   });
 });
 

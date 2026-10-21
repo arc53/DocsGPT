@@ -28,6 +28,7 @@ export type InsightsState =
   | 'noTraffic'
   | 'analyzing'
   | 'olderOnly'
+  | 'failedOnly'
   | 'partial'
   | 'ready';
 
@@ -35,10 +36,12 @@ export type InsightsState =
  * What the insights section shows, from the fetch and its response.
  *
  * The sweep labels only answers inside its window (`backfill_days` back), so
- * an unlabelled answer is either still to come or never labelled. While some
- * are still to come and too few are labelled for any figure, the section is
- * `analyzing`; with none labelled and none to come, `olderOnly`. With figures
- * it is `partial` while some are still to come, else `ready`.
+ * an unlabelled answer is either still to come or never labelled; an answer
+ * whose labelling failed for good is neither, and is not waited on. While
+ * some are still to come and too few are labelled for any figure, the section
+ * is `analyzing`; with none labelled and none to come, `failedOnly` when some
+ * failed, else `olderOnly`. With figures it is `partial` while some are still
+ * to come, else `ready`.
  */
 export function insightsState(
   status: InsightsFetchStatus,
@@ -52,7 +55,8 @@ export function insightsState(
   if (turns === 0) return 'noTraffic';
   if (unlabelled_recent_turns > 0 && labelled_turns < MIN_SAMPLE)
     return 'analyzing';
-  if (labelled_turns === 0) return 'olderOnly';
+  if (labelled_turns === 0)
+    return (data.coverage.failed_turns ?? 0) > 0 ? 'failedOnly' : 'olderOnly';
   // Complete once nothing inside the labelling window is left: older
   // answers are never labelled, so they never count against it.
   return unlabelled_recent_turns > 0 ? 'partial' : 'ready';

@@ -788,6 +788,13 @@
           "title": "没有可分析的近期对话",
           "description": "洞察涵盖 {{date}} 起的对话。更早的对话不会分析；管理员可以补充分析。"
         },
+        "failedOnly": {
+          "title": "无法分析任何回答",
+          "description_one": "模型无法分析此期间的 {{formatted}} 条回答。模型或其问题变更后会重新分析。",
+          "description_other": "模型无法分析此期间的 {{formatted}} 条回答。模型或其问题变更后会重新分析。"
+        },
+        "failed_one": "{{formatted}} 条回答无法分析",
+        "failed_other": "{{formatted}} 条回答无法分析",
         "settings": {
           "button": "设置",
           "title": "洞察设置",

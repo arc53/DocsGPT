@@ -790,6 +790,13 @@
           "title": "Keine aktuellen Gespräche zum Auswerten",
           "description": "Einblicke umfassen Gespräche ab dem {{date}}. Ältere werden nicht ausgewertet; ein Administrator kann sie nachträglich auswerten lassen."
         },
+        "failedOnly": {
+          "title": "Keine Antwort konnte ausgewertet werden",
+          "description_one": "Das Modell konnte {{formatted}} Antwort in diesem Zeitraum nicht auswerten. Es versucht es erneut, sobald sich das Modell oder seine Fragen ändern.",
+          "description_other": "Das Modell konnte {{formatted}} Antworten in diesem Zeitraum nicht auswerten. Es versucht es erneut, sobald sich das Modell oder seine Fragen ändern."
+        },
+        "failed_one": "{{formatted}} Antwort konnte nicht ausgewertet werden",
+        "failed_other": "{{formatted}} Antworten konnten nicht ausgewertet werden",
         "settings": {
           "button": "Einstellungen",
           "title": "Einstellungen für Einblicke",

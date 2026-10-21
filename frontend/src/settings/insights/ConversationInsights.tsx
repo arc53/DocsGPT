@@ -86,11 +86,26 @@ type ConversationInsightsProps = {
 };
 
 /**
+ * How many of the window's answers could not be analyzed (their labelling
+ * failed for good), or undefined when none did or the server does not say.
+ */
+function useFailedNote(data: Insights | null): string | undefined {
+  const { t } = useTranslation();
+  const failed = data?.coverage.failed_turns ?? 0;
+  return failed > 0
+    ? t('settings.analytics.insights.failed', {
+        count: failed,
+        formatted: formatCount(failed),
+      })
+    : undefined;
+}
+
+/**
  * The intro of insights as a page of its own: the description, its Learn
- * more link and, while labelling is partial, its coverage (labelled of what
- * the sweep will label, so answers older than its window, never labelled,
- * leave the count out), as inline content for a paragraph (the section's
- * own, or a page toolbar's `intro`).
+ * more link, while labelling is partial its coverage (labelled of what the
+ * sweep will label, so answers older than its window, never labelled, leave
+ * the count out), and how many answers could not be analyzed, as inline
+ * content for a paragraph (the section's own, or a page toolbar's `intro`).
  */
 export function InsightsIntro({
   state,
@@ -110,6 +125,7 @@ export function InsightsIntro({
           ),
         })
       : undefined;
+  const failed = useFailedNote(data);
   return (
     <>
       {t('settings.analytics.insights.description')}{' '}
@@ -122,6 +138,12 @@ export function InsightsIntro({
         <>
           <span aria-hidden> · </span>
           <span className="tabular-nums">{count}</span>
+        </>
+      )}
+      {failed && (
+        <>
+          <span aria-hidden> · </span>
+          <span className="tabular-nums">{failed}</span>
         </>
       )}
     </>
@@ -212,6 +234,8 @@ export default function ConversationInsights({
     );
   else if (state === 'analyzing' && data) body = <AnalyzingState data={data} />;
   else if (state === 'olderOnly' && data) body = <OlderOnlyState data={data} />;
+  else if (state === 'failedOnly' && data)
+    body = <FailedOnlyState data={data} />;
   else if (showsFigures(state) && data)
     body = (
       <>
@@ -255,6 +279,7 @@ function AnalyzingState({ data }: { data: Insights }) {
   const { labelled_turns: done, unlabelled_recent_turns: waiting } =
     data.coverage;
   const total = done + waiting;
+  const failed = useFailedNote(data);
   const title = t('settings.analytics.insights.analyzing.title');
   return (
     <EmptyState
@@ -268,6 +293,7 @@ function AnalyzingState({ data }: { data: Insights }) {
             labelled: formatCount(done),
             formatted: formatCount(total),
           })}
+          {failed && ` · ${failed}`}
         </span>
       }
       action={
@@ -279,6 +305,27 @@ function AnalyzingState({ data }: { data: Insights }) {
           aria-label={title}
         />
       }
+    />
+  );
+}
+
+/**
+ * No answer in the window is labelled and none is still to come, and some
+ * could not be analyzed: the sweep tries them again only once the model or
+ * its questions change.
+ */
+function FailedOnlyState({ data }: { data: Insights }) {
+  const { t } = useTranslation();
+  const failed = data.coverage.failed_turns ?? 0;
+  return (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      title={t('settings.analytics.insights.failedOnly.title')}
+      description={t('settings.analytics.insights.failedOnly.description', {
+        count: failed,
+        formatted: formatCount(failed),
+      })}
     />
   );
 }

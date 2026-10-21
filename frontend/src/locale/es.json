@@ -818,6 +818,15 @@
           "title": "No hay conversaciones recientes que analizar",
           "description": "La información abarca las conversaciones desde el {{date}}. Las anteriores no se analizan; un administrador puede analizarlas a posteriori."
         },
+        "failedOnly": {
+          "title": "No se pudo analizar ninguna respuesta",
+          "description_one": "El modelo no pudo analizar {{formatted}} respuesta de este periodo. Lo vuelve a intentar cuando cambian el modelo o sus preguntas.",
+          "description_other": "El modelo no pudo analizar {{formatted}} respuestas de este periodo. Lo vuelve a intentar cuando cambian el modelo o sus preguntas.",
+          "description_many": "El modelo no pudo analizar {{formatted}} respuestas de este periodo. Lo vuelve a intentar cuando cambian el modelo o sus preguntas."
+        },
+        "failed_one": "{{formatted}} respuesta no se pudo analizar",
+        "failed_other": "{{formatted}} respuestas no se pudieron analizar",
+        "failed_many": "{{formatted}} respuestas no se pudieron analizar",
         "settings": {
           "button": "Configuración",
           "title": "Configuración de la información",
