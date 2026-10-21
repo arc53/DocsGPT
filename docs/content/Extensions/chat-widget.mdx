@@ -1,7 +1,7 @@
 ---
 title: Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-21
 ---
 import { Callout, Tabs } from 'nextra/components'
 
@@ -84,10 +84,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
 ```
 
-The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.10.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
+The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.11.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
 
 ### Usage
 
@@ -102,7 +102,7 @@ Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidge
 ```html filename="html"
 <!DOCTYPE html>
 <div id="app"></div>
-<script src="https://unpkg.com/docsgpt@0.10.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
 <script>
   window.onload = function() {
     renderDocsGPTWidget('app', {
@@ -172,6 +172,8 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
 | **`heroTitle`**    | `string`         | `"Welcome to DocsGPT !"`                                    | Welcome message displayed when the chatbot is initially opened.                                     |
 | **`heroDescription`** | `string`     | `"This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources."` | Introductory text providing context or disclaimers about the chatbot.                                 |
+| **`suggestedQuestions`** | `string[]` | _unset_                                                | Questions listed under the welcome card before the first message. Clicking one sends it. See [Suggested questions](#suggested-questions). |
+| **`suggestedQuestionsLabel`** | `string` | `"Suggested questions"`                             | Heading over `suggestedQuestions`. Pass an empty string to hide it.                                  |
 | **`theme`**        | `"dark" \| "light"` | `"dark"`                                                  | Color theme of the widget interface.                                                                 |
 | **`buttonIcon`**   | `string`         | a chat-bubble icon                                          | URL for the icon image used in the widget's launch button. Defaults to a chat-bubble icon drawn inline. |
 | **`buttonText`**   | `string`         | `"Ask a question"`                                          | Label of the widget's launch button.                                                                 |
@@ -261,6 +263,26 @@ Three properties change what the widget shows of DocsGPT:
   poweredBy={{ label: 'Powered by Acme', href: 'https://acme.example' }}
 />
 ```
+
+---
+
+## Suggested questions
+
+`suggestedQuestions` lists questions under the welcome card, so a visitor can start with one click. Clicking a question sends it, and the list goes away once the conversation starts. Anything the visitor had already typed stays in the input. Blank entries are skipped.
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  suggestedQuestions={[
+    'How do I install the SDK?',
+    'Which plans include SSO?',
+    'How do I rotate an API key?',
+  ]}
+  suggestedQuestionsLabel="Popular questions"
+/>
+```
+
+The list shows every question you pass, each on its own row, so keep it to a handful that fit the panel. While a file is still uploading, or the microphone is dictating, the questions are disabled until the send can go through.
 
 ---
 
