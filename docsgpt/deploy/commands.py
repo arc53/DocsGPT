@@ -312,9 +312,32 @@ def _port_number(value: object, source: str) -> int:
     return int(text)
 
 
-def _service_names(directory: Path) -> tuple[str, str]:
+def _service_names(directory: Path) -> tuple[str, ...]:
     """This install's service names; an install elsewhere gets its own, so the two cannot collide."""
     return native.service_names(directory, stack.stack_dir(None))
+
+
+def _installed_names(services, names: tuple[str, ...], report: bool = True) -> tuple[str, ...]:
+    """The services in ``names`` whose unit is installed.
+
+    A newer version can add a service (the analytics worker) that an install made by an older one has
+    no unit for until ``up`` writes it. Starting or stopping that one would fail, so the lifecycle
+    commands work on the installed ones and say what is missing.
+
+    Args:
+        services: The service manager.
+        names: This install's service names, in order.
+        report: Whether to print a note to stderr for each service that is not installed.
+
+    Returns:
+        The installed services, in the order of ``names``.
+    """
+    installed = tuple(name for name in names if services.is_installed(name))
+    if report:
+        for name in names:
+            if name not in installed:
+                print(native.not_installed(name), file=sys.stderr)
+    return installed
 
 
 def _port_is_free(port: int) -> bool:
@@ -327,7 +350,7 @@ def _port_is_free(port: int) -> bool:
     return True
 
 
-def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, str]) -> None:
+def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, ...]) -> None:
     """Whatever holds the port would answer the health check while these services failed to bind.
 
     The one exception is this install's own API holding the port it is recorded on. Ownership is not
@@ -627,7 +650,7 @@ def down(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native":
         services = context.service_manager()
         # The worker goes first: it talks to the API, not the other way round.
-        for name in reversed(_service_names(directory)):
+        for name in reversed(_installed_names(services, _service_names(directory))):
             services.stop(name)
         return 0
     context.docker.compose(directory, *_EVERY_PROFILE, "down")
@@ -648,7 +671,11 @@ def status(args, context: Optional[Context] = None) -> int:
         port = _native_port(env)
         print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
         print(f"Address: {_native_address(env)}")
+        installed = _installed_names(services, _service_names(directory), report=False)
         for name in _service_names(directory):
+            if name not in installed:
+                print(f"  {name}: not installed yet; {native.INSTALL_HINT}")
+                continue
             print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
         healthy = context.wait(f"http://127.0.0.1:{port}/api/health", 0)
         print("API: answering" if healthy else "API: not answering (see `docsgpt logs`)")
@@ -671,7 +698,7 @@ def logs(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         logs_dir = directory / "logs"
-        wanted = args.services or ["api", "worker"]
+        wanted = args.services or [native.log_name(name) for name in _service_names(directory)]
         # Opened before the first read and kept: a line written between printing what is there and
         # starting to follow would otherwise appear in neither.
         handles = {}
@@ -779,7 +806,7 @@ def env(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native" and getattr(args, "restart", True):
         context = context or Context.default(args)
         services = context.service_manager()
-        names = _service_names(directory)
+        names = _installed_names(services, _service_names(directory))
         if any(services.is_running(name) for name in names):
             for name in reversed(names):
                 services.stop(name)
@@ -824,7 +851,7 @@ def dev(args, context: Optional[Context] = None) -> int:
     children = dev_module.plan(args, checkout)
     print(f"DocsGPT from {checkout}")
     for child in children:
-        print(f"  {child.name:<6} {' '.join(child.command)}")
+        print(f"  {child.name:<{dev_module.WIDTH}} {' '.join(child.command)}")
     print(f"\nAPI     http://{args.host}:{args.port}")
     if getattr(args, "ui", False):
         print(f"UI      http://localhost:{dev_module.UI_PORT}")
@@ -1239,6 +1266,108 @@ def _local_decisions(settings: Any) -> str:
     return text
 
 
+# Beat sends one sweep per ANALYTICS_SWEEP_SECONDS; a worker on the queue takes each within seconds. This many
+# waiting means several intervals went by with nothing taking them, whereas doctor run before the workers start
+# sees one or two at most.
+ANALYTICS_BACKLOG_WARN = 3
+
+
+def _queue_backlog(client: Any, queue: str) -> int:
+    """Messages waiting on a Celery queue in Redis: kombu keeps one list per priority step, the name and its twins.
+
+    Args:
+        client: A redis-py client on the broker's database.
+        queue: The Celery queue name.
+
+    Returns:
+        The total length of the queue's lists; reserved (unacked) messages are not in them.
+    """
+    from kombu.transport.redis import PRIORITY_STEPS, Channel
+
+    keys = [f"{queue}{Channel.sep}{step}" if step else queue for step in PRIORITY_STEPS]
+    return sum(int(client.llen(key) or 0) for key in keys)
+
+
+def _analytics_consumers(url: str, queue: str, timeout: float = 1.0) -> Optional[list[str]]:
+    """The worker nodes that answer a short ``inspect`` and list ``queue``, or None when none answers.
+
+    A solo-pool worker answers only between tasks, so one in the middle of a sweep is silent: an empty answer or
+    none is not evidence that nothing consumes the queue.
+
+    Args:
+        url: The Celery broker URL.
+        queue: The queue to look for.
+        timeout: Seconds to wait for replies.
+
+    Returns:
+        Sorted node names consuming ``queue``, an empty list when workers answered without it, or None.
+    """
+    from celery import Celery
+
+    app = Celery("docsgpt-doctor", broker=url, set_as_current=False)
+    try:
+        replies = app.control.inspect(timeout=timeout).active_queues()
+    except Exception:  # noqa: BLE001 - this is extra detail; the redis row reports a broker that does not answer
+        return None
+    finally:
+        app.close()
+    if not replies:
+        return None
+    return sorted(node for node, queues in replies.items()
+                  if any(isinstance(q, dict) and q.get("name") == queue for q in queues or []))
+
+
+def _check_analytics(env: Mapping[str, str], broker_url: Optional[str]) -> Check:
+    """Whether anything takes the analytics queue, judged by its backlog on the broker; never a failure.
+
+    With ``DECISION_ANALYTICS_ENABLED`` on, beat sends the sweep to ``ANALYTICS_QUEUE``. A worker whose ``-Q``
+    leaves it out, or a solo-pool ``docsgpt worker`` with no ``docsgpt worker --analytics`` beside it, lets the
+    messages pile up in Redis and the Insights pages never fill. Workers are often not running when doctor is, so
+    only a backlog of several intervals warns; a short ``inspect`` adds which workers consume the queue.
+
+    Args:
+        env: The stack's settings file.
+        broker_url: The broker the redis row pinged (``--redis-url`` or ``CELERY_BROKER_URL``); the settings'
+            default when None.
+    """
+    try:
+        with _service_environment(env):
+            from docsgpt.core.settings import Settings
+
+            _forget_shell_settings(env)
+            settings = Settings(_env_file=None)
+    except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
+        return Check("analytics", "warn", f"the settings do not load: {_first_error(exc)}")
+    if not settings.DECISION_ANALYTICS_ENABLED:
+        return Check("analytics", "ok", "off (DECISION_ANALYTICS_ENABLED=false)")
+    queue = settings.ANALYTICS_QUEUE
+    url = broker_url or settings.CELERY_BROKER_URL
+    try:
+        import redis
+
+        client = redis.Redis.from_url(url, socket_connect_timeout=3, socket_timeout=3)
+        waiting = _queue_backlog(client, queue)
+    except Exception as exc:  # noqa: BLE001 - the redis row reports a broker that does not answer
+        return Check("analytics", "warn", f"on, but the `{queue}` queue cannot be read on {_endpoint(url)}: "
+                                          f"{_scrub(str(exc).strip(), url)}")
+    consumers = _analytics_consumers(url, queue)
+    held = f"{waiting} message{'' if waiting == 1 else 's'} waiting on the `{queue}` queue"
+    if waiting >= ANALYTICS_BACKLOG_WARN:
+        minutes = waiting * max(60, settings.ANALYTICS_SWEEP_SECONDS) // 60
+        held += f" (about {minutes} min of sweeps)"
+        if consumers:
+            verb = "consumes" if len(consumers) == 1 else "consume"
+            return Check("analytics", "warn", f"{held} although {', '.join(consumers)} {verb} it, so it is behind")
+        nobody = "none of the workers that answered consumes it" if consumers == [] else "no worker takes them"
+        return Check("analytics", "warn", f"{held} and {nobody}, so Insights stay empty: run "
+                                          f"`docsgpt worker --analytics` next to the worker, or add {queue} to its -Q")
+    if consumers:
+        held += f"; consumed by {', '.join(consumers)}"
+    elif consumers == []:
+        held += "; no worker that answered consumes it"
+    return Check("analytics", "ok", f"on; {held}")
+
+
 def doctor(args, context: Optional[Context] = None) -> int:
     """Check what DocsGPT needs on this machine, and say what is missing."""
     from docsgpt.core import paths
@@ -1253,14 +1382,16 @@ def doctor(args, context: Optional[Context] = None) -> int:
     env = envfile.read(env_path)
     directory = stack.stack_dir(args.dir)
     docker = _mode(directory) == "docker" and (directory / stack.COMPOSE_FILE).is_file()
+    redis_urls = _redis_to_check(args, env)
     checks = [
         Check("settings", "ok" if env_path.is_file() else "warn",
               f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
         _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
-        _check_redis(_redis_to_check(args, env)),
+        _check_redis(redis_urls),
         _check_provider(env),
         _check_model(env),
         _check_decisions(env, docker),
+        _check_analytics(env, redis_urls.get("broker")),
     ]
 
     # The one command that exists to explain a broken setup must not fall over on one.
@@ -1273,10 +1404,14 @@ def doctor(args, context: Optional[Context] = None) -> int:
 
     if _mode(directory) == "native":
         services = context.service_manager() if context else native.services_for_platform()
-        names = _service_names(directory)
+        every = _service_names(directory)
+        names = _installed_names(services, every, report=False)
         running = [name for name in names if services.is_running(name)]
         level = "ok" if len(running) == len(names) else "warn"
-        checks.append(Check("services", level, f"{len(running)} of {len(names)} running ({', '.join(names)})"))
+        detail = f"{len(running)} of {len(names)} running ({', '.join(names)})"
+        # A service only a newer version runs is a hint, not a fault: the rest work without it.
+        detail += "".join(f"; {native.not_installed(name)}" for name in every if name not in names)
+        checks.append(Check("services", level, detail))
 
     for check in checks:
         print(f"[{MARKS[check.level]}] {check.name:<9} {check.detail}")
@@ -1286,7 +1421,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
     return 1 if failed else 0
 
 
-def _chosen_services(names: tuple[str, str], wanted: list) -> list:
+def _chosen_services(names: tuple[str, ...], wanted: list) -> list:
     """The services the user asked for, given either short names (api) or full ones."""
     if not wanted:
         return list(names)
@@ -1307,7 +1442,14 @@ def restart(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         services = context.service_manager()
-        chosen = _chosen_services(_service_names(directory), list(args.services))
+        names = _service_names(directory)
+        if args.services:
+            chosen = _chosen_services(names, list(args.services))
+            missing = [name for name in chosen if not services.is_installed(name)]
+            if missing:
+                raise DeployError(" ".join(native.not_installed(name) for name in missing))
+        else:
+            chosen = list(_installed_names(services, names))
         for name in reversed(chosen):
             services.stop(name)
         for name in chosen:

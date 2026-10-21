@@ -102,8 +102,10 @@ services:
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
     user: root
     # Consumes the default queue plus `parsing` (read_document) and `embeddings`
-    # (query embedding); without the latter every search times out.
-    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest
+    # (query embedding); without the latter every search times out. `analytics`
+    # carries the conversation-analytics sweep; on a 1-CPU host, see "The analytics
+    # queue" in the Background Jobs docs before turning it on.
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     env_file:
       - path: .env
         required: false

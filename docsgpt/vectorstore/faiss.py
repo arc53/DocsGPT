@@ -316,9 +316,28 @@ class FaissStore(BaseVectorStore):
         self.index_to_docstore_id = dict(enumerate(remaining))
         return True
 
+    def _own_metadata(self, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """A copy of chunk metadata whose ``source_id`` is this index's source.
+
+        Metadata from the chunk API is the caller's; as in the other stores, it
+        cannot move a chunk to another source.
+
+        Args:
+            metadata: The chunk's metadata as given.
+
+        Returns:
+            The metadata, ``source_id`` set to this store's (left as given when
+            the store has none).
+        """
+        own = dict(metadata or {})
+        source_id = str(self.source_id or "").replace("docsgpt/indexes/", "").rstrip("/")
+        if source_id:
+            own["source_id"] = source_id
+        return own
+
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Add a new chunk and save to storage."""
-        ids = self.add_texts([text], [metadata or {}])
+        """Add a new chunk and save to storage; its ``source_id`` is this index's source."""
+        ids = self.add_texts([text], [self._own_metadata(metadata)])
         self._save_to_storage()
         return ids[0]
 
@@ -334,7 +353,8 @@ class FaissStore(BaseVectorStore):
         Args:
             chunk_id: Id of the chunk to replace.
             text: The chunk's new text.
-            metadata: The chunk's complete new metadata.
+            metadata: The chunk's complete new metadata; ``source_id`` is
+                this index's source whatever it says.
 
         Returns:
             ``chunk_id``, unchanged.
@@ -369,7 +389,7 @@ class FaissStore(BaseVectorStore):
         self.index_to_docstore_id = dict(enumerate(remaining + [chunk_id]))
         self.documents[chunk_id] = {
             "page_content": text,
-            "metadata": dict(metadata or {}),
+            "metadata": self._own_metadata(metadata),
         }
         self._save_to_storage()
         return chunk_id

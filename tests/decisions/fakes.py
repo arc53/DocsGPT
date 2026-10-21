@@ -39,6 +39,31 @@ class CharTokenizer:
         return "".join(chr(i) for i in ids)
 
 
+def byte_tokenizer(folder):
+    """A real ``tokenizers`` byte-level BPE with no merges, loaded as the release client loads the model's.
+
+    Its ids are the UTF-8 bytes of the text, so ASCII reads back with ``chr`` as ``CharTokenizer``'s does, and like
+    the model's own tokenizer it refuses a string holding a lone surrogate (``TypeError``).
+
+    Args:
+        folder: Where its ``tokenizer.json`` is written.
+    """
+    from tokenizers import Tokenizer, decoders, models, pre_tokenizers
+
+    from docsgpt.decisions.vendor.arc_decide_onnx import _Tokenizer
+
+    printable = [*range(ord("!"), ord("~") + 1), *range(ord("¡"), ord("¬") + 1), *range(ord("®"), ord("ÿ") + 1)]
+    others = [b for b in range(256) if b not in printable]
+    # GPT-2's byte-to-character table: printable bytes as themselves, the rest from U+0100 on.
+    vocab = {chr(b): b for b in printable} | {chr(256 + k): b for k, b in enumerate(others)}
+    tokenizer = Tokenizer(models.BPE(vocab=vocab, merges=[]))
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=False)
+    tokenizer.decoder = decoders.ByteLevel()
+    path = folder / "tokenizer.json"
+    tokenizer.save(str(path))
+    return _Tokenizer(path)
+
+
 def digest(ids) -> float:
     """An order-sensitive function of every row, standing in for the label logits at the last position."""
     return (sum((i + 1) * v for i, v in enumerate(ids)) % 9973) / 9973

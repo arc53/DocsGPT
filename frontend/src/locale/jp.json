@@ -72,7 +72,8 @@
         "monitor_paused": "モニターが一時停止されました",
         "monitor_expired": "モニターの期限が切れました",
         "schedule": "予定したタスクが完了しました",
-        "default": "新しい返信"
+        "default": "新しい返信",
+        "docs_gaps": "ドキュメントの不足の週次サマリー"
       },
       "open": "開く",
       "fallbackTitle": "アシスタントからのお知らせ"
@@ -612,7 +613,8 @@
         "last24Hours": "過去24時間",
         "last7Days": "過去7日間",
         "last15Days": "過去15日間",
-        "last30Days": "過去30日間"
+        "last30Days": "過去30日間",
+        "last90Days": "過去90日間"
       },
       "messages": "メッセージ",
       "tokenUsage": "トークン使用量",
@@ -656,7 +658,195 @@
           "direct": "エージェントなしのチャット",
           "agent": "エージェント経由"
         }
-      }
+      },
+      "insights": {
+        "description": "AI モデルが各会話から推定した値です。",
+        "learnMore": "詳細",
+        "coverage": "{{total}} 件中 {{labelled}} 件の回答を分析済み",
+        "loadError": "インサイトを読み込めませんでした。",
+        "notEnough": "データがまだ足りません（現在 {{formatted}} 件）",
+        "notEnoughShort": "データがまだ足りません",
+        "notEnoughReplies": "返信がまだ足りません",
+        "languageNote": "これらのメッセージの {{share}} は{{languages}}で書かれており、モデルの読み取り精度が下がります。{{labels}}は信頼性が低い可能性があります。",
+        "otherLanguages": "その他の言語",
+        "stats": {
+          "fullyAnswered": "完全に回答",
+          "fullyAnsweredHint": "回答が完全に答えた質問です。あいさつや雑談は数えません。",
+          "goalMet": "目的を達成",
+          "goalMetHint": "ユーザーが求めたものを得られた会話です。会話が落ち着いた後、会話全体から判定します。",
+          "frustrated": "不満",
+          "frustratedHint": "はっきりとした不満を示す返信です。回答の後に送られたメッセージだけを数えるため、会話の最初のメッセージは数えません。",
+          "asksHuman": "担当者を希望",
+          "asksHumanHint": "担当者、チケット、または別の連絡方法を求める返信です。最初のメッセージでの依頼は数えません。",
+          "docsGaps": "ドキュメントの不足",
+          "docsGapsHint": "ドキュメントが質問に対応していない、または検索でページが見つからなかったために不十分だった回答です。下でグループ化しています。"
+        },
+        "sub": {
+          "ofQuestions_one": "質問 {{formatted}} 件中",
+          "ofQuestions_other": "質問 {{formatted}} 件中",
+          "ofReplies_one": "返信 {{formatted}} 件中",
+          "ofReplies_other": "返信 {{formatted}} 件中",
+          "ofConversations_one": "会話 {{formatted}} 件中",
+          "ofConversations_other": "会話 {{formatted}} 件中",
+          "inAnswers_one": "回答 {{formatted}} 件中",
+          "inAnswers_other": "回答 {{formatted}} 件中"
+        },
+        "panels": {
+          "answerStatus": "回答状況の推移",
+          "sentiment": "感情の推移",
+          "whyNot": "完全に回答されなかった理由",
+          "requestType": "依頼の種類",
+          "implicitFeedback": "回答への返信",
+          "shareOfAnswers_one": "回答 {{formatted}} 件に占める割合",
+          "shareOfAnswers_other": "回答 {{formatted}} 件に占める割合",
+          "shareOfMessages_one": "メッセージ {{formatted}} 件に占める割合",
+          "shareOfMessages_other": "メッセージ {{formatted}} 件に占める割合",
+          "shareOfConversations_one": "会話 {{formatted}} 件に占める割合",
+          "shareOfConversations_other": "会話 {{formatted}} 件に占める割合",
+          "ofReplies_one": "返信 {{formatted}} 件中",
+          "ofReplies_other": "返信 {{formatted}} 件中",
+          "barLabel": "{{name}}: {{value}}",
+          "barLabelNone": "{{name}}: データがまだ足りません",
+          "noneOfThese": "どのトピックにも該当しない",
+          "empty": "この期間に表示する内容はありません。",
+          "tooltipShare": "{{name}}: {{value}}",
+          "ofQuestions_one": "質問 {{formatted}} 件中",
+          "ofQuestions_other": "質問 {{formatted}} 件中",
+          "topics": "トピック",
+          "overlapNote": "1つの会話が複数に数えられることがあるため、合計は100%になりません。",
+          "noTopics": {
+            "title": "トピックはまだありません",
+            "description": "トピックを追加すると、ユーザーが何について尋ねているかがわかります。",
+            "action": "トピックを設定"
+          }
+        },
+        "labelNamesInline": {
+          "answer_status": "回答状況",
+          "gap_type": "完全に回答されなかった理由",
+          "topic_effective": "トピック",
+          "reaction": "回答への返信"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "完全に回答",
+            "partiallyAnswered": "一部回答",
+            "declined": "分からないと回答",
+            "clarifying": "詳細を確認"
+          },
+          "gapType": {
+            "docsMissing": "ドキュメントの不足",
+            "notRetrieved": "検索がページを見逃した",
+            "answerMissed": "回答がページを活かせなかった",
+            "outOfScope": "対象外",
+            "featureNotSupported": "未対応の機能",
+            "needsAccountData": "アカウント情報か担当者が必要",
+            "ambiguous": "あいまいな質問",
+            "confidentlyUngrounded": "ドキュメントの裏付けがない回答",
+            "other": "その他"
+          },
+          "reaction": {
+            "thanks": "お礼・確認",
+            "reAsk": "再質問",
+            "pushbackOrComplaint": "反論・苦情"
+          },
+          "requestType": {
+            "troubleshooting": "トラブルシューティング",
+            "howTo": "やり方",
+            "lookup": "事実の確認",
+            "concept": "説明",
+            "comparison": "比較",
+            "featureRequest": "機能の要望",
+            "accountBilling": "アカウント・請求",
+            "chitChat": "雑談",
+            "other": "その他"
+          },
+          "sentiment": {
+            "positive": "肯定的",
+            "neutral": "中立",
+            "negative": "否定的"
+          }
+        },
+        "off": {
+          "title": "このエージェントではインサイトがオフです",
+          "description": "オンにすると、回答が役に立ったか、ドキュメントのどこが不足しているかを推定します。",
+          "turnOn": "オンにする"
+        },
+        "noConversations": {
+          "hour": "過去1時間の会話はありません",
+          "last24Hours": "過去24時間の会話はありません",
+          "last7Days": "過去7日間の会話はありません",
+          "last15Days": "過去15日間の会話はありません",
+          "last30Days": "過去30日間の会話はありません"
+        },
+        "noConversationsDescription": "インサイトは各会話の数分後に表示されます。",
+        "analyzing": {
+          "title": "会話を分析しています",
+          "progress_one": "{{formatted}} 件中 {{labelled}} 件の回答を分析済み · 新しい順",
+          "progress_other": "{{formatted}} 件中 {{labelled}} 件の回答を分析済み · 新しい順"
+        },
+        "olderOnly": {
+          "title": "分析する最近の会話はありません",
+          "description": "インサイトの対象は {{date}} 以降の会話です。それより古い会話は分析されません。管理者がさかのぼって分析できます。"
+        },
+        "failedOnly": {
+          "title": "分析できた回答はありません",
+          "description_one": "この期間の {{formatted}} 件の回答をモデルが分析できませんでした。モデルまたはその質問が変わると、もう一度分析します。",
+          "description_other": "この期間の {{formatted}} 件の回答をモデルが分析できませんでした。モデルまたはその質問が変わると、もう一度分析します。"
+        },
+        "failed_one": "{{formatted}} 件の回答を分析できませんでした",
+        "failed_other": "{{formatted}} 件の回答を分析できませんでした",
+        "settings": {
+          "button": "設定",
+          "title": "インサイトの設定",
+          "saveFailed": "インサイトの設定を保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "gaps": {
+        "heading": "ドキュメントの不足",
+        "description": {
+          "page": "ドキュメントで答えられなかった質問を、検索で最も近かったページごとにまとめています。",
+          "source": "ドキュメントで答えられなかった質問を、最も近いページのソースごとにまとめています。",
+          "topic": "ドキュメントで答えられなかった質問を、トピックごとにまとめています。"
+        },
+        "groupBy": "ドキュメントの不足のまとめ方",
+        "groups": {
+          "page": "ページ",
+          "source": "ソース",
+          "topic": "トピック"
+        },
+        "columns": {
+          "gaps": "不足",
+          "share": "質問に占める割合",
+          "change": "変化",
+          "example": "質問の例",
+          "open": "例"
+        },
+        "share_one": "{{formatted}} 件中 {{percent}}",
+        "share_other": "{{formatted}} 件中 {{percent}}",
+        "gapsCount_one": "不足 {{formatted}} 件",
+        "gapsCount_other": "不足 {{formatted}} 件",
+        "change": {
+          "new": "新規",
+          "none": "変化なし",
+          "upLabel": "前の期間から {{formatted}} 件増加",
+          "downLabel": "前の期間から {{formatted}} 件減少",
+          "noEarlier": "以前のデータなし"
+        },
+        "noPage": "ページが見つかりませんでした",
+        "openRow": "{{name}} の例を表示",
+        "export": "CSV をエクスポート",
+        "empty": "この期間にドキュメントの不足はありません。",
+        "emptyDescription": "ドキュメントで答えられなかった質問がここに表示されます。",
+        "loadError": "ドキュメントの不足を読み込めませんでした。",
+        "panel": {
+          "gaps": "不足",
+          "share": "質問に占める割合",
+          "previous": "前の期間",
+          "examples": "質問の例",
+          "allInLogs": "ドキュメントの不足をすべてログで表示"
+        }
+      },
+      "loadError": "このグラフを読み込めませんでした。"
     },
     "logs": {
       "label": "ログ",
@@ -824,7 +1014,25 @@
       "feedback": {
         "like": "高評価",
         "dislike": "低評価"
-      }
+      },
+      "labels": {
+        "filterAll": "すべてのラベル",
+        "notAnswered": "完全には未回答",
+        "docsGap": "ドキュメントの不足",
+        "frustrated": "不満",
+        "asksHuman": "担当者を希望",
+        "negativeReaction": "再質問・反論",
+        "negativeSentiment": "否定的な感情",
+        "hint": "ラベルは推定であり、誤っていることがあります。",
+        "conversation": "会話",
+        "clearConversation": "すべての会話を表示",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "これらのフィルターに一致するメッセージはありません。",
+        "filter": "ラベル",
+        "topics": "トピック"
+      },
+      "levelFilter": "レベル",
+      "typeFilter": "イベントの種類"
     },
     "teams": {
       "label": "チーム",
@@ -1840,6 +2048,9 @@
         "notice_one": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。",
         "notice_other": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。"
       }
+    },
+    "insights": {
+      "label": "インサイト"
     }
   },
   "modals": {
@@ -2495,7 +2706,9 @@
       "tabs": {
         "overview": "概要",
         "logs": "ログ",
-        "schedules": "スケジュール"
+        "insights": "インサイト",
+        "schedules": "スケジュール",
+        "analytics": "分析"
       },
       "fallbackName": "無題のエージェント",
       "subnavAriaLabel": "エージェントのサブナビゲーション"
@@ -2560,7 +2773,8 @@
         "preview": "プレビュー",
         "basics": "基本情報",
         "knowledge": "ナレッジと動作",
-        "model": "モデル"
+        "model": "モデル",
+        "analytics": "インサイト"
       },
       "placeholders": {
         "agentName": "エージェント名",
@@ -2780,13 +2994,92 @@
         "audienceTitle_other": "このエージェントを通じて使用できる人",
         "stopNote_one": "編集権限を失うと、実行されなくなります。",
         "stopNote_other": "編集権限を失うと、実行されなくなります。"
+      },
+      "analytics": {
+        "enable": "インサイトを収集する",
+        "enableDescription": "終了した会話をバックグラウンドで読み取り、回答が役に立ったか、ドキュメントのどこが不足しているかを推定します。結果は「インサイト」タブとログに表示されます。",
+        "learnMore": "詳細",
+        "serverOff": "このサーバーではインサイトがオフのため、これらの設定はまだ効果がありません。オンにするよう管理者に依頼してください。",
+        "topics": "トピック",
+        "countOf": "{{count}} / {{max}}",
+        "addTopic": "トピックを追加",
+        "itemActions": "{{name}} の操作",
+        "edit": "編集",
+        "remove": "削除",
+        "modal": {
+          "addTopic": "トピックを追加",
+          "editTopic": "トピックを編集",
+          "name": "名前",
+          "description": "説明",
+          "submitAdd": "追加",
+          "submitSave": "保存",
+          "dialogDescription": "名前と説明から、ここに何が入るかをモデルが判断します。",
+          "editFolder": "このトピックは、このエージェントのソースのフォルダー「{{name}}」です。保存すると独自のトピックになり、フォルダーのページには追従しなくなります。",
+          "namePlaceholder": "請求",
+          "descriptionHint": "任意。振り分けの精度が上がります。ページ、機能、ユーザーがよく使う言葉をいくつか挙げてください。",
+          "descriptionPlaceholder": "料金、プラン、席数、請求書。",
+          "overlap": "他のトピックと重複可",
+          "overlapDescription": "会話全体ごとに判定するため、複数が当てはまることもあります。ドキュメント全体にまたがる不具合報告や料金の質問などに。",
+          "onePickFull": "重複しないトピックは {{max}} 個までのため、このトピックは重複可になります。",
+          "overlapFull": "重複可のトピックは {{max}} 個までのため、このトピックは重複できません。",
+          "overlapOff": "このサーバーは重複可のトピックを判定しなくなったため、このトピックは重複できません。",
+          "reachOnePick": "新しい質問を振り分けます。以前の質問のトピックは変わりません。",
+          "reachOverlap": "最近の会話でも判定します。",
+          "kindChangeToOverlap": "変更すると集計は最初からになります。これまで質問を振り分けていましたが、今後は会話で判定します。",
+          "kindChangeToOnePick": "変更すると集計は最初からになります。これまで会話で判定していましたが、今後は質問を振り分けます。"
+        },
+        "errors": {
+          "nameRequired": "名前を入力してください。",
+          "topicNameTooLong": "長すぎます。{{max}} 文字以内に短くしてください。",
+          "topicNameTaken": "この名前はすでに別のトピックで使われています。",
+          "topicNameReserved": "この名前は、どのトピックにも当てはまらない質問のために予約されています。",
+          "topicDescriptionTooLong": "長すぎます。{{max}} 以内に短くしてください（中国語・日本語・韓国語の文字は 3 文字分として数えます）。"
+        },
+        "digest": "ドキュメントの不足の週次サマリー",
+        "digestDescription": "週に 1 回、エージェントの所有者に、主なドキュメントの不足を一覧にした通知が届きます。",
+        "off": "オフ",
+        "topicsDescription": "ユーザーが何について尋ねているか。各質問は、最もよく当てはまる1つのトピックに入ります。",
+        "fromSources": "ソースから",
+        "hide": "非表示",
+        "groups": {
+          "onePick": "質問ごとに1つ",
+          "overlap": "重複可",
+          "overlapDescription": "会話全体で判定します。複数が当てはまることもあります。"
+        },
+        "notes": {
+          "foldersFailed": "このエージェントのソースのフォルダーを読み込めませんでした。",
+          "unsaved": "このエージェントのソースのフォルダーは、保存すると表示されます。",
+          "unlisted": "質問は、このエージェントのソースのフォルダーにも振り分けられます。",
+          "hidden": "非表示のフォルダー：{{names}}",
+          "show": "表示",
+          "cut": "次の小さいフォルダーは入りきらないため、その質問は「どのトピックにも該当しない」になります：{{names}}",
+          "single": "トピックが1つだけでは振り分けられません。もう1つ追加してください。",
+          "full": "このエージェントのトピックは上限に達しています：重複しないもの {{topics}} 個、重複可のもの {{overlapping}} 個。",
+          "overOnePick": "このサーバーで使える重複しないトピックは {{max}} 個になり、このエージェントの数より少なくなりました。質問を振り分けるのは先に追加した {{max}} 個だけです。別のトピックを追加するには、いくつか削除してください。",
+          "overOverlapping": "このサーバーで使える重複可のトピックは {{max}} 個になり、このエージェントの数より少なくなりました。判定するのは先に追加した {{max}} 個だけです。別のトピックを追加するには、いくつか削除してください。",
+          "overlapOff": "このサーバーは重複可のトピックを判定しなくなったため、これらは判定されません。編集して質問を振り分けるトピックにするか、削除してください。"
+        },
+        "empty": {
+          "title": "トピックはまだありません",
+          "workflow": "ユーザーが尋ねる内容を追加してください。各質問は、最もよく当てはまる1つのトピックに入ります。",
+          "unsaved": "このエージェントのソースのトピックは、保存すると表示されます。独自のトピックは今すぐ追加できます。",
+          "noFolders": "このエージェントのソースには、質問を振り分けるフォルダーがありません。独自のトピックを追加してください。",
+          "allHidden": "このエージェントのソースのフォルダーはすべて非表示のため、質問は振り分けられません。",
+          "showFolders": "フォルダーを表示"
+        },
+        "removeTopic": {
+          "title": "「{{name}}」を削除しますか？",
+          "description": "重複可のトピックなので、独自の結果があります。結果はインサイトとログに表示されなくなり、再び追加すると最初からやり直しになります。",
+          "submit": "削除"
+        }
       }
     },
     "logs": {
       "title": "エージェントログ",
       "lastUsedAt": "最終使用日時",
       "noUsageHistory": "使用履歴がありません",
-      "tableHeader": "エージェントエンドポイントログ"
+      "tableHeader": "エージェントエンドポイントログ",
+      "description": "このエージェントのAPIコール、スケジュール実行、エラー。"
     },
     "schedules": {
       "title": "エージェントスケジュール",
@@ -3014,7 +3307,6 @@
     "guardrailEvents": {
       "heading": "ガードレールのアクティビティ",
       "description": "このエージェントで発動したすべてのコントロールと、実行できなかったすべてのコントロール。",
-      "lastDays": "過去 {{count}} 日間",
       "blocked": "ブロック",
       "redacted": "マスク済み",
       "flagged": "フラグ付き",
@@ -3256,7 +3548,11 @@
     "showAll_other": "すべて表示（{{formatted}}）",
     "pageRange_one": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
     "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
-    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。"
+    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。",
+    "analytics": {
+      "subtitle": "このエージェントのメッセージ量、トークン使用量、ユーザーフィードバック。"
+    },
+    "loadError": "このエージェントを読み込めませんでした。"
   },
   "components": {
     "fileUpload": {
@@ -3353,9 +3649,9 @@
       "groups": {
         "personal": "個人",
         "workspace": "ワークスペース",
-        "insights": "インサイト",
         "administration": "管理",
-        "automations": "オートメーション"
+        "automations": "オートメーション",
+        "monitoring": "モニタリング"
       }
     },
     "openSidebar": "サイドバーを開く",

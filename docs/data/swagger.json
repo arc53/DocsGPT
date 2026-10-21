@@ -475,6 +475,66 @@
       ],
       "type": "object"
     },
+    "GetConversationInsightsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "Agent id",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GetDocsGapsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "Agent id",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        },
+        "group_by": {
+          "default": "page",
+          "description": "Group by the effective topic, or by the source or page of the turn's first retrieved chunk",
+          "enum": [
+            "topic",
+            "source",
+            "page"
+          ],
+          "example": "topic",
+          "type": "string"
+        },
+        "limit": {
+          "default": 25,
+          "description": "Most groups returned (1-50)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "GetFeedbackAnalyticsModel": {
       "properties": {
         "api_key_id": {
@@ -641,6 +701,10 @@
             "dislike"
           ],
           "example": "like",
+          "type": "string"
+        },
+        "label": {
+          "description": "Only chat turns the decision model labelled this way at ANALYTICS_FILTER_MIN_PROBABILITY or better: one of docs_gap, not_answered, negative_reaction, negative_sentiment, frustrated, asks_human, tag:<id> (a topic of the turn's conversation that can overlap) or topic:<name> (the turn's own topic)",
           "type": "string"
         },
         "level": {
@@ -2611,6 +2675,56 @@
         }
       ]
     },
+    "/api/analytics/topic_folders": {
+      "get": {
+        "description": "The folders of an agent's sources, largest first: one per documentation section, described by up to five page titles. They fill the agent's topic question after its own topics; the settings list them so the owner can hide or edit them. Needs edit access to the agent.",
+        "operationId": "get_get_topic_folders",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/analytics/topics": {
+      "get": {
+        "description": "Every topic an agent's conversations are labelled with, sorted by name, each with the Logs 'label' filter that selects it: topic:<name> for a topic that doesn't overlap (its own topics and source folders), tag:<id> for one that can. Needs the agent's logs; an agent the caller can't see gives an empty list.",
+        "operationId": "get_get_agent_topics",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
     "/api/answer": {
       "post": {
         "description": "Provide a response based on the question and retriever",
@@ -3927,6 +4041,33 @@
         ]
       }
     },
+    "/api/get_conversation_insights": {
+      "post": {
+        "description": "Insights from the decision model's labels: per label and option the expected count and its rate with a 95% interval widened by the label's calibration error, each label's tier, the same per time bucket, label coverage and the language mix. answer_status rates are over requests (not over greetings). 'available' is the operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' (from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' (still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). For an agent, 'one_pick' lists the options of its topic question (empty when it asks none) and 'overlapping' its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list.",
+        "operationId": "post_get_conversation_insights",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetConversationInsightsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
     "/api/get_conversations": {
       "get": {
         "description": "Retrieve the user's sidebar conversations (visibility = listed), newest first, ordered by ``date`` DESC then ``id`` DESC. Each item carries ``date`` (ISO-8601). To page older conversations, pass the last item's ``date`` and ``id`` as ``before`` and ``before_id``. Invalid params are ignored.",
@@ -3961,6 +4102,33 @@
         ],
         "x-pat-scopes": [
           "conversations:read"
+        ]
+      }
+    },
+    "/api/get_docs_gaps": {
+      "post": {
+        "description": "Docs gaps: answers that fell short because the docs do not cover the question, as expected counts (sums of the decision model's probabilities) per group, with the group's rate over its answers and a 95% interval, the window just before for the trend, and up to five example questions (gaps at even odds or better). Groups with under half an expected gap are left out; key null means no source was retrieved. previous_labelled counts the labelled answers in the window before, so a group with no earlier gaps can be told from a window that was never labelled; by page, each row's source names the source most of its answers retrieved the page from (null if unknown).",
+        "operationId": "post_get_docs_gaps",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetDocsGapsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
         ]
       }
     },
@@ -4185,7 +4353,7 @@
     },
     "/api/get_user_logs": {
       "post": {
-        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline. Runs are ordered by their start time; ones still going (answers, scheduled, workflow and webhook runs) carry running: true until their finished row replaces them.",
+        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline. Runs are ordered by their start time; ones still going (answers, scheduled, workflow and webhook runs) carry running: true until their finished row replaces them. Finished chat rows carry 'labels', the analytics label keys at ANALYTICS_FILTER_MIN_PROBABILITY or better, and 'tag_names' names the tags on the page.",
         "operationId": "post_get_user_logs",
         "parameters": [
           {

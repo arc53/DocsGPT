@@ -1,4 +1,3 @@
-import isEqual from 'lodash/isEqual';
 import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
@@ -87,6 +86,9 @@ import { agentsListPath } from './paths';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
+import AnalyticsSection from './components/AnalyticsSection';
+import { configToSave, sameAgent } from './analyticsConfig';
+import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
@@ -143,6 +145,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
+  const analyticsAvailability = useAnalyticsAvailability();
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
@@ -666,7 +669,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'draft');
-    formData.append('config', JSON.stringify(agent.config ?? {}));
+    formData.append('config', JSON.stringify(configToSave(agent.config)));
 
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
@@ -758,7 +761,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'published');
-    formData.append('config', JSON.stringify(agent.config ?? {}));
+    formData.append('config', JSON.stringify(configToSave(agent.config)));
 
     if (imageFile) formData.append('image', imageFile);
     if (agent.tools && agent.tools.length > 0)
@@ -858,7 +861,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const parsed = JSON.parse(text);
       setAgent({ ...agent, json_schema: parsed });
       setJsonSchemaValid(true);
-    } catch (error) {
+    } catch {
       setJsonSchemaValid(false);
     }
   };
@@ -1192,7 +1195,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       : '';
 
     const isChanged =
-      !isEqual(agent, initialAgentRef.current) ||
+      !sameAgent(agent, initialAgentRef.current) ||
       imageFile !== null ||
       jsonSchemaText !== initialJsonSchemaText ||
       takeovers.length > 0;
@@ -1536,7 +1539,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         type: 'public',
                       }
                     }
-                    onSelectPrompt={(name, id, type) =>
+                    onSelectPrompt={(name, id) =>
                       setAgent({ ...agent, prompt_id: id })
                     }
                     setPrompts={(newPrompts) =>
@@ -1880,6 +1883,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             })
           }
         />
+        <AnalyticsSection
+          value={agent.config?.analytics}
+          token={token}
+          agentId={agent.id || undefined}
+          available={analyticsAvailability.enabled}
+          maxTopics={analyticsAvailability.maxTopics}
+          maxOverlapping={analyticsAvailability.maxOverlapping}
+          // Not policy: anyone who can save the agent changes it.
+          disabled={!canSubmit}
+          onChange={(analytics) =>
+            setAgent((prev) => ({
+              ...prev,
+              config: { ...(prev.config ?? {}), analytics },
+            }))
+          }
+        />
         {modeConfig[effectiveMode].showDelete &&
           agent.id &&
           can(agent, 'delete') && (
@@ -1982,7 +2001,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         prompts={prompts}
         isOpen={addPromptModal}
         onClose={() => setAddPromptModal('INACTIVE')}
-        onSelect={(name: string, id: string, type: string) => {
+        onSelect={(name: string, id: string) => {
           setAgent({ ...agent, prompt_id: id });
         }}
       />

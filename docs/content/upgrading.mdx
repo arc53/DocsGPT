@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-21
 ---
 
 import { Callout } from 'nextra/components'
@@ -200,6 +200,21 @@ An agent [webhook](/API/webhooks)'s JSON payload now reaches the agent with its 
 #### New table
 
 Migration `0055_content_scores` adds the `content_scores` table (cached prompt-injection scores, by text hash) and a nullable `guardrail_events.item_ref` column. It runs with the other [migrations](#migrations); downgrading below it drops both.
+
+#### Conversation analytics: a new table and the analytics queue
+
+Migration `0057_conversation_labels` adds the `conversation_labels` table and an index on `conversation_messages (timestamp)`. The index is built `CONCURRENTLY`, so chat keeps writing while it builds, which can take a while on a large table. Downgrading below the migration drops both.
+
+[Insights](/Using/analytics-and-logs#conversation-insights) are off until you set `DECISION_ANALYTICS_ENABLED=true`. The labelling runs on a new Celery queue, `analytics`. The shipped Compose files and Kubernetes manifest now list it; pull them along with the code. A worker you start with your own `-Q` must add it before you turn analytics on, or nothing is labelled:
+
+```diff
+- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
++ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest,analytics
+```
+
+See [The analytics queue](/Deploying/Background-Jobs#the-analytics-queue).
+
+**Before rolling back to 1.0.0:** an agent created or saved on this release holds an `analytics` block in its `config`, which 1.0.0 does not accept. 1.0.0 then keeps that agent's guardrails but drops its [`api_write_allowlist`](/API/agent-api#letting-api-callers-make-changes), so API-key, widget and public-link callers, and the schedules they set, have every write on the owner's credentials refused. It fails safe, but those agents stop making the changes you allowed. To keep them, [roll back](#rollback) by restoring the backup you took before upgrading.
 
 ### Upgrading to 1.0.0
 

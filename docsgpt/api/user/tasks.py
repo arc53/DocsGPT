@@ -877,6 +877,36 @@ def setup_periodic_tasks(sender, **kwargs):
         name="cleanup-background-jobs",
     )
     sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
+    # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
+    # digest run on ANALYTICS_QUEUE and are only scheduled while
+    # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
+    # drops entries no longer registered). ``expires`` only drops a message a
+    # worker receives too late, so a backlog does not run sweeps back to back
+    # or send a digest per stale message: the Redis broker checks it on
+    # receipt, and an unconsumed queue keeps every message. Label retention
+    # runs on ``docsgpt`` regardless, so labels made while analytics was on are
+    # still purged after it goes off.
+    from docsgpt.analytics.tasks import analytics_gap_digest, analytics_sweep, cleanup_conversation_labels
+
+    analytics_on = bool(settings.DECISION_ANALYTICS_ENABLED)
+    if analytics_on:
+        sweep_every = max(60, settings.ANALYTICS_SWEEP_SECONDS)
+        sender.add_periodic_task(
+            timedelta(seconds=sweep_every),
+            analytics_sweep.s(),
+            name="analytics-sweep",
+            expires=sweep_every,
+        )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_conversation_labels.s(),
+        name="cleanup-conversation-labels",
+        expires=24 * 3600,
+    )
+    if analytics_on:
+        sender.add_periodic_task(
+            timedelta(weeks=1), analytics_gap_digest.s(), name="analytics-gap-digest", expires=6 * 3600
+        )
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the

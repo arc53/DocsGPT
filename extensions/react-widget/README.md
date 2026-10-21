@@ -53,6 +53,14 @@ To link the widget to your api and your documents you can pass parameters to the
 
 `suggestedQuestions` lists questions under the welcome card; a click sends one, and the list goes away once the conversation starts. `suggestedQuestionsLabel` sets the heading over them ("Suggested questions" by default; an empty string hides it).
 
+The widget's own text follows the visitor's browser language (`locale="auto"`, the default) in English, Spanish, French, Japanese, Simplified and Traditional Chinese, Russian and German. Set `locale` (e.g. `"de"`) to fix it, and `translations` to replace single strings by key, e.g. `translations={{ composerPlaceholder: 'Ask our team' }}`. Text you pass in props such as `title` is never translated. The keys are in [`src/locale/en.ts`](src/locale/en.ts); `SearchBar` takes the same two props. See [Languages](https://docs.docsgpt.cloud/Extensions/chat-widget#languages).
+
+Pass a `ref` to drive the widget from your page (`open()`, `close()`, `toggle()`, `isOpen()`, `focus()`, `ask(question, { send })`, `newChat()`, `clearHistory()`, and `on`/`off` for events), and `onEvent` to receive every event, e.g. `question_submitted`, `answer_completed` or `feedback`. With the script tag, `renderDocsGPTWidget` returns the same controller plus `destroy()`, and `renderSearchBar` returns `{ destroy }`. See [JavaScript API](https://docs.docsgpt.cloud/Extensions/chat-widget#javascript-api).
+
+Conversations are kept in the visitor's `localStorage` (per agent, the 30 most recent), so a reload continues the chat, and the header has **New chat** and **Chat history** buttons. Set `persistConversations={false}` to store nothing, and call `clearHistory()` on logout where computers are shared. See [Conversation history](https://docs.docsgpt.cloud/Extensions/chat-widget#conversation-history).
+
+Set `layout="sidebar"` to dock the chat to the edge of the window at full height instead of floating it above the button. `sidebarSide` picks the edge (`'right'` by default) and `sidebarWidth` the starting width (420px). Visitors can drag the inner edge, or use the arrow keys on it, to resize it between 320px and `min(720px, 70vw)`, and their width is remembered unless `persistConversations` is false. `size` doesn't apply to the sidebar, and on phones it opens full screen. See [Sidebar layout](https://docs.docsgpt.cloud/Extensions/chat-widget#sidebar-layout).
+
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
 ### Html
@@ -68,7 +76,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.12.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
@@ -91,7 +99,7 @@ To link the widget to your api and your documents you can pass parameters to the
       </head>
       <body>
         <div id="app"></div>
-        <script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script>
+        <script src="https://unpkg.com/docsgpt@0.12.0/dist/legacy/browser.js"></script>
         <script>
           window.onload = function() {
             renderDocsGPTWidget('app', {
@@ -150,7 +158,7 @@ import { SearchBar } from "docsgpt";
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SearchBar Embedding</title>
-  <script src="https://unpkg.com/docsgpt@0.11.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
+  <script src="https://unpkg.com/docsgpt@0.12.0/dist/legacy/browser.js"></script> <!-- The bundled JavaScript file -->
 </head>
 <body>
   <!-- Element where the SearchBar will render -->
@@ -178,9 +186,9 @@ import { SearchBar } from "docsgpt";
 | **`apiKey`**    | `string`  | a DocsGPT demo agent's key | Required. The API key of your published agent. An omitted key searches a public DocsGPT demo agent; an empty key is rejected. |
 | **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | The base URL of the server hosting the vector similarity search and chatbot services.           |
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | The theme of the search bar. Accepts `"dark"` or `"light"`.                                     |
-| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
+| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field. The default follows `locale`.             |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
-| **`buttonText`** | `string` | `"Search here"`                     | Text in the search field on the page: the button label (`modal`) or the field's placeholder (`dropdown`). |
+| **`buttonText`** | `string` | `"Search here"`                     | Text in the search field on the page: the button label (`modal`) or the field's placeholder (`dropdown`). The default follows `locale`. |
 | **`variant`**   | `"modal" \| "dropdown"` | `"modal"` | `modal` opens a search dialog from a button; `dropdown` is a field you type into, with results in a panel under it. |
 | **`shape`**     | `"pill" \| "rounded"` | `"pill"` | Corners of the search field: fully rounded, or 8px. |
 | **`avatar`**    | `string`  | a person on the brand-colour circle | Image beside "Ask the AI", also used by the chat it opens. |
@@ -188,6 +196,9 @@ import { SearchBar } from "docsgpt";
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. |
 | **`passthrough`** | `Record<string, string \| number \| boolean \| null>` | _unset_ | Passed to the chat opened from "Ask the AI": values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}` and they appear in the agent's Logs. |
+| **`locale`** | `string` | `"auto"` | Language of the search bar's text and the chat it opens: `"auto"` (the browser's), or `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. |
+| **`translations`** | `Partial<Messages>` | _unset_ | Replaces single strings by key, e.g. `{ askTheAi: 'Ask our assistant' }`. |
+| **`onEvent`** | `(event) => void` | _unset_ | Passed to the chat opened from "Ask the AI": called with each of its events. |
 
 
 Feel free to reach out if you need help customizing or extending the `SearchBar`!

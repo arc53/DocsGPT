@@ -303,7 +303,8 @@ def test_schema_wait_retries_a_database_url_it_cannot_parse(name: str, tmp_path:
 def test_worker_runs_the_beat_scheduler() -> None:
     command = _main_container("docsgpt-worker")["command"]
     assert "-B" in command
-    assert "embeddings" in command[command.index("-Q") + 1]
+    queues = command[command.index("-Q") + 1].split(",")
+    assert "embeddings" in queues and "analytics" in queues
 
 
 def test_worker_reaches_the_api_inside_the_cluster() -> None:

@@ -98,6 +98,9 @@ const makeStore = (
     sttAvailable: true,
     authRequired: false,
     attachmentBudgetShare: null,
+    analyticsEnabled: false,
+    analyticsMaxTopics: 15,
+    analyticsMaxOverlapping: 20,
   };
   const conversation: ConversationState = {
     queries: [],

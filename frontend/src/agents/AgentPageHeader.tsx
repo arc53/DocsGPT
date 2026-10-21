@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import {
@@ -15,20 +16,14 @@ import { Button } from '@/components/ui/button';
 import { NavTab } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
+import { buildAgentSection, getVisibleGroups } from '../navigation/sections';
+import { selectAnalyticsEnabled } from '../preferences/preferenceSlice';
 import { type AccessFields } from '../utils/accessUtils';
-import { canAgent } from './agentAccess';
-import {
-  AGENTS_MANAGE_ROOT,
-  agentEditPath as agentEditPathProp,
-  agentLogsPath,
-  agentSchedulesPath,
-} from './paths';
+import { AGENTS_MANAGE_ROOT } from './paths';
 
 type AgentPageHeaderProps = {
   agentId?: string;
   agentName?: string;
-  /** Route shape for the agent's own root page. Defaults to classic edit URL. */
-  agentEditPath?: string;
   /** Optional className wrapper for layout tweaks per page. */
   className?: string;
   /**
@@ -55,10 +50,11 @@ type AgentPageHeaderProps = {
 
 /**
  * The workflow builder's toolbar chrome: a Breadcrumb (`Agents > <agent
- * name>`), an optional status Badge, and NavTab links to the agent's
- * Overview (the builder, always current), Logs and Schedules (hidden until
- * the agent has an id). The builder is full-screen with no sidebar, so it
- * needs its own way between them. The current crumb is the agent's avatar,
+ * name>`), an optional status Badge, and NavTab links to the agent's pages
+ * (hidden until the agent has an id). The builder is full-screen with no
+ * sidebar, so it needs its own way between them: the sidebar's tabs
+ * (`buildAgentSection`), flat and in its order, with Overview (the builder)
+ * always current. The current crumb is the agent's avatar,
  * name and a chevron in a `ghost sm` Button that opens the details, like the
  * phone top bar's chat title. Section pages use
  * `components/AgentPageToolbar` and the sidebar instead.
@@ -66,7 +62,6 @@ type AgentPageHeaderProps = {
 export default function AgentPageHeader({
   agentId,
   agentName,
-  agentEditPath,
   className,
   inline = false,
   agentImage,
@@ -75,36 +70,14 @@ export default function AgentPageHeader({
   access,
 }: AgentPageHeaderProps) {
   const { t } = useTranslation();
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
 
-  const editPath =
-    agentEditPath ??
-    (agentId ? agentEditPathProp(agentId) : AGENTS_MANAGE_ROOT);
-  const tabs = useMemo(
-    () => [
-      {
-        id: 'overview' as const,
-        label: t('agents.pageHeader.tabs.overview'),
-        href: editPath,
-        action: 'view',
-      },
-      {
-        id: 'logs' as const,
-        label: t('agents.pageHeader.tabs.logs'),
-        href: agentId ? agentLogsPath(agentId) : '#',
-        action: 'view_logs',
-      },
-      {
-        id: 'schedules' as const,
-        label: t('agents.pageHeader.tabs.schedules'),
-        href: agentId ? agentSchedulesPath(agentId) : '#',
-        action: 'manage_schedules',
-      },
-    ],
-    [agentId, editPath, t],
-  );
-  const visibleTabs = tabs.filter(
-    (tab) => !access || canAgent(access, tab.action),
-  );
+  // The builder only edits workflows, so Overview is the builder's path.
+  const visibleTabs = agentId
+    ? getVisibleGroups(buildAgentSection(agentId, agentName, true, access), {
+        features: { analytics: analyticsEnabled === true },
+      }).flatMap((group) => group.items)
+    : [];
   const displayName = agentName?.trim() || t('agents.pageHeader.fallbackName');
 
   return (
@@ -172,14 +145,14 @@ export default function AgentPageHeader({
           {visibleTabs.map((tab) => (
             // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
             <NavTab
-              key={tab.id}
-              current={tab.id === 'overview'}
+              key={tab.key}
+              current={tab.key === 'overview'}
               className="-mb-px"
             >
-              {tab.id === 'overview' ? (
-                <span>{tab.label}</span>
+              {tab.key === 'overview' ? (
+                <span>{t(tab.labelKey)}</span>
               ) : (
-                <Link to={tab.href}>{tab.label}</Link>
+                <Link to={tab.path}>{t(tab.labelKey)}</Link>
               )}
             </NavTab>
           ))}

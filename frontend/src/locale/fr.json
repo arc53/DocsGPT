@@ -74,7 +74,8 @@
         "monitor_paused": "Moniteur en pause",
         "monitor_expired": "Moniteur expiré",
         "schedule": "Tâche planifiée terminée",
-        "default": "Nouvelle réponse"
+        "default": "Nouvelle réponse",
+        "docs_gaps": "Synthèse hebdomadaire des lacunes de la doc"
       },
       "open": "Ouvrir",
       "fallbackTitle": "Votre assistant a du nouveau"
@@ -632,7 +633,8 @@
         "last24Hours": "24 heures",
         "last7Days": "7 jours",
         "last15Days": "15 jours",
-        "last30Days": "30 jours"
+        "last30Days": "30 jours",
+        "last90Days": "90 jours"
       },
       "messages": "Messages",
       "tokenUsage": "Consommation de jetons",
@@ -676,7 +678,209 @@
           "direct": "Conversation sans agent",
           "agent": "Via des agents"
         }
-      }
+      },
+      "insights": {
+        "description": "Estimé par un modèle d’IA à partir de chaque conversation.",
+        "learnMore": "En savoir plus",
+        "coverage": "{{labelled}} réponses analysées sur {{total}}",
+        "loadError": "Impossible de charger les analyses.",
+        "notEnough": "Pas encore assez de données ({{formatted}} pour l’instant)",
+        "notEnoughShort": "Pas encore assez de données",
+        "notEnoughReplies": "Pas encore assez de relances",
+        "languageNote": "{{share}} de ces messages sont en {{languages}}, que le modèle lit moins précisément. {{labels}} peuvent être moins fiables.",
+        "otherLanguages": "d’autres langues",
+        "stats": {
+          "fullyAnswered": "Réponse complète",
+          "fullyAnsweredHint": "Questions auxquelles la réponse a entièrement répondu. Les salutations et les échanges informels ne comptent pas.",
+          "goalMet": "Objectif atteint",
+          "goalMetHint": "Conversations où l’utilisateur a obtenu ce qu’il demandait, jugées sur l’ensemble de la conversation une fois qu’elle est retombée.",
+          "frustrated": "Frustration",
+          "frustratedHint": "Relances qui montrent une frustration nette. Seuls les messages envoyés après une réponse comptent, donc jamais le premier message d’une conversation.",
+          "asksHuman": "Demande d’un humain",
+          "asksHumanHint": "Relances qui demandent une personne, un ticket ou un autre moyen de vous joindre. Un premier message qui le demande ne compte pas.",
+          "docsGaps": "Lacunes de la doc",
+          "docsGapsHint": "Réponses insuffisantes parce que la doc ne couvre pas la question ou que la recherche n’a pas trouvé la page. Regroupées plus bas."
+        },
+        "sub": {
+          "ofQuestions_one": "sur {{formatted}} question",
+          "ofQuestions_other": "sur {{formatted}} questions",
+          "ofQuestions_many": "sur {{formatted}} questions",
+          "ofReplies_one": "sur {{formatted}} relance",
+          "ofReplies_other": "sur {{formatted}} relances",
+          "ofReplies_many": "sur {{formatted}} relances",
+          "ofConversations_one": "sur {{formatted}} conversation",
+          "ofConversations_other": "sur {{formatted}} conversations",
+          "ofConversations_many": "sur {{formatted}} conversations",
+          "inAnswers_one": "dans {{formatted}} réponse",
+          "inAnswers_other": "dans {{formatted}} réponses",
+          "inAnswers_many": "dans {{formatted}} réponses"
+        },
+        "panels": {
+          "answerStatus": "Statut des réponses dans le temps",
+          "sentiment": "Sentiment au fil du temps",
+          "whyNot": "Pourquoi la réponse est incomplète",
+          "requestType": "Type de demande",
+          "implicitFeedback": "Réactions aux réponses",
+          "shareOfAnswers_one": "Part de {{formatted}} réponse",
+          "shareOfAnswers_other": "Part de {{formatted}} réponses",
+          "shareOfAnswers_many": "Part de {{formatted}} réponses",
+          "shareOfMessages_one": "Part de {{formatted}} message",
+          "shareOfMessages_other": "Part de {{formatted}} messages",
+          "shareOfMessages_many": "Part de {{formatted}} messages",
+          "shareOfConversations_one": "Part de {{formatted}} conversation",
+          "shareOfConversations_other": "Part de {{formatted}} conversations",
+          "shareOfConversations_many": "Part de {{formatted}} conversations",
+          "ofReplies_one": "Sur {{formatted}} relance",
+          "ofReplies_other": "Sur {{formatted}} relances",
+          "ofReplies_many": "Sur {{formatted}} relances",
+          "barLabel": "{{name}} : {{value}}",
+          "barLabelNone": "{{name}} : pas encore assez de données",
+          "noneOfThese": "Aucun de ces sujets",
+          "empty": "Rien à afficher sur cette période.",
+          "tooltipShare": "{{name}} : {{value}}",
+          "ofQuestions_one": "Sur {{formatted}} question",
+          "ofQuestions_other": "Sur {{formatted}} questions",
+          "ofQuestions_many": "Sur {{formatted}} questions",
+          "topics": "Sujets",
+          "overlapNote": "Une conversation peut compter dans plusieurs, la somme ne fait donc pas 100 %.",
+          "noTopics": {
+            "title": "Aucun sujet pour l’instant",
+            "description": "Ajoutez des sujets pour voir ce que les gens demandent.",
+            "action": "Configurer les sujets"
+          }
+        },
+        "labelNamesInline": {
+          "answer_status": "le statut des réponses",
+          "gap_type": "la raison d’une réponse incomplète",
+          "topic_effective": "le sujet",
+          "reaction": "les réactions aux réponses"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Réponse complète",
+            "partiallyAnswered": "Réponse partielle",
+            "declined": "A dit ne pas savoir",
+            "clarifying": "A demandé des précisions"
+          },
+          "gapType": {
+            "docsMissing": "Lacune de la doc",
+            "notRetrieved": "La recherche a manqué la page",
+            "answerMissed": "La réponse a ignoré la page",
+            "outOfScope": "Hors sujet",
+            "featureNotSupported": "Fonctionnalité non prise en charge",
+            "needsAccountData": "Nécessite l’accès au compte ou l’équipe",
+            "ambiguous": "Question peu claire",
+            "confidentlyUngrounded": "Réponse non étayée par la doc",
+            "other": "Autre"
+          },
+          "reaction": {
+            "thanks": "Remerciement ou confirmation",
+            "reAsk": "Question reposée",
+            "pushbackOrComplaint": "Contestation ou plainte"
+          },
+          "requestType": {
+            "troubleshooting": "Dépannage",
+            "howTo": "Mode d’emploi",
+            "lookup": "Recherche d’une information",
+            "concept": "Explication",
+            "comparison": "Comparaison",
+            "featureRequest": "Demande de fonctionnalité",
+            "accountBilling": "Compte ou facturation",
+            "chitChat": "Échange informel",
+            "other": "Autre"
+          },
+          "sentiment": {
+            "positive": "Positif",
+            "neutral": "Neutre",
+            "negative": "Négatif"
+          }
+        },
+        "off": {
+          "title": "Les analyses sont désactivées pour cet agent",
+          "description": "Activez-les pour estimer si les réponses ont aidé et où la documentation est insuffisante.",
+          "turnOn": "Activer"
+        },
+        "noConversations": {
+          "hour": "Aucune conversation au cours de la dernière heure",
+          "last24Hours": "Aucune conversation au cours des dernières 24 heures",
+          "last7Days": "Aucune conversation au cours des 7 derniers jours",
+          "last15Days": "Aucune conversation au cours des 15 derniers jours",
+          "last30Days": "Aucune conversation au cours des 30 derniers jours"
+        },
+        "noConversationsDescription": "Les analyses apparaissent quelques minutes après chaque conversation.",
+        "analyzing": {
+          "title": "Analyse des conversations en cours",
+          "progress_one": "{{labelled}} réponse analysée sur {{formatted}} · les plus récentes d’abord",
+          "progress_other": "{{labelled}} réponses analysées sur {{formatted}} · les plus récentes d’abord",
+          "progress_many": "{{labelled}} réponses analysées sur {{formatted}} · les plus récentes d’abord"
+        },
+        "olderOnly": {
+          "title": "Aucune conversation récente à analyser",
+          "description": "Les analyses couvrent les conversations à partir du {{date}}. Les plus anciennes ne sont pas analysées ; un administrateur peut les rattraper."
+        },
+        "failedOnly": {
+          "title": "Aucune réponse n’a pu être analysée",
+          "description_one": "Le modèle n’a pas pu analyser {{formatted}} réponse de cette période. Il réessaie quand le modèle ou ses questions changent.",
+          "description_other": "Le modèle n’a pas pu analyser {{formatted}} réponses de cette période. Il réessaie quand le modèle ou ses questions changent.",
+          "description_many": "Le modèle n’a pas pu analyser {{formatted}} réponses de cette période. Il réessaie quand le modèle ou ses questions changent."
+        },
+        "failed_one": "{{formatted}} réponse n’a pas pu être analysée",
+        "failed_other": "{{formatted}} réponses n’ont pas pu être analysées",
+        "failed_many": "{{formatted}} réponses n’ont pas pu être analysées",
+        "settings": {
+          "button": "Paramètres",
+          "title": "Paramètres des analyses",
+          "saveFailed": "Impossible d’enregistrer les paramètres des analyses. Réessayez."
+        }
+      },
+      "gaps": {
+        "heading": "Lacunes de la doc",
+        "description": {
+          "page": "Questions auxquelles la doc n’a pas pu répondre, regroupées par la page la plus proche trouvée par la recherche.",
+          "source": "Questions auxquelles la doc n’a pas pu répondre, regroupées par la source de la page la plus proche.",
+          "topic": "Questions auxquelles la doc n’a pas pu répondre, regroupées par sujet."
+        },
+        "groupBy": "Regrouper les lacunes par",
+        "groups": {
+          "page": "Page",
+          "source": "Source",
+          "topic": "Sujet"
+        },
+        "columns": {
+          "gaps": "Lacunes",
+          "share": "Part des questions",
+          "change": "Évolution",
+          "example": "Exemple de question",
+          "open": "Exemples"
+        },
+        "share_one": "{{percent}} sur {{formatted}}",
+        "share_other": "{{percent}} sur {{formatted}}",
+        "share_many": "{{percent}} sur {{formatted}}",
+        "gapsCount_one": "{{formatted}} lacune",
+        "gapsCount_other": "{{formatted}} lacunes",
+        "gapsCount_many": "{{formatted}} lacunes",
+        "change": {
+          "new": "Nouveau",
+          "none": "Aucune évolution",
+          "upLabel": "{{formatted}} de plus que la période précédente",
+          "downLabel": "{{formatted}} de moins que la période précédente",
+          "noEarlier": "Aucune donnée antérieure"
+        },
+        "noPage": "Aucune page trouvée",
+        "openRow": "Voir les exemples pour {{name}}",
+        "export": "Exporter en CSV",
+        "empty": "Aucune lacune de la doc sur cette période.",
+        "emptyDescription": "Les questions auxquelles la doc n’a pas pu répondre apparaissent ici.",
+        "loadError": "Impossible de charger les lacunes de la doc.",
+        "panel": {
+          "gaps": "Lacunes",
+          "share": "Part des questions",
+          "previous": "Période précédente",
+          "examples": "Exemples de questions",
+          "allInLogs": "Voir toutes les lacunes dans les journaux"
+        }
+      },
+      "loadError": "Impossible de charger ce graphique."
     },
     "logs": {
       "label": "Journaux",
@@ -851,7 +1055,25 @@
       "feedback": {
         "like": "Aimé",
         "dislike": "Pas aimé"
-      }
+      },
+      "labels": {
+        "filterAll": "Toutes les étiquettes",
+        "notAnswered": "Réponse incomplète",
+        "docsGap": "Lacune de la doc",
+        "frustrated": "Frustration",
+        "asksHuman": "Demande d’un humain",
+        "negativeReaction": "Question reposée ou contestation",
+        "negativeSentiment": "Sentiment négatif",
+        "hint": "Les étiquettes sont des estimations et peuvent être fausses.",
+        "conversation": "Conversation",
+        "clearConversation": "Afficher toutes les conversations",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "Aucun message ne correspond à ces filtres.",
+        "filter": "Étiquette",
+        "topics": "Sujets"
+      },
+      "levelFilter": "Niveau",
+      "typeFilter": "Type d’événement"
     },
     "teams": {
       "label": "Équipes",
@@ -1900,6 +2122,9 @@
         "notice_many": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser.",
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       }
+    },
+    "insights": {
+      "label": "Analyses"
     }
   },
   "modals": {
@@ -2572,7 +2797,9 @@
       "tabs": {
         "overview": "Aperçu",
         "logs": "Journaux",
-        "schedules": "Planifications"
+        "insights": "Analyses",
+        "schedules": "Planifications",
+        "analytics": "Statistiques"
       },
       "fallbackName": "Agent sans titre",
       "subnavAriaLabel": "Sous-navigation de l’agent"
@@ -2637,7 +2864,8 @@
         "preview": "Aperçu",
         "basics": "Informations de base",
         "knowledge": "Connaissances et comportement",
-        "model": "Modèle"
+        "model": "Modèle",
+        "analytics": "Analyses"
       },
       "placeholders": {
         "agentName": "Nom de l’agent",
@@ -2863,13 +3091,92 @@
         "stopNote_one": "Il cesse de s’exécuter si vous perdez l’accès en modification.",
         "stopNote_other": "Ils cessent de s’exécuter si vous perdez l’accès en modification.",
         "stopNote_many": "Ils cessent de s’exécuter si vous perdez l’accès en modification."
+      },
+      "analytics": {
+        "enable": "Générer des analyses",
+        "enableDescription": "Lit en arrière-plan les conversations terminées pour estimer si les réponses ont aidé et où la doc est insuffisante. Les résultats apparaissent dans l’onglet Analyses et dans les journaux.",
+        "learnMore": "En savoir plus",
+        "serverOff": "Les analyses sont désactivées sur ce serveur, ces paramètres sont donc encore sans effet. Demandez à votre administrateur de les activer.",
+        "topics": "Sujets",
+        "countOf": "{{count}} sur {{max}}",
+        "addTopic": "Ajouter un sujet",
+        "itemActions": "Actions pour {{name}}",
+        "edit": "Modifier",
+        "remove": "Retirer",
+        "modal": {
+          "addTopic": "Ajouter un sujet",
+          "editTopic": "Modifier le sujet",
+          "name": "Nom",
+          "description": "Description",
+          "submitAdd": "Ajouter",
+          "submitSave": "Enregistrer",
+          "dialogDescription": "Le nom et la description indiquent au modèle ce qui va ici.",
+          "editFolder": "Ce sujet est le dossier « {{name}} » des sources de cet agent. L’enregistrer en fait le vôtre : il ne suit plus les pages du dossier.",
+          "namePlaceholder": "Facturation",
+          "descriptionHint": "Facultatif. Rend le classement plus précis : citez quelques pages, fonctionnalités ou mots qu’écrivent les utilisateurs.",
+          "descriptionPlaceholder": "Prix, offres, places ou factures.",
+          "overlap": "Peut chevaucher d’autres sujets",
+          "overlapDescription": "Vérifié sur chaque conversation entière, plusieurs peuvent donc s’appliquer : pour un signalement de bug ou une question de prix qui traverse la doc.",
+          "onePickFull": "Au-delà de {{max}} sujets sans chevauchement, ce n’est plus possible : celui-ci peut donc chevaucher les autres.",
+          "overlapFull": "Au-delà de {{max}} sujets qui se chevauchent, ce n’est plus possible : celui-ci ne le peut donc pas.",
+          "overlapOff": "Ce serveur ne vérifie plus les sujets qui se chevauchent : celui-ci ne le peut donc pas.",
+          "reachOnePick": "Classe les nouvelles questions ; les précédentes gardent leur sujet.",
+          "reachOverlap": "Également vérifié sur les conversations récentes.",
+          "kindChangeToOverlap": "Ce changement remet ses chiffres à zéro : il classait des questions et sera désormais vérifié sur des conversations.",
+          "kindChangeToOnePick": "Ce changement remet ses chiffres à zéro : il était vérifié sur des conversations et classera désormais des questions."
+        },
+        "errors": {
+          "nameRequired": "Saisissez un nom.",
+          "topicNameTooLong": "Trop long. Raccourcissez-le à {{max}} caractères.",
+          "topicNameTaken": "Un autre sujet porte déjà ce nom.",
+          "topicNameReserved": "Ce nom est réservé aux questions qui ne correspondent à aucun sujet.",
+          "topicDescriptionTooLong": "Trop long. Raccourcissez-la à {{max}} (les caractères chinois, japonais et coréens comptent triple)."
+        },
+        "digest": "Synthèse hebdomadaire des lacunes de la doc",
+        "digestDescription": "Une fois par semaine, le propriétaire de l’agent reçoit une notification listant les principales lacunes de la doc.",
+        "off": "Désactivées",
+        "topicsDescription": "Ce que les gens demandent. Chaque question va dans le sujet qui lui correspond le mieux.",
+        "fromSources": "Des sources",
+        "hide": "Masquer",
+        "groups": {
+          "onePick": "Un par question",
+          "overlap": "Peuvent se chevaucher",
+          "overlapDescription": "Vérifiés sur des conversations entières ; plusieurs peuvent s’appliquer."
+        },
+        "notes": {
+          "foldersFailed": "Impossible de charger les dossiers des sources de cet agent.",
+          "unsaved": "Les dossiers des sources de cet agent apparaissent une fois l’agent enregistré.",
+          "unlisted": "Les questions sont aussi classées dans les dossiers des sources de cet agent.",
+          "hidden": "Dossiers masqués : {{names}}",
+          "show": "Afficher",
+          "cut": "Ces dossiers plus petits ne rentrent pas, leurs questions vont dans Aucun de ces sujets : {{names}}",
+          "single": "Un sujet seul ne classe rien. Ajoutez-en un autre pour commencer.",
+          "full": "Cet agent a atteint le nombre maximal de sujets : {{topics}} qui ne se chevauchent pas et {{overlapping}} qui le peuvent.",
+          "overOnePick": "Ce serveur autorise désormais {{max}} sujets sans chevauchement, moins que cet agent n’en a : seuls les {{max}} premiers ajoutés classent les questions. Retirez-en pour en ajouter d’autres.",
+          "overOverlapping": "Ce serveur autorise désormais {{max}} sujets qui se chevauchent, moins que cet agent n’en a : seuls les {{max}} premiers ajoutés sont vérifiés. Retirez-en pour en ajouter d’autres.",
+          "overlapOff": "Ce serveur ne vérifie plus les sujets qui se chevauchent, ceux-ci ne sont donc pas vérifiés. Modifiez-en un pour qu’il classe plutôt les questions, ou retirez-le."
+        },
+        "empty": {
+          "title": "Aucun sujet pour l’instant",
+          "workflow": "Ajoutez ce que les gens demandent. Chaque question va dans le sujet qui lui correspond le mieux.",
+          "unsaved": "Les sujets des sources de cet agent apparaissent une fois l’agent enregistré. Vous pouvez ajouter les vôtres dès maintenant.",
+          "noFolders": "Les sources de cet agent n’ont pas de dossiers pour classer les questions. Ajoutez vos propres sujets.",
+          "allHidden": "Tous les dossiers des sources de cet agent sont masqués, les questions ne sont donc pas classées.",
+          "showFolders": "Afficher les dossiers"
+        },
+        "removeTopic": {
+          "title": "Retirer « {{name}} » ?",
+          "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
+          "submit": "Retirer"
+        }
       }
     },
     "logs": {
       "title": "Journaux de l’agent",
       "lastUsedAt": "Dernière utilisation",
       "noUsageHistory": "Aucun historique d’utilisation",
-      "tableHeader": "Journaux du point de terminaison de l’agent"
+      "tableHeader": "Journaux du point de terminaison de l’agent",
+      "description": "Appels API, exécutions planifiées et erreurs de cet agent."
     },
     "schedules": {
       "title": "Planifications de l’agent",
@@ -3102,7 +3409,6 @@
     "guardrailEvents": {
       "heading": "Activité des garde-fous",
       "description": "Chaque contrôle déclenché sur cet agent, et chaque contrôle qui n’a pas pu s’exécuter.",
-      "lastDays": "{{count}} derniers jours",
       "blocked": "Bloqué",
       "redacted": "Masqué",
       "flagged": "Signalé",
@@ -3349,7 +3655,11 @@
     "pageRange_one": "{{from}}–{{to}} sur {{formatted}} agent",
     "pageRange_other": "{{from}}–{{to}} sur {{formatted}} agents",
     "pageRange_many": "{{from}}–{{to}} sur {{formatted}} agents",
-    "deleteConsequence": "Ses planifications et son historique d’exécutions sont également supprimés. Cette action est irréversible."
+    "deleteConsequence": "Ses planifications et son historique d’exécutions sont également supprimés. Cette action est irréversible.",
+    "analytics": {
+      "subtitle": "Volume de messages, consommation de jetons et retours des utilisateurs pour cet agent."
+    },
+    "loadError": "Impossible de charger cet agent."
   },
   "components": {
     "fileUpload": {
@@ -3448,9 +3758,9 @@
       "groups": {
         "personal": "Personnel",
         "workspace": "Espace de travail",
-        "insights": "Analyses",
         "administration": "Administration",
-        "automations": "Automatisations"
+        "automations": "Automatisations",
+        "monitoring": "Supervision"
       }
     },
     "openSidebar": "Ouvrir la barre latérale",

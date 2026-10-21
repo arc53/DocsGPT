@@ -448,14 +448,15 @@ class OnnxBackend:
         enc = engine.tokenizer.encode
         try:
             text = to_text(request.state)
+            # The tokenizer raises TypeError on a lone surrogate (a ``\ud800`` escape in a server's JSON body).
+            ids = enc(text)
+            truncated = len(ids) > engine.max_state_tokens
+            if truncated:  # as the release client's state_text, which this needs the flag from
+                text = engine.tokenizer.decode(ids[: engine.max_state_tokens]) + " ...[truncated]"
+            prefix = enc(prefix_text(text))
+            suffixes = [enc(suffix_text(q)) for q in request.questions.values()]
         except (TypeError, ValueError):
             return "bad_item"
-        ids = enc(text)
-        truncated = len(ids) > engine.max_state_tokens
-        if truncated:  # as the release client's state_text, which this needs the flag from
-            text = engine.tokenizer.decode(ids[: engine.max_state_tokens]) + " ...[truncated]"
-        prefix = enc(prefix_text(text))
-        suffixes = [enc(suffix_text(q)) for q in request.questions.values()]
         passes = plan(len(prefix), [len(s) for s in suffixes], lane, self.PLAN)
         needed = len(prefix) + max(map(len, suffixes))
         predicted = sum(map(self._predict, passes)) * 1000 if self.profile else None
@@ -485,9 +486,9 @@ class OnnxBackend:
                     self.profile.observe(step, elapsed)
                 logits[max(step.segment, 0)] = out
             answers = {key: engine.answer(logits[i], key, q) for i, (key, q) in enumerate(request.questions.items())}
-        except Exception:  # noqa: BLE001 -- one bad item never fails the batch
+        except Exception:  # noqa: BLE001 -- one failed pass never fails the batch
             logger.exception("A decision-model pass failed")
-            return "bad_item"
+            return "backend_error"
         finally:
             if lane == "background":
                 self._background_used = self._clock()

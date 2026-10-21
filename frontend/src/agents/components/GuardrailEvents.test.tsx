@@ -150,6 +150,48 @@ describe('GuardrailEvents tones', () => {
     ).not.toBeNull();
   });
 
+  // IN-16: one set of window labels with the analytics select, and a
+  // min width, so a phone doesn't cut "Last 30 days".
+  it("labels its window in the analytics select's words, at a min width", () => {
+    const trigger = container.querySelector(
+      '[data-testid="guardrail-events-window"]',
+    )!;
+    expect(trigger.textContent).toBe(
+      'settings.analytics.filterOptions.last30Days',
+    );
+    expect(trigger.className).toContain('min-w-[125px]');
+    expect(trigger.className).not.toContain('w-[150px]');
+  });
+
+  it('names its three selects and lets each grow to its value', async () => {
+    const ids = [
+      ['guardrail-events-window', 'activity.history.periodFilter'],
+      ['guardrail-events-check-filter', 'agents.guardrailEvents.check'],
+      ['guardrail-events-outcome-filter', 'agents.guardrailEvents.outcome'],
+    ];
+    for (const [id, name] of ids) {
+      const trigger = container.querySelector<HTMLElement>(
+        `[data-testid="${id}"]`,
+      )!;
+      expect(trigger.getAttribute('aria-label')).toBe(name);
+      const classes = trigger.className.split(' ');
+      expect(classes.some((c) => /^w-\[/.test(c))).toBe(false);
+      expect(classes.some((c) => /^min-w-\[/.test(c))).toBe(true);
+    }
+    const check = container.querySelector<HTMLElement>(
+      '[data-testid="guardrail-events-check-filter"]',
+    )!;
+    await act(async () => {
+      check.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const menu = document.querySelector<HTMLElement>(
+      '[data-slot="select-content"]',
+    )!;
+    expect(menu.className.split(' ')).toContain('w-auto');
+  });
+
   it('renders ui/table named by the Guardrail decisions sub-heading', () => {
     const table = container.querySelector('table[data-slot="table"]');
     expect(table).not.toBeNull();
