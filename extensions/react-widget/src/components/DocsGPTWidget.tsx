@@ -1062,10 +1062,11 @@ const ConversationArea = styled.div`
   flex: 1;
   min-height: 0;
 `;
-const Composer = styled.div`
+// The credit line pads the bottom; without it the composer pads itself.
+const Composer = styled.div<{ $noCredit?: boolean }>`
   flex-shrink: 0;
   box-sizing: border-box;
-  padding: 12px 16px 0 16px;
+  padding: 12px 16px ${(props) => (props.$noCredit ? '16px' : '0')} 16px;
 `;
 // border bg-card rounded-3xl; the rows pad themselves.
 const PromptContainer = styled.form<{ $stacked?: boolean }>`
@@ -2568,7 +2569,7 @@ export const WidgetCore = ({
                 </ScrollToLatest>
               )}
             </ConversationArea>
-            <Composer>
+            <Composer $noCredit={poweredBy === false}>
               {attachmentsEnabled && (
                 <HiddenFileInput
                   ref={attachmentInputRef}
