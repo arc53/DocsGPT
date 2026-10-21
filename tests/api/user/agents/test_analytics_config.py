@@ -22,6 +22,27 @@ def _config(**analytics) -> dict:
     return {"analytics": analytics}
 
 
+TWO_CONTROLS = {
+    "enabled": True,
+    "mode": "scan_all",
+    "controls": [
+        {"check": "secrets", "stage": "output", "action": "redact"},
+        {"check": "pii", "stage": "output", "action": "redact"},
+    ],
+}
+
+
+@pytest.fixture
+def narrowed_checks(monkeypatch):
+    """Only ``pii`` allowed, as after an operator tightened ``GUARDRAILS_CHECKS_ENABLED``: ``secrets`` controls
+    no longer validate."""
+    from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+
+    monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", ["pii"])
+    monkeypatch.setattr(GuardrailCreator, "_bootstrapped", False)
+    yield
+
+
 @pytest.mark.unit
 class TestAnalyticsConfigValidation:
     def test_defaults(self):
@@ -148,6 +169,18 @@ class TestNotPolicy:
         assert not _policy_changed({"config": {}}, {"config": new})
         assert not _policy_changed({"config": None}, {"config": new})
 
+    def test_dropping_a_control_that_no_longer_validates_is(self, narrowed_checks):
+        # The lenient read drops a control whose check the operator turned off; it comes back once turned on
+        # again, so a save without it removes a control, not a dead entry.
+        stored = {"guardrails": TWO_CONTROLS, "api_write_allowlist": []}
+        new = normalize_agent_config({"guardrails": {**TWO_CONTROLS, "controls": TWO_CONTROLS["controls"][1:]},
+                                      "analytics": {"enabled": False}})
+        assert _policy_changed({"config": stored}, {"config": new})
+
+    def test_a_block_that_no_longer_validates_dropped_whole_is(self):
+        stored = {"guardrails": {**TWO_CONTROLS, "mode": "legacy_mode"}}
+        assert _policy_changed({"config": stored}, {"config": normalize_agent_config({"analytics": {}})})
+
     def test_a_guardrails_change_still_is(self):
         new = {"guardrails": {"enabled": False}, "api_write_allowlist": [], "analytics": {}}
         assert _policy_changed({"config": self.GUARDED}, {"config": new})
@@ -244,6 +277,26 @@ class TestUpdateAgentRoute:
         response = _put(app, pg_conn, "owner", str(agent["id"]), {"name": "Renamed", "config": stored})
         assert response.status_code == 200, response.json
         assert self._saved(pg_conn, agent)["name"] == "Renamed"
+
+    def test_an_insights_save_keeps_a_control_that_no_longer_validates(self, app, pg_conn, narrowed_checks):
+        # The insights sheet sends the stored config back with its own changes: guardrails it does not change
+        # are not validated again, so a control the operator turned off neither blocks the save nor is lost.
+        stored = {"guardrails": TWO_CONTROLS, "api_write_allowlist": [], "analytics": {"enabled": True}}
+        agent = self._agent(pg_conn, stored)
+        response = _put(app, pg_conn, "owner", str(agent["id"]),
+                        {"config": {**stored, "analytics": {"enabled": False}}})
+        assert response.status_code == 200, response.json
+        saved = self._saved(pg_conn, agent)["config"]
+        assert saved["guardrails"] == TWO_CONTROLS and saved["analytics"]["enabled"] is False
+
+    def test_a_guardrails_change_is_validated_whole(self, app, pg_conn, narrowed_checks):
+        from docsgpt.api.user.agents.routes import INVALID_CONFIG_MESSAGE
+
+        stored = {"guardrails": TWO_CONTROLS, "api_write_allowlist": []}
+        agent = self._agent(pg_conn, stored)
+        changed = {**stored, "guardrails": {**TWO_CONTROLS, "mode": "monitor_only"}}
+        response = _put(app, pg_conn, "owner", str(agent["id"]), {"config": changed})
+        assert response.status_code == 400 and response.json["message"] == INVALID_CONFIG_MESSAGE
 
     def test_adding_past_the_limit_is_400_with_the_analytics_message(self, app, pg_conn, monkeypatch):
         from docsgpt.api.user.agents.routes import ANALYTICS_INVALID_CONFIG_MESSAGES, INVALID_CONFIG_MESSAGE

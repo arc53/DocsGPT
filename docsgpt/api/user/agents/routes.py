@@ -13,7 +13,7 @@ from docsgpt.analytics.config import STORED_CONTEXT, AnalyticsConfigError
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
 from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys
-from docsgpt.guardrails.config import AgentConfig
+from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
 from docsgpt.api.user.base import (
     copy_agent_image_for_user,
     handle_image_upload,
@@ -334,7 +334,7 @@ def _policy_changed(existing: dict, update_fields: dict) -> bool:
             continue
         new, old = update_fields[key], existing.get(key)
         if key == "config":
-            if _without_analytics(new) != _without_analytics(old):
+            if _without_analytics(new) != _without_analytics(old) or _drops_controls(new, old):
                 return True
         elif key.startswith("limited_"):
             if bool(new) != bool(old):
@@ -359,6 +359,27 @@ def _without_analytics(config) -> dict:
     """
     normalized = AgentConfig.parse(config if isinstance(config, dict) else None).model_dump(mode="json")
     return {key: value for key, value in normalized.items() if key != "analytics"}
+
+
+def _controls(config) -> set:
+    """The ``(check, stage)`` of each guardrail control stored in ``config``, as written, valid or not."""
+    guardrails = config.get("guardrails") if isinstance(config, dict) else None
+    entries = guardrails.get("controls") if isinstance(guardrails, dict) else None
+    return {
+        (str(entry.get("check")), str(entry.get("stage")))
+        for entry in entries if isinstance(entry, dict)
+    } if isinstance(entries, list) else set()
+
+
+def _drops_controls(new, old) -> bool:
+    """``new`` leaves out a control stored in ``old``.
+
+    The normalized comparison reads ``old`` leniently, which drops a control
+    that stopped validating (its check turned off by the operator, or renamed);
+    such a control comes back once its check does, so leaving it out removes
+    protection all the same.
+    """
+    return not _controls(old) <= _controls(new)
 
 
 def _reject(message: str, user: str, field: str = "-"):
@@ -616,14 +637,27 @@ def normalize_agent_config(raw, stored: Optional[dict] = None) -> Optional[dict]
     if not isinstance(raw, dict):
         raise ValueError("config must be a JSON object")
     context = {STORED_CONTEXT: stored.get("analytics")} if isinstance(stored, dict) else None
+    # Guardrails sent back as stored are not validated again: a control that
+    # stopped validating since (its check turned off by the operator) would
+    # otherwise block every save of the agent, such as an insights change,
+    # and is kept as it is, so it applies again once its check does.
+    kept = (
+        isinstance(stored, dict) and isinstance(raw.get("guardrails"), dict)
+        and raw["guardrails"] == stored.get("guardrails")
+    )
+    if kept:
+        raw = {**raw, "guardrails": GuardrailsConfig.parse(raw["guardrails"]).model_dump(mode="json")}
     try:
-        return AgentConfig.model_validate(raw, context=context).model_dump(mode="json")
+        normalized = AgentConfig.model_validate(raw, context=context).model_dump(mode="json")
     except PydanticValidationError as exc:
         loc = tuple(exc.errors()[0].get("loc", ())) if exc.errors() else ()
         if loc[:1] == ("analytics",):
             part = str(loc[1]) if len(loc) > 1 else None
             raise AnalyticsConfigError(_first_pydantic_error(exc), part)
         raise ValueError(_first_pydantic_error(exc))
+    if kept:
+        normalized["guardrails"] = stored["guardrails"]
+    return normalized
 
 
 def _first_pydantic_error(exc: PydanticValidationError) -> str:
