@@ -3,11 +3,13 @@
 import datetime
 import json
 import uuid
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError as PydanticValidationError
 
+from docsgpt.analytics.config import STORED_CONTEXT, AnalyticsConfigError
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
 from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys
@@ -79,6 +81,27 @@ agents_ns = Namespace("agents", description="Agent management operations", path=
 INVALID_CONFIG_MESSAGE = (
     "Invalid config: one or more guardrail controls failed validation."
 )
+# The same for a rejected ``config.analytics`` (the insights settings), by the
+# field that failed; static for the same reason.
+ANALYTICS_INVALID_CONFIG_MESSAGES = {
+    "topics": "Invalid config: the insights topics failed validation.",
+    "hidden_folders": "Invalid config: the insights hidden folders failed validation.",
+}
+ANALYTICS_INVALID_CONFIG_MESSAGE = "Invalid config: the insights settings failed validation."
+
+
+def invalid_config_message(exc: ValueError) -> str:
+    """The static 400 message for a rejected ``config``: the insights part that failed, else the guardrails one.
+
+    Args:
+        exc: The error ``normalize_agent_config`` raised.
+
+    Returns:
+        A message free of the validator's own text.
+    """
+    if isinstance(exc, AnalyticsConfigError):
+        return ANALYTICS_INVALID_CONFIG_MESSAGES.get(exc.part or "", ANALYTICS_INVALID_CONFIG_MESSAGE)
+    return INVALID_CONFIG_MESSAGE
 
 
 AGENT_TYPE_SCHEMAS = {
@@ -562,21 +585,26 @@ def keep_owner_only_config(config: dict, existing_agent: dict, is_team_editor: b
     return {**config, "api_write_allowlist": stored}
 
 
-def normalize_agent_config(raw):
+def normalize_agent_config(raw, stored: Optional[dict] = None) -> Optional[dict]:
     """Validate an inbound ``config`` payload, returning the normalized dict.
 
     Strict on write: an unknown check, an action a stage cannot honour, or bad
     per-check settings is a 400 rather than a silently-ignored control that the
-    operator believes is protecting them.
+    operator believes is protecting them. The one leniency is the insights
+    topic limits on an update: a kind past a limit lowered since the agent was
+    saved may keep its stored count (``STORED_CONTEXT``), so an unrelated save
+    such as a rename still goes through.
 
     Args:
         raw: The ``config`` value from the request (dict, JSON string, or None).
+        stored: The agent's stored config on an update; None on a create.
 
     Returns:
         The normalized config dict, or None when nothing was supplied.
 
     Raises:
-        ValueError: When the payload cannot be validated.
+        AnalyticsConfigError: When the ``analytics`` block cannot be validated.
+        ValueError: When anything else in the payload cannot be validated.
     """
     if raw is None or raw == "":
         return None
@@ -587,9 +615,14 @@ def normalize_agent_config(raw):
             raise ValueError("config must be a JSON object")
     if not isinstance(raw, dict):
         raise ValueError("config must be a JSON object")
+    context = {STORED_CONTEXT: stored.get("analytics")} if isinstance(stored, dict) else None
     try:
-        return AgentConfig.model_validate(raw).model_dump(mode="json")
+        return AgentConfig.model_validate(raw, context=context).model_dump(mode="json")
     except PydanticValidationError as exc:
+        loc = tuple(exc.errors()[0].get("loc", ())) if exc.errors() else ()
+        if loc[:1] == ("analytics",):
+            part = str(loc[1]) if len(loc) > 1 else None
+            raise AnalyticsConfigError(_first_pydantic_error(exc), part)
         raise ValueError(_first_pydantic_error(exc))
 
 
@@ -842,7 +875,7 @@ class CreateAgent(Resource):
                     "Agent config rejected on create (user=%s): %s", user, exc
                 )
                 return make_response(
-                    jsonify({"success": False, "message": INVALID_CONFIG_MESSAGE}),
+                    jsonify({"success": False, "message": invalid_config_message(exc)}),
                     400,
                 )
             if normalized_config is None:
@@ -1249,14 +1282,16 @@ class UpdateAgent(Resource):
                             update_fields["json_schema"] = None
                     elif field == "config":
                         try:
-                            normalized_config = normalize_agent_config(data.get("config"))
+                            normalized_config = normalize_agent_config(
+                                data.get("config"), stored=existing_agent.get("config") or {},
+                            )
                         except ValueError as exc:
                             current_app.logger.warning(
                                 "Agent config rejected on update (user=%s): %s",
                                 user,
                                 exc,
                             )
-                            return _reject(INVALID_CONFIG_MESSAGE, user, field)
+                            return _reject(invalid_config_message(exc), user, field)
                         update_fields["config"] = keep_owner_only_config(
                             normalized_config or {}, existing_agent, is_team_editor,
                         )

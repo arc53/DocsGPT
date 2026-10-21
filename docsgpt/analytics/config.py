@@ -1,17 +1,18 @@
 """Pydantic contract for ``agents.config.analytics``: whether an agent's conversations are labelled, and how.
 
 Strict on write like the rest of ``AgentConfig``; ``parse`` is the lenient read the sweep uses, so a row written
-under looser limits (an operator lowering ``ANALYTICS_MAX_OVERLAPPING_TOPICS``) still labels with what fits. None
-of this is policy: an editor without ``edit_policy`` may change it.
+under looser limits (an operator lowering ``ANALYTICS_MAX_OVERLAPPING_TOPICS``) still labels with what fits. A save
+of such a row keeps its counts: validated with the stored block as ``STORED_CONTEXT``, each kind may hold as many
+topics as it already had. None of this is policy: an editor without ``edit_policy`` may change it.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator, model_validator
 
 from docsgpt.analytics.schema import NONE_OPTION, units
 
@@ -24,12 +25,36 @@ OVERLAP_DESCRIPTION_UNITS = 300
 TOPIC_ID = re.compile(r"^[a-z0-9]{8,32}$")
 #: Folders an owner may hide; far past any agent's folder count.
 MAX_HIDDEN_FOLDERS = 100
+#: Validation context key: the agent's stored ``analytics`` block, whose topic counts a save may keep.
+STORED_CONTEXT = "stored_analytics"
+
+
+class AnalyticsConfigError(ValueError):
+    """A rejected ``analytics`` block of an agent's config, told apart from the rest of the config's errors.
+
+    Attributes:
+        part: The block's field that failed (``topics``, ``hidden_folders``…), or None when unknown.
+    """
+
+    def __init__(self, message: str, part: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.part = part
 
 
 def _limits():
     from docsgpt.core.settings import settings
 
     return settings.ANALYTICS_MAX_TOPICS, settings.ANALYTICS_MAX_OVERLAPPING_TOPICS
+
+
+def _stored_counts(stored: Any) -> tuple[int, int]:
+    """How many topics of each kind a stored ``analytics`` block has: ``(one-pick, overlapping)``; 0s if unreadable."""
+    topics = stored.get("topics") if isinstance(stored, dict) else None
+    if not isinstance(topics, list):
+        return 0, 0
+    entries = [topic for topic in topics if isinstance(topic, dict)]
+    overlapping = sum(topic.get("overlap") is True for topic in entries)
+    return len(entries) - overlapping, overlapping
 
 
 class AnalyticsTopic(BaseModel):
@@ -101,8 +126,15 @@ class AnalyticsConfig(BaseModel):
 
     @field_validator("topics")
     @classmethod
-    def _topics(cls, value: List[AnalyticsTopic]) -> List[AnalyticsTopic]:
+    def _topics(cls, value: List[AnalyticsTopic], info: ValidationInfo) -> List[AnalyticsTopic]:
+        """Each kind within its limit, ids and names (either kind, ignoring case) unique.
+
+        A limit lowered after the agent was saved doesn't refuse what it already has: with ``STORED_CONTEXT`` set,
+        each kind may keep its stored count, but not grow past it.
+        """
         max_topics, max_overlapping = _limits()
+        stored_picks, stored_overlapping = _stored_counts((info.context or {}).get(STORED_CONTEXT))
+        max_topics, max_overlapping = max(max_topics, stored_picks), max(max_overlapping, stored_overlapping)
         if sum(not t.overlap for t in value) > max_topics:
             raise ValueError(f"at most {max_topics} topics that don't overlap")
         if sum(t.overlap for t in value) > max_overlapping:

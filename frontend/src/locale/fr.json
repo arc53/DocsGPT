@@ -3108,6 +3108,7 @@
           "overlapDescription": "Vérifié sur chaque conversation entière, plusieurs peuvent donc s’appliquer : pour un signalement de bug ou une question de prix qui traverse la doc.",
           "onePickFull": "Au-delà de {{max}} sujets sans chevauchement, ce n’est plus possible : celui-ci peut donc chevaucher les autres.",
           "overlapFull": "Au-delà de {{max}} sujets qui se chevauchent, ce n’est plus possible : celui-ci ne le peut donc pas.",
+          "overlapOff": "Ce serveur ne vérifie plus les sujets qui se chevauchent : celui-ci ne le peut donc pas.",
           "reachOnePick": "Classe les nouvelles questions ; les précédentes gardent leur sujet.",
           "reachOverlap": "Également vérifié sur les conversations récentes.",
           "kindChangeToOverlap": "Ce changement remet ses chiffres à zéro : il classait des questions et sera désormais vérifié sur des conversations.",
@@ -3115,6 +3116,7 @@
         },
         "errors": {
           "nameRequired": "Saisissez un nom.",
+          "topicNameTooLong": "Trop long. Raccourcissez-le à {{max}} caractères.",
           "topicNameTaken": "Un autre sujet porte déjà ce nom.",
           "topicNameReserved": "Ce nom est réservé aux questions qui ne correspondent à aucun sujet.",
           "topicDescriptionTooLong": "Trop long. Raccourcissez-la à {{max}} (les caractères chinois, japonais et coréens comptent triple)."
@@ -3138,7 +3140,10 @@
           "show": "Afficher",
           "cut": "Ces dossiers plus petits ne rentrent pas, leurs questions vont dans Aucun de ces sujets : {{names}}",
           "single": "Un sujet seul ne classe rien. Ajoutez-en un autre pour commencer.",
-          "full": "Cet agent a atteint le nombre maximal de sujets : {{topics}} qui ne se chevauchent pas et {{overlapping}} qui le peuvent."
+          "full": "Cet agent a atteint le nombre maximal de sujets : {{topics}} qui ne se chevauchent pas et {{overlapping}} qui le peuvent.",
+          "overOnePick": "Ce serveur autorise désormais {{max}} sujets sans chevauchement, moins que cet agent n’en a : seuls les {{max}} premiers ajoutés classent les questions. Retirez-en pour en ajouter d’autres.",
+          "overOverlapping": "Ce serveur autorise désormais {{max}} sujets qui se chevauchent, moins que cet agent n’en a : seuls les {{max}} premiers ajoutés sont vérifiés. Retirez-en pour en ajouter d’autres.",
+          "overlapOff": "Ce serveur ne vérifie plus les sujets qui se chevauchent, ceux-ci ne sont donc pas vérifiés. Modifiez-en un pour qu’il classe plutôt les questions, ou retirez-le."
         },
         "empty": {
           "title": "Aucun sujet pour l’instant",

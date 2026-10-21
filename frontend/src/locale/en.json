@@ -3028,6 +3028,7 @@
           "overlapDescription": "Checked on each whole conversation, so several can apply: for a bug report or a pricing question that cuts across the docs.",
           "onePickFull": "{{max}} topics that don't overlap is the most, so this one can overlap.",
           "overlapFull": "{{max}} topics that can overlap is the most, so this one can't.",
+          "overlapOff": "This server no longer checks topics that can overlap, so this one can't.",
           "reachOnePick": "Sorts new questions; earlier ones keep their topic.",
           "reachOverlap": "Also checked on recent conversations.",
           "kindChangeToOverlap": "Changing this starts its figures over: it sorted questions and will now be checked on conversations.",
@@ -3035,6 +3036,7 @@
         },
         "errors": {
           "nameRequired": "Enter a name.",
+          "topicNameTooLong": "Too long. Shorten it to {{max}} characters.",
           "topicNameTaken": "Another topic already has this name.",
           "topicNameReserved": "This name is kept for questions that fit no topic.",
           "topicDescriptionTooLong": "Too long. Shorten it to fit {{max}} (Chinese, Japanese and Korean characters count three times)."
@@ -3058,7 +3060,10 @@
           "show": "Show",
           "cut": "These smaller folders don't fit, so their questions go to None of these topics: {{names}}",
           "single": "One topic on its own sorts nothing. Add another to start.",
-          "full": "This agent has the most topics it can: {{topics}} that don't overlap and {{overlapping}} that can."
+          "full": "This agent has the most topics it can: {{topics}} that don't overlap and {{overlapping}} that can.",
+          "overOnePick": "This server now allows {{max}} topics that don't overlap, fewer than this agent has, so only the first {{max}} added sort questions. Remove some to add others.",
+          "overOverlapping": "This server now allows {{max}} topics that can overlap, fewer than this agent has, so only the first {{max}} added are checked. Remove some to add others.",
+          "overlapOff": "This server no longer checks topics that can overlap, so these aren't checked. Edit one to sort questions instead, or remove it."
         },
         "empty": {
           "title": "No topics yet",

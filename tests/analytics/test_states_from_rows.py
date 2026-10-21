@@ -3,7 +3,7 @@
 import pytest
 
 from docsgpt.analytics import schema, states, topics
-from docsgpt.analytics.config import AnalyticsConfig
+from docsgpt.analytics.config import TOPIC_NAME_CHARS, AnalyticsConfig
 
 
 def _row(position, prompt, response="An answer.", status="complete", sources=None, metadata=None, **extra):
@@ -159,6 +159,34 @@ class TestFolders:
         flat_b = {"name": "API", "directory_structure": '{"auth.md": {"token_count": 3}}'}
         assert _folders([flat_a, flat_b]) == {"product docs": "Pages such as: Intro; Setup",
                                              "api": "Pages such as: Auth"}
+
+    def test_a_long_source_name_is_cut_to_fit_a_topic_name(self):
+        long_name = "Q3-2025 Vendor Due Diligence Questionnaire - Halvorsen Logistics (final, signed).pdf"
+        flat = {"name": long_name, "directory_structure": {"questionnaire.pdf": _file()}}
+        other = {"name": "Handbook", "directory_structure": {"intro.md": _file()}}
+        names = [f["name"] for f in topics.folders([flat, other])]
+        cut = next(name for name in names if name != "handbook")
+        assert len(cut) <= TOPIC_NAME_CHARS and cut.endswith("…")
+        # Cut on a word boundary, never mid-word.
+        assert cut == "q3-2025 vendor due diligence questionnaire - halvorsen…"
+        AnalyticsConfig.model_validate({"hidden_folders": names, "topics": [
+            {"id": "topic0001", "name": cut}]})
+
+    def test_a_long_folder_name_is_cut_too(self):
+        structure = {"a" * 80: {"x.md": _file()}, "faq": {"q.md": _file()}}
+        names = [f["name"] for f in topics.folders(_source(structure))]
+        assert names[0] == "a" * (TOPIC_NAME_CHARS - 1) + "…" and len(names[0]) == TOPIC_NAME_CHARS
+
+    def test_cut_names_stay_unique_whatever_the_order(self):
+        stem = "vendor due diligence questionnaire for halvorsen logistics and partners"
+        a = {"name": f"{stem} part one", "directory_structure": {"a.md": _file()}}
+        b = {"name": f"{stem} part two", "directory_structure": {"b.md": _file()}}
+        c = {"name": "Handbook", "directory_structure": {"c.md": _file()}}
+        first = _folders([a, b, c])
+        assert first == _folders([c, b, a])
+        assert len(first) == 3 and all(len(name) <= TOPIC_NAME_CHARS for name in first)
+        assert first["vendor due diligence questionnaire for halvorsen logistics…"] == "Pages such as: A"
+        assert first["vendor due diligence questionnaire for halvorsen… 2"] == "Pages such as: B"
 
     def test_a_single_folder_is_still_listed(self):
         assert _folders(_source({"a.md": _file()})) == {"overview": "Pages such as: A"}

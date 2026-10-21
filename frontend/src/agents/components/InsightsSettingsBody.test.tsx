@@ -284,6 +284,23 @@ describe('InsightsSettingsBody', () => {
       expect(notes()).toContain(`${K}.notes.hidden(billing)`);
     });
 
+    it('pre-fills a folder name past the topic limit cut to fit', async () => {
+      const long =
+        'q3-2025 vendor due diligence questionnaire - halvorsen logistics (final, signed).pdf';
+      getTopicFolders.mockResolvedValue(
+        folders([{ name: long, description: 'Pages such as: Q' }, ...FOLDERS]),
+      );
+      await render();
+      await openMenu(rowNamed(long));
+      await act(async () => menuItem(`${K}.edit`).click());
+      const value = dialog()!.querySelector('input')!.value;
+      expect(value).toBe(long.slice(0, 60));
+      await submit(`${K}.modal.submitSave`);
+      expect(latest!.topics).toEqual([
+        expect.objectContaining({ name: long.slice(0, 60).trim() }),
+      ]);
+    });
+
     it('cuts the smallest folders past the limit, own topics first', async () => {
       await render({
         maxTopics: 3,
@@ -393,6 +410,21 @@ describe('InsightsSettingsBody', () => {
       ]);
     });
 
+    it('refuses a name past the limit', async () => {
+      await render();
+      await act(async () => button(`${K}.addTopic`)!.click());
+      await fill({ name: 'n'.repeat(61) });
+      await submit();
+      expect(dialog()!.textContent).toContain(`${K}.errors.topicNameTooLong`);
+      expect(latest).toBeUndefined();
+      await fill({ name: 'n'.repeat(60) });
+      expect(dialog()!.textContent).not.toContain(
+        `${K}.errors.topicNameTooLong`,
+      );
+      await submit();
+      expect(latest!.topics[0].name).toHaveLength(60);
+    });
+
     it('has no overlap switch when the server allows none', async () => {
       await render({ maxOverlapping: 0 });
       await act(async () => button(`${K}.addTopic`)!.click());
@@ -418,6 +450,49 @@ describe('InsightsSettingsBody', () => {
       });
       expect(button(`${K}.addTopic`)).toBeUndefined();
       expect(notes()).toContain(`${K}.notes.full`);
+    });
+  });
+
+  describe('past a lowered limit', () => {
+    const overlapping = [1, 2, 3, 4, 5].map((n) => topic(`Tag ${n}`, true));
+
+    it('says when a kind has more topics than the server now allows', async () => {
+      await render({
+        maxTopics: 2,
+        maxOverlapping: 3,
+        initial: config({
+          topics: [topic('A'), topic('B'), topic('C'), ...overlapping],
+        }),
+      });
+      expect(notes()).toContain(`${K}.notes.overOnePick`);
+      expect(notes()).toContain(`${K}.notes.overOverlapping`);
+      expect(notes()).not.toContain(`${K}.notes.full`);
+      expect(button(`${K}.addTopic`)).toBeUndefined();
+    });
+
+    it('says nothing at the limit', async () => {
+      await render({
+        maxOverlapping: 5,
+        initial: config({ topics: overlapping }),
+      });
+      expect(notes()).not.toContain(`${K}.notes.overOverlapping`);
+    });
+
+    it('lets an overlapping topic be switched off once the server allows none', async () => {
+      await render({
+        maxOverlapping: 0,
+        initial: config({ topics: [PRICING] }),
+      });
+      expect(notes()).toContain(`${K}.notes.overlapOff`);
+      await openMenu(rowNamed('Pricing question'));
+      await act(async () => menuItem(`${K}.edit`).click());
+      expect(overlapSwitch()!.disabled).toBe(false);
+      await act(async () => overlapSwitch()!.click());
+      // Off, it can't go back on: the server takes none.
+      expect(overlapSwitch()!.disabled).toBe(true);
+      await submit(`${K}.modal.submitSave`);
+      expect(latest!.topics).toEqual([{ ...PRICING, overlap: false }]);
+      expect(notes()).not.toContain(`${K}.notes.overlapOff`);
     });
   });
 

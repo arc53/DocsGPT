@@ -3108,6 +3108,7 @@
           "overlapDescription": "Se comprueba en cada conversación completa, así que pueden aplicarse varios: para un informe de error o una pregunta de precios que atraviesa la documentación.",
           "onePickFull": "No caben más de {{max}} temas que no se solapan, así que este puede solaparse.",
           "overlapFull": "No caben más de {{max}} temas que pueden solaparse, así que este no puede.",
+          "overlapOff": "Este servidor ya no comprueba temas que pueden solaparse, así que este no puede.",
           "reachOnePick": "Clasifica las preguntas nuevas; las anteriores conservan su tema.",
           "reachOverlap": "También se comprueba en las conversaciones recientes.",
           "kindChangeToOverlap": "Este cambio reinicia sus cifras: clasificaba preguntas y ahora se comprobará en conversaciones.",
@@ -3115,6 +3116,7 @@
         },
         "errors": {
           "nameRequired": "Escribe un nombre.",
+          "topicNameTooLong": "Demasiado largo. Acórtalo hasta {{max}} caracteres.",
           "topicNameTaken": "Otro tema ya tiene este nombre.",
           "topicNameReserved": "Este nombre está reservado para las preguntas que no encajan en ningún tema.",
           "topicDescriptionTooLong": "Demasiado larga. Acórtala hasta {{max}} (los caracteres chinos, japoneses y coreanos cuentan el triple)."
@@ -3138,7 +3140,10 @@
           "show": "Mostrar",
           "cut": "Estas carpetas más pequeñas no caben, así que sus preguntas van a Ninguno de estos temas: {{names}}",
           "single": "Un solo tema no clasifica nada. Añade otro para empezar.",
-          "full": "Este agente tiene el máximo de temas: {{topics}} que no se solapan y {{overlapping}} que pueden solaparse."
+          "full": "Este agente tiene el máximo de temas: {{topics}} que no se solapan y {{overlapping}} que pueden solaparse.",
+          "overOnePick": "Este servidor ahora admite {{max}} temas que no se solapan, menos de los que tiene este agente, así que solo los {{max}} primeros que se añadieron clasifican preguntas. Quita algunos para añadir otros.",
+          "overOverlapping": "Este servidor ahora admite {{max}} temas que pueden solaparse, menos de los que tiene este agente, así que solo se comprueban los {{max}} primeros que se añadieron. Quita algunos para añadir otros.",
+          "overlapOff": "Este servidor ya no comprueba temas que pueden solaparse, así que estos no se comprueban. Edita uno para que clasifique preguntas o quítalo."
         },
         "empty": {
           "title": "Aún no hay temas",

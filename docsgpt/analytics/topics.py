@@ -17,7 +17,7 @@ from pathlib import PurePosixPath
 from typing import Any, Iterator, Optional
 
 from docsgpt.analytics import schema
-from docsgpt.analytics.config import TOPIC_DESCRIPTION_UNITS, AnalyticsConfig
+from docsgpt.analytics.config import TOPIC_DESCRIPTION_UNITS, TOPIC_NAME_CHARS, AnalyticsConfig
 
 #: Path parts that name no section of their own.
 SKIPPED_DIRS = ("docs", "content", "src", "en")
@@ -79,11 +79,50 @@ def _describe(name: str, titles: set[str]) -> str:
     return schema.cap("Pages such as: " + "; ".join(shown), TOPIC_DESCRIPTION_UNITS)
 
 
+def _shorten(name: str, limit: int) -> str:
+    """``name`` cut to ``limit`` characters with "…", on a word boundary when one is in its second half."""
+    if len(name) <= limit:
+        return name
+    cut = name[:limit - 1]
+    if not name[limit - 1].isspace():
+        space = cut.rfind(" ")
+        if space > limit // 2:
+            cut = cut[:space]
+    return cut.rstrip(" -_,.;:/(") + "…"
+
+
+def _fitted(names: list[str]) -> dict[str, str]:
+    """Each folder name mapped to one of at most ``TOPIC_NAME_CHARS`` characters, so it fits a topic's name.
+
+    A folder is named after a directory or a whole source (an uploaded file's name, often longer), but its name is
+    also what the owner hides it by, edits it into and filters Logs on, all capped at ``TOPIC_NAME_CHARS``. A longer
+    one is cut; a cut name another folder already has gets " 2", " 3"…, given out in name order so the same sources
+    always get the same names.
+
+    Args:
+        names: The folder names, unique.
+
+    Returns:
+        ``{name: fitted name}``; the fitted names are unique.
+    """
+    fitted = {name: name for name in names if len(name) <= TOPIC_NAME_CHARS}
+    taken = set(fitted.values())
+    for name in sorted(n for n in names if n not in fitted):
+        short, n = _shorten(name, TOPIC_NAME_CHARS), 1
+        while short in taken:
+            n += 1
+            suffix = f" {n}"
+            short = _shorten(name, TOPIC_NAME_CHARS - len(suffix)) + suffix
+        fitted[name] = short
+        taken.add(short)
+    return fitted
+
+
 def folders(sources: list[dict]) -> list[dict[str, str]]:
     """The folders of an agent's sources, largest first by tokens: ``[{name, description}]``.
 
-    In an agent with several sources, a flat one (every page at its root) is one folder named after the source. At
-    most ``MAX_FOLDERS`` are listed.
+    In an agent with several sources, a flat one (every page at its root) is one folder named after the source. A
+    name longer than a topic's is cut to fit (see :func:`_fitted`). At most ``MAX_FOLDERS`` are listed.
 
     Args:
         sources: Source rows with ``name`` and ``directory_structure``.
@@ -102,8 +141,10 @@ def folders(sources: list[dict]) -> list[dict[str, str]]:
             entry = sections.setdefault(name, {"titles": set(), "tokens": 0})
             entry["titles"].add(page_title(path))
             entry["tokens"] += tokens
-    ordered = sorted(sections, key=lambda name: (-sections[name]["tokens"], name))[:MAX_FOLDERS]
-    return [{"name": name, "description": _describe(name, sections[name]["titles"])} for name in ordered]
+    fitted = _fitted(list(sections))
+    ordered = sorted(sections, key=lambda name: (-sections[name]["tokens"], fitted[name]))[:MAX_FOLDERS]
+    return [{"name": fitted[name], "description": _describe(fitted[name], sections[name]["titles"])}
+            for name in ordered]
 
 
 def merge(own: list[tuple[str, Optional[str]]], folder_list: list[dict[str, str]], hidden: list[str],

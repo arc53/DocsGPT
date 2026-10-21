@@ -28,6 +28,9 @@ export type TopicDraft = {
 /** The description's counter shows past this share of its budget. */
 const COUNTER_FROM = 0.8;
 
+/** Length in code points, as the server counts a name. */
+const chars = (text: string) => Array.from(text).length;
+
 type TopicModalProps = {
   /** The owner's topic being edited; left out to add one or edit a folder. */
   item?: TopicDraft;
@@ -35,7 +38,10 @@ type TopicModalProps = {
   folder?: TopicFolder;
   /** The other topics' and shown folders' names, for the duplicate check. */
   others: string[];
-  /** The server allows topics that can overlap (its limit is above 0). */
+  /**
+   * The server allows topics that can overlap (its limit is above 0). At 0
+   * the switch still shows for a topic that overlaps, to turn it off.
+   */
   overlapAllowed: boolean;
   /** No more topics that don't overlap fit, this one aside. */
   onePickFull: boolean;
@@ -78,7 +84,13 @@ export default function TopicModal({
 
   useEffect(() => {
     if (!open) return;
-    setName(item?.name ?? folder?.name ?? '');
+    // A name past the limit (a long source's) starts cut to fit; typing can't
+    // pass `maxLength`, but a value set here could.
+    setName(
+      Array.from(item?.name ?? folder?.name ?? '')
+        .slice(0, TOPIC_NAME_MAX)
+        .join(''),
+    );
     setDescription(item?.description ?? folder?.description ?? '');
     // A new topic overlaps only when the other kind is full.
     setOverlap(item?.overlap ?? (onePickFull && !overlapFull));
@@ -91,11 +103,15 @@ export default function TopicModal({
   const trimmedDescription = description.trim();
   const nameError = !trimmedName
     ? t('agents.form.analytics.errors.nameRequired')
-    : nameTaken(trimmedName, [RESERVED_TOPIC_NAME])
-      ? t('agents.form.analytics.errors.topicNameReserved')
-      : nameTaken(trimmedName, others)
-        ? t('agents.form.analytics.errors.topicNameTaken')
-        : null;
+    : chars(trimmedName) > TOPIC_NAME_MAX
+      ? t('agents.form.analytics.errors.topicNameTooLong', {
+          max: formatCount(TOPIC_NAME_MAX),
+        })
+      : nameTaken(trimmedName, [RESERVED_TOPIC_NAME])
+        ? t('agents.form.analytics.errors.topicNameReserved')
+        : nameTaken(trimmedName, others)
+          ? t('agents.form.analytics.errors.topicNameTaken')
+          : null;
   const max = descriptionMax(overlap);
   const used = units(trimmedDescription);
   const descriptionError =
@@ -111,7 +127,9 @@ export default function TopicModal({
   const locked = overlap ? onePickFull : overlapFull;
   const lockedHint = overlap
     ? t(k('onePickFull'), { max: formatCount(maxTopics) })
-    : t(k('overlapFull'), { max: formatCount(maxOverlapping) });
+    : maxOverlapping === 0
+      ? t(k('overlapOff'))
+      : t(k('overlapFull'), { max: formatCount(maxOverlapping) });
   const kindChanged = item !== undefined && item.overlap !== overlap;
 
   const submit = () => {
@@ -192,7 +210,7 @@ export default function TopicModal({
             onChange={(event) => setDescription(event.target.value)}
           />
         </FormField>
-        {overlapAllowed && (
+        {(overlapAllowed || item?.overlap) && (
           <SettingRow
             label={t(k('overlap'))}
             description={locked ? lockedHint : t(k('overlapDescription'))}

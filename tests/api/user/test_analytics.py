@@ -1868,6 +1868,29 @@ class TestAgentTopics:
             {"label": f"tag:{_TAG}", "name": "Pricing question", "overlap": True},
         ]}
 
+    def test_a_long_named_source_lists_a_label_the_logs_filter_takes(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        repo = SourcesRepository(pg_conn)
+        flat = repo.create("Q3-2025 Vendor Due Diligence Questionnaire - Halvorsen Logistics (final, signed).pdf",
+                           user_id="owner", directory_structure={"questionnaire.pdf": {"token_count": 900}})
+        docs = repo.create("Docs", user_id="owner", directory_structure={"guides": {"setup.md": {"token_count": 9}}})
+        agent = AgentsRepository(pg_conn).create("owner", "a", "published", key="key-long",
+                                                 source_id=str(docs["id"]), extra_source_ids=[str(flat["id"])])
+        agent_id = str(agent["id"])
+        listed = self._get(app, pg_conn, "owner", agent_id).json["topics"]
+        label = next(topic["label"] for topic in listed if topic["name"].startswith("q3-2025"))
+        name = label.removeprefix("topic:")
+        assert len(name) <= 60
+        cid, first, second = _labelled_conversation(pg_conn, "owner", agent_id=agent_id,
+                                                    topics={name: 0.8, "guides": 0.2})
+        for message in (first, second):
+            _chat_log(pg_conn, "owner", message, cid, agent_id)
+        response = _post_logs(app, pg_conn, "owner", {"api_key_id": agent_id, "label": label})
+        assert response.status_code == 200
+        assert {row["message_id"] for row in response.json["logs"]} == {first, second}
+
     def test_needs_the_agents_logs(self, app, pg_conn):
         from docsgpt.storage.db.repositories.agents import AgentsRepository
 

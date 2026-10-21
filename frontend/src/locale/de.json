@@ -3028,6 +3028,7 @@
           "overlapDescription": "Wird an jedem ganzen Gespräch geprüft, daher können mehrere zutreffen: etwa für einen Fehlerbericht oder eine Preisfrage quer durch die Doku.",
           "onePickFull": "Mehr als {{max}} Themen ohne Überschneidung gehen nicht, daher kann sich dieses überschneiden.",
           "overlapFull": "Mehr als {{max}} Themen mit Überschneidung gehen nicht, daher kann sich dieses nicht überschneiden.",
+          "overlapOff": "Dieser Server prüft keine Themen mit Überschneidung mehr, daher kann sich dieses nicht überschneiden.",
           "reachOnePick": "Ordnet neue Fragen zu; frühere behalten ihr Thema.",
           "reachOverlap": "Wird auch an aktuellen Gesprächen geprüft.",
           "kindChangeToOverlap": "Diese Änderung setzt seine Zahlen zurück: Es hat Fragen zugeordnet und wird jetzt an Gesprächen geprüft.",
@@ -3035,6 +3036,7 @@
         },
         "errors": {
           "nameRequired": "Gib einen Namen ein.",
+          "topicNameTooLong": "Zu lang. Kürze ihn auf {{max}} Zeichen.",
           "topicNameTaken": "Ein anderes Thema hat schon diesen Namen.",
           "topicNameReserved": "Dieser Name ist für Fragen reserviert, die zu keinem Thema passen.",
           "topicDescriptionTooLong": "Zu lang. Kürze sie auf {{max}} (chinesische, japanische und koreanische Zeichen zählen dreifach)."
@@ -3058,7 +3060,10 @@
           "show": "Einblenden",
           "cut": "Diese kleineren Ordner passen nicht mehr, ihre Fragen landen unter Keines dieser Themen: {{names}}",
           "single": "Ein einzelnes Thema sortiert nichts. Füge ein weiteres hinzu.",
-          "full": "Dieser Agent hat die maximale Zahl an Themen: {{topics}}, die sich nicht überschneiden, und {{overlapping}}, die es können."
+          "full": "Dieser Agent hat die maximale Zahl an Themen: {{topics}}, die sich nicht überschneiden, und {{overlapping}}, die es können.",
+          "overOnePick": "Dieser Server erlaubt jetzt {{max}} Themen ohne Überschneidung, weniger als dieser Agent hat. Nur die ersten {{max}} ordnen Fragen zu. Entferne welche, um andere hinzuzufügen.",
+          "overOverlapping": "Dieser Server erlaubt jetzt {{max}} Themen mit Überschneidung, weniger als dieser Agent hat. Nur die ersten {{max}} werden geprüft. Entferne welche, um andere hinzuzufügen.",
+          "overlapOff": "Dieser Server prüft keine Themen mit Überschneidung mehr, daher werden diese nicht geprüft. Bearbeite eines, damit es stattdessen Fragen zuordnet, oder entferne es."
         },
         "empty": {
           "title": "Noch keine Themen",

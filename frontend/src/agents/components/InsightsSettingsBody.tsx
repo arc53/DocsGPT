@@ -187,6 +187,10 @@ export default function InsightsSettingsBody({
 
   const onePickFull = onePickOwn.length >= maxTopics;
   const overlapFull = overlapping.length >= maxOverlapping;
+  // A limit lowered after the topics were added: they stay, the server uses
+  // the first ones up to it, and saves go through while the count doesn't grow.
+  const overOnePick = onePickOwn.length > maxTopics;
+  const overOverlapping = overlapping.length > maxOverlapping;
   const canAdd = !disabled && !(onePickFull && overlapFull);
 
   const hide = (folder: TopicFolder) =>
@@ -363,7 +367,29 @@ export default function InsightsSettingsBody({
   // One topic on its own is a choice that says nothing; the server asks none.
   if (onePickRows.length === 1 && !unsaved && !unlisted)
     note('single', k('notes.single'));
-  if (!disabled && onePickFull && overlapFull)
+  if (overOnePick)
+    note(
+      'overOnePick',
+      t('agents.form.analytics.notes.overOnePick', {
+        max: formatCount(maxTopics),
+      }),
+    );
+  if (overOverlapping)
+    note(
+      'overOverlapping',
+      maxOverlapping === 0
+        ? k('notes.overlapOff')
+        : t('agents.form.analytics.notes.overOverlapping', {
+            max: formatCount(maxOverlapping),
+          }),
+    );
+  if (
+    !disabled &&
+    onePickFull &&
+    overlapFull &&
+    !overOnePick &&
+    !overOverlapping
+  )
     note(
       'full',
       t('agents.form.analytics.notes.full', {
