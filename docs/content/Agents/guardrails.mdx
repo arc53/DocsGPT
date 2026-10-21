@@ -339,7 +339,7 @@ Writes are validated **strictly**. The request is rejected with HTTP 400 and the
 - the same `(check, stage)` pair appears twice, or there are more than 50 controls;
 - `mode`, `timeout_ms` or `block_message` is out of bounds.
 
-Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
+Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. A save that sends the guardrails back exactly as stored, such as a change to the agent's insights settings, keeps them as they are without validating them again, so such a control neither blocks the save nor is lost: it runs again once its check is allowed. Leaving it out of a save removes it, and counts as a policy change. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
 
 ### What a blocked turn looks like to a client
 
