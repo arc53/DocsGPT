@@ -1,4 +1,3 @@
-import isEqual from 'lodash/isEqual';
 import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
@@ -88,7 +87,7 @@ import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AnalyticsSection from './components/AnalyticsSection';
-import { configToSave } from './analyticsConfig';
+import { configToSave, sameAgent } from './analyticsConfig';
 import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
@@ -1196,7 +1195,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       : '';
 
     const isChanged =
-      !isEqual(agent, initialAgentRef.current) ||
+      !sameAgent(agent, initialAgentRef.current) ||
       imageFile !== null ||
       jsonSchemaText !== initialJsonSchemaText ||
       takeovers.length > 0;

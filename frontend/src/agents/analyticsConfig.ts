@@ -4,6 +4,8 @@
  * never comes back as a 400 naming a list index, and which source folders
  * the topic question offers.
  */
+import isEqual from 'lodash/isEqual';
+
 import type {
   AgentConfig,
   AnalyticsConfig,
@@ -57,6 +59,26 @@ export function analyticsOf(value?: AnalyticsConfig | null): AnalyticsConfig {
         ? value.digest
         : DEFAULT_ANALYTICS.digest,
   };
+}
+
+/**
+ * Whether two agents are the same as the form saves them: a missing insights
+ * block reads as the defaults, as `analyticsOf` reads it, so switching
+ * insights off and on again on an agent saved before them leaves nothing to
+ * save.
+ */
+export function sameAgent<T extends { config?: AgentConfig }>(
+  a: T,
+  b: T,
+): boolean {
+  const read = (agent: T) => ({
+    ...agent,
+    config: {
+      ...(agent.config ?? {}),
+      analytics: analyticsOf(agent.config?.analytics),
+    },
+  });
+  return isEqual(read(a), read(b));
 }
 
 /**

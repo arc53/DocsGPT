@@ -425,6 +425,19 @@ describe('InsightsSettingsBody', () => {
       expect(latest!.topics[0].name).toHaveLength(60);
     });
 
+    it('takes 60 characters outside the BMP, as the server counts them', async () => {
+      // `maxlength` counts UTF-16 units, so it would stop 60 emoji at 30;
+      // the limit is checked in code points instead.
+      await render();
+      await act(async () => button(`${K}.addTopic`)!.click());
+      expect(dialog()!.querySelector('input')!.hasAttribute('maxlength')).toBe(
+        false,
+      );
+      await fill({ name: '📦'.repeat(60) });
+      await submit();
+      expect(Array.from(latest!.topics[0].name)).toHaveLength(60);
+    });
+
     it('has no overlap switch when the server allows none', async () => {
       await render({ maxOverlapping: 0 });
       await act(async () => button(`${K}.addTopic`)!.click());

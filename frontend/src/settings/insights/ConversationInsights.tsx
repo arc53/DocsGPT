@@ -264,6 +264,7 @@ export default function ConversationInsights({
           hasTopics={
             Boolean(agentId) && (data.totals.topic_effective?.n ?? 0) > 0
           }
+          labelled={data.coverage.labelled_turns}
         />
       )}
     </>

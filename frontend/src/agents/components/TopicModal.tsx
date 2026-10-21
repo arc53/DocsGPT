@@ -84,8 +84,9 @@ export default function TopicModal({
 
   useEffect(() => {
     if (!open) return;
-    // A name past the limit (a long source's) starts cut to fit; typing can't
-    // pass `maxLength`, but a value set here could.
+    // A name past the limit (a long source's) starts cut to fit. Typing past
+    // it shows the error instead: `maxLength` would count UTF-16 units, not
+    // the code points the server counts, and stop emoji at half the limit.
     setName(
       Array.from(item?.name ?? folder?.name ?? '')
         .slice(0, TOPIC_NAME_MAX)
@@ -178,7 +179,6 @@ export default function TopicModal({
         >
           <Input
             value={name}
-            maxLength={TOPIC_NAME_MAX}
             placeholder={t(k('namePlaceholder'))}
             onChange={(event) => setName(event.target.value)}
           />

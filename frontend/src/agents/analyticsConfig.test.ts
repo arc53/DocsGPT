@@ -7,13 +7,14 @@ import {
   DEFAULT_ANALYTICS,
   descriptionMax,
   isDefaultAnalytics,
+  sameAgent,
   nameTaken,
   newTopicId,
   units,
   visibleFolders,
   withAnalytics,
 } from './analyticsConfig';
-import type { AnalyticsConfig, AnalyticsTopic } from './types';
+import type { AgentConfig, AnalyticsConfig, AnalyticsTopic } from './types';
 
 const topic = (
   name: string,
@@ -159,6 +160,41 @@ describe('configToSave', () => {
     expect(configToSave({ api_write_allowlist: [] })).toEqual({
       api_write_allowlist: [],
     });
+  });
+});
+
+describe('sameAgent', () => {
+  const agent: { name: string; config?: AgentConfig } = {
+    name: 'Docs bot',
+    config: { api_write_allowlist: [] },
+  };
+
+  it('reads a missing insights block as the defaults', () => {
+    // An agent saved before insights: switching them off and on again leaves
+    // nothing to save.
+    expect(
+      sameAgent(
+        { ...agent, config: { ...agent.config, analytics: DEFAULT_ANALYTICS } },
+        agent,
+      ),
+    ).toBe(true);
+    expect(
+      sameAgent(
+        { name: 'Docs bot', config: { analytics: DEFAULT_ANALYTICS } },
+        { name: 'Docs bot' },
+      ),
+    ).toBe(true);
+  });
+
+  it('tells a changed insights block or anything else apart', () => {
+    const off = { ...DEFAULT_ANALYTICS, enabled: false };
+    expect(
+      sameAgent(
+        { ...agent, config: { ...agent.config, analytics: off } },
+        agent,
+      ),
+    ).toBe(false);
+    expect(sameAgent({ ...agent, name: 'Renamed' }, agent)).toBe(false);
   });
 });
 

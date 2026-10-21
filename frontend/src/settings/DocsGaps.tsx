@@ -84,7 +84,45 @@ type DocsGapsProps = {
   filterOption: string;
   /** The agent has topics, so grouping by topic is offered. */
   hasTopics: boolean;
+  /**
+   * Answers analyzed in the window, as the insights above last read them: a
+   * change while the sweep labels reloads the report in place.
+   */
+  labelled?: number;
 };
+
+type DocsGapsBody = {
+  success?: boolean;
+  enabled?: boolean;
+  rows?: DocsGapRow[];
+  previous_labelled?: number;
+};
+
+async function fetchDocsGaps(
+  agentId: string | undefined,
+  filterOption: string,
+  groupBy: DocsGapsGroup,
+  token: string | null,
+) {
+  const response = await userService.getDocsGaps(
+    {
+      api_key_id: agentId,
+      filter_option: filterOption,
+      group_by: groupBy,
+      limit: LIMIT,
+    },
+    token,
+  );
+  if (!response.ok) throw new Error('docs gaps');
+  const body: DocsGapsBody = await response.json();
+  if (!body?.success) throw new Error('docs gaps');
+  return {
+    status: 'ready' as const,
+    enabled: body.enabled !== false,
+    rows: body.rows ?? [],
+    previousLabelled: (body.previous_labelled ?? 0) > 0,
+  };
+}
 
 /**
  * Questions the docs could not answer, grouped by the closest retrieved page,
@@ -98,6 +136,7 @@ export default function DocsGaps({
   agentName,
   filterOption,
   hasTopics,
+  labelled,
 }: DocsGapsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -116,43 +155,22 @@ export default function DocsGaps({
   const [reloadKey, setReloadKey] = useState(0);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const requestId = useRef(0);
+  // The `labelled` count the rows on screen were asked at, and the current
+  // one for the load below, which a new count alone doesn't start.
+  const loadedAt = useRef(labelled);
+  const labelledRef = useRef(labelled);
+  labelledRef.current = labelled;
   const sectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const id = ++requestId.current;
+    loadedAt.current = labelledRef.current;
     setState((prev) => ({ ...prev, status: 'loading', rows: [] }));
     setOpenIndex(null);
-    userService
-      .getDocsGaps(
-        {
-          api_key_id: agentId,
-          filter_option: filterOption,
-          group_by: groupBy,
-          limit: LIMIT,
-        },
-        token,
-      )
-      .then((response) => {
-        if (!response.ok) throw new Error('docs gaps');
-        return response.json();
+    fetchDocsGaps(agentId, filterOption, groupBy, token)
+      .then((next) => {
+        if (id === requestId.current) setState(next);
       })
-      .then(
-        (body: {
-          success?: boolean;
-          enabled?: boolean;
-          rows?: DocsGapRow[];
-          previous_labelled?: number;
-        }) => {
-          if (id !== requestId.current) return;
-          if (!body?.success) throw new Error('docs gaps');
-          setState({
-            status: 'ready',
-            enabled: body.enabled !== false,
-            rows: body.rows ?? [],
-            previousLabelled: (body.previous_labelled ?? 0) > 0,
-          });
-        },
-      )
       .catch(() => {
         if (id === requestId.current)
           setState({
@@ -163,6 +181,23 @@ export default function DocsGaps({
           });
       });
   }, [agentId, filterOption, groupBy, token, reloadKey]);
+
+  // More answers analyzed since the rows were asked: ask again, keeping the
+  // rows on screen until the answer lands. Not while a group is open, so its
+  // panel doesn't change under the reader; closing it catches up.
+  const ready = state.status === 'ready';
+  useEffect(() => {
+    if (labelled === loadedAt.current || !ready || openIndex !== null) return;
+    const id = ++requestId.current;
+    loadedAt.current = labelled;
+    fetchDocsGaps(agentId, filterOption, groupBy, token)
+      .then((next) => {
+        if (id === requestId.current) setState(next);
+      })
+      .catch(() => {
+        // Keep the rows on screen; the next change asks again.
+      });
+  }, [labelled, ready, openIndex, agentId, filterOption, groupBy, token]);
 
   // The weekly notification links here (`#docs-gaps`): once the report has
   // loaded, bring it into view, then drop the hash. The report unmounts while

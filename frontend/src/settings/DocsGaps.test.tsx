@@ -377,6 +377,27 @@ describe('DocsGaps', () => {
     );
   });
 
+  it('reloads in place as more answers are analyzed, not while a group is open', async () => {
+    // The insights above poll while the sweep labels; a report loaded early
+    // must not stay at what was labelled then.
+    respond({ rows: [] });
+    await render({ labelled: 3 });
+    expect(getDocsGaps).toHaveBeenCalledTimes(1);
+    respond({ rows: [row()] });
+    await render({ labelled: 3 });
+    expect(getDocsGaps).toHaveBeenCalledTimes(1);
+    await render({ labelled: 9 });
+    expect(getDocsGaps).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('Installing on Docker');
+    // An open group stays as it is until it is closed.
+    const opener = container.querySelector<HTMLElement>('tbody tr')!;
+    await act(async () => opener.click());
+    respond({ rows: [row({ name: 'Upgrading' })] });
+    await render({ labelled: 12 });
+    expect(getDocsGaps).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="docs-gaps"]')).not.toBeNull();
+  });
+
   it('shows the load error with Retry, and nothing while the agent has it off', async () => {
     getDocsGaps.mockResolvedValue({
       ok: false,
