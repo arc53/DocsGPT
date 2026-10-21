@@ -11,6 +11,8 @@ const size = (['small', 'medium', 'large'] as const).find(
   (option) => option === params.get('size'),
 );
 const apiKey = params.get('apiKey') ?? undefined;
+// `?persist=0` keeps nothing between reloads.
+const persistConversations = params.get('persist') !== '0';
 
 const logEvent = (event: WidgetEvent) => console.info('[docsgpt]', event);
 
@@ -57,6 +59,12 @@ export const App = () => {
         >
           Fill
         </button>
+        <button type="button" onClick={() => widget.current?.newChat()}>
+          New chat
+        </button>
+        <button type="button" onClick={() => widget.current?.clearHistory()}>
+          Clear history
+        </button>
       </div>
       <DocsGPTWidget
         ref={widget}
@@ -66,6 +74,7 @@ export const App = () => {
         theme={theme}
         size={size}
         apiKey={apiKey}
+        persistConversations={persistConversations}
         onEvent={logEvent}
         suggestedQuestions={[
           'How do I run DocsGPT locally?',

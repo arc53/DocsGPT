@@ -12,6 +12,20 @@ export const zh = {
   expandChat: '展开聊天',
   collapseChat: '收起聊天',
   closeChat: '关闭聊天',
+  newChat: 'New chat', // TODO(translate)
+  chatHistory: 'Chat history', // TODO(translate)
+  historyHeading: 'History', // TODO(translate)
+  backToChat: 'Back to chat', // TODO(translate)
+  historyToday: 'Today', // TODO(translate)
+  historyYesterday: 'Yesterday', // TODO(translate)
+  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
+  historyOlder: 'Older', // TODO(translate)
+  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
+  deleteConversation: 'Delete conversation', // TODO(translate)
+  clearAll: 'Clear all', // TODO(translate)
+  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
+  clearAllConfirmButton: 'Delete all', // TODO(translate)
+  cancel: 'Cancel', // TODO(translate)
   sources: '来源',
   openSource: '打开来源 {number}',
   toolsUsed: '已使用 {tools}',
@@ -28,6 +42,7 @@ export const zh = {
   feedbackNotSaved: '保存失败',
   answerFailed: '无法生成回复',
   connectionError: '出了点问题。请检查网络连接后重试。',
+  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
   retry: '重试',
   copyError: '复制错误信息',
   scrollToLatest: '滚动到最新消息',

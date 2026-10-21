@@ -31,6 +31,19 @@ import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
 import { isTouchPrimary, isWebSource, sourceLabel } from '../utils/helper';
 import { renderAnswer } from '../utils/markdown';
+import {
+  conversationTitle,
+  createConversationStore,
+  fromStoredTurn,
+  newConversationId,
+  removeConversation,
+  removeStorage,
+  storageKey,
+  toStoredTurn,
+  upsertConversation,
+  type StoredConversation,
+  type StoredTurn,
+} from '../utils/conversationStore';
 import { I18nProvider, useMessages } from '../locale/context';
 import {
   AttachButton,
@@ -45,6 +58,8 @@ import {
   VoiceWaveform,
 } from './ComposerControls';
 import { AgentAvatar, PoweredBy } from './Branding';
+import { HistoryView } from './HistoryView';
+import { IconButton } from './IconButton';
 import {
   ArrowDown,
   Check,
@@ -56,11 +71,13 @@ import {
   ExternalLink,
   FileText,
   Globe,
+  History,
   Maximize2,
   MessageCircle,
   Minimize2,
   RotateCcw,
   SendArrow,
+  SquarePen,
   ThumbsDown,
   ThumbsUp,
   X,
@@ -111,6 +128,14 @@ const formatList = (items: string[], locale: string) => {
   }
   return items.join(', ');
 };
+
+// Layout timing in the browser, without React's warning on the server.
+const useClientLayoutEffect =
+  typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
+
+/** What decides whether a stored conversation changed. */
+const savedSignature = (turns: StoredTurn[], conversationId: string | null) =>
+  JSON.stringify([conversationId, turns]);
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -370,33 +395,6 @@ const FloatingButton = styled.button<{ $bg?: string; $hidden: boolean }>`
     animation: none;
   }
 `;
-// ghost-muted icon-sm: 32px, rounded-md, accent hover.
-const IconButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: ${radii.md};
-  background-color: transparent;
-  color: ${(props) => props.theme.mutedForeground};
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-
-  &:hover {
-    background-color: ${(props) => props.theme.accent};
-    color: ${(props) => props.theme.foreground};
-  }
-
-  ${focusRing}
-`;
-
 const ExpandButton = styled(IconButton)`
   @media only screen and (max-width: 768px) {
     display: none;
@@ -422,12 +420,25 @@ const ContentWrapper = styled.div`
   flex: 1;
 `;
 
-const HeaderActions = styled.div`
+const HeaderActions = styled.div<{ $compact?: boolean }>`
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
   margin: -4px -8px 0 0;
+  /* The small panel can't spare four buttons' width from the title: two per
+     row, the later ones (Close) on top. */
+  ${(props) =>
+    props.$compact &&
+    css`
+      flex-wrap: wrap-reverse;
+      justify-content: flex-end;
+      max-width: 68px;
+
+      @media only screen and (max-width: 768px) {
+        max-width: none;
+      }
+    `}
 `;
 
 const Title = styled.h3`
@@ -448,13 +459,13 @@ const Description = styled.p`
   overflow-wrap: break-word;
 `;
 
-const Conversation = styled.div`
+const Conversation = styled.div<{ $hidden?: boolean }>`
   height: 100%;
   box-sizing: border-box;
   padding: 16px;
   text-align: left;
   overflow-y: auto;
-  display: flex;
+  display: ${(props) => (props.$hidden ? 'none' : 'flex')};
   flex-direction: column;
   gap: 20px;
   scrollbar-width: thin;
@@ -1711,6 +1722,8 @@ const Launcher = (
       },
       on: emitter.on,
       off: emitter.off,
+      newChat: () => coreRef.current?.newChat(),
+      clearHistory: () => coreRef.current?.clearHistory(),
     }),
     [emitter, setOpenState],
   );
@@ -1764,6 +1777,8 @@ export const WidgetCore = ({
   showMicButton = false,
   poweredBy = true,
   passthrough,
+  persistConversations = true,
+  ephemeral = false,
   onEvent,
   coreRef,
 }: WidgetCoreProps) => {
@@ -1820,6 +1835,186 @@ export const WidgetCore = ({
     conversationIdRef.current = id;
     setConversationId(id);
   };
+
+  // Saved conversations. React state stays the truth while mounted; storage
+  // is written when a question goes out, an answer settles or feedback
+  // changes, never per streamed token.
+  const persistence = ephemeral
+    ? 'none'
+    : persistConversations === false
+      ? 'off'
+      : 'on';
+  const storeKey = storageKey(apiHost, apiKey);
+  const store = React.useMemo(
+    () => (persistence === 'on' ? createConversationStore(storeKey) : null),
+    [persistence, storeKey],
+  );
+  const [storedConversations, setStoredConversations] = React.useState<
+    StoredConversation[]
+  >([]);
+  const [view, setView] = React.useState<'chat' | 'history'>('chat');
+  // The local id of the conversation on screen; null until its first save.
+  const [activeId, setActiveIdState] = React.useState<string | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  const setActiveId = (id: string | null) => {
+    activeIdRef.current = id;
+    setActiveIdState(id);
+  };
+  const savedSignatureRef = useRef('');
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  // Bumped to land a restored conversation on its latest turn.
+  const [restoreTick, setRestoreTick] = React.useState(0);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  /** Writes the chat on screen, unless it's unchanged since the last write. */
+  const saveConversation = (
+    turns: Query[],
+    streaming: boolean,
+    serverId: string | null,
+  ) => {
+    if (!store || turns.length === 0) return;
+    const stored = turns.map((query, index) =>
+      toStoredTurn(query, streaming && index === turns.length - 1),
+    );
+    const signature = savedSignature(stored, serverId);
+    if (signature === savedSignatureRef.current) return;
+    savedSignatureRef.current = signature;
+    const id = activeIdRef.current ?? newConversationId();
+    setActiveId(id);
+    const next = store.update((state) =>
+      upsertConversation(state, {
+        id,
+        conversationId: serverId,
+        title: conversationTitle(turns[0].prompt),
+        updatedAt: Date.now(),
+        turns: stored,
+      }),
+    );
+    setStoredConversations(next.conversations);
+  };
+
+  const feedbackSignature = queries.map((query) => query.feedback ?? '').join();
+  React.useEffect(() => {
+    saveConversation(queries, status === 'loading', conversationId);
+  }, [queries.length, status, conversationId, feedbackSignature]);
+
+  React.useEffect(() => {
+    if (persistence === 'off') removeStorage(storeKey);
+  }, [persistence, storeKey]);
+
+  const resetChat = () => {
+    setQueries([]);
+    updateConversationId(null);
+    setActiveId(null);
+    savedSignatureRef.current = '';
+    setOpenSources(new Set());
+    setHighlightedSource(null);
+    setCopiedIndex(null);
+    setFeedbackErrorIndex(null);
+    setIsPinnedToLatest(true);
+  };
+
+  /** Puts a stored conversation on screen, ready to continue. */
+  const showConversation = (conversation: StoredConversation) => {
+    const restored = conversation.turns.map((turn) =>
+      fromStoredTurn(turn, t('interrupted')),
+    );
+    resetChat();
+    setActiveId(conversation.id);
+    // Seen as saved, so viewing it doesn't move it to the top of History.
+    savedSignatureRef.current = savedSignature(
+      restored.map((query) => toStoredTurn(query)),
+      conversation.conversationId,
+    );
+    setQueries(restored);
+    updateConversationId(conversation.conversationId);
+    setRestoreTick((tick) => tick + 1);
+    emit({ type: 'conversation_restored' });
+  };
+
+  // An answer still streaming is stopped (reported once, as answer_stopped)
+  // and saved as far as it got.
+  const leaveConversation = () => {
+    if (statusRef.current !== 'loading') return;
+    stopGenerating();
+    saveConversation(queriesRef.current, false, conversationIdRef.current);
+  };
+
+  const startNewChat = () => {
+    setView('chat');
+    if (queriesRef.current.length === 0) return;
+    leaveConversation();
+    emit({ type: 'new_chat' });
+    resetChat();
+    if (store)
+      setStoredConversations(
+        store.update((state) => ({ ...state, activeId: null })).conversations,
+      );
+  };
+
+  const clearHistory = () => {
+    if (statusRef.current === 'loading') stopGenerating();
+    if (store) store.clear();
+    else if (persistence === 'off') removeStorage(storeKey);
+    setStoredConversations([]);
+    emit({ type: 'history_cleared' });
+    if (queriesRef.current.length > 0) emit({ type: 'new_chat' });
+    resetChat();
+  };
+
+  const selectConversation = (conversation: StoredConversation) => {
+    if (conversation.id !== activeIdRef.current) {
+      leaveConversation();
+      showConversation(conversation);
+      if (store)
+        setStoredConversations(
+          store.update((state) => ({ ...state, activeId: conversation.id }))
+            .conversations,
+        );
+    }
+    setView('chat');
+    if (!touchPrimary) focusPrompt();
+  };
+
+  const deleteConversation = (id: string) => {
+    if (!store) return;
+    setStoredConversations(
+      store.update((state) => removeConversation(state, id)).conversations,
+    );
+    if (id !== activeIdRef.current) return;
+    if (statusRef.current === 'loading') stopGenerating();
+    emit({ type: 'new_chat' });
+    resetChat();
+  };
+
+  const closeHistory = () => {
+    setView('chat');
+    window.requestAnimationFrame(() =>
+      (historyButtonRef.current ?? promptRef.current)?.focus(),
+    );
+  };
+
+  // Restore the conversation that was on screen, and follow other tabs'
+  // changes to the list without switching the one shown here.
+  React.useEffect(() => {
+    if (!store) {
+      setStoredConversations([]);
+      return;
+    }
+    const state = store.read();
+    setStoredConversations(state.conversations);
+    const active = state.conversations.find(
+      (item) => item.id === state.activeId,
+    );
+    if (active && active.id !== activeIdRef.current) showConversation(active);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== store.key) return;
+      setStoredConversations(store.read().conversations);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [store]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
@@ -1914,6 +2109,8 @@ export const WidgetCore = ({
       // Wait for animations before unmounting
       const timeout = setTimeout(() => {
         setMounted(false);
+        // Reopening shows the chat, not the list left open.
+        setView('chat');
       }, 250);
       return () => clearTimeout(timeout);
     }
@@ -1937,6 +2134,15 @@ export const WidgetCore = ({
 
   // Explicit request: land immediately rather than easing.
   const jumpToLatest = () => scrollToLatest(false);
+
+  // A restored conversation, a reopened panel or the way back from History
+  // lands on the latest turn, before paint.
+  useClientLayoutEffect(() => {
+    const el = conversationRef.current;
+    if (!el || view !== 'chat') return;
+    el.scrollTop = el.scrollHeight;
+    setIsPinnedToLatest(true);
+  }, [restoreTick, view, mounted]);
 
   const handleConversationScroll = () => {
     const el = conversationRef.current;
@@ -2407,6 +2613,7 @@ export const WidgetCore = ({
   // ask() goes through the suggested questions' gate: blocked, it only fills
   // the composer, so the question is never lost.
   const runPendingAction = (action: (typeof pendingActionsRef.current)[0]) => {
+    setView('chat');
     if (action.type === 'focus') {
       focusPrompt();
       return;
@@ -2421,9 +2628,15 @@ export const WidgetCore = ({
     focusPrompt();
   };
 
+  // The controller outlives renders; these read the latest state.
+  const historyActionsRef = useRef({ startNewChat, clearHistory });
+  historyActionsRef.current = { startNewChat, clearHistory };
+
   React.useImperativeHandle(
     coreRef,
     (): WidgetCoreHandle => ({
+      newChat: () => historyActionsRef.current.startNewChat(),
+      clearHistory: () => historyActionsRef.current.clearHistory(),
       ask: (question, send) => {
         pendingActionsRef.current.push({ type: 'ask', question, send });
         setPendingTick((tick) => tick + 1);
@@ -2615,6 +2828,12 @@ export const WidgetCore = ({
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            // Escape leaves History from anywhere in the panel, the header too.
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape' || view !== 'history') return;
+              event.preventDefault();
+              closeHistory();
+            }}
           >
             <Header>
               <AgentAvatar src={avatar} size={40} fallback="person" />
@@ -2624,7 +2843,35 @@ export const WidgetCore = ({
                   {description ?? t('headerDescription')}
                 </Description>
               </ContentWrapper>
-              <HeaderActions>
+              <HeaderActions $compact={size === 'small'}>
+                {queries.length > 0 && (
+                  <IconButton
+                    type="button"
+                    onClick={() => {
+                      startNewChat();
+                      if (!touchPrimary) focusPrompt();
+                    }}
+                    aria-label={t('newChat')}
+                    title={t('newChat')}
+                  >
+                    <SquarePen size={16} />
+                  </IconButton>
+                )}
+                {store &&
+                  (storedConversations.length > 0 || view === 'history') && (
+                    <IconButton
+                      ref={historyButtonRef}
+                      type="button"
+                      onClick={() =>
+                        view === 'history' ? closeHistory() : setView('history')
+                      }
+                      aria-label={t('chatHistory')}
+                      title={t('chatHistory')}
+                      aria-pressed={view === 'history'}
+                    >
+                      <History size={16} />
+                    </IconButton>
+                  )}
                 {canExpand && (
                   <ExpandButton
                     type="button"
@@ -2632,6 +2879,7 @@ export const WidgetCore = ({
                     aria-label={
                       isExpanded ? t('collapseChat') : t('expandChat')
                     }
+                    title={isExpanded ? t('collapseChat') : t('expandChat')}
                     aria-expanded={isExpanded}
                   >
                     {isExpanded ? (
@@ -2645,15 +2893,28 @@ export const WidgetCore = ({
                   type="button"
                   onClick={handleClose}
                   aria-label={t('closeChat')}
+                  title={t('closeChat')}
                 >
                   <X size={16} />
                 </IconButton>
               </HeaderActions>
             </Header>
             <ConversationArea>
+              {view === 'history' && store && (
+                <HistoryView
+                  conversations={storedConversations}
+                  activeId={activeId}
+                  onSelect={selectConversation}
+                  onDelete={deleteConversation}
+                  onClearAll={clearHistory}
+                  onBack={closeHistory}
+                />
+              )}
+              {/* Kept mounted under History, so its answers aren't rebuilt. */}
               <Conversation
                 ref={conversationRef}
                 onScroll={handleConversationScroll}
+                $hidden={view === 'history'}
               >
                 {queries.length > 0 ? (
                   queries?.map((query, index) => {
@@ -2857,7 +3118,7 @@ export const WidgetCore = ({
                   />
                 )}
               </Conversation>
-              {!isPinnedToLatest && queries.length > 0 && (
+              {view === 'chat' && !isPinnedToLatest && queries.length > 0 && (
                 <ScrollToLatest
                   type="button"
                   onClick={jumpToLatest}
@@ -2867,7 +3128,11 @@ export const WidgetCore = ({
                 </ScrollToLatest>
               )}
             </ConversationArea>
-            <Composer $noCredit={poweredBy === false}>
+            {/* Hidden, not unmounted, so the draft and its files survive. */}
+            <Composer
+              $noCredit={poweredBy === false}
+              hidden={view === 'history'}
+            >
               {attachmentsEnabled && (
                 <HiddenFileInput
                   ref={attachmentInputRef}

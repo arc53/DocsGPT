@@ -51,7 +51,7 @@ export interface Query {
   feedback?: FEEDBACK;
   error?: string;
   /** Set when `error` is the widget's own message, shown in the current locale. */
-  errorKey?: 'connectionError';
+  errorKey?: 'connectionError' | 'interrupted';
   sources?: { title: string; text: string; source: string }[];
   conversationId?: string | null;
   title?: string | null;
@@ -146,6 +146,12 @@ export interface WidgetProps extends LocaleProps {
    */
   passthrough?: Record<string, PassthroughValue>;
   /**
+   * Keep the visitor's conversations in this browser's `localStorage`, so a
+   * reload continues the chat and earlier ones are listed under History.
+   * `false` stores nothing and removes what an earlier visit stored.
+   */
+  persistConversations?: boolean;
+  /**
    * Called with every event the chat fires, e.g. to send them to analytics.
    * `ref` and the controller's `on()` reach the same events.
    */
@@ -156,6 +162,8 @@ export interface WidgetProps extends LocaleProps {
 export interface WidgetCoreHandle {
   ask: (question: string, send: boolean) => void;
   focus: () => void;
+  newChat: () => void;
+  clearHistory: () => void;
 }
 
 export interface WidgetCoreProps extends WidgetProps {
@@ -164,6 +172,8 @@ export interface WidgetCoreProps extends WidgetProps {
   isOpen: boolean;
   prefilledQuery?: string;
   coreRef?: React.Ref<WidgetCoreHandle>;
+  /** A one-off chat: stored conversations are neither read, written nor removed. */
+  ephemeral?: boolean;
 }
 
 /**
@@ -256,6 +266,12 @@ export type WidgetEvent = { conversationId: string | null } & (
       /** The code block's language, `text` when it has none. */
       language: string;
     }
+  /** The chat was emptied; `conversationId` is the conversation left behind. */
+  | { type: 'new_chat' }
+  /** A saved conversation was shown again, on load or from History. */
+  | { type: 'conversation_restored' }
+  /** Everything stored for this agent was removed. */
+  | { type: 'history_cleared' }
 );
 
 export type WidgetEventType = WidgetEvent['type'];
@@ -301,6 +317,13 @@ export interface WidgetController {
     type: T,
     handler: WidgetEventHandler<T>,
   ) => void;
+  /** Empties the chat, stopping an answer that is still streaming. */
+  newChat: () => void;
+  /**
+   * Removes every conversation stored for this agent in this browser, then
+   * starts a new chat. Call it on logout where computers are shared.
+   */
+  clearHistory: () => void;
 }
 
 /** What `renderDocsGPTWidget` returns. */

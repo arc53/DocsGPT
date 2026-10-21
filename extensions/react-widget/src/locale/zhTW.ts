@@ -12,6 +12,20 @@ export const zhTW = {
   expandChat: '展開對話',
   collapseChat: '收合對話',
   closeChat: '關閉對話',
+  newChat: 'New chat', // TODO(translate)
+  chatHistory: 'Chat history', // TODO(translate)
+  historyHeading: 'History', // TODO(translate)
+  backToChat: 'Back to chat', // TODO(translate)
+  historyToday: 'Today', // TODO(translate)
+  historyYesterday: 'Yesterday', // TODO(translate)
+  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
+  historyOlder: 'Older', // TODO(translate)
+  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
+  deleteConversation: 'Delete conversation', // TODO(translate)
+  clearAll: 'Clear all', // TODO(translate)
+  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
+  clearAllConfirmButton: 'Delete all', // TODO(translate)
+  cancel: 'Cancel', // TODO(translate)
   sources: '來源',
   openSource: '開啟來源 {number}',
   toolsUsed: '已使用 {tools}',
@@ -28,6 +42,7 @@ export const zhTW = {
   feedbackNotSaved: '無法儲存',
   answerFailed: '無法產生回覆',
   connectionError: '發生錯誤。請檢查網路連線後再試一次。',
+  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
   retry: '重試',
   copyError: '複製錯誤訊息',
   scrollToLatest: '捲動至最新訊息',

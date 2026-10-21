@@ -1073,6 +1073,7 @@ const SearchBarInner = ({
           showMicButton={showMicButton}
           passthrough={passthrough}
           onEvent={onEvent}
+          ephemeral
         />
       </Main>
     </ThemeProvider>

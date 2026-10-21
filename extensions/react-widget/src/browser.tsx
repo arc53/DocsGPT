@@ -75,6 +75,8 @@ if (typeof window !== 'undefined') {
         expectedOpen = true;
         run((target) => target.ask(question, options));
       },
+      newChat: () => run((target) => target.newChat()),
+      clearHistory: () => run((target) => target.clearHistory()),
       on: emitter.on,
       off: emitter.off,
       destroy: () => {

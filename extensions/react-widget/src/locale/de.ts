@@ -12,6 +12,20 @@ export const de = {
   expandChat: 'Chat vergrößern',
   collapseChat: 'Chat verkleinern',
   closeChat: 'Chat schließen',
+  newChat: 'New chat', // TODO(translate)
+  chatHistory: 'Chat history', // TODO(translate)
+  historyHeading: 'History', // TODO(translate)
+  backToChat: 'Back to chat', // TODO(translate)
+  historyToday: 'Today', // TODO(translate)
+  historyYesterday: 'Yesterday', // TODO(translate)
+  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
+  historyOlder: 'Older', // TODO(translate)
+  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
+  deleteConversation: 'Delete conversation', // TODO(translate)
+  clearAll: 'Clear all', // TODO(translate)
+  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
+  clearAllConfirmButton: 'Delete all', // TODO(translate)
+  cancel: 'Cancel', // TODO(translate)
   sources: 'Quellen',
   openSource: 'Quelle {number} öffnen',
   toolsUsed: '{tools} verwendet',
@@ -29,6 +43,7 @@ export const de = {
   answerFailed: 'Antwort konnte nicht erstellt werden',
   connectionError:
     'Etwas ist schiefgelaufen. Prüfe deine Verbindung und versuche es erneut.',
+  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
   retry: 'Erneut versuchen',
   copyError: 'Fehlermeldung kopieren',
   scrollToLatest: 'Zur neuesten Nachricht scrollen',

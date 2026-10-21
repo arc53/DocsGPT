@@ -12,6 +12,20 @@ export const fr = {
   expandChat: 'Agrandir la conversation',
   collapseChat: 'Réduire la conversation',
   closeChat: 'Fermer la conversation',
+  newChat: 'New chat', // TODO(translate)
+  chatHistory: 'Chat history', // TODO(translate)
+  historyHeading: 'History', // TODO(translate)
+  backToChat: 'Back to chat', // TODO(translate)
+  historyToday: 'Today', // TODO(translate)
+  historyYesterday: 'Yesterday', // TODO(translate)
+  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
+  historyOlder: 'Older', // TODO(translate)
+  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
+  deleteConversation: 'Delete conversation', // TODO(translate)
+  clearAll: 'Clear all', // TODO(translate)
+  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
+  clearAllConfirmButton: 'Delete all', // TODO(translate)
+  cancel: 'Cancel', // TODO(translate)
   sources: 'Sources',
   openSource: 'Ouvrir la source {number}',
   toolsUsed: 'Outils utilisés : {tools}',
@@ -29,6 +43,7 @@ export const fr = {
   answerFailed: 'Impossible de générer une réponse',
   connectionError:
     'Une erreur s’est produite. Vérifiez votre connexion et réessayez.',
+  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
   retry: 'Réessayer',
   copyError: 'Copier l’erreur',
   scrollToLatest: 'Aller au dernier message',

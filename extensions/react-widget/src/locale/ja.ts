@@ -12,6 +12,20 @@ export const ja = {
   expandChat: 'チャットを拡大',
   collapseChat: 'チャットを縮小',
   closeChat: 'チャットを閉じる',
+  newChat: 'New chat', // TODO(translate)
+  chatHistory: 'Chat history', // TODO(translate)
+  historyHeading: 'History', // TODO(translate)
+  backToChat: 'Back to chat', // TODO(translate)
+  historyToday: 'Today', // TODO(translate)
+  historyYesterday: 'Yesterday', // TODO(translate)
+  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
+  historyOlder: 'Older', // TODO(translate)
+  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
+  deleteConversation: 'Delete conversation', // TODO(translate)
+  clearAll: 'Clear all', // TODO(translate)
+  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
+  clearAllConfirmButton: 'Delete all', // TODO(translate)
+  cancel: 'Cancel', // TODO(translate)
   sources: 'ソース',
   openSource: 'ソース {number} を開く',
   toolsUsed: '{tools} を使用しました',
@@ -29,6 +43,7 @@ export const ja = {
   answerFailed: '応答を生成できませんでした',
   connectionError:
     '問題が発生しました。接続を確認して、もう一度お試しください。',
+  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
   retry: '再試行',
   copyError: 'エラーをコピー',
   scrollToLatest: '最新のメッセージへスクロール',

@@ -27,6 +27,35 @@ export const en = {
   collapseChat: 'Collapse chat',
   // Header icon button: close the chat panel.
   closeChat: 'Close chat',
+  // Header icon button (screen readers and tooltip): clear the chat and start over.
+  newChat: 'New chat',
+  // Header icon button (screen readers and tooltip): show the saved conversations.
+  chatHistory: 'Chat history',
+
+  // Heading of the saved-conversations view, which replaces the messages. One short word.
+  historyHeading: 'History',
+  // Icon button beside that heading (screen readers and tooltip): leave the list.
+  backToChat: 'Back to chat',
+  // Group label in the list: conversations from today.
+  historyToday: 'Today',
+  // Group label in the list: conversations from yesterday.
+  historyYesterday: 'Yesterday',
+  // Group label in the list: conversations from the week before yesterday.
+  historyPrevious7Days: 'Previous 7 days',
+  // Group label in the list: anything older than a week.
+  historyOlder: 'Older',
+  // Shown instead of the list when nothing is saved. One calm sentence.
+  historyEmpty: 'Your conversations will appear here.',
+  // Trash icon button on a row (screen readers and tooltip); the row's title is read after it.
+  deleteConversation: 'Delete conversation',
+  // Small text button beside the heading: delete every saved conversation. About 12 characters.
+  clearAll: 'Clear all',
+  // Confirmation question that replaces the list's top row after "Clear all".
+  clearAllConfirm: 'Delete all saved conversations?',
+  // Destructive button in that confirmation. About 12 characters.
+  clearAllConfirmButton: 'Delete all',
+  // Button in that confirmation that keeps the conversations. About 12 characters.
+  cancel: 'Cancel',
 
   // Toggle above an answer that lists its sources, followed by a count. One word.
   sources: 'Sources',
@@ -62,6 +91,8 @@ export const en = {
   answerFailed: "Couldn't generate a response",
   // Alert text when the request itself failed (network or server down).
   connectionError: 'Something went wrong. Check your connection and try again.',
+  // Alert text for an answer that was still arriving when the page was closed or reloaded.
+  interrupted: 'This answer was interrupted before it finished.',
   // Icon button under a failed answer (screen readers): ask again.
   retry: 'Retry',
   // Icon button under a failed answer (screen readers): copy the error text.

@@ -12,6 +12,20 @@ export const ru = {
   expandChat: 'Развернуть чат',
   collapseChat: 'Свернуть чат',
   closeChat: 'Закрыть чат',
+  newChat: 'New chat', // TODO(translate)
+  chatHistory: 'Chat history', // TODO(translate)
+  historyHeading: 'History', // TODO(translate)
+  backToChat: 'Back to chat', // TODO(translate)
+  historyToday: 'Today', // TODO(translate)
+  historyYesterday: 'Yesterday', // TODO(translate)
+  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
+  historyOlder: 'Older', // TODO(translate)
+  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
+  deleteConversation: 'Delete conversation', // TODO(translate)
+  clearAll: 'Clear all', // TODO(translate)
+  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
+  clearAllConfirmButton: 'Delete all', // TODO(translate)
+  cancel: 'Cancel', // TODO(translate)
   sources: 'Источники',
   openSource: 'Открыть источник {number}',
   toolsUsed: 'Использовано: {tools}',
@@ -29,6 +43,7 @@ export const ru = {
   answerFailed: 'Не удалось сгенерировать ответ',
   connectionError:
     'Что-то пошло не так. Проверьте подключение и попробуйте ещё раз.',
+  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
   retry: 'Повторить',
   copyError: 'Копировать ошибку',
   scrollToLatest: 'К последнему сообщению',

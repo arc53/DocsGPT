@@ -186,6 +186,7 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
 | **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT" in the widget's language, `false` hides it, and an object replaces it. See [Branding](#branding). |
 | **`passthrough`**  | `Record<string, string \| number \| boolean \| null>` | _unset_                 | Values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}`, and they appear on each turn in Logs. See [Passing who is asking](#passing-who-is-asking). |
+| **`persistConversations`** | `boolean` | `true`                                             | Keeps the visitor's conversations in the browser's `localStorage`, so a reload continues the chat and earlier chats are listed under History. `false` stores nothing and removes what an earlier visit stored. See [Conversation history](#conversation-history). |
 | **`locale`**       | `string`         | `"auto"`                                                    | Language of the widget's own text. `"auto"` follows the visitor's browser; or set one of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. See [Languages](#languages). |
 | **`translations`** | `Partial<Messages>` | _unset_                                                  | Replaces individual strings of the widget's own text, by key, e.g. `{ composerPlaceholder: 'Ask our team' }`. See [Languages](#languages). |
 | **`onEvent`**      | `(event: WidgetEvent) => void` | _unset_                                       | Called with every event the chat fires, such as a question sent or an answer finished. See [JavaScript API](#javascript-api). |
@@ -290,6 +291,43 @@ The list shows every question you pass, each on its own row, so keep it to a han
 
 ---
 
+## Conversation history
+
+The widget remembers the visitor's conversations in their browser. After a reload, or on the next page of your site, the chat opens where they left off, and a follow-up question continues the same conversation on the server. An answer that was still arriving when the page closed comes back as an error with a **Retry** button.
+
+Two buttons in the header manage this:
+
+- **New chat** empties the chat and shows the welcome card again. It appears once the chat has a message, and it stops an answer that is still arriving.
+- **Chat history** lists the saved conversations, grouped as Today, Yesterday, Previous 7 days and Older. Selecting one shows it again; each row has a delete button, and **Clear all** deletes every saved conversation after asking to confirm. It appears once something is saved.
+
+What is stored, per agent, in the browser's `localStorage`:
+
+- Each conversation's questions, answers, sources, likes and dislikes, and error messages.
+- The names and server ids of attached files, but not their contents.
+- The conversation's id on the server, and when it was started and last updated.
+
+The entry's key is `docsgpt-widget:v1:` followed by a short hash of `apiHost` and `apiKey`, so two agents on one site keep separate lists and the key itself is not written to storage. The widget keeps the 30 most recent conversations, in about 1 MB, and drops the oldest first. Where storage is blocked or full, as in some private windows, the chat still works and keeps its history only until the page closes. Other tabs on the same site see the updated list, but a tab never switches the conversation it is showing.
+
+To keep nothing in the browser, turn it off. This also removes what an earlier visit stored:
+
+```jsx
+<DocsGPTWidget apiKey="your-agent-api-key" persistConversations={false} />
+```
+
+On computers that several people share, such as an internal site behind a login, clear the history when someone signs out. `clearHistory()` removes everything stored for this agent and starts a new chat:
+
+```js
+const widget = renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
+
+function onLogout() {
+  widget.clearHistory();
+}
+```
+
+The chat that the search bar opens with "Ask the AI" is a one-off: it isn't saved and doesn't show History.
+
+---
+
 ## Languages
 
 The widget shows its own text in the visitor's language: the input placeholder, button labels, status lines such as "Thinking…", error messages and the credit line. It ships with English (`en`), Spanish (`es`), French (`fr`), Japanese (`ja`), Simplified Chinese (`zh`), Traditional Chinese (`zh-TW`), Russian (`ru`) and German (`de`).
@@ -374,6 +412,8 @@ You can call the controller as soon as you have it, before the chat has opened o
 | `isOpen()` | `true` while the panel is open. |
 | `focus()` | Opens the panel and puts the cursor in the message field. |
 | `ask(question, { send })` | Opens the panel and sends `question`. With `{ send: false }` it only puts the question in the message field, for the visitor to edit and send. If the visitor couldn't send right now either, because an answer is still streaming, a file is uploading or the microphone is on, the question goes into the message field instead of being sent. |
+| `newChat()` | Empties the chat, like the **New chat** button. An answer that is still arriving is stopped first. |
+| `clearHistory()` | Removes every conversation stored for this agent in this browser, then starts a new chat. Use it on logout where computers are shared. See [Conversation history](#conversation-history). |
 | `on(type, handler)` | Calls `handler` for each event of that type. Returns a function that removes it. Adding the same handler twice for one type keeps it once. |
 | `off(type, handler)` | Removes a handler added with `on`. |
 | `destroy()` | Script tag only: removes the widget from the page and drops its handlers. Calling it again does nothing. In React, stop rendering the component instead. |
@@ -391,6 +431,9 @@ Every event has a `type` and a `conversationId`: the server's id for the convers
 | `source_clicked` | `title`, `url` | The visitor opened a web source from the Sources list. |
 | `answer_copied` | `question`, `answer` | The visitor copied an answer. |
 | `code_copied` | `question`, `code`, `language` | The visitor copied a code block from an answer. |
+| `new_chat` | | The chat was emptied: by **New chat**, `newChat()`, or deleting or clearing the conversation on screen. `conversationId` is the conversation that was left. A stopped answer fires `answer_stopped` first. |
+| `conversation_restored` | | A saved conversation is on screen again, on page load or picked from History. `conversationId` is that conversation's, or `null` if the server never assigned one. |
+| `history_cleared` | | **Clear all** or `clearHistory()` removed the stored conversations. If the chat had messages, `new_chat` follows. |
 
 Each question ends in exactly one of `answer_completed`, `answer_failed` or `answer_stopped`, unless the widget is removed mid-answer. An error thrown by your handler is logged to the console and doesn't affect the widget or other handlers. In TypeScript, `WidgetController`, `WidgetInstance` (the script tag's controller, with `destroy`), `WidgetEvent` and the related types are exported from the package.
 
