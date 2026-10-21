@@ -1671,9 +1671,9 @@ def reencrypt_saved_secrets(batch_size: int = 500) -> dict:
     holds API keys and MCP per-tool credentials, and ``encrypted_action_secrets``,
     the API Tool's header and query secrets) and custom-model API keys
     (``user_custom_models.api_key_encrypted``). Each blob is read with
-    ENCRYPTION_SECRET_KEY, then ENCRYPTION_SECRET_KEY_PREVIOUS; one only the
-    previous key opens is rewritten, one neither opens is left as it is.
-    Running it again changes nothing.
+    ENCRYPTION_SECRET_KEY, then ENCRYPTION_SECRET_KEY_PREVIOUS; v2 blobs only
+    the previous key opens and legacy v1 blobs are rewritten to v2, one
+    neither opens is left as it is. Running it again changes nothing.
 
     Args:
         batch_size: Rows locked and rewritten per transaction.
@@ -1685,7 +1685,7 @@ def reencrypt_saved_secrets(batch_size: int = 500) -> dict:
 
     from sqlalchemy import text
 
-    from docsgpt.security.encryption import reseal_credentials
+    from docsgpt.security.encryption import reseal_tool_credentials
 
     counts = {"rewritten": 0, "current": 0, "failed": 0}
     last_id = "00000000-0000-0000-0000-000000000000"
@@ -1709,7 +1709,7 @@ def reencrypt_saved_secrets(batch_size: int = 500) -> dict:
                     blob = config.get(key)
                     if not blob or not isinstance(blob, str):
                         continue
-                    status, resealed = reseal_credentials(blob, row.user_id)
+                    status, resealed = reseal_tool_credentials(blob, row.user_id)
                     counts[status] += 1
                     if resealed:
                         patch[key] = resealed
@@ -1735,7 +1735,7 @@ def reencrypt_saved_secrets(batch_size: int = 500) -> dict:
                 last_id = str(row.id)
                 if not row.api_key_encrypted:
                     continue
-                status, resealed = reseal_credentials(row.api_key_encrypted, row.user_id)
+                status, resealed = reseal_tool_credentials(row.api_key_encrypted, row.user_id)
                 counts[status] += 1
                 if resealed:
                     conn.execute(
