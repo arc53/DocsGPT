@@ -23,6 +23,7 @@ import {
   conversationSlice,
   fetchAnswer,
   setConversation,
+  tailInFlightMessage,
 } from './conversationSlice';
 
 vi.mock('./conversationHandlers', async (importOriginal) => ({
@@ -307,6 +308,181 @@ describe('conversation listener — conversation.continued', () => {
     store.dispatch(conversationSlice.actions.setStatus('idle'));
     await settle();
     expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe('conversation listener — a continuation starts in the open chat', () => {
+  const STARTED = (overrides: Partial<SSEEvent> = {}): SSEEvent => ({
+    id: 'evt-start-1',
+    ts: '2026-10-20T10:52:40Z',
+    type: 'message.started',
+    payload: { conversation_id: 'conv-1', message_id: 'msg-2' },
+    ...overrides,
+  });
+
+  const LOADED = {
+    queries: [
+      {
+        prompt: 'make the file',
+        response: 'working on it',
+        status: 'complete',
+        message_id: 'msg-1',
+      },
+      {
+        prompt: '[Background event - not a user message] job finished',
+        response:
+          'Response was terminated prior to completion, try regenerating.',
+        status: 'streaming',
+        message_id: 'msg-2',
+        metadata: {
+          wake: { source: 'job', ref_id: 'j1', dedupe_key: 'job:j1:final' },
+          continuation: true,
+        },
+      },
+    ],
+  };
+
+  const settle = async () => {
+    for (let i = 0; i < 6; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  beforeEach(() => {
+    (conversationService.getConversation as unknown as Mock).mockReset();
+    (conversationService.tailMessage as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (conversationService.getConversation as unknown as Mock).mockResolvedValue({
+      ok: true,
+      json: async () => LOADED,
+    });
+    (conversationService.tailMessage as unknown as Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        message_id: 'msg-2',
+        status: 'complete',
+        response: 'Your file is ready.',
+      }),
+    });
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: [{ id: 'conv-1', name: 'Job chat' }],
+      loading: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('loads the chat and follows the answer as it is written', async () => {
+    const store = makeStore('conv-1');
+    store.dispatch(
+      setConversation([
+        {
+          prompt: 'make the file',
+          response: 'working on it',
+          messageId: 'msg-1',
+        },
+      ]),
+    );
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    expect(conversationService.getConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'tok-1',
+    );
+    expect(conversationService.tailMessage).toHaveBeenCalledWith(
+      'msg-2',
+      'tok-1',
+    );
+    const queries = store.getState().conversation.queries;
+    expect(queries[1].response).toBe('Your file is ready.');
+  });
+
+  it('leaves an answer this tab is streaming to its own stream', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('drops the reload when the user starts an answer while it loads', async () => {
+    let release: (value: unknown) => void = () => {};
+    (conversationService.getConversation as unknown as Mock).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const store = makeStore('conv-1');
+    store.dispatch(
+      setConversation([{ prompt: 'new question', messageId: 'msg-local' }]),
+    );
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    store.dispatch(conversationSlice.actions.setStatus('loading'));
+    release({ ok: true, json: async () => LOADED });
+    await settle();
+    const state = store.getState().conversation;
+    expect(state.status).toBe('loading');
+    expect(state.queries).toHaveLength(1);
+    expect(state.queries[0].prompt).toBe('new question');
+  });
+
+  it('leaves a newer answer alone when an old tail finds its message gone', async () => {
+    (conversationService.tailMessage as unknown as Mock).mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ status: 'not found' }),
+    });
+    const store = makeStore('conv-1');
+    store.dispatch(
+      setConversation([
+        { prompt: 'woken', messageId: 'msg-2', messageStatus: 'streaming' },
+        { prompt: 'new question', messageId: 'msg-3' },
+      ]),
+    );
+    await store.dispatch(
+      tailInFlightMessage({
+        messageId: 'msg-2',
+        index: 0,
+        conversationId: 'conv-1',
+      }),
+    );
+    expect(store.getState().conversation.status).toBe('loading');
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('leaves an answer the chat already shows alone', async () => {
+    const store = makeStore('conv-1');
+    store.dispatch(
+      setConversation([{ prompt: 'q', response: 'a', messageId: 'msg-2' }]),
+    );
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('does not load a chat it is not showing', async () => {
+    const store = makeStore('conv-other');
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('reloads the chat when the answer it follows is taken back out', async () => {
+    // A continuation that ended silent (NO_REPLY) or failed deletes its row.
+    (conversationService.tailMessage as unknown as Mock).mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ status: 'not found' }),
+    });
+    const store = makeStore('conv-1');
+    store.dispatch(sseEventReceived(STARTED()));
+    await settle();
+    expect(
+      (conversationService.getConversation as unknown as Mock).mock.calls
+        .length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(store.getState().conversation.status).not.toBe('loading');
   });
 });
 

@@ -1,5 +1,6 @@
 import { envVar } from '@/env';
 import {
+  AsyncThunkPayloadCreator,
   createAsyncThunk,
   createListenerMiddleware,
   createSlice,
@@ -169,6 +170,25 @@ export function handleAbort() {
   }
 }
 
+/**
+ * A thunk that streams into the chat. It gets the stream's signal; once it
+ * settles there is no stream left for Stop to close.
+ */
+function streamed<Arg, Result, Api>(
+  body: (arg: Arg, api: Api, signal: AbortSignal) => Promise<Result>,
+): (arg: Arg, api: Api) => Promise<Result> {
+  return async (arg, api) => {
+    if (abortController) abortController.abort();
+    const controller = new AbortController();
+    abortController = controller;
+    try {
+      return await body(arg, api, controller.signal);
+    } finally {
+      if (abortController === controller) abortController = null;
+    }
+  };
+}
+
 /** How long the chat's Stop waits for the server to take it before closing. */
 export const STOP_REQUEST_TIMEOUT_MS = 1000;
 
@@ -217,7 +237,17 @@ async function stop(
       ),
     ]);
   }
-  if (abortController === controller) handleAbort();
+  if (abortController === controller) {
+    handleAbort();
+    // A closed stream never gets its terminal event, which is what ends
+    // loading. An answer picked back up is left to its tail, which ends it
+    // once the server has saved the stop.
+    if (
+      controller &&
+      (getState() as RootState).conversation.conversationId === conversationId
+    )
+      dispatch(conversationSlice.actions.setStatus('idle'));
+  }
   // The user may have opened another chat while the request was out: mark
   // only the answer that was stopped, in the chat it belongs to.
   const after = (getState() as RootState).conversation;
@@ -259,6 +289,9 @@ export type LoadConversationArgs = {
   // so its messages and agent card change in one render. Without it the
   // selected agent is left alone.
   resolveAgent?: (data: ConversationAgentFields) => Promise<Agent | null>;
+  // A refresh nobody asked for (an event): dropped when this tab starts
+  // streaming an answer before it lands, which it would otherwise overwrite.
+  unlessStreaming?: boolean;
 };
 
 let loadSeq = 0;
@@ -267,7 +300,7 @@ export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
 >('loadConversation', async (args, { dispatch, getState }) => {
-  const { id, force, resolveAgent } = args;
+  const { id, force, resolveAgent, unlessStreaming } = args;
   const seq = ++loadSeq;
   const state = getState() as RootState;
   const token = state.preference.token;
@@ -295,6 +328,12 @@ export const loadConversation = createAsyncThunk<
   if (seq !== loadSeq) {
     return { data: null, stale: true };
   }
+  if (
+    unlessStreaming &&
+    (getState() as RootState).conversation.status === 'loading'
+  ) {
+    return { data: null, stale: true };
+  }
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
   if (agent !== undefined) dispatch(setSelectedAgent(agent));
@@ -320,14 +359,26 @@ export const loadConversation = createAsyncThunk<
   return { data, stale: false };
 });
 
-export const fetchAnswer = createAsyncThunk<
-  Answer,
-  { question: string; indx?: number; attachmentIds?: string[] }
->('fetchAnswer', async (arg, { dispatch, getState }) => {
+type FetchAnswerArgs = {
+  question: string;
+  indx?: number;
+  attachmentIds?: string[];
+};
+
+export const fetchAnswer = createAsyncThunk<Answer, FetchAnswerArgs>(
+  'fetchAnswer',
+  streamed(answerQuestion),
+);
+
+async function answerQuestion(
+  arg: FetchAnswerArgs,
+  {
+    dispatch,
+    getState,
+  }: Parameters<AsyncThunkPayloadCreator<Answer, FetchAnswerArgs>>[1],
+  signal: AbortSignal,
+): Promise<Answer> {
   const { question, indx } = arg;
-  if (abortController) abortController.abort();
-  abortController = new AbortController();
-  const { signal } = abortController;
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
@@ -749,7 +800,7 @@ export const fetchAnswer = createAsyncThunk<
     sources: [],
     tool_calls: [],
   };
-});
+}
 
 // Tail-polls the placeholder until terminal status, navigation away,
 // or hard timeout. First poll fires immediately so rows that are
@@ -775,6 +826,9 @@ export function isWaitingOnUser(toolCalls: unknown): boolean {
   );
 }
 
+/** Messages whose tail found them deleted and reloaded their chat for it. */
+const reloadedForGoneMessage = new Set<string>();
+
 export const tailInFlightMessage = createAsyncThunk<
   void,
   { messageId: string; index: number; conversationId: string }
@@ -798,9 +852,33 @@ export const tailInFlightMessage = createAsyncThunk<
         continue;
       }
 
-      // 404 → row deleted (e.g. conversation wiped); bail quietly.
+      // 404 → row deleted: the conversation was wiped, or a continuation
+      // ended silent or failed and took its message back out. Reload the
+      // chat if it is still open, so the message does not linger.
       if (resp.status === 404) {
+        // A newer answer started in this chat meanwhile: it owns the status now.
+        const now = (getState() as RootState).conversation;
+        if (
+          now.conversationId !== conversationId ||
+          now.queries[now.queries.length - 1]?.messageId !== messageId
+        )
+          return;
         dispatch(conversationSlice.actions.setStatus('idle'));
+        // Once per message: a reload that still lists it must not tail it again and again.
+        if (
+          !reloadedForGoneMessage.has(messageId) &&
+          (getState() as RootState).conversation.conversationId ===
+            conversationId
+        ) {
+          reloadedForGoneMessage.add(messageId);
+          dispatch(
+            loadConversation({
+              id: conversationId,
+              force: true,
+              unlessStreaming: true,
+            }),
+          );
+        }
         return;
       }
 
@@ -837,21 +915,28 @@ export const tailInFlightMessage = createAsyncThunk<
   },
 );
 
-export const submitToolActions = createAsyncThunk<
-  void,
-  {
-    toolActions: {
-      call_id: string;
-      decision?: 'approved' | 'denied';
-      comment?: string;
-      result?: Record<string, any>;
-    }[];
-  }
->('submitToolActions', async ({ toolActions }, { dispatch, getState }) => {
-  if (abortController) abortController.abort();
-  abortController = new AbortController();
-  const { signal } = abortController;
+type SubmitToolActionsArgs = {
+  toolActions: {
+    call_id: string;
+    decision?: 'approved' | 'denied';
+    comment?: string;
+    result?: Record<string, any>;
+  }[];
+};
 
+export const submitToolActions = createAsyncThunk<void, SubmitToolActionsArgs>(
+  'submitToolActions',
+  streamed(sendToolActions),
+);
+
+async function sendToolActions(
+  { toolActions }: SubmitToolActionsArgs,
+  {
+    dispatch,
+    getState,
+  }: Parameters<AsyncThunkPayloadCreator<void, SubmitToolActionsArgs>>[1],
+  signal: AbortSignal,
+): Promise<void> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
   if (!conversationId) {
@@ -969,7 +1054,7 @@ export const submitToolActions = createAsyncThunk<
     },
     idempotencyKey,
   );
-});
+}
 
 export const conversationSlice = createSlice({
   name: 'conversation',
@@ -1591,6 +1676,28 @@ conversationListenerMiddleware.startListening({
     const conversationId = String(payload.conversation_id ?? '');
     if (!conversationId) return;
     if (envelope.type === 'message.started') {
+      // An answer this tab is not streaming started in the chat it shows: a
+      // continuation after a background job, or a turn from another tab.
+      // Loading the chat picks its in-flight message up and tails it, so it
+      // streams here and can be stopped. Never mid-stream (see above).
+      const state = listenerApi.getState() as RootState;
+      const messageId = String(payload.message_id ?? '');
+      if (
+        messageId &&
+        state.conversation.conversationId === conversationId &&
+        state.conversation.status !== 'loading' &&
+        !state.conversation.queries.some(
+          (query) => query.messageId === messageId,
+        )
+      ) {
+        listenerApi.dispatch(
+          loadConversation({
+            id: conversationId,
+            force: true,
+            unlessStreaming: true,
+          }),
+        );
+      }
       await listNewConversation(
         conversationId,
         listenerApi.getState,

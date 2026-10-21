@@ -773,6 +773,10 @@ class ArtifactGeneratorTool(Tool):
         spec, valid = self._validate(kind, kwargs.get("spec"))
         if valid is not None:
             return valid
+        if not (isinstance(title, str) and title.strip()):
+            # Some models put the title only inside the spec; it still names the file.
+            spec_title = spec.get("title")
+            title = spec_title if isinstance(spec_title, str) and spec_title.strip() else None
 
         rendered = self._render(kind, spec)
         if rendered.get("error"):
