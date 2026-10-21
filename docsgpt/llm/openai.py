@@ -1037,10 +1037,13 @@ class OpenAILLM(BaseLLM):
         )
         logging.debug("OpenAI request completed")
         self._record_chat_usage(getattr(response, "usage", None))
+        if not response.choices:
+            raise ValueError("LLM returned empty or filtered response")
         if tools:
             return response.choices[0]
-        else:
-            return response.choices[0].message.content
+        if response.choices[0].message is None:
+            raise ValueError("LLM returned empty or filtered response")
+        return response.choices[0].message.content
 
     def _raw_gen_stream(
         self,
