@@ -134,7 +134,8 @@ def windows(text: str, max_windows: Optional[int] = None) -> tuple[list[str], in
 
     The order is the last window, the first, then the rest from the end backwards. Windows are counted in model
     tokens; before the tokenizer has loaded they are counted in characters, one per token at worst, which gives
-    more and shorter windows and still reads every part of the text.
+    more and shorter windows and still reads every part of the text. Either way the windows hold the text as
+    ``tokens.clean`` leaves it: a lone surrogate, which the tokenizer refuses, is read as U+FFFD.
 
     Args:
         text: The text to score.
@@ -145,6 +146,7 @@ def windows(text: str, max_windows: Optional[int] = None) -> tuple[list[str], in
     """
     if max_windows is None:
         max_windows = settings.GUARDRAILS_INJECTION_MAX_WINDOWS
+    text = tokens.clean(text)
     ids = tokens.encode(text)
     units: Any = ids if ids is not None else text
     starts = [0]
@@ -263,7 +265,12 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
     plan = []  # (text index, window) in the order the windows are sent
     totals: List[Optional[int]] = [None] * n
     for i in todo:
-        pieces, totals[i] = windows(texts[i], cap)
+        try:
+            pieces, totals[i] = windows(texts[i], cap)
+        except Exception:  # noqa: BLE001 - a text the tokenizer fails on is that text's failure, not the call's
+            logger.warning("Could not window a text for injection scoring", exc_info=True)
+            reasons[i] = "bad_item"
+            continue
         plan.extend((i, piece) for piece in pieces)
     answers, why, ms = _ask(plan, feature, budget)
     model = next((d.model for d in answers if d is not None), None)
@@ -272,6 +279,8 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
         sent.setdefault(owner, []).append(k)
     rows = []
     for i in todo:
+        if i not in sent:  # never windowed
+            continue
         mine = sent[i]
         answered = [answers[k] for k in mine if answers[k] is not None]
         reasons[i] = next((why[k] for k in mine if why[k]), None)

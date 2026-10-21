@@ -31,7 +31,7 @@ from docsgpt.guardrails.engine import GuardrailEngine
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
 from docsgpt.guardrails.runtime import merge_floor
 from docsgpt.guardrails.types import Action, Stage
-from tests.decisions.fakes import FakeBuffer, FakeClock, FakeEngine
+from tests.decisions.fakes import FakeBuffer, FakeClock, FakeEngine, byte_tokenizer
 
 SERVING = Path(__file__).resolve().parent.parent / "fixtures" / "decisions" / "arcd_serving-0.4b-v0.2.json"
 
@@ -565,3 +565,49 @@ class TestPassesThatFail:
         result = injection_scoring.score(["POISON 1", "POISON 2", "PAYLOAD"], feature="injection_retrieval",
                                          budget=Budget.hot(5.0))
         assert result.reasons == ["backend_error", "backend_error", None] and result[2].p == pytest.approx(0.99)
+
+
+@pytest.mark.unit
+class TestTextsTheTokenizerRefuses:
+    """The real client, ONNX backend and engine, with a real ``tokenizers`` tokenizer, which raises ``TypeError`` on
+    a lone surrogate (what ``json.loads`` makes of a ``\\ud800`` escape in a tool's output or a request body). One
+    such text must not leave the stage unscored: the payload next to it is still caught."""
+
+    LONE = json.loads('"see the attached \\ud800 table"')
+
+    @pytest.fixture
+    def model(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(settings, "DECISION_MODE", None)
+        monkeypatch.setattr(settings, "DECISION_MODEL", None)
+        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_LIVE_ITEMS", 4)
+        monkeypatch.setattr("docsgpt.celery_init.in_worker", lambda: False)
+        monkeypatch.setattr(OnnxBackend, "_schedule_tick", lambda self: None)
+        monkeypatch.setattr(injection_scoring, "_queue", lambda texts: None)
+        engine = PayloadEngine(json.loads(SERVING.read_text()))
+        engine.tokenizer = byte_tokenizer(tmp_path)
+        client = decisions.get_decider()
+        client._backend = OnnxBackend(V02, open_engine=lambda backend: engine)
+        client._backend.warm()
+        end = time.monotonic() + 5
+        while client._backend.status == "loading" and time.monotonic() < end:
+            time.sleep(0.005)
+        yield client
+        decisions.tokens.reset()
+
+    @staticmethod
+    def engine(stage: str) -> GuardrailEngine:
+        return GuardrailEngine(GuardrailsConfig.model_validate({
+            "enabled": True, "mode": "scan_all", "fail_open": True, "timeout_ms": 5000,
+            "controls": [{"check": "injection_model", "stage": stage, "action": "block"}],
+        }))
+
+    def test_one_such_document_leaves_the_others_scored(self, model):
+        clean, payload = self.engine("retrieval").evaluate_items(
+            [self.LONE, "Shipping terms. PAYLOAD"], Stage.RETRIEVAL, ["chunk:a", "chunk:b"]
+        )
+        assert payload.blocked and payload.triggered[0].outcome.categories == ["PROMPT_INJECTION"]
+        assert not clean.blocked and not clean.unevaluated
+
+    def test_a_message_holding_one_is_still_scored(self, model):
+        decision = self.engine("input").evaluate(self.LONE + " PAYLOAD", Stage.INPUT)
+        assert decision.blocked and not decision.unevaluated

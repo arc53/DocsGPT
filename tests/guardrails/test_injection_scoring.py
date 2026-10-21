@@ -6,6 +6,7 @@ The decision model is ``FakeDecider`` and the cache a dict: no model, no databas
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 
 import pytest
@@ -16,6 +17,7 @@ from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.guardrails import injection_scoring as scoring
 from docsgpt.retriever.labels import chunk_key
+from tests.decisions.fakes import byte_tokenizer
 
 #: The cache read as it ships, before the suite-wide fixture replaces it with an empty one.
 REAL_LOAD = scoring._load
@@ -343,3 +345,42 @@ def test_scores_report_what_the_windows_read(cache, monkeypatch):
     monkeypatch.setattr(fake, "decide_batch", marked)
     result = score(fake, ["text"])
     assert result[0].truncated and result.model is not None and result.totals == [1]
+
+
+#: A lone surrogate, as ``json.loads`` makes one from a ``\ud800`` escape: a tool's JSON, or a client's request body.
+LONE = json.loads('"look here \\ud800 and carry on"')
+
+
+@pytest.mark.unit
+class TestTextsTheTokenizerRefuses:
+    """The model's tokenizer raises on a lone surrogate. One such text must not leave the others unscored."""
+
+    def test_a_lone_surrogate_is_scored_as_its_repaired_text(self, cache, tmp_path):
+        fake = FakeDecider({"injection": lambda state, q: 0.99 if "PAYLOAD" in state["text"] else 0.02},
+                           tokenizer=byte_tokenizer(tmp_path))
+        result = score(fake, [LONE, "a chunk with the PAYLOAD"])
+        assert result.reasons == [None, None]
+        assert result[0].p == pytest.approx(0.02) and result[1].p == pytest.approx(0.99)
+        assert fake.calls[0].requests[0].state == {"text": "look here � and carry on"}
+
+    def test_the_cache_keys_the_text_as_it_came(self, cache, tmp_path):
+        score(FakeDecider({"injection": 0.1}, tokenizer=byte_tokenizer(tmp_path)), [LONE, "plain chunk"])
+        assert {digest for digest, _ in cache.rows} == {
+            hashlib.sha256(LONE.encode("utf-8", "surrogatepass")).hexdigest(),
+            hashlib.sha256(b"plain chunk").hexdigest(),
+        }
+
+    def test_windows_before_the_tokenizer_loads_are_repaired(self):
+        assert scoring.windows(LONE) == (["look here � and carry on"], 1)
+
+    def test_a_text_the_tokenizer_fails_on_is_a_bad_item_and_the_rest_are_scored(self, cache):
+        class Fails(CharTokenizer):
+            def encode(self, text):
+                if "BOOM" in text:
+                    raise RuntimeError("the tokenizer failed")
+                return super().encode(text)
+
+        fake = FakeDecider({"injection": 0.97}, tokenizer=Fails())
+        result = score(fake, ["BOOM", "a chunk with the PAYLOAD"])
+        assert result.reasons == ["bad_item", None] and result[0] is None and result[1].p == pytest.approx(0.97)
+        assert [r.state for r in fake.calls[0].requests] == [{"text": "a chunk with the PAYLOAD"}]
