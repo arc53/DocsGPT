@@ -200,12 +200,22 @@ far)", a panel "Not enough data yet", a tag row `—`.
   Series take colour by meaning (`success`, `warning`, `destructive`, `info`
   for Asked for details); a series that is no failure, "Said it didn't know"
   and Sentiment's Neutral, is `muted-foreground`.
-- Share lists (Request type, Why not fully answered, Tags, Topic) are
+- Share lists (Request type, Why not fully answered, Topics) are
   `ShareBars` in a `subtle lg` Card with a `SectionHeader as="h2" size="xs"` and a
   muted `text-xs` "Share of N answers" line: per row the label (`text-xs`,
   wrapping, `sm:w-40`), a stock `ui/Progress` and the whole percent, as one
   `sr-only` text run ("How-to: 38%") with the drawing `aria-hidden`. A panel
   left alone on the last row spans both columns and lays its rows in two.
+- Topics (agent pages only; each agent has its own list) always spans both
+  columns, after Why not fully answered. With both kinds it is two halves, from
+  `xl` side by side, each under a `SectionHeader as="h3" size="sm"` named as the
+  settings groups (One per question, a share of messages; Can overlap, a share
+  of conversations, with a muted "don't add up to 100%" line), each list named
+  by its heading. With one kind, its bars in two columns and no halves. An
+  overlapping topic under the sample floor reads `—`; the rows sort by share.
+  Without either kind it is left out, except for editors of an agent that asks
+  no topic question: `EmptyState sm` with Set up topics (`outline field pill`),
+  which opens the settings drawer.
 - One name per label on every surface (charts, tiles, Logs): Replies to
   answers, Docs gap, Asked again or pushed back; copy says "analyzed", never
   "labelled".
@@ -213,7 +223,7 @@ far)", a panel "Not enough data yet", a tag row `—`.
 Docs gaps (`settings/DocsGaps`) is its own section after the figures,
 `id="docs-gaps"` (the weekly summary's target, scrolled to once it has
 loaded): a `SectionHeader` whose `actions` are the Page / Source / Topic
-`ToggleGroup` (Topic only on an agent with topics; the pick kept in
+`ToggleGroup` (Topic only on an agent with topics that don't overlap; the pick kept in
 localStorage) and Export CSV (`outline field pill`, `Download` first). From `lg`
 the rows are a `Table`; below it, `filled interactive` tiles with a
 `MetaSegment` line. A row opens a `SidePanel`: the page name as its title, then
@@ -236,12 +246,14 @@ Logs label chips (`settings/LabelChips`, in the row's header) are text-only
 `Badge`s, since status and outcome badges carry no icon, coloured by meaning:
 `warning` where the answer needs attention (Docs gap, Not fully answered,
 Asked for a person), `destructive` where the user is upset (Asked again or
-pushed back, Negative sentiment, Frustrated), `neutral` for the owner's tags
-(truncating at `max-w-48`) and the "+N" for the rest (named in `sr-only`). At
+pushed back, Negative sentiment, Frustrated), `neutral` for the agent's
+topics that can overlap (truncating at `max-w-48`) and the "+N" for the rest (named in `sr-only`). At
 most three; a docs gap stands for not fully answered, frustrated for negative
 sentiment. The Logs filter selects are named (`aria-label`), `field pill` with
 a `min-w-[…]` and `SelectContent fit`; the label select is there from the first
 paint (the flag from Redux) and, on an agent, only while it collects insights.
+On an agent it ends with a Topics group: every topic, as `/api/analytics/topics`
+lists it (folders included), sorted by name and without badges.
 
 Insights settings are one body, `agents/components/InsightsSettingsBody`, in
 three hosts that each save it their own way:
@@ -263,17 +275,36 @@ has settings of its own, and then show an `info` Alert that they don't run yet.
 The body edits `value` only and renders sibling blocks for its host's
 `flex flex-col gap-5`: Collect insights (`SettingRow` and `Switch`, with Learn
 more to the docs' `#analytics-settings-for-an-agent`); then, only while it is
-on, Topics and Tags as peer `SectionHeader size="xs"` blocks over `Card
-variant="subtle" padding="none"` `ListRows`, each row's ⋯ the same `ActionMenu`
-(`Pencil` Edit, `destructive` `Trash2` Remove after a separator), both added and
-edited in one `AnalyticsItemModal`, the `count` showing the limit only once it
-is reached (DESIGN.md › Counts); then the Weekly docs-gap summary switch.
-Topics is a "Group questions by topic" switch: with source folders
-(`topicSource="sources"`) on lists them read-only with Customize (`outline sm`,
-square), which turns them into an own list with Reset to sources (`ghost sm`,
-confirming when the list differs) and Add topic (`outline sm`, `Plus`); a
-workflow has only its own list. Tags hide while the server's tag limit is 0. A
-confirm or the item modal keeps its copy while it animates closed (`useKept`).
+on, Topics; then the Weekly docs-gap summary switch.
+
+Topics is one `SectionHeader size="xs"` (the `count` is the rows shown) with
+Add topic (`outline sm`, `Plus`) over one `Card variant="subtle"
+padding="none"`:
+
+- Rows: the source folders (a `neutral` From sources `Badge` with `Folder` in
+  the title) and the owner's own topics, by name. A folder's ⋯ is Edit (it
+  becomes an own topic and the folder hides) and Hide; an own topic's is Edit
+  and Remove, after a separator, confirming only for one that can overlap,
+  whose results go with it. Each ⋯ is the same `ActionMenu`.
+- Groups: none until a topic can overlap; then One per question and Can
+  overlap, each under a `SectionHeader size="sm"` one heading level down, named
+  as the halves of the Insights Topics panel.
+- Notes under the rows, muted `text-xs` lines with a `link` `size="text"`
+  action: hidden folders (Show), folders past the limit, folders that failed
+  (Retry), one topic on its own, both limits reached (Add topic leaves), the
+  folders that come after the first save, and the folders a read-only caller
+  can't list.
+- Empty: `EmptyState sm` with `illustration="none"` in the card, its copy by
+  cause (a workflow, unsaved, no folders, every folder hidden with Show
+  folders); three skeleton rows while folders load.
+
+`TopicModal` adds and edits both kinds: name, optional description (its
+budget, and the counter past 80%, follow the kind), Can overlap other topics
+as a `SettingRow` and `Switch` (off by default, locked when the other kind is
+full, absent when the server allows none), then a muted line on what the change
+reaches, or a `warning` Alert when an edit changes the kind. Workflows pass
+`topicSource="none"` and never load folders. A confirm or the dialog keeps its
+copy while it animates closed (`useKept`).
 
 ## App chrome: the phone top bar and New Chat
 

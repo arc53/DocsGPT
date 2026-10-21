@@ -554,7 +554,8 @@ chips: durations, counts); no disable needed. HTTP method pills take their varia
 only, by meaning: `warning` where the answer needs attention (Docs gap, Not
 fully answered, Asked for a person), `destructive` where the user is upset
 (Asked again or pushed back, Negative sentiment, Frustrated), `neutral` for the
-owner's tags and the "+N" overflow (see PATTERNS.md › Monitoring pages).
+agent's topics that can overlap and the "+N" overflow (see PATTERNS.md ›
+Monitoring pages).
 
 A removable chip (a filter chip, a picked source) is `<Badge onRemove
 removeLabel>`: a named X button (12px X in a 16px round hover well, a 24px

@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
-lastUpdated: 2026-10-19
+lastUpdated: 2026-10-21
 ---
 
 import { Callout } from 'nextra/components'
@@ -236,7 +236,7 @@ Per-day call counts are in `decision_usage` under the same feature labels.
 
 ### Conversation analytics
 
-The [analytics sweep](/Models/decision-model#conversation-analytics) runs outside any request, so it leaves no execution trace. Its calls are counted in `decision_usage` under two feature labels: `analytics_turn` (answers, the replies to them and each user message) and `analytics_conversation` (goal met and the agent's tags). Each sweep logs one `analytics_sweep` line from the worker with its counts (`messages`, `conversations`, `calls`, `states`, `rows`, `errors`, `timeouts`, `truncated`), `ms`, and `stopped`: `budget` when its time ran out, `unavailable` when the model could not be reached, `timeout` when chat kept the model busy, or `null` when it finished. Sweeps that keep stopping on `timeout` mean labels lag behind the traffic.
+The [analytics sweep](/Models/decision-model#conversation-analytics) runs outside any request, so it leaves no execution trace. Its calls are counted in `decision_usage` under two feature labels: `analytics_turn` (answers, the replies to them and each user message) and `analytics_conversation` (goal met and the agent's topics that can overlap). Each sweep logs one `analytics_sweep` line from the worker with its counts (`messages`, `conversations`, `calls`, `states`, `rows`, `errors`, `timeouts`, `truncated`), `ms`, and `stopped`: `budget` when its time ran out, `unavailable` when the model could not be reached, `timeout` when chat kept the model busy, or `null` when it finished. Sweeps that keep stopping on `timeout` mean labels lag behind the traffic.
 
 ### Prompt-injection scanning
 
