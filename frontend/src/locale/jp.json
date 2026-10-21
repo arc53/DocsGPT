@@ -1571,6 +1571,7 @@
       "descriptions": {
         "google_drive": "ドキュメント、スプレッドシート、PDF をナレッジに同期します。",
         "share_point": "SharePoint サイトと OneDrive のファイルをナレッジに同期します。",
+        "mcp_canva": "Canvaデザインの操作、エクスポート、ブランドテンプレートの利用を行います。",
         "confluence": "Confluence のスペースとページをナレッジに同期します。",
         "s3": "S3 バケットのドキュメントをナレッジに同期します。",
         "reddit": "検索条件に一致する Reddit の投稿をナレッジに同期します。",

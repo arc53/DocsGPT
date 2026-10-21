@@ -1575,6 +1575,7 @@
         "share_point": "Dateien aus SharePoint-Sites und OneDrive ins Wissen synchronisieren.",
         "confluence": "Confluence-Bereiche und -Seiten ins Wissen synchronisieren.",
         "s3": "Dokumente aus einem S3-Bucket ins Wissen synchronisieren.",
+        "mcp_canva": "Arbeiten Sie mit Canva-Designs, exportieren Sie diese und nutzen Sie Marken-Vorlagen.",
         "reddit": "Reddit-Beiträge zu deinen Suchen ins Wissen synchronisieren.",
         "brave": "Web und Bilder mit der Brave Search API durchsuchen.",
         "telegram": "Nachrichten und Bilder an einen Telegram-Chat senden.",
