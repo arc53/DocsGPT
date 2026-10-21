@@ -1710,6 +1710,96 @@ class TestDocsGaps:
             assert _gaps(app, pg_conn, "owner-a", body).status_code == 400
 
 
+def _named_source(conn, owner, name):
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+    return str(SourcesRepository(conn).create(name, user_id=owner)["id"])
+
+
+def _source_page(source_id):
+    """A turn's stored sources pointing at ``source_id``, as a retriever saves them."""
+    return [{"title": "Overview", "source": "docs/overview.md", "source_id": source_id, "text": "x"}]
+
+
+def _share_with(conn, resource_type, resource_id, owner, member, level):
+    import uuid
+
+    from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+    from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+    team = str(TeamsRepository(conn).create("Acme", f"acme-{uuid.uuid4().hex[:8]}", owner)["id"])
+    TeamMembersRepository(conn).add_member(team, member)
+    TeamResourceGrantsRepository(conn).grant(team, resource_type, resource_id, owner, owner, access_level=level)
+
+
+def _gap_names(app, pg_conn, user, body=None):
+    """``(source group name, page group source line)`` of the docs gaps ``user`` reads."""
+    body = body or {}
+    by_source = _gaps(app, pg_conn, user, {**body, "group_by": "source"}).json["rows"]
+    by_page = _gaps(app, pg_conn, user, {**body, "group_by": "page"}).json["rows"]
+    assert len(by_source) == 1 and len(by_page) == 1
+    return by_source[0]["name"], by_page[0]["source"]
+
+
+class TestDocsGapsSourceNames:
+    """A docs-gap row names its source only when the reader may use that source: the ids come from the turn's
+    stored sources, which a chunk's own metadata can set, so another user's id must not read back as a name."""
+
+    def test_another_users_private_source_is_not_named(self, app, pg_conn, analytics_on):
+        private = _named_source(pg_conn, "victim-a", "Acme M&A due diligence")
+        _labelled_conversation(pg_conn, "attacker-b", sources=_source_page(private), gap={"docs missing": 0.9})
+
+        # the gap row stays, unnamed, as a deleted source's does
+        assert _gap_names(app, pg_conn, "attacker-b") == (private, None)
+
+    def test_own_source_is_named(self, app, pg_conn, analytics_on):
+        mine = _named_source(pg_conn, "u-own", "Product docs")
+        _labelled_conversation(pg_conn, "u-own", sources=_source_page(mine), gap={"docs missing": 0.9})
+
+        assert _gap_names(app, pg_conn, "u-own") == ("Product docs", "Product docs")
+
+    @pytest.mark.parametrize("level", ["viewer", "editor"])
+    def test_team_shared_source_is_named(self, app, pg_conn, analytics_on, level):
+        shared = _named_source(pg_conn, "alice", "Team handbook")
+        _share_with(pg_conn, "source", shared, "alice", "bob", level)
+        _labelled_conversation(pg_conn, "bob", sources=_source_page(shared), gap={"docs missing": 0.9})
+
+        assert _gap_names(app, pg_conn, "bob") == ("Team handbook", "Team handbook")
+
+    def test_agent_view_names_the_owners_sources_for_the_owner_and_its_editors(self, app, pg_conn, analytics_on):
+        agent = str(_analytics_agent(pg_conn, owner="owner-a")["id"])
+        _share_with(pg_conn, "agent", agent, "owner-a", "editor-e", "editor")
+        owned = _named_source(pg_conn, "owner-a", "Owner docs")
+        _labelled_conversation(pg_conn, "caller-b", agent_id=agent, sources=_source_page(owned),
+                               gap={"docs missing": 0.9})
+
+        for reader in ("owner-a", "editor-e"):
+            assert _gap_names(app, pg_conn, reader, {"api_key_id": agent}) == ("Owner docs", "Owner docs")
+
+    def test_agent_view_names_a_sponsored_source(self, app, pg_conn, analytics_on):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        # an editor's source the owner can't use, attached and sponsored by that editor
+        sponsored = _named_source(pg_conn, "editor-e", "Editor research")
+        agent = str(AgentsRepository(pg_conn).create(
+            "owner-a", "Docs bot", "published", key="key-sponsored", config={"analytics": {}},
+            extra_source_ids=[sponsored], resource_sponsors={f"source:{sponsored}": "editor-e"},
+        )["id"])
+        _labelled_conversation(pg_conn, "caller-b", agent_id=agent, sources=_source_page(sponsored),
+                               gap={"docs missing": 0.9})
+
+        assert _gap_names(app, pg_conn, "owner-a", {"api_key_id": agent}) == ("Editor research", "Editor research")
+
+    def test_agent_view_does_not_name_a_source_the_agent_cannot_reach(self, app, pg_conn, analytics_on):
+        private = _named_source(pg_conn, "victim-a", "Acme M&A due diligence")
+        agent = str(_analytics_agent(pg_conn, owner="attacker-b")["id"])
+        _labelled_conversation(pg_conn, "caller-c", agent_id=agent, sources=_source_page(private),
+                               gap={"docs missing": 0.9})
+
+        assert _gap_names(app, pg_conn, "attacker-b", {"api_key_id": agent}) == (private, None)
+
+
 def _chat_log(conn, user, message_id, conversation_id, agent_id=None):
     from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 

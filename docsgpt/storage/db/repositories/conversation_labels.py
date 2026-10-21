@@ -1135,16 +1135,35 @@ class ConversationLabelsRepository:
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
-    def source_names(self, source_ids: Iterable[str]) -> Dict[str, str]:
-        """``{id: name}`` of the given sources (UUIDs only), for the docs-gap source and page groups."""
+    def source_names(
+        self, source_ids: Iterable[str], owners: Iterable[str], shared: Iterable[str] = (),
+    ) -> Dict[str, str]:
+        """``{id: name}`` of the given sources (UUIDs only) the reader may name, for the docs-gap source and page
+        groups.
+
+        Args:
+            source_ids: The groups' source ids.
+            owners: Users whose own sources are named.
+            shared: Other source ids that are named (the caller decides who may see them).
+
+        Returns:
+            The names of the sources among ``source_ids`` owned by one of ``owners`` or listed in ``shared``.
+        """
         from docsgpt.storage.db.base_repository import looks_like_uuid
 
         ids = sorted({str(i) for i in source_ids if i and looks_like_uuid(str(i))})
-        if not ids:
+        owners = sorted({str(o) for o in owners if o})
+        if not ids or not owners:
             return {}
         result = self._conn.execute(
-            text("SELECT CAST(id AS text) AS id, name FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))"),
-            {"ids": ids},
+            text(
+                """
+                SELECT CAST(id AS text) AS id, name FROM sources
+                WHERE id = ANY(CAST(:ids AS uuid[]))
+                  AND (user_id = ANY(:owners) OR id = ANY(CAST(:shared AS uuid[])))
+                """
+            ),
+            {"ids": ids, "owners": owners, "shared": sorted({str(s) for s in shared if looks_like_uuid(str(s))})},
         )
         return {row.id: row.name for row in result.fetchall() if row.name}
 

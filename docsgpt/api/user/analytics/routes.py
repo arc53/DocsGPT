@@ -1,7 +1,7 @@
 """Analytics and reporting routes."""
 
 import datetime
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -13,12 +13,13 @@ from docsgpt.activity.now import CHAT_FRESH_SECONDS
 from docsgpt.analytics import insights, schema as analytics_schema, topics as analytics_topics
 from docsgpt.analytics.config import TOPIC_ID, TOPIC_NAME_CHARS, AnalyticsConfig
 from docsgpt.api import api
-from docsgpt.api.user.resource_access import AccessDenied, require, resolve
+from docsgpt.api.user.resource_access import AccessDenied, agent_refs, allowed_actions, require, resolve
 from docsgpt.api.user.base import (
     generate_date_range,
     generate_hourly_range,
     generate_minute_range,
 )
+from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid
 from docsgpt.storage.db.redaction import redact_secrets
@@ -884,6 +885,47 @@ def _agent_analytics(agent: Optional[dict]) -> AnalyticsConfig:
     return AnalyticsConfig.parse(((agent or {}).get("config") or {}).get("analytics"))
 
 
+def _gap_source_names(
+    conn: Connection, repo: ConversationLabelsRepository, source_ids: Iterable[Optional[str]], user: str,
+    agent: Optional[dict],
+) -> dict:
+    """Names of the docs-gap groups' sources that the reader may see.
+
+    A turn's stored ``source_id`` can come from a chunk's own metadata, so it never names a source on its own say:
+    a source is named when the reader may use it (owns it, or a team shares it), and on an agent's page also when
+    the agent's owner may use it (the page is the owner's view) or the agent references it, attached or sponsored,
+    as its edit page names them (see ``resource_access.resource_states``). Any other id stays unnamed, like a
+    deleted source's.
+
+    Args:
+        conn: Open database connection.
+        repo: The labels repository on ``conn``.
+        source_ids: The groups' source ids.
+        user: The reader.
+        agent: The agent whose page is read, already access-checked; ``None`` for the reader's own.
+
+    Returns:
+        ``{source id: name}`` of the sources the reader may see.
+    """
+    readers = {user}
+    named: set = set()
+    if agent:
+        readers.add(agent.get("user_id"))
+        named.update(rid for kind, rid in agent_refs(agent) if kind == "source")
+        named.update(
+            rid for kind, _, rid in (key.partition(":") for key in agent.get("resource_sponsors") or {})
+            if kind == "source"
+        )
+    readers.discard(None)
+    for reader in readers:
+        # ``use`` is a viewer action no switch moves, so any team grant carries it.
+        named.update(
+            rid for rid, level in visible_with_access(conn, reader, "source").items()
+            if "use" in allowed_actions("source", level, None)
+        )
+    return repo.source_names(source_ids, readers, named)
+
+
 def _label_scope(user: str, api_key: Optional[str], agent_pg_id: Optional[str]) -> Scope:
     """An agent's labels (all its traffic, as its owner sees it), else the caller's own."""
     if agent_pg_id:
@@ -1129,8 +1171,8 @@ class GetDocsGaps(Resource):
                 ) if groups else []
                 source_ids = {"source": "key", "page": "source_id"}.get(group_by)
                 names = (
-                    repo.source_names(group[source_ids] for group in groups)
-                    if source_ids else {}
+                    _gap_source_names(conn, repo, [group[source_ids] for group in groups], user, agent)
+                    if source_ids and groups else {}
                 )
 
             by_key: dict = {}
