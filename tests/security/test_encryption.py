@@ -239,3 +239,107 @@ class TestResealCredentials:
         monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
         assert encryption.reseal_credentials(blob, "user-1") == ("failed", None)
         assert encryption.reseal_credentials("not base64 !!", "user-1") == ("failed", None)
+
+
+@pytest.mark.unit
+class TestToolCredentialsEnvelope:
+    def test_new_tool_blobs_are_authenticated(self, monkeypatch):
+        """New tool/MCP/custom-model writes use v2 and fail on tampering."""
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        assert blob.startswith("v2:")
+        assert encryption.decrypt_tool_credentials(blob, "user-1") == {"api_key": "k"}
+
+        parts = blob.split(":", 2)
+        raw = bytearray(base64.b64decode(parts[2]))
+        raw[-5] ^= 1
+        tampered = f"{parts[0]}:{parts[1]}:" + base64.b64encode(bytes(raw)).decode()
+        assert encryption.decrypt_tool_credentials(tampered, "user-1") == {}
+
+    def test_tool_reader_still_opens_legacy_v1_blobs(self, monkeypatch):
+        """Rows written before the migration stay readable."""
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        legacy = encryption.encrypt_credentials({"api_key": "k"}, "user-1")
+        assert encryption.decrypt_tool_credentials(legacy, "user-1") == {"api_key": "k"}
+
+    def test_tool_reader_rejects_cross_user_replay(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        assert encryption.decrypt_tool_credentials(blob, "user-2") == {}
+
+    def test_tool_helpers_handle_empty_input(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        assert encryption.encrypt_tool_credentials({}, "user-1") == ""
+        assert encryption.decrypt_tool_credentials("", "user-1") == {}
+
+
+@pytest.mark.unit
+class TestResealToolCredentials:
+    def test_v2_blob_on_current_key_is_left_alone(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        assert encryption.reseal_tool_credentials(blob, "user-1") == ("current", None)
+
+    def test_v2_blob_on_previous_key_is_rewritten_and_survives_key_removal(self, monkeypatch):
+        """Rotate v2 tool secret fields and custom-model keys, then drop the old key."""
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "old-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        tool_blob = encryption.encrypt_tool_credentials(
+            {"get": {"headers": {"X-Key": "sk"}}}, "user-1"
+        )
+        model_blob = encryption.encrypt_tool_credentials({"api_key": "m"}, "user-1")
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+        resealed_blobs = []
+        for blob in (tool_blob, model_blob):
+            status, resealed = encryption.reseal_tool_credentials(blob, "user-1")
+            assert status == "rewritten"
+            assert resealed.startswith("v2:")
+            resealed_blobs.append(resealed)
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        assert encryption.decrypt_tool_credentials(
+            resealed_blobs[0], "user-1"
+        ) == {"get": {"headers": {"X-Key": "sk"}}}
+        assert encryption.decrypt_tool_credentials(resealed_blobs[1], "user-1") == {"api_key": "m"}
+        for resealed in resealed_blobs:
+            assert encryption.reseal_tool_credentials(resealed, "user-1") == ("current", None)
+
+    def test_legacy_v1_blob_is_rewritten_to_v2_not_v1(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "old-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        legacy = encryption.encrypt_credentials({"api_key": "k"}, "user-1")
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+        status, resealed = encryption.reseal_tool_credentials(legacy, "user-1")
+        assert status == "rewritten"
+        assert resealed.startswith("v2:")
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        assert encryption.decrypt_tool_credentials(resealed, "user-1") == {"api_key": "k"}
+        assert encryption.reseal_tool_credentials(resealed, "user-1") == ("current", None)
+
+    def test_second_run_changes_nothing(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        status, resealed = encryption.reseal_tool_credentials(blob, "user-1")
+        assert (status, resealed) == ("current", None)
+        assert encryption.reseal_tool_credentials(blob, "user-1") == ("current", None)
+
+    def test_unreadable_blob_is_reported_and_not_replaced(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+        assert encryption.reseal_tool_credentials("not base64 !!", "user-1") == ("failed", None)
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "lost-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        orphan = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+        assert encryption.reseal_tool_credentials(orphan, "user-1") == ("failed", None)

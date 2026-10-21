@@ -449,7 +449,7 @@ class TestReencrypt:
 
 
 class TestReencryptSavedSecrets:
-    """Secrets saved on tools and custom models, outside connections (v1 blobs)."""
+    """Secrets saved on tools and custom models, outside connections."""
 
     def _tool(self, conn, config, user="alice") -> str:
         return str(conn.execute(
@@ -476,7 +476,7 @@ class TestReencryptSavedSecrets:
 
     def test_rewrites_tool_and_custom_model_secrets_so_the_previous_key_can_go(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings
-        from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+        from docsgpt.security.encryption import decrypt_tool_credentials, encrypt_credentials
 
         monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "old-key")
         tool = self._tool(pg_conn, {
@@ -495,12 +495,14 @@ class TestReencryptSavedSecrets:
         monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
         config = self._config(pg_conn, tool)
         assert config["server_url"] == "https://mcp.example.com"
-        assert decrypt_credentials(config["encrypted_credentials"], "alice") == {"api_key": "t"}
-        assert decrypt_credentials(config["encrypted_action_secrets"], "alice") == {"get": {"headers": {"X": "s"}}}
+        assert config["encrypted_credentials"].startswith("v2:")
+        assert decrypt_tool_credentials(config["encrypted_credentials"], "alice") == {"api_key": "t"}
+        assert decrypt_tool_credentials(config["encrypted_action_secrets"], "alice") == {"get": {"headers": {"X": "s"}}}
         blob = pg_conn.execute(
             text("SELECT api_key_encrypted FROM user_custom_models WHERE id = CAST(:i AS uuid)"), {"i": model}
         ).scalar()
-        assert decrypt_credentials(blob, "alice") == {"api_key": "m"}
+        assert blob.startswith("v2:")
+        assert decrypt_tool_credentials(blob, "alice") == {"api_key": "m"}
 
     def test_a_second_run_changes_nothing(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings

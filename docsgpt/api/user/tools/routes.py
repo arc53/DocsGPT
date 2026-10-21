@@ -40,7 +40,7 @@ from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import action_access, owner_credential_writes
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import CredentialDecryptionError, decrypt_tool_credentials, encrypt_tool_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
@@ -108,7 +108,7 @@ def _encrypt_secret_fields(config, config_requirements, user_id):
 
     storage_config = config.copy()
     secret_values = {k: config[k] for k in secret_keys}
-    storage_config["encrypted_credentials"] = encrypt_credentials(secret_values, user_id)
+    storage_config["encrypted_credentials"] = encrypt_tool_credentials(secret_values, user_id)
     for key in secret_keys:
         storage_config.pop(key, None)
     return storage_config
@@ -159,7 +159,7 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 
     existing_secrets = {}
     if "encrypted_credentials" in existing_config:
-        existing_secrets = decrypt_credentials(
+        existing_secrets = decrypt_tool_credentials(
             existing_config["encrypted_credentials"], user_id
         )
 
@@ -178,7 +178,7 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
     )
 
     if merged_secrets:
-        storage_config["encrypted_credentials"] = encrypt_credentials(
+        storage_config["encrypted_credentials"] = encrypt_tool_credentials(
             merged_secrets, user_id
         )
     else:
@@ -263,7 +263,7 @@ def _stored_api_tool_secrets(config: dict, owner_id: str) -> dict:
     """Decrypted ``{action: {section: {param: value}}}`` plus legacy plaintext values."""
     config = config or {}
     blob = config.get(API_TOOL_SECRETS_KEY)
-    secrets: dict = decrypt_credentials(blob, owner_id) if blob else {}
+    secrets: dict = decrypt_tool_credentials(blob, owner_id) if blob else {}
     for name, action in (config.get("actions") or {}).items():
         for section, param, spec in _secret_props(action):
             value = spec.get("value")
@@ -340,7 +340,7 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
             if kept is not None:
                 sealed.setdefault(name, {}).setdefault(section, {})[param] = kept
     if sealed:
-        out[API_TOOL_SECRETS_KEY] = encrypt_credentials(sealed, owner_id)
+        out[API_TOOL_SECRETS_KEY] = encrypt_tool_credentials(sealed, owner_id)
     return out
 
 

@@ -304,3 +304,95 @@ def decrypt_json(blob: str, owner_id: str) -> dict:
     if not isinstance(data, dict):
         raise CredentialDecryptionError("Credential payload is not an object")
     return data
+
+
+def encrypt_tool_credentials(credentials: dict, user_id: str) -> str:
+    """Encrypt tool, MCP and custom-model secrets with the v2 envelope.
+
+    Args:
+        credentials: JSON-serialisable secrets.
+        user_id: The owner the blob belongs to; decryption needs it.
+
+    Returns:
+        The ``v2:<key_id>:<payload>`` string, or ``""`` for empty input.
+    """
+    if not credentials:
+        return ""
+    return encrypt_json(credentials, user_id)
+
+
+def decrypt_tool_credentials(blob: str, user_id: str) -> dict:
+    """Decrypt tool, MCP and custom-model secrets written by either envelope.
+
+    New blobs are v2 (AES-GCM, tampering fails). Legacy v1 blobs (AES-CBC)
+    still decrypt so existing rows keep working until they are re-saved.
+
+    Args:
+        blob: The stored string from :func:`encrypt_tool_credentials` or the
+            legacy :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        The credentials, or an empty dict when the blob is missing,
+        tampered with, or bound to another owner/key.
+    """
+    if not blob:
+        return {}
+    if envelope_key_id(blob) is not None:
+        try:
+            return decrypt_json(blob, user_id)
+        except CredentialDecryptionError as e:
+            logger.warning(f"Failed to decrypt tool credentials: {e}")
+            return {}
+    return decrypt_credentials(blob, user_id)
+
+
+def reseal_tool_credentials(blob: str, user_id: str) -> tuple[str, Optional[str]]:
+    """Re-encrypt a tool/MCP/custom-model blob with the current key when needed.
+
+    Handles both envelopes: v2 blobs already on the current key are reported
+    as current, v2 blobs only a previous key opens and legacy v1 blobs are
+    rewritten to v2 with ``ENCRYPTION_SECRET_KEY``. Blobs neither key opens
+    are reported as failed and left unchanged. Rotated secrets are never
+    written back to v1.
+
+    Args:
+        blob: The stored string from :func:`encrypt_tool_credentials` or the
+            legacy :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        ``("current", None)`` when the current key already opens it,
+        ``("rewritten", new_blob)`` when it was rewritten to v2, and
+        ``("failed", None)`` when neither key opens it.
+    """
+    if not blob or not isinstance(blob, str):
+        return "failed", None
+    if envelope_key_id(blob) is not None:
+        if envelope_key_id(blob) == current_key_id():
+            try:
+                decrypt_json(blob, user_id)
+                return "current", None
+            except CredentialDecryptionError:
+                return "failed", None
+        try:
+            credentials = decrypt_json(blob, user_id)
+        except CredentialDecryptionError:
+            return "failed", None
+        resealed = encrypt_tool_credentials(credentials, user_id)
+        return ("rewritten", resealed) if resealed else ("failed", None)
+    try:
+        data = base64.b64decode(blob.encode(), validate=True)
+    except Exception:
+        return "failed", None
+    credentials = None
+    for secret in _v1_secrets():
+        try:
+            credentials = _decrypt_v1(data, user_id, secret)
+            break
+        except Exception:
+            continue
+    if credentials is None:
+        return "failed", None
+    resealed = encrypt_tool_credentials(credentials, user_id)
+    return ("rewritten", resealed) if resealed else ("failed", None)
