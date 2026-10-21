@@ -1430,8 +1430,24 @@ function WorkflowBuilderInner() {
         takeovers.length > 0
       : false;
 
+  // The agent's config as the server has it now, read just before a save
+  // that replaces it; throws when it can't be read.
+  const readSavedConfig = useCallback(
+    async (id: string) => {
+      const response = await userService.getAgent(id, token);
+      if (!response.ok)
+        throw new Error(t('agents.workflow.builder.updateAgentFailed'));
+      const agent = (await response.json()) as Agent;
+      return agent.config;
+    },
+    [token, t],
+  );
+
+  // One save at a time: a second one beside it would race it to the server.
+  const persistingRef = useRef(false);
   const persistWorkflow = useCallback(
     async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
+      if (persistingRef.current) return 'cancelled';
       setPublishErrors([]);
       setErrorContext('publish');
 
@@ -1441,6 +1457,7 @@ function WorkflowBuilderInner() {
         return 'failed';
       }
 
+      persistingRef.current = true;
       setIsPublishing(true);
       let createdWorkflowId: string | null = null;
       try {
@@ -1498,9 +1515,15 @@ function WorkflowBuilderInner() {
             if (imageFile) {
               agentFormData.append('image', imageFile);
             }
-            // Only the insights: the rest of the saved config goes back as is.
+            // Only the insights. The config replaces the stored one whole,
+            // so the rest comes from the server's copy as it is now, not as
+            // the builder loaded it: a guardrails or allowlist change saved
+            // meanwhile elsewhere stays. No fresh copy, no save.
             const savedConfig = pendingAnalytics
-              ? withAnalytics(currentAgent.config, pendingAnalytics)
+              ? withAnalytics(
+                  await readSavedConfig(effectiveAgentId),
+                  pendingAnalytics,
+                )
               : null;
             if (savedConfig)
               agentFormData.append('config', JSON.stringify(savedConfig));
@@ -1579,6 +1602,7 @@ function WorkflowBuilderInner() {
           agentFormData.append('image', imageFile);
         }
         if (folderId) agentFormData.append('folder_id', folderId);
+        // A new agent: there is no stored config to read again.
         const createdConfig = pendingAnalytics
           ? withAnalytics(currentAgent.config, pendingAnalytics)
           : null;
@@ -1647,6 +1671,7 @@ function WorkflowBuilderInner() {
         ]);
         return 'failed';
       } finally {
+        persistingRef.current = false;
         setIsPublishing(false);
       }
     },
@@ -1661,6 +1686,7 @@ function WorkflowBuilderInner() {
       imageFile,
       currentAgent.allow_system_prompt_override,
       currentAgent.config,
+      readSavedConfig,
       pendingAnalytics,
       folderId,
       navigateBackToAgents,
@@ -1672,15 +1698,34 @@ function WorkflowBuilderInner() {
     ],
   );
 
+  // Each opening of the details sheet: a save started from an earlier one
+  // never closes or marks a later one.
+  const detailsSessionRef = useRef(0);
   const openDetails = useCallback(() => {
+    detailsSessionRef.current += 1;
     setDetailsSaveFailed(false);
     setShowDetails(true);
   }, []);
+  // Cancel, the X, Escape and the scrim do nothing while its save is out.
+  const handleDetailsOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        openDetails();
+        return;
+      }
+      if (detailsSaving) return;
+      detailsSessionRef.current += 1;
+      setShowDetails(false);
+    },
+    [detailsSaving, openDetails],
+  );
 
   // Save from the details sheet: put its values into the builder, then save
   // once they are in state (the effect below), so the request carries them.
   const handleDetailsSave = useCallback(
     (values: WorkflowDetailsSave) => {
+      // A save is already out: this one would race it.
+      if (persistingRef.current || detailsSaving) return;
       setWorkflowName(values.name);
       setWorkflowDescription(values.description);
       setCurrentAgent((prev) => ({
@@ -1699,7 +1744,7 @@ function WorkflowBuilderInner() {
       );
       setDetailsSaveRequested(true);
     },
-    [currentAgent.config?.analytics],
+    [currentAgent.config?.analytics, detailsSaving],
   );
 
   useEffect(() => {
@@ -1707,8 +1752,10 @@ function WorkflowBuilderInner() {
     setDetailsSaveRequested(false);
     setDetailsSaving(true);
     setDetailsSaveFailed(false);
+    const session = detailsSessionRef.current;
     void persistWorkflow(false).then((outcome) => {
       setDetailsSaving(false);
+      if (session !== detailsSessionRef.current) return;
       if (outcome === 'saved') setShowDetails(false);
       // Declining the sponsor confirmation leaves the sheet open, no error.
       else if (outcome === 'failed') setDetailsSaveFailed(true);
@@ -2159,7 +2206,7 @@ function WorkflowBuilderInner() {
 
         <WorkflowDetailsSheet
           open={showDetails}
-          onOpenChange={setShowDetails}
+          onOpenChange={handleDetailsOpenChange}
           details={{
             name: workflowName,
             description: workflowDescription,

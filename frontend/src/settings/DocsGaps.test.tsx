@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import examples from './insights/fixtures/apiExamples.json';
 import type { DocsGapRow } from './types';
@@ -392,6 +392,49 @@ describe('DocsGaps', () => {
     )!;
     await act(async () => retry.click());
     expect(container.querySelector('[data-testid="docs-gaps"]')).toBeNull();
+  });
+
+  // The weekly notification links to `#docs-gaps`. The report is unmounted
+  // while the insights above it reload (a window change, Retry, a settings
+  // save, a renewed token): it scrolls there once per visit, not each time.
+  it('brings the report into view once for a #docs-gaps link', async () => {
+    respond({ rows: [row()] });
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    let hash = '';
+    function Hash() {
+      hash = useLocation().hash;
+      return null;
+    }
+    const show = (shown: boolean) =>
+      act(async () =>
+        root.render(
+          <MemoryRouter initialEntries={['/x?a=1#docs-gaps']}>
+            {shown && (
+              <DocsGaps
+                agentId="a1"
+                agentName="Fintech bot"
+                filterOption="last_30_days"
+                hasTopics={false}
+              />
+            )}
+            <Hash />
+          </MemoryRouter>,
+        ),
+      );
+    try {
+      await show(true);
+      await act(async () => undefined);
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      // Ready, then gone while the insights load, then ready again.
+      await show(false);
+      await show(true);
+      await act(async () => undefined);
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(hash).toBe('');
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
   });
 
   it("reads the server's topic grouping", async () => {

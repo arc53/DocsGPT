@@ -69,6 +69,23 @@ vi.mock('./CanvasControls', () => ({ default: () => null }));
 
 const updateAgent = vi.fn();
 const updateWorkflow = vi.fn();
+const getAgent = vi.fn();
+const AGENT = {
+  id: 'a1',
+  name: 'Renewal desk',
+  agent_type: 'workflow',
+  workflow: 'w1',
+  allowed_actions: ['view', 'edit', 'publish', 'delete'],
+  config: {
+    api_write_allowlist: ['t1:write'],
+    analytics: {
+      enabled: true,
+      topics: [],
+      hidden_folders: [],
+      digest: false,
+    },
+  },
+};
 const WORKFLOW = {
   workflow: { name: 'Renewal desk', description: '' },
   nodes: [
@@ -91,23 +108,7 @@ const ok = (body: unknown) =>
   Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
 vi.mock('../../api/services/userService', () => ({
   default: {
-    getAgent: () =>
-      ok({
-        id: 'a1',
-        name: 'Renewal desk',
-        agent_type: 'workflow',
-        workflow: 'w1',
-        allowed_actions: ['view', 'edit', 'publish', 'delete'],
-        config: {
-          api_write_allowlist: ['t1:write'],
-          analytics: {
-            enabled: true,
-            topics: [],
-            hidden_folders: [],
-            digest: false,
-          },
-        },
-      }),
+    getAgent: (...a: unknown[]) => getAgent(...a),
     updateAgent: (...a: unknown[]) => updateAgent(...a),
     updateWorkflow: (...a: unknown[]) => updateWorkflow(...a),
     getUserTools: () => ok({ tools: [] }),
@@ -144,6 +145,7 @@ describe('WorkflowBuilder insights', () => {
   beforeEach(() => {
     updateAgent.mockReset().mockImplementation(() => ok({ id: 'a1' }));
     updateWorkflow.mockReset().mockImplementation(() => ok({ success: true }));
+    getAgent.mockReset().mockImplementation(() => ok(AGENT));
     sheet.props = null;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -243,5 +245,79 @@ describe('WorkflowBuilder insights', () => {
       'agents.workflow.builder.unsavedChanges',
     );
     expect(saveButton?.disabled).toBe(false);
+  });
+  // Saved elsewhere since the builder loaded (another tab, another editor):
+  // an insights save must not put the old guardrails or allowlist back.
+  it('puts the new insights on the config as the server has it at save time', async () => {
+    await render();
+    const fresh = {
+      ...AGENT.config,
+      api_write_allowlist: [],
+      guardrails: { enabled: true, controls: [{ id: 'pii' }] },
+    };
+    getAgent.mockImplementation(() => ok({ ...AGENT, config: fresh }));
+    const next = { ...details().analytics, digest: true };
+    await save(next);
+    expect(updateAgent).toHaveBeenCalledTimes(1);
+    expect(sentConfig()).toEqual({ ...fresh, analytics: next });
+  });
+
+  it('fails the save when the fresh read fails, keeping the edit', async () => {
+    await render();
+    getAgent.mockImplementation(() =>
+      Promise.resolve({ ok: false, json: () => Promise.resolve({}) }),
+    );
+    const onOpenChange = sheet.props!.onOpenChange as (o: boolean) => void;
+    await act(async () => onOpenChange(true));
+    const next = { ...details().analytics, digest: true };
+    await save(next);
+    expect(updateAgent).not.toHaveBeenCalled();
+    expect(sheet.props!.open).toBe(true);
+    expect((sheet.props!.errors as string[]).length).toBeGreaterThan(0);
+    expect(details().analytics).toEqual(next);
+  });
+
+  describe('while a details save is out', () => {
+    let finish: (value: unknown) => void;
+    const openDetails = async () => {
+      const onOpenChange = sheet.props!.onOpenChange as (o: boolean) => void;
+      await act(async () => onOpenChange(true));
+    };
+
+    beforeEach(() => {
+      updateAgent.mockReset().mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+    });
+
+    it('keeps the panel open until the save answers, then closes it', async () => {
+      await render();
+      await openDetails();
+      await save({ ...details().analytics, digest: true });
+      expect(sheet.props!.saving).toBe(true);
+      const onOpenChange = sheet.props!.onOpenChange as (o: boolean) => void;
+      await act(async () => onOpenChange(false));
+      expect(sheet.props!.open).toBe(true);
+      await act(async () =>
+        finish({ ok: true, json: () => Promise.resolve({ id: 'a1' }) }),
+      );
+      await act(async () => undefined);
+      expect(sheet.props!.open).toBe(false);
+    });
+
+    it('starts no second save beside it', async () => {
+      await render();
+      await openDetails();
+      await save({ ...details().analytics, digest: true });
+      await save({ ...details().analytics, digest: true });
+      expect(updateWorkflow).toHaveBeenCalledTimes(1);
+      await act(async () =>
+        finish({ ok: true, json: () => Promise.resolve({ id: 'a1' }) }),
+      );
+      await act(async () => undefined);
+      expect(updateWorkflow).toHaveBeenCalledTimes(1);
+    });
   });
 });

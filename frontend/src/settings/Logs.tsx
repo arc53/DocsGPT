@@ -61,6 +61,13 @@ const COPY_OMITS = ['id', 'action', 'timestamp', 'event_type'];
 /** The most rows one request reads: the endpoint's largest page. */
 const MAX_REQUEST_ROWS = 100;
 
+/** The most pages read looking for a linked message before giving up. */
+const MAX_TARGET_PAGES = 10;
+
+/** A conversation id as the API takes it: a UUID, else it refuses the call. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** The label filter's keys under `settings.logs.labels`. */
 const LABEL_KEYS: Record<(typeof LOG_LABELS)[number], string> = {
   not_answered: 'notAnswered',
@@ -91,7 +98,11 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawLabel = searchParams.get('label');
   const labelFilter = isLogLabel(rawLabel) ? rawLabel : null;
-  const conversationFilter = searchParams.get('conversation') || null;
+  // A malformed id is ignored, like an unknown label: the API would refuse
+  // it and leave an error with no way out.
+  const rawConversation = searchParams.get('conversation');
+  const conversationFilter =
+    rawConversation && UUID_RE.test(rawConversation) ? rawConversation : null;
   const messageTarget = searchParams.get('message') || null;
   // The server's flag from Redux (read at start-up), so the filter row is
   // whole on the first paint instead of growing a select later.
@@ -626,19 +637,38 @@ function LogsTable({
   const listRef = useRef<HTMLDivElement>(null);
 
   // Opens the linked message once, when its row arrives; collapsing it
-  // afterwards is the user's choice and sticks.
+  // afterwards is the user's choice and sticks. Pages hold the newest rows
+  // first, so an older message is further on: load on until its row is
+  // there, the last page or MAX_TARGET_PAGES.
   const openedTarget = useRef<string | null>(null);
+  // `rows`: how many rows were there when it last asked for a page, so a
+  // render before that page starts loading doesn't ask again.
+  const seeking = useRef({ target: '', pages: 1, rows: -1 });
   useEffect(() => {
     if (!targetMessageId || openedTarget.current === targetMessageId) return;
     const target = logs.find((log) => log.message_id === targetMessageId);
-    if (!target) return;
+    if (!target) {
+      // A new link, or the pages started over (other filters): seek anew.
+      if (
+        seeking.current.target !== targetMessageId ||
+        logs.length < seeking.current.rows
+      )
+        seeking.current = { target: targetMessageId, pages: 1, rows: -1 };
+      const seek = seeking.current;
+      if (loading || failed || !hasMore || logs.length === 0) return;
+      if (seek.pages >= MAX_TARGET_PAGES || seek.rows === logs.length) return;
+      seek.pages += 1;
+      seek.rows = logs.length;
+      setPage((prev) => prev + 1);
+      return;
+    }
     openedTarget.current = targetMessageId;
     setOpenLogId(target.id);
     const row = Array.from(
       listRef.current?.querySelectorAll<HTMLElement>('[data-log-id]') ?? [],
     ).find((element) => element.dataset.logId === target.id);
     revealElement(row, 'nearest');
-  }, [logs, targetMessageId]);
+  }, [logs, targetMessageId, loading, failed, hasMore, setPage]);
 
   const handleLogToggle = (logId: string) => {
     if (openLogId === logId) {

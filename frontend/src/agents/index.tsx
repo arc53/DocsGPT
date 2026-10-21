@@ -51,11 +51,13 @@ export default function Agents() {
       <Route path="manage/discovered" element={<AgentsList />} />
       <Route path="manage/new" element={<NewAgent mode="new" />} />
       {/* An agent's pages open only for a role that may use them; the
-          guard sends anyone else back to the list. */}
+          guard sends anyone else back to the list. Each page's guard has its
+          own key, so the agent it read for one page never reaches another
+          (its page would take that copy without reading it again). */}
       <Route
         path="manage/edit/:agentId"
         element={
-          <AgentRouteGuard action="view">
+          <AgentRouteGuard key="edit" action="view">
             <NewAgent mode="edit" />
           </AgentRouteGuard>
         }
@@ -63,7 +65,7 @@ export default function Agents() {
       <Route
         path="manage/logs/:agentId"
         element={
-          <AgentRouteGuard action="view_logs">
+          <AgentRouteGuard key="logs" action="view_logs">
             <AgentLogs />
           </AgentRouteGuard>
         }
@@ -71,7 +73,7 @@ export default function Agents() {
       <Route
         path="manage/analytics/:agentId"
         element={
-          <AgentRouteGuard action="view_logs">
+          <AgentRouteGuard key="analytics" action="view_logs">
             <AgentAnalytics />
           </AgentRouteGuard>
         }
@@ -79,7 +81,7 @@ export default function Agents() {
       <Route
         path="manage/insights/:agentId"
         element={
-          <AgentRouteGuard action="view_logs">
+          <AgentRouteGuard key="insights" action="view_logs">
             <AgentInsights />
           </AgentRouteGuard>
         }
@@ -87,7 +89,7 @@ export default function Agents() {
       <Route
         path="manage/schedules/:agentId"
         element={
-          <AgentRouteGuard action="manage_schedules">
+          <AgentRouteGuard key="schedules" action="manage_schedules">
             <SchedulesView />
           </AgentRouteGuard>
         }
@@ -96,7 +98,7 @@ export default function Agents() {
       <Route
         path="manage/workflow/edit/:agentId"
         element={
-          <AgentRouteGuard action="view">
+          <AgentRouteGuard key="workflow" action="view">
             <WorkflowBuilderForAgent />
           </AgentRouteGuard>
         }

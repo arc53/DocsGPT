@@ -98,8 +98,9 @@ export default function AnalyticsSection({
               maxOverlapping={maxOverlapping}
               disabled={disabled}
               token={token}
-              // The source folders load once the section opens.
-              active={expanded && available}
+              // The source folders load once the section opens, with the
+              // server's switch off too: hidden ones can still come back.
+              active={expanded}
             />
           </div>
         </Collapsible>

@@ -254,6 +254,80 @@ describe('Logs label filter and drill-down', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('ignores a conversation that is no UUID, which the API would refuse', async () => {
+    await render('/settings/logs?conversation=not-a-uuid&message=m1');
+    expect(lastRequest().conversation_id).toBeUndefined();
+    expect(
+      container.querySelector('[data-testid="logs-conversation-chip"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain('settings.logs.loadError');
+  });
+
+  describe('a linked message past the first page', () => {
+    const CONVERSATION = 'a16e1e68-3cce-49a9-b05c-f97807748cd3';
+    const TARGET = '9a4d5bf9-0191-4e54-8de4-aa3f4704d0c1';
+    const rows = (pageNumber: number, withTarget = false) =>
+      Array.from({ length: 10 }, (_, i) => ({
+        id: `p${pageNumber}-${i}`,
+        action: 'stream_answer',
+        level: 'info',
+        event_type: 'chat',
+        timestamp: `2026-10-${String(20 - pageNumber).padStart(2, '0')}T10:${String(59 - i).padStart(2, '0')}:00Z`,
+        question: `q${pageNumber}-${i}`,
+        conversation_id: CONVERSATION,
+        message_id: withTarget && i === 4 ? TARGET : `m${pageNumber}-${i}`,
+      }));
+    const requestedPages = () =>
+      getLogs.mock.calls.map((call) => call[0].page as number);
+    const settle = async () => {
+      for (let i = 0; i < 15; i += 1) await act(async () => undefined);
+    };
+
+    it('loads on until its row is there, then opens it', async () => {
+      getLogs.mockImplementation((params: { page: number }) =>
+        Promise.resolve(
+          page({
+            logs: rows(params.page, params.page === 3),
+            has_more: true,
+          }),
+        ),
+      );
+      await render(
+        `/settings/logs?conversation=${CONVERSATION}&message=${TARGET}`,
+      );
+      await settle();
+      expect(requestedPages()).toEqual([1, 2, 3]);
+      const toggle = container.querySelector<HTMLButtonElement>(
+        '[data-log-id="p3-4"] button[aria-expanded]',
+      )!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('gives up after ten pages', async () => {
+      getLogs.mockImplementation((params: { page: number }) =>
+        Promise.resolve(page({ logs: rows(params.page), has_more: true })),
+      );
+      await render(
+        `/settings/logs?conversation=${CONVERSATION}&message=${TARGET}`,
+      );
+      await settle();
+      expect(requestedPages()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    });
+
+    it('stops at the last page', async () => {
+      getLogs.mockImplementation((params: { page: number }) =>
+        Promise.resolve(
+          page({ logs: rows(params.page), has_more: params.page < 2 }),
+        ),
+      );
+      await render(
+        `/settings/logs?conversation=${CONVERSATION}&message=${TARGET}`,
+      );
+      await settle();
+      expect(requestedPages()).toEqual([1, 2]);
+    });
+  });
+
   it("puts the row's labels in its header, tags named by the page's tag_names", async () => {
     await render('/settings/logs');
     const header = container.querySelector(

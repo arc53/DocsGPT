@@ -129,6 +129,35 @@ describe('AnalyticsSection', () => {
     );
   });
 
+  // The folders don't hang on the server's switch: with it off, an agent's
+  // hidden folders still show, and can be shown again.
+  it('loads the folders with the server switch off, so hidden ones can come back', async () => {
+    getTopicFolders.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          success: true,
+          folders: [{ name: 'Billing', description: 'Pages such as: Plans' }],
+        }),
+    });
+    await render({
+      available: false,
+      initial: { ...DEFAULT_ANALYTICS, hidden_folders: ['Billing'] },
+    });
+    await act(async () => toggle().click());
+    await act(async () => undefined);
+    expect(getTopicFolders).toHaveBeenCalledWith('a1', 'token');
+    const show = Array.from(section()!.querySelectorAll('button')).find(
+      (button) =>
+        button.textContent === 'agents.form.analytics.notes.show' ||
+        button.textContent === 'agents.form.analytics.empty.showFolders',
+    );
+    expect(show).toBeDefined();
+    expect(section()!.textContent).not.toContain(
+      'agents.form.analytics.empty.noFolders',
+    );
+  });
+
   it('tells a read-only role it can only look', async () => {
     await render({ disabled: true });
     expect(section()!.querySelector('[role="note"]')!.textContent).toBe(

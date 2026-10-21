@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -34,8 +34,10 @@ type InsightsSettingsSheetProps = {
  * An agent's insights settings in a modal side panel, opened from its
  * Insights page (the toolbar's Settings, and Turn on while it is off). It
  * edits a draft of the saved settings and saves only `config.analytics`, on
- * top of the saved config, so it never meets unsaved Overview edits (another
- * route). Cancel, the X, Escape and the scrim drop the draft.
+ * top of the config as the server has it at that moment (read again just
+ * before the save), so it never meets unsaved Overview edits (another route)
+ * nor undoes a guardrails or allowlist change saved meanwhile. Cancel, the X,
+ * Escape and the scrim drop the draft; while a save is out they do nothing.
  *
  * Args:
  *   open: Whether the panel is open.
@@ -51,8 +53,15 @@ export default function InsightsSettingsSheet({
   startEnabled = false,
   onSaved,
 }: InsightsSettingsSheetProps) {
+  // A save that is out holds the panel open: closed, its answer would land
+  // on a panel opened again meanwhile.
+  const saving = useRef(false);
+  const handleOpenChange = (next: boolean) => {
+    if (!next && saving.current) return;
+    onOpenChange(next);
+  };
   return (
-    <SidePanel open={open} onOpenChange={onOpenChange}>
+    <SidePanel open={open} onOpenChange={handleOpenChange}>
       {/* Mounted only while open, so each opening starts a fresh draft and
           the limits and folders load only then. */}
       <SheetContents
@@ -60,6 +69,9 @@ export default function InsightsSettingsSheet({
         startEnabled={startEnabled}
         onClose={() => onOpenChange(false)}
         onSaved={onSaved}
+        onSavingChange={(value) => {
+          saving.current = value;
+        }}
       />
     </SidePanel>
   );
@@ -70,11 +82,13 @@ function SheetContents({
   startEnabled,
   onClose,
   onSaved,
+  onSavingChange,
 }: {
   agent: Agent;
   startEnabled: boolean;
   onClose: () => void;
   onSaved: (config: AgentConfig) => void;
+  onSavingChange: (saving: boolean) => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -86,14 +100,30 @@ function SheetContents({
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  // This opening of the panel: a save that answers after it closed hands
+  // its config back but neither closes nor touches a later one.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const save = async () => {
-    const config = withAnalytics(agent.config, draft);
-    const form = new FormData();
-    form.append('config', JSON.stringify(config));
     setSaving(true);
     setFailed(false);
+    onSavingChange(true);
     try {
+      // The config replaces the stored one whole: start from the server's
+      // copy as it is now, not as the page loaded it, so a change saved
+      // meanwhile elsewhere stays. No fresh copy, no save.
+      const current = await userService.getAgent(agent.id ?? '', token);
+      if (!current.ok) throw new Error('read failed');
+      const fresh = (await current.json()) as Agent;
+      const config = withAnalytics(fresh.config, draft);
+      const form = new FormData();
+      form.append('config', JSON.stringify(config));
       const response = await userService.updateAgent(
         agent.id ?? '',
         form,
@@ -101,11 +131,12 @@ function SheetContents({
       );
       if (!response.ok) throw new Error('save failed');
       onSaved(config);
-      onClose();
+      if (mounted.current) onClose();
     } catch {
-      setFailed(true);
+      if (mounted.current) setFailed(true);
     } finally {
-      setSaving(false);
+      onSavingChange(false);
+      if (mounted.current) setSaving(false);
     }
   };
 
@@ -141,6 +172,7 @@ function SheetContents({
           variant="ghost"
           size="lg"
           shape="pill"
+          disabled={saving}
           onClick={onClose}
         >
           {t('agents.form.buttons.cancel')}

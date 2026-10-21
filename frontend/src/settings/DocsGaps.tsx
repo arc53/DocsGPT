@@ -9,7 +9,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardTitle } from '@/components/ui/card';
@@ -102,6 +102,7 @@ export default function DocsGaps({
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const location = useLocation();
+  const navigate = useNavigate();
   const [stored, setStored] = useState<DocsGapsGroup>(readGroup);
   const groupBy: DocsGapsGroup =
     stored === 'topic' && !hasTopics ? 'page' : stored;
@@ -116,7 +117,6 @@ export default function DocsGaps({
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const requestId = useRef(0);
   const sectionRef = useRef<HTMLDivElement>(null);
-  const revealed = useRef(false);
 
   useEffect(() => {
     const id = ++requestId.current;
@@ -165,13 +165,25 @@ export default function DocsGaps({
   }, [agentId, filterOption, groupBy, token, reloadKey]);
 
   // The weekly notification links here (`#docs-gaps`): once the report has
-  // loaded, bring it into view.
+  // loaded, bring it into view, then drop the hash. The report unmounts while
+  // the insights above it reload (a window change, Retry, a settings save, a
+  // renewed token), so a flag of its own wouldn't last: without the hash the
+  // next load stays where the reader is.
   useEffect(() => {
-    if (state.status !== 'ready' || revealed.current) return;
-    if (location.hash !== '#docs-gaps') return;
-    revealed.current = true;
+    if (state.status !== 'ready' || location.hash !== '#docs-gaps') return;
     revealElement(sectionRef.current, 'start');
-  }, [state.status, location.hash]);
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: '' },
+      { replace: true, state: location.state },
+    );
+  }, [
+    state.status,
+    location.hash,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+  ]);
 
   if (state.status === 'ready' && !state.enabled) return null;
 

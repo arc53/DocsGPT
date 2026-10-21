@@ -22,6 +22,7 @@ vi.mock('react-redux', () => ({
 }));
 
 const service = vi.hoisted(() => ({
+  getAgent: vi.fn(),
   updateAgent: vi.fn(),
   getTopicFolders: vi.fn(),
   getConfig: vi.fn(),
@@ -60,6 +61,12 @@ describe('InsightsSettingsSheet', () => {
   beforeEach(() => {
     service.updateAgent.mockReset();
     service.updateAgent.mockResolvedValue({ ok: true });
+    // The server's copy, read again just before a save: as loaded unless a
+    // test says otherwise.
+    service.getAgent.mockReset();
+    service.getAgent.mockImplementation(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(classic()) }),
+    );
     service.getTopicFolders.mockReset();
     service.getTopicFolders.mockResolvedValue({
       ok: true,
@@ -205,6 +212,103 @@ describe('InsightsSettingsSheet', () => {
     );
     expect(onSaved).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  // Another tab or editor changed the guardrails or the API write
+  // allowlist since this page loaded: the insights save must not undo it.
+  it('saves the insights on top of the config as the server has it now', async () => {
+    const changed = {
+      guardrails: { enabled: false, controls: [{ id: 'pii' }] },
+      api_write_allowlist: [],
+      analytics: { ...DEFAULT_ANALYTICS, topics: [PRICING] },
+    };
+    service.getAgent.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ ...classic(), config: changed }),
+      }),
+    );
+    const { onSaved } = await render(classic());
+    await act(async () => enabled().click());
+    await act(async () => save().click());
+    expect(service.getAgent).toHaveBeenCalledWith('a1', 'token');
+    const config = sentConfig();
+    expect(config).toEqual({
+      ...changed,
+      analytics: { ...changed.analytics, enabled: false },
+    });
+    expect(onSaved).toHaveBeenCalledWith(config);
+  });
+
+  it('saves nothing, with the Alert, when the fresh read fails', async () => {
+    service.getAgent.mockResolvedValue({ ok: false });
+    const { onSaved, onOpenChange } = await render(classic());
+    await act(async () => enabled().click());
+    await act(async () => save().click());
+    expect(service.updateAgent).not.toHaveBeenCalled();
+    expect(panel().querySelector('[role="alert"]')!.textContent).toContain(
+      'settings.analytics.insights.settings.saveFailed',
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  describe('while a save is out', () => {
+    let finish: (value: { ok: boolean }) => void;
+    beforeEach(() => {
+      service.updateAgent.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+    });
+
+    it('keeps the panel open: Cancel is off and Escape does nothing', async () => {
+      const { onOpenChange, onSaved } = await render(classic());
+      await act(async () => enabled().click());
+      await act(async () => save().click());
+      expect(button('agents.form.buttons.cancel')!.disabled).toBe(true);
+      await act(async () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+      });
+      expect(onOpenChange).not.toHaveBeenCalled();
+      await act(async () => finish({ ok: true }));
+      expect(onSaved).toHaveBeenCalledTimes(1);
+      expect(onOpenChange).toHaveBeenCalledTimes(1);
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    it('lets Escape close it once no save is out', async () => {
+      const { onOpenChange } = await render(classic());
+      await act(async () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+      });
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    it('never closes a panel opened again after the one that saved', async () => {
+      const agent = classic();
+      const handlers = await render(agent);
+      await act(async () => enabled().click());
+      await act(async () => save().click());
+      const show = (open: boolean) =>
+        act(async () =>
+          root.render(
+            <InsightsSettingsSheet open={open} agent={agent} {...handlers} />,
+          ),
+        );
+      // The page closes it and opens it again before the save answers.
+      await show(false);
+      await show(true);
+      await act(async () => finish({ ok: true }));
+      expect(handlers.onSaved).toHaveBeenCalledTimes(1);
+      expect(handlers.onOpenChange).not.toHaveBeenCalled();
+      expect(panel()).not.toBeNull();
+    });
   });
 
   // IN-20: Turn on opens the panel already switched on, so the owner sees

@@ -643,8 +643,9 @@ describe('ConversationInsights', () => {
     ).toBe(
       'settings.analytics.insights.panels.tooltipShare(Fully answered|50%)',
     );
+    // Of the four outcomes the bars share out: the greeting isn't one.
     expect(footer!([{ dataIndex: 0 }])).toBe(
-      'settings.analytics.insights.panels.ofQuestions(5)',
+      'settings.analytics.insights.panels.ofQuestions(4)',
     );
   });
 

@@ -689,8 +689,6 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
     'declined, no information': palette.mutedForeground,
     'asked a clarifying question': palette.info,
   };
-  const questions = (index: number) =>
-    data.series[index]?.labels.answer_status?.n ?? 0;
   const bucketTotal = (index: number) =>
     ANSWER_STATUS_SERIES.reduce(
       (sum, option) =>
@@ -732,8 +730,10 @@ function AnswerStatusPanel({ data }: { data: Insights }) {
                 value: formatShare(Number(item.raw)),
                 interpolation: { escapeValue: false },
               }),
+            // The day's questions the bars share out: its four outcomes,
+            // greetings ("not a request") left out as in the bars.
             footer: (items) => {
-              const n = questions(items[0]?.dataIndex ?? -1);
+              const n = Math.round(bucketTotal(items[0]?.dataIndex ?? -1));
               return t('settings.analytics.insights.panels.ofQuestions', {
                 count: n,
                 formatted: formatCount(n),
