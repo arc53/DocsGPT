@@ -12,20 +12,20 @@ export const ru = {
   expandChat: 'Развернуть чат',
   collapseChat: 'Свернуть чат',
   closeChat: 'Закрыть чат',
-  newChat: 'New chat', // TODO(translate)
-  chatHistory: 'Chat history', // TODO(translate)
-  historyHeading: 'History', // TODO(translate)
-  backToChat: 'Back to chat', // TODO(translate)
-  historyToday: 'Today', // TODO(translate)
-  historyYesterday: 'Yesterday', // TODO(translate)
-  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
-  historyOlder: 'Older', // TODO(translate)
-  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
-  deleteConversation: 'Delete conversation', // TODO(translate)
-  clearAll: 'Clear all', // TODO(translate)
-  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
-  clearAllConfirmButton: 'Delete all', // TODO(translate)
-  cancel: 'Cancel', // TODO(translate)
+  newChat: 'Новый чат',
+  chatHistory: 'История бесед',
+  historyHeading: 'История',
+  backToChat: 'Назад к чату',
+  historyToday: 'Сегодня',
+  historyYesterday: 'Вчера',
+  historyPrevious7Days: 'Последние 7 дней',
+  historyOlder: 'Ранее',
+  historyEmpty: 'Здесь появятся ваши беседы.',
+  deleteConversation: 'Удалить беседу',
+  clearAll: 'Очистить всё',
+  clearAllConfirm: 'Удалить все сохранённые беседы?',
+  clearAllConfirmButton: 'Удалить всё',
+  cancel: 'Отмена',
   sources: 'Источники',
   openSource: 'Открыть источник {number}',
   toolsUsed: 'Использовано: {tools}',
@@ -43,7 +43,7 @@ export const ru = {
   answerFailed: 'Не удалось сгенерировать ответ',
   connectionError:
     'Что-то пошло не так. Проверьте подключение и попробуйте ещё раз.',
-  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
+  interrupted: 'Этот ответ прервался, не успев завершиться.',
   retry: 'Повторить',
   copyError: 'Копировать ошибку',
   scrollToLatest: 'К последнему сообщению',

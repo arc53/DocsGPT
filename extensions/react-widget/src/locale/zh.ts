@@ -12,20 +12,20 @@ export const zh = {
   expandChat: '展开聊天',
   collapseChat: '收起聊天',
   closeChat: '关闭聊天',
-  newChat: 'New chat', // TODO(translate)
-  chatHistory: 'Chat history', // TODO(translate)
-  historyHeading: 'History', // TODO(translate)
-  backToChat: 'Back to chat', // TODO(translate)
-  historyToday: 'Today', // TODO(translate)
-  historyYesterday: 'Yesterday', // TODO(translate)
-  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
-  historyOlder: 'Older', // TODO(translate)
-  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
-  deleteConversation: 'Delete conversation', // TODO(translate)
-  clearAll: 'Clear all', // TODO(translate)
-  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
-  clearAllConfirmButton: 'Delete all', // TODO(translate)
-  cancel: 'Cancel', // TODO(translate)
+  newChat: '新聊天',
+  chatHistory: '聊天记录',
+  historyHeading: '历史',
+  backToChat: '返回聊天',
+  historyToday: '今天',
+  historyYesterday: '昨天',
+  historyPrevious7Days: '过去 7 天',
+  historyOlder: '更早',
+  historyEmpty: '您的对话将显示在这里。',
+  deleteConversation: '删除对话',
+  clearAll: '全部清除',
+  clearAllConfirm: '删除所有已保存的对话？',
+  clearAllConfirmButton: '全部删除',
+  cancel: '取消',
   sources: '来源',
   openSource: '打开来源 {number}',
   toolsUsed: '已使用 {tools}',
@@ -42,7 +42,7 @@ export const zh = {
   feedbackNotSaved: '保存失败',
   answerFailed: '无法生成回复',
   connectionError: '出了点问题。请检查网络连接后重试。',
-  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
+  interrupted: '此回答在完成前被中断。',
   retry: '重试',
   copyError: '复制错误信息',
   scrollToLatest: '滚动到最新消息',

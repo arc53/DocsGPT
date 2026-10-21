@@ -12,20 +12,20 @@ export const zhTW = {
   expandChat: '展開對話',
   collapseChat: '收合對話',
   closeChat: '關閉對話',
-  newChat: 'New chat', // TODO(translate)
-  chatHistory: 'Chat history', // TODO(translate)
-  historyHeading: 'History', // TODO(translate)
-  backToChat: 'Back to chat', // TODO(translate)
-  historyToday: 'Today', // TODO(translate)
-  historyYesterday: 'Yesterday', // TODO(translate)
-  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
-  historyOlder: 'Older', // TODO(translate)
-  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
-  deleteConversation: 'Delete conversation', // TODO(translate)
-  clearAll: 'Clear all', // TODO(translate)
-  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
-  clearAllConfirmButton: 'Delete all', // TODO(translate)
-  cancel: 'Cancel', // TODO(translate)
+  newChat: '新對話',
+  chatHistory: '對話記錄',
+  historyHeading: '歷史',
+  backToChat: '返回對話',
+  historyToday: '今天',
+  historyYesterday: '昨天',
+  historyPrevious7Days: '過去 7 天',
+  historyOlder: '更早',
+  historyEmpty: '您的對話會顯示在這裡。',
+  deleteConversation: '刪除對話',
+  clearAll: '全部清除',
+  clearAllConfirm: '要刪除所有已儲存的對話嗎？',
+  clearAllConfirmButton: '全部刪除',
+  cancel: '取消',
   sources: '來源',
   openSource: '開啟來源 {number}',
   toolsUsed: '已使用 {tools}',
@@ -42,7 +42,7 @@ export const zhTW = {
   feedbackNotSaved: '無法儲存',
   answerFailed: '無法產生回覆',
   connectionError: '發生錯誤。請檢查網路連線後再試一次。',
-  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
+  interrupted: '此回答在完成前已中斷。',
   retry: '重試',
   copyError: '複製錯誤訊息',
   scrollToLatest: '捲動至最新訊息',

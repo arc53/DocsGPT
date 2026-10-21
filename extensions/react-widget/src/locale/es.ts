@@ -12,20 +12,20 @@ export const es = {
   expandChat: 'Ampliar chat',
   collapseChat: 'Contraer chat',
   closeChat: 'Cerrar chat',
-  newChat: 'New chat', // TODO(translate)
-  chatHistory: 'Chat history', // TODO(translate)
-  historyHeading: 'History', // TODO(translate)
-  backToChat: 'Back to chat', // TODO(translate)
-  historyToday: 'Today', // TODO(translate)
-  historyYesterday: 'Yesterday', // TODO(translate)
-  historyPrevious7Days: 'Previous 7 days', // TODO(translate)
-  historyOlder: 'Older', // TODO(translate)
-  historyEmpty: 'Your conversations will appear here.', // TODO(translate)
-  deleteConversation: 'Delete conversation', // TODO(translate)
-  clearAll: 'Clear all', // TODO(translate)
-  clearAllConfirm: 'Delete all saved conversations?', // TODO(translate)
-  clearAllConfirmButton: 'Delete all', // TODO(translate)
-  cancel: 'Cancel', // TODO(translate)
+  newChat: 'Nuevo chat',
+  chatHistory: 'Historial de conversaciones',
+  historyHeading: 'Historial',
+  backToChat: 'Volver al chat',
+  historyToday: 'Hoy',
+  historyYesterday: 'Ayer',
+  historyPrevious7Days: 'Últimos 7 días',
+  historyOlder: 'Anteriores',
+  historyEmpty: 'Tus conversaciones aparecerán aquí.',
+  deleteConversation: 'Eliminar conversación',
+  clearAll: 'Borrar todo',
+  clearAllConfirm: '¿Eliminar todas las conversaciones guardadas?',
+  clearAllConfirmButton: 'Eliminar todo',
+  cancel: 'Cancelar',
   sources: 'Fuentes',
   openSource: 'Abrir fuente {number}',
   toolsUsed: 'Herramientas usadas: {tools}',
@@ -42,7 +42,7 @@ export const es = {
   feedbackNotSaved: 'No se guardó',
   answerFailed: 'No se pudo generar una respuesta',
   connectionError: 'Algo salió mal. Revisa tu conexión e inténtalo de nuevo.',
-  interrupted: 'This answer was interrupted before it finished.', // TODO(translate)
+  interrupted: 'Esta respuesta se interrumpió antes de terminar.',
   retry: 'Reintentar',
   copyError: 'Copiar error',
   scrollToLatest: 'Ir al último mensaje',
