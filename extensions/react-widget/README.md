@@ -44,11 +44,14 @@ To link the widget to your api and your documents you can pass parameters to the
                buttonBg = "#222327"
                allowedFileExtensions = {['.pdf', '.docx', '.md', '.png']}
                showMicButton
+               suggestedQuestions = {['How do I get started?', 'Which plans include SSO?']}
           />;
     };
 ```
 
 `avatar` sets the header image and `heroIcon` the image on the welcome card (the DocsGPT mark by default). `poweredBy` controls the credit line under the input: `false` hides it, and `{ label, href }` replaces it.
+
+`suggestedQuestions` lists questions under the welcome card; a click sends one, and the list goes away once the conversation starts. `suggestedQuestionsLabel` sets the heading over them ("Suggested questions" by default; an empty string hides it).
 
 `allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
@@ -103,7 +106,8 @@ To link the widget to your api and your documents you can pass parameters to the
               buttonIcon:"https://your-icon.svg",
               buttonBg:"#222327",
               allowedFileExtensions: ['.pdf', '.docx', '.md', '.png'],
-              showMicButton: true
+              showMicButton: true,
+              suggestedQuestions: ['How do I get started?', 'Which plans include SSO?']
             });
           }
         </script>
