@@ -1413,7 +1413,8 @@ class TestConversationInsights:
         assert data["one_pick"] == []
         assert data["coverage"] == {"turns": 4, "labelled_turns": 4, "replies": 2, "labelled_replies": 2,
                                     "conversations": 2, "labelled_conversations": 2,
-                                    "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0}
+                                    "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0,
+                                    "failed_turns": 0}
         assert data["languages"] == {"en": 4}
         assert data["language_warnings"] == []
 
@@ -1580,7 +1581,7 @@ class TestConversationInsights:
         agent = _analytics_agent(pg_conn, enabled=False)
         data = _insights(app, pg_conn, "owner", {"api_key_id": str(agent["id"])}).json
         assert data["enabled"] is False
-        assert data["coverage"]["unlabelled_recent_turns"] == 0
+        assert data["coverage"]["unlabelled_recent_turns"] == data["coverage"]["failed_turns"] == 0
         assert data["backfill_days"] >= 1 and data["labelling_from"]
 
 

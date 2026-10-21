@@ -22,6 +22,10 @@ It stops starting calls when its time budget is spent, when a call comes back ``
 that call; the next beat retries) or ``timeout`` (the model is busy with chat). Items that timed out are not written
 and are picked up by the next sweep; a state that could not be built, or came back ``bad_item``, is written as an
 ``_error`` row and not retried until the schema or the model changes.
+
+Every row a state yields records what the state was built from (``source_updated_at``, ``source_hash``: the message's,
+or for a conversation's own rows the conversation's, as read), so an edit made while the call ran leaves the labels
+stale and the next sweep asks again, while feedback or a finished background job, which change neither, ask nothing.
 """
 
 from __future__ import annotations
@@ -45,7 +49,6 @@ from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Request
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversation_labels import ERROR, ConversationLabelsRepository
-from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
@@ -84,6 +87,8 @@ class _Item:
     questions: dict = field(default_factory=dict)
     reply_message_id: Optional[str] = None
     hashes: dict = field(default_factory=dict)  # question key to the row's options_hash
+    source_updated_at: Any = None  # the source message's (or conversation's) updated_at, as read
+    source_hash: Optional[str] = None  # and its content hash, as read
 
     @property
     def source(self) -> Optional[str]:
@@ -181,6 +186,7 @@ class Sweep:
         self.stopped: Optional[str] = None
         self._agents: dict[str, Optional[_Agent]] = {}
         self._messages: dict[str, list[states.Message]] = {}
+        self._conversations: dict[str, tuple[Any, Optional[str]]] = {}  # (updated_at, hash) as read
         self._queue: list[_Item] = []
         self._started = time.monotonic()
 
@@ -230,8 +236,11 @@ class Sweep:
         return self._agents[agent_id]
 
     def _load(self, conn, conversation_id: str) -> list[states.Message]:
-        msgs = states.messages(ConversationsRepository(conn).get_messages(conversation_id))
+        """The conversation's user messages, each with its source hash, and the conversation's own source."""
+        loaded = ConversationLabelsRepository(conn).source_messages(conversation_id)
+        msgs = states.messages(loaded["messages"])
         self._messages[conversation_id] = msgs
+        self._conversations[conversation_id] = (loaded["updated_at"], loaded["hash"])
         return msgs
 
     # ---- message pass ---------------------------------------------------------------------------------------------
@@ -265,20 +274,26 @@ class Sweep:
 
     def _message_items(self, conn, candidate: dict) -> list[list[_Item]]:
         """The states of a conversation's unlabelled messages, one group per message; the request type is last,
-        since its row marks the message labelled."""
+        since its row marks the message labelled.
+
+        A message the candidate query counts as unlabelled but ``states.messages`` leaves out (the two disagree
+        on what is a user message) gets a state-less item, written as an ``_error`` marker, so it is never a
+        candidate again and the message pass always ends.
+        """
         cid = candidate["conversation_id"]
-        unlabelled = ConversationLabelsRepository(conn).unlabelled_message_ids(
+        unlabelled = ConversationLabelsRepository(conn).unlabelled_messages(
             cid, schema.SCHEMA_HASH, self.model_version, self.days, settings.ANALYTICS_TURN_SETTLE_SECONDS
         )
         agent = self._agent(conn, candidate["agent_id"])
         msgs = self._load(conn, cid)
         groups: list[list[_Item]] = []
+        owner = dict(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"])
         for i, m in enumerate(msgs):
             if m.id not in unlabelled:
                 continue
             self.stats["messages"] += 1
-            base = dict(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
-                        message_id=m.id, occurred_at=m.timestamp, lang=states.lang(m.prompt))
+            base = dict(owner, message_id=m.id, occurred_at=m.timestamp, lang=states.lang(m.prompt),
+                        source_updated_at=m.updated_at, source_hash=m.source_hash)
             plan: list[tuple[str, Callable[[], Any], dict, dict]] = []
             if m.is_turn:
                 plan.append(("turn", lambda i=i: states.turn(msgs, i), TURN_QUESTIONS, {}))
@@ -300,6 +315,13 @@ class Sweep:
                                    exc_info=True)
                 items.append(item)
             groups.append(items)
+        for message_id in unlabelled.keys() - {m.id for m in msgs}:
+            row = unlabelled[message_id]
+            logger.warning("Analytics: message %s is a candidate but not a user message; marked as an error",
+                           message_id)
+            self.stats["messages"] += 1
+            groups.append([_Item(level="message", message_id=message_id, occurred_at=row["timestamp"], lang="en",
+                                 source_updated_at=row["updated_at"], source_hash=row["source_hash"], **owner)])
         return groups
 
     # ---- conversation pass ----------------------------------------------------------------------------------------
@@ -343,9 +365,11 @@ class Sweep:
             description = topic.description or topic.name
             questions[f"tag:{topic.id}"] = schema.tag_question(topic.name, description)
             hashes[f"tag:{topic.id}"] = topics.options_hash([topic.name, description])
+        updated_at, source_hash = self._conversations[cid]
         item = _Item(conversation_id=cid, user_id=candidate["user_id"], agent_id=candidate["agent_id"],
                      level="conversation", message_id=None, occurred_at=msgs[-1].timestamp,
-                     lang=states.lang("\n".join(m.prompt for m in msgs)), questions=questions, hashes=hashes)
+                     lang=states.lang("\n".join(m.prompt for m in msgs)), questions=questions, hashes=hashes,
+                     source_updated_at=updated_at, source_hash=source_hash)
         try:
             item.state = states.conversation(msgs)
         except Exception:  # noqa: BLE001
@@ -435,7 +459,8 @@ class Sweep:
             "level": item.level, "label": label, "top": top, "p_top": p_top, "probabilities": probabilities,
             "derived": False, "lang": item.lang, "options_hash": item.hashes.get(label),
             "schema_hash": schema.SCHEMA_HASH, "model_version": self.model_version,
-            "occurred_at": item.occurred_at,
+            "occurred_at": item.occurred_at, "source_updated_at": item.source_updated_at,
+            "source_hash": item.source_hash,
         }
 
     def _rows(self, item: _Item, decision) -> list[dict]:

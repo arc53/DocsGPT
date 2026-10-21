@@ -2,7 +2,9 @@
 
 The analytics sweep (``docsgpt.analytics.tasks``) writes and reads rows here; every candidate query takes the
 running ``schema_hash`` and ``model_version``, so a message labelled under other wording or by another model is a
-candidate again. The dashboard reads (insights, docs gaps, Logs labels) take only the ``schema_hash``: rows of every
+candidate again. A marker (and a conversation's ``goal_met``) is current while its message (or conversation) is unchanged
+since the sweep read it: its ``updated_at`` is no later than the row's ``source_updated_at`` or, past it, the content
+still hashes to the row's ``source_hash`` (``_fresh``). The dashboard reads (insights, docs gaps, Logs labels) take only the ``schema_hash``: rows of every
 model under the running wording count, and the interval takes the widest model's calibration error. They scope on
 the row's own ``agent_id`` or ``user_id``, so each runs on ``agent_time_idx`` or ``user_time_idx``. Projections are
 explicit, never ``SELECT *``.
@@ -23,18 +25,20 @@ from docsgpt.analytics.states import (
     COMPRESSION_SUMMARY_PROMPT,
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
+from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 from docsgpt.utils import strip_null_bytes
 
 #: The label every labelled user message carries (its request type) or, when one of its states could not be
-#: built or was refused as a bad item, ``_error``. A message with neither, or with one older than its last edit,
-#: is labelled again.
+#: built or was refused as a bad item, ``_error``. A message with neither, or with one that is not current
+#: (``_fresh``), is labelled again.
 MARKERS = ("request_type", "_error")
 ERROR = "_error"
 
 _UPSERT_COLUMNS = (
     "conversation_id", "message_id", "reply_message_id", "user_id", "agent_id", "level", "label", "top", "p_top",
     "probabilities", "derived", "lang", "options_hash", "schema_hash", "model_version", "occurred_at",
+    "source_updated_at", "source_hash",
 )
 
 _PROJECTION = (
@@ -43,12 +47,14 @@ _PROJECTION = (
     "l.created_at"
 )
 
-# The agent a conversation belongs to: its own ``agent_id``, else the agent whose key it was asked with.
+# The agent a conversation belongs to: its own ``agent_id``, else the agent whose key it was asked with. The key is
+# compared as ``citext`` (the column's type), so the lookup can use ``agents_key_key``: compared as text, every
+# conversation without an id scans ``agents``.
 _AGENT = """
     LEFT JOIN LATERAL (
         SELECT a.id, a.config FROM agents a
         WHERE a.id = c.agent_id
-           OR (c.agent_id IS NULL AND COALESCE(c.api_key, '') <> '' AND a.key = c.api_key)
+           OR (c.agent_id IS NULL AND COALESCE(c.api_key, '') <> '' AND a.key = CAST(c.api_key AS citext))
         LIMIT 1
     ) ag ON true
 """
@@ -61,26 +67,74 @@ _TAGS_HASH = (
 )
 
 
+def _has_text(expr: str) -> str:
+    """SQL: text ``expr`` (``NULL`` as empty) has a character other than whitespace, as ``str.strip`` tells it."""
+    return f"COALESCE({expr}, '') ~ '[^[:space:]]'"
+
+
 def _usable(m: str) -> str:
     """SQL: message ``m`` is a finished user message (complete or failed, with a prompt), not a compression summary
     row (marked, or, written before the marker, its label with nothing else on the row): ``states.messages``."""
     return f"""
         {m}.status IN ('complete', 'failed')
-        AND COALESCE({m}.prompt, '') <> ''
+        AND {_has_text(f"{m}.prompt")}
         AND COALESCE({m}.message_metadata->>'{COMPRESSION_SUMMARY_MARKER}', '') <> 'true'
         AND NOT ({m}.prompt = '{COMPRESSION_SUMMARY_PROMPT}' AND {m}.tool_calls = '[]'::jsonb
                  AND {m}.message_metadata = '{{}}'::jsonb)
     """
 
 
+def _message_hash(m: str) -> str:
+    """SQL: a hash of what the states read of message ``m``: its prompt, response, sources, status and timestamp.
+
+    The sweep stores it on the rows it writes (``source_hash``) as it reads the message, and ``_fresh`` compares
+    it with the message as it is now, so both sides are this one expression. Columns the states never read
+    (feedback, tool calls) are left out, so setting them does not label the message again.
+    """
+    return (f"md5(jsonb_build_array({m}.prompt, {m}.response, {m}.sources, {m}.status,"
+            f" extract(epoch FROM {m}.timestamp))::text)")
+
+
+def _conversation_source(conversation: str) -> str:
+    """SQL: the one row of a conversation's ``updated_at`` (its latest message's) and ``hash`` (of its messages'
+    ``_message_hash`` in position order), over its user messages, for the conversation id SQL ``conversation``."""
+    return f"""
+        SELECT MAX(cm.updated_at) AS updated_at,
+               md5(string_agg({_message_hash("cm")}, ',' ORDER BY cm.position)) AS hash
+        FROM conversation_messages cm
+        WHERE cm.conversation_id = {conversation} AND {_usable("cm")}
+    """
+
+
+def _fresh(row: str, updated_at: str, current_hash: str) -> str:
+    """SQL: label row ``row`` still describes what it was built from.
+
+    It is when nothing changed since the sweep read it (``source_updated_at`` is no earlier than ``updated_at``,
+    the cheap test), or when something did but the content hashes the same (feedback, a finished background job).
+    ``current_hash`` is only evaluated in that second case. A row written before migration 0058 has no source and
+    keeps the old test: it was written at or after the last change.
+
+    Args:
+        row: The ``conversation_labels`` alias.
+        updated_at: SQL for the message's (or the conversation's latest) ``updated_at`` now.
+        current_hash: SQL for its ``_message_hash`` (or ``_conversation_source`` hash) now.
+
+    Returns:
+        A parenthesised SQL condition.
+    """
+    return (f"(CASE WHEN {row}.source_updated_at IS NULL THEN {row}.created_at >= {updated_at}"
+            f" WHEN {row}.source_updated_at >= {updated_at} THEN true"
+            f" ELSE COALESCE({row}.source_hash = {current_hash}, false) END)")
+
+
 def _unlabelled(m: str) -> str:
-    """SQL: message ``m`` has no marker under the running schema and model, or only one older than its last edit."""
+    """SQL: message ``m`` has no current marker (``_fresh``) under the running schema and model."""
     return f"""
         NOT EXISTS (
             SELECT 1 FROM conversation_labels lm
             WHERE lm.message_id = {m}.id AND lm.label IN ('request_type', '_error')
               AND lm.schema_hash = :schema_hash AND lm.model_version = :model_version
-              AND lm.created_at >= {m}.updated_at
+              AND {_fresh("lm", f"{m}.updated_at", _message_hash(m))}
         )
     """
 
@@ -107,9 +161,13 @@ def _conversation_level(alias: str) -> str:
 
 
 def _is_turn(m: str) -> str:
-    """SQL: message ``m`` holds a finished answer (``states.Message.is_turn``)."""
-    return (f"({m}.status = 'complete' AND btrim(COALESCE({m}.response, '')) <> ''"
-            f" AND btrim({m}.response) <> :placeholder)")
+    """SQL: message ``m`` holds a finished answer (``states.Message.is_turn``); binds ``:placeholder``.
+
+    The answer is stripped of whitespace for the placeholder test only when it holds the placeholder at all.
+    """
+    return (f"({m}.status = 'complete' AND {_has_text(f'{m}.response')}"
+            f" AND (strpos({m}.response, :placeholder) = 0"
+            f" OR regexp_replace({m}.response, '^[[:space:]]+|[[:space:]]+$', '', 'g') <> :placeholder))")
 
 
 #: The Logs ``label`` filter and row chips: per key, which row the label sits on (``message``: the turn's own row;
@@ -261,7 +319,7 @@ class Scope:
         return (
             f"{alias}.user_id = :scope_user AND NOT EXISTS (SELECT 1 FROM agents va"
             f" WHERE (va.id = {alias}.agent_id OR ({alias}.agent_id IS NULL"
-            f" AND COALESCE({alias}.api_key, '') <> '' AND va.key = {alias}.api_key))"
+            f" AND COALESCE({alias}.api_key, '') <> '' AND va.key = CAST({alias}.api_key AS citext)))"
             " AND va.user_id <> :scope_user)"
         )
 
@@ -289,7 +347,7 @@ class ConversationLabelsRepository:
 
         Args:
             rows: Dicts with the table's columns; ``message_id``, ``reply_message_id``, ``agent_id``, ``top``,
-                ``p_top``, ``lang`` and ``options_hash`` may be missing.
+                ``p_top``, ``lang``, ``options_hash``, ``source_updated_at`` and ``source_hash`` may be missing.
 
         Returns:
             The number of rows written.
@@ -300,18 +358,22 @@ class ConversationLabelsRepository:
             """
             INSERT INTO conversation_labels
                 (conversation_id, message_id, reply_message_id, user_id, agent_id, level, label, top, p_top,
-                 probabilities, derived, lang, options_hash, schema_hash, model_version, occurred_at)
+                 probabilities, derived, lang, options_hash, schema_hash, model_version, occurred_at,
+                 source_updated_at, source_hash)
             VALUES
                 (CAST(:conversation_id AS uuid), CAST(:message_id AS uuid), CAST(:reply_message_id AS uuid),
                  :user_id, CAST(:agent_id AS uuid), :level, :label, :top, :p_top, CAST(:probabilities AS jsonb),
-                 :derived, :lang, :options_hash, :schema_hash, :model_version, :occurred_at)
+                 :derived, :lang, :options_hash, :schema_hash, :model_version, :occurred_at,
+                 CAST(:source_updated_at AS timestamptz), :source_hash)
             ON CONFLICT (conversation_id, COALESCE(message_id, '00000000-0000-0000-0000-000000000000'::uuid), label)
             DO UPDATE SET
                 reply_message_id = EXCLUDED.reply_message_id, user_id = EXCLUDED.user_id,
                 agent_id = EXCLUDED.agent_id, level = EXCLUDED.level, top = EXCLUDED.top,
                 p_top = EXCLUDED.p_top, probabilities = EXCLUDED.probabilities, derived = EXCLUDED.derived,
                 lang = EXCLUDED.lang, options_hash = EXCLUDED.options_hash, schema_hash = EXCLUDED.schema_hash,
-                model_version = EXCLUDED.model_version, occurred_at = EXCLUDED.occurred_at, created_at = now()
+                model_version = EXCLUDED.model_version, occurred_at = EXCLUDED.occurred_at,
+                source_updated_at = EXCLUDED.source_updated_at, source_hash = EXCLUDED.source_hash,
+                created_at = now()
             """
         )
         payload = []
@@ -421,13 +483,14 @@ class ConversationLabelsRepository:
         self, schema_hash: str, model_version: str, days: int, agent_id: Optional[str] = None
     ) -> Dict[str, int]:
         """How many messages and conversations ``message_candidates`` would find, settled or not (``--dry-run``)."""
-        params: Dict[str, Any] = {"schema_hash": schema_hash, "model_version": model_version, "days": int(days)}
+        params: Dict[str, Any] = {"schema_hash": schema_hash, "model_version": model_version, "days": int(days),
+                                  "placeholder": TERMINATED_RESPONSE_PLACEHOLDER}
         scope = _scope(params, agent_id, (), "m.conversation_id")
         row = self._conn.execute(
             text(
                 f"""
                 SELECT COUNT(*) AS messages, COUNT(DISTINCT m.conversation_id) AS conversations,
-                       COUNT(*) FILTER (WHERE m.status = 'complete' AND COALESCE(m.response, '') <> '') AS turns
+                       COUNT(*) FILTER (WHERE {_is_turn("m")}) AS turns
                 FROM conversation_messages m
                 JOIN conversations c ON c.id = m.conversation_id
                 {_AGENT}
@@ -439,14 +502,20 @@ class ConversationLabelsRepository:
         ).one()
         return dict(row._mapping)
 
-    def unlabelled_message_ids(
+    def unlabelled_messages(
         self, conversation_id: str, schema_hash: str, model_version: str, days: int, settle_seconds: int
-    ) -> set[str]:
-        """The ids of one conversation's messages that ``message_candidates`` counts as unlabelled."""
+    ) -> Dict[str, dict]:
+        """One conversation's messages that ``message_candidates`` counts as unlabelled.
+
+        Returns:
+            By message id: its ``timestamp``, ``updated_at`` and ``source_hash`` (``_message_hash``), for a marker
+            written without loading it.
+        """
         result = self._conn.execute(
             text(
                 f"""
-                SELECT CAST(m.id AS text) FROM conversation_messages m
+                SELECT CAST(m.id AS text) AS id, m.timestamp, m.updated_at, {_message_hash("m")} AS source_hash
+                FROM conversation_messages m
                 WHERE m.conversation_id = CAST(:conversation_id AS uuid)
                   AND m.timestamp >= NOW() - make_interval(days => :days)
                   AND m.updated_at <= NOW() - make_interval(secs => :settle)
@@ -456,7 +525,39 @@ class ConversationLabelsRepository:
             {"conversation_id": conversation_id, "schema_hash": schema_hash, "model_version": model_version,
              "days": int(days), "settle": float(settle_seconds)},
         )
-        return {row[0] for row in result.fetchall()}
+        return {row.id: {"timestamp": row.timestamp, "updated_at": row.updated_at, "source_hash": row.source_hash}
+                for row in result.fetchall()}
+
+    def source_messages(self, conversation_id: str) -> Dict[str, Any]:
+        """A conversation's messages as the sweep builds states from them, with what it stores of their source.
+
+        One statement, so the hashes describe exactly the rows returned.
+
+        Returns:
+            ``messages``: its ``conversation_messages`` rows in position order (as ``row_to_dict`` gives them),
+            each with its ``source_hash`` (``_message_hash``); ``updated_at`` and ``hash``: the conversation's, as
+            ``_conversation_source`` computes them (``None`` without user messages).
+        """
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT m.*, {_message_hash("m")} AS source_hash, src.updated_at AS conversation_updated_at,
+                       src.hash AS conversation_hash
+                FROM conversation_messages m
+                CROSS JOIN ({_conversation_source("CAST(:conversation_id AS uuid)")}) src
+                WHERE m.conversation_id = CAST(:conversation_id AS uuid)
+                ORDER BY m.position
+                """
+            ),
+            {"conversation_id": conversation_id},
+        )
+        rows = [row_to_dict(row) for row in result.fetchall()]
+        updated_at = rows[0]["conversation_updated_at"] if rows else None
+        source_hash = rows[0]["conversation_hash"] if rows else None
+        for row in rows:
+            row.pop("conversation_updated_at")
+            row.pop("conversation_hash")
+        return {"messages": rows, "updated_at": updated_at, "hash": source_hash}
 
     def conversation_candidates(
         self,
@@ -472,9 +573,9 @@ class ConversationLabelsRepository:
 
         A conversation is a candidate when its last user message is within the last ``days`` and older than
         ``idle_minutes``, every one of its messages in the window is labelled, and it has no ``goal_met`` row
-        under the running schema and model, the row is older than its last message, or the agent's tags changed
-        since (``tags_hash``). A conversation whose state could not be built (an ``_error`` row newer than its
-        last message) is not asked again.
+        under the running schema and model, the row is not current (``_fresh``: a message changed since the sweep
+        read it), or the agent's tags changed since (``tags_hash``). A conversation whose state could not be built
+        (a current ``_error`` row) is not asked again.
 
         Returns:
             ``conversation_id``, ``user_id``, ``agent_id``, ``last_at`` and ``tags_hash``, the value to store
@@ -483,6 +584,11 @@ class ConversationLabelsRepository:
         params: Dict[str, Any] = {"schema_hash": schema_hash, "model_version": model_version, "days": int(days),
                                   "idle": int(idle_minutes), "limit": int(limit)}
         scope = _scope(params, agent_id, exclude, "conv.conversation_id")
+
+        def fresh(row: str) -> str:
+            current = f"(SELECT src.hash FROM ({_conversation_source('conv.conversation_id')}) src)"
+            return _fresh(row, "conv.last_updated", current)
+
         result = self._conn.execute(
             text(
                 f"""
@@ -502,12 +608,12 @@ class ConversationLabelsRepository:
                     ON g.conversation_id = conv.conversation_id AND g.message_id IS NULL AND g.label = 'goal_met'
                 WHERE {_ENABLED}
                   AND (g.id IS NULL OR g.schema_hash <> :schema_hash OR g.model_version <> :model_version
-                       OR g.created_at < conv.last_updated OR g.options_hash IS DISTINCT FROM {_TAGS_HASH})
+                       OR NOT {fresh("g")} OR g.options_hash IS DISTINCT FROM {_TAGS_HASH})
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_labels e
                       WHERE e.conversation_id = conv.conversation_id AND e.message_id IS NULL
                         AND e.label = '_error' AND e.schema_hash = :schema_hash
-                        AND e.model_version = :model_version AND e.created_at >= conv.last_updated
+                        AND e.model_version = :model_version AND {fresh("e")}
                   )
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_messages m
@@ -643,9 +749,11 @@ class ConversationLabelsRepository:
 
         Returns:
             ``turns``, ``labelled_turns`` (with ``answer_status``), ``replies``, ``labelled_replies`` (with
-            ``reaction``), ``conversations``, ``labelled_conversations`` (with ``goal_met``), and the unlabelled
+            ``reaction``), ``conversations``, ``labelled_conversations`` (with ``goal_met``), the unlabelled
             turns of an enabled agent split at ``labelling_from``: ``unlabelled_recent_turns`` and
-            ``unlabelled_older_turns``.
+            ``unlabelled_older_turns``, and ``failed_turns``: unlabelled turns of an enabled agent whose states
+            could not be built or were refused (a current ``_error`` marker), which the sweep does not retry
+            until the schema or the model changes, so they are not counted as still to come.
         """
         params: Dict[str, Any] = {"schema_hash": schema_hash, "start": start, "end": end,
                                   "labelling_from": labelling_from,
@@ -665,7 +773,12 @@ class ConversationLabelsRepository:
                            {_is_turn("m")} AS is_turn,
                            LAG({_is_turn("m")}) OVER (PARTITION BY m.conversation_id ORDER BY m.position) AS after_turn,
                            ROW_NUMBER() OVER (PARTITION BY m.conversation_id ORDER BY m.position DESC) = 1 AS is_last,
-                           {_ENABLED} AS enabled
+                           {_ENABLED} AS enabled,
+                           EXISTS (
+                               SELECT 1 FROM conversation_labels e
+                               WHERE e.message_id = m.id AND e.label = '_error' AND e.schema_hash = :schema_hash
+                                 AND {_fresh("e", "m.updated_at", _message_hash("m"))}
+                           ) AS failed
                     FROM conv
                     JOIN conversations c ON c.id = conv.conversation_id
                     {_AGENT}
@@ -681,10 +794,12 @@ class ConversationLabelsRepository:
                     COUNT(*) FILTER (WHERE s.in_window AND s.is_last AND (s.enabled OR g.id IS NOT NULL))
                         AS conversations,
                     COUNT(g.id) FILTER (WHERE s.in_window AND s.is_last) AS labelled_conversations,
-                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND s.recent)
-                        AS unlabelled_recent_turns,
-                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL
-                                     AND NOT s.recent) AS unlabelled_older_turns
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND NOT s.failed
+                                     AND s.recent) AS unlabelled_recent_turns,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND NOT s.failed
+                                     AND NOT s.recent) AS unlabelled_older_turns,
+                    COUNT(*) FILTER (WHERE s.in_window AND s.is_turn AND s.enabled AND a.id IS NULL AND s.failed)
+                        AS failed_turns
                 FROM seq s
                 LEFT JOIN conversation_labels a
                     ON a.message_id = s.id AND a.label = 'answer_status' AND a.schema_hash = :schema_hash

@@ -905,6 +905,7 @@ def _utc_iso(value) -> Optional[str]:
 _EMPTY_COVERAGE = {
     "turns": 0, "labelled_turns": 0, "replies": 0, "labelled_replies": 0,
     "conversations": 0, "labelled_conversations": 0, "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0,
+    "failed_turns": 0,
 }
 
 

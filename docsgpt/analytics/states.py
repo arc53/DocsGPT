@@ -40,6 +40,8 @@ class Message:
         status: ``complete`` or ``failed``.
         timestamp: When the message was sent.
         updated_at: When the row last changed.
+        source_hash: The hash of what states read of the row, when it was loaded with one
+            (``ConversationLabelsRepository.source_messages``).
     """
 
     id: str
@@ -49,6 +51,7 @@ class Message:
     status: str = "complete"
     timestamp: Optional[datetime.datetime] = None
     updated_at: Optional[datetime.datetime] = None
+    source_hash: Optional[str] = None
 
     @property
     def is_turn(self) -> bool:
@@ -86,7 +89,8 @@ def messages(rows: list[dict]) -> list[Message]:
         sources = row.get("sources") if isinstance(row.get("sources"), list) else []
         out.append(Message(id=str(row["id"]), prompt=prompt, response=row.get("response") or "",
                            sources=[s for s in sources if isinstance(s, dict)], status=row["status"],
-                           timestamp=_time(row.get("timestamp")), updated_at=_time(row.get("updated_at"))))
+                           timestamp=_time(row.get("timestamp")), updated_at=_time(row.get("updated_at")),
+                           source_hash=row.get("source_hash")))
     return out
 
 

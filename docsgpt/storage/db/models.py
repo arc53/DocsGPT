@@ -978,6 +978,10 @@ conversation_labels_table = Table(
     Column("model_version", Text, nullable=False),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # what the row's state was built from, as the sweep read it: the message's (or the conversation's latest)
+    # updated_at and a hash of its content; NULL on rows from before migration 0058
+    Column("source_updated_at", DateTime(timezone=True)),
+    Column("source_hash", Text),
 )
 
 Index(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import json
 import uuid
 
@@ -10,12 +11,14 @@ import pytest
 from sqlalchemy import text
 
 from docsgpt.analytics import schema, tasks
+from docsgpt.analytics.states import TERMINATED_RESPONSE_PLACEHOLDER
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget
 from docsgpt.decisions.models import V02, version
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.conversation_labels import _AGENT, ConversationLabelsRepository, Scope
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 VERSION = version(V02)
@@ -68,20 +71,22 @@ def _conversation(conn, *, agent_id=None, api_key=None, user="owner", visibility
 
 
 def _message(conn, cid, position, prompt, response="Here is how.", *, status="complete", ago_minutes=120,
-             sources=None) -> str:
+             sources=None, tool_calls=None) -> str:
     return conn.execute(
         text(
             """
             INSERT INTO conversation_messages
-                (conversation_id, user_id, position, prompt, response, status, sources, timestamp, updated_at)
+                (conversation_id, user_id, position, prompt, response, status, sources, tool_calls, timestamp,
+                 updated_at)
             VALUES (CAST(:cid AS uuid), 'owner', :position, :prompt, :response, :status, CAST(:sources AS jsonb),
-                    now() - make_interval(mins => :ago), now() - make_interval(mins => :ago))
+                    CAST(:tool_calls AS jsonb), now() - make_interval(mins => :ago),
+                    now() - make_interval(mins => :ago))
             RETURNING CAST(id AS text)
             """
         ),
         {"cid": cid, "position": position, "prompt": prompt, "response": response, "status": status,
          "sources": json.dumps(sources or [{"title": "Install", "text": "pip install docsgpt"}]),
-         "ago": ago_minutes - position},
+         "tool_calls": json.dumps(tool_calls or []), "ago": ago_minutes - position},
     ).scalar()
 
 
@@ -471,3 +476,152 @@ class TestDigestAndBackfill:
         estimate = tasks.backfill_estimate(7)
         assert (estimate["messages"], estimate["conversations"], estimate["turns"]) == (2, 1, 2)
         assert estimate["estimated_compute_s"] is None and not fake.calls
+
+
+def _candidates(conn, **kwargs) -> list[dict]:
+    return ConversationLabelsRepository(conn).message_candidates(schema.SCHEMA_HASH, VERSION, 30, 0, 50, **kwargs)
+
+
+def _coverage(conn, user="owner") -> dict:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return ConversationLabelsRepository(conn).coverage(Scope(user_id=user), schema.SCHEMA_HASH,
+                                                       now - datetime.timedelta(days=7), now,
+                                                       now - datetime.timedelta(days=30))
+
+
+@pytest.mark.unit
+class TestAgentByKey:
+    def test_a_key_only_conversation_resolves_its_agent_in_any_case(self, db, fake):
+        agent = _agent(db, enabled=True)
+        cid = _conversation(db, api_key=agent["key"].upper())
+        _message(db, cid, 0, "How do I install it?")
+        assert [c["agent_id"] for c in _candidates(db)] == [str(agent["id"])]
+        tasks.sweep()
+        assert {row.agent_id for row in _labels(db, cid).values()} == {str(agent["id"])}
+
+    def test_another_owners_agent_by_key_is_out_of_a_users_coverage_in_any_case(self, db, fake):
+        agent = _agent(db, enabled=True)
+        cid = _conversation(db, api_key=agent["key"].upper(), user="someone")
+        _message(db, cid, 0, "How do I install it?")
+        assert _coverage(db, "someone")["turns"] == 0
+
+    def test_the_agent_lookup_can_use_the_key_index(self, db):
+        index = db.execute(text(
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'agents' AND indexdef LIKE '%(key)%'"
+        )).scalar()
+        db.execute(text("SET LOCAL enable_seqscan = off"))
+        plan = "\n".join(row[0] for row in db.execute(text(f"EXPLAIN SELECT ag.id FROM conversations c {_AGENT}")))
+        assert index and index in plan
+
+
+@pytest.mark.unit
+class TestBlankText:
+    def test_a_blank_prompt_never_holds_up_the_conversation(self, db, fake):
+        cid = _conversation(db)
+        _message(db, cid, 0, "How do I install it?")
+        _message(db, cid, 1, " \n\t ", "ok")
+        tasks.sweep()
+        assert (None, "goal_met") in _labels(db, cid)
+        assert not _candidates(db)
+
+    def test_a_blank_answer_is_not_a_turn(self, db, fake):
+        cid = _conversation(db)
+        _message(db, cid, 0, "How do I install it?", "\n")
+        _message(db, cid, 1, "and now?", f"{TERMINATED_RESPONSE_PLACEHOLDER}\n")
+        assert tasks.backfill_estimate(7)["turns"] == 0
+        tasks.sweep()
+        coverage = _coverage(db)
+        assert (coverage["turns"], coverage["unlabelled_recent_turns"]) == (0, 0)
+
+    def test_a_message_the_states_drop_still_gets_a_marker(self, db, fake, monkeypatch):
+        cid = _conversation(db)
+        _message(db, cid, 0, "How do I install it?")
+        dropped = _message(db, cid, 1, "drop me")
+        real = tasks.states.messages
+        monkeypatch.setattr(tasks.states, "messages",
+                            lambda rows: [m for m in real(rows) if m.prompt != "drop me"])
+        tasks.sweep()
+        labels = _labels(db, cid)
+        assert labels[(dropped, "_error")].top == "build_failed"
+        assert (None, "goal_met") in labels and not _candidates(db)
+
+
+@pytest.mark.unit
+class TestFailedTurns:
+    def test_turns_whose_states_failed_are_counted_failed_not_pending(self, db):
+        _two_turns(db)
+        with installed(_Partial(lambda r: True, "bad_item")):
+            tasks.sweep()
+        coverage = _coverage(db)
+        assert (coverage["turns"], coverage["labelled_turns"]) == (2, 0)
+        assert (coverage["unlabelled_recent_turns"], coverage["failed_turns"]) == (0, 2)
+
+    def test_an_edit_after_the_failure_makes_the_turn_pending_again(self, db, monkeypatch):
+        cid, first, _ = _two_turns(db)
+        with installed(_Partial(lambda r: True, "bad_item")):
+            tasks.sweep()
+        db.execute(text("UPDATE conversation_messages SET response = 'Regenerated.' WHERE id = CAST(:id AS uuid)"),
+                   {"id": first})
+        coverage = _coverage(db)
+        assert (coverage["unlabelled_recent_turns"], coverage["failed_turns"]) == (1, 1)
+
+
+class _Editing(FakeDecider):
+    """Answers as ``FakeDecider``, and runs ``edit`` once, during the first call of ``feature``."""
+
+    def __init__(self, feature, edit):
+        super().__init__(ANSWERS)
+        self.feature, self.edit = feature, edit
+
+    def decide_batch(self, requests, *, feature, budget=Budget.HOT):
+        if feature == self.feature and self.edit is not None:
+            self.edit, edit = None, self.edit
+            edit()
+        return super().decide_batch(requests, feature=feature, budget=budget)
+
+
+def _respond(conn, message_id, response):
+    conn.execute(text("UPDATE conversation_messages SET response = :r WHERE id = CAST(:id AS uuid)"),
+                 {"r": response, "id": message_id})
+
+
+@pytest.mark.unit
+class TestFreshness:
+    def test_an_edit_during_the_call_leaves_the_message_to_the_next_sweep(self, db, monkeypatch):
+        monkeypatch.setattr(settings, "ANALYTICS_TURN_SETTLE_SECONDS", 0)
+        cid, _, second = _two_turns(db)
+        editing = _Editing("analytics_turn", lambda: _respond(db, second, "Regenerated."))
+        with installed(editing):
+            tasks.sweep()
+            assert [c["conversation_id"] for c in _candidates(db)] == [cid]
+            calls = len(editing.calls)
+            tasks.sweep()
+        asked = editing.calls[calls]
+        assert asked.feature == "analytics_turn" and asked.requests[0].state["answer"] == "Regenerated."
+        assert not _candidates(db)
+
+    def test_an_edit_during_the_conversation_call_asks_the_conversation_again(self, db, monkeypatch):
+        monkeypatch.setattr(settings, "ANALYTICS_TURN_SETTLE_SECONDS", 0)
+        cid, first, _ = _two_turns(db)
+        editing = _Editing("analytics_conversation", lambda: _respond(db, first, "Regenerated."))
+        with installed(editing):
+            tasks.sweep()
+            assert (None, "goal_met") in _labels(db, cid)
+            calls = len(editing.calls)
+            tasks.sweep()
+        assert [c.feature for c in editing.calls[calls:]] == ["analytics_turn", "analytics_conversation"]
+
+    def test_feedback_and_a_finished_background_job_relabel_nothing(self, db, fake, monkeypatch):
+        cid = _conversation(db)
+        first = _message(db, cid, 0, "How do I install it?",
+                         tool_calls=[{"call_id": "c1", "job_id": "job-1", "status": "running"}])
+        _message(db, cid, 1, "and on Windows?")
+        tasks.sweep()
+        db.execute(text("UPDATE conversation_labels SET created_at = now() - interval '10 minutes'"))
+        repo = ConversationsRepository(db)
+        assert repo.set_feedback(cid, 1, {"text": "dislike"})
+        assert repo.patch_tool_call(first, "job-1", {"status": "completed"})
+        monkeypatch.setattr(settings, "ANALYTICS_TURN_SETTLE_SECONDS", 0)
+        calls = len(fake.calls)
+        report = tasks.sweep()
+        assert len(fake.calls) == calls and report["messages"] == 0 and not _candidates(db)
