@@ -240,6 +240,17 @@ class TestOrder:
             outcomes = ModelInjectionCheck({}).scan_items(DOCS, Stage.RETRIEVAL, ScanContext())
         assert fake.calls == [] and {o.error for o in outcomes} == {"unscored: off"}
 
+    @pytest.mark.parametrize("reason, queued", [
+        ("bad_item", []), ("backend_error", []), ("timeout", [DOCS]), ("transport", [DOCS]), ("loading", [DOCS]),
+    ])
+    def test_only_items_a_later_try_could_score_are_queued(self, lazy, reason, queued):
+        """An item the model failed on would fail again in the background: it is not queued every turn."""
+        fake = FakeDecider(reasons={"injection_retrieval": reason})
+        with installed(fake):
+            outcomes = ModelInjectionCheck({}).scan_items(DOCS, Stage.RETRIEVAL, ScanContext())
+        assert {o.error for o in outcomes} == {"timeout" if reason == "timeout" else f"unscored: {reason}"}
+        assert lazy == queued
+
 
 @pytest.mark.unit
 class TestLiveItems:

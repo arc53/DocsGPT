@@ -33,7 +33,7 @@ from docsgpt import decisions
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Q, Request, states, tokens, usage
 from docsgpt.decisions.features import INJECTION_LAZY
-from docsgpt.decisions.types import ModelInfo
+from docsgpt.decisions.types import BACKEND_REASONS, ModelInfo
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,12 @@ QUESTIONS = {"injection": Q.INJECTION}
 LAZY_MAX_TEXTS = 16
 #: Why a text was not scored because the caller's ``live`` limit was reached.
 DEFERRED = "deferred"
+#: Why the model could not answer one text, which asking again would not change: the text does not render, or the
+#: backend failed on it (``backend_error``: its pass raised, or a server refused it). Neither stops the other texts,
+#: and neither is queued for background scoring.
+ITEM_FAILURES = frozenset({"bad_item", "backend_error"})
+#: Why the model could not answer at all: the rest of the windows are not sent.
+DOWN = BACKEND_REASONS - ITEM_FAILURES
 
 
 @dataclass(frozen=True)
@@ -198,7 +204,8 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
 
     In the hot lane the windows go out in calls of at most ``DECISION_MAX_BATCH_STATES`` within ``budget``; in the
     background lane in calls of at most ``GUARDRAILS_INJECTION_BATCH_STATES``, each with ``budget``. A call whose
-    status is ``unavailable`` stops the rest. Cache hits are counted in ``decision_usage`` under status
+    status is ``unavailable`` for a reason in ``DOWN`` stops the rest; one the backend failed on item by item
+    (``backend_error``) does not. Cache hits are counted in ``decision_usage`` under status
     ``cached``, so checked texts per feature need no table of their own.
 
     Args:
@@ -303,11 +310,11 @@ def _ask(plan: List[tuple], feature: str, budget: Budget) -> tuple[list, list, f
         )
         for k, decision, reason in zip(part, batch, batch.reasons):
             answers[k], why[k] = decision, reason
-        if batch.status == "unavailable":
+        down = next((r for r in batch.reasons if r in DOWN), None) if batch.status == "unavailable" else None
+        if down is not None:
             # The backend is down or loading: asking again item by item would only wait on it.
-            reason = next((r for r in batch.reasons if r), "unavailable")
             for k in range(part.stop, len(plan)):
-                why[k] = reason
+                why[k] = down
             break
     return answers, why, (time.monotonic() - started) * 1000
 

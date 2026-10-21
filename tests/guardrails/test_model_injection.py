@@ -14,7 +14,7 @@ import pytest
 
 from docsgpt import decisions
 from docsgpt.core.settings import settings
-from docsgpt.decisions import Q, features, record
+from docsgpt.decisions import Budget, Q, features, record
 from docsgpt.decisions.features import INJECTION_INPUT
 from docsgpt.decisions.backends.onnx import OnnxBackend
 from docsgpt.decisions.latency import SpeedProfile
@@ -31,7 +31,7 @@ from docsgpt.guardrails.engine import GuardrailEngine
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
 from docsgpt.guardrails.runtime import merge_floor
 from docsgpt.guardrails.types import Action, Stage
-from tests.decisions.fakes import FakeClock, FakeEngine
+from tests.decisions.fakes import FakeBuffer, FakeClock, FakeEngine
 
 SERVING = Path(__file__).resolve().parent.parent / "fixtures" / "decisions" / "arcd_serving-0.4b-v0.2.json"
 
@@ -303,6 +303,7 @@ class TestDecisionRecord:
 
     @pytest.mark.parametrize("reason, status", [
         ("loading", "unavailable"), ("circuit_open", "unavailable"), ("timeout", "timeout"), ("bad_item", "error"),
+        ("backend_error", "error"),
     ])
     def test_an_unscored_text_records_why(self, reason, status):
         snap = self.evaluate(engine_config(Action.FLAG), FakeDecider(reasons={"injection_input": reason}))
@@ -500,3 +501,67 @@ class TestLongMessagesOnTheClock:
         outcome = self.scan_with_two_seconds(self.TEXT)
         assert not outcome.evaluated and outcome.error == "timeout"
         assert outcome.detail == "timeout p=0.010 windows=2/7"
+
+
+class PoisonEngine(FakeEngine):
+    """A fake engine whose pass raises on a window that holds ``POISON`` (the runtime failing on one item), and
+    answers P(injection) 0.99 for a window that holds ``PAYLOAD`` and 0.01 otherwise, in whichever buffer it ran."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kv = self.last = self.buffers[0] = PoisonBuffer(self, *self._buffer_args)
+
+    def new_buffer(self):
+        buffer = PoisonBuffer(self, *self._buffer_args)
+        self.buffers.append(buffer)
+        return buffer
+
+    def answer(self, logits, key, question):
+        p = 0.99 if "PAYLOAD" in "".join(map(chr, self.last.rows)) else 0.01
+        return Release._answer(question, "noul", [p, 1 - p])
+
+
+class PoisonBuffer(FakeBuffer):
+    def __init__(self, engine, *args):
+        super().__init__(*args)
+        self.engine = engine
+
+    def extend(self, ids, start, io, chunk):
+        self.engine.last = self
+        if "POISON" in "".join(map(chr, self.rows[:start] + list(ids))):
+            raise RuntimeError("the pass failed")
+        return super().extend(ids, start, io, chunk)
+
+
+@pytest.mark.unit
+class TestPassesThatFail:
+    """The real client and ONNX backend, whose pass raises on some texts: the texts after them are still scored."""
+
+    @pytest.fixture
+    def model(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MODE", None)
+        monkeypatch.setattr(settings, "DECISION_MODEL", None)
+        monkeypatch.setattr("docsgpt.celery_init.in_worker", lambda: False)
+        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", True)
+        monkeypatch.setattr(OnnxBackend, "_schedule_tick", lambda self: None)
+        engine = PoisonEngine(json.loads(SERVING.read_text()))
+        client = decisions.get_decider()
+        client._backend = OnnxBackend(V02, open_engine=lambda backend: engine)
+        client._backend.warm()
+        end = time.monotonic() + 5
+        while client._backend.status == "loading" and time.monotonic() < end:
+            time.sleep(0.005)
+        yield client
+        decisions.tokens.reset()
+
+    def test_the_background_lane_scores_the_text_after_a_part_that_failed(self, model, monkeypatch):
+        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_BATCH_STATES", 8)
+        texts = [f"POISON {i}" for i in range(8)] + ["PAYLOAD"]
+        result = injection_scoring.score(texts, feature=injection_scoring.INJECTION_LAZY, budget=Budget.BACKGROUND)
+        assert result.reasons == ["backend_error"] * 8 + [None] and result[8].p == pytest.approx(0.99)
+
+    def test_the_hot_lane_scans_the_payload_after_a_part_that_failed(self, model, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_MAX_BATCH_STATES", 2)
+        result = injection_scoring.score(["POISON 1", "POISON 2", "PAYLOAD"], feature="injection_retrieval",
+                                         budget=Budget.hot(5.0))
+        assert result.reasons == ["backend_error", "backend_error", None] and result[2].p == pytest.approx(0.99)

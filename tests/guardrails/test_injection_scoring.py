@@ -199,7 +199,35 @@ class TestCalls:
         assert len(fake.calls) == 1 and list(result) == [None, None, None]
         assert result.reasons == ["loading"] * 3 and cache.rows == {}
 
-    @pytest.mark.parametrize("reason", ["timeout", "bad_item"])
+    @pytest.mark.parametrize("budget, size", [
+        (Budget.BACKGROUND, "GUARDRAILS_INJECTION_BATCH_STATES"), (Budget.hot(1.5), "DECISION_MAX_BATCH_STATES"),
+    ])
+    def test_a_part_the_backend_failed_on_does_not_stop_the_rest(self, cache, monkeypatch, budget, size):
+        monkeypatch.setattr(settings, size, 2)
+        fake = FakeDecider({"injection": lambda state, q: 0.99 if "PAYLOAD" in state["text"] else 0.01})
+        real = fake.decide_batch
+
+        def poison_fails(requests, **kwargs):
+            done = real(requests, **kwargs)
+            failed = ["POISON" in r.state["text"] for r in requests]
+            return BatchResult([None if f else d for d, f in zip(done, failed)],
+                               ["backend_error" if f else None for f in failed])
+
+        monkeypatch.setattr(fake, "decide_batch", poison_fails)
+        result = score(fake, ["POISON 1", "POISON 2", "PAYLOAD"], budget=budget)
+        assert len(fake.calls) == 2 and result.reasons == ["backend_error", "backend_error", None]
+        assert result[:2] == [None, None] and result[2].p == 0.99
+
+    def test_a_backend_reason_beside_backend_error_still_stops_further_calls(self, cache, monkeypatch):
+        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_BATCH_STATES", 2)
+        fake = FakeDecider({"injection": 0.2})
+        monkeypatch.setattr(fake, "decide_batch", lambda requests, **kwargs: fake.calls.append(requests) or BatchResult(
+            [None] * len(requests), ["backend_error"] + ["transport"] * (len(requests) - 1)))
+        result = score(fake, ["a", "b", "c"], budget=Budget.BACKGROUND)
+        assert len(fake.calls) == 1 and list(result) == [None, None, None]
+        assert result.reasons == ["backend_error", "transport", "transport"]
+
+    @pytest.mark.parametrize("reason", ["timeout", "bad_item", "backend_error"])
     def test_items_not_answered_are_not_cached(self, cache, monkeypatch, reason):
         fake = FakeDecider({"injection": 0.2})
         real = fake.decide_batch
