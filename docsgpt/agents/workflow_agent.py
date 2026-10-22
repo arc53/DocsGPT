@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, Iterable, List, Optional, Tuple
 
 from docsgpt.agents.base import BaseAgent
 from docsgpt.guardrails.config import (
@@ -8,6 +8,7 @@ from docsgpt.guardrails.config import (
 )
 from docsgpt.agents.workflows.schemas import (
     ExecutionStatus,
+    NodeType,
     Workflow,
     WorkflowEdge,
     WorkflowGraph,
@@ -16,6 +17,7 @@ from docsgpt.agents.workflows.schemas import (
 )
 from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 from docsgpt.core.settings import settings
+from docsgpt.events.publisher import publish_user_event
 from docsgpt.logging import LogContext, log_activity
 from docsgpt.sandbox.artifacts_capture import QuotaExceeded
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -26,6 +28,9 @@ from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+# Nodes a run passes through that are not steps of its progress.
+_NOT_STEPS = frozenset({NodeType.START.value, NodeType.NOTE.value})
 
 # Per-run cap on attachments staged as run-scoped artifacts; the remainder is
 # dropped (the per-user artifact quota is only a best-effort soft cap).
@@ -41,10 +46,14 @@ class WorkflowAgent(BaseAgent):
         workflow_id: Optional[str] = None,
         workflow: Optional[Dict[str, Any]] = None,
         workflow_owner: Optional[str] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.workflow_id = workflow_id
+        # The request's passthrough values, seeded as ``state.passthrough`` so
+        # node prompts can read ``{{ passthrough.* }}``.
+        self.passthrough = passthrough if isinstance(passthrough, dict) else None
         self.workflow_row: Optional[Dict[str, Any]] = None
         self.workflow_owner = workflow_owner
         self._workflow_data = workflow
@@ -116,7 +125,9 @@ class WorkflowAgent(BaseAgent):
         self._engine.run_persisted = self._run_persisted
         interrupted = True
         try:
-            yield from self._engine.execute({"input_documents": input_documents}, query)
+            yield from self._with_progress(
+                self._engine.execute(self._initial_inputs(input_documents), query), run_user_id
+            )
             interrupted = False
         finally:
             self._finalize_workflow_run(
@@ -126,6 +137,80 @@ class WorkflowAgent(BaseAgent):
                 query,
                 interrupted=interrupted,
             )
+
+    def _initial_inputs(self, input_documents: Any) -> Dict[str, Any]:
+        """The run's starting state: its documents, plus the request's passthrough values."""
+        inputs: Dict[str, Any] = {"input_documents": input_documents}
+        if self.passthrough:
+            inputs["passthrough"] = dict(self.passthrough)
+        return inputs
+
+    def _with_progress(
+        self, events: Iterable[Dict[str, Any]], run_user_id: Optional[str]
+    ) -> Generator[Dict[str, Any], None, None]:
+        """Pass the engine's events through, recording each step as it starts.
+
+        A step's start is written to the run row (``progress``) and sent to
+        the person who started the run as ``workflow.run.step``, so Activity
+        can say which step a run is on. Only a run with a row records
+        progress; a failed write never touches the run.
+
+        Args:
+            events: The engine's event stream.
+            run_user_id: The run's owner.
+
+        Yields:
+            Every event, unchanged.
+        """
+        record = self._run_persisted and bool(run_user_id) and self._engine is not None
+        total = self._engine.graph.linear_step_count() if record else None
+        done = 0
+        try:
+            for event in events:
+                if record and event.get("type") == "workflow_step" and event.get("node_type") not in _NOT_STEPS:
+                    if event.get("status") == "running":
+                        self._record_progress(
+                            str(run_user_id),
+                            {
+                                "done": done,
+                                "total": total,
+                                "current": {
+                                    "node_id": event.get("node_id"),
+                                    "title": event.get("node_title"),
+                                    "type": event.get("node_type"),
+                                    "started_at": datetime.now(timezone.utc).isoformat(),
+                                },
+                            },
+                        )
+                    elif event.get("status") == "completed":
+                        done += 1
+                yield event
+        finally:
+            # Closing the stream mid-run must reach the engine's own cleanup.
+            close = getattr(events, "close", None)
+            if close is not None:
+                close()
+
+    def _record_progress(self, run_user_id: str, progress: Dict[str, Any]) -> None:
+        """Store a run's progress and tell its owner; best-effort.
+
+        Args:
+            run_user_id: The run's owner.
+            progress: ``{done, total, current}``.
+        """
+        run_id = self._engine.workflow_run_id
+        try:
+            with db_session() as conn:
+                if not WorkflowRunsRepository(conn).set_progress(run_id, run_user_id, progress):
+                    return
+        except Exception:
+            logger.exception("Recording progress of workflow run %s failed", run_id)
+            return
+        publish_user_event(
+            run_user_id,
+            "workflow.run.step",
+            {"workflow_run_id": run_id, "workflow_id": self.workflow_id, "progress": progress},
+        )
 
     def _load_workflow_graph(self) -> Optional[WorkflowGraph]:
         if self._workflow_data:
@@ -301,13 +386,33 @@ class WorkflowAgent(BaseAgent):
                     run_user_id,
                     ExecutionStatus.RUNNING.value,
                     run_id=self._engine.workflow_run_id,
-                    inputs={"query": query},
+                    inputs=self._run_inputs(query),
                     started_at=datetime.now(timezone.utc),
                 )
             return pg_workflow_id
         except Exception as e:
             logger.error(f"Failed to pre-create workflow run: {e}")
             return None
+
+    def _run_inputs(self, query: str) -> Dict[str, Any]:
+        """The run row's ``inputs``: the query and, when known, what started the run.
+
+        Args:
+            query: The run's input.
+
+        Returns:
+            ``{"query": ...}``, plus ``started_by`` (see ``BaseAgent``) and
+            ``agent_id`` (the agent that ran it; several can share a
+            workflow) when set.
+        """
+        inputs: Dict[str, Any] = {"query": query}
+        started_by = getattr(self, "started_by", None)
+        if started_by:
+            inputs["started_by"] = str(started_by)
+        agent_id = getattr(self, "agent_id", None)
+        if agent_id:
+            inputs["agent_id"] = str(agent_id)
+        return inputs
 
     def _bridge_attachments(
         self, run_user_id: Optional[str], *, persisted: bool
@@ -470,7 +575,7 @@ class WorkflowAgent(BaseAgent):
                 workflow_id=self.workflow_id or "unknown",
                 user=run_user_id,
                 status=status,
-                inputs={"query": query},
+                inputs=self._run_inputs(query),
                 outputs=self._serialize_state(self._engine.state),
                 steps=self._engine.get_execution_summary(),
                 created_at=datetime.now(timezone.utc),

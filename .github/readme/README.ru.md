@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit c345cddb3ac33b44a077cfb5599f6adb2fc6604f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 298ec2a0297af9fb740062f8d13afbfa967fdb7f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -44,11 +44,18 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="DocsGPT за 30 секунд: загрузка документов, синхронизация с GitHub, ответы с источниками, глубокое исследование, визуальные workflow, инструменты, чат-виджет, OpenAI-совместимый API, MCP-сервер и самостоятельное размещение через docsgpt up" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="Обзор DocsGPT: ответы с указанием источников, знания, агенты, визуальные workflow, инструменты и коннекторы, наблюдаемость">
   </a>
 </p>
 
 > 🎃 **Hacktoberfest 2026:** футболки за значимый вклад весь октябрь. Подробнее в [HACKTOBERFEST.md](../../HACKTOBERFEST.md).
+
+<p align="center">
+  <sub>При поддержке</sub><br>
+  <a href="https://get.neon.com/docsgpt"><picture><source media="(prefers-color-scheme: dark)" srcset="https://neon.com/brand/neon-logo-dark-color.svg"><img height="32" alt="Neon" src="https://neon.com/brand/neon-logo-light-color.svg" /></picture></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Программа Vercel для проектов с открытым исходным кодом" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
 
 ## Зачем нужен DocsGPT
 
@@ -76,6 +83,8 @@ MCP-сервера. Всё работает в вашей среде с выбр
 - 🧠 **Любые модели:** OpenAI, Anthropic, Google, Groq, OpenRouter или локальные модели через Ollama, vLLM и другие OpenAI-совместимые серверы.
 - 🛡️ **Защитные механизмы:** выявляйте, редактируйте или блокируйте PII, секреты, prompt injection и ответы без опоры на источники.
 - ⏰ **Расписания и webhook:** запускайте агентов по таймеру или из любой системы, способной отправить HTTP-запрос.
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
@@ -191,15 +200,4 @@ docsgpt down       # остановка (данные и настройки со
 
 DocsGPT распространяется по [лицензии MIT](../../LICENSE).
 
-## При поддержке
 
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>

@@ -296,6 +296,32 @@ class TestAccountNamesInToolNames:
         assert detail["tools"][0]["display_name"] == "Telegram · Alerts bot"
 
 
+class TestPresetDefaultActions:
+    """A preset's tool starts with only its ``default_actions`` on (Alpha Vantage's 133 tools)."""
+
+    def test_actions_outside_the_defaults_start_off(self, pg_conn):
+        from docsgpt.connectors.permissions import action_permission
+
+        connection = dict(pg_conn.execute(
+            text(
+                "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, server_url) "
+                "VALUES ('alice', 'mcp:https://mcp.alphavantage.co', 'mcp:alphavantage', 'mcp_oauth', "
+                "'connected', 'https://mcp.alphavantage.co') RETURNING *"
+            )
+        ).one()._mapping)
+        read_only = {"readOnlyHint": True}
+        discovered = [
+            {"name": name, "description": name, "inputSchema": {"type": "object", "properties": {}},
+             "annotations": read_only}
+            for name in ("GLOBAL_QUOTE", "MACDEXT")
+        ]
+
+        [tool] = service.ensure_connection_tools(pg_conn, "alice", connection, mcp_actions=discovered)
+
+        permissions = {action["name"]: action_permission(action) for action in tool["actions"]}
+        assert permissions == {"GLOBAL_QUOTE": "always", "MACDEXT": "off"}
+
+
 class TestOwnerCredentialWrites:
     """The tool list names the writes an agent's API allowlist can cover."""
 

@@ -36,7 +36,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 from typing import Any, Iterable
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 # httpx2 (the maintained fork of httpx, by its original author, published by
 # Pydantic at github.com/pydantic/httpx2) is what the OpenAI and Anthropic
@@ -46,6 +46,7 @@ from urllib.parse import urlsplit, urlunsplit
 import anyio
 import httpx2 as httpx
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 
 # Allowed URL schemes. Anything else (file, gopher, ftp, data, ...) is
@@ -168,6 +169,50 @@ def _resolve(host: str) -> Iterable[ipaddress.IPv4Address | ipaddress.IPv6Addres
     return addresses
 
 
+def _urllib3_host(url: str) -> str | None:
+    """Host of ``url`` as urllib3 reads it, or ``None`` if it cannot parse it."""
+
+    try:
+        return urllib3.util.parse_url(url).host
+    except urllib3.exceptions.LocationParseError:
+        return None
+
+
+def reject_ambiguous_url(url: str) -> None:
+    """Refuse a URL whose host the HTTP libraries could read differently from ``urlsplit``.
+
+    The SSRF guard checks the host ``urlsplit`` finds, but ``requests`` and
+    ``boto`` dial the host urllib3 finds. For ``http://127.0.0.1\\@1.1.1.1``
+    ``urlsplit`` reads ``1.1.1.1`` (``127.0.0.1\\`` as userinfo) while urllib3
+    ends the authority at the backslash and dials ``127.0.0.1``. ``urlsplit``
+    also silently drops tabs and newlines that other parsers keep.
+
+    Raises:
+        UnsafeUserUrlError: If the URL contains control characters, a
+            backslash or whitespace in its authority, or a host urllib3
+            reads differently.
+    """
+
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
+        raise UnsafeUserUrlError(f"url {url!r} contains control characters")
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError as exc:
+        raise UnsafeUserUrlError(f"could not parse url {url!r}: {exc}") from exc
+    if "\\" in parts.netloc or any(ch.isspace() for ch in parts.netloc):
+        raise UnsafeUserUrlError(f"url {url!r} has a backslash or whitespace in its host part")
+    if not host:
+        return
+    # Re-parse the host urlsplit found so both sides get urllib3's spelling
+    # (IDNA, brackets, case) before they are compared.
+    bracketed = f"[{host}]" if ":" in host else host
+    expected = _urllib3_host(f"{parts.scheme}://{bracketed}/")
+    actual = _urllib3_host(url)
+    if expected is None or expected != actual:
+        raise UnsafeUserUrlError(f"url {url!r} names its host ambiguously ({host!r} vs {actual!r})")
+
+
 def _validate_and_pick_ip(
     url: str,
 ) -> tuple[str, ipaddress.IPv4Address | ipaddress.IPv6Address, "urlsplit"]:
@@ -187,6 +232,7 @@ def _validate_and_pick_ip(
     if not isinstance(url, str) or not url.strip():
         raise UnsafeUserUrlError("url must be a non-empty string")
 
+    reject_ambiguous_url(url)
     try:
         parts = urlsplit(url)
     except ValueError as exc:
@@ -311,14 +357,6 @@ def _ip_to_url_host(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
     return str(ip)
 
 
-def _url_userinfo_prefix(netloc: str) -> str:
-    """Return the exact ``userinfo@`` prefix from a URL netloc, if present."""
-
-    if "@" not in netloc:
-        return ""
-    return f"{netloc.rsplit('@', 1)[0]}@"
-
-
 def _pinned_session(
     url: str, headers: dict[str, str] | None
 ) -> tuple[requests.Session, str, dict[str, str]]:
@@ -338,7 +376,10 @@ def _pinned_session(
 
     host, ip, parts = _validate_and_pick_ip(url)
 
-    netloc = f"{_url_userinfo_prefix(parts.netloc)}{_ip_to_url_host(ip)}"
+    # The dialed URL is rebuilt from the validated IP alone: userinfo is sent
+    # as Basic auth, never copied, so no user-written authority text reaches
+    # the parser that picks the connect host.
+    netloc = _ip_to_url_host(ip)
     if parts.port is not None:
         netloc = f"{netloc}:{parts.port}"
     pinned_url = urlunsplit(
@@ -350,6 +391,8 @@ def _pinned_session(
     request_headers["Host"] = host_header
 
     session = requests.Session()
+    if parts.username is not None:
+        session.auth = (unquote(parts.username), unquote(parts.password or ""))
     if parts.scheme == "https":
         session.mount("https://", _PinnedHostAdapter(host))
     return session, pinned_url, request_headers

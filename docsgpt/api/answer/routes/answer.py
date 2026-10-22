@@ -127,6 +127,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     agent_id=processor.agent_id,
                     model_id=processor.model_id,
                     trace=processor.trace,
+                    passthrough=processor.passthrough,
                     _continuation={
                         "messages": messages,
                         "tools_dict": tools_dict,
@@ -171,6 +172,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     model_id=processor.model_id,
                     request_id=processor.request_id,
                     trace=processor.trace,
+                    passthrough=processor.passthrough,
                 )
 
             stream_result = self.process_response_stream(stream)
@@ -190,6 +192,9 @@ class AnswerResource(Resource, BaseAnswerResource):
                 "tool_calls": stream_result["tool_calls"],
                 "thought": stream_result["thought"],
             }
+            for key in ("artifacts", "attachments"):
+                if stream_result.get(key):
+                    result[key] = stream_result[key]
 
             extra_info = stream_result.get("extra")
             if extra_info:

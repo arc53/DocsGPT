@@ -1,0 +1,78 @@
+# The decision model's server (`docsgpt decide-server`), which the API and the
+# worker call at docsgpt-decider-service once this component is on (see
+# kustomization.yaml next to this file). It runs the API's image and stays
+# idle, loading and downloading nothing, until a decision feature is turned on
+# in docsgpt-secrets; the first one downloads the model (~0.5 GB) into the
+# volume below. The API's readiness never depends on it: decisions fail open.
+#
+# It reads its key, DECISION_KEY, from INTERNAL_KEY, as the API and the worker do.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docsgpt-decision-models
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docsgpt-decider
+spec:
+  replicas: 1
+  # One pod at a time on the ReadWriteOnce volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: docsgpt-decider
+  template:
+    metadata:
+      labels:
+        app: docsgpt-decider
+    spec:
+      securityContext:
+        fsGroup: 999  # the image's appuser, so it can write the model cache
+      containers:
+      - name: docsgpt-decider
+        image: arc53/docsgpt:1.0.0
+        command: ["python", "-m", "docsgpt", "decide-server", "--host", "0.0.0.0", "--port", "7095",
+                  "--device", "cpu"]
+        ports:
+        - containerPort: 7095
+        # /health answers while the process runs, before and during a model load.
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7095
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "4"
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        env:
+        - name: DECISION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: INTERNAL_KEY
+        volumeMounts:
+        - name: decision-models
+          mountPath: /app/models/decision
+      volumes:
+      - name: decision-models
+        persistentVolumeClaim:
+          claimName: docsgpt-decision-models

@@ -268,6 +268,9 @@ class LLMHandler(ABC):
         plan = self._attachment_plan_of(agent)
         if plan is not None:
             return self._prepare_planned_messages(agent, messages, plan)
+        if getattr(agent, "_attachments_merged", False) is True:
+            # A resumed turn: its saved messages already carry the files.
+            return messages
         if not attachments:
             return messages
         logger.info(f"Preparing messages with {len(attachments)} attachments")
@@ -450,7 +453,19 @@ class LLMHandler(ABC):
         block = render_attachment_block(plan)
         if block:
             content = carrier.get("content")
-            if isinstance(content, list):
+            if getattr(getattr(llm, "capabilities", None), "prompt_cache_breakpoints", False) is True:
+                # The history replays the question without the files, so it
+                # goes first and alone in its text part: the prompt-cache
+                # breakpoint on it then marks a prefix later turns resend
+                # byte for byte (``OpenAILLM._with_cache_breakpoints``).
+                parts = content if isinstance(content, list) else (
+                    [{"type": "text", "text": content}] if isinstance(content, str) and content else []
+                )
+                lead = 0
+                while lead < len(parts) and isinstance(parts[lead], dict) and parts[lead].get("type") == "text":
+                    lead += 1
+                carrier["content"] = [*parts[:lead], {"type": "text", "text": block}, *parts[lead:]]
+            elif isinstance(content, list):
                 carrier["content"] = [{"type": "text", "text": block}, *content]
             else:
                 text = content if isinstance(content, str) else ""

@@ -26,6 +26,9 @@ const userService = {
     throttledApiClient.get(endpoints.USER.AGENTS, token),
   getGuardrailCatalog: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.GUARDRAIL_CATALOG, token),
+  /** The guardrails a new agent starts with (Admin › Defaults). */
+  getAgentDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_DEFAULTS, token),
   getGuardrailEvents: (
     agentId: string,
     token: string | null,
@@ -107,6 +110,25 @@ const userService = {
     apiClient.post(endpoints.USER.TOOL_ANALYTICS, data, token),
   getScheduleAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
+  getConversationInsights: (
+    data: { api_key_id?: string; filter_option: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERSATION_INSIGHTS, data, token),
+  getDocsGaps: (
+    data: {
+      api_key_id?: string;
+      filter_option: string;
+      group_by: 'page' | 'source' | 'topic';
+      limit: number;
+    },
+    token: string | null,
+  ): Promise<Response> => apiClient.post(endpoints.USER.DOCS_GAPS, data, token),
+  /** The `auto` topic rule's topics for an agent (needs edit access). */
+  getTopicFolders: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TOPIC_FOLDERS(agentId), token),
+  getAgentTopics: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_TOPICS(agentId), token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   getTraces: (
@@ -143,6 +165,8 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  getSourceDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_DEFAULTS, token),
   testSourceRetrieval: (
     sourceId: string,
     data: { query: string; retrieval?: any },
@@ -283,9 +307,22 @@ const userService = {
     token: string | null,
     path?: string,
     search?: string,
+    injection?: 'flagged',
   ): Promise<any> =>
     throttledApiClient.get(
-      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
+      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search, injection),
+      token,
+    ),
+  /** Mark a chunk text safe from prompt-injection screening for its source (`allow`), or undo it (`clear`). */
+  reviewChunkInjection: (
+    sourceId: string,
+    contentHash: string,
+    decision: 'allow' | 'clear',
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.INJECTION_REVIEW(sourceId),
+      { content_hash: contentHash, decision },
       token,
     ),
   /** The chunk behind a citation, by the content key retrieval labelled it with. */
@@ -317,6 +354,8 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
+  cancelMCPOAuth: (taskId: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_OAUTH_CANCEL, { task_id: taskId }, token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   // The source's own connection syncs it; no browser token is involved.

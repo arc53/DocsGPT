@@ -5,6 +5,7 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
 import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
@@ -64,9 +65,19 @@ export interface Preference {
   // config loads, so a backend without these flags keeps showing the controls.
   ttsAvailable: boolean;
   sttAvailable: boolean;
+  // The server rejects unauthenticated calls (/api/config ``requires_auth``).
+  authRequired: boolean;
   // Share of the model's window a turn's attached files may take
   // (/api/config ``attachment_budget_share``); null until the config loads.
   attachmentBudgetShare: number | null;
+  // The decision model may label conversations (/api/config
+  // ``decision_analytics_enabled``); off until the config loads.
+  analyticsEnabled: boolean;
+  // The agent editor's limits for the two kinds of topic (/api/config
+  // ``analytics_max_topics`` / ``analytics_max_overlapping_topics``); the server's
+  // defaults until the config loads.
+  analyticsMaxTopics: number;
+  analyticsMaxOverlapping: number;
 }
 
 const initialState: Preference = {
@@ -99,7 +110,11 @@ const initialState: Preference = {
   rolesResolved: false,
   ttsAvailable: true,
   sttAvailable: true,
+  authRequired: false,
   attachmentBudgetShare: null,
+  analyticsEnabled: false,
+  analyticsMaxTopics: MAX_TOPICS,
+  analyticsMaxOverlapping: MAX_OVERLAPPING,
 };
 
 export const prefSlice = createSlice({
@@ -157,6 +172,7 @@ export const prefSlice = createSlice({
       action: PayloadAction<{
         data: ConversationSummary[] | null;
         loading: boolean;
+        requestedAt?: number;
       }>,
     ) => {
       if (!action.payload.data) {
@@ -168,25 +184,42 @@ export const prefSlice = createSlice({
         payload: action.payload.data,
       });
     },
-    /** An older page, loaded as the sidebar's end scrolls into view. */
-    appendConversations: (
-      state,
-      action: PayloadAction<ConversationSummary[]>,
-    ) => {
-      const existing = state.conversations.data ?? [];
-      const seen = new Set(existing.map((c) => c.id));
-      state.conversations.data = [
-        ...existing,
-        ...action.payload.filter((c) => !seen.has(c.id)),
-      ];
-      state.conversations.hasMore =
-        action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+    /**
+     * An older page, loaded as the sidebar's end scrolls into view.
+     * `requestedAt`, when its request went out, orders its unread marks.
+     */
+    appendConversations: {
+      reducer: (
+        state,
+        action: PayloadAction<
+          ConversationSummary[],
+          string,
+          { requestedAt?: number }
+        >,
+      ) => {
+        const existing = state.conversations.data ?? [];
+        const seen = new Set(existing.map((c) => c.id));
+        state.conversations.data = [
+          ...existing,
+          ...action.payload.filter((c) => !seen.has(c.id)),
+        ];
+        state.conversations.hasMore =
+          action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+      },
+      prepare: (list: ConversationSummary[], requestedAt?: number) => ({
+        payload: list,
+        meta: { requestedAt },
+      }),
     },
     removeConversation: (state, action: PayloadAction<string>) => {
       if (!state.conversations.data) return;
       state.conversations.data = state.conversations.data.filter(
         (c) => c.id !== action.payload,
       );
+    },
+    /** Every conversation was deleted: the list is empty, with no more pages. */
+    removeAllConversations: (state) => {
+      state.conversations = { data: [], loading: false, hasMore: false };
     },
     /** A rename keeps the chat's place, so it is applied here, not refetched. */
     renameConversation: (
@@ -252,8 +285,23 @@ export const prefSlice = createSlice({
       state.ttsAvailable = action.payload.tts;
       state.sttAvailable = action.payload.stt;
     },
+    setAuthRequired: (state, action: PayloadAction<boolean>) => {
+      state.authRequired = action.payload;
+    },
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
+    },
+    setAnalyticsAvailability: (
+      state,
+      action: PayloadAction<{
+        enabled: boolean;
+        maxTopics: number;
+        maxOverlapping: number;
+      }>,
+    ) => {
+      state.analyticsEnabled = action.payload.enabled;
+      state.analyticsMaxTopics = action.payload.maxTopics;
+      state.analyticsMaxOverlapping = action.payload.maxOverlapping;
     },
   },
 });
@@ -267,6 +315,7 @@ export const {
   receiveConversations,
   appendConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversationsLoading,
   setToken,
@@ -286,7 +335,9 @@ export const {
   setRoles,
   clearRoles,
   setSpeechAvailability,
+  setAuthRequired,
   setAttachmentBudgetShare,
+  setAnalyticsAvailability,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -435,9 +486,18 @@ export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;
 export const selectIsAdmin = (state: RootState) =>
   state.preference.roles.includes('admin');
+// Speech needs a signed-in user wherever the server requires auth, so a
+// signed-out viewer of a shared conversation gets no Speak button.
 export const selectTtsAvailable = (state: RootState) =>
-  state.preference.ttsAvailable;
+  state.preference.ttsAvailable &&
+  (!state.preference.authRequired || !!state.preference.token);
 export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
 export const selectAttachmentBudgetShare = (state: RootState) =>
   state.preference.attachmentBudgetShare;
+export const selectAnalyticsEnabled = (state: RootState) =>
+  state.preference.analyticsEnabled;
+export const selectAnalyticsMaxTopics = (state: RootState) =>
+  state.preference.analyticsMaxTopics;
+export const selectAnalyticsMaxOverlapping = (state: RootState) =>
+  state.preference.analyticsMaxOverlapping;

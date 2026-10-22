@@ -115,6 +115,7 @@ defaults:                              # optional, applied to every model below
   reasoning_effort: <string>           # default null; none|minimal|low|medium|high|xhigh (subset is model-dependent)
   api_flavor: <string>                  # chat_completions (default) or responses
   tool_result_images: <string>          # default: by API; native (inside the tool result) or follow_up (a user message after it)
+  prompt_cache_breakpoints: bool        # default false; responses only: mark explicit prompt-cache breakpoints (GPT-5.6+; earlier models reject them)
 
 models:                                # required
   - id: <string, required>             # unique registry key; persisted in agent records

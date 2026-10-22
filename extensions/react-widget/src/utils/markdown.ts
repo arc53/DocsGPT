@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import { highlight } from './prism';
+import { interpolate } from '../locale/index';
 
 type Markdown = ReturnType<typeof MarkdownIt>;
 type CoreRule = Parameters<Markdown['core']['ruler']['push']>[1];
@@ -10,6 +11,10 @@ type Token = StateCore['tokens'][number];
 export type AnswerEnv = {
   /** How many sources the answer has; only `[1]`…`[sourceCount]` link. */
   sourceCount?: number;
+  /** Citation pill label; `{number}` is the source's number. */
+  openSourceLabel?: string;
+  /** The code frame's copy button label. */
+  copyCodeLabel?: string;
 };
 
 const CITATION = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
@@ -105,9 +110,16 @@ const createMarkdown = () => {
   const escape = md.utils.escapeHtml;
 
   md.core.ruler.before('text_join', 'dgpt_citations', citations);
-  md.renderer.rules.dgpt_cite = (tokens, idx) => {
+  md.renderer.rules.dgpt_cite = (tokens, idx, _options, env) => {
     const n = escape(String((tokens[idx].meta as { n: string }).n));
-    return `<button type="button" class="dgpt-cite" data-cite="${n}" aria-label="Open source ${n}">${n}</button>`;
+    const label = escape(
+      interpolate(
+        (env as AnswerEnv | undefined)?.openSourceLabel ??
+          'Open source {number}',
+        { number: n },
+      ),
+    );
+    return `<button type="button" class="dgpt-cite" data-cite="${n}" aria-label="${label}">${n}</button>`;
   };
 
   md.renderer.rules.table_open = () =>
@@ -131,16 +143,20 @@ const createMarkdown = () => {
 
   // The app's CodeFrame: a header with the language and a copy button over
   // the code, which keeps its lines and scrolls sideways.
-  md.renderer.rules.fence = (tokens, idx) => {
+  md.renderer.rules.fence = (tokens, idx, _options, env) => {
     const token = tokens[idx];
     const language = token.info.trim().split(/\s+/)[0].toLowerCase();
     const code = token.content.replace(/\n$/, '');
     const body = (language ? highlight(code, language) : null) ?? escape(code);
+    // A language name, not prose, so 'text' stays untranslated.
     const label = language ? escape(language) : 'text';
+    const copyLabel = escape(
+      (env as AnswerEnv | undefined)?.copyCodeLabel ?? 'Copy code',
+    );
     return (
       '<div class="dgpt-code">' +
       `<div class="dgpt-code-header"><span class="dgpt-code-language">${label}</span>` +
-      `<button type="button" class="dgpt-code-copy" aria-label="Copy code">${COPY_SVG}${CHECK_SVG}</button></div>` +
+      `<button type="button" class="dgpt-code-copy" aria-label="${copyLabel}">${COPY_SVG}${CHECK_SVG}</button></div>` +
       `<pre class="dgpt-code-body"><code>${body}</code></pre>` +
       '</div>'
     );

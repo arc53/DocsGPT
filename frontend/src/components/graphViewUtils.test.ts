@@ -352,7 +352,7 @@ describe('otherTypesList', () => {
   });
 
   it('maps the app codes Intl does not know', () => {
-    expect(otherTypesList(['A', 'B'], more, 'jp')).toBe(
+    expect(otherTypesList(['A', 'B'], more, 'ja')).toBe(
       new Intl.ListFormat('ja', { type: 'conjunction' }).format(['A', 'B']),
     );
   });

@@ -1,4 +1,5 @@
 import { envVar } from '@/env';
+import { useAvoidToasts } from '@/components/ui/toast-layout';
 import { cn } from '@/lib/utils';
 import { CloudUpload, Database } from 'lucide-react';
 import {
@@ -83,7 +84,7 @@ import {
 } from './message-input/attachmentUpload';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { exceedsAttachmentBudget } from './message-input/attachmentBudget';
-import { handleAbort } from '../conversation/conversationSlice';
+import { stopAnswer } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   getFileExtension,
@@ -364,6 +365,9 @@ export default function MessageInput({
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // The toast stack sits above the composer rather than over its controls.
+  const composerRef = useRef<HTMLDivElement>(null);
+  useAvoidToasts(composerRef);
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
@@ -1325,24 +1329,38 @@ export default function MessageInput({
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
 
+  // The list loads on mount and on each open; only the latest request's
+  // answer applies, so a slow older one can't undo a toggle.
+  const toolsRequestRef = useRef(0);
   const fetchUserTools = useCallback(() => {
+    const request = ++toolsRequestRef.current;
+    const isLatest = () => request === toolsRequestRef.current;
     setToolsLoading(true);
     userService
       .getUserTools(token)
       .then((res) => res.json())
       .then((data) => {
+        if (!isLatest()) return;
         const filtered = (data.tools || []).filter(isChatPickerToolVisible);
         setUserTools(filtered);
       })
       .catch((error) => {
         console.error('Error fetching tools:', error);
       })
-      .finally(() => setToolsLoading(false));
+      .finally(() => {
+        if (isLatest()) setToolsLoading(false);
+      });
   }, [token]);
 
   // Launched from the Tools picker; the modals live here because the picker
   // closes when a sign-in opens.
   const signInAgain = useSignInAgain({ onConnected: fetchUserTools });
+
+  // Loaded up front so the Tools pill shows its count before the picker is
+  // opened; opening it refetches.
+  useEffect(() => {
+    if (showToolButton) fetchUserTools();
+  }, [showToolButton, fetchUserTools]);
 
   useEffect(() => {
     if (isToolsPopupOpen) {
@@ -1535,7 +1553,7 @@ export default function MessageInput({
   };
 
   const handleCancel = () => {
-    handleAbort();
+    void (dispatch as AppDispatch)(stopAnswer());
   };
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -1599,6 +1617,7 @@ export default function MessageInput({
           it rewrites text nodes into <font> wrappers and React loses the
           controls (dead Attach button, see AttachFileButton). */}
       <div
+        ref={composerRef}
         translate="no"
         className="border-border bg-card relative flex w-full flex-col rounded-3xl border"
       >

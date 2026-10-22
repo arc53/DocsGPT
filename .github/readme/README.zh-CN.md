@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit c345cddb3ac33b44a077cfb5599f6adb2fc6604f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 298ec2a0297af9fb740062f8d13afbfa967fdb7f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -44,11 +44,18 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="30 秒了解 DocsGPT：上传文档、同步 GitHub、带来源的回答、深度研究、可视化工作流、工具、聊天 widget、OpenAI 兼容 API、MCP server，以及通过 docsgpt up 自托管" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="DocsGPT 概览：带引用的回答、知识库、agent、可视化工作流、工具和连接器、可观测性">
   </a>
 </p>
 
 > 🎃 **Hacktoberfest 2026**：整个十月，提交有意义的贡献即可获得 T 恤。请参阅 [HACKTOBERFEST.md](../../HACKTOBERFEST.md)。
+
+<p align="center">
+  <sub>支持方</sub><br>
+  <a href="https://get.neon.com/docsgpt"><picture><source media="(prefers-color-scheme: dark)" srcset="https://neon.com/brand/neon-logo-dark-color.svg"><img height="32" alt="Neon" src="https://neon.com/brand/neon-logo-light-color.svg" /></picture></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Vercel 开源计划" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
 
 ## 为什么选择 DocsGPT
 
@@ -76,6 +83,8 @@ SSO、团队和配额在内的一切功能均采用 MIT 许可证。
 - 🧠 **任意模型**：支持 OpenAI、Anthropic、Google、Groq、OpenRouter，以及通过 Ollama、vLLM 和其他 OpenAI 兼容 server 使用的本地模型。
 - 🛡️ **安全护栏**：标记、脱敏或拦截 PII、密钥、提示词注入和无依据的回答。
 - ⏰ **计划任务和 webhook**：按定时任务运行 agent，或由任何能够发送 HTTP 请求的系统触发运行。
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
@@ -191,15 +200,4 @@ docsgpt down       # 停止（数据和设置会保留）
 
 DocsGPT 采用 [MIT 许可证](../../LICENSE)。
 
-## 支持方
 
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>

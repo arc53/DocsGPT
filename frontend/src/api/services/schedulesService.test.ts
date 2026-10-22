@@ -145,3 +145,25 @@ describe('schedulesService run now and pause errors', () => {
     });
   });
 });
+
+describe('schedulesService.getRun', () => {
+  it('rejects a run the server could not find', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ success: false, message: 'Run not found' }, 404),
+    );
+
+    await expect(schedulesService.getRun('s1', 'r1', 't')).rejects.toThrow(
+      'Run not found',
+    );
+  });
+
+  it('returns the run on success', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ run: { id: 'r1' } }),
+    );
+
+    await expect(schedulesService.getRun('s1', 'r1', 't')).resolves.toEqual({
+      run: { id: 'r1' },
+    });
+  });
+});

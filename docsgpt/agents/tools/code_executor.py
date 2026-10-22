@@ -54,7 +54,7 @@ from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.storage.storage_creator import StorageCreator
-from docsgpt.utils import safe_filename
+from docsgpt.utils import display_filename
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +177,9 @@ class CodeExecutorTool(Tool):
         self.tool_id: Optional[str] = self.config.get("tool_id")
         self.conversation_id: Optional[str] = self.config.get("conversation_id")
         self.workflow_run_id: Optional[str] = self.config.get("workflow_run_id")
+        # A scheduled or webhook run with no conversation: the session lives for
+        # the run, and no files are saved since there is nothing to attach them to.
+        self.run_scope_id: Optional[str] = self.config.get("run_scope_id")
         self.message_id: Optional[str] = self.config.get("message_id")
         # Static, deployment-level approval gate (mirrors the action metadata flag).
         self._require_approval: bool = bool(self.config.get("require_approval", False))
@@ -427,13 +430,13 @@ class CodeExecutorTool(Tool):
 
         session_id = self._resolve_session_id()
         if session_id is None:
-            return {"status": "error", "error": "code_executor requires a conversation_id or workflow_run_id."}
+            return {"status": "error", "error": "code_executor requires a conversation_id, workflow_run_id or agent run."}
 
         code = kwargs.get("code")
         if not isinstance(code, str) or not code.strip():
             return {"status": "error", "error": "code is required."}
 
-        should_capture = kwargs.get("capture_artifacts", True)
+        should_capture = kwargs.get("capture_artifacts", True) and bool(self.conversation_id or self.workflow_run_id)
         outputs = self._normalize_outputs(kwargs.get("outputs"))
         ttl = self._coerce_int(kwargs.get("ttl"))
         keep_alive = self._keep_alive(kwargs.get("persist"), ttl)
@@ -791,7 +794,7 @@ class CodeExecutorTool(Tool):
             if max_bytes and isinstance(declared_size, (int, float)) and declared_size > max_bytes:
                 return {"error": f"input artifact {artifact_id} exceeds the {max_bytes}-byte sandbox input limit."}
 
-            filename = safe_filename(version.get("filename") or artifact_id)
+            filename = display_filename(version.get("filename") or artifact_id)
             try:
                 file_obj = storage.get_file(version["storage_path"])
                 try:
@@ -896,7 +899,12 @@ class CodeExecutorTool(Tool):
             self._last_artifacts = [
                 # ``ref`` is the model-facing handle (``A1``); the UI needs it to
                 # resolve a ref the model typed into its answer.
-                {"id": a["artifact_id"], "filename": a.get("filename"), "ref": a.get("ref")}
+                {
+                    "id": a["artifact_id"],
+                    "filename": a.get("filename"),
+                    "ref": a.get("ref"),
+                    "version": a.get("version"),
+                }
                 for a in captured
                 if a.get("artifact_id")
             ]
@@ -941,7 +949,14 @@ class CodeExecutorTool(Tool):
                     logger.exception("code_executor: saving a displayed chart failed")
             if ref is not None:
                 saved.append(ref)
-                self._last_artifacts.append({"id": ref["artifact_id"], "filename": filename, "ref": ref.get("ref")})
+                self._last_artifacts.append(
+                    {
+                        "id": ref["artifact_id"],
+                        "filename": filename,
+                        "ref": ref.get("ref"),
+                        "version": ref.get("version"),
+                    }
+                )
                 self._last_artifact_id = self._last_artifact_id or ref["artifact_id"]
             label = f"{ref['ref']} {filename}" if ref and ref.get("ref") else filename
             try:
@@ -1141,7 +1156,7 @@ class CodeExecutorTool(Tool):
     # ------------------------------------------------------------------
     def _resolve_session_id(self) -> Optional[str]:
         """Derive a sandbox session id from the bound conversation/run; sanitize to the gateway charset."""
-        raw = self.conversation_id or self.workflow_run_id
+        raw = self.conversation_id or self.workflow_run_id or self.run_scope_id
         if not raw:
             return None
         sanitized = _SESSION_ID_RE.sub("-", str(raw))

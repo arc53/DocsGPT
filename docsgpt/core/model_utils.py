@@ -113,6 +113,7 @@ def get_model_capabilities(
             "supports_tools": model.capabilities.supports_tools,
             "supports_structured_output": model.capabilities.supports_structured_output,
             "context_window": model.capabilities.context_window,
+            "api_flavor": model.capabilities.api_flavor,
         }
     return None
 

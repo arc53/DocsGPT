@@ -19,10 +19,12 @@ Rules, in order:
   and at most ``AUTO_RESUME_MAX_CONSECUTIVE`` in a row without a user message;
   past that, events wait for the user's next message.
 
-A continuation is a turn like a chat turn: its message id is reserved before
-it runs, so its tool calls are journaled and its files attached under it, and
-a slow call may become a background job (with ``check_job`` to look at it).
-It stays headless: tools that need approval are denied.
+A continuation is a turn like a chat turn: its message is reserved before it
+runs and streams as it is written (:mod:`docsgpt.background.live_turn`), so
+the open chat shows it, a reload resumes it and Stop ends it; its tool calls
+are journaled and its files attached under it, and a slow call may become a
+background job (with ``check_job`` to look at it). It stays headless: tools
+that need approval are denied.
 """
 
 from __future__ import annotations
@@ -37,11 +39,12 @@ from sqlalchemy import Connection, text
 from docsgpt.background import jobs, wake
 from docsgpt.background.context import BackgroundContext, auto_resume_allowed
 from docsgpt.background.events import publish_conversation_continued
+from docsgpt.background.live_turn import LiveTurn
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
-from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository, MessageUpdateOutcome
 from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -235,6 +238,37 @@ def _history(messages: List[Dict[str, Any]], model_id: Optional[str], user_id: s
     return limit_chat_history(history, model_id=model_id, user_id=user_id)
 
 
+def _replay(
+    conversation: Dict[str, Any], messages: List[Dict[str, Any]], model_id: Optional[str], user_id: str
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """The compressed summary and the history a chat turn would replay.
+
+    A conversation with a saved compression point replays its summary (in the
+    system prompt) and only the turns after the point, as ``/stream`` does;
+    replaying the raw history instead sent a continuation several times the
+    context of the chat turns around it. No compression is run here.
+
+    Args:
+        conversation: The conversation row (its ``compression_metadata``).
+        messages: Its messages, in order.
+        model_id: The model the turn runs on.
+        user_id: The conversation's owner.
+
+    Returns:
+        ``(summary, history)``: ``summary`` is None when no usable point exists.
+    """
+    from docsgpt.api.answer.services.compression.service import CompressionService
+    from docsgpt.api.answer.services.compression.types import latest_usable_compression_point
+
+    metadata = conversation.get("compression_metadata") or {}
+    if not (metadata.get("is_compressed") and latest_usable_compression_point(metadata.get("compression_points"))):
+        return None, _history(messages, model_id, user_id)
+    summary, recent = CompressionService(llm=None, model_id=model_id or "").get_compressed_context(
+        {**conversation, "queries": messages}
+    )
+    return summary or None, _history(recent, model_id, user_id)
+
+
 def _last_model(messages: List[Dict[str, Any]]) -> Optional[str]:
     """The model the conversation last used: the continuation answers with the same one."""
     for message in reversed(messages):
@@ -298,11 +332,17 @@ def continue_conversation_body(conversation_id: str, attempt: int = 0) -> Dict[s
 
 def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes: List[Dict[str, Any]],
             message_id: str) -> Dict[str, Any]:
-    """Run the turn for the claimed wakes and deliver its answer as ``message_id`` (or stay silent)."""
+    """Run the turn for the claimed wakes and deliver its answer as ``message_id`` (or stay silent).
+
+    The message is written while the turn runs (:class:`LiveTurn`), so the
+    chat shows it working and can stop it; a silent or failed turn takes it
+    back out. When the row can't be reserved the message is appended at the end.
+    """
     conversation_id = str(conversation["id"])
     user_id = conversation["user_id"]
+    live = LiveTurn.open(conversation, message_id, prompt=wake.render_events(wakes), metadata=_wake_metadata(wakes))
     try:
-        outcome = _run_turn(conversation, messages, wakes, message_id=message_id)
+        outcome = _run_turn(conversation, messages, wakes, message_id=message_id, live=live)
     except Exception as exc:
         from docsgpt.quotas.service import QuotaExceededError
 
@@ -310,26 +350,53 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
             logger.info("continuation in %s skipped: quota exhausted", conversation_id)
         else:
             logger.exception("continuation turn failed in %s", conversation_id)
+        if live is not None:
+            live.discard()
         # The results stay deliverable: check_job or the user's next message takes them.
         _settle(wakes, "failed", job_state="pending", error=str(exc)[:500])
         return {"state": "failed", "error": type(exc).__name__}
 
     answer = (outcome.get("answer") or "").strip()
-    if outcome.get("error_type") and not answer:
+    stopped = bool(outcome.get("stopped"))
+    if not stopped and outcome.get("error_type") and not answer:
+        if live is not None:
+            live.discard()
         _settle(wakes, "failed", job_state="pending", error=str(outcome.get("error") or "")[:500])
         return {"state": "failed", "error": outcome.get("error_type")}
-    if wake.is_no_reply(answer):
+    if not stopped and wake.is_no_reply(answer):
+        if live is not None:
+            live.discard()
         _settle(wakes, "suppressed", job_state="suppressed")
         _schedule_rest(conversation_id)
         return {"state": "suppressed", "events": len(wakes)}
 
-    message = _append(conversation, wakes, outcome, message_id=message_id)
+    if live is None:
+        message_id = str(_append(conversation, wakes, outcome, message_id=message_id)["id"])
+    else:
+        metadata = {**_responses_metadata(outcome), **_wake_metadata(wakes)}
+        saved = live.finish(outcome, metadata=metadata, stopped=stopped)
+        if saved is not MessageUpdateOutcome.UPDATED:
+            if saved is not MessageUpdateOutcome.NOT_FOUND:
+                # The save failed: take the half-written row out (the reconciler fails it if this can't).
+                live.discard()
+            # The results stay deliverable to the user's next message.
+            _settle(wakes, "failed", job_state="pending", error="the continuation's message could not be saved")
+            return {"state": "superseded_by_user" if saved is MessageUpdateOutcome.NOT_FOUND else "failed"}
     _link_turn(message_id, outcome)
-    _settle(wakes, "delivered", message_id=str(message["id"]))
-    publish_conversation_continued(user_id, conversation_id, str(message["id"]), wakes[0].get("source") or "job")
+    _settle(wakes, "delivered", message_id=message_id)
+    publish_conversation_continued(user_id, conversation_id, message_id, wakes[0].get("source") or "job")
+    if stopped:
+        # The user ended this turn: nothing it started may carry it on.
+        from docsgpt.background.service import stop_turn_jobs
+
+        try:
+            stop_turn_jobs(conversation_id, message_id, str(user_id))
+        except Exception:
+            logger.exception("continuation %s: stopping its background jobs failed", message_id)
+        return {"state": "stopped", "message_id": message_id, "events": len(wakes)}
     _notify(conversation, wakes, answer)
     _schedule_rest(conversation_id)
-    return {"state": "delivered", "message_id": str(message["id"]), "events": len(wakes)}
+    return {"state": "delivered", "message_id": message_id, "events": len(wakes)}
 
 
 def _drop_pending(conversation_id: str) -> None:
@@ -372,11 +439,13 @@ def _run_turn(
     wakes: List[Dict[str, Any]],
     *,
     message_id: str,
+    live: Optional[LiveTurn] = None,
 ):
     """Run the headless turn as ``message_id`` and return its outcome (``run_agent_headless``'s dict).
 
     The turn gets a background context of its own, so a slow call becomes a
-    job (reporting back to this message) instead of holding the worker.
+    job (reporting back to this message) instead of holding the worker. With
+    ``live`` its events stream to the chat and the user's Stop ends it.
     """
     from docsgpt.agents.headless_runner import run_agent_headless
 
@@ -387,6 +456,7 @@ def _run_turn(
     if agent_config is None:
         raise LookupError("the conversation's agent no longer exists")
     query = wake.render_events(wakes)
+    summary, history = _replay(conversation, messages, model_id, user_id)
     agent_id = agent_config.get("id")
     background = BackgroundContext(
         user_id=str(user_id),
@@ -401,12 +471,15 @@ def _run_turn(
         tool_allowlist=[],
         model_id_override=model_id,
         endpoint="continuation",
-        chat_history=_history(messages, model_id, user_id),
+        chat_history=history,
+        compressed_summary=summary,
         conversation_id=str(conversation["id"]),
         request_id=str(uuid.uuid4()),
         trace_user_id=user_id,
         message_id=message_id,
         background=background,
+        on_event=live.event if live is not None else None,
+        should_stop=live.stopped if live is not None else None,
     )
 
 
@@ -498,6 +571,18 @@ def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
     return metadata
 
 
+#: Keys of a turn's agent metadata a continuation message keeps (as a chat turn stores them).
+_RESPONSES_METADATA_KEYS = ("response_id", "response_chain_key", "responses_state", "usage", "compression_epoch")
+
+
+def _responses_metadata(outcome: Dict[str, Any]) -> Dict[str, Any]:
+    """The Responses continuity a headless turn reported, for its message's metadata."""
+    reported = outcome.get("metadata")
+    if not isinstance(reported, dict):
+        return {}
+    return {key: reported[key] for key in _RESPONSES_METADATA_KEYS if reported.get(key) is not None}
+
+
 def _append(
     conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: Dict[str, Any], *, message_id: str
 ) -> Dict[str, Any]:
@@ -513,7 +598,10 @@ def _append(
                 "sources": outcome.get("sources") or [],
                 "tool_calls": outcome.get("tool_calls") or [],
                 "model_id": outcome.get("model_id"),
-                "metadata": _wake_metadata(wakes),
+                # The turn's Responses state (response id, reasoning) beside
+                # the wake: without it the user's next turn cannot chain onto
+                # this one and resends the whole history.
+                "metadata": {**_responses_metadata(outcome), **_wake_metadata(wakes)},
             },
         )
 

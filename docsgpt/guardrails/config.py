@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from docsgpt.analytics.config import AnalyticsConfig
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,15 @@ def _reason(exc: Exception) -> str:
     return str(exc)
 
 MODES = ("monitor_only", "scan_all")
+
+
+def _item_level(check: str) -> bool:
+    from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+
+    try:
+        return bool(GuardrailCreator.get(check).item_level)
+    except ValueError:
+        return False
 
 
 class GuardrailControl(BaseModel):
@@ -136,16 +146,24 @@ class GuardrailsConfig(BaseModel):
             seen.add(key)
         return value
 
-    def controls_for(self, stage: Stage) -> List[GuardrailControl]:
+    def controls_for(self, stage: Stage, item_level: Optional[bool] = None) -> List[GuardrailControl]:
         """Enabled controls for ``stage``, honouring ``mode``.
 
         ``monitor_only`` degrades every action to a log-only flag, which is the
         supported rollout path: turn checks on, watch what they would have
         done, then promote.
+
+        Args:
+            stage: The stage.
+            item_level: ``True`` for only the checks that score items one by
+                one (``GuardrailCheck.item_level``), ``False`` for only the
+                others, ``None`` for both.
         """
         if not self.enabled:
             return []
         selected = [c for c in self.controls if c.enabled and c.stage == stage]
+        if item_level is not None:
+            selected = [c for c in selected if _item_level(c.check) is item_level]
         if self.mode != "scan_all":
             return [c.model_copy(update={"action": Action.FLAG}) for c in selected]
         return selected
@@ -218,6 +236,9 @@ class AgentConfig(BaseModel):
     # public-link user, and schedules either of them set. Any other such
     # write is refused for them. ``tool_id:action``.
     api_write_allowlist: List[str] = []
+    # Conversation analytics (``docsgpt.analytics``): the owner's labelling
+    # choices, not policy, so ``_policy_changed`` leaves them out.
+    analytics: AnalyticsConfig = AnalyticsConfig()
 
     @field_validator("api_write_allowlist")
     @classmethod
@@ -240,5 +261,15 @@ class AgentConfig(BaseModel):
         try:
             return cls.model_validate(raw)
         except Exception:
-            # A bad allowlist falls back to none: the safe side.
-            return cls(guardrails=GuardrailsConfig.parse(raw.get("guardrails")))
+            # Each block is salvaged on its own, so a malformed guardrails or
+            # analytics block (or an unknown key) keeps a valid allowlist. Only
+            # a bad allowlist falls back to none: the safe side.
+            try:
+                allowlist = cls.model_validate({"api_write_allowlist": raw.get("api_write_allowlist") or []})
+            except Exception:
+                allowlist = cls()
+            return cls(
+                guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
+                api_write_allowlist=allowlist.api_write_allowlist,
+                analytics=AnalyticsConfig.parse(raw.get("analytics")),
+            )

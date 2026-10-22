@@ -99,6 +99,12 @@ class TestSalvage:
         parsed = AgentConfig.parse({"guardrails": TWO_CONTROLS}).guardrails
         assert _checks(parsed) == ["pii"]
 
+    @pytest.mark.parametrize("rest", [{"guardrails": {"mode": "not-a-mode"}}, {"a_newer_block": {}}])
+    def test_a_malformed_block_keeps_a_valid_allowlist(self, rest):
+        """Only a bad allowlist falls back to none; a broken guardrails block or an unknown key costs it nothing."""
+        parsed = AgentConfig.parse({"api_write_allowlist": ["tool1:send"], **rest})
+        assert parsed.api_write_allowlist == ["tool1:send"]
+
     def test_resolve_config_end_to_end(self, narrowed):
         assert _checks(resolve_config({"guardrails": TWO_CONTROLS})) == ["pii"]
 

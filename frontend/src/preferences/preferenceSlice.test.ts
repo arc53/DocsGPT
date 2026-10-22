@@ -12,11 +12,19 @@ import reducer, {
   setConversationsHead,
   setConversationsLoading,
   prefListenerMiddleware,
+  selectAnalyticsEnabled,
+  selectAnalyticsMaxOverlapping,
+  selectAnalyticsMaxTopics,
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
+  selectTtsAvailable,
+  setAnalyticsAvailability,
+  setAuthRequired,
   setRoles,
   setSourceDocs,
+  setSpeechAvailability,
+  setToken,
 } from './preferenceSlice';
 
 const baseState = () => reducer(undefined, { type: '@@INIT' });
@@ -185,5 +193,63 @@ describe('conversation list paging', () => {
     const chat = state.conversations.data?.find((c) => c.id === id);
     expect(chat?.name).toBe('Renamed');
     expect(ids(state)).toHaveLength(full + 5);
+  });
+});
+
+describe('text-to-speech availability', () => {
+  const ttsFor = (actions: Parameters<typeof reducer>[1][]) =>
+    selectTtsAvailable({
+      preference: actions.reduce(reducer, baseState()),
+    } as RootState);
+
+  it('is offered on an instance without auth', () => {
+    expect(ttsFor([setAuthRequired(false)])).toBe(true);
+  });
+
+  it('is hidden from a signed-out viewer when the server requires auth', () => {
+    expect(ttsFor([setAuthRequired(true)])).toBe(false);
+  });
+
+  it('is offered to a signed-in user when the server requires auth', () => {
+    expect(ttsFor([setAuthRequired(true), setToken('tok')])).toBe(true);
+  });
+
+  it('stays hidden when the server has it switched off', () => {
+    expect(
+      ttsFor([
+        setToken('tok'),
+        setSpeechAvailability({ tts: false, stt: true }),
+      ]),
+    ).toBe(false);
+  });
+});
+
+// FX-9: /api/config is read once, at start (useDataInitializer); the flag
+// and the editor's limits come from here.
+describe('insights availability', () => {
+  const root = (preference: ReturnType<typeof baseState>) =>
+    ({ preference }) as unknown as RootState;
+
+  it('is off, with the default limits, until /api/config loads', () => {
+    const state = root(baseState());
+    expect(selectAnalyticsEnabled(state)).toBe(false);
+    expect(selectAnalyticsMaxTopics(state)).toBe(15);
+    expect(selectAnalyticsMaxOverlapping(state)).toBe(20);
+  });
+
+  it("keeps the server's switch and limits", () => {
+    const state = root(
+      reducer(
+        baseState(),
+        setAnalyticsAvailability({
+          enabled: true,
+          maxTopics: 8,
+          maxOverlapping: 0,
+        }),
+      ),
+    );
+    expect(selectAnalyticsEnabled(state)).toBe(true);
+    expect(selectAnalyticsMaxTopics(state)).toBe(8);
+    expect(selectAnalyticsMaxOverlapping(state)).toBe(0);
   });
 });

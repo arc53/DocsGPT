@@ -177,6 +177,17 @@ class IngestionSettings(SettingsGroup):
     )
     GITHUB_INGEST_MAX_WORKERS: int = Field(default=8, ge=1, description="Parallel file fetches per GitHub repo ingest.")
 
+    INGEST_QUEUE: str = Field(
+        default="ingest",
+        description=(
+            "Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, "
+            "graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest "
+            "worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped "
+            "Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in "
+            "every worker's explicit -Q list, or nothing runs ingests."
+        ),
+    )
+
     # read_document parsing on a dedicated Celery queue (backend parser).
     DOCUMENT_PARSE_QUEUE: str = Field(default="parsing", description="Celery queue the parse_document task is routed to.")
     DOCUMENT_PARSE_TIMEOUT: int = Field(

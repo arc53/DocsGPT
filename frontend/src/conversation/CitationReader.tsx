@@ -30,6 +30,7 @@ import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 import { SEARCH_LENGTH, knowledgeLink } from '../settings/knowledgeLink';
 import { formatDateOnly } from '../utils/dateTimeUtils';
 import { type AnswerSource, sourceExcerpt, sourceHref } from './chatCompanion';
+import SourceRelevance from './SourceRelevance';
 
 type Chunk = {
   doc_id: string;
@@ -88,7 +89,9 @@ export default function CitationReader({
 
   const sourceId = source.source_id;
   const chunkKey = source.chunk_key;
-  const excerpt = sourceExcerpt(source);
+  // A withheld source's text is a placeholder: nothing to search or show.
+  const withheld = Boolean(source.withheld);
+  const excerpt = withheld ? '' : sourceExcerpt(source);
 
   useEffect(() => {
     if (!sourceId || !chunkKey) {
@@ -210,6 +213,13 @@ export default function CitationReader({
     }
     return (
       <>
+        {withheld ? (
+          <Alert variant="warning" data-testid="citation-withheld">
+            <AlertDescription>
+              {t('conversation.sources.reader.withheld')}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {state.status === 'excerpt' ? (
           <Alert variant="info" role="note">
             <AlertDescription>
@@ -270,7 +280,18 @@ export default function CitationReader({
       <PanelHeader
         title={source.title}
         description={knowledgeName}
-        actions={<Badge className="tabular-nums">{number}</Badge>}
+        actions={
+          <>
+            {withheld ? (
+              <Badge variant="warning">
+                {t('conversation.sources.withheld')}
+              </Badge>
+            ) : (
+              <SourceRelevance relevance={source.relevance} />
+            )}
+            <Badge className="tabular-nums">{number}</Badge>
+          </>
+        }
         onBack={onBack}
         backLabel={t('conversation.sources.reader.back')}
       />

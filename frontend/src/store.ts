@@ -1,6 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import activityReducer, {
+  activityListenerMiddleware,
+} from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import { MAX_OVERLAPPING, MAX_TOPICS } from './agents/analyticsConfig';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
 import connectorsReducer from './connectors/connectorsSlice';
@@ -63,7 +67,11 @@ const preloadedState: { preference: Preference } = {
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    authRequired: false,
     attachmentBudgetShare: null,
+    analyticsEnabled: false,
+    analyticsMaxTopics: MAX_TOPICS,
+    analyticsMaxOverlapping: MAX_OVERLAPPING,
   },
 };
 const store = configureStore({
@@ -83,12 +91,14 @@ const store = configureStore({
     connectors: connectorsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,
+    activity: activityReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
       backgroundListenerMiddleware.middleware,
+      activityListenerMiddleware.middleware,
     ),
 });
 

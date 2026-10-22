@@ -862,22 +862,23 @@ class TestContinuationPreservesByomScope:
         assert sp.model_user_id == "owner"
 
     def test_save_path_persists_model_user_id_in_agent_config(self):
-        """The save site (``routes/base.py:complete_stream``) must
-        include ``model_user_id`` in the ``agent_config`` dict written
-        to the continuation store."""
+        """The save site (``routes/base.py:_save_pause_state``, called by
+        ``complete_stream``) must include ``model_user_id`` in the
+        ``agent_config`` dict written to the continuation store."""
         import inspect
 
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
-        # complete_stream is the only callsite that constructs the
-        # save dict. Confirm the parameter is in scope and the key is
-        # spelled correctly so a future rename doesn't silently drop it.
+        # _save_pause_state is the only place that constructs the save
+        # dict. Confirm the parameter reaches it and the key is spelled
+        # correctly so a future rename doesn't silently drop it.
         sig = inspect.signature(BaseAnswerResource.complete_stream)
         assert "model_user_id" in sig.parameters
+        assert "model_user_id" in inspect.signature(BaseAnswerResource._save_pause_state).parameters
+        assert "model_user_id=model_user_id" in inspect.getsource(BaseAnswerResource.complete_stream)
 
-        src = inspect.getsource(BaseAnswerResource.complete_stream)
-        # Both: (a) the model_user_id parameter is in scope and (b) the
-        # save dict includes it under the same key the resume side reads.
+        src = inspect.getsource(BaseAnswerResource._save_pause_state)
+        # The save dict includes it under the same key the resume side reads.
         assert '"model_user_id": model_user_id' in src
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from unittest.mock import Mock
 
 import pytest
@@ -382,39 +381,16 @@ class TestFloorMerge:
         agent = self._cfg(enabled=True, mode="monitor_only")
         assert merge_floor(agent, None) is agent
 
-    def test_invalid_floor_is_ignored_not_fatal(self, monkeypatch):
-        from docsgpt.core.settings import settings
-        from docsgpt.guardrails.runtime import instance_floor
-
-        monkeypatch.setattr(settings, "GUARDRAILS_FLOOR", {"mode": "not-a-mode"})
-        assert instance_floor() is None
-
-    def test_floor_with_controls_but_no_enabled_flag_warns(self, monkeypatch, caplog):
-        """A floor that parses clean but merges to nothing must not do so silently."""
-        from docsgpt.core.settings import settings
-        from docsgpt.guardrails.runtime import instance_floor
-
-        monkeypatch.setattr(
-            settings,
-            "GUARDRAILS_FLOOR",
-            {"mode": "scan_all",
-             "controls": [{"check": "secrets", "stage": "output", "action": "redact"}]},
-        )
-        with caplog.at_level(logging.WARNING):
-            floor = instance_floor()
-        assert floor is None
-        assert "enabled" in caplog.text
-
     def test_documented_floor_example_is_effective(self, monkeypatch):
-        """The example in settings.py must produce a floor that actually merges."""
-        from docsgpt.core.settings import settings
+        """The example in the settings reference must produce a floor that actually merges."""
         from docsgpt.guardrails.runtime import floor_keys, instance_floor
 
         monkeypatch.setattr(
-            settings,
-            "GUARDRAILS_FLOOR",
-            {"enabled": True, "mode": "scan_all",
-             "controls": [{"check": "secrets", "stage": "output", "action": "redact"}]},
+            "docsgpt.guardrails.floor._floor",
+            GuardrailsConfig.model_validate(
+                {"enabled": True, "mode": "scan_all",
+                 "controls": [{"check": "secrets", "stage": "output", "action": "redact"}]}
+            ),
         )
         assert instance_floor() is not None
         assert floor_keys() == {"secrets:output"}

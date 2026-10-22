@@ -50,8 +50,11 @@ describe('AgentPageToolbar', () => {
   it('keeps the row at field height when a tab has no actions', () => {
     const html = renderToStaticMarkup(<AgentPageToolbar name="FAQ" />);
     // A 38px spacer stands in for the actions, so the rule lands in the same
-    // place on every agent tab.
-    expect(html).toContain('h-9.5');
+    // place on every agent tab; on a phone the actions stack under the
+    // byline, so it would only leave an empty band there.
+    expect(html).toContain(
+      '<div aria-hidden="true" class="hidden h-9.5 sm:block"></div>',
+    );
   });
 
   it('renders notices between the row and the rule', () => {

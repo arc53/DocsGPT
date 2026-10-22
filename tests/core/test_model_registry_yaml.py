@@ -178,6 +178,13 @@ class TestYAMLLoader:
         assert openai["gpt-5.4-mini"].capabilities.context_window == 400_000
         assert openai["gpt-5.5"].capabilities.context_window == 1_050_000
 
+    def test_prompt_cache_breakpoints_is_opt_in_per_model(self):
+        grouped = _by_provider(load_model_yamls([BUILTIN_MODELS_DIR]))
+        openai = {m.id: m for c in grouped["openai"] for m in c.models}
+        # GPT-5.6+ caches only at breakpoints; gpt-5.5 rejects the field.
+        assert openai["gpt-5.6-sol"].capabilities.prompt_cache_breakpoints is True
+        assert openai["gpt-5.5"].capabilities.prompt_cache_breakpoints is False
+
 
 # ── Registry × settings: every documented .env permutation ───────────────
 

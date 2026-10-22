@@ -161,7 +161,8 @@ export type Agent = {
   config?: AgentConfig;
 };
 
-export type GuardrailStage = 'input' | 'retrieval' | 'tool_result' | 'output';
+export type GuardrailStage =
+  'input' | 'retrieval' | 'tool_result' | 'output' | 'attachment';
 
 export type GuardrailAction = 'flag' | 'redact' | 'block';
 
@@ -184,10 +185,37 @@ export type GuardrailsConfig = {
   controls: GuardrailControl[];
 };
 
+/**
+ * One of the owner's topics. One that doesn't overlap is an option of the
+ * question each user message is sorted by, next to the agent's source
+ * folders; one that overlaps is checked on whole conversations, and several
+ * can apply. The id keeps an overlapping topic's history across renames.
+ */
+export type AnalyticsTopic = {
+  id: string;
+  name: string;
+  description: string;
+  overlap: boolean;
+};
+
+/** A folder of the agent's sources: a default topic that doesn't overlap. */
+export type TopicFolder = { name: string; description: string };
+
+/** `agents.config.analytics`: whether and how the agent's conversations are labelled. */
+export type AnalyticsConfig = {
+  enabled: boolean;
+  topics: AnalyticsTopic[];
+  /** Source folders left out of the topic question. */
+  hidden_folders: string[];
+  /** The owner's weekly in-app docs-gap notification. */
+  digest: boolean;
+};
+
 export type AgentConfig = {
   guardrails?: GuardrailsConfig;
   /** `tool_id:action` writes on the owner's accounts API-key callers may run. */
   api_write_allowlist?: string[];
+  analytics?: AnalyticsConfig;
 };
 
 export type GuardrailCheckInfo = {
@@ -198,6 +226,11 @@ export type GuardrailCheckInfo = {
   supports_redaction: boolean;
   latency_hint_ms: number;
   remote: boolean;
+  /**
+   * Scores each retrieved document or attached file on its own, so `block`
+   * at those stages withholds only the flagged item.
+   */
+  item_level?: boolean;
   available: boolean;
 };
 
@@ -206,7 +239,7 @@ export type GuardrailCatalog = {
   checks: GuardrailCheckInfo[];
   stages: GuardrailStage[];
   modes: GuardrailMode[];
-  actions_by_stage: Record<GuardrailStage, GuardrailAction[]>;
+  actions_by_stage: Partial<Record<GuardrailStage, GuardrailAction[]>>;
   default_block_message: string;
   pii_entities: string[];
   default_pii_entities: string[];
@@ -238,6 +271,11 @@ export type GuardrailEvent = {
   score: number | null;
   match_count: number;
   detail: string | null;
+  /**
+   * The item an item-level verdict is about: `chunk:<source_id>:<chunk_key>`
+   * for a retrieved document, `attachment:<id>` for an attached file.
+   */
+  item_ref?: string | null;
   created_at: string;
 };
 

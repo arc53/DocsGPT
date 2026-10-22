@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-21
 ---
 
 import { Callout } from 'nextra/components'
@@ -14,7 +14,7 @@ import { Callout } from 'nextra/components'
 
 To upgrade:
 
-1. **Back up.** `docsgpt backup` for an installer or `docsgpt up` Docker install whose `docsgpt` has that command (releases after 0.21.0; on 0.21.0 [back up by hand](#back-up-and-restore-by-hand-0210)). Otherwise dump Postgres (`pg_dump`) and copy your uploads and indexes.
+1. **Back up.** `docsgpt backup` for an installer or `docsgpt up` Docker install whose `docsgpt` has that command (1.0.0 and later; on 0.21.0 [back up by hand](#back-up-and-restore-by-hand-0210)). Otherwise dump Postgres (`pg_dump`) and copy your uploads and indexes.
 2. **Read the [upgrade notes](#upgrade-notes)** for every release after the one you run, and the [changelog](/changelog).
 3. **Follow the steps for your install**, below.
 
@@ -31,7 +31,7 @@ Release notes: [changelog](/changelog). Tags: [GitHub releases](https://github.c
 ## Installer or `docsgpt up`
 
 ```bash
-docsgpt backup                     # releases after 0.21.0; see below for 0.21.0
+docsgpt backup                     # 1.0.0 and later; see below for 0.21.0
 docsgpt upgrade                    # the latest release; --version <version> for another
 docsgpt status
 ```
@@ -42,7 +42,7 @@ A `docsgpt up --native` install has nothing for `docsgpt backup` to archive: dum
 
 ### Back up and restore by hand (0.21.0)
 
-`docsgpt backup` and `docsgpt restore` are new after 0.21.0 (`docsgpt --help` shows whether yours has them). On 0.21.0, take the same backup by hand from the stack directory. It holds a dump of the database and a tar of each data volume (`docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors`). Keep a copy of `.env` too: it holds the install's secrets.
+`docsgpt backup` and `docsgpt restore` are new in 1.0.0 (`docsgpt --help` shows whether yours has them). On 0.21.0, take the same backup by hand from the stack directory. It holds a dump of the database and a tar of each data volume (`docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors`). Keep a copy of `.env` too: it holds the install's secrets.
 
 ```bash
 cd ~/.docsgpt/server               # /opt/docsgpt when installed as root on Linux
@@ -163,15 +163,62 @@ docker compose stop backend worker
 docker compose run --rm backend alembic -c docsgpt/alembic.ini downgrade <revision>
 ```
 
-`<revision>` is the newest file in `docsgpt/alembic/versions` at the older release's tag. Then set the older tag and start the stack. For example, 0.21.0 ends at `0031_token_usage_cache_tokens`; downgrading to it from the next release drops personal access tokens, usage quotas, request traces, team sharing settings, tool preferences and resource sponsors, so restore the backup instead.
+`<revision>` is the newest file in `docsgpt/alembic/versions` at the older release's tag. Then set the older tag and start the stack. For example, 0.21.0 ends at `0031_token_usage_cache_tokens`; downgrading to it from 1.0.0 drops personal access tokens, usage quotas, request traces, team sharing settings, tool preferences and resource sponsors, so restore the backup instead.
 
 ## Upgrade notes
 
 Newest first. Each note says what an existing deployment has to do.
 
-### Next release (unreleased)
+### Upgrading from 1.0.0
 
-These apply to the release after 0.21.0. The [changelog](/changelog#unreleased) lists the other changes that need action: `SCIM_TOKEN` with `SCIM_ENABLED`, six retrieved chunks by default, and the removed providers and settings.
+These apply to the release after 1.0.0.
+
+#### Ingests move to an `ingest` queue
+
+Source uploads, remote and connector ingests, re-ingests, source syncs, graph builds and wiki conversion now go to their own Celery queue, `ingest` (`INGEST_QUEUE`). Chat attachments stay on `docsgpt`. A worker started without `-Q` consumes it automatically. **If you start your worker with an explicit `-Q`, add `ingest`:**
+
+```diff
+- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings
++ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
+```
+
+The bundled Compose and Kubernetes manifests already include it, so pull them along with the code. Without it, new sources stay in "processing" forever, because nothing picks the task up, and no error is logged. Tasks queued before the upgrade are still on `docsgpt` and finish there. If you set `INGEST_QUEUE` to another name, use that name in every `-Q` list instead. To keep long ingests from delaying scheduled runs and cleanups, run a second worker with `-Q ingest`; see [Scaling and scheduled tasks](/Deploying/Kubernetes-Deploying#scaling-and-scheduled-tasks).
+
+#### GUARDRAILS_FLOOR moves to Admin → Guardrails
+
+The [instance floor](/Agents/guardrails#the-instance-floor), the guardrails every agent follows, is now stored in the database and edited by an admin under **Admin → Guardrails** (`GET`/`PUT /api/admin/guardrails`). `GUARDRAILS_FLOOR` is deprecated:
+
+- On the first start of the new release with `GUARDRAILS_FLOOR` set, its value is stored as the floor, and the API logs a warning that the setting is deprecated. Every agent keeps the same floor; nothing else is needed.
+- From then on the stored floor applies and `GUARDRAILS_FLOOR` is ignored, with a warning at each start while it is still set. Remove it from `.env`, the Kubernetes ConfigMap or your deployment's environment once the page shows the floor.
+- A value that does not validate is not imported: the API logs an error, no floor applies, and you set the floor on the page. Check the log after upgrading an install whose floor you rely on.
+- A floor change made on the page reaches every API process and worker within 30 seconds, without a restart.
+
+#### Webhook payloads are no longer ASCII-escaped
+
+An agent [webhook](/API/webhooks)'s JSON payload now reaches the agent with its non-ASCII text as written (`"Résumé"`) instead of as `\u00e9` escapes, and so does the source search a webhook run makes when the payload has no text fields. An agent prompt or tool that relied on the escaped form sees the characters themselves.
+
+#### New table
+
+Migration `0055_content_scores` adds the `content_scores` table (cached prompt-injection scores, by text hash) and a nullable `guardrail_events.item_ref` column. It runs with the other [migrations](#migrations); downgrading below it drops both.
+
+#### Conversation analytics: a new table and the analytics queue
+
+Migration `0057_conversation_labels` adds the `conversation_labels` table and an index on `conversation_messages (timestamp)`. The index is built `CONCURRENTLY`, so chat keeps writing while it builds, which can take a while on a large table. Downgrading below the migration drops both.
+
+[Insights](/Using/analytics-and-logs#conversation-insights) are off until you set `DECISION_ANALYTICS_ENABLED=true`. The labelling runs on a new Celery queue, `analytics`. The shipped Compose files and Kubernetes manifest now list it; pull them along with the code. A worker you start with your own `-Q` must add it before you turn analytics on, or nothing is labelled:
+
+```diff
+- celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest
++ celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings,ingest,analytics
+```
+
+See [The analytics queue](/Deploying/Background-Jobs#the-analytics-queue).
+
+**Before rolling back to 1.0.0:** an agent created or saved on this release holds an `analytics` block in its `config`, which 1.0.0 does not accept. 1.0.0 then keeps that agent's guardrails but drops its [`api_write_allowlist`](/API/agent-api#letting-api-callers-make-changes), so API-key, widget and public-link callers, and the schedules they set, have every write on the owner's credentials refused. It fails safe, but those agents stop making the changes you allowed. To keep them, [roll back](#rollback) by restoring the backup you took before upgrading.
+
+### Upgrading to 1.0.0
+
+These apply to 1.0.0. The [changelog](/changelog#100) lists the other changes that need action: `SCIM_TOKEN` with `SCIM_ENABLED`, six retrieved chunks by default, and the removed providers and settings.
 
 #### Connectors: set ENCRYPTION_SECRET_KEY first
 

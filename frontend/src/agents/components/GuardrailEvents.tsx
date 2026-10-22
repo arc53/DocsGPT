@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import {
   Select,
@@ -10,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Progress } from '@/components/ui/progress';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -24,29 +26,38 @@ import {
 import StatCard from '@/components/StatCard';
 
 import userService from '../../api/services/userService';
+import { chunkFilePath } from '../../components/graph/graphCanvasUtils';
 import SkeletonLoader from '../../components/SkeletonLoader';
 import { LoadMoreStatus } from '../../components/ui/load-more-status';
 import { useLoadMore, type LoadMorePage } from '../../hooks/useLoadMore';
+import { showActionToast } from '../../notifications/actionToastSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import { knowledgeLink } from '../../settings/knowledgeLink';
+import { EMPTY_VALUE, formatDateTime } from '../../utils/dateTimeUtils';
 import { GuardrailEvent, GuardrailSummary } from '../types';
+import { ACTION_KEYS, STAGE_KEYS } from './GuardrailsSection';
 
 /** Decisions per request; older ones load as the table's end scrolls into view. */
 const PAGE_SIZE = 50;
-const WINDOWS = [7, 30, 90];
+/** The windows (days) and their labels, worded as the analytics select's. */
+const WINDOWS = [
+  [7, 'last7Days'],
+  [30, 'last30Days'],
+  [90, 'last90Days'],
+] as const;
 
-const STAGE_KEYS: Record<string, string> = {
-  input: 'agents.form.guardrails.stages.input',
-  retrieval: 'agents.form.guardrails.stages.retrieval',
-  tool_result: 'agents.form.guardrails.stages.toolResult',
-  output: 'agents.form.guardrails.stages.output',
-};
+/** What an item-level verdict was about: a retrieved chunk, or an attached file. */
+type ItemRef =
+  | { kind: 'chunk'; sourceId: string; chunkKey: string }
+  | { kind: 'attachment'; id: string };
 
-const ACTION_KEYS: Record<string, string> = {
-  flag: 'agents.form.guardrails.actions.flag',
-  redact: 'agents.form.guardrails.actions.redact',
-  block: 'agents.form.guardrails.actions.block',
-};
+/** Read `chunk:<source_id>:<chunk_key>` or `attachment:<id>`; null for anything else. */
+export function parseItemRef(ref?: string | null): ItemRef | null {
+  const chunk = /^chunk:([^:]+):([0-9a-f]{32})$/.exec(ref ?? '');
+  if (chunk) return { kind: 'chunk', sourceId: chunk[1], chunkKey: chunk[2] };
+  const attachment = /^attachment:(.+)$/.exec(ref ?? '');
+  return attachment ? { kind: 'attachment', id: attachment[1] } : null;
+}
 
 /**
  * Colour by meaning, matching the status tokens used across the app: a block
@@ -158,17 +169,18 @@ export default function GuardrailEvents({ agentId }: Props) {
             onValueChange={(value) => setDays(Number(value))}
           >
             <SelectTrigger
-              className="w-[150px]"
+              className="min-w-[125px]"
               size="field"
               shape="pill"
+              aria-label={t('activity.history.periodFilter')}
               data-testid="guardrail-events-window"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              {WINDOWS.map((window) => (
+            <SelectContent fit>
+              {WINDOWS.map(([window, labelKey]) => (
                 <SelectItem key={window} value={String(window)}>
-                  {t('agents.guardrailEvents.lastDays', { count: window })}
+                  {t(`settings.analytics.filterOptions.${labelKey}`)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -224,14 +236,15 @@ export default function GuardrailEvents({ agentId }: Props) {
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Select value={checkFilter} onValueChange={setCheckFilter}>
           <SelectTrigger
-            className="w-[170px]"
+            className="min-w-[170px]"
             size="field"
             shape="pill"
+            aria-label={t('agents.guardrailEvents.check')}
             data-testid="guardrail-events-check-filter"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent fit>
             <SelectItem value="all">
               {t('agents.guardrailEvents.allChecks')}
             </SelectItem>
@@ -244,14 +257,15 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
         <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
           <SelectTrigger
-            className="w-[170px]"
+            className="min-w-[170px]"
             size="field"
             shape="pill"
+            aria-label={t('agents.guardrailEvents.outcome')}
             data-testid="guardrail-events-outcome-filter"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent fit>
             <SelectItem value="all">
               {t('agents.guardrailEvents.allOutcomes')}
             </SelectItem>
@@ -286,14 +300,16 @@ export default function GuardrailEvents({ agentId }: Props) {
               onRetry={() => setReloadKey((key) => key + 1)}
             />
           ) : events.length === 0 ? (
-            <p
-              className="text-muted-foreground p-4 text-sm"
+            <EmptyState
+              size="sm"
+              illustration="none"
               data-testid="guardrail-events-empty"
-            >
-              {filtered
-                ? t('agents.guardrailEvents.emptyForFilter')
-                : t('agents.guardrailEvents.empty')}
-            </p>
+              title={
+                filtered
+                  ? t('agents.guardrailEvents.emptyForFilter')
+                  : t('agents.guardrailEvents.empty')
+              }
+            />
           ) : (
             <Table aria-labelledby={tableHeadingId}>
               <TableHead>
@@ -304,6 +320,7 @@ export default function GuardrailEvents({ agentId }: Props) {
                   <TableHeader>
                     {t('agents.guardrailEvents.outcome')}
                   </TableHeader>
+                  <TableHeader>{t('agents.guardrailEvents.score')}</TableHeader>
                   <TableHeader>
                     {t('agents.guardrailEvents.detail')}
                   </TableHeader>
@@ -333,8 +350,16 @@ export default function GuardrailEvents({ agentId }: Props) {
                           : t(ACTION_KEYS[event.action] ?? event.action)}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {typeof event.score === 'number'
+                        ? event.score.toFixed(2)
+                        : EMPTY_VALUE}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {event.detail || '—'}
+                      <div className="flex flex-col items-start gap-1">
+                        <span>{event.detail || EMPTY_VALUE}</span>
+                        <ItemRefCell value={event.item_ref} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -354,6 +379,89 @@ export default function GuardrailEvents({ agentId }: Props) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The item an event is about: a link that opens the chunk in Knowledge
+ * (found by its content key, as a citation is), or "Attached file".
+ */
+function ItemRefCell({ value }: { value?: string | null }) {
+  const { t } = useTranslation();
+  const ref = parseItemRef(value);
+  if (!ref) return null;
+  if (ref.kind === 'attachment')
+    return (
+      <span className="text-xs">
+        {t('agents.guardrailEvents.attachedFile')}
+      </span>
+    );
+  return <ChunkLink sourceId={ref.sourceId} chunkKey={ref.chunkKey} />;
+}
+
+function ChunkLink({
+  sourceId,
+  chunkKey,
+}: {
+  sourceId: string;
+  chunkKey: string;
+}) {
+  const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const [opening, setOpening] = React.useState(false);
+
+  const open = async () => {
+    setOpening(true);
+    try {
+      const response = await userService.getSourceChunk(
+        sourceId,
+        chunkKey,
+        token,
+      );
+      if (!response.ok) throw new Error('chunk lookup');
+      const body = await response.json();
+      const metadata = body.chunk?.metadata ?? {};
+      navigate(
+        knowledgeLink(
+          body.source?.kind === 'wiki' && body.page_path
+            ? { sourceId, wikiPage: body.page_path }
+            : {
+                sourceId,
+                chunk: {
+                  id: body.chunk.doc_id,
+                  search: body.chunk.text ?? '',
+                  path: chunkFilePath(metadata) || undefined,
+                },
+              },
+        ),
+      );
+    } catch {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('agents.guardrailEvents.chunkUnavailable'),
+        }),
+      );
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  // A text-size link takes the type of the line it sits in.
+  return (
+    <span className="text-xs">
+      <Button
+        type="button"
+        variant="link"
+        size="text"
+        loading={opening}
+        onClick={open}
+      >
+        {t('agents.guardrailEvents.openChunk')}
+      </Button>
+    </span>
   );
 }
 

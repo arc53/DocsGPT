@@ -20,7 +20,13 @@ the same plan:
   sandbox with a short preview (``sandbox``), and with no tool to reach them
   they are ``not_included``;
 * a zip is listed (``archive``) but never inlined: the worker unpacked it,
-  and its members follow it in the rows as files of their own.
+  and its members follow it in the rows as files of their own;
+* a file an attachment guardrail withheld (``withheld``) is listed with that
+  reason and nothing of it is sent, natively or as text;
+* in reference mode (``attachments_mode: "reference"`` on the request) this
+  turn's files are not inlined at all: each is listed as ``reference`` for
+  the attachments tool and the code sandbox to work with. Without a tool to
+  reach them the mode is ignored and the files are planned as usual.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from docsgpt.agents.turn_capabilities import TurnCapabilities
 from docsgpt.attachment_full_text import full_text_tokens
@@ -47,7 +53,15 @@ NATIVE_PDF_PAGE_TOKENS = 500
 # gpt-6.1-sol: a 4-page image-only scan cost 12,312 prompt tokens (~3.1k a
 # page), and 14 scans of 31 pages together added ~81k (~2.6k a page). Priced
 # at NATIVE_PDF_PAGE_TOKENS these scans planned at 500 a page, 5-6x too low.
+# The provider adds the same page image for every page that carries a raster
+# image, text layer or not. Measured on Azure (gpt-6-luna and gpt-6.1-sol
+# alike): an OCR'd scan cost its text plus ~2,850 a page, a text page with a
+# small logo its text plus ~1,750, and a text-only page nothing extra.
 NATIVE_SCAN_PAGE_TOKENS = 3000
+# Bytes per page above which a PDF the worker never counted image pages for
+# is taken for pages of images: born-digital PDFs run a few KB to a few tens of
+# KB a page, scans hundreds of KB (an OCR'd 45-page acta: 5.4 MB).
+IMAGE_PAGE_BYTES = 100_000
 # Context one PDF page rendered as an image takes (150 dpi, a page of
 # roughly 1240x1754 px). Measured, not the per-image guess above: an
 # end-to-end run of a 200k-window vision model planned ~100k tokens of page
@@ -101,9 +115,11 @@ class FileStatus(str, Enum):
     TOOL = "tool"
     SANDBOX = "sandbox"
     EARLIER = "earlier"
+    REFERENCE = "reference"
     NOT_INCLUDED = "not_included"
     UNREADABLE = "unreadable"
     ARCHIVE = "archive"
+    WITHHELD = "withheld"
 
 
 @dataclass(eq=False)
@@ -122,6 +138,8 @@ class PlannedFile:
         text_tokens: Tokens of the stored text (the ``M`` of a partial).
         original_tokens: Tokens the parser extracted before the stored cut.
         page_count: Pages, for a PDF the worker could open.
+        image_pages: Pages that carry a raster image, as the worker counted
+            them (None for rows stored before it did).
         inline_tokens: Context this plan spends on the file.
         shown_tokens: Text tokens shown inline (the ``N`` of a partial,
             the preview of a sandbox file).
@@ -149,6 +167,7 @@ class PlannedFile:
     text_tokens: int = 0
     original_tokens: int = 0
     page_count: Optional[int] = None
+    image_pages: Optional[int] = None
     inline_tokens: int = 0
     shown_tokens: int = 0
     native_parts: int = 0
@@ -365,6 +384,8 @@ def plan_attachments(
     earlier: Optional[Sequence[Dict[str, Any]]] = None,
     max_native_parts: int = 40,
     sandbox_max_input_bytes: Optional[int] = None,
+    reference: bool = False,
+    withheld: Optional[Set[str]] = None,
 ) -> AttachmentPlan:
     """Plan this turn's attachments against a token budget.
 
@@ -378,6 +399,11 @@ def plan_attachments(
         sandbox_max_input_bytes: Largest file the sandbox stages; larger
             spreadsheets are planned like any other file. None reads
             ``SANDBOX_MAX_INPUT_BYTES``.
+        reference: Keep this turn's files out of the context and list them
+            as ``reference`` for the tools, when the attachments tool is in
+            the turn.
+        withheld: Attachment ids an attachment guardrail withheld; their
+            files are planned ``withheld``.
 
     Returns:
         The plan.
@@ -401,6 +427,7 @@ def plan_attachments(
                 planned.status = FileStatus.EARLIER
 
     reachable = capabilities.attachments_tool
+    by_reference = bool(reference and reachable)
     walk: List[PlannedFile] = []
     for row in current or ():
         if not isinstance(row, dict):
@@ -425,8 +452,13 @@ def plan_attachments(
     deferred: List[PlannedFile] = []
     overflow = FileStatus.TOOL if reachable else FileStatus.NOT_INCLUDED
 
+    blocked = set(withheld or ())
     for planned in walk:
         row = planned.attachment
+        if blocked.intersection(planned.attachment_ids):
+            planned.status = FileStatus.WITHHELD
+            planned.reason = "content_policy"
+            continue
         has_text = _has_text(row)
         native_ok = capabilities.reads_natively(planned.mime_type) and _native_readable(row)
         # Page images stop at SYNTHETIC_PDF_MAX_PAGES: a longer PDF with a
@@ -444,6 +476,12 @@ def plan_attachments(
         if not has_text and not native_ok:
             planned.status = FileStatus.UNREADABLE
             planned.reason = _unreadable_reason(row, capabilities)
+            continue
+
+        if by_reference:
+            # The client asked for the files to be worked on, not read whole:
+            # nothing of them goes into the context.
+            planned.status = FileStatus.REFERENCE
             continue
 
         if capabilities.sandbox and _is_spreadsheet(planned) and _fits_sandbox(row, sandbox_max_input_bytes):
@@ -504,11 +542,51 @@ def plan_attachments(
             remaining -= planned.inline_tokens
         break
 
+    for planned in files:
+        if not planned.current and blocked.intersection(planned.attachment_ids):
+            planned.status = FileStatus.WITHHELD
+            planned.reason = "content_policy"
+
     if capabilities.sandbox:
         for planned in files:
-            planned.sandbox_eligible = _fits_sandbox(planned.attachment, sandbox_max_input_bytes)
+            planned.sandbox_eligible = planned.status is not FileStatus.WITHHELD and _fits_sandbox(
+                planned.attachment, sandbox_max_input_bytes
+            )
 
     return AttachmentPlan(files=files, capabilities=capabilities, budget=max(int(budget), 0))
+
+
+def plan_listing(plan: AttachmentPlan) -> List[Dict[str, Any]]:
+    """The plan's files as an API client sees them: ref, attachment id, name and status.
+
+    A client keeps the mapping to name a file on later turns (by its ``F``
+    ref in the prompt, or its id in ``attachments``) without sending its
+    bytes again.
+
+    Args:
+        plan: The turn's plan.
+
+    Returns:
+        One entry per ref, in ref order.
+    """
+    listing = []
+    for planned in plan.files:
+        entry: Dict[str, Any] = {
+            "ref": planned.ref,
+            "id": planned.attachment_ids[0],
+            "filename": planned.filename,
+            "mime_type": planned.mime_type,
+            "status": planned.status.value,
+        }
+        size = planned.attachment.get("size")
+        if isinstance(size, int) and size > 0:
+            entry["size"] = size
+        if planned.page_count:
+            entry["pages"] = planned.page_count
+        if planned.readable_tokens:
+            entry["tokens"] = planned.readable_tokens
+        listing.append(entry)
+    return listing
 
 
 def is_archive(row: Dict[str, Any]) -> bool:
@@ -560,6 +638,7 @@ def _new_planned(row: Dict[str, Any], ref: str, attachment_id: str, is_current: 
         text_tokens = _int(extraction.get("stored_tokens"))
     original = _int(extraction.get("original_tokens")) or text_tokens
     page_count = _metadata(row).get("page_count")
+    image_pages = _metadata(row).get("image_page_count")
     return PlannedFile(
         ref=ref,
         attachment=row,
@@ -570,6 +649,7 @@ def _new_planned(row: Dict[str, Any], ref: str, attachment_id: str, is_current: 
         text_tokens=text_tokens,
         original_tokens=original,
         page_count=page_count if isinstance(page_count, int) and page_count > 0 else None,
+        image_pages=image_pages if isinstance(image_pages, int) and image_pages >= 0 else None,
         full_tokens=full_text_tokens(row),
     )
 
@@ -632,8 +712,34 @@ def _native_cost(planned: PlannedFile, capabilities: TurnCapabilities) -> int:
         pages = planned.page_count or 1
         if _pages_are_images(planned):
             return pages * NATIVE_SCAN_PAGE_TOKENS
-        return planned.original_tokens + pages * NATIVE_PDF_PAGE_TOKENS
+        image_pages = _image_pages(planned, pages)
+        return (
+            planned.original_tokens
+            + image_pages * NATIVE_SCAN_PAGE_TOKENS
+            + (pages - image_pages) * NATIVE_PDF_PAGE_TOKENS
+        )
     return max(planned.original_tokens, IMAGE_PART_TOKENS)
+
+
+def _image_pages(planned: PlannedFile, pages: int) -> int:
+    """Pages of a PDF with a text layer that the provider also reads as page images.
+
+    The worker's count when it recorded one; for older rows, an estimate from
+    the file's bytes per page, so an OCR'd scan is not priced as born-digital.
+
+    Args:
+        planned: The PDF.
+        pages: Its page count (1 when unknown).
+
+    Returns:
+        The number of pages to price as page images, at most ``pages``.
+    """
+    if planned.image_pages is not None:
+        return min(planned.image_pages, pages)
+    size = planned.attachment.get("size")
+    if not isinstance(size, int) or size <= 0 or planned.page_count is None:
+        return 0
+    return min(pages, size // IMAGE_PAGE_BYTES)
 
 
 def _pages_are_images(planned: PlannedFile) -> bool:

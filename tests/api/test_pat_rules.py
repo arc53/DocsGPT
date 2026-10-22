@@ -300,6 +300,22 @@ class TestRelationshipsBeyondIds:
         ):
             assert _denied(_call(client, method, path, claims, json={})) == "resource_not_allowed", path
 
+    def test_analytics_topics_honour_the_agent_allowlist(self, client):
+        claims = _claims(["analytics:read", "agents:read"], {"agents": [AGENT_A]})
+        for path in ("/api/analytics/topics", "/api/analytics/topic_folders"):
+            assert _denied(_call(client, "GET", f"{path}?agent_id={AGENT_A}", claims)) is None, path
+            assert (
+                _denied(_call(client, "GET", f"{path}?agent_id={AGENT_B}", claims)) == "resource_not_allowed"
+            ), path
+
+    @pytest.mark.parametrize("family", ["sources", "prompts", "tools", "workflows"])
+    def test_analytics_topics_are_closed_to_tokens_restricted_on_anything_but_agents(self, client, family):
+        claims = _claims(["analytics:read", "agents:read"], {family: [SOURCE_A]})
+        for path in ("/api/analytics/topics", "/api/analytics/topic_folders"):
+            assert (
+                _denied(_call(client, "GET", f"{path}?agent_id={AGENT_A}", claims)) == "resource_not_allowed"
+            ), path
+
     @pytest.mark.parametrize("family", ["agents", "sources", "prompts", "tools", "workflows"])
     def test_conversations_and_analytics_are_closed_to_every_restricted_token(self, client, family):
         claims = _claims(["conversations:write", "analytics:read"], {family: [SOURCE_A]})

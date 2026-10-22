@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Iterable, List, Optional
+import uuid
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.agents.tool_executor import ToolExecutor
-from docsgpt.api.answer.segments import separated
+from docsgpt.api.answer.segments import merge_tool_calls, separated
 from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
@@ -29,6 +30,7 @@ from docsgpt.api.answer.services.stream_processor import (
     wiki_tool_config,
 )
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.guardrails.config import AgentConfig
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -108,6 +110,7 @@ def run_agent_headless(
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
@@ -115,6 +118,8 @@ def run_agent_headless(
     trace_user_id: Optional[str] = None,
     message_id: Optional[str] = None,
     background: Any = None,
+    on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
 
@@ -124,7 +129,8 @@ def run_agent_headless(
     -- and with ``query`` otherwise.
 
     The run is recorded as one execution trace under ``endpoint`` as its
-    source. ``request_id`` links that trace to the caller's own record (the
+    source, and its decision-model entries go to ``metadata["decisions"]``.
+    ``request_id`` links that trace to the caller's own record (the
     scheduler passes its run id, the webhook worker its task id); it is kept
     off the LLM's token-usage rows, whose request ids drive request counts.
     ``trace_user_id`` owns the trace when the run belongs to someone other
@@ -137,11 +143,19 @@ def run_agent_headless(
     them, and wiki edits only when the wiki's owner allows outside edits (as
     for a webhook run).
 
+    ``compressed_summary`` is the summary of a compressed conversation whose
+    tail ``chat_history`` holds; it goes into the system prompt as in a chat turn.
+
     A continuation turn passes ``message_id``, the id its message will be
     stored with (tool calls are journaled and files attached under it), and
     ``background``, its :class:`~docsgpt.background.context.BackgroundContext`:
     a slow call then becomes a background job and ``check_job`` is offered,
     as in a chat turn. Approval-gated tools stay denied either way.
+
+    ``on_event`` sees each event the agent yields, as it yields it, so a
+    continuation can stream the turn to the chat. ``should_stop`` is asked
+    after each event; once it says yes the run ends, keeping what it has, and
+    the outcome's ``stopped`` is True.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -154,7 +168,7 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    with tracing.activate(trace):
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()):
         try:
             outcome = _run_agent_headless(
                 agent_config,
@@ -164,11 +178,15 @@ def run_agent_headless(
                 model_id_override=model_id_override,
                 endpoint=endpoint,
                 chat_history=chat_history,
+                compressed_summary=compressed_summary,
                 conversation_id=conversation_id,
                 external_caller=external_caller,
                 public_link_caller=public_link_caller,
                 message_id=message_id,
                 background=background,
+                request_id=request_id,
+                on_event=on_event,
+                should_stop=should_stop,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -189,11 +207,15 @@ def _run_agent_headless(
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
     message_id: Optional[str] = None,
     background: Any = None,
+    request_id: Optional[str] = None,
+    on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -297,10 +319,11 @@ def _run_agent_headless(
             decoded_token=decoded_token,
         )
         # Routed per source like a chat's pre-fetch, so each source keeps its
-        # own retriever and retrieval settings.
+        # own retriever and retrieval settings (and its turns their rerank arm).
         retriever = build_dispatcher(
             lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
             sources=prefetch_sources,
+            conversation_id=conversation_id,
             **retriever_kwargs,
         )
         try:
@@ -323,6 +346,8 @@ def _run_agent_headless(
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
+    else:
+        tool_executor.run_scope_id = f"agent-run-{uuid.uuid4().hex}"
     if message_id:
         tool_executor.message_id = str(message_id)
     if background is not None:
@@ -368,6 +393,10 @@ def _run_agent_headless(
         # agent, so it carries the same guardrails an interactive turn would.
         "agent_config": agent_config.get("config") or {},
     }
+    if compressed_summary:
+        # ``chat_history`` is then the tail after a saved compression point;
+        # the summary of what it replaced rides in the system prompt.
+        agent_kwargs["compressed_summary"] = compressed_summary
     if wiki_config:
         agent_kwargs["wiki_config"] = wiki_config
     if agent_type == "workflow":
@@ -395,18 +424,33 @@ def _run_agent_headless(
     agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
     if conversation_id:
         agent.conversation_id = str(conversation_id)
+    # Not ``agent.request_id``: that one reaches the token-usage rows.
+    if message_id or request_id:
+        agent.started_by = str(message_id or request_id)
 
     answer_full = ""
     thought = ""
     sources_log: List[Dict[str, Any]] = []
     tool_calls: List[Dict[str, Any]] = []
     stream_error: Optional[str] = None
+    # Responses continuity (response id, reasoning state, usage) the agent
+    # reports for the turn; a continuation stores it like a chat turn does.
+    message_metadata: Dict[str, Any] = {}
+    # The decision model's entries for the run, under ``decisions``.
+    decision_record.attach(message_metadata)
     steps_completed = 0
     # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
     tool_since_text = False
-    for event in agent.gen(query=query):
+    stopped = False
+    events = agent.gen(query=query)
+    for event in events:
         if not isinstance(event, dict):
             continue
+        if on_event is not None:
+            try:
+                on_event(event)
+            except Exception:
+                logger.exception("Headless run for agent %s: its event observer failed", agent_id)
         # ``Agent.gen`` reports a failed stream with an error event rather than
         # by raising. Dropping it here (as this loop used to) makes a broken run
         # indistinguishable from one that simply had nothing to say, and the
@@ -421,19 +465,16 @@ def _run_agent_headless(
                 # retract from, so the stored result is all there is.
                 answer_full = ""
                 thought = ""
-            continue
         # A workflow's work is its nodes: its tool calls stay in the engine's
         # execution log and its node agents own their LLMs, so neither
         # ``tool_calls`` nor the token tally below sees them. Counting
         # completed steps is the only evidence a quiet workflow ran at all.
-        if event.get("type") == "workflow_step":
+        elif event.get("type") == "workflow_step":
             if event.get("status") == "completed":
                 steps_completed += 1
-            continue
-        if event.get("type") == "tool_call":
+        elif event.get("type") == "tool_call":
             tool_since_text = True
-            continue
-        if "answer" in event:
+        elif "answer" in event:
             chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
             if chunk.strip():
                 tool_since_text = False
@@ -444,6 +485,18 @@ def _run_agent_headless(
             tool_calls.extend(event["tool_calls"])
         elif "thought" in event:
             thought += str(event["thought"])
+        elif isinstance(event.get("metadata"), dict):
+            message_metadata.update(event["metadata"])
+        # After every event, a tool call's included: the next one may start another LLM round.
+        if should_stop is not None and should_stop():
+            stopped = True
+            break
+    if stopped:
+        close = getattr(events, "close", None)
+        if callable(close):
+            close()
+        # The agent reports its calls when its turn ends, which a stopped run never reaches.
+        tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
 
     denied = list(getattr(tool_executor, "headless_denials", []))
     error: Optional[str] = None
@@ -488,4 +541,6 @@ def _run_agent_headless(
         "error": error,
         "steps_completed": steps_completed,
         "model_id": model_id,
+        "metadata": message_metadata,
+        "stopped": stopped,
     }

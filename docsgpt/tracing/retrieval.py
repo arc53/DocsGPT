@@ -31,7 +31,10 @@ def start_retrieval_span(
 
 
 def describe_documents(span: Any, docs: Optional[List[Dict[str, Any]]], *, query: Optional[str] = None) -> None:
-    """Record what a retrieval returned: counts, sources, top scores and a chunk preview."""
+    """Record what a retrieval returned: counts, sources, top scores and a chunk preview.
+
+    A chunk the decision model scored shows its ``relevance`` in the preview.
+    """
     if not span:
         return
     docs = docs or []
@@ -56,6 +59,7 @@ def describe_documents(span: Any, docs: Optional[List[Dict[str, Any]]], *, query
                         "title": d.get("title") or d.get("filename"),
                         "source": d.get("source"),
                         "score": d.get("score"),
+                        "relevance": d.get("relevance"),
                         "text": str(d.get("text") or "")[:_SNIPPET_CHARS],
                     }.items()
                     if v not in (None, "")

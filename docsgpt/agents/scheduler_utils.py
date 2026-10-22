@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import date, datetime, time, timedelta, timezone
+from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
@@ -23,8 +23,10 @@ def resolve_timezone(tz_name: Optional[str]) -> ZoneInfo:
     name = (tz_name or "UTC").strip() or "UTC"
     try:
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError as exc:
-        raise ScheduleValidationError(f"Unknown timezone: {name}") from exc
+    # A directory ("America"), a path or an over-long name raises OSError or
+    # ValueError rather than ZoneInfoNotFoundError.
+    except (ZoneInfoNotFoundError, OSError, ValueError) as exc:
+        raise ScheduleValidationError(f"Unknown timezone: {name[:64]}") from exc
 
 
 def parse_cron(expression: str) -> None:
@@ -86,6 +88,89 @@ def next_cron_run(
     itr = croniter(expression, anchor_local)
     nxt_local = itr.get_next(datetime)
     return nxt_local.astimezone(timezone.utc)
+
+
+def cron_runs(
+    expression: str,
+    tz_name: Optional[str],
+    *,
+    after: datetime,
+    until: datetime,
+    limit: int,
+) -> List[datetime]:
+    """Return the fire times strictly after ``after`` and before ``until`` (UTC, tz-aware).
+
+    The same times as calling ``next_cron_run`` from each fire time in turn,
+    for expanding a schedule over a window: the expression is validated and
+    the zone resolved once, and one iterator walks the local clock, so DST
+    lands as it does there.
+
+    A cron's times of day are the same on every day it fires (the minute and
+    hour fields don't depend on the date), so the walk goes one step at a
+    time only through the first whole day and days whose clock changes. On
+    any other day it steps once, to find the day, and repeats the times. A
+    croniter step costs about 17µs, and a 15-minute cron has 4,032 of them
+    in six weeks.
+
+    Args:
+        expression: A 5-field cron expression.
+        tz_name: The schedule's IANA zone (default UTC).
+        after: Exclusive lower bound.
+        until: Exclusive upper bound.
+        limit: The most times returned.
+
+    Returns:
+        Up to ``limit`` fire times, oldest first.
+
+    Raises:
+        ScheduleValidationError: The expression or the zone is invalid.
+    """
+    parse_cron(expression)
+    tz = resolve_timezone(tz_name)
+    if after.tzinfo is None:
+        after = after.replace(tzinfo=timezone.utc)
+    seen = after.astimezone(tz)
+    itr = croniter(expression, seen)
+    # Offsets from local midnight of one whole day without a clock change.
+    times: Optional[List[timedelta]] = None
+    out: List[datetime] = []
+    fire = itr.get_next(datetime)
+    while len(out) < limit:
+        day = fire.date()
+        start = _local_midnight(day, tz)
+        plain = _local_midnight(day + timedelta(days=1), tz) - start == timedelta(days=1)
+        if plain and times is not None:
+            since = fire.astimezone(timezone.utc) - start
+            for offset in times:
+                if offset < since:
+                    continue
+                at = start + offset
+                if at >= until or len(out) >= limit:
+                    return out
+                out.append(at)
+            # On to the next day the cron fires.
+            seen = (start + times[-1]).astimezone(tz)
+            itr = croniter(expression, seen)
+            fire = itr.get_next(datetime)
+            continue
+        whole = seen.date() < day
+        offsets: List[timedelta] = []
+        while fire.date() == day:
+            at = fire.astimezone(timezone.utc)
+            if at >= until or len(out) >= limit:
+                return out
+            out.append(at)
+            offsets.append(at - start)
+            seen = fire
+            fire = itr.get_next(datetime)
+        if plain and whole and times is None:
+            times = offsets
+    return out
+
+
+def _local_midnight(day: date, tz: ZoneInfo) -> datetime:
+    """The start of ``day`` on the ``tz`` clock, in UTC."""
+    return datetime.combine(day, time(), tzinfo=tz).astimezone(timezone.utc)
 
 
 def parse_delay(delay: str) -> timedelta:

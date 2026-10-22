@@ -8,6 +8,7 @@ stack public, unmigrated or unable to share uploads fails here first.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,8 @@ from docsgpt.version import __version__
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 K8S = REPO_ROOT / "deployment" / "k8s"
+DECIDER = K8S / "optional-decider"
+DECIDER_URL = "http://docsgpt-decider-service:7095"
 
 
 def _documents(path: Path) -> list[dict[str, Any]]:
@@ -105,6 +108,8 @@ def test_opt_in_manifests_stay_out_of_the_default_stack() -> None:
     assert "sandbox" not in resources
     assert "qdrant" not in resources
     assert "ingress" not in resources
+    assert "decider" not in resources and "components" not in _kustomization()
+    assert "#   - optional-decider" in (K8S / "kustomization.yaml").read_text(), "one line to uncomment"
 
 
 def test_secret_ships_no_usable_credentials() -> None:
@@ -261,8 +266,7 @@ def test_init_containers_have_resources() -> None:
 def test_migration_job_runs_the_packaged_migrate_command() -> None:
     job = _named("Job", "postgres-init")
     container = next(c for c in _pod_spec(job)["containers"] if c["name"] == "postgres-init")
-    # docsgpt.cli, not the package: the 0.21.0 image predates docsgpt/__main__.py.
-    assert container["command"] == ["python", "-m", "docsgpt.cli", "migrate", "--no-create"]
+    assert container["command"] == ["python", "-m", "docsgpt", "migrate", "--no-create"]
 
 
 @pytest.mark.parametrize("name", ["docsgpt-api", "docsgpt-worker"])
@@ -299,12 +303,25 @@ def test_schema_wait_retries_a_database_url_it_cannot_parse(name: str, tmp_path:
 def test_worker_runs_the_beat_scheduler() -> None:
     command = _main_container("docsgpt-worker")["command"]
     assert "-B" in command
-    assert "embeddings" in command[command.index("-Q") + 1]
+    queues = command[command.index("-Q") + 1].split(",")
+    assert "embeddings" in queues and "analytics" in queues
 
 
 def test_worker_reaches_the_api_inside_the_cluster() -> None:
     env = {e["name"]: e.get("value") for e in _main_container("docsgpt-worker")["env"]}
-    assert env["API_URL"] == "http://docsgpt-api-service"
+    assert env["WORKER_API_URL"] == "http://docsgpt-api-service"
+
+
+@pytest.mark.parametrize("name", ["docsgpt-api", "docsgpt-worker"])
+def test_app_pods_preserve_the_public_api_url_from_the_secret(name: str) -> None:
+    container = _main_container(name)
+    assert {"secretRef": {"name": "docsgpt-secrets"}} in container["envFrom"]
+    # Explicit env entries override envFrom. Publishing the app must keep the
+    # browser-facing address on the worker too, where OAuth callbacks are built.
+    secret = dict(_secret_data(), API_URL="https://docs.example.com")
+    env = dict(secret)
+    env.update({e["name"]: e.get("value") for e in container["env"]})
+    assert env["API_URL"] == "https://docs.example.com"
 
 
 def test_images_are_pinned() -> None:
@@ -333,6 +350,7 @@ def test_sandbox_image_matches_the_release_version() -> None:
         "deployments/sandbox-deploy.yaml",
         "deployments/qdrant-deploy.yaml",
         "optional-mongo/deployments/mongo-deploy.yaml",
+        "optional-decider/decider-deploy.yaml",
     ],
 )
 def test_opt_in_images_are_pinned(path: str) -> None:
@@ -354,3 +372,104 @@ def test_ingress_example_targets_the_api_service() -> None:
     backend = ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]
     assert backend["name"] == "docsgpt-api-service"
     assert ingress["spec"]["tls"], "the example must terminate TLS"
+
+
+def _decision_key_from_the_secret(container: dict[str, Any]) -> bool:
+    env = {e["name"]: e for e in container.get("env", [])}
+    ref = env.get("DECISION_KEY", {}).get("valueFrom", {}).get("secretKeyRef")
+    return ref == {"name": "docsgpt-secrets", "key": "INTERNAL_KEY"}
+
+
+def _component() -> dict[str, Any]:
+    """The optional-decider kustomize component."""
+    return yaml.safe_load((DECIDER / "kustomization.yaml").read_text())
+
+
+def _decider_named(kind: str, name: str) -> dict[str, Any]:
+    """The component's resource of ``kind`` called ``name``."""
+    docs = [doc for resource in _component()["resources"] for doc in _documents(DECIDER / resource)]
+    return next(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+
+def test_the_decider_is_a_component() -> None:
+    component = _component()
+    assert component["kind"] == "Component"
+    for resource in component["resources"]:
+        assert (DECIDER / resource).is_file(), resource
+
+
+def test_the_decider_serves_the_model_from_its_own_volume() -> None:
+    deployment = _decider_named("Deployment", "docsgpt-decider")
+    decider = _pod_spec(deployment)["containers"][0]
+    assert decider["image"] == f"arc53/docsgpt:{__version__}"
+    assert decider["command"] == ["python", "-m", "docsgpt", "decide-server", "--host", "0.0.0.0", "--port", "7095",
+                                  "--device", "cpu"]
+    assert decider["readinessProbe"]["httpGet"] == {"path": "/health", "port": 7095}
+    assert decider["resources"]["limits"]["memory"] == "2Gi"
+    assert {"secretRef": {"name": "docsgpt-secrets"}} in decider["envFrom"]
+    assert _decision_key_from_the_secret(decider)
+    spec = _pod_spec(deployment)
+    assert spec["securityContext"]["fsGroup"] == 999
+    (volume,) = spec["volumes"]
+    assert volume["persistentVolumeClaim"]["claimName"] == "docsgpt-decision-models"
+    assert decider["volumeMounts"] == [{"name": volume["name"], "mountPath": "/app/models/decision"}]
+    claim = _decider_named("PersistentVolumeClaim", "docsgpt-decision-models")
+    assert claim["spec"]["accessModes"] == ["ReadWriteOnce"]
+    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
+
+
+def test_the_decider_service_targets_it() -> None:
+    service = _decider_named("Service", "docsgpt-decider-service")
+    assert service["spec"].get("type", "ClusterIP") == "ClusterIP"
+    assert service["spec"]["selector"] == {"app": "docsgpt-decider"}
+    assert service["spec"]["ports"][0]["port"] == service["spec"]["ports"][0]["targetPort"] == 7095
+
+
+def test_the_component_points_the_api_and_the_worker_at_it() -> None:
+    patched = {}
+    for entry in _component()["patches"]:
+        patch = yaml.safe_load(entry["patch"])
+        (container,) = _pod_spec(patch)["containers"]
+        assert container["name"] == patch["metadata"]["name"], "merged into the main container by name"
+        patched[container["name"]] = {e["name"]: e.get("value") for e in container["env"]}
+        assert _decision_key_from_the_secret(container), "the key the decider expects"
+    assert patched == {name: {"DECISION_BASE_URL": DECIDER_URL, "DECISION_KEY": None}
+                       for name in ("docsgpt-api", "docsgpt-worker")}
+
+
+def test_the_image_user_id_is_the_fs_group() -> None:
+    dockerfile = (REPO_ROOT / "docsgpt" / "Dockerfile").read_text()
+    assert "groupadd -r -g 999 appuser" in dockerfile and "useradd -r -u 999 -g appuser" in dockerfile
+
+
+@pytest.mark.parametrize("name, size", [("docsgpt-api", "1Gi"), ("docsgpt-worker", "64Mi")])
+def test_by_default_the_api_holds_the_model_and_the_worker_only_its_tokenizer(name: str, size: str) -> None:
+    container = _main_container(name)
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    assert "DECISION_BASE_URL" not in env and "DECISION_BASE_URL" not in _secret_data()
+    assert "DECISION_KEY" not in env, "INTERNAL_KEY must not reach a server set in docsgpt-secrets"
+    volumes = {v["name"]: v for v in _pod_spec(_named("Deployment", name))["volumes"]}
+    (mount,) = [m for m in container["volumeMounts"] if m["mountPath"] == "/app/models/decision"]
+    assert volumes[mount["name"]]["emptyDir"]["sizeLimit"] == size
+    assert container["resources"]["limits"]["memory"] == "4Gi", "room for the API's model (~1 GB)"
+    assert container.get("readinessProbe", {}).get("httpGet", {}).get("path") in (None, "/api/health")
+
+
+@pytest.mark.skipif(shutil.which("kubectl") is None, reason="needs kubectl (no cluster)")
+def test_uncommenting_the_component_adds_the_decider(tmp_path: Path) -> None:
+    tree = tmp_path / "k8s"
+    shutil.copytree(K8S, tree)
+    kustomization = tree / "kustomization.yaml"
+    text = kustomization.read_text().replace("# components:\n#   - optional-decider", "components:\n  - optional-decider")
+    kustomization.write_text(text)
+    built = subprocess.run(["kubectl", "kustomize", str(tree)], capture_output=True, text=True, timeout=60)
+    assert built.returncode == 0, built.stderr
+    docs = [doc for doc in yaml.safe_load_all(built.stdout) if doc]
+    names = {(doc["kind"], doc["metadata"]["name"]) for doc in docs}
+    assert {("Deployment", "docsgpt-decider"), ("Service", "docsgpt-decider-service")} <= names
+    for doc in docs:
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] in ("docsgpt-api", "docsgpt-worker"):
+            (container,) = _pod_spec(doc)["containers"]
+            env = {e["name"]: e for e in container["env"]}
+            assert env["DECISION_BASE_URL"]["value"] == DECIDER_URL
+            assert _decision_key_from_the_secret(container)

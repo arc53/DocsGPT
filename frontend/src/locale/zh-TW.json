@@ -31,10 +31,11 @@
     "dismiss": "關閉",
     "toolApprovalTitle": "需要核准工具",
     "toolApprovalReview": "檢視",
-    "toolApprovalFallbackName": "對話"
+    "toolApprovalFallbackName": "對話",
+    "moreToasts_other": "還有 {{count}} 則",
+    "fewerToasts": "收合"
   },
   "backgroundJobs": {
-    "unread": "未讀",
     "card": {
       "status": {
         "working": "背景執行中",
@@ -71,7 +72,8 @@
         "monitor_paused": "監控已暫停",
         "monitor_expired": "監控已過期",
         "schedule": "排程工作已完成",
-        "default": "新回覆"
+        "default": "新回覆",
+        "docs_gaps": "每週文件缺口摘要"
       },
       "open": "開啟",
       "fallbackTitle": "你的助理有新消息"
@@ -351,10 +353,11 @@
         "queryPlaceholder": "輸入此來源應能回答的問題...",
         "run": "執行",
         "notSavedHint": "這些設定僅用於此次測試，不會儲存到來源。若要永久生效，請至來源設定中修改。",
+        "notSavedHintEditor": "這些設定在儲存到來源之前僅用於此次測試。",
         "resultSummary": "檢索到 {{count}} 個區塊 · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "此查詢未檢索到任何區塊。",
-        "emptyWithThreshold": "沒有區塊的分數達到分數門檻（{{threshold}}）。調低門檻可查看接近的結果。",
+        "emptyWithThreshold": "沒有區塊的分數達到相似度門檻（{{threshold}}）。調低門檻可查看接近的結果。",
         "showMore": "顯示完整區塊",
         "showLess": "收合",
         "noScore": "無分數",
@@ -366,7 +369,31 @@
         },
         "errors": {
           "failed": "檢索測試失敗。請再試一次。"
-        }
+        },
+        "relevance": "相關度",
+        "compare": "與檢索器順序比較",
+        "compareHint": "同時依檢索器順序列出所有候選，顯示其相關度，以及相關度模型是保留、提升還是捨棄了它。",
+        "relevanceRun": {
+          "applied": "已在 {{ms}} ms 內依相關度排序",
+          "fallback": "未使用相關度模型（{{reason}}），保留檢索器順序"
+        },
+        "compareTitle": "檢索器順序",
+        "compareDescription": "相關度階段收到的所有候選，依檢索器的排名順序列出。",
+        "compareColumns": {
+          "before": "排名",
+          "chunk": "區塊",
+          "relevance": "相關度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "提升到 #{{rank}}",
+          "kept": "保留為 #{{rank}}",
+          "dropped": "已捨棄",
+          "notKept": "未保留"
+        },
+        "strictness": "此次測試的相關度",
+        "saveToSource": "儲存到來源",
+        "savedToSource": "已儲存。此來源現在使用你測試過的設定。"
       },
       "editConfig": "來源設定",
       "shareWithTeam": "與團隊分享",
@@ -395,14 +422,15 @@
       "searchAlt": "搜尋",
       "retrievalOptions": {
         "title": "進階設定",
+        "advanced": "進階",
         "retrieval": {
           "title": "檢索",
           "note": "這些變更立即生效，無需重新索引。",
           "tag": "無需重新索引",
           "chunks": "檢索區塊數（top-k）",
-          "scoreThreshold": "分數門檻",
-          "scoreThresholdPlaceholder": "無",
-          "scoreThresholdHint": "僅回傳相關性分數高於此值（0–1）的區塊；數值越高越嚴格。",
+          "similarityThreshold": "相似度門檻",
+          "similarityThresholdPlaceholder": "無",
+          "similarityThresholdHint": "捨棄檢索器相似度分數低於此值（0–1）的區塊。依檢索器的分數篩選，而非相關度模型。",
           "rephraseQuery": "搜尋前改寫查詢",
           "retriever": "檢索器",
           "retrievers": {
@@ -429,16 +457,17 @@
           "passageNodesHint": "段落既可因符合問題而被找到，也可因與符合內容相連而被找到。在此版本之後建立的圖譜上效果最佳。",
           "blendVector": "與向量檢索結合",
           "blendVectorHint": "加入向量檢索結果，避免遺漏圖譜未找到的段落。",
-          "agentToolHint": "當此來源的公開方式為「隨選搜尋工具」，或由代理型代理使用時，代理也可以自行沿著這些關係查找。"
+          "agentToolHint": "當此來源的搜尋提供方式為「隨選搜尋工具」，或由自主型（agentic）代理使用時，代理也可以自行沿著這些關係查找。"
         },
         "prescreen": {
-          "enable": "啟用 LLM 預篩選",
-          "warning": "會擷取較大的候選集合並使用 LLM 篩選。這將增加查詢延遲與成本。",
+          "enable": "LLM 篩選",
+          "warning": "由 LLM 審查較大的候選集合，只保留能回答查詢的區塊。這會增加每次查詢的延遲與成本。",
           "candidateK": "擷取候選數",
           "maxKeep": "保留區塊上限",
           "batchSize": "批次大小",
           "model": "模型（選填）",
-          "modelPlaceholder": "預設使用請求模型"
+          "modelPlaceholder": "預設使用請求模型",
+          "exclusiveHint": "它可取代相關度：開啟其中一項會關閉另一項。"
         },
         "graph": {
           "title": "圖譜擷取",
@@ -463,8 +492,32 @@
             "semantic": "語意"
           },
           "maxTokens": "每區塊最大 Token 數",
+          "maxTokensHint": "最多 4,096 個 Token。",
           "minTokens": "每區塊最小 Token 數",
           "duplicateHeaders": "在各區塊間重複標頭"
+        },
+        "relevance": {
+          "title": "相關度",
+          "tag": "無需重新索引",
+          "mode": "相關度模型",
+          "modeHint": "根據查詢為擷取到的每個區塊評分。「重新排序」把最相關的排在前面；「重新排序並篩選」還會捨棄相關度低的。",
+          "modes": {
+            "off": "關閉",
+            "reorder": "重新排序",
+            "filter": "重新排序並篩選"
+          },
+          "strictness": "篩選嚴格度",
+          "strictnessHint": "越嚴格保留的區塊越少：每個回答用的 token 更少，但更可能捨棄有用的區塊。",
+          "presets": {
+            "loose": "寬鬆",
+            "balanced": "均衡",
+            "strict": "嚴格",
+            "custom": "自訂（{{value}}）"
+          },
+          "minRelevance": "最低相關度",
+          "minRelevanceHint": "區塊被保留所需的確切相關度（0–1）。寬鬆為 0.1，均衡為 0.3，嚴格為 0.5。",
+          "candidates": "評分候選數",
+          "candidatesHint": "檢索器為相關度模型擷取並評分的區塊數量，最多 {{max}} 個。預設 {{default}} 個。"
         }
       },
       "configModal": {
@@ -473,7 +526,7 @@
         "subtitleGeneric": "設定此來源的分塊與檢索方式。",
         "save": "儲存",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
-        "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
+        "prescreenInvalidHint": "請檢查 LLM 篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
         "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
         "reingestLater": "稍後",
         "errors": {
@@ -536,11 +589,23 @@
       "deleteFileConsequence": "其區塊也會一併刪除。此操作無法復原。",
       "deleteDirectoryConsequence": "其中的所有內容也會一併刪除。此操作無法復原。",
       "syncConsequence": "其內容會從您的雲端儲存空間更新，可能會覆寫您對個別區塊所做的編輯。",
-      "deleteItemFailed": "無法刪除「{{name}}」。"
+      "deleteItemFailed": "無法刪除「{{name}}」。",
+      "injection": {
+        "flaggedOnly": "僅顯示已標記",
+        "high": "很可能是提示詞注入",
+        "suspected": "疑似提示詞注入",
+        "markedSafe": "已標為安全",
+        "markSafe": "標為安全",
+        "undo": "復原",
+        "flaggedNotice": "此文本塊看起來像提示詞注入（分數 {{percent}}%）。檢查檢索來源的代理會標記它，或在回答中略去它。",
+        "safeNotice": "已標為安全：使用此來源的代理會將此文本塊視為正常內容。編輯其文字會移除該標記。",
+        "reviewFailed": "無法更新此文本塊，請再試一次。",
+        "noFlagged": "此來源中沒有被標記的文本塊。文本塊會在對話首次檢索到它時評分。"
+      }
     },
     "analytics": {
       "label": "分析",
-      "subtitle": "追蹤您賃戶的訊息量、Token 使用量和使用者回饋",
+      "subtitle": "追蹤您帳戶的訊息量、Token 使用量和使用者回饋",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "filterOptions": {
@@ -548,7 +613,8 @@
         "last24Hours": "24 小時",
         "last7Days": "7 天",
         "last15Days": "15 天",
-        "last30Days": "30 天"
+        "last30Days": "30 天",
+        "last90Days": "90 天"
       },
       "messages": "訊息",
       "tokenUsage": "Token 使用量",
@@ -562,7 +628,7 @@
         "total": "總計",
         "model": "依模型",
         "agent": "依代理",
-        "source": "依來源"
+        "source": "依流程"
       },
       "includeSideChannel": "背景 Token",
       "promptTokens": "提示 Token",
@@ -592,7 +658,195 @@
           "direct": "不使用代理的聊天",
           "agent": "透過代理"
         }
-      }
+      },
+      "insights": {
+        "description": "由 AI 模型根據每段對話估算。",
+        "learnMore": "了解更多",
+        "coverage": "已分析 {{labelled}}/{{total}} 則回答",
+        "loadError": "無法載入洞察。",
+        "notEnough": "資料還不夠（目前 {{formatted}} 則）",
+        "notEnoughShort": "資料還不夠",
+        "notEnoughReplies": "回覆還不夠",
+        "languageNote": "這些訊息中有 {{share}} 使用{{languages}}，模型對這些語言的理解較不準確。{{labels}}可能較不可靠。",
+        "otherLanguages": "其他語言",
+        "stats": {
+          "fullyAnswered": "完整回答",
+          "fullyAnsweredHint": "回答完整解決的問題。問候與閒聊不計入。",
+          "goalMet": "達成目標",
+          "goalMetHint": "使用者得到所需內容的對話，在對話平靜下來後根據整段對話判斷。",
+          "frustrated": "不滿",
+          "frustratedHint": "明顯表現出不滿的回覆。只計入回答之後送出的訊息，因此對話的第一則訊息永遠不計入。",
+          "asksHuman": "要求真人",
+          "asksHumanHint": "要求真人、工單或其他聯絡方式的回覆。第一則訊息中提出的要求不計入。",
+          "docsGaps": "文件缺口",
+          "docsGapsHint": "因文件未涵蓋該問題或搜尋找不到頁面而不夠完整的回答。下方分組列出。"
+        },
+        "sub": {
+          "ofQuestions_one": "共 {{formatted}} 個問題",
+          "ofQuestions_other": "共 {{formatted}} 個問題",
+          "ofReplies_one": "共 {{formatted}} 則回覆",
+          "ofReplies_other": "共 {{formatted}} 則回覆",
+          "ofConversations_one": "共 {{formatted}} 段對話",
+          "ofConversations_other": "共 {{formatted}} 段對話",
+          "inAnswers_one": "共 {{formatted}} 則回答",
+          "inAnswers_other": "共 {{formatted}} 則回答"
+        },
+        "panels": {
+          "answerStatus": "回答狀態隨時間變化",
+          "sentiment": "情緒隨時間變化",
+          "whyNot": "未完整回答的原因",
+          "requestType": "請求類型",
+          "implicitFeedback": "對回答的回覆",
+          "shareOfAnswers_one": "佔 {{formatted}} 則回答的比例",
+          "shareOfAnswers_other": "佔 {{formatted}} 則回答的比例",
+          "shareOfMessages_one": "佔 {{formatted}} 則訊息的比例",
+          "shareOfMessages_other": "佔 {{formatted}} 則訊息的比例",
+          "shareOfConversations_one": "佔 {{formatted}} 段對話的比例",
+          "shareOfConversations_other": "佔 {{formatted}} 段對話的比例",
+          "ofReplies_one": "共 {{formatted}} 則回覆",
+          "ofReplies_other": "共 {{formatted}} 則回覆",
+          "barLabel": "{{name}}：{{value}}",
+          "barLabelNone": "{{name}}：資料還不夠",
+          "noneOfThese": "不屬於這些主題",
+          "empty": "此期間沒有可顯示的內容。",
+          "tooltipShare": "{{name}}：{{value}}",
+          "ofQuestions_one": "共 {{formatted}} 個問題",
+          "ofQuestions_other": "共 {{formatted}} 個問題",
+          "topics": "主題",
+          "overlapNote": "一段對話可能計入多個主題，因此合計不等於 100%。",
+          "noTopics": {
+            "title": "還沒有主題",
+            "description": "新增主題，看看使用者在問什麼。",
+            "action": "設定主題"
+          }
+        },
+        "labelNamesInline": {
+          "answer_status": "回答狀態",
+          "gap_type": "未完整回答的原因",
+          "topic_effective": "主題",
+          "reaction": "對回答的回覆"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "完整回答",
+            "partiallyAnswered": "部分回答",
+            "declined": "表示不知道",
+            "clarifying": "追問細節"
+          },
+          "gapType": {
+            "docsMissing": "文件缺口",
+            "notRetrieved": "搜尋找不到頁面",
+            "answerMissed": "回答未用上頁面",
+            "outOfScope": "超出範圍",
+            "featureNotSupported": "不支援的功能",
+            "needsAccountData": "需要帳戶權限或真人",
+            "ambiguous": "問題不清楚",
+            "confidentlyUngrounded": "回答缺少文件依據",
+            "other": "其他"
+          },
+          "reaction": {
+            "thanks": "致謝或確認",
+            "reAsk": "再次提問",
+            "pushbackOrComplaint": "反駁或抱怨"
+          },
+          "requestType": {
+            "troubleshooting": "疑難排解",
+            "howTo": "操作方法",
+            "lookup": "查詢資訊",
+            "concept": "概念說明",
+            "comparison": "比較",
+            "featureRequest": "功能需求",
+            "accountBilling": "帳戶或帳單",
+            "chitChat": "閒聊",
+            "other": "其他"
+          },
+          "sentiment": {
+            "positive": "正面",
+            "neutral": "中性",
+            "negative": "負面"
+          }
+        },
+        "off": {
+          "title": "此代理已關閉洞察",
+          "description": "開啟後可估算回答是否有幫助，以及文件哪裡有不足。",
+          "turnOn": "開啟"
+        },
+        "noConversations": {
+          "hour": "過去 1 小時沒有對話",
+          "last24Hours": "過去 24 小時沒有對話",
+          "last7Days": "過去 7 天沒有對話",
+          "last15Days": "過去 15 天沒有對話",
+          "last30Days": "過去 30 天沒有對話"
+        },
+        "noConversationsDescription": "洞察會在每段對話結束幾分鐘後出現。",
+        "analyzing": {
+          "title": "正在分析對話",
+          "progress_one": "已分析 {{labelled}}/{{formatted}} 則回答 · 最新優先",
+          "progress_other": "已分析 {{labelled}}/{{formatted}} 則回答 · 最新優先"
+        },
+        "olderOnly": {
+          "title": "沒有可分析的近期對話",
+          "description": "洞察涵蓋 {{date}} 起的對話。更早的對話不會分析；管理員可以補做分析。"
+        },
+        "failedOnly": {
+          "title": "無法分析任何回答",
+          "description_one": "模型無法分析此期間的 {{formatted}} 則回答。模型或其問題變更後會重新分析。",
+          "description_other": "模型無法分析此期間的 {{formatted}} 則回答。模型或其問題變更後會重新分析。"
+        },
+        "failed_one": "{{formatted}} 則回答無法分析",
+        "failed_other": "{{formatted}} 則回答無法分析",
+        "settings": {
+          "button": "設定",
+          "title": "洞察設定",
+          "saveFailed": "無法儲存洞察設定。請再試一次。"
+        }
+      },
+      "gaps": {
+        "heading": "文件缺口",
+        "description": {
+          "page": "文件無法回答的問題，依搜尋找到的最接近頁面分組。",
+          "source": "文件無法回答的問題，依最接近頁面所屬的來源分組。",
+          "topic": "文件無法回答的問題，依主題分組。"
+        },
+        "groupBy": "文件缺口分組方式",
+        "groups": {
+          "page": "頁面",
+          "source": "來源",
+          "topic": "主題"
+        },
+        "columns": {
+          "gaps": "缺口",
+          "share": "佔問題的比例",
+          "change": "變化",
+          "example": "範例問題",
+          "open": "範例"
+        },
+        "share_one": "{{formatted}} 個中的 {{percent}}",
+        "share_other": "{{formatted}} 個中的 {{percent}}",
+        "gapsCount_one": "{{formatted}} 個缺口",
+        "gapsCount_other": "{{formatted}} 個缺口",
+        "change": {
+          "new": "新增",
+          "none": "沒有變化",
+          "upLabel": "比上一期增加 {{formatted}} 個",
+          "downLabel": "比上一期減少 {{formatted}} 個",
+          "noEarlier": "暫無先前資料"
+        },
+        "noPage": "找不到頁面",
+        "openRow": "查看 {{name}} 的範例",
+        "export": "匯出 CSV",
+        "empty": "此期間沒有文件缺口。",
+        "emptyDescription": "文件無法回答的問題會顯示在這裡。",
+        "loadError": "無法載入文件缺口。",
+        "panel": {
+          "gaps": "缺口",
+          "share": "佔問題的比例",
+          "previous": "上一期",
+          "examples": "範例問題",
+          "allInLogs": "在日誌中查看所有文件缺口"
+        }
+      },
+      "loadError": "無法載入此圖表。"
     },
     "logs": {
       "label": "日誌",
@@ -638,7 +892,9 @@
         "activity": "活動",
         "steps": "步驟",
         "result": "結果",
-        "source": "來源"
+        "source": "來源",
+        "feedback": "回饋",
+        "passthrough": "透傳參數"
       },
       "trace": {
         "view": "檢視追蹤",
@@ -669,7 +925,8 @@
           "chunks_other": "{{count}} 個片段",
           "hits_one": "{{count}} 個命中",
           "hits_other": "{{count}} 個命中",
-          "cached": "快取"
+          "cached": "快取",
+          "answered": "已回答 {{answered}}/{{total}}"
         },
         "status": {
           "ok": "正常",
@@ -683,6 +940,7 @@
         "kinds": {
           "agent": "代理",
           "llm": "LLM 呼叫",
+          "decision": "決策模型呼叫",
           "tool": "工具呼叫",
           "retrieval": "檢索",
           "search": "向量搜尋",
@@ -744,7 +1002,37 @@
           "allAttributes": "所有屬性"
         }
       },
-      "loadError": "無法載入日誌。"
+      "loadError": "無法載入日誌。",
+      "running": "執行中",
+      "failedAtStep": "在第 {{step}} 步失敗",
+      "failedAtStepOf": "在第 {{step}} 步失敗（共 {{total}} 步）",
+      "origin": {
+        "api": "API",
+        "shared": "共用",
+        "chat": "聊天"
+      },
+      "feedback": {
+        "like": "讚",
+        "dislike": "倒讚"
+      },
+      "labels": {
+        "filterAll": "所有標註",
+        "notAnswered": "未完整回答",
+        "docsGap": "文件缺口",
+        "frustrated": "不滿",
+        "asksHuman": "要求真人",
+        "negativeReaction": "再次提問或反駁",
+        "negativeSentiment": "負面情緒",
+        "hint": "標註是估算結果，可能有誤。",
+        "conversation": "對話",
+        "clearConversation": "顯示所有對話",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "沒有符合這些篩選條件的訊息。",
+        "filter": "標註",
+        "topics": "主題"
+      },
+      "levelFilter": "層級",
+      "typeFilter": "事件類型"
     },
     "teams": {
       "label": "團隊",
@@ -760,7 +1048,6 @@
       "save": "儲存",
       "createTeamError": "無法建立團隊。",
       "noTeams": "尚無團隊。",
-      "noDescription": "無描述",
       "loadError": "載入團隊失敗。",
       "roleAdmin": "管理員",
       "roleMember": "成員",
@@ -1201,6 +1488,8 @@
       "savedSecretPlaceholder": "已儲存 · 輸入新值以取代",
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個工具",
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個工具",
+      "triggerLabel_one": "工具，已選 {{formatted}} 個",
+      "triggerLabel_other": "工具，已選 {{formatted}} 個",
       "manageInConnectors": "在連接器中管理",
       "defaultBadge": "預設",
       "noToolsYet": "還沒有工具",
@@ -1285,7 +1574,7 @@
       "deleteWarning": "要刪除「{{modelName}}」嗎？",
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
-        "builtin": "DocsGPT 模型",
+        "builtin": "內建",
         "user": "我的模型"
       },
       "actions": {
@@ -1296,11 +1585,11 @@
         "displayName": "顯示名稱",
         "modelId": "模型 ID",
         "description": "說明",
-        "baseUrl": "Base URL",
+        "baseUrl": "基礎 URL",
         "apiKey": "API 金鑰"
       },
       "placeholders": {
-        "displayName": "My Mistral",
+        "displayName": "我的 Mistral",
         "modelId": "例:mistral-large-latest",
         "description": "選填說明",
         "baseUrl": "https://api.mistral.ai/v1",
@@ -1434,7 +1723,10 @@
         "tokenLabel": "您的權杖",
         "usageTitle": "使用方式",
         "usageHint": "將其匯出為環境變數，然後在 Authorization 標頭中作為 Bearer 權杖傳送。",
-        "done": "完成"
+        "done": "完成",
+        "createTool": "為智慧體建立工具",
+        "toolCreated": "工具已建立。可在 設定 › 工具 中找到，並加入智慧體。",
+        "toolFailed": "無法建立工具。"
       },
       "regenerate": {
         "action": "重新產生",
@@ -1455,7 +1747,7 @@
       "label": "連接器",
       "subtitle": "將 DocsGPT 連接到團隊使用的服務。一個連線可以把內容同步到知識庫，也可以為代理提供工具。",
       "search": "搜尋連接器...",
-      "addCustom": "新增自訂工具",
+      "addCustom": "新增自訂連接器",
       "custom": {
         "custom_mcp": "MCP 伺服器",
         "custom_openapi": "OpenAPI / REST"
@@ -1502,6 +1794,7 @@
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
         "mcp_drawio": "使用 draw.io 建立可編輯的流程圖和其他圖表。",
+        "mcp_coingecko": "查詢即時加密貨幣價格、市值、交易量、熱門幣種和價格歷史。",
         "mcp_clickup": "搜尋、讀取和更新 ClickUp 任務、文件與清單，並新增留言。",
         "mcp_zapier": "使用 Zapier MCP 帳戶中啟用的動作讀取或更新已連線的應用程式。",
         "mcp_trello": "尋找 Trello 看板與卡片，並建立及更新卡片。",
@@ -1509,6 +1802,9 @@
         "mcp_resend": "傳送電子郵件並管理聯絡人、受眾和網域。",
         "mcp_calcom": "讀取並管理您的 Cal.com 預約、活動類型、空閒時間和排程。",
         "mcp_airtable": "搜尋、讀取和更新 Airtable 資料庫中的記錄。",
+        "mcp_context7": "查詢函式庫的最新文件與程式碼範例。",
+        "mcp_alphavantage": "查詢股票報價、基本面資料、外匯、加密貨幣、經濟指標和市場新聞。",
+        "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
@@ -1578,7 +1874,7 @@
         "endpoint_url": "自訂端點 URL",
         "client_id": "用戶端 ID",
         "client_secret": "用戶端密鑰",
-        "user_agent": "User agent",
+        "user_agent": "使用者代理程式（User-Agent）",
         "bucket": "儲存貯體",
         "prefix": "路徑前綴",
         "search_queries": "搜尋詞",
@@ -1748,7 +2044,15 @@
       "capabilityChip": {
         "sync": "同步到知識庫",
         "tools": "為代理提供工具"
+      },
+      "injection": {
+        "flagged": "疑似提示詞注入",
+        "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
+        "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       }
+    },
+    "insights": {
+      "label": "洞察"
     }
   },
   "modals": {
@@ -1767,6 +2071,7 @@
       "dropzoneText": "點擊上傳或拖放檔案",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、圖片、音訊、EPUB、JSON 或 ZIP，每個最大 25 MB",
       "filesRejected": "未新增（超過 25 MB 或不支援的類型）：{{files}}",
+      "selectFolder": "選擇資料夾",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "新增到知識庫",
@@ -1836,8 +2141,8 @@
           "connect": "連接到 Google Drive",
           "validateFailed": "無法驗證登入。請再試一次。",
           "pickerFailed": "無法開啟檔案選擇器。請再試一次。",
-          "selectedFiles": "已選擇的檔案",
-          "selectFiles": "選擇檔案",
+          "selectedFiles": "已選擇的項目",
+          "selectFiles": "選擇檔案或資料夾",
           "noFilesSelected": "尚未選擇檔案或資料夾。",
           "removeItem": "移除 {{name}}"
         }
@@ -1866,7 +2171,7 @@
       "copy": "複製",
       "copied": "已複製",
       "confirm": "我已儲存金鑰",
-      "apiKeyLabel": "API Key"
+      "apiKeyLabel": "API 金鑰"
     },
     "deleteConv": {
       "confirm": "要刪除所有對話嗎？",
@@ -1881,8 +2186,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "搜尋對話",
-      "noResults": "未找到結果",
-      "loading": "載入中..."
+      "noResults": "未找到結果"
     },
     "configTool": {
       "title": "工具設定",
@@ -1891,7 +2195,7 @@
       "apiKeyPlaceholder": "輸入 API 金鑰",
       "addButton": "新增工具",
       "closeButton": "關閉",
-      "customNamePlaceholder": "Enter custom name (optional)",
+      "customNamePlaceholder": "輸入自訂名稱（選填）",
       "fieldRequired": "{{field}} 為必填",
       "positiveNumber": "必須是正數",
       "maxTimeout": "逾時上限為 300 秒"
@@ -1952,20 +2256,20 @@
       "deleteConfirmation": "要刪除此區塊嗎？"
     },
     "addAction": {
-      "title": "New Action",
-      "actionNamePlaceholder": "Action Name",
-      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
-      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
-      "addButton": "Add"
+      "title": "新增操作",
+      "actionNamePlaceholder": "操作名稱",
+      "invalidFormat": "函式名稱格式無效。只能使用字母、數字、底線和連字號。",
+      "formatHelp": "只能使用字母、數字、底線和連字號（例如 `get_data`、`send_report` 等）",
+      "addButton": "新增"
     },
     "agentDetails": {
       "title": "存取詳情",
-      "publicLink": "Public Link",
-      "apiKey": "API Key",
+      "publicLink": "公開連結",
+      "apiKey": "API 金鑰",
       "webhookUrl": "Webhook URL",
-      "generate": "Generate",
-      "test": "Test",
-      "learnMore": "Learn more",
+      "generate": "產生",
+      "test": "測試",
+      "learnMore": "了解更多",
       "resetKey": "重設金鑰",
       "resetKeyConfirm": "要重設「{{name}}」的 API 金鑰嗎？",
       "apiWrites": {
@@ -2001,36 +2305,36 @@
       "import": "匯入 ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "從 YAML 匯入代理",
+      "description": "上傳代理 YAML 檔案。來源和工具會與你的帳號比對；缺少的項目可在下一步對應或建立。新代理會以草稿形式匯入；重新匯入則會更新相符的代理，並保留其目前狀態。",
+      "dropzoneText": "點擊上傳或拖放 .yaml 檔案",
+      "invalidFileType": "僅支援 .yaml 或 .yml 檔案",
+      "readError": "無法讀取此代理檔案",
+      "importError": "匯入失敗",
+      "willCreate": "將建立新代理。",
+      "willUpdate": "將更新現有代理（依 {{matchedBy}} 比對）。",
+      "workflowCreate": "包含一個有 {{nodes}} 個節點的工作流程，將為你建立。",
+      "workflowUpdate": "包含一個有 {{nodes}} 個節點的工作流程，你現有的工作流程將被更新。",
+      "workflowDelete": "未包含工作流程：此代理現有的工作流程（{{nodes}} 個節點）及其執行記錄和產出物將被永久刪除。",
+      "sources": "來源",
+      "tools": "工具",
+      "models": "模型",
+      "sourceMatched": "{{name}}：使用你現有的來源",
+      "sourceMissing": "{{name}}：找不到",
+      "leaveUnattached": "暫不附加",
+      "toolBuiltin": "{{type}}：內建",
+      "toolReuse": "{{name}}：重複使用你現有的工具",
+      "toolUnavailable": "{{type}}：此執行個體無法使用，將略過",
+      "toolCreate": "{{name}}：將會建立",
+      "secretPlaceholder": "{{field}}（留空則略過此工具）",
+      "modelCustom": "{{name}}：自訂模型",
+      "apiKeyPlaceholder": "API 金鑰（留空則略過此模型）",
+      "warningsTitle": "代理已以草稿形式匯入。部分項目需要你注意：",
+      "warningsTitlePublished": "你已發佈的代理已更新。部分項目需要你注意：",
+      "cancel": "取消",
+      "review": "檢閱",
+      "import": "匯入",
+      "continueToAgent": "前往代理"
     },
     "jwt": {
       "title": "新增 JWT 權杖",
@@ -2085,6 +2389,8 @@
       "view_more": "查看更多 {{count}} 個來源",
       "noSourcesAvailable": "還沒有知識",
       "selectedCount": "已選 {{count}} 個",
+      "triggerLabel_one": "知識庫，已選 {{formatted}} 個",
+      "triggerLabel_other": "知識庫，已選 {{formatted}} 個",
       "groupOwn": "你的",
       "groupTeam": "團隊共享",
       "fromConnector": "來自 {{name}}",
@@ -2106,8 +2412,17 @@
         "forbidden": "此來源已被刪除，或你已無權存取。以下顯示的是隨回答儲存的摘錄。",
         "loadFailed": "無法載入這段內容。",
         "openLink": "開啟連結",
-        "openInKnowledge": "在知識庫中開啟"
-      }
+        "openInKnowledge": "在知識庫中開啟",
+        "withheld": "此來源可能含有提示詞注入，因此此代理的防護規則將其排除在回答之外。AI 沒有讀取這段內容。"
+      },
+      "relevance": {
+        "strong": "高度相關",
+        "possible": "可能相關",
+        "weak": "相關性低",
+        "tooltip": "相關度 {{percent}}%"
+      },
+      "withheld": "已扣下",
+      "withheldNote": "此代理的防護規則將其排除在回答之外：其中可能含有提示詞注入。"
     },
     "attachments": {
       "attach": "附件",
@@ -2134,13 +2449,15 @@
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",
+    "stoppedTitle": "已停止",
     "errors": {
       "contextLength": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案。",
       "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
       "contextLengthSized": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案。",
       "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
       "serverError": "請稍後再試。造成不便，敬請見諒。",
-      "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。"
+      "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。",
+      "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。"
     },
     "reasoning": "推理",
     "wikiWrite": {
@@ -2268,7 +2585,6 @@
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
     },
     "send": "傳送",
-    "viewArtifact": "檢視 Artifact",
     "stopSpeaking": "停止朗讀",
     "loadingAudio": "正在載入音訊",
     "voice": {
@@ -2339,6 +2655,31 @@
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 個失敗"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML 頁面",
+        "pdf": "PDF",
+        "slides": "投影片",
+        "document": "文件",
+        "spreadsheet": "試算表",
+        "data": "資料檔案",
+        "image": "圖片",
+        "file": "檔案"
+      },
+      "version": "v{{version}}",
+      "download": "下載 {{title}}",
+      "more": "還有{{count}}個檔案",
+      "fileCount": "{{count}} 個檔案",
+      "showAll": "顯示全部 {{count}} 個",
+      "listTitle": "此回答的檔案",
+      "backToList": "返回檔案列表",
+      "group": {
+        "documents": "文件",
+        "images": "圖片",
+        "data": "資料",
+        "other": "其他檔案"
+      }
     }
   },
   "agents": {
@@ -2354,9 +2695,9 @@
     },
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "importAgent": "匯入",
+    "exportAgent": "匯出為 YAML",
+    "exportAgentFailed": "無法匯出代理",
     "close": "關閉",
     "shareWithTeam": "與團隊分享",
     "backToAll": "返回所有代理",
@@ -2367,7 +2708,9 @@
       "tabs": {
         "overview": "總覽",
         "logs": "日誌",
-        "schedules": "排程"
+        "insights": "洞察",
+        "schedules": "排程",
+        "analytics": "分析"
       },
       "fallbackName": "未命名代理",
       "subnavAriaLabel": "代理子導覽"
@@ -2428,11 +2771,12 @@
         "agentType": "代理類型",
         "models": "模型",
         "advanced": "進階",
-        "guardrails": "Guardrails",
+        "guardrails": "防護機制",
         "preview": "預覽",
         "basics": "基本資訊",
         "knowledge": "知識與行為",
-        "model": "模型"
+        "model": "模型",
+        "analytics": "洞察"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -2517,54 +2861,61 @@
         "saveDraftFailed": "無法儲存草稿，請重試。"
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
-        "needsSetup": "{{count}} need setup",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "enable": "啟用防護機制",
+        "enableDescription": "對此代理的每次執行套用所選檢查",
+        "mode": "強制執行模式",
+        "monitorHint": "監控模式只記錄原本會發生的情況，不會變更任何回答。建議從這裡開始，檢閱記錄後再切換為強制執行。",
+        "checks": "檢查項目",
+        "latencyHint": "執行此檢查時大約增加的延遲",
+        "notConfigured": "未設定",
+        "lockedByFloor": "執行個體政策要求此項，無法移除",
+        "configure": "設定",
+        "blockMessage": "封鎖時的回應訊息",
+        "blockMessageDescription": "檢查封鎖請求或回答時向使用者顯示",
+        "failOpen": "檢查失敗時繼續",
+        "failOpenDescription": "檢查逾時或發生錯誤時，仍讓此輪對話通過。關閉此選項則改為中止此輪對話。",
+        "timeout": "檢查逾時（毫秒）",
+        "loadError": "無法載入防護機制目錄",
+        "terms": "禁用詞（每行一個）",
+        "termsPlaceholder": "競爭對手名稱\n內部代號",
+        "allowHosts": "允許的主機（每行一個）",
+        "blockHosts": "封鎖的主機（每行一個）",
+        "policyText": "政策",
+        "minOverlap": "與來源的最低重疊度",
+        "minWords": "最短回答長度（詞數）",
+        "confidence": "信心門檻",
+        "confidenceHint": "評審模型必須標記該內容，且信心至少達到此值（預設：0.7）",
+        "activeCount": "{{count}} 項啟用中",
+        "needsSetup": "{{count}} 項需要設定",
+        "setupRequired": "儲存前請先填寫此檢查的設定。",
+        "pickAtLeastOne": "請至少選擇一項，未選擇任何項目時無法執行此檢查。",
+        "remove": "移除",
+        "instanceDisabled": "此執行個體已關閉防護機制，因此這裡的任何設定都不會執行。請聯絡管理員設定 GUARDRAILS_ENABLED。",
+        "floorNotice": "此執行個體要求 {{count}} 項控制，且一律套用。",
+        "floorControl": "{{stage}}：{{action}}（執行個體政策要求）",
+        "unknownCheck": "此代理使用了此處無法使用的檢查（{{check}}）。若該檢查恢復可用，仍會執行。",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "使用者輸入",
+          "retrieval": "檢索到的來源",
+          "toolResult": "工具結果",
+          "output": "回答",
+          "attachment": "附件"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "僅標記",
+          "redact": "遮蔽",
+          "block": "封鎖"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
-        }
+          "monitorOnly": "僅監控",
+          "scanAll": "全面強制執行"
+        },
+        "itemLevelHint": "封鎖只會扣下被標記的來源或檔案。",
+        "advanced": "進階",
+        "threshold": "執行門檻",
+        "thresholdHint": "分數達到此值時執行該規則的動作（0 到 1，預設 0.9）。",
+        "flagThreshold": "標記門檻",
+        "flagThresholdHint": "分數達到此值時標記並記錄該文字，但不封鎖任何內容（預設 0.5）。"
       },
       "byline": {
         "new": "設定好代理後發佈，即可與它對話。"
@@ -2645,13 +2996,92 @@
         "audienceTitle_other": "誰可以透過此智慧代理使用它們",
         "stopNote_one": "如果你失去編輯權限，它將停止執行。",
         "stopNote_other": "如果你失去編輯權限，它們將停止執行。"
+      },
+      "analytics": {
+        "enable": "收集洞察",
+        "enableDescription": "在背景讀取已結束的對話，估算回答是否有幫助以及文件哪裡不足。結果會顯示在「洞察」分頁和日誌中。",
+        "learnMore": "了解更多",
+        "serverOff": "此伺服器已關閉洞察，因此這些設定暫不生效。請聯絡管理員開啟。",
+        "topics": "主題",
+        "countOf": "{{count}}/{{max}}",
+        "addTopic": "新增主題",
+        "itemActions": "{{name}} 的操作",
+        "edit": "編輯",
+        "remove": "移除",
+        "modal": {
+          "addTopic": "新增主題",
+          "editTopic": "編輯主題",
+          "name": "名稱",
+          "description": "描述",
+          "submitAdd": "新增",
+          "submitSave": "儲存",
+          "dialogDescription": "名稱和描述告訴模型哪些內容屬於這裡。",
+          "editFolder": "此主題是此代理來源中的資料夾「{{name}}」。儲存後它會成為你自己的主題，不再跟隨該資料夾的頁面。",
+          "namePlaceholder": "帳單",
+          "descriptionHint": "選填。能讓分類更準確：列出幾個頁面、功能或使用者常用的詞。",
+          "descriptionPlaceholder": "價格、方案、席位或發票。",
+          "overlap": "可與其他主題重疊",
+          "overlapDescription": "針對每段完整對話判斷，因此可同時適用多個：適合橫跨整份文件的錯誤回報或價格問題。",
+          "onePickFull": "不重疊的主題最多 {{max}} 個，因此這個主題可重疊。",
+          "overlapFull": "可重疊的主題最多 {{max}} 個，因此這個主題不能重疊。",
+          "overlapOff": "此伺服器不再判斷可重疊的主題，因此這個主題不能重疊。",
+          "reachOnePick": "對新問題進行分類；之前的問題保留原主題。",
+          "reachOverlap": "也會對近期的對話進行判斷。",
+          "kindChangeToOverlap": "變更後其數據將重新開始：它原先用於分類問題，今後將針對對話進行判斷。",
+          "kindChangeToOnePick": "變更後其數據將重新開始：它原先針對對話進行判斷，今後將用於分類問題。"
+        },
+        "errors": {
+          "nameRequired": "請輸入名稱。",
+          "topicNameTooLong": "太長了。請縮短到 {{max}} 個字元以內。",
+          "topicNameTaken": "已有其他主題使用此名稱。",
+          "topicNameReserved": "此名稱保留給不屬於任何主題的問題。",
+          "topicDescriptionTooLong": "太長了。請縮短到 {{max}} 以內（中文、日文和韓文字元以三個計算）。"
+        },
+        "digest": "每週文件缺口摘要",
+        "digestDescription": "每週一次，代理的擁有者會收到一則通知，列出主要的文件缺口。",
+        "off": "關閉",
+        "topicsDescription": "使用者在問什麼。每個問題歸入最合適的一個主題。",
+        "fromSources": "來自來源",
+        "hide": "隱藏",
+        "groups": {
+          "onePick": "每個問題一個",
+          "overlap": "可重疊",
+          "overlapDescription": "針對整段對話判斷；可同時適用多個。"
+        },
+        "notes": {
+          "foldersFailed": "無法載入此代理來源中的資料夾。",
+          "unsaved": "儲存後會顯示此代理來源中的資料夾。",
+          "unlisted": "問題也會歸入此代理來源中的資料夾。",
+          "hidden": "已隱藏的資料夾：{{names}}",
+          "show": "顯示",
+          "cut": "這些較小的資料夾放不下，其問題會歸入「不屬於這些主題」：{{names}}",
+          "single": "只有一個主題無法分類。再新增一個即可開始。",
+          "full": "此代理的主題已達上限：{{topics}} 個不重疊的主題和 {{overlapping}} 個可重疊的主題。",
+          "overOnePick": "此伺服器現在只允許 {{max}} 個不重疊的主題，少於此代理已有的數量，因此只有最先新增的 {{max}} 個會分類問題。刪除一些後才能新增其他主題。",
+          "overOverlapping": "此伺服器現在只允許 {{max}} 個可重疊的主題，少於此代理已有的數量，因此只會判斷最先新增的 {{max}} 個。刪除一些後才能新增其他主題。",
+          "overlapOff": "此伺服器不再判斷可重疊的主題，因此這些主題不會被判斷。可編輯主題改為分類問題，或將其刪除。"
+        },
+        "empty": {
+          "title": "還沒有主題",
+          "workflow": "新增使用者會問的內容。每個問題歸入最合適的一個主題。",
+          "unsaved": "儲存後會顯示此代理來源中的主題。你現在就可以新增自己的主題。",
+          "noFolders": "此代理的來源中沒有可用於分類問題的資料夾。請新增你自己的主題。",
+          "allHidden": "此代理來源中的資料夾已全部隱藏，因此問題不會被分類。",
+          "showFolders": "顯示資料夾"
+        },
+        "removeTopic": {
+          "title": "要移除「{{name}}」嗎？",
+          "description": "它可重疊，因此有自己的結果。這些結果將從洞察和日誌中消失，重新新增後會從頭開始。",
+          "submit": "移除"
+        }
       }
     },
     "logs": {
       "title": "代理日誌",
       "lastUsedAt": "最後使用時間",
       "noUsageHistory": "無使用歷史",
-      "tableHeader": "代理端點日誌"
+      "tableHeader": "代理端點日誌",
+      "description": "此代理的 API 呼叫、排程執行和錯誤。"
     },
     "schedules": {
       "title": "代理排程",
@@ -2726,6 +3156,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "頻率",
+        "customTiming": "此排程使用自訂時間：{{pattern}}。變更下方的時間即可取代它。",
         "dayOfWeek": "星期"
       },
       "status": {
@@ -2756,7 +3187,8 @@
         "error": "錯誤",
         "errorWithType": "錯誤（{{type}}）",
         "output": "輸出",
-        "truncated": "（已截斷）"
+        "truncated": "（已截斷）",
+        "openConversation": "開啟對話"
       },
       "toolCard": {
         "cancelFailed": "取消失敗",
@@ -2795,7 +3227,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "每個工作日 {{time}}",
+        "weekends": "每個週末 {{time}}",
+        "days": "每週{{days}} {{time}}",
+        "hourly": "每小時",
+        "hourlyAt": "每小時第 {{minute}} 分",
+        "hourlyRange": "{{from}} 至 {{to}} 每小時",
+        "hourlyRangeWeekdays": "工作日 {{from}} 至 {{to}} 每小時",
+        "everyMinutes_one": "每 {{formatted}} 分鐘",
+        "everyMinutes_other": "每 {{formatted}} 分鐘",
+        "everyHours_one": "每 {{formatted}} 小時",
+        "everyHours_other": "每 {{formatted}} 小時"
       },
       "runLog": {
         "when": "時間",
@@ -2825,7 +3268,8 @@
         "overdue": "已逾期"
       },
       "deleteFailed": "無法刪除此排程。",
-      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。"
+      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。",
+      "allSchedules": "所有排程"
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。",
@@ -2863,26 +3307,29 @@
       "deleteConsequence": "其中的代理會移出資料夾，不會被刪除。"
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "防護機制活動",
+      "description": "此代理上觸發的每項控制，以及每項無法執行的控制。",
+      "blocked": "已封鎖",
+      "redacted": "已遮蔽",
+      "flagged": "已標記",
+      "notEvaluated": "未評估",
+      "notEvaluatedHint": "檢查逾時或發生錯誤，因此此內容實際上從未經過檢查。這不代表內容沒有問題。",
+      "byCheck": "依檢查",
+      "allChecks": "所有檢查",
+      "allOutcomes": "所有結果",
+      "tableHeader": "防護機制決策",
+      "when": "時間",
+      "check": "檢查",
+      "stage": "階段",
+      "outcome": "結果",
+      "detail": "詳細資訊",
+      "empty": "此代理尚未觸發任何防護機制。",
+      "emptyForFilter": "沒有符合此篩選條件的決策。",
+      "loadError": "無法載入防護機制活動",
+      "score": "分數",
+      "openChunk": "開啟文本塊",
+      "attachedFile": "附件",
+      "chunkUnavailable": "此文本塊已不在其來源中，或您無法開啟該來源。"
     },
     "workflow": {
       "expressionRow": "運算式 {{index}}",
@@ -2895,15 +3342,8 @@
       "redo": "重做",
       "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "此產出物無法預覽",
         "loadListFailed": "無法載入產出物",
-        "loadFailed": "無法載入產出物",
-        "loading": "正在載入產出物...",
-        "inProgress": "執行中——節點產生的產出物會顯示在這裡。",
-        "empty": "此次執行未產生產出物。",
-        "back": "返回產出物列表",
-        "untitled": "產出物 {{id}}",
-        "fileKind": "檔案"
+        "untitled": "產出物 {{id}}"
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",
@@ -3036,8 +3476,8 @@
         "extract": "擷取"
       },
       "mobileBlocker": {
-        "title": "需要桌上型裝置",
-        "body": "工作流程建構器需要更大的螢幕才能獲得最佳體驗。請在桌上型電腦或筆記型電腦上開啟此頁面。"
+        "title": "請在更大的螢幕上開啟",
+        "body": "工作流程建構器需要更寬的螢幕。請使用電腦，或將平板電腦轉為橫向。"
       },
       "nodes": {
         "start": "開始",
@@ -3068,11 +3508,11 @@
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "輸出：",
         "errorLabel": "錯誤：",
-        "artifacts": "產出物",
         "minimapHeading": "工作流程",
         "emptyTitle": "測試工作流程",
         "unsavedDraftAttachments": "在預覽中附加文件前，請先儲存工作流程。",
-        "stepCount_one": "（{{count}} 步）"
+        "stepCount_one": "（{{count}} 步）",
+        "backToRun": "返回執行"
       },
       "documents": {
         "modeAll": "所有輸入文件",
@@ -3110,15 +3550,19 @@
     "showAll_other": "查看全部 {{formatted}} 個",
     "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
     "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
-    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。"
+    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。",
+    "analytics": {
+      "subtitle": "此代理的訊息量、Token 使用量和使用者回饋。"
+    },
+    "loadError": "無法載入此代理。"
   },
   "components": {
     "fileUpload": {
-      "clickToUpload": "Click to upload or drag and drop",
-      "dropFiles": "Drop the files here",
-      "fileTypes": "PNG, JPG, JPEG up to",
+      "clickToUpload": "點擊上傳或拖放檔案",
+      "dropFiles": "將檔案拖放到這裡",
+      "fileTypes": "PNG、JPG、JPEG，上限",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit",
+      "fileSizeError": "檔案超過 {{size}}MB 上限",
       "preview": "圖片預覽",
       "remove": "移除檔案"
     },
@@ -3128,7 +3572,7 @@
         "note": "筆記",
         "memory": "記憶"
       },
-      "fallbackTitle": "Artifact",
+      "fallbackTitle": "產出物",
       "todo": {
         "done": "已完成 {{count}}",
         "open": "未完成 {{count}}",
@@ -3159,9 +3603,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "找不到頁面",
+    "message": "你要找的頁面不存在。",
+    "goHome": "返回首頁"
   },
   "filePicker": {
     "searchPlaceholder": "搜尋檔案和資料夾",
@@ -3207,8 +3651,9 @@
       "groups": {
         "personal": "個人",
         "workspace": "工作區",
-        "insights": "洞察",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "自動化",
+        "monitoring": "監控"
       }
     },
     "openSidebar": "開啟側邊欄",
@@ -3288,7 +3733,6 @@
     "loadError": "無法載入你的監控",
     "actionError": "操作失敗，請再試一次。",
     "untitled": "監控",
-    "watching": "正在留意變化",
     "every": "每 {{interval}}",
     "onEvent": "發生時",
     "openConversation": "開啟對話",
@@ -3365,5 +3809,282 @@
       "conversationGone": "已結束：其對話已無法繼續"
     },
     "endedBecause": "已結束：{{reason}}"
+  },
+  "activity": {
+    "label": "活動",
+    "schedules": {
+      "label": "排程",
+      "subtitle": "你所有代理的週期性執行與一次性任務，以及助理在聊天中建立的任務。",
+      "search": "搜尋排程",
+      "createdInChat": "在聊天中建立",
+      "createdInChatHint": "沒有代理。每個都屬於建立它的聊天。",
+      "agentSchedules": "代理排程",
+      "openChat": "開啟聊天",
+      "noMatches": "沒有符合搜尋的排程。",
+      "loadError": "無法載入你的排程",
+      "empty": "還沒有排程",
+      "emptyHint": "在這裡建立，或在聊天中請助理依排程做事。",
+      "agentLabel": "代理",
+      "agentPlaceholder": "選擇代理",
+      "agentSearch": "搜尋代理",
+      "agentEmpty": "沒有可以設定排程的代理",
+      "teamAgent": "你透過團隊管理的隊友代理"
+    },
+    "marks": {
+      "failed": "有失敗",
+      "needsYou": "等待你的核准",
+      "working": "執行中",
+      "unread": "未讀",
+      "watching": "正在監控變化"
+    },
+    "kind": {
+      "chat": "聊天",
+      "job": "背景工作",
+      "code": "程式碼執行",
+      "schedule": "排程執行",
+      "workflow": "工作流程",
+      "webhook": "Webhook 執行",
+      "ingest": "知識",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} 個執行中",
+      "running_other": "{{formatted}} 個執行中",
+      "needsYou_one": "{{formatted}} 項需要你處理",
+      "needsYou_other": "{{formatted}} 項需要你處理"
+    },
+    "now": {
+      "label": "目前",
+      "subtitle": "正在執行的、等待你處理的，以及接下來要執行的。即時更新。",
+      "loadError": "無法載入你的活動",
+      "stopFailed": "無法停止該回答。請重試，或開啟聊天在那裡停止。",
+      "thinking": "思考中",
+      "writing": "正在撰寫回答",
+      "ranByHand": "手動執行",
+      "due": "排定於 {{time}}",
+      "chunks": "已嵌入 {{done}}/{{total}} 個區塊",
+      "background": "背景",
+      "running": "執行中",
+      "stop": "停止",
+      "cancel": "取消",
+      "open": "開啟",
+      "approve": "核准 {{tools}}",
+      "approveAction": "核准工具操作",
+      "expires": "{{time}}過期",
+      "approval": "核准",
+      "review": "查看",
+      "pausedAfter_one": "{{name}} 失敗 {{formatted}} 次後已暫停",
+      "pausedAfter_other": "{{name}} 失敗 {{formatted}} 次後已暫停",
+      "errorType": {
+        "auth_expired": "登入已過期",
+        "tool_not_allowed": "工具未被允許",
+        "budget_exceeded": "超出權杖預算",
+        "timeout": "逾時",
+        "agent_error": "代理失敗",
+        "internal": "內部錯誤",
+        "missed": "錯過了執行時間",
+        "overlap": "上一次執行仍在進行",
+        "stream_error": "回答串流中斷",
+        "empty_output": "沒有產生任何輸出"
+      },
+      "viewRuns": "查看執行",
+      "fromChat": "來自 {{name}}",
+      "timesToday_one": "未來 24 小時執行 {{formatted}} 次",
+      "timesToday_other": "未來 24 小時執行 {{formatted}} 次",
+      "oneTime": "一次性",
+      "stats": {
+        "running": "執行中",
+        "background_one": "背景 {{formatted}} 個",
+        "background_other": "背景 {{formatted}} 個",
+        "needsYou": "需要你處理",
+        "approvalExpires": "有一個核准將於{{time}}過期",
+        "next24h": "未來 24 小時",
+        "nextAt": "下一個：{{time}}，{{name}}",
+        "failed": "失敗（過去 24 小時）",
+        "viewInHistory": "在歷史中查看"
+      },
+      "needsYou": "需要你處理",
+      "reconnect": "{{name}} 需要重新連線",
+      "reconnectAction": "重新連線",
+      "runningTitle": "執行中",
+      "filter": "顯示",
+      "filters": {
+        "all": "全部",
+        "chats": "聊天",
+        "automations": "自動化",
+        "knowledge": "知識"
+      },
+      "nothingRunning": "沒有正在執行的內容",
+      "upNext": "接下來",
+      "nothingPlanned": "未來 24 小時沒有排定執行的內容",
+      "watching": "監控中",
+      "allMonitors": "所有監控",
+      "nothingWatched": "沒有正在監控的內容",
+      "checked": "{{time}}檢查過",
+      "openCalendar": "開啟行事曆",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "apiRequests_one": "{{formatted}} 個請求",
+      "apiRequests_other": "{{formatted}} 個請求",
+      "reading": "正在讀取內容",
+      "operation": {
+        "upload": "上傳",
+        "sync": "同步",
+        "reingest": "重新索引"
+      },
+      "syncBatch": {
+        "daily": "每日同步",
+        "weekly": "每週同步",
+        "monthly": "每月同步"
+      },
+      "syncSources_one": "{{formatted}} 個來源",
+      "syncSources_other": "{{formatted}} 個來源",
+      "syncBlocked_one": "{{formatted}} 個需要重新連線",
+      "syncBlocked_other": "{{formatted}} 個需要重新連線"
+    },
+    "calendar": {
+      "label": "行事曆",
+      "subtitle": "排定的執行、依結果顯示的過往執行，以及正在監控的內容。",
+      "loadError": "無法載入行事曆",
+      "runLoadError": "無法開啟此次執行。請重試。",
+      "runNowError": "無法啟動執行。請重試。",
+      "todayButton": "今天",
+      "previous": "上一頁",
+      "next": "下一頁",
+      "agentFilter": "代理",
+      "allAgents": "所有代理",
+      "viewLabel": "檢視",
+      "views": {
+        "day": "日",
+        "week": "週",
+        "month": "月",
+        "agenda": "議程"
+      },
+      "monitors": "監控",
+      "knowledgeSyncs": "知識同步",
+      "hidePast": "隱藏過往執行",
+      "legend": {
+        "planned": "已排定",
+        "running": "執行中",
+        "success": "成功",
+        "failed": "失敗",
+        "paused": "已暫停或略過",
+        "missed": "已錯過",
+        "sync": "知識同步"
+      },
+      "truncated": "部分非常頻繁的排程在此範圍內只顯示前幾次執行。",
+      "watching": "監控中",
+      "state": {
+        "planned": "已排定",
+        "paused": "已暫停",
+        "pending": "啟動中",
+        "running": "執行中",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "已略過",
+        "timeout": "逾時",
+        "missed": "已錯過"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "另有 {{formatted}} 項",
+      "more_other": "另有 {{formatted}} 項",
+      "today": "今天",
+      "tomorrow": "明天",
+      "empty": "這些天沒有排定項目",
+      "blockDone_one": "已完成 {{done}}/{{formatted}} 次",
+      "blockDone_other": "已完成 {{done}}/{{formatted}} 次",
+      "slotCount_one": "{{formatted}} 次",
+      "slotCount_other": "{{formatted}} 次",
+      "oneTime": "一次性",
+      "recurring": "週期性",
+      "when": "時間",
+      "repeats": "重複",
+      "fromChat": "來自聊天",
+      "pausedNote": "此排程已暫停，因此這次執行不會發生。請在排程頁面恢復它。",
+      "dayRuns": "當天的執行",
+      "queued": "已開始執行。它會顯示在「目前」和執行記錄中。",
+      "openSchedule": "開啟排程",
+      "timezone": "排程時區",
+      "missedNote": "這次執行從未開始：當時排程器已停止或落後。立即執行以補上，或檢查 worker 是否帶 beat 執行。",
+      "syncRepeats": {
+        "daily": "每天，從排程器啟動時開始計算",
+        "weekly": "每週，從排程器啟動時開始計算",
+        "monthly": "每 30 天，從排程器啟動時開始計算"
+      },
+      "sources": "來源",
+      "needsReconnecting": "需要重新連線",
+      "lastSynced": "已於 {{time}} 同步",
+      "notSyncedYet": "尚未同步",
+      "openKnowledge": "開啟知識庫"
+    },
+    "history": {
+      "label": "歷史",
+      "subtitle": "你的排程、Webhook、工作流程、背景工作和監控已完成的執行。完整的技術記錄在「設定 › 記錄」中。",
+      "search": "搜尋執行",
+      "statusFilter": "狀態",
+      "kindFilter": "類型",
+      "statusFilters": {
+        "all": "所有狀態",
+        "failed": "失敗",
+        "success": "成功",
+        "skipped": "已略過",
+        "cancelled": "已取消"
+      },
+      "kindFilters": {
+        "all": "全部",
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "job": "背景",
+        "monitor": "監控喚醒"
+      },
+      "kind": {
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "job": "背景",
+        "monitor": "監控"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失敗",
+        "timeout": "逾時",
+        "skipped": "已略過",
+        "cancelled": "已取消"
+      },
+      "trigger": {
+        "cron": "排程",
+        "manual": "手動",
+        "webhook": "Webhook",
+        "chat": "聊天",
+        "monitor": "發現變化",
+        "trigger": "Webhook 連結",
+        "approval": "核准連結",
+        "monitor_paused": "監控已暫停",
+        "monitor_expired": "監控已過期"
+      },
+      "columns": {
+        "when": "時間",
+        "run": "執行",
+        "owner": "代理 / 聊天",
+        "kind": "類型",
+        "trigger": "觸發",
+        "status": "狀態",
+        "duration": "時長",
+        "tokens": "權杖"
+      },
+      "yesterday": "昨天",
+      "loadError": "無法載入歷史",
+      "runLoadError": "無法開啟此次執行。請重試。",
+      "noMatches": "沒有符合這些篩選條件的執行",
+      "empty": "還沒有已完成的執行",
+      "emptyHint": "你的排程、Webhook、工作流程、背景工作和監控的執行完成後會顯示在這裡。",
+      "loadMore": "載入更多",
+      "retention": "預設情況下，排程執行保留 90 天，Webhook 執行保留 30 天，背景工作和監控喚醒保留 7 天。工作流程執行會持續列出，其追蹤保留 30 天。",
+      "period_one": "最近 {{formatted}} 天",
+      "period_other": "最近 {{formatted}} 天",
+      "periodFilter": "時間範圍"
+    }
   }
 }

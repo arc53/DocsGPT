@@ -1,3 +1,5 @@
+import type { I18n } from '../locale/context';
+
 export interface StreamEvent {
   type?: string;
   [key: string]: unknown;
@@ -21,15 +23,18 @@ export const prettifyName = (name: string): string =>
  * scaffolding the user gains nothing from seeing. Keyed on node_type (a
  * closed enum) rather than node_title, which is free text like "agent node".
  */
-export const workflowStepLabel = (event: StreamEvent): string | null => {
+export const workflowStepLabel = (
+  event: StreamEvent,
+  t: I18n['t'],
+): string | null => {
   if (event.status !== 'running') return null;
   switch (event.node_type) {
     case 'agent':
-      return 'Thinking…';
+      return t('thinking');
     case 'code':
-      return 'Running code…';
+      return t('runningCode');
     case 'condition':
-      return 'Deciding next step…';
+      return t('decidingNextStep');
     case 'start':
     case 'end':
     case 'state':
@@ -37,7 +42,7 @@ export const workflowStepLabel = (event: StreamEvent): string | null => {
       return null;
     default:
       return typeof event.node_title === 'string' && event.node_title
-        ? `${prettifyName(event.node_title)}…`
+        ? t('workflowStep', { step: prettifyName(event.node_title) })
         : null;
   }
 };
