@@ -118,14 +118,14 @@ describe('Button variants', () => {
     expect(buttonVariants({ size: lg })).not.toContain('size-10');
   });
 
-  it('size="text" is a link mid-sentence: it inherits size, weight and line-height and keeps primary', () => {
+  it('size="text" is a link mid-sentence: it inherits size, weight and line-height and keeps the link colour', () => {
     const classes = renderedClasses(
       <Button variant="link" size="text">
         Learn more
       </Button>,
     ).split(' ');
     expect(classes).toEqual(
-      expect.arrayContaining(['h-auto', 'p-0', 'text-primary']),
+      expect.arrayContaining(['h-auto', 'p-0', 'text-link']),
     );
     // No type of its own: font-size, weight and line-height inherit.
     for (const cls of ['h-9', 'px-4', 'py-2']) {
@@ -167,7 +167,7 @@ describe('Button variants', () => {
       </Button>,
     ).split(' ');
     expect(classes).toEqual(
-      expect.arrayContaining(['text-sm', 'font-medium', 'text-primary']),
+      expect.arrayContaining(['text-sm', 'font-medium', 'text-link']),
     );
   });
 
@@ -180,7 +180,7 @@ describe('Button variants', () => {
     const classes = (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
     expect(classes).toContain('text-current');
     expect(classes).toContain('hover:text-current');
-    expect(classes).not.toContain('text-primary');
+    expect(classes).not.toContain('text-link');
     expect(classes).toContain('hover:underline');
     expect(html).toContain('data-tone="current"');
   });

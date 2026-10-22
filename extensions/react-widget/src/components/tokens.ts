@@ -19,6 +19,8 @@ export const themes = {
     controlFill: '#ffffff',
     controlHover: '#ececec',
     primary: '#7d54d1',
+    /** Answer link text: primary in light. */
+    link: '#7d54d1',
     /** primary/90 */
     primaryHover: 'rgba(125, 84, 209, 0.9)',
     primaryForeground: '#ffffff',
@@ -75,6 +77,8 @@ export const themes = {
     controlFill: 'rgba(68, 69, 76, 0.3)',
     controlHover: 'rgba(68, 69, 76, 0.5)',
     primary: '#8855f1',
+    /** secondary-foreground: primary as text is 3.45:1 on the background. */
+    link: '#b89cf8',
     primaryHover: 'rgba(136, 85, 241, 0.9)',
     primaryForeground: '#ffffff',
     secondary: 'rgba(151, 106, 243, 0.15)',

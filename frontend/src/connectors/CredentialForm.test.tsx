@@ -96,7 +96,7 @@ describe('CredentialForm', () => {
     // A link in running text: it takes the 12px hint's size and weight
     // from the sentence (no type of its own) and keeps primary.
     expect(link.dataset.size).toBe('text');
-    expect(link.className).toContain('text-primary');
+    expect(link.className).toContain('text-link');
     expect(link.className).not.toMatch(/\btext-(xs|sm)\b|font-(normal|medium)/);
     expect(link.lastElementChild?.tagName.toLowerCase()).toBe('svg');
   });

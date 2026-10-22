@@ -840,7 +840,7 @@ const Markdown = styled.div`
   }
 
   a {
-    color: ${(props) => props.theme.primary};
+    color: ${(props) => props.theme.link};
     text-decoration: none;
     text-underline-offset: 4px;
     border-radius: ${radii.sm};

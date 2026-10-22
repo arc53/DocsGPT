@@ -32,7 +32,7 @@ const buttonVariantOptions = {
       "h-auto p-0 text-sm font-medium [&_svg:not([class*='size-'])]:size-3",
     // A link in running text: no height or padding and no type of its
     // own, so it takes the sentence's size, weight and line-height and
-    // wraps with the text. The variant's colour stays (primary for link).
+    // wraps with the text. The variant's colour stays (the link token for link).
     // A bare label is inline text, so a long one breaks across lines with
     // the sentence instead of jumping down as one box; with an icon it
     // stays the inline-flex row, which keeps the icon's gap.
@@ -58,7 +58,7 @@ const buttonVariantOptions = {
       'text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20',
     'ghost-destructive-on-accent':
       'text-muted-foreground hover:bg-destructive/15 hover:text-destructive dark:hover:bg-destructive/20',
-    link: 'text-primary underline-offset-4 hover:underline',
+    link: 'text-link underline-offset-4 hover:underline',
     destructive: `bg-destructive text-destructive-foreground hover:bg-destructive/90 ${destructiveRing} dark:bg-destructive/60`,
     'destructive-outline': `border border-destructive text-destructive bg-transparent hover:bg-destructive hover:text-destructive-foreground ${destructiveRing}`,
     // Popover combobox triggers: mirrors SelectTrigger so the two sit

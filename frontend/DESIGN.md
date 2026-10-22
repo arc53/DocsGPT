@@ -43,7 +43,8 @@ through `@theme inline`, so `bg-`, `text-`, `border-`, `ring-`, `fill-` and
 | `muted`, `muted-foreground`             | quiet fills and secondary text, icons, placeholders, timestamps                   | `bg-gray-100/200`, `text-gray-400/500/600`, `dark:text-gray-400`    |
 | `accent`, `accent-foreground`           | hover and selected fills                                                          | `hover:bg-gray-100`, `dark:hover:bg-gray-700`                       |
 | `border`, `input`, `ring`               | dividers, field borders (fields use `border-input`, `fieldFrame`), focus rings    | `border-gray-200/300`, `dark:border-gray-600/700`                   |
-| `primary`, `primary-foreground`         | brand purple: primary actions, links, selected states                             | `bg-purple-*`, `text-purple-*`, `#7D54D1`, `#A076F6`                |
+| `primary`, `primary-foreground`         | brand purple: primary actions, selected states                                    | `bg-purple-*`, `text-purple-*`, `#7D54D1`, `#A076F6`                |
+| `link`                                  | text links: the Button `link` variant, `text-link`                                | `text-primary` on a link                                            |
 | `secondary`, `secondary-foreground`     | pressed and active toggles (a brand tint), secondary buttons, the question bubble | `bg-accent` on an active icon button                                |
 | `destructive`, `destructive-foreground` | errors, failed states, dangerous actions                                          | `text-red-*`, `bg-red-50/100`, `#B42318`, `#E60000`                 |
 | `success`, `success-foreground`         | completed, active, healthy                                                        | `text-green-*`, `text-emerald-*`, `bg-green-50/100`                 |
@@ -74,9 +75,12 @@ colours read at runtime) use the same #6b6b6b.
 
 The dark `primary` (#8855f1) is set so white text on it reaches 4.55:1 on
 every default Button. As text on the dark surfaces it is below 4.5:1 (3.45:1
-on background, 3.06:1 on card), so links and `text-primary` in dark pass only
-as large or UI text; a fix for that needs its own link token. `ring`
-and `secondary` keep the lighter #976af3.
+on background, 3.06:1 on card), so `text-primary` in dark passes only as large
+or UI text. Links use `link` instead (`text-link`, the Button `link` variant):
+an alias of `primary` in light and of `secondary-foreground` (#b89cf8) in dark,
+6.84:1 on background and 6.07:1 on card. It is the citation pill's colour, and
+close to the white text in lightness, so a link is told from the text by hue
+and its hover underline. `ring` and `secondary` keep the lighter #976af3.
 
 Chart colours are not a separate palette. `chart-1` to `chart-5` alias
 `primary`, `info`, `success`, `warning` and `destructive`, in that order,
@@ -222,7 +226,7 @@ Patterns:
   markdown, a hint's "Learn more", a Cancel in a status line) is
   `variant="link" size="text"`, with `asChild` around the `<a>`: no height or
   padding and no type of its own, so it takes the sentence's size, weight and
-  line-height and keeps `primary`; underlined on hover, the shared focus ring.
+  line-height and keeps `link`; underlined on hover, the shared focus ring.
   A bare label is inline text, so a long one breaks across lines with the
   sentence; with an icon it stays an inline-flex row. A web link in a chat
   answer opens a new tab with no icon; `aria-describedby` points at one hidden
