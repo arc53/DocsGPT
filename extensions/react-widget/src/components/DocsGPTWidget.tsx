@@ -840,7 +840,7 @@ const Markdown = styled.div`
   }
 
   a {
-    color: ${(props) => props.theme.primary};
+    color: ${(props) => props.theme.link};
     text-decoration: none;
     text-underline-offset: 4px;
     border-radius: ${radii.sm};
@@ -1710,6 +1710,7 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
   turn,
   openSourceLabel,
   copyCodeLabel,
+  newTabLabel,
   onAnswerClick,
 }: {
   response: string;
@@ -1717,24 +1718,40 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
   turn: number;
   openSourceLabel: string;
   copyCodeLabel: string;
+  newTabLabel: string;
   onAnswerClick: (
     turn: number,
     event: React.MouseEvent<HTMLDivElement>,
   ) => void;
 }) {
+  // Answer links open a new tab; the hidden hint says so to screen readers
+  // without landing in copied text.
+  const newTabHintId = React.useId();
   const html = React.useMemo(
     () =>
       DOMPurify.sanitize(
-        renderAnswer(response, { sourceCount, openSourceLabel, copyCodeLabel }),
+        renderAnswer(response, {
+          sourceCount,
+          openSourceLabel,
+          copyCodeLabel,
+          newTabHintId,
+        }),
         { ADD_ATTR: ['target'] },
       ),
-    [response, sourceCount, openSourceLabel, copyCodeLabel],
+    [response, sourceCount, openSourceLabel, copyCodeLabel, newTabHintId],
   );
   return (
-    <Markdown
-      onClick={(event) => onAnswerClick(turn, event)}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <Markdown
+        onClick={(event) => onAnswerClick(turn, event)}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {html.includes('<a ') && (
+        <span id={newTabHintId} hidden>
+          {newTabLabel}
+        </span>
+      )}
+    </>
   );
 });
 
@@ -3340,6 +3357,7 @@ export const WidgetCore = ({
                                 turn={index}
                                 openSourceLabel={t('openSource')}
                                 copyCodeLabel={t('copyCode')}
+                                newTabLabel={t('opensInNewTab')}
                                 onAnswerClick={handleAnswerClick}
                               />
                             </Message>

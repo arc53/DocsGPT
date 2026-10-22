@@ -2814,6 +2814,7 @@
       "researched_other": "Изучено {{count}} темы"
     },
     "openFile": "Открыть файл",
+    "opensInNewTab": "Открывается в новой вкладке",
     "stepGroup": {
       "title": "Инструменты",
       "failed": "Ошибок: {{count}}"

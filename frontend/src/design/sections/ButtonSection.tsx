@@ -248,7 +248,7 @@ export default function ButtonSection() {
       </Example>
       <Example
         title="Links: in running text, standalone, with an icon, in a status Alert"
-        code='size="text" (inherits size, weight, line-height; keeps primary) · size="inline" (14px medium) · a trailing ArrowRight / ExternalLink is 12px, set by the size (no size-3) · a leading icon sets size-4 · tone="current" (context colour)'
+        code='size="text" (inherits size, weight, line-height; keeps the link colour) · size="inline" (14px medium) · a trailing ArrowRight / ExternalLink is 12px, set by the size (no size-3) · a leading icon sets size-4 · tone="current" (context colour)'
       >
         <div className="flex max-w-md flex-col gap-4">
           <p className="text-foreground text-base">

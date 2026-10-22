@@ -2664,6 +2664,7 @@
       "researched_other": "{{count}} Themen recherchiert"
     },
     "openFile": "Datei öffnen",
+    "opensInNewTab": "Öffnet sich in einem neuen Tab",
     "stepGroup": {
       "title": "Werkzeuge",
       "failed": "{{count}} fehlgeschlagen"

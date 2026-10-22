@@ -61,9 +61,10 @@ function render(content: string, options: RenderOptions = {}) {
   act(() => root.render(<MarkdownAnswer content={content} {...options} />));
   const all = container.querySelectorAll('.katex').length;
   const display = container.querySelectorAll('.katex-display').length;
+  // Visible text only: no formulas, and no hidden "opens in a new tab" hint.
   const clone = container.cloneNode(true) as HTMLElement;
   clone
-    .querySelectorAll('.katex, .katex-error')
+    .querySelectorAll('.katex, .katex-error, [hidden]')
     .forEach((node) => node.remove());
   return {
     inline: all - display,

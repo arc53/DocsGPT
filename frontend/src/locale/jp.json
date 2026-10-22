@@ -2652,6 +2652,7 @@
       "researched": "{{count}} 件のトピックを調査しました"
     },
     "openFile": "ファイルを開く",
+    "opensInNewTab": "新しいタブで開きます",
     "stepGroup": {
       "title": "ツール",
       "failed": "{{count}} 件失敗"
