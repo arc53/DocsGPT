@@ -274,6 +274,18 @@ def sync_connector_source(self, source_id):
 
 
 @celery.task(bind=True)
+def website_pages(self, source_id, user, operation, urls=None, file_path=None):
+    """Add pages to a Website source, or refresh one (``website_pages_worker``).
+
+    Not retried: a page that can't be fetched fails the same way again, and
+    the worker has already reported it.
+    """
+    from docsgpt.worker import website_pages_worker
+
+    return website_pages_worker(self, source_id, user, operation, urls=urls, file_path=file_path)
+
+
+@celery.task(bind=True)
 def sync_source(
     self,
     source_data,

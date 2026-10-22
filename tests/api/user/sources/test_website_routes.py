@@ -220,3 +220,91 @@ class TestRemovePages:
         response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["nope.md"])
 
         assert response.status_code == 400
+
+
+class TestAddPages:
+    def _add(self, app, pg_conn, src, entries):
+        from docsgpt.api.user.sources.website import AddWebsitePages
+
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.sync_source"
+        ) as sync_task:
+            pages_task.delay.return_value = MagicMock(id="pages-task")
+            sync_task.delay.return_value = MagicMock(id="sync-task")
+            response = _call(app, pg_conn, AddWebsitePages, "POST", json={"source_id": str(src["id"]), "entries": entries})
+        return response, pages_task, sync_task
+
+    def test_pages_on_the_same_host_are_appended(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/new", "mode": "page"}])
+
+        assert response.status_code == 200
+        assert response.json["mode"] == "append"
+        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"])
+        sync_task.delay.assert_not_called()
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert saved[-1] == {"url": "https://docs.x.io/new", "mode": "page"}
+
+    def test_a_page_already_listed_is_not_listed_twice(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/extra#top", "mode": "page"}])
+
+        assert response.status_code == 200
+        entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert [e["url"] for e in entries] == ["https://docs.x.io/", "https://docs.x.io/extra"]
+        pages_task.delay.assert_called_once()
+
+    def test_a_whole_site_rebuilds_the_source(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task, sync_task = self._add(
+            app, pg_conn, src, [{"url": "https://docs.x.io/API/", "mode": "site", "path_prefix": "/API/"}],
+        )
+
+        assert response.status_code == 200
+        assert response.json["mode"] == "sync"
+        pages_task.delay.assert_not_called()
+        kwargs = sync_task.delay.call_args.kwargs
+        assert kwargs["loader"] == "website"
+        assert kwargs["doc_id"] == str(src["id"])
+        assert kwargs["source_data"]["entries"][-1]["path_prefix"] == "/API/"
+
+    def test_a_page_on_a_new_host_rebuilds_the_source(self, app, pg_conn):
+        # Every page then needs a host folder in the tree.
+        src = _seed(pg_conn)
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": "https://github.com/a/b", "mode": "page"}])
+
+        assert response.json["mode"] == "sync"
+        sync_task.delay.assert_called_once()
+
+    def test_bad_entries_are_400(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": ""}])
+
+        assert response.status_code == 400
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+
+
+class TestRefreshPage:
+    def _refresh(self, app, pg_conn, src, file_path):
+        from docsgpt.api.user.sources.website import RefreshWebsitePage
+
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task:
+            pages_task.delay.return_value = MagicMock(id="refresh-task")
+            response = _call(app, pg_conn, RefreshWebsitePage, "POST", json={"source_id": str(src["id"]), "file_path": file_path})
+        return response, pages_task
+
+    def test_queues_the_page(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task = self._refresh(app, pg_conn, src, "Deploying/Docker.md")
+
+        assert response.status_code == 200
+        assert response.json["task_id"] == "refresh-task"
+        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md")
+
+    def test_an_unknown_page_is_400(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task = self._refresh(app, pg_conn, src, "nope.md")
+
+        assert response.status_code == 400
+        pages_task.delay.assert_not_called()

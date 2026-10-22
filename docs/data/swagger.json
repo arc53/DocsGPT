@@ -25,6 +25,26 @@
       ],
       "type": "object"
     },
+    "AddWebsitePagesModel": {
+      "properties": {
+        "entries": {
+          "description": "Pages or sites to add (as in /api/website)",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "AnswerModel": {
       "properties": {
         "active_docs": {
@@ -984,6 +1004,23 @@
       },
       "required": [
         "endpoint"
+      ],
+      "type": "object"
+    },
+    "RefreshWebsitePageModel": {
+      "properties": {
+        "file_path": {
+          "description": "Tree path of the page",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path",
+        "source_id"
       ],
       "type": "object"
     },
@@ -7292,7 +7329,9 @@
         "tags": [
           "sources"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "sources:read"
+        ]
       },
       "post": {
         "description": "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync.",
@@ -7315,7 +7354,63 @@
         "tags": [
           "sources"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/pages": {
+      "post": {
+        "description": "Add pages or sites to a Website source; they stay in every sync. Pages on the source's hosts are fetched and appended now; a site, or a page on a new host, rebuilds the source like a sync.",
+        "operationId": "post_add_website_pages",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AddWebsitePagesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/refresh": {
+      "post": {
+        "description": "Re-fetch one page of a Website source now; if it can't be fetched, its content is kept.",
+        "operationId": "post_refresh_website_page",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RefreshWebsitePageModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
       }
     },
     "/api/website/remove": {
@@ -7340,7 +7435,9 @@
         "tags": [
           "sources"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "sources:write"
+        ]
       }
     },
     "/api/workflows": {

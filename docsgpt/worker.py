@@ -4502,6 +4502,132 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     return {"status": "embedded", "added": added, "deleted": deleted}
 
 
+def website_pages_worker(self, source_id, user, operation, urls=None, file_path=None):
+    """Add pages to a Website source, or refresh one, without re-fetching the rest.
+
+    A sync wipes the index and rebuilds it; this changes only the pages named.
+    Each page is fetched first, so one that can't be fetched leaves the source
+    as it was. Its old chunks (keyed by its URL) are then replaced and its tree
+    entry rewritten. The route sends whole-site additions and pages on a new
+    host to a sync instead: those rename the tree.
+
+    Args:
+        self: Celery task instance.
+        source_id: The Website source.
+        user: Its owner (the route resolves it).
+        operation: ``add`` (fetch ``urls``) or ``refresh`` (re-fetch the page
+            at ``file_path``).
+        urls: Page URLs to add; they are already in the source's config.
+        file_path: Tree path of the page to refresh.
+
+    Returns:
+        ``{"status": "ok", "pages": n}``.
+
+    Raises:
+        ValueError: The source or page is unknown, or no page could be fetched.
+    """
+    from docsgpt.parser.remote.base import url_to_virtual_path
+    from docsgpt.parser.remote.web_loader import WebLoader
+    from docsgpt.parser.remote.website_tree import (
+        config_from_legacy,
+        remove_pages,
+        set_page,
+        total_tokens,
+        web_pages,
+    )
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source_id)
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    event_operation = "add_pages" if operation == "add" else "refresh_page"
+    envelope = {
+        "source_id": source_id,
+        "job_name": source.get("name", ""),
+        "loader": "website",
+        "operation": event_operation,
+    }
+    publish_user_event(user, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
+
+    try:
+        structure = source.get("directory_structure") or {}
+        if not isinstance(structure, dict):
+            structure = {}
+        config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
+        pages = web_pages(structure)
+        if operation == "refresh":
+            url = dict(pages).get(file_path)
+            if not url:
+                raise ValueError(f"No page at {file_path!r} in this source")
+            targets = {url: file_path}
+        elif operation == "add":
+            include_host = len({urlsplit(u).netloc for _, u in pages} | {urlsplit(u).netloc for u in urls or []}) > 1
+            targets = {url: url_to_virtual_path(url, include_host) for url in urls or []}
+        else:
+            raise ValueError(f"Unknown operation {operation!r}")
+
+        docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(list(targets))
+        if not docs:
+            raise ValueError("None of the pages could be fetched; the source is unchanged")
+
+        cfg = SourceConfig.parse(source.get("config"))
+        chunker = ChunkerCreator.create_chunker(
+            cfg.chunking.strategy,
+            chunking_strategy=cfg.chunking.strategy,
+            max_tokens=cfg.chunking.max_tokens,
+            min_tokens=cfg.chunking.min_tokens,
+            duplicate_headers=cfg.chunking.duplicate_headers,
+        )
+        store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+        fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        for doc in docs:
+            url = doc.extra_info["source"]
+            path = targets.get(url) or url_to_virtual_path(url)
+            doc.extra_info["file_path"] = path
+            # The page may already be in the tree (added twice, or refreshed).
+            store.delete_chunks_by_source_path(url)
+            remove_pages(structure, [p for p, u in web_pages(structure) if u == url])
+            token_count = 0
+            size_bytes = 0
+            for chunk in chunker.chunk(documents=[doc]):
+                metadata = dict(chunk.extra_info or {})
+                metadata.update({"source": url, "file_path": path})
+                if doc.extra_info.get("title"):
+                    metadata["title"] = doc.extra_info["title"]
+                store.add_chunk(chunk.text, metadata=metadata)
+                token_count += num_tokens_from_string(chunk.text)
+                size_bytes += len(chunk.text.encode("utf-8"))
+            set_page(structure, path, {
+                "type": "text/markdown",
+                "size_bytes": size_bytes,
+                "token_count": token_count,
+                "url": url,
+                "title": doc.extra_info.get("title"),
+                "fetched_at": fetched_at,
+            })
+
+        with db_session() as conn:
+            SourcesRepository(conn).update(
+                source_id, user,
+                {"directory_structure": structure, "tokens": str(total_tokens(structure))},
+            )
+    except Exception as e:
+        logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
+        publish_user_event(
+            user, "source.ingest.failed", {**envelope, "error": str(e)[:1024]},
+            scope={"kind": "source", "id": source_id},
+        )
+        raise
+    publish_user_event(
+        user, "source.ingest.completed", {**envelope, "pages": len(docs), "limited": False},
+        scope={"kind": "source", "id": source_id},
+    )
+    return {"status": "ok", "pages": len(docs)}
+
+
 def _wiki_page_path_from_rel(rel_path):
     """Build a validated leading-slash wiki page path, or None if invalid.
 
