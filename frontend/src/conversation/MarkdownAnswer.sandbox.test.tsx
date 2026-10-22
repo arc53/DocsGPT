@@ -124,6 +124,23 @@ describe('MarkdownAnswer sandbox: links', () => {
     expect(anchor?.getAttribute('target')).toBe('_blank');
   });
 
+  // Tailwind's preflight leaves a bare <a> looking like the text around it.
+  it('draws an ordinary link as a text link that says it opens a new tab', () => {
+    render('See the [Docker setup](https://docs.docsgpt.cloud/) first.');
+
+    const anchor = container.querySelector('a');
+    expect(anchor?.dataset.slot).toBe('button');
+    expect(anchor?.dataset.variant).toBe('link');
+    expect(anchor?.dataset.size).toBe('text');
+    expect(anchor?.textContent).toBe('Docker setup');
+
+    // A hidden description: read by screen readers, never copied with the text.
+    const hintId = anchor?.getAttribute('aria-describedby') ?? '';
+    const hint = hintId ? document.getElementById(hintId) : null;
+    expect(hint?.hidden).toBe(true);
+    expect(hint?.textContent).toBe('conversation.opensInNewTab');
+  });
+
   it('still blocks javascript: urls', () => {
     render('[click](javascript:alert&#40;1&#41;)');
     expect(container.querySelector('a')?.getAttribute('href')).toBe('');

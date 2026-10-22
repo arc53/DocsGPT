@@ -2650,6 +2650,7 @@
       "researched": "已研究 {{count}} 个主题"
     },
     "openFile": "打开文件",
+    "opensInNewTab": "在新标签页中打开",
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 个失败"

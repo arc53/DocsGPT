@@ -224,7 +224,9 @@ Patterns:
   padding and no type of its own, so it takes the sentence's size, weight and
   line-height and keeps `primary`; underlined on hover, the shared focus ring.
   A bare label is inline text, so a long one breaks across lines with the
-  sentence; with an icon it stays an inline-flex row.
+  sentence; with an icon it stays an inline-flex row. A web link in a chat
+  answer opens a new tab with no icon; `aria-describedby` points at one hidden
+  "Opens in a new tab" per answer (`conversation.opensInNewTab`).
   A standalone link ("Learn more" with `ExternalLink`, "Go to Tools" with
   `ArrowRight`, the icon a child) is `size="inline"`: the same, but 14px
   medium, so it reads as a control. A link that takes the colour of what it

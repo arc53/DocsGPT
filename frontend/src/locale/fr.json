@@ -2739,6 +2739,7 @@
       "researched_many": "{{count}} sujets étudiés"
     },
     "openFile": "Ouvrir le fichier",
+    "opensInNewTab": "S’ouvre dans un nouvel onglet",
     "stepGroup": {
       "title": "Outils",
       "failed": "{{count}} en échec"

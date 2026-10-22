@@ -2664,6 +2664,7 @@
       "researched_other": "Researched {{count}} topics"
     },
     "openFile": "Open file",
+    "opensInNewTab": "Opens in a new tab",
     "stepGroup": {
       "title": "Tools",
       "failed": "{{count}} failed"
