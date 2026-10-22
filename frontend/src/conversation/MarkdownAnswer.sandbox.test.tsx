@@ -111,8 +111,9 @@ describe('MarkdownAnswer sandbox: links', () => {
     const className = button?.getAttribute('class') ?? '';
     expect(className).not.toMatch(/\bbg-primary\b/);
     expect(className).not.toMatch(/\bh-9\b/);
-    expect(className).not.toMatch(/\bwhitespace-nowrap\b/);
-    expect(className).toContain('whitespace-normal');
+    // size="text" makes a bare label inline text that wraps.
+    expect(className).toContain('not-has-[>svg]:inline');
+    expect(className).toContain('not-has-[>svg]:whitespace-normal');
   });
 
   it('leaves ordinary links alone', () => {

@@ -33,7 +33,10 @@ const buttonVariantOptions = {
     // A link in running text: no height or padding and no type of its
     // own, so it takes the sentence's size, weight and line-height and
     // wraps with the text. The variant's colour stays (primary for link).
-    text: "h-auto p-0 [&_svg:not([class*='size-'])]:size-3",
+    // A bare label is inline text, so a long one breaks across lines with
+    // the sentence instead of jumping down as one box; with an icon it
+    // stays the inline-flex row, which keeps the icon's gap.
+    text: "h-auto p-0 not-has-[>svg]:inline not-has-[>svg]:whitespace-normal [&_svg:not([class*='size-'])]:size-3",
   },
   variant: {
     default: 'bg-primary text-primary-foreground hover:bg-primary/90',

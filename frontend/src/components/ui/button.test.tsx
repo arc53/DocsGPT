@@ -136,6 +136,20 @@ describe('Button variants', () => {
     ).toEqual([]);
   });
 
+  it('size="text" wraps with the sentence unless it holds an icon', () => {
+    const classes = cn(buttonVariants({ variant: 'link', size: 'text' })).split(
+      ' ',
+    );
+    // A bare label is inline text, so it breaks across lines like the
+    // sentence around it; with an icon it stays the inline-flex row.
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'not-has-[>svg]:inline',
+        'not-has-[>svg]:whitespace-normal',
+      ]),
+    );
+  });
+
   it.each(['inline', 'text'] as const)(
     'size="%s" draws an unsized icon at 12px (a trailing link icon)',
     (size) => {

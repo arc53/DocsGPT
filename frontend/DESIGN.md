@@ -223,6 +223,8 @@ Patterns:
   `variant="link" size="text"`, with `asChild` around the `<a>`: no height or
   padding and no type of its own, so it takes the sentence's size, weight and
   line-height and keeps `primary`; underlined on hover, the shared focus ring.
+  A bare label is inline text, so a long one breaks across lines with the
+  sentence; with an icon it stays an inline-flex row.
   A standalone link ("Learn more" with `ExternalLink`, "Go to Tools" with
   `ArrowRight`, the icon a child) is `size="inline"`: the same, but 14px
   medium, so it reads as a control. A link that takes the colour of what it

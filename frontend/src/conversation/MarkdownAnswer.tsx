@@ -153,8 +153,6 @@ export default function MarkdownAnswer({
               toolName: artifact.toolName ?? '',
             })
           }
-          /* Sits mid-sentence, so it must wrap with the surrounding text. */
-          className="whitespace-normal"
         >
           {content}
         </Button>
