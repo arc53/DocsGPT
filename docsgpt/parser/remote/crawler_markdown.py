@@ -139,34 +139,50 @@ class CrawlerLoader(BaseRemote):
             links.append((full_url, a.text.strip()))
         return links
 
-    def _get_base_domain(self, url):
-        extracted = _extract(url)
-        # Reconstruct the domain as domain.suffix
-        base_domain = f"{extracted.domain}.{extracted.suffix}"
-        return base_domain
+    def _get_base_domain(self, url: str) -> str:
+        """Extract the base domain or hostname used for link filtering.
 
-    def _filter_links(self, links, base_domain):
+        Args:
+            url: The seed URL to extract the base domain from.
+
+        Returns:
+            The lowercased hostname or registered domain string.
         """
-        Filter the extracted links to only include those that match the crawling criteria:
-        - If allow_subdomains is True, allow any link whose domain ends with the base_domain.
-        - If allow_subdomains is False, only allow exact matches of the base_domain.
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+        if not self.allow_subdomains:
+            return hostname
+
+        extracted = _extract(url)
+        if extracted.suffix:
+            return f"{extracted.domain}.{extracted.suffix}".lower()
+        return hostname
+
+    def _filter_links(self, links: list[tuple[str, str]], base_domain: str) -> list[str]:
+        """Filter extracted links to those matching the crawling criteria.
+
+        Args:
+            links: A list of (url, link_text) tuples extracted from a page.
+            base_domain: The base domain or hostname to match against.
+
+        Returns:
+            A list of filtered URL strings that satisfy the domain rules.
         """
         filtered = []
+        base = (base_domain or "").lower()
         for link, _ in links:
             parsed_link = urlparse(link)
-            if not parsed_link.netloc:
+            link_host = (parsed_link.hostname or "").lower()
+            if not link_host:
                 continue
 
-            extracted = _extract(parsed_link.netloc)
-            link_base = f"{extracted.domain}.{extracted.suffix}"
-
             if self.allow_subdomains:
-                # For subdomains: sub.example.com ends with example.com
-                if link_base == base_domain or link_base.endswith("." + base_domain):
+                # Allow exact domain match or any subdomain of base_domain
+                if link_host == base or link_host.endswith("." + base):
                     filtered.append(link)
             else:
-                # Exact domain match
-                if link_base == base_domain:
+                # Exact domain match only
+                if link_host == base:
                     filtered.append(link)
         return filtered
 

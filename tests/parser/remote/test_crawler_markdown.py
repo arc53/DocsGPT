@@ -135,6 +135,117 @@ def test_load_data_allows_subdomains(monkeypatch, _patch_markdownify):
     assert len(docs) == 2
 
 
+def test_load_data_disallows_subdomains(monkeypatch, _patch_markdownify):
+    root_html = """
+    <html><head><title>Home</title></head>
+    <body><a href="http://blog.example.com/post">Blog</a><a href="/about">About</a></body>
+    </html>
+    """
+    about_html = "<html><head><title>About</title></head><body>About page</body></html>"
+
+    _patch_markdownify[root_html] = "Home Markdown"
+    _patch_markdownify[about_html] = "About Markdown"
+
+    responses = {
+        "http://example.com": DummyResponse(root_html),
+        "http://example.com/about": DummyResponse(about_html),
+    }
+
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
+    loader = CrawlerLoader(limit=5, allow_subdomains=False)
+
+    docs = loader.load_data("http://example.com")
+
+    sources = {doc.extra_info["source"] for doc in docs}
+    assert "http://blog.example.com/post" not in sources
+    assert sources == {"http://example.com", "http://example.com/about"}
+
+
+def test_subdomain_seed_exact_host_filtering(monkeypatch, _patch_markdownify):
+    docs_root = """
+    <html><head><title>Docs</title></head>
+    <body>
+        <a href="/guide">Guide</a>
+        <a href="http://blog.example.com/post">Blog</a>
+        <a href="http://example.com/home">Apex</a>
+    </body>
+    </html>
+    """
+    guide_html = "<html><head><title>Guide</title></head><body>Guide page</body></html>"
+
+    _patch_markdownify[docs_root] = "Docs Markdown"
+    _patch_markdownify[guide_html] = "Guide Markdown"
+
+    responses = {
+        "http://docs.example.com": DummyResponse(docs_root),
+        "http://docs.example.com/guide": DummyResponse(guide_html),
+    }
+
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
+    loader = CrawlerLoader(limit=5, allow_subdomains=False)
+    docs = loader.load_data("http://docs.example.com")
+
+    sources = {doc.extra_info["source"] for doc in docs}
+    assert sources == {"http://docs.example.com", "http://docs.example.com/guide"}
+    assert "http://blog.example.com/post" not in sources
+    assert "http://example.com/home" not in sources
+
+
+def test_subdomain_seed_allows_subdomains_when_flag_true(monkeypatch, _patch_markdownify):
+    docs_root = """
+    <html><head><title>Docs</title></head>
+    <body>
+        <a href="http://blog.example.com/post">Blog</a>
+    </body>
+    </html>
+    """
+    blog_html = "<html><head><title>Blog</title></head><body>Blog page</body></html>"
+
+    _patch_markdownify[docs_root] = "Docs Markdown"
+    _patch_markdownify[blog_html] = "Blog Markdown"
+
+    responses = {
+        "http://docs.example.com": DummyResponse(docs_root),
+        "http://blog.example.com/post": DummyResponse(blog_html),
+    }
+
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
+    loader = CrawlerLoader(limit=5, allow_subdomains=True)
+    docs = loader.load_data("http://docs.example.com")
+
+    sources = {doc.extra_info["source"] for doc in docs}
+    assert "http://blog.example.com/post" in sources
+    assert sources == {"http://docs.example.com", "http://blog.example.com/post"}
+
+
+def test_unrecognized_public_suffix_helpers(monkeypatch):
+    """Unrecognized public suffix keeps the seed hostname and rejects sibling hosts."""
+    monkeypatch.setattr(
+        "docsgpt.parser.remote.crawler_markdown._extract",
+        lambda url: SimpleNamespace(domain="notavalidsuffix", suffix=""),
+    )
+
+    loader = CrawlerLoader(allow_subdomains=True)
+    base = loader._get_base_domain("https://alpha.notavalidsuffix")
+    assert base == "alpha.notavalidsuffix"
+
+    links = [
+        ("https://alpha.notavalidsuffix/page", "Seed host"),
+        ("https://child.alpha.notavalidsuffix/page", "Child host"),
+        ("https://beta.notavalidsuffix/page", "Sibling host"),
+        ("https://notavalidsuffix/page", "Suffix-only host"),
+    ]
+
+    filtered = loader._filter_links(links, base)
+    assert filtered == [
+        "https://alpha.notavalidsuffix/page",
+        "https://child.alpha.notavalidsuffix/page",
+    ]
+
+
 def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify, _patch_validate_url):
     root_html = """
     <html><head><title>Home</title></head>
