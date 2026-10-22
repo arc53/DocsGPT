@@ -1,4 +1,5 @@
 import logging
+from typing import Callable, Optional
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
@@ -9,8 +10,24 @@ from docsgpt.security.safe_url import pinned_request
 
 
 class CrawlerLoader(BaseRemote):
-    def __init__(self, limit=10):
-        self.limit = limit  # Set the limit for the number of pages to scrape
+    def __init__(
+        self,
+        limit: Optional[int] = 10,
+        accept: Optional[Callable[[str], bool]] = None,
+        keep_links: bool = False,
+    ):
+        """
+        Args:
+            limit: Most pages to fetch (``None`` for no cap).
+            accept: Which links to follow. Default: the start page's scheme
+                and host.
+            keep_links: Keep the URL of links inside sentences in page text.
+        """
+        self.limit = limit
+        self.accept = accept
+        self.keep_links = keep_links
+        # Whether the last crawl stopped at the limit with pages left to visit.
+        self.limit_reached = False
 
     def load_data(self, inputs):
         url = inputs
@@ -36,6 +53,7 @@ class CrawlerLoader(BaseRemote):
             # Checked before each fetch, so failed and non-page fetches count
             # toward the limit too instead of letting the crawl run past it.
             if self.limit is not None and len(visited_urls) >= self.limit:
+                self.limit_reached = any(normalize_page_url(u) not in visited_urls for u in urls_to_visit)
                 break
             current_url = urls_to_visit.pop(0)
             page_key = normalize_page_url(current_url)
@@ -48,6 +66,7 @@ class CrawlerLoader(BaseRemote):
                 response.raise_for_status()
                 document = page_document(
                     response.content, response.headers.get("Content-Type"), current_url,
+                    keep_links=self.keep_links,
                 )
                 if document is None:
                     # Not a page (a PDF or image the site links to): no text
@@ -70,9 +89,12 @@ class CrawlerLoader(BaseRemote):
                     parsed_link = urlparse(link)
                 except ValueError:
                     continue
-                # Compare the host itself: a substring match also follows
-                # share links and lookalike hosts that contain the site URL.
-                on_site = (parsed_link.scheme, parsed_link.hostname) == site
+                if self.accept is not None:
+                    on_site = self.accept(link)
+                else:
+                    # Compare the host itself: a substring match also follows
+                    # share links and lookalike hosts that contain the site URL.
+                    on_site = (parsed_link.scheme, parsed_link.hostname) == site
                 if on_site and link_key not in visited_urls:
                     all_links.append(link)
 

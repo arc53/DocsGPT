@@ -22,6 +22,13 @@ headers = {
 
 
 class WebLoader(BaseRemote):
+    def __init__(self, keep_links: bool = False):
+        """
+        Args:
+            keep_links: Keep the URL of links inside sentences in page text.
+        """
+        self.keep_links = keep_links
+
     def load_data(self, inputs):
         urls = inputs
         if isinstance(urls, str):
@@ -45,6 +52,7 @@ class WebLoader(BaseRemote):
                     response.headers.get("Content-Type"),
                     url,
                     include_host=include_host,
+                    keep_links=self.keep_links,
                 )
                 if document is not None:
                     documents.append(document)

@@ -124,6 +124,22 @@ class IngestionSettings(SettingsGroup):
             "ingest worker down. 0 disables it."
         ),
     )
+    WEB_DEFAULT_PAGES: int = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Page limit a whole-site Website source gets when it names none: the crawl or sitemap stops after "
+            "this many pages."
+        ),
+    )
+    WEB_MAX_PAGES: int = Field(
+        default=500,
+        ge=1,
+        description=(
+            "Highest page limit a whole-site Website source may ask for; larger requests are clamped to it. Each "
+            "page is a fetch plus embedding, so this bounds how long one site ingest or sync can run."
+        ),
+    )
     PDF_TRUST_CHECK: bool = Field(
         default=True,
         description=(

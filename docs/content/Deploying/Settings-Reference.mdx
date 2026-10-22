@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-21
+lastUpdated: 2026-10-22
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1203,6 +1203,18 @@ Largest HTML/XML docling will parse, in bytes.
 Type `int`, default `8000000`, must be `>= 0`.
 
 HTML/XHTML larger than this (bytes) are head-truncated before the markdownify parser runs (the anydoc engine's HTML path). The tree that path builds costs ~50x the input (30 MB of HTML measured at 1.6 GB RSS) and the upload cap is 100 MB, so the gate is what keeps one upload from taking the ingest worker down. 0 disables it.
+
+### `WEB_DEFAULT_PAGES`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Page limit a whole-site Website source gets when it names none: the crawl or sitemap stops after this many pages.
+
+### `WEB_MAX_PAGES`
+
+Type `int`, default `500`, must be `>= 1`.
+
+Highest page limit a whole-site Website source may ask for; larger requests are clamped to it. Each page is a fetch plus embedding, so this bounds how long one site ingest or sync can run.
 
 ### `PDF_TRUST_CHECK`
 

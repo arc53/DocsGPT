@@ -1,6 +1,7 @@
 import logging
 import re
-from typing import List, Optional, Set
+import zlib
+from typing import Callable, List, Optional, Set
 
 import defusedxml.ElementTree as ET
 from defusedxml import DefusedXmlException
@@ -11,6 +12,7 @@ from docsgpt.parser.remote.base import (
     spans_multiple_hosts,
 )
 from docsgpt.parser.remote.page_content import page_document
+from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 
@@ -20,10 +22,54 @@ logger = logging.getLogger(__name__)
 # gave. Real sites use one or two; past this it is a loop or a trap.
 MAX_SITEMAP_DEPTH = 5
 
+# The sitemaps protocol caps an uncompressed sitemap at 50 MB; a gzip that
+# inflates past it is refused rather than decompressed into memory.
+MAX_SITEMAP_BYTES = 50 * 1024 * 1024
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _gunzip(data: bytes, url: str) -> Optional[bytes]:
+    """Decompress a gzip sitemap, refusing one that inflates past the cap.
+
+    Args:
+        data: The gzip bytes.
+        url: The sitemap's URL, for the log.
+
+    Returns:
+        The XML bytes, or ``None`` when the file is corrupt or too large.
+    """
+    inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    try:
+        content = inflater.decompress(data, MAX_SITEMAP_BYTES + 1)
+    except zlib.error as e:
+        logger.warning(f"Skipping sitemap {url}: not valid gzip ({e})")
+        return None
+    if len(content) > MAX_SITEMAP_BYTES or inflater.unconsumed_tail:
+        logger.warning(f"Skipping sitemap {url}: inflates past {MAX_SITEMAP_BYTES} bytes")
+        return None
+    return content
+
 
 class SitemapLoader(BaseRemote):
-    def __init__(self, limit=20):
-        self.limit = limit  # Adding limit to control the number of URLs to process
+    def __init__(
+        self,
+        limit: Optional[int] = 20,
+        accept: Optional[Callable[[str], bool]] = None,
+        keep_links: bool = False,
+    ):
+        """
+        Args:
+            limit: Most pages to load; the sitemap walk stops collecting once
+                it has this many (``None`` for no cap).
+            accept: Which page URLs count. Applied while walking, so the limit
+                takes the sitemap's own order after exclusions.
+            keep_links: Keep the URL of links inside sentences in page text.
+        """
+        self.limit = limit
+        self.accept = accept
+        self.keep_links = keep_links
+        # Whether the last walk filled the limit, so the sitemap may list more.
+        self.limit_reached = False
 
     def load_data(self, inputs):
         sitemap_url= inputs
@@ -42,8 +88,42 @@ class SitemapLoader(BaseRemote):
         if not urls:
             logger.warning(f"No URLs found in the sitemap: {sitemap_url}")
             return []
+        return self.load_pages(urls)
 
-        # Load content of extracted URLs
+    def collect_urls(self, sitemap_urls: List[str]) -> List[str]:
+        """Walk several sitemaps in order against one shared page budget.
+
+        A URL that turns out not to be a sitemap is skipped rather than taken
+        as a page (a soft 404 at ``/sitemap.xml`` is an HTML shell).
+
+        Args:
+            sitemap_urls: Sitemap or sitemap-index URLs.
+
+        Returns:
+            Accepted page URLs, in sitemap order, at most ``limit`` of them.
+        """
+        visited: Set[str] = set()
+        urls: List[str] = []
+        for sitemap_url in sitemap_urls:
+            remaining = None if self.limit is None else self.limit - len(urls)
+            if remaining is not None and remaining <= 0:
+                break
+            found = self._extract_urls(sitemap_url, visited, 0, remaining)
+            if found == [sitemap_url]:
+                continue
+            urls.extend(found)
+        self.limit_reached = self.limit is not None and len(urls) >= self.limit
+        return urls
+
+    def load_pages(self, urls: List[str]) -> List[Document]:
+        """Fetch page URLs (already collected from a sitemap) into documents.
+
+        Args:
+            urls: Page URLs in the order to load them.
+
+        Returns:
+            One document per page that loaded, at most ``limit``.
+        """
         include_host = spans_multiple_hosts(urls)
         documents = []
         processed_urls = 0  # Counter for processed URLs
@@ -66,6 +146,7 @@ class SitemapLoader(BaseRemote):
                     response.headers.get("Content-Type"),
                     url,
                     include_host=include_host,
+                    keep_links=self.keep_links,
                 )
                 if document is not None:
                     documents.append(document)
@@ -125,6 +206,14 @@ class SitemapLoader(BaseRemote):
         except Exception as e:
             logger.error(f"Failed to fetch sitemap: {sitemap_url}. Error: {e}")
             return []
+
+        # A .xml.gz sitemap arrives as gzip bytes (Content-Encoding gzip is
+        # undone by requests; a gzip *file* is not).
+        if isinstance(response.content, bytes) and response.content[:2] == _GZIP_MAGIC:
+            content = _gunzip(response.content, sitemap_url)
+            if content is None:
+                return []
+            return self._parse_sitemap(content, visited, depth, budget)
 
         # Determine if this is a sitemap or a URL
         if self._is_sitemap(response):
@@ -188,7 +277,10 @@ class SitemapLoader(BaseRemote):
                 return urls
             if not loc.text or not loc.text.strip():
                 continue
-            urls.append(loc.text.strip())
+            url = loc.text.strip()
+            if self.accept is not None and not self.accept(url):
+                continue
+            urls.append(url)
 
         # Check for nested sitemaps
         for sitemap in root.findall('.//sitemap/loc'):
