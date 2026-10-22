@@ -601,6 +601,22 @@
         "safeNotice": "安全とマーク済み：このソースを使うエージェントは、このチャンクを問題なしとして扱います。テキストを編集するとマークは外れます。",
         "reviewFailed": "このチャンクを更新できませんでした。もう一度お試しください。",
         "noFlagged": "このソースにはフラグが立ったチャンクはありません。チャンクはチャットで取得されたときに採点されます。"
+      },
+      "website": {
+        "page": "ページ",
+        "pages": "ページ",
+        "fetched": "取得日時",
+        "filterPages": "ページを絞り込み",
+        "openPage": "ページを開く",
+        "pagesByline_one": "{{pages}} ページ · {{tokens}} トークン",
+        "pagesByline_other": "{{pages}} ページ · {{tokens}} トークン",
+        "sites_one": "{{count}} サイト",
+        "sites_other": "{{count}} サイト",
+        "pageCount_one": "{{count}} ページ",
+        "pageCount_other": "{{count}} ページ",
+        "synced": "{{frequency}} · {{when}}に同期",
+        "notSynced": "同期なし",
+        "fetchedAt": "{{when}}に取得"
       }
     },
     "analytics": {

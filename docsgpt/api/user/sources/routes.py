@@ -4,6 +4,7 @@ import json
 import math
 import uuid
 from typing import Optional
+from urllib.parse import urlparse
 
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
@@ -31,6 +32,7 @@ from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.parser.remote.remote_creator import normalize_remote_data
+from docsgpt.parser.remote.website_tree import config_from_legacy, count_pages
 from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -79,6 +81,30 @@ def _connection_id(row: dict) -> str | None:
     """The connection a source syncs from, as a string id, or None."""
     value = row.get("connection_id")
     return str(value) if value else None
+
+
+def _website_summary(row: dict) -> Optional[dict]:
+    """Where a web source comes from, for its Knowledge card.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        ``{"hosts": [...], "pages": n}`` for a Website source (or one made by
+        the url, crawler or sitemap loaders), else ``None``. Hosts come from
+        the source's entries, without ``www.``; pages are its tree's leaves.
+    """
+    config = config_from_legacy(row.get("type"), row.get("remote_data"))
+    if config is None:
+        return None
+    hosts: list[str] = []
+    for entry in config["entries"]:
+        host = (urlparse(entry["url"]).hostname or "").removeprefix("www.")
+        if host and host not in hosts:
+            hosts.append(host)
+    structure = row.get("directory_structure")
+    pages = count_pages(structure) if isinstance(structure, dict) else 0
+    return {"hosts": hosts, "pages": pages}
 
 
 def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
@@ -256,6 +282,7 @@ class PaginatedSources(Resource):
                         None if owned else team_shared.get(str(doc["id"]))
                     ),
                     "connectionId": _connection_id(doc),
+                    "website": _website_summary(doc),
                 }
                 paginated_docs.append(
                     _with_access(

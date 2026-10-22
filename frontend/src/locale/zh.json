@@ -601,6 +601,22 @@
         "safeNotice": "已标为安全：使用此来源的智能体会将此文本块视为正常内容。编辑其文本会移除该标记。",
         "reviewFailed": "无法更新此文本块，请重试。",
         "noFlagged": "此来源中没有被标记的文本块。文本块会在对话首次检索到它时评分。"
+      },
+      "website": {
+        "page": "页面",
+        "pages": "页面",
+        "fetched": "获取时间",
+        "filterPages": "筛选页面",
+        "openPage": "打开页面",
+        "pagesByline_one": "{{pages}} 个页面 · {{tokens}} 个令牌",
+        "pagesByline_other": "{{pages}} 个页面 · {{tokens}} 个令牌",
+        "sites_one": "{{count}} 个网站",
+        "sites_other": "{{count}} 个网站",
+        "pageCount_one": "{{count}} 个页面",
+        "pageCount_other": "{{count}} 个页面",
+        "synced": "{{frequency}} · {{when}}已同步",
+        "notSynced": "未同步",
+        "fetchedAt": "{{when}}获取"
       }
     },
     "analytics": {

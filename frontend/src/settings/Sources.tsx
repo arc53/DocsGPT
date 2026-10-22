@@ -3,6 +3,8 @@ import {
   CalendarIcon,
   Check,
   Eye,
+  FileText,
+  Globe,
   HardDrive,
   Network,
   RefreshCw,
@@ -61,9 +63,14 @@ import {
   updateUploadTask,
 } from '../upload/uploadSlice';
 import { can } from '../utils/accessUtils';
-import { EMPTY_VALUE, formatDate } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatDate,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
+import WebsiteTree from '../components/WebsiteTree';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import {
@@ -681,7 +688,20 @@ export default function Sources({
           linkedChunk={link?.chunk}
         />
       ) : documentToView.isNested ? (
-        documentToView.type === 'connector:file' ? (
+        documentToView.website ? (
+          <WebsiteTree
+            docId={documentToView.id || ''}
+            canEdit={viewCanEdit}
+            sourceName={documentToView.name}
+            onBackToDocuments={closeDocument}
+            headerAction={testRetrievalAction}
+            hosts={documentToView.website.hosts}
+            syncFrequency={documentToView.syncFrequency}
+            syncedAt={documentToView.date}
+            initialPath={link?.chunk?.path}
+            linkedChunk={link?.chunk}
+          />
+        ) : documentToView.type === 'connector:file' ? (
           <ConnectorTree
             docId={documentToView.id || ''}
             canEdit={viewCanEdit}
@@ -915,7 +935,9 @@ export default function Sources({
                             </Badge>
                           );
                         })()}
-                      <CardFooter className="flex-col items-start gap-1">
+                      {/* w-full: the column is items-start, so without it the
+                          footer sizes to a long host line and never truncates. */}
+                      <CardFooter className="w-full flex-col items-start gap-1">
                         {connection && (
                           <span className="flex max-w-full min-w-0 items-center gap-2">
                             <ConnectorIcon
@@ -933,12 +955,49 @@ export default function Sources({
                             </span>
                           </span>
                         )}
-                        <span className="flex items-center gap-2">
-                          <CalendarIcon className="size-3.5" />
-                          {document.date
-                            ? formatDate(document.date)
-                            : EMPTY_VALUE}
-                        </span>
+                        {document.website ? (
+                          <>
+                            {/* Where a website source comes from, and how it
+                                stays current, instead of its date. */}
+                            <span className="flex max-w-full min-w-0 items-center gap-2">
+                              <Globe className="size-3.5 shrink-0" />
+                              <span className="min-w-0 truncate">
+                                {document.website.hosts.length === 1
+                                  ? document.website.hosts[0]
+                                  : t('settings.sources.website.sites', {
+                                      count: document.website.hosts.length,
+                                    })}
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <FileText className="size-3.5" />
+                              {t('settings.sources.website.pageCount', {
+                                count: document.website.pages,
+                              })}
+                            </span>
+                            {document.syncFrequency &&
+                              document.syncFrequency !== 'never' && (
+                                <span className="flex items-center gap-2">
+                                  <RefreshCw className="size-3.5 shrink-0" />
+                                  {t('settings.sources.website.synced', {
+                                    frequency: t(
+                                      `settings.sources.syncFrequency.${document.syncFrequency}`,
+                                    ),
+                                    when:
+                                      formatRelative(document.date) ??
+                                      EMPTY_VALUE,
+                                  })}
+                                </span>
+                              )}
+                          </>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <CalendarIcon className="size-3.5" />
+                            {document.date
+                              ? formatDate(document.date)
+                              : EMPTY_VALUE}
+                          </span>
+                        )}
                         <span className="flex items-center gap-2">
                           <HardDrive className="size-3.5" />
                           {document.tokens

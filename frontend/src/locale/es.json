@@ -621,6 +621,25 @@
         "safeNotice": "Marcado como seguro: los agentes que usan esta fuente tratan este fragmento como limpio. Si editas su texto, se quita la marca.",
         "reviewFailed": "No se pudo actualizar este fragmento. Inténtalo de nuevo.",
         "noFlagged": "No se ha marcado ningún fragmento de esta fuente. Un fragmento se puntúa cuando un chat lo recupera."
+      },
+      "website": {
+        "page": "Página",
+        "pages": "Páginas",
+        "fetched": "Obtenida",
+        "filterPages": "Filtrar páginas",
+        "openPage": "Abrir página",
+        "pagesByline_one": "{{pages}} página · {{tokens}} tokens",
+        "pagesByline_other": "{{pages}} páginas · {{tokens}} tokens",
+        "pagesByline_many": "{{pages}} páginas · {{tokens}} tokens",
+        "sites_one": "{{count}} sitio",
+        "sites_other": "{{count}} sitios",
+        "sites_many": "{{count}} sitios",
+        "pageCount_one": "{{count}} página",
+        "pageCount_other": "{{count}} páginas",
+        "pageCount_many": "{{count}} páginas",
+        "synced": "{{frequency}} · sincronizado {{when}}",
+        "notSynced": "Sin sincronizar",
+        "fetchedAt": "Obtenida {{when}}"
       }
     },
     "analytics": {

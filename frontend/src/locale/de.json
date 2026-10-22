@@ -603,6 +603,22 @@
         "safeNotice": "Als sicher markiert: Agenten, die diese Quelle nutzen, behandeln diesen Chunk als unbedenklich. Wenn du den Text bearbeitest, wird die Markierung entfernt.",
         "reviewFailed": "Der Chunk konnte nicht aktualisiert werden. Bitte versuche es erneut.",
         "noFlagged": "In dieser Quelle wurde kein Chunk markiert. Ein Chunk wird bewertet, sobald ein Chat ihn abruft."
+      },
+      "website": {
+        "page": "Seite",
+        "pages": "Seiten",
+        "fetched": "Abgerufen",
+        "filterPages": "Seiten filtern",
+        "openPage": "Seite öffnen",
+        "pagesByline_one": "{{pages}} Seite · {{tokens}} Tokens",
+        "pagesByline_other": "{{pages}} Seiten · {{tokens}} Tokens",
+        "sites_one": "{{count}} Website",
+        "sites_other": "{{count}} Websites",
+        "pageCount_one": "{{count}} Seite",
+        "pageCount_other": "{{count}} Seiten",
+        "synced": "{{frequency}} · synchronisiert {{when}}",
+        "notSynced": "Nicht synchronisiert",
+        "fetchedAt": "Abgerufen {{when}}"
       }
     },
     "analytics": {

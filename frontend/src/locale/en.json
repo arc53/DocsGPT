@@ -603,6 +603,22 @@
         "safeNotice": "Marked safe: agents using this source treat this chunk as clean. Editing its text removes the mark.",
         "reviewFailed": "Could not update this chunk. Please try again.",
         "noFlagged": "No chunk in this source has been flagged. A chunk is scored once a chat retrieves it."
+      },
+      "website": {
+        "page": "Page",
+        "pages": "Pages",
+        "fetched": "Fetched",
+        "filterPages": "Filter pages",
+        "openPage": "Open page",
+        "pagesByline_one": "{{pages}} page · {{tokens}} tokens",
+        "pagesByline_other": "{{pages}} pages · {{tokens}} tokens",
+        "sites_one": "{{count}} site",
+        "sites_other": "{{count}} sites",
+        "pageCount_one": "{{count}} page",
+        "pageCount_other": "{{count}} pages",
+        "synced": "{{frequency}} · synced {{when}}",
+        "notSynced": "Not synced",
+        "fetchedAt": "Fetched {{when}}"
       }
     },
     "analytics": {

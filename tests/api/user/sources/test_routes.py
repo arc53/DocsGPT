@@ -275,6 +275,40 @@ class TestPaginatedSources:
         ):
             assert key in row
 
+    def test_a_web_source_carries_its_hosts_and_page_count(self, app, pg_conn):
+        # The Knowledge card shows where a website source comes from.
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        user = "u-web-card"
+        leaf = {"type": "text/markdown", "size_bytes": 1, "token_count": 1}
+        _seed_source(
+            pg_conn, user, name="web", type="website",
+            remote_data={"entries": [
+                {"url": "https://www.docs.x.io/", "mode": "site"},
+                {"url": "https://github.com/a/b", "mode": "page"},
+            ]},
+            directory_structure={
+                "docs.x.io": {"index.md": {**leaf, "url": "https://www.docs.x.io/"}},
+                "github.com": {"a": {"b.md": {**leaf, "url": "https://github.com/a/b"}}},
+            },
+        )
+        # Ingested before pages carried their URL: every leaf is still a page.
+        _seed_source(
+            pg_conn, user, name="legacy", type="crawler", remote_data={"url": "https://y.io/"},
+            directory_structure={"index.md": leaf, "guide": {"a.md": leaf, "b.md": leaf}},
+        )
+        _seed_source(pg_conn, user, name="upload", type="local")
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10&sort=name&order=asc"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        rows = {row["name"]: row for row in response.json["paginated"]}
+        assert rows["web"]["website"] == {"hosts": ["docs.x.io", "github.com"], "pages": 2}
+        assert rows["legacy"]["website"] == {"hosts": ["y.io"], "pages": 3}
+        assert rows["upload"]["website"] is None
+
     def test_exposes_stalled_ingest_status(self, app, pg_conn):
         """A source whose ingest the reconciler escalated to 'stalled'
         surfaces ingestStatus='failed' so the UI can badge it.

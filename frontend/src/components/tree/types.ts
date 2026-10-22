@@ -21,6 +21,8 @@ export interface RowMenuContext {
   isFile: boolean;
   itemId: string;
   displayName?: string;
+  /** The file's node (a web page's carries its `url`); absent for folders. */
+  node?: FileNode;
   /** Default "View" option already provided by TreeBrowser. */
   defaultViewOption: MenuOption;
 }

@@ -96,6 +96,9 @@ export type Doc = {
   team_access?: 'viewer' | 'editor' | null;
   // The connection a synced source comes from (Google Drive account, S3 keys).
   connectionId?: string | null;
+  // A Website source's hosts and page count (also older link, crawler and
+  // sitemap sources); null for every other kind.
+  website?: { hosts: string[]; pages: number } | null;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;

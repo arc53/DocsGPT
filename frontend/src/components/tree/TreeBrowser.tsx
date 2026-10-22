@@ -10,10 +10,15 @@ import React, {
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { selectToken } from '../../preferences/preferenceSlice';
-import { EMPTY_VALUE, formatCount } from '../../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatRelative,
+} from '../../utils/dateTimeUtils';
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
-import { Eye, File, Folder } from 'lucide-react';
+import { Eye, File, FileText, Folder } from 'lucide-react';
+import { nodeAtPath, pageAddress, withPageTitles } from './pages';
 import { EmptyState } from '../ui/empty-state';
 import { useLoaderState } from '../../hooks';
 import Chunks, {
@@ -124,6 +129,31 @@ export interface TreeBrowserProps {
    * False hides the chunk list's Add, Edit and Delete; browsing stays.
    */
   canEdit?: boolean;
+  /**
+   * `pages`: a Website source (WebsiteTree). Pages are named by their title
+   * with their address under it, and the columns are Page, Tokens and
+   * Fetched (a page's byte size means little). `files` (default) otherwise.
+   */
+  variant?: 'files' | 'pages';
+  /**
+   * Replaces the counts byline under the crumbs. Gets the open file's node
+   * (null at a folder) and the source's file and token counts.
+   */
+  renderByline?: (context: {
+    openFile: FileNode | null;
+    files: number;
+    tokens: number;
+  }) => React.ReactNode;
+}
+
+/** The stored structure, with page titles as names for a Website source. */
+function prepareStructure(
+  value: DirectoryStructure,
+  variant: 'files' | 'pages',
+): DirectoryStructure {
+  return variant === 'pages' && value && typeof value === 'object'
+    ? withPageTitles(value)
+    : value;
 }
 
 /**
@@ -206,8 +236,11 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   linkedChunk,
   onCrumbsChange,
   canEdit = true,
+  variant = 'files',
+  renderByline,
 }) => {
   const { t } = useTranslation();
+  const pages = variant === 'pages';
   const [loading, setLoading] = useLoaderState(true, 500);
   const [loadFailed, setLoadFailed] = useState(false);
   // Bumped to refetch the structure (Retry).
@@ -261,7 +294,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
       const data = await response.json();
       if (!mountedRef.current) return false;
       if (data && data.directory_structure) {
-        setDirectoryStructure(data.directory_structure);
+        setDirectoryStructure(
+          prepareStructure(data.directory_structure, variant),
+        );
         onDirectoryDataLoadedRef.current?.(data);
         return true;
       }
@@ -270,7 +305,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
       console.error('Error refreshing directory structure:', err);
       return false;
     }
-  }, [docId, token]);
+  }, [docId, token, variant]);
 
   const resetPath = useCallback(() => {
     setSelectedFile(null);
@@ -294,7 +329,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         const data = await response.json();
         if (cancelled) return;
         if (data && data.directory_structure) {
-          setDirectoryStructure(data.directory_structure);
+          setDirectoryStructure(
+            prepareStructure(data.directory_structure, variant),
+          );
           onDirectoryDataLoadedRef.current?.(data);
         } else {
           setLoadFailed(true);
@@ -311,7 +348,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [docId, token, reloadKey]);
+  }, [docId, token, reloadKey, variant]);
 
   const getCurrentDirectory = useCallback((): DirectoryStructure => {
     if (!directoryStructure) return {};
@@ -378,12 +415,31 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         : {},
     );
     const files = countLeaves(navigatorNodes);
+    if (renderByline) {
+      const openPath = singleFile?.path ?? selectedFile?.id;
+      return renderByline({
+        openFile:
+          openPath && structure && typeof structure === 'object'
+            ? nodeAtPath(structure as DirectoryStructure, openPath)
+            : null,
+        files,
+        tokens: totalTokens,
+      });
+    }
     return t('settings.sources.filesByline', {
       count: files,
       files: formatCount(files),
       tokens: formatCount(totalTokens),
     });
-  }, [embedded, directoryStructure, navigatorNodes, t]);
+  }, [
+    embedded,
+    directoryStructure,
+    navigatorNodes,
+    renderByline,
+    singleFile,
+    selectedFile,
+    t,
+  ]);
 
   const handleNavigatorSelect = (node: NavigatorNode) => {
     const parts = node.path.split('/');
@@ -436,6 +492,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     isFile: boolean,
     itemId: string,
     displayName?: string,
+    node?: FileNode,
   ): MenuOption[] => {
     const defaultViewOption = buildDefaultViewOption(name, isFile, displayName);
     if (getRowMenuOptions) {
@@ -444,6 +501,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         isFile,
         itemId,
         displayName,
+        node,
         defaultViewOption,
       });
     }
@@ -455,9 +513,10 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     isFile: boolean,
     itemId: string,
     displayName?: string,
+    node?: FileNode,
   ) => (
     <ActionMenu
-      options={resolveRowMenuOptions(name, isFile, itemId, displayName)}
+      options={resolveRowMenuOptions(name, isFile, itemId, displayName, node)}
       triggerLabel={t('settings.sources.menuAlt')}
       className="shrink-0"
     />
@@ -468,9 +527,31 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
    * configured columnOrder. Sizes/tokens of 0 (or undefined) render as
    * the em dash, the app's missing-value placeholder.
    */
-  const renderColumnPair = (sizeBytes: number, tokens: number) => {
+  const renderColumnPair = (
+    sizeBytes: number,
+    tokens: number,
+    fetchedAt?: string,
+  ) => {
     const sizeDisplay = sizeBytes > 0 ? formatBytes(sizeBytes) : EMPTY_VALUE;
     const tokensDisplay = tokens > 0 ? formatCount(tokens) : EMPTY_VALUE;
+
+    // A web page: Tokens, then when it was last fetched (a folder has none).
+    if (pages) {
+      return (
+        <>
+          <TableCell width="20%" align="right" className="tabular-nums">
+            {tokensDisplay}
+          </TableCell>
+          <TableCell
+            width="30%"
+            align="right"
+            className="text-muted-foreground whitespace-nowrap"
+          >
+            {fetchedAt ? (formatRelative(fetchedAt) ?? '') : ''}
+          </TableCell>
+        </>
+      );
+    }
 
     // Numbers read down a column: right-aligned, tabular figures.
     const size = (
@@ -550,6 +631,11 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           ? node.display_name
           : name;
       const fileNode = node as FileNode;
+      const address =
+        pages && typeof fileNode.url === 'string'
+          ? pageAddress(fileNode.url)
+          : null;
+      const Icon = pages ? FileText : File;
 
       return (
         <TableRow
@@ -558,18 +644,31 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         >
           <TableCell width="40%" align="left">
             <div className="flex min-w-0 items-center gap-2">
-              <File className="text-muted-foreground size-4 shrink-0" />
-              <span className="truncate" title={displayName}>
-                {displayName}
-              </span>
+              <Icon className="text-muted-foreground size-4 shrink-0" />
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate" title={displayName}>
+                  {displayName}
+                </span>
+                {address ? (
+                  <span
+                    className="text-muted-foreground truncate text-xs"
+                    title={address}
+                  >
+                    {address}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </TableCell>
           {renderColumnPair(
             fileNode.size_bytes || 0,
             fileNode.token_count || 0,
+            typeof fileNode.fetched_at === 'string'
+              ? fileNode.fetched_at
+              : undefined,
           )}
           <TableCell width="10%" align="right">
-            {renderRowActionsCell(name, true, itemId, displayName)}
+            {renderRowActionsCell(name, true, itemId, displayName, fileNode)}
           </TableCell>
         </TableRow>
       );
@@ -655,6 +754,10 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
       isFile: true,
       itemId: `file-${singleFile.path}`,
       displayName: singleFile.label,
+      node:
+        directoryStructure && typeof directoryStructure === 'object'
+          ? (nodeAtPath(directoryStructure, singleFile.path) ?? undefined)
+          : undefined,
       defaultViewOption,
     }).filter((option) => option !== defaultViewOption);
     if (options.length === 0) return null;
@@ -721,9 +824,20 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         <TableHead>
           <TableRow>
             <TableHeader width="40%" align="left">
-              {t('settings.sources.fileName')}
+              {pages
+                ? t('settings.sources.website.page')
+                : t('settings.sources.fileName')}
             </TableHeader>
-            {columnOrder === 'size-first' ? (
+            {pages ? (
+              <>
+                <TableHeader width="20%" align="right">
+                  {t('settings.sources.tokens')}
+                </TableHeader>
+                <TableHeader width="30%" align="right">
+                  {t('settings.sources.website.fetched')}
+                </TableHeader>
+              </>
+            ) : columnOrder === 'size-first' ? (
               <>
                 <TableHeader width="30%" align="right">
                   {t('settings.sources.size')}
@@ -782,9 +896,17 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           }
           onSelect={handleNavigatorSelect}
           folderMode="tree"
-          filterLabel={t('settings.sources.filterFiles')}
+          filterLabel={
+            pages
+              ? t('settings.sources.website.filterPages')
+              : t('settings.sources.filterFiles')
+          }
           emptyLabel={t('settings.sources.noResults')}
-          title={t('settings.sources.files')}
+          title={
+            pages
+              ? t('settings.sources.website.pages')
+              : t('settings.sources.files')
+          }
         />
         <div className="min-w-0 flex-1">
           {selectedFile ? renderChunks(selectedFile) : renderTable()}

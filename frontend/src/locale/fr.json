@@ -621,6 +621,25 @@
         "safeNotice": "Marqué comme sûr : les agents qui utilisent cette source traitent ce fragment comme sain. Modifier son texte retire la marque.",
         "reviewFailed": "Impossible de mettre à jour ce fragment. Veuillez réessayer.",
         "noFlagged": "Aucun fragment de cette source n’a été signalé. Un fragment est noté dès qu’une conversation le récupère."
+      },
+      "website": {
+        "page": "Page web",
+        "pages": "Pages web",
+        "fetched": "Récupérée",
+        "filterPages": "Filtrer les pages",
+        "openPage": "Ouvrir la page",
+        "pagesByline_one": "{{pages}} page · {{tokens}} jetons",
+        "pagesByline_other": "{{pages}} pages · {{tokens}} jetons",
+        "pagesByline_many": "{{pages}} pages · {{tokens}} jetons",
+        "sites_one": "{{count}} site",
+        "sites_other": "{{count}} sites",
+        "sites_many": "{{count}} sites",
+        "pageCount_one": "{{count}} page",
+        "pageCount_other": "{{count}} pages",
+        "pageCount_many": "{{count}} pages",
+        "synced": "{{frequency}} · synchronisé {{when}}",
+        "notSynced": "Non synchronisé",
+        "fetchedAt": "Récupérée {{when}}"
       }
     },
     "analytics": {

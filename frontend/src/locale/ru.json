@@ -639,6 +639,28 @@
         "safeNotice": "Отмечен как безопасный: агенты, использующие этот источник, считают фрагмент чистым. Если изменить текст, отметка снимется.",
         "reviewFailed": "Не удалось обновить фрагмент. Попробуйте ещё раз.",
         "noFlagged": "В этом источнике нет помеченных фрагментов. Фрагмент оценивается, когда чат впервые его находит."
+      },
+      "website": {
+        "page": "Страница",
+        "pages": "Страницы",
+        "fetched": "Загружено",
+        "filterPages": "Фильтр страниц",
+        "openPage": "Открыть страницу",
+        "pagesByline_one": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "pagesByline_few": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "pagesByline_many": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "pagesByline_other": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "sites_one": "Сайтов: {{count}}",
+        "sites_few": "Сайтов: {{count}}",
+        "sites_many": "Сайтов: {{count}}",
+        "sites_other": "Сайтов: {{count}}",
+        "pageCount_one": "Страниц: {{count}}",
+        "pageCount_few": "Страниц: {{count}}",
+        "pageCount_many": "Страниц: {{count}}",
+        "pageCount_other": "Страниц: {{count}}",
+        "synced": "{{frequency}} · синхронизировано {{when}}",
+        "notSynced": "Не синхронизируется",
+        "fetchedAt": "Загружено {{when}}"
       }
     },
     "analytics": {

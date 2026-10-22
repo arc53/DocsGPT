@@ -108,6 +108,21 @@ def set_page(structure: Dict[str, Any], path: str, leaf: Dict[str, Any]) -> None
     node[parts[-1]] = leaf
 
 
+def count_pages(structure: Dict[str, Any]) -> int:
+    """How many pages a web source's tree holds: its leaves.
+
+    Leaves from before pages carried their ``url`` count too, so an older
+    crawler or sitemap source isn't shown as empty.
+    """
+    count = 0
+    for node in (structure or {}).values():
+        if _is_leaf(node):
+            count += 1
+        elif isinstance(node, dict):
+            count += count_pages(node)
+    return count
+
+
 def total_tokens(structure: Dict[str, Any]) -> int:
     """Sum of the tree's leaf token counts (the source's ``tokens``)."""
     total = 0

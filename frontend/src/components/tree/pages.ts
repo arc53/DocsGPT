@@ -1,0 +1,101 @@
+import type { DirectoryStructure, FileNode } from './types';
+
+const isLeaf = (node: unknown): node is FileNode =>
+  !!node && typeof node === 'object' && 'token_count' in node;
+
+// What sites put between a page's own title and the site's name.
+const TITLE_SEPARATORS = [' | ', ' – ', ' — ', ' - '];
+
+function pageTitles(structure: DirectoryStructure): string[] {
+  const titles: string[] = [];
+  for (const node of Object.values(structure ?? {})) {
+    if (isLeaf(node)) {
+      if (node.url && typeof node.title === 'string' && node.title.trim())
+        titles.push(node.title.trim());
+    } else if (node && typeof node === 'object') {
+      titles.push(...pageTitles(node as DirectoryStructure));
+    }
+  }
+  return titles;
+}
+
+/**
+ * The site name every page title ends with (` | DocsGPT Docs`), when the
+ * source has two or more pages and all of them share it; else ''.
+ */
+function sharedTitleSuffix(titles: string[]): string {
+  if (titles.length < 2) return '';
+  const suffixOf = (title: string) => {
+    let best = -1;
+    for (const separator of TITLE_SEPARATORS) {
+      const at = title.lastIndexOf(separator);
+      if (at > best) best = at;
+    }
+    return best > 0 ? title.slice(best) : '';
+  };
+  const suffix = suffixOf(titles[0]);
+  return suffix && titles.every((title) => suffixOf(title) === suffix)
+    ? suffix
+    : '';
+}
+
+function namePages(
+  structure: DirectoryStructure,
+  suffix: string,
+): DirectoryStructure {
+  const result: DirectoryStructure = {};
+  for (const [name, node] of Object.entries(structure ?? {})) {
+    if (isLeaf(node)) {
+      let title = typeof node.title === 'string' ? node.title.trim() : '';
+      if (suffix && title.endsWith(suffix))
+        title = title.slice(0, -suffix.length);
+      result[name] =
+        node.url && title && !node.display_name
+          ? { ...node, display_name: title }
+          : node;
+    } else if (node && typeof node === 'object') {
+      result[name] = namePages(node as DirectoryStructure, suffix) as FileNode;
+    } else {
+      result[name] = node;
+    }
+  }
+  return result;
+}
+
+/**
+ * A Website source's tree with each page named by its title.
+ *
+ * A web page's leaf carries `url` and `title` (see the worker); the tree,
+ * table and crumbs name a file by `display_name`, so the title goes there,
+ * without the site name when every page's title ends with the same one
+ * (`Security Checklist | DocsGPT Docs`). A `display_name` already set wins.
+ *
+ * @param structure The source's `directory_structure`.
+ * @returns A copy; the input is not changed.
+ */
+export function withPageTitles(
+  structure: DirectoryStructure,
+): DirectoryStructure {
+  return namePages(structure, sharedTitleSuffix(pageTitles(structure)));
+}
+
+/**
+ * The leaf at a tree path (`Deploying/Docker.md`), or null for a folder or
+ * a missing path.
+ */
+export function nodeAtPath(
+  structure: DirectoryStructure,
+  path: string,
+): FileNode | null {
+  let node: unknown = structure;
+  for (const part of path.split('/').filter(Boolean)) {
+    if (!node || typeof node !== 'object' || isLeaf(node)) return null;
+    node = (node as DirectoryStructure)[part];
+  }
+  return isLeaf(node) ? node : null;
+}
+
+/** A page's address as shown under its title: no scheme, no trailing slash. */
+export function pageAddress(url: string): string {
+  return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/(?=$|\?)/, '');
+}
