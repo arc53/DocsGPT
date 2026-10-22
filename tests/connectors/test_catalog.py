@@ -313,7 +313,7 @@ def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
 
     assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
 
-def test_context7_preset_uses_remote_oauth_catalog_contract():
+def test_context7_preset_uses_remote_oauth_catalog_contract() -> None:
     context7 = catalog.get_definition("mcp:context7")
 
     assert context7.name == "Context7"
