@@ -9,6 +9,8 @@ removed by hand survive a sync:
   sitemap (robots.txt, then the well-known locations) and falls back to
   following links. The limit takes the sitemap's own order, after scope and
   skips are applied;
+- ``WEB_MAX_PAGES`` caps the whole source: pages are fetched first, and sites
+  share what is left, in their order;
 - ``skip`` lists addresses a site's crawl must leave out: an exact page, or a
   section written as ``https://host/path/*``.
 
@@ -252,6 +254,9 @@ def parse_website_config(raw: Union[str, Dict[str, Any], None]) -> Dict[str, Any
         entries.append(entry)
     if not entries:
         raise ValueError("A website source needs at least one page or site")
+    cap = int(settings.WEB_MAX_PAGES)
+    if sum(1 for entry in entries if entry["mode"] == "page") > cap:
+        raise ValueError(f"A website source holds up to {cap} pages")
     skip = [rule.strip() for rule in raw.get("skip") or [] if isinstance(rule, str) and rule.strip()]
     return {"entries": entries, "skip": skip, "keep_links": bool(raw.get("keep_links"))}
 
@@ -271,15 +276,19 @@ class WebsiteLoader(BaseRemote):
             inputs: The Website config (see ``parse_website_config``).
 
         Returns:
-            One document per page, in entry order.
+            One document per page: the pages first, then each site's, in entry
+            order. ``WEB_MAX_PAGES`` caps the total, so sites get what the
+            pages leave.
         """
         config = parse_website_config(inputs)
         keep_links = config["keep_links"]
+        cap = int(settings.WEB_MAX_PAGES)
         documents: List[Document] = []
         seen = set()
         site_reports = []
 
-        for entry in config["entries"]:
+        entries = sorted(config["entries"], key=lambda entry: entry["mode"] != "page")
+        for entry in entries:
             if entry["mode"] == "page":
                 try:
                     key = page_key(entry["url"])
@@ -290,7 +299,13 @@ class WebsiteLoader(BaseRemote):
                     continue
                 docs = WebLoader(keep_links=keep_links).load_data([entry["url"]])
             else:
-                docs, report = self._load_site(entry, config["skip"], keep_links)
+                budget = cap - len(documents)
+                if budget < 1:
+                    site_reports.append({
+                        "url": entry["url"], "found_with": None, "pages": 0, "limit_reached": True,
+                    })
+                    continue
+                docs, report = self._load_site(entry, config["skip"], keep_links, budget)
                 site_reports.append(report)
             for doc in docs:
                 key = page_key(doc.extra_info["source"])
@@ -308,13 +323,16 @@ class WebsiteLoader(BaseRemote):
         return dedupe_virtual_paths(documents)
 
     @staticmethod
-    def _load_site(entry: Dict[str, Any], skip: List[str], keep_links: bool) -> Tuple[List[Document], Dict[str, Any]]:
+    def _load_site(
+        entry: Dict[str, Any], skip: List[str], keep_links: bool, budget: Optional[int] = None,
+    ) -> Tuple[List[Document], Dict[str, Any]]:
         """Load one whole-site entry through its sitemap, else by following links.
 
         Args:
             entry: A ``site`` entry from ``parse_website_config``.
             skip: The source's skip rules.
             keep_links: Keep the URL of links inside sentences.
+            budget: The most pages the source has left; lowers the entry's limit.
 
         Returns:
             The pages, and a report: the start URL, ``found_with`` (``sitemap``,
@@ -322,6 +340,8 @@ class WebsiteLoader(BaseRemote):
         """
         url = entry["url"]
         limit = _clamp_pages(entry.get("max_pages"))
+        if budget is not None:
+            limit = max(1, min(limit, budget))
         scope = SiteScope(url, entry.get("path_prefix", ""), entry.get("include_subdomains", False), skip)
         discovery = entry.get("discovery", "auto")
         pasted_sitemap = _is_sitemap_url(url)

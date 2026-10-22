@@ -278,6 +278,37 @@ class TestAddPages:
         assert response.json["mode"] == "sync"
         sync_task.delay.assert_called_once()
 
+    def test_pages_past_the_admin_cap_are_refused(self, app, pg_conn):
+        # The seeded source holds 4 pages; the cap covers the whole source.
+        src = _seed(pg_conn)
+        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 5
+            response, pages_task, sync_task = self._add(app, pg_conn, src, [
+                {"url": "https://docs.x.io/one", "mode": "page"},
+                {"url": "https://docs.x.io/two", "mode": "page"},
+            ])
+            fits, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+
+        assert response.status_code == 400
+        assert response.json["code"] == "page_limit"
+        assert response.json["max_pages"] == 5
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+        assert fits.status_code == 200
+        entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert [e["url"] for e in entries][-1] == "https://docs.x.io/one"
+        assert "https://docs.x.io/two" not in [e["url"] for e in entries]
+
+    def test_a_site_on_a_full_source_is_refused(self, app, pg_conn):
+        src = _seed(pg_conn)
+        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 4
+            response, _, sync_task = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/API/", "mode": "site"}])
+
+        assert response.status_code == 400
+        assert response.json["code"] == "page_limit"
+        sync_task.delay.assert_not_called()
+
     def test_bad_entries_are_400(self, app, pg_conn):
         src = _seed(pg_conn)
         response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": ""}])

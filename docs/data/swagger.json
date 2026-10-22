@@ -7361,7 +7361,7 @@
     },
     "/api/website/pages": {
       "post": {
-        "description": "Add pages or sites to a Website source; they stay in every sync. Pages on the source's hosts are fetched and appended now; a site, or a page on a new host, rebuilds the source like a sync.",
+        "description": "Add pages or sites to a Website source; they stay in every sync. Pages on the source's hosts are fetched and appended now; a site, or a page on a new host, rebuilds the source like a sync. Refused with code page_limit when the source would hold more than WEB_MAX_PAGES pages.",
         "operationId": "post_add_website_pages",
         "parameters": [
           {

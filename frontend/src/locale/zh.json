@@ -620,6 +620,7 @@
         "addPages": "添加页面",
         "addPagesHint": "立即获取，并在每次同步时保留。添加整个网站会重建此来源。",
         "addFailed": "无法添加页面。",
+        "pageLimit_other": "此来源最多可包含 {{count}} 个页面。",
         "addingPages": "正在添加页面…",
         "refreshing": "正在刷新页面…",
         "refreshPage": "刷新页面",

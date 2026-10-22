@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-22
+lastUpdated: 2026-10-23
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1212,9 +1212,9 @@ Page limit a whole-site Website source gets when it names none: the crawl or sit
 
 ### `WEB_MAX_PAGES`
 
-Type `int`, default `500`, must be `>= 1`.
+Type `int`, default `100`, must be `>= 1`.
 
-Highest page limit a whole-site Website source may ask for; larger requests are clamped to it. Each page is a fetch plus embedding, so this bounds how long one site ingest or sync can run.
+Most pages one Website source may hold, across all its pages and sites: pages added by address count first, sites share what is left, and Add pages refuses to go past it. A site's own page limit is clamped to it. Each page is a fetch plus embedding, so this bounds how long one ingest or sync can run.
 
 ### `PDF_TRUST_CHECK`
 

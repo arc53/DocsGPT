@@ -280,6 +280,45 @@ class TestWebsiteLoaderSites:
         assert len(docs) == 3
         assert len(default) == 2
 
+    def test_the_admin_cap_covers_the_whole_source(self, web):
+        links = [f"/p{i}" for i in range(10)]
+        sites = {"https://x.io/": page("Home", links=links), "https://y.io/a": page("Y")}
+        sites.update({f"https://x.io/p{i}": page(f"P{i}") for i in range(10)})
+        web(sites)
+        loader = WebsiteLoader()
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 3
+            fake_settings.WEB_DEFAULT_PAGES = 2
+            # The page is listed after the site but is kept: added pages
+            # come first, and the site gets what is left.
+            docs = loader.load_data({"entries": [
+                {"url": "https://x.io/", "mode": "site", "max_pages": 50},
+                {"url": "https://y.io/a", "mode": "page"},
+            ]})
+
+        assert len(docs) == 3
+        assert "https://y.io/a" in sources(docs)
+        assert loader.report["sites"][0]["limit_reached"] is True
+
+    def test_sites_share_the_admin_cap(self, web):
+        sites = {}
+        for host in ("x.io", "z.io"):
+            sites[f"https://{host}/"] = page("Home", links=[f"/p{i}" for i in range(5)])
+            sites.update({f"https://{host}/p{i}": page(f"P{i}") for i in range(5)})
+        web(sites)
+        loader = WebsiteLoader()
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 4
+            fake_settings.WEB_DEFAULT_PAGES = 4
+            docs = loader.load_data({"entries": [
+                {"url": "https://x.io/", "mode": "site", "max_pages": 3},
+                {"url": "https://z.io/", "mode": "site", "max_pages": 3},
+            ]})
+
+        assert len(docs) == 4
+        assert [s["pages"] for s in loader.report["sites"]] == [3, 1]
+        assert loader.report["sites"][1]["limit_reached"] is True
+
     def test_keep_links_reaches_the_extractor(self, web):
         web({"https://x.io/a": page("A", body="Read the <a href='https://ref.io/spec'>spec</a> before you start.")})
         plain = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/a", "mode": "page"}]})
@@ -310,6 +349,16 @@ class TestParseWebsiteConfig:
         config = parse_website_config({"entries": [{"url": "https://x.io/a", "max_pages": 9}]})
 
         assert config["entries"] == [{"url": "https://x.io/a", "mode": "page"}]
+
+    def test_rejects_more_pages_than_the_admin_cap(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        entries = [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            with pytest.raises(ValueError, match="up to 2 pages"):
+                parse_website_config({"entries": entries})
+            assert len(parse_website_config({"entries": entries[:2]})["entries"]) == 2
 
     @pytest.mark.parametrize(
         "raw",

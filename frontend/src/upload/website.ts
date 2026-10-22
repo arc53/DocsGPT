@@ -44,7 +44,7 @@ export type WebsiteConfig = {
 
 /** The page limit and its cap when /api/config doesn't say (WEB_DEFAULT_PAGES, WEB_MAX_PAGES). */
 export const DEFAULT_WEB_PAGES = 100;
-export const MAX_WEB_PAGES = 500;
+export const MAX_WEB_PAGES = 100;
 
 export function defaultWebsiteDraft(defaultPages: number): WebsiteDraft {
   return {

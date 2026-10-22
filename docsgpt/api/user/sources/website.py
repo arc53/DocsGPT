@@ -20,9 +20,11 @@ from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.api.user.sources.routes import sources_ns
 from docsgpt.api.user.tasks import sync_source, website_pages
+from docsgpt.core.settings import settings
 from docsgpt.parser.remote.website_loader import page_key, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
+    count_pages,
     folder_skip_rule,
     pages_under,
     remove_pages,
@@ -36,9 +38,9 @@ from docsgpt.utils import check_required_fields
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 
-def _error(message: str, status: int = 400, code: str | None = None):
-    """A failed response; ``code`` names an error the UI words itself."""
-    body = {"success": False, "error": message}
+def _error(message: str, status: int = 400, code: str | None = None, **details):
+    """A failed response; ``code`` names an error the UI words itself, with ``details`` for its message."""
+    body = {"success": False, "error": message, **details}
     if code:
         body["code"] = code
     return make_response(jsonify(body), status)
@@ -225,7 +227,8 @@ class AddWebsitePages(Resource):
     @api.doc(
         description=(
             "Add pages or sites to a Website source; they stay in every sync. Pages on the source's hosts are "
-            "fetched and appended now; a site, or a page on a new host, rebuilds the source like a sync."
+            "fetched and appended now; a site, or a page on a new host, rebuilds the source like a sync. "
+            "Refused with code page_limit when the source would hold more than WEB_MAX_PAGES pages."
         ),
     )
     def post(self):
@@ -249,6 +252,14 @@ class AddWebsitePages(Resource):
                     return _error("Not a website source")
                 listed = {(e["mode"], page_key(e["url"])) for e in config["entries"]}
                 added = [e for e in new_entries if (e["mode"], page_key(e["url"])) not in listed]
+                # WEB_MAX_PAGES caps the whole source, so it can't grow past
+                # what a sync may fetch again.
+                cap = int(settings.WEB_MAX_PAGES)
+                held = count_pages(doc["directory_structure"]) if isinstance(doc.get("directory_structure"), dict) else 0
+                new_pages = sum(1 for e in added if e["mode"] == "page")
+                adds_site = any(e["mode"] == "site" for e in added)
+                if held + new_pages > cap or (adds_site and held + new_pages >= cap):
+                    return _error(f"A website source holds up to {cap} pages", code="page_limit", max_pages=cap)
                 config = {**config, "entries": config["entries"] + added}
                 SourcesRepository(conn).update(str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"})
         except AccessDenied as err:

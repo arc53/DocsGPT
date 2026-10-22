@@ -133,11 +133,12 @@ class IngestionSettings(SettingsGroup):
         ),
     )
     WEB_MAX_PAGES: int = Field(
-        default=500,
+        default=100,
         ge=1,
         description=(
-            "Highest page limit a whole-site Website source may ask for; larger requests are clamped to it. Each "
-            "page is a fetch plus embedding, so this bounds how long one site ingest or sync can run."
+            "Most pages one Website source may hold, across all its pages and sites: pages added by address count "
+            "first, sites share what is left, and Add pages refuses to go past it. A site's own page limit is "
+            "clamped to it. Each page is a fetch plus embedding, so this bounds how long one ingest or sync can run."
         ),
     )
     PDF_TRUST_CHECK: bool = Field(

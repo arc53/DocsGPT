@@ -44,11 +44,12 @@ export default function AddWebsitePagesModal({
     defaultWebsiteDraft(limits.defaultPages),
   );
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // The message to show when the server refused, worded here.
+  const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
     setPending(true);
-    setFailed(false);
+    setError(null);
     const startedAt = Date.now();
     try {
       const response = await userService.addWebsitePages(
@@ -59,11 +60,20 @@ export default function AddWebsitePagesModal({
         token,
       );
       const data = await response.json();
-      if (!response.ok || !data?.success) throw new Error('add failed');
+      if (!response.ok || !data?.success) {
+        setError(
+          data?.code === 'page_limit'
+            ? t('settings.sources.website.pageLimit', {
+                count: data.max_pages,
+              })
+            : t('settings.sources.website.addFailed'),
+        );
+        return;
+      }
       onQueued(startedAt);
       onClose();
     } catch {
-      setFailed(true);
+      setError(t('settings.sources.website.addFailed'));
     } finally {
       setPending(false);
     }
@@ -88,11 +98,9 @@ export default function AddWebsitePagesModal({
       }
     >
       <div className="flex flex-col gap-5">
-        {failed && (
+        {error && (
           <Alert variant="destructive">
-            <AlertDescription>
-              {t('settings.sources.website.addFailed')}
-            </AlertDescription>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
         <WebsiteFields
