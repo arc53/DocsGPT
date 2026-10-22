@@ -839,6 +839,29 @@ class TestDownloadToDirectory:
         assert _files(tmp_path) == ["invoice.pdf"]
 
     @pytest.mark.unit
+    def test_file_urls_name_each_downloaded_file(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "Reports", "mimeType": FOLDER},
+            "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root",
+                   "webViewLink": "https://drive.google.com/file/d/f1/view"},
+            "d1": {"name": "Plan", "mimeType": GDOC, "webViewLink": "https://docs.google.com/document/d/d1/edit"},
+            "f2": {"name": "bad.pdf", "mimeType": "application/pdf",
+                   "webViewLink": "https://drive.google.com/file/d/f2/view"},
+            "f3": {"name": "nolink.pdf", "mimeType": "application/pdf"},
+        }, errors={"f2": _http_error(500, "backendError")})
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["d1", "f2", "f3"]})
+        assert result["file_urls"] == {
+            "Reports/q1.pdf": "https://drive.google.com/file/d/f1/view",
+            "Plan.docx": "https://docs.google.com/document/d/d1/edit",
+        }
+
+    @pytest.mark.unit
+    def test_item_fields_ask_for_the_web_link(self):
+        from docsgpt.parser.connectors.google_drive.loader import _ITEM_FIELDS
+
+        assert "webViewLink" in _ITEM_FIELDS.split(",")
+
+    @pytest.mark.unit
     def test_unsupported_types_skipped(self, drive_loader, tmp_path):
         loader, _ = drive_loader({
             "root": {"name": "Mixed", "mimeType": FOLDER},

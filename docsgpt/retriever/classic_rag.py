@@ -420,7 +420,7 @@ class ClassicRAG(BaseRetriever):
                         entry = {
                             "text": page_content,
                             **labels,
-                            **self._connector_labels.for_source(vectorstore_id),
+                            **self._connector_labels.for_source(vectorstore_id, metadata),
                         }
                         if self.include_scores:
                             entry["score"] = score

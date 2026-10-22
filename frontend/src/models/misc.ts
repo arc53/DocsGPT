@@ -54,6 +54,7 @@ export type SourceRetrievalConfig = {
   chunks?: number; // top-k, default 6
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
+  show_links?: boolean; // default true; synced sources link each file in its service
   prescreen?: SourcePrescreenConfig | null; // null = off
   reranker?: SourceRerankerConfig | null; // null = relevance off
   graph?: SourceGraphRetrievalConfig; // graphrag retriever only

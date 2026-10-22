@@ -68,6 +68,37 @@ describe('RetrievalOptions disclosure', () => {
     expect(inner.className.split(' ')).toContain('pt-4');
   });
 
+  it('offers the file-link switch only where the source has links', () => {
+    const onChange = vi.fn();
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={onChange}
+          alwaysOpen
+        />,
+      );
+    });
+    expect(container.querySelector('#retrieval-show-links')).toBeNull();
+
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={onChange}
+          alwaysOpen
+          linksAvailable
+        />,
+      );
+    });
+    const toggle = container.querySelector(
+      '#retrieval-show-links',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    act(() => toggle.click());
+    expect(onChange.mock.calls.at(-1)![0].retrieval.show_links).toBe(false);
+  });
+
   it('caps the chunk-size input and explains the limit', () => {
     act(() => {
       root.render(

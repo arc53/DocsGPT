@@ -47,8 +47,13 @@ class TestParseLenient:
         assert r.chunks == 6
         assert r.score_threshold is None
         assert r.rephrase_query is True
+        assert r.show_links is True
         assert r.reranker is None
         assert r.prescreen is None
+
+    def test_show_links_can_be_turned_off(self):
+        cfg = SourceConfig.model_validate({"retrieval": {"show_links": False}})
+        assert cfg.retrieval.show_links is False
 
     def test_parse_partial_merges_onto_defaults(self):
         cfg = SourceConfig.parse({"retrieval": {"chunks": 5}})

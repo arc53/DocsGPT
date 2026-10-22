@@ -328,3 +328,49 @@ class TestConnectorSyncFingerprint:
         tuned = worker._connector_sync_fingerprint("fp", {"chunking": {"max_tokens": 500}})
         assert tuned != base
         assert tuned == worker._connector_sync_fingerprint("fp", '{"chunking": {"max_tokens": 500}}')
+
+    def test_fingerprints_stored_before_web_links_force_one_reingest(self):
+        import hashlib
+        import json
+
+        from docsgpt import worker
+
+        before = hashlib.sha256(
+            json.dumps({"selection": "fp", "config": {}}, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        assert worker._connector_sync_fingerprint("fp", None) != before
+
+
+@pytest.mark.unit
+class TestIngestConnectorWebLinks:
+    """Each chunk of a downloaded file carries the file's link in the service."""
+
+    def test_chunks_carry_their_files_link(self, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        _mock_connector_pipeline.download_to_directory.return_value = {
+            "files_downloaded": 2,
+            "empty_result": False,
+            "file_urls": {"Reports/q1.pdf": "https://drive.google.com/file/d/f1/view"},
+        }
+        reader = MagicMock(name="reader")
+        reader.load_data.return_value = [
+            Document(text="q1 body", extra_info={"source": "Reports/q1.pdf"}),
+            Document(text="other body", extra_info={"source": "other.pdf"}),
+        ]
+        reader.directory_structure = {}
+        monkeypatch.setattr(worker, "SimpleDirectoryReader", lambda *a, **kw: reader)
+        stored: list = []
+        monkeypatch.setattr(
+            worker, "embed_and_store_documents",
+            lambda docs, full_path, source_id, task, **kw: stored.extend(docs),
+        )
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload",
+        )
+
+        by_source = {doc.metadata["source"]: doc.metadata for doc in stored}
+        assert by_source["Reports/q1.pdf"]["url"] == "https://drive.google.com/file/d/f1/view"
+        assert "url" not in by_source["other.pdf"]

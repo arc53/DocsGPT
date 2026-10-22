@@ -212,6 +212,7 @@ class RetrievalConfig(BaseModel):
     chunks: int = 6  # final top-k
     score_threshold: Optional[float] = None  # pgvector/mongo/qdrant/milvus honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
+    show_links: bool = True  # synced sources: citations and the agent get each file's link in its service
     reranker: Optional[dict] = None  # None = relevance off; else RerankerConfig dict
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
     graph: GraphRetrievalConfig = GraphRetrievalConfig()  # graphrag retriever only

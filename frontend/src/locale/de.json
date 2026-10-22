@@ -434,6 +434,8 @@
           "similarityThresholdPlaceholder": "Keiner",
           "similarityThresholdHint": "Verwirft Chunks, deren Ähnlichkeitswert vom Retriever unter diesem Wert (0–1) liegt. Gefiltert wird nach dem Wert des Retrievers, nicht nach dem Relevanzmodell.",
           "rephraseQuery": "Anfrage vor der Suche umformulieren",
+          "showLinks": "Auf die Originaldateien verlinken",
+          "showLinksHint": "Quellenangaben und der Agent erhalten den Link jeder Datei in dem Dienst, aus dem sie synchronisiert wurde. Zum Öffnen braucht man dort weiterhin Zugriff auf die Datei.",
           "retriever": "Retriever",
           "retrievers": {
             "classic": "Klassisch",

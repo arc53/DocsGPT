@@ -21,7 +21,7 @@ from docsgpt.parser.schema.base import Document
 _FOLDER_MIME = 'application/vnd.google-apps.folder'
 _SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
 # Metadata read for every walked item; shortcutDetails says where a shortcut points.
-_ITEM_FIELDS = 'id,name,mimeType,modifiedTime,driveId,shortcutDetails(targetId,targetMimeType)'
+_ITEM_FIELDS = 'id,name,mimeType,modifiedTime,driveId,webViewLink,shortcutDetails(targetId,targetMimeType)'
 # Retries after the first attempt. Google's client retries 5xx, 429, rate-limit
 # 403s and dropped connections with exponential backoff and jitter (1s, 2s, 4s...).
 _NUM_RETRIES = 5
@@ -638,8 +638,9 @@ class GoogleDriveLoader(BaseConnectorLoader):
         Returns:
             The download summary: ``files_downloaded``, ``files_failed``,
             ``files_skipped``, ``sync_fingerprint``, ``directory_path``,
-            ``empty_result``, ``source_type`` and ``config_used``, plus
-            ``error`` when the download could not run. ``sync_fingerprint``
+            ``empty_result``, ``source_type``, ``config_used`` and
+            ``file_urls`` (each downloaded file's path under ``local_dir`` →
+            its Drive link), plus ``error`` when the download could not run. ``sync_fingerprint``
             is ``None`` when a file or folder failed, or a file was refused
             for a reason other than its content (sharing, permissions), since
             that can change without the file's ``modifiedTime`` changing.
@@ -651,6 +652,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
         stats = _WalkStats()
         files_downloaded = 0
         entries = []
+        file_urls = {}
         fingerprintable = True
 
         try:
@@ -665,6 +667,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 try:
                     self._download_file(file_metadata, _safe_join(local_dir, parts))
                     files_downloaded += 1
+                    if file_metadata.get('webViewLink'):
+                        file_urls[os.path.join(*parts)] = file_metadata['webViewLink']
                 except Exception as e:
                     stats.record_failure(file_metadata.get('name'), e)
                     if not _error_reasons(e) & _CONTENT_REFUSAL_REASONS:
@@ -678,7 +682,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 "directory_path": local_dir,
                 "empty_result": files_downloaded == 0,
                 "source_type": "google_drive",
-                "config_used": config
+                "config_used": config,
+                "file_urls": file_urls,
             }
 
         except Exception as e:
@@ -691,6 +696,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 "empty_result": True,
                 "source_type": "google_drive",
                 "config_used": config,
+                "file_urls": file_urls,
                 "error": str(e)
             }
 

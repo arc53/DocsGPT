@@ -40,6 +40,7 @@ import {
 import RetrievalOptions, {
   isPrescreenConfigValid,
   optionsToConfig,
+  sourceHasFileLinks,
 } from '../settings/components/RetrievalOptions';
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
@@ -896,6 +897,7 @@ export default function ConnectWizard({
             graphRAGAvailable={graphRAGAvailable}
             availableModels={availableModels}
             decision={decision}
+            linksAvailable={sourceHasFileLinks(connector.key)}
           />
         </>
       )}

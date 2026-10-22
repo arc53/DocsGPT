@@ -72,6 +72,10 @@ class ConfluenceLoader(BaseConnectorLoader):
         self.base_url = API_V2.format(cloud_id=self.cloud_id)
         self.download_base = DOWNLOAD_BASE.format(cloud_id=self.cloud_id)
         self.next_page_token = None
+        # The site's web address (``https://acme.atlassian.net/wiki``), from the first response that names it.
+        self._site_base: Optional[str] = None
+        # Downloaded file's local path → its web UI link, relative to the site.
+        self._file_links: Dict[str, str] = {}
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -105,6 +109,7 @@ class ConfluenceLoader(BaseConnectorLoader):
         file_ids = config.get("file_ids", [])
         folder_ids = config.get("folder_ids", [])
         files_downloaded = 0
+        self._file_links = {}
 
         os.makedirs(local_dir, exist_ok=True)
 
@@ -127,7 +132,44 @@ class ConfluenceLoader(BaseConnectorLoader):
             "empty_result": files_downloaded == 0,
             "source_type": "confluence",
             "config_used": config,
+            "file_urls": self._file_urls(local_dir),
         }
+
+    def _note_site(self, links: Any) -> None:
+        """Keep the site's web address from a response's ``_links.base``."""
+        if not self._site_base and isinstance(links, dict) and links.get("base"):
+            self._site_base = str(links["base"])
+
+    def _note_link(self, path: str, links: Any) -> None:
+        """Remember the web UI link of the file written at ``path``."""
+        webui = links.get("webui") if isinstance(links, dict) else None
+        if webui:
+            self._file_links[path] = str(webui)
+
+    def _fetch_site_base(self) -> Optional[str]:
+        """Read the site's web address from a one-item space listing; ``None`` when it cannot."""
+        try:
+            response = requests.get(
+                f"{self.base_url}/spaces", headers=self._headers(), params={"limit": 1}, timeout=30
+            )
+            response.raise_for_status()
+            return response.json().get("_links", {}).get("base") or None
+        except Exception as e:
+            logger.warning("Could not read the Confluence site address: %s", e)
+            return None
+
+    def _file_urls(self, local_dir: str) -> Dict[str, str]:
+        """Each downloaded file's web link, keyed by its path under ``local_dir``."""
+        if not self._file_links:
+            return {}
+        base = self._site_base or self._fetch_site_base()
+        if not base:
+            return {}
+        urls = {}
+        for path, webui in self._file_links.items():
+            url = webui if webui.startswith(("https://", "http://")) else f"{base.rstrip('/')}/{webui.lstrip('/')}"
+            urls[os.path.relpath(path, local_dir)] = url
+        return urls
 
     def _list_spaces(
         self, limit: int, cursor: Optional[str], search_query: Optional[str]
@@ -294,6 +336,8 @@ class ConfluenceLoader(BaseConnectorLoader):
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(body)
 
+            self._note_site(page.get("_links"))
+            self._note_link(file_path, page.get("_links"))
             return True
         except Exception as e:
             logger.error("Error downloading page %s: %s", page_id, e)
@@ -316,6 +360,7 @@ class ConfluenceLoader(BaseConnectorLoader):
                 )
                 response.raise_for_status()
                 data = response.json()
+                self._note_site(data.get("_links"))
 
                 for att in data.get("results", []):
                     media_type = att.get("mediaType", "")
@@ -343,6 +388,7 @@ class ConfluenceLoader(BaseConnectorLoader):
                         for chunk in file_resp.iter_content(chunk_size=8192):
                             f.write(chunk)
 
+                    self._note_link(file_path, att.get("_links"))
                     downloaded += 1
 
                 next_link = data.get("_links", {}).get("next")
@@ -374,6 +420,7 @@ class ConfluenceLoader(BaseConnectorLoader):
             except Exception as e:
                 logger.error("Error listing pages in space %s: %s", space_id, e)
                 break
+            self._note_site(data.get("_links"))
 
             for page in data.get("results", []):
                 page_id = page.get("id")
