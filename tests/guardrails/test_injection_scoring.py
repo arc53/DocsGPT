@@ -6,6 +6,7 @@ The decision model is ``FakeDecider`` and the cache a dict: no model, no databas
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 
 import pytest
@@ -16,6 +17,7 @@ from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.guardrails import injection_scoring as scoring
 from docsgpt.retriever.labels import chunk_key
+from tests.decisions.fakes import byte_tokenizer
 
 #: The cache read as it ships, before the suite-wide fixture replaces it with an empty one.
 REAL_LOAD = scoring._load
@@ -199,7 +201,35 @@ class TestCalls:
         assert len(fake.calls) == 1 and list(result) == [None, None, None]
         assert result.reasons == ["loading"] * 3 and cache.rows == {}
 
-    @pytest.mark.parametrize("reason", ["timeout", "bad_item"])
+    @pytest.mark.parametrize("budget, size", [
+        (Budget.BACKGROUND, "GUARDRAILS_INJECTION_BATCH_STATES"), (Budget.hot(1.5), "DECISION_MAX_BATCH_STATES"),
+    ])
+    def test_a_part_the_backend_failed_on_does_not_stop_the_rest(self, cache, monkeypatch, budget, size):
+        monkeypatch.setattr(settings, size, 2)
+        fake = FakeDecider({"injection": lambda state, q: 0.99 if "PAYLOAD" in state["text"] else 0.01})
+        real = fake.decide_batch
+
+        def poison_fails(requests, **kwargs):
+            done = real(requests, **kwargs)
+            failed = ["POISON" in r.state["text"] for r in requests]
+            return BatchResult([None if f else d for d, f in zip(done, failed)],
+                               ["backend_error" if f else None for f in failed])
+
+        monkeypatch.setattr(fake, "decide_batch", poison_fails)
+        result = score(fake, ["POISON 1", "POISON 2", "PAYLOAD"], budget=budget)
+        assert len(fake.calls) == 2 and result.reasons == ["backend_error", "backend_error", None]
+        assert result[:2] == [None, None] and result[2].p == 0.99
+
+    def test_a_backend_reason_beside_backend_error_still_stops_further_calls(self, cache, monkeypatch):
+        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_BATCH_STATES", 2)
+        fake = FakeDecider({"injection": 0.2})
+        monkeypatch.setattr(fake, "decide_batch", lambda requests, **kwargs: fake.calls.append(requests) or BatchResult(
+            [None] * len(requests), ["backend_error"] + ["transport"] * (len(requests) - 1)))
+        result = score(fake, ["a", "b", "c"], budget=Budget.BACKGROUND)
+        assert len(fake.calls) == 1 and list(result) == [None, None, None]
+        assert result.reasons == ["backend_error", "transport", "transport"]
+
+    @pytest.mark.parametrize("reason", ["timeout", "bad_item", "backend_error"])
     def test_items_not_answered_are_not_cached(self, cache, monkeypatch, reason):
         fake = FakeDecider({"injection": 0.2})
         real = fake.decide_batch
@@ -315,3 +345,42 @@ def test_scores_report_what_the_windows_read(cache, monkeypatch):
     monkeypatch.setattr(fake, "decide_batch", marked)
     result = score(fake, ["text"])
     assert result[0].truncated and result.model is not None and result.totals == [1]
+
+
+#: A lone surrogate, as ``json.loads`` makes one from a ``\ud800`` escape: a tool's JSON, or a client's request body.
+LONE = json.loads('"look here \\ud800 and carry on"')
+
+
+@pytest.mark.unit
+class TestTextsTheTokenizerRefuses:
+    """The model's tokenizer raises on a lone surrogate. One such text must not leave the others unscored."""
+
+    def test_a_lone_surrogate_is_scored_as_its_repaired_text(self, cache, tmp_path):
+        fake = FakeDecider({"injection": lambda state, q: 0.99 if "PAYLOAD" in state["text"] else 0.02},
+                           tokenizer=byte_tokenizer(tmp_path))
+        result = score(fake, [LONE, "a chunk with the PAYLOAD"])
+        assert result.reasons == [None, None]
+        assert result[0].p == pytest.approx(0.02) and result[1].p == pytest.approx(0.99)
+        assert fake.calls[0].requests[0].state == {"text": "look here � and carry on"}
+
+    def test_the_cache_keys_the_text_as_it_came(self, cache, tmp_path):
+        score(FakeDecider({"injection": 0.1}, tokenizer=byte_tokenizer(tmp_path)), [LONE, "plain chunk"])
+        assert {digest for digest, _ in cache.rows} == {
+            hashlib.sha256(LONE.encode("utf-8", "surrogatepass")).hexdigest(),
+            hashlib.sha256(b"plain chunk").hexdigest(),
+        }
+
+    def test_windows_before_the_tokenizer_loads_are_repaired(self):
+        assert scoring.windows(LONE) == (["look here � and carry on"], 1)
+
+    def test_a_text_the_tokenizer_fails_on_is_a_bad_item_and_the_rest_are_scored(self, cache):
+        class Fails(CharTokenizer):
+            def encode(self, text):
+                if "BOOM" in text:
+                    raise RuntimeError("the tokenizer failed")
+                return super().encode(text)
+
+        fake = FakeDecider({"injection": 0.97}, tokenizer=Fails())
+        result = score(fake, ["BOOM", "a chunk with the PAYLOAD"])
+        assert result.reasons == ["bad_item", None] and result[0] is None and result[1].p == pytest.approx(0.97)
+        assert [r.state for r in fake.calls[0].requests] == [{"text": "a chunk with the PAYLOAD"}]

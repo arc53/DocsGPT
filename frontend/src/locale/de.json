@@ -73,7 +73,8 @@
         "monitor_paused": "Monitor pausiert",
         "monitor_expired": "Monitor abgelaufen",
         "schedule": "Geplante Aufgabe fertig",
-        "default": "Neue Antwort"
+        "default": "Neue Antwort",
+        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken"
       },
       "open": "Öffnen",
       "fallbackTitle": "Dein Assistent hat Neuigkeiten"
@@ -614,7 +615,8 @@
         "last24Hours": "24 Stunden",
         "last7Days": "7 Tage",
         "last15Days": "15 Tage",
-        "last30Days": "30 Tage"
+        "last30Days": "30 Tage",
+        "last90Days": "90 Tage"
       },
       "messages": "Nachrichten",
       "tokenUsage": "Token-Verbrauch",
@@ -658,7 +660,195 @@
           "direct": "Chat ohne Agent",
           "agent": "Über Agenten"
         }
-      }
+      },
+      "insights": {
+        "description": "Von einem KI-Modell aus jedem Gespräch geschätzt.",
+        "learnMore": "Mehr erfahren",
+        "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
+        "loadError": "Die Einblicke konnten nicht geladen werden.",
+        "notEnough": "Noch nicht genug Daten (bisher {{formatted}})",
+        "notEnoughShort": "Noch nicht genug Daten",
+        "notEnoughReplies": "Noch nicht genug Folgenachrichten",
+        "languageNote": "{{share}} dieser Nachrichten sind auf {{languages}}; diese Sprachen liest das Modell weniger genau. {{labels}} können daher weniger zuverlässig sein.",
+        "otherLanguages": "anderen Sprachen",
+        "stats": {
+          "fullyAnswered": "Vollständig beantwortet",
+          "fullyAnsweredHint": "Fragen, die die Antwort vollständig beantwortet hat. Begrüßungen und Smalltalk zählen nicht.",
+          "goalMet": "Ziel erreicht",
+          "goalMetHint": "Gespräche, in denen der Nutzer bekommen hat, worum er gebeten hat, beurteilt am ganzen Gespräch, sobald es ruht.",
+          "frustrated": "Frustriert",
+          "frustratedHint": "Folgenachrichten, die deutlich Frust zeigen. Es zählen nur Nachrichten nach einer Antwort, die erste Nachricht eines Gesprächs also nie.",
+          "asksHuman": "Nach einem Menschen gefragt",
+          "asksHumanHint": "Folgenachrichten, die nach einem Menschen, einem Ticket oder einem anderen Kontaktweg fragen. Eine erste Nachricht mit dieser Bitte zählt nicht.",
+          "docsGaps": "Lücken in der Doku",
+          "docsGapsHint": "Antworten, die zu kurz kamen, weil die Doku die Frage nicht abdeckt oder die Suche die Seite nicht gefunden hat. Unten gruppiert."
+        },
+        "sub": {
+          "ofQuestions_one": "von {{formatted}} Frage",
+          "ofQuestions_other": "von {{formatted}} Fragen",
+          "ofReplies_one": "von {{formatted}} Folgenachricht",
+          "ofReplies_other": "von {{formatted}} Folgenachrichten",
+          "ofConversations_one": "von {{formatted}} Gespräch",
+          "ofConversations_other": "von {{formatted}} Gesprächen",
+          "inAnswers_one": "in {{formatted}} Antwort",
+          "inAnswers_other": "in {{formatted}} Antworten"
+        },
+        "panels": {
+          "answerStatus": "Antwortstatus im Zeitverlauf",
+          "sentiment": "Stimmung im Zeitverlauf",
+          "whyNot": "Warum nicht vollständig beantwortet",
+          "requestType": "Art der Anfrage",
+          "implicitFeedback": "Reaktionen auf Antworten",
+          "shareOfAnswers_one": "Anteil an {{formatted}} Antwort",
+          "shareOfAnswers_other": "Anteil an {{formatted}} Antworten",
+          "shareOfMessages_one": "Anteil an {{formatted}} Nachricht",
+          "shareOfMessages_other": "Anteil an {{formatted}} Nachrichten",
+          "shareOfConversations_one": "Anteil an {{formatted}} Gespräch",
+          "shareOfConversations_other": "Anteil an {{formatted}} Gesprächen",
+          "ofReplies_one": "Von {{formatted}} Folgenachricht",
+          "ofReplies_other": "Von {{formatted}} Folgenachrichten",
+          "barLabel": "{{name}}: {{value}}",
+          "barLabelNone": "{{name}}: noch nicht genug Daten",
+          "noneOfThese": "Keines dieser Themen",
+          "empty": "In diesem Zeitraum gibt es nichts anzuzeigen.",
+          "tooltipShare": "{{name}}: {{value}}",
+          "ofQuestions_one": "Von {{formatted}} Frage",
+          "ofQuestions_other": "Von {{formatted}} Fragen",
+          "topics": "Themen",
+          "overlapNote": "Ein Gespräch kann unter mehreren zählen, daher ergeben sie zusammen nicht 100 %.",
+          "noTopics": {
+            "title": "Noch keine Themen",
+            "description": "Füge Themen hinzu, um zu sehen, worüber Leute fragen.",
+            "action": "Themen einrichten"
+          }
+        },
+        "labelNamesInline": {
+          "answer_status": "Antwortstatus",
+          "gap_type": "Grund für unvollständige Antworten",
+          "topic_effective": "Thema",
+          "reaction": "Reaktionen auf Antworten"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Vollständig beantwortet",
+            "partiallyAnswered": "Teilweise beantwortet",
+            "declined": "Wusste es nicht",
+            "clarifying": "Nach Details gefragt"
+          },
+          "gapType": {
+            "docsMissing": "Lücke in der Doku",
+            "notRetrieved": "Suche fand die Seite nicht",
+            "answerMissed": "Antwort übersah die Seite",
+            "outOfScope": "Außerhalb des Themas",
+            "featureNotSupported": "Nicht unterstützte Funktion",
+            "needsAccountData": "Braucht Kontozugriff oder Personal",
+            "ambiguous": "Unklare Frage",
+            "confidentlyUngrounded": "Antwort nicht durch die Doku gedeckt",
+            "other": "Sonstiges"
+          },
+          "reaction": {
+            "thanks": "Dank oder Bestätigung",
+            "reAsk": "Erneut gefragt",
+            "pushbackOrComplaint": "Widerspruch oder Beschwerde"
+          },
+          "requestType": {
+            "troubleshooting": "Fehlerbehebung",
+            "howTo": "Anleitung",
+            "lookup": "Faktenfrage",
+            "concept": "Erklärung",
+            "comparison": "Vergleich",
+            "featureRequest": "Funktionswunsch",
+            "accountBilling": "Konto oder Abrechnung",
+            "chitChat": "Smalltalk",
+            "other": "Sonstiges"
+          },
+          "sentiment": {
+            "positive": "Positiv",
+            "neutral": "Neutral",
+            "negative": "Negativ"
+          }
+        },
+        "off": {
+          "title": "Einblicke sind für diesen Agenten ausgeschaltet",
+          "description": "Schalte sie ein, um abzuschätzen, ob Antworten geholfen haben und wo die Dokumentation Lücken hat.",
+          "turnOn": "Einschalten"
+        },
+        "noConversations": {
+          "hour": "Keine Gespräche in der letzten Stunde",
+          "last24Hours": "Keine Gespräche in den letzten 24 Stunden",
+          "last7Days": "Keine Gespräche in den letzten 7 Tagen",
+          "last15Days": "Keine Gespräche in den letzten 15 Tagen",
+          "last30Days": "Keine Gespräche in den letzten 30 Tagen"
+        },
+        "noConversationsDescription": "Einblicke erscheinen einige Minuten nach jedem Gespräch.",
+        "analyzing": {
+          "title": "Gespräche werden ausgewertet",
+          "progress_one": "{{labelled}} von {{formatted}} Antwort ausgewertet · neueste zuerst",
+          "progress_other": "{{labelled}} von {{formatted}} Antworten ausgewertet · neueste zuerst"
+        },
+        "olderOnly": {
+          "title": "Keine aktuellen Gespräche zum Auswerten",
+          "description": "Einblicke umfassen Gespräche ab dem {{date}}. Ältere werden nicht ausgewertet; ein Administrator kann sie nachträglich auswerten lassen."
+        },
+        "failedOnly": {
+          "title": "Keine Antwort konnte ausgewertet werden",
+          "description_one": "Das Modell konnte {{formatted}} Antwort in diesem Zeitraum nicht auswerten. Es versucht es erneut, sobald sich das Modell oder seine Fragen ändern.",
+          "description_other": "Das Modell konnte {{formatted}} Antworten in diesem Zeitraum nicht auswerten. Es versucht es erneut, sobald sich das Modell oder seine Fragen ändern."
+        },
+        "failed_one": "{{formatted}} Antwort konnte nicht ausgewertet werden",
+        "failed_other": "{{formatted}} Antworten konnten nicht ausgewertet werden",
+        "settings": {
+          "button": "Einstellungen",
+          "title": "Einstellungen für Einblicke",
+          "saveFailed": "Die Einstellungen für Einblicke konnten nicht gespeichert werden. Versuche es noch einmal."
+        }
+      },
+      "gaps": {
+        "heading": "Lücken in der Doku",
+        "description": {
+          "page": "Fragen, die die Doku nicht beantworten konnte, gruppiert nach der Seite, die die Suche als nächste fand.",
+          "source": "Fragen, die die Doku nicht beantworten konnte, gruppiert nach der Quelle der nächsten Seite.",
+          "topic": "Fragen, die die Doku nicht beantworten konnte, gruppiert nach Thema."
+        },
+        "groupBy": "Lücken gruppieren nach",
+        "groups": {
+          "page": "Seite",
+          "source": "Quelle",
+          "topic": "Thema"
+        },
+        "columns": {
+          "gaps": "Lücken",
+          "share": "Anteil der Fragen",
+          "change": "Änderung",
+          "example": "Beispielfrage",
+          "open": "Beispiele"
+        },
+        "share_one": "{{percent}} von {{formatted}}",
+        "share_other": "{{percent}} von {{formatted}}",
+        "gapsCount_one": "{{formatted}} Lücke",
+        "gapsCount_other": "{{formatted}} Lücken",
+        "change": {
+          "new": "Neu",
+          "none": "Keine Änderung",
+          "upLabel": "{{formatted}} mehr als im vorigen Zeitraum",
+          "downLabel": "{{formatted}} weniger als im vorigen Zeitraum",
+          "noEarlier": "Keine früheren Daten"
+        },
+        "noPage": "Keine Seite gefunden",
+        "openRow": "Beispiele für {{name}} anzeigen",
+        "export": "CSV exportieren",
+        "empty": "Keine Lücken in der Doku in diesem Zeitraum.",
+        "emptyDescription": "Hier erscheinen Fragen, die die Doku nicht beantworten konnte.",
+        "loadError": "Die Lücken in der Doku konnten nicht geladen werden.",
+        "panel": {
+          "gaps": "Lücken",
+          "share": "Anteil der Fragen",
+          "previous": "Voriger Zeitraum",
+          "examples": "Beispielfragen",
+          "allInLogs": "Alle Lücken in den Protokollen ansehen"
+        }
+      },
+      "loadError": "Dieses Diagramm konnte nicht geladen werden."
     },
     "logs": {
       "label": "Protokolle",
@@ -826,7 +1016,25 @@
       "feedback": {
         "like": "Gefällt",
         "dislike": "Gefällt nicht"
-      }
+      },
+      "labels": {
+        "filterAll": "Alle Labels",
+        "notAnswered": "Nicht vollständig beantwortet",
+        "docsGap": "Lücke in der Doku",
+        "frustrated": "Frustriert",
+        "asksHuman": "Nach einem Menschen gefragt",
+        "negativeReaction": "Erneut gefragt oder widersprochen",
+        "negativeSentiment": "Negative Stimmung",
+        "hint": "Labels sind Schätzungen und können falsch sein.",
+        "conversation": "Gespräch",
+        "clearConversation": "Alle Gespräche anzeigen",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "Keine Nachrichten passen zu diesen Filtern.",
+        "filter": "Label",
+        "topics": "Themen"
+      },
+      "levelFilter": "Stufe",
+      "typeFilter": "Ereignistyp"
     },
     "teams": {
       "label": "Teams",
@@ -1597,6 +1805,7 @@
         "mcp_calcom": "Cal.com-Buchungen, Eventtypen, Verfügbarkeit und Zeitpläne lesen und verwalten.",
         "mcp_context7": "Aktuelle Dokumentation und Codebeispiele für Bibliotheken nachschlagen.",
         "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
+        "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -1847,6 +2056,9 @@
         "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
         "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
       }
+    },
+    "insights": {
+      "label": "Einblicke"
     }
   },
   "modals": {
@@ -2509,7 +2721,9 @@
       "tabs": {
         "overview": "Übersicht",
         "logs": "Protokolle",
-        "schedules": "Zeitpläne"
+        "insights": "Einblicke",
+        "schedules": "Zeitpläne",
+        "analytics": "Analytik"
       },
       "fallbackName": "Unbenannter Agent",
       "subnavAriaLabel": "Agenten-Unternavigation"
@@ -2574,7 +2788,8 @@
         "preview": "Vorschau",
         "basics": "Grundlagen",
         "knowledge": "Wissen und Verhalten",
-        "model": "Modell"
+        "model": "Modell",
+        "analytics": "Einblicke"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -2795,13 +3010,92 @@
         "audienceTitle_other": "Wer sie über diesen Agenten nutzen kann",
         "stopNote_one": "Es läuft nicht mehr, wenn du den Bearbeitungszugriff verlierst.",
         "stopNote_other": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff verlierst."
+      },
+      "analytics": {
+        "enable": "Einblicke sammeln",
+        "enableDescription": "Liest abgeschlossene Gespräche im Hintergrund und schätzt, ob Antworten geholfen haben und wo die Doku Lücken hat. Die Ergebnisse erscheinen im Tab „Einblicke“ und in den Protokollen.",
+        "learnMore": "Mehr erfahren",
+        "serverOff": "Einblicke sind auf diesem Server ausgeschaltet, daher wirken diese Einstellungen noch nicht. Bitte deinen Administrator, sie einzuschalten.",
+        "topics": "Themen",
+        "countOf": "{{count}} von {{max}}",
+        "addTopic": "Thema hinzufügen",
+        "itemActions": "Aktionen für {{name}}",
+        "edit": "Bearbeiten",
+        "remove": "Entfernen",
+        "modal": {
+          "addTopic": "Thema hinzufügen",
+          "editTopic": "Thema bearbeiten",
+          "name": "Name",
+          "description": "Beschreibung",
+          "submitAdd": "Hinzufügen",
+          "submitSave": "Speichern",
+          "dialogDescription": "Name und Beschreibung sagen dem Modell, was hierher gehört.",
+          "editFolder": "Dieses Thema ist der Ordner \"{{name}}\" aus den Quellen dieses Agenten. Beim Speichern wird es zu deinem eigenen und folgt den Seiten des Ordners nicht mehr.",
+          "namePlaceholder": "Abrechnung",
+          "descriptionHint": "Optional. Macht die Zuordnung genauer: nenne ein paar Seiten, Funktionen oder Wörter, die Nutzer schreiben.",
+          "descriptionPlaceholder": "Preise, Tarife, Plätze oder Rechnungen.",
+          "overlap": "Kann sich mit anderen Themen überschneiden",
+          "overlapDescription": "Wird an jedem ganzen Gespräch geprüft, daher können mehrere zutreffen: etwa für einen Fehlerbericht oder eine Preisfrage quer durch die Doku.",
+          "onePickFull": "Mehr als {{max}} Themen ohne Überschneidung gehen nicht, daher kann sich dieses überschneiden.",
+          "overlapFull": "Mehr als {{max}} Themen mit Überschneidung gehen nicht, daher kann sich dieses nicht überschneiden.",
+          "overlapOff": "Dieser Server prüft keine Themen mit Überschneidung mehr, daher kann sich dieses nicht überschneiden.",
+          "reachOnePick": "Ordnet neue Fragen zu; frühere behalten ihr Thema.",
+          "reachOverlap": "Wird auch an aktuellen Gesprächen geprüft.",
+          "kindChangeToOverlap": "Diese Änderung setzt seine Zahlen zurück: Es hat Fragen zugeordnet und wird jetzt an Gesprächen geprüft.",
+          "kindChangeToOnePick": "Diese Änderung setzt seine Zahlen zurück: Es wurde an Gesprächen geprüft und ordnet jetzt Fragen zu."
+        },
+        "errors": {
+          "nameRequired": "Gib einen Namen ein.",
+          "topicNameTooLong": "Zu lang. Kürze ihn auf {{max}} Zeichen.",
+          "topicNameTaken": "Ein anderes Thema hat schon diesen Namen.",
+          "topicNameReserved": "Dieser Name ist für Fragen reserviert, die zu keinem Thema passen.",
+          "topicDescriptionTooLong": "Zu lang. Kürze sie auf {{max}} (chinesische, japanische und koreanische Zeichen zählen dreifach)."
+        },
+        "digest": "Wöchentliche Übersicht der Doku-Lücken",
+        "digestDescription": "Einmal pro Woche erhält der Eigentümer des Agenten eine Benachrichtigung mit den größten Lücken in der Doku.",
+        "off": "Aus",
+        "topicsDescription": "Worüber Leute fragen. Jede Frage kommt in das eine Thema, das am besten passt.",
+        "fromSources": "Aus Quellen",
+        "hide": "Ausblenden",
+        "groups": {
+          "onePick": "Eins pro Frage",
+          "overlap": "Können sich überschneiden",
+          "overlapDescription": "Werden an ganzen Gesprächen geprüft; mehrere können zutreffen."
+        },
+        "notes": {
+          "foldersFailed": "Die Ordner der Quellen dieses Agenten konnten nicht geladen werden.",
+          "unsaved": "Ordner aus den Quellen dieses Agenten erscheinen, sobald du ihn speicherst.",
+          "unlisted": "Fragen werden auch den Ordnern der Quellen dieses Agenten zugeordnet.",
+          "hidden": "Ausgeblendete Ordner: {{names}}",
+          "show": "Einblenden",
+          "cut": "Diese kleineren Ordner passen nicht mehr, ihre Fragen landen unter Keines dieser Themen: {{names}}",
+          "single": "Ein einzelnes Thema sortiert nichts. Füge ein weiteres hinzu.",
+          "full": "Dieser Agent hat die maximale Zahl an Themen: {{topics}}, die sich nicht überschneiden, und {{overlapping}}, die es können.",
+          "overOnePick": "Dieser Server erlaubt jetzt {{max}} Themen ohne Überschneidung, weniger als dieser Agent hat. Nur die ersten {{max}} ordnen Fragen zu. Entferne welche, um andere hinzuzufügen.",
+          "overOverlapping": "Dieser Server erlaubt jetzt {{max}} Themen mit Überschneidung, weniger als dieser Agent hat. Nur die ersten {{max}} werden geprüft. Entferne welche, um andere hinzuzufügen.",
+          "overlapOff": "Dieser Server prüft keine Themen mit Überschneidung mehr, daher werden diese nicht geprüft. Bearbeite eines, damit es stattdessen Fragen zuordnet, oder entferne es."
+        },
+        "empty": {
+          "title": "Noch keine Themen",
+          "workflow": "Füge hinzu, worüber Leute fragen. Jede Frage kommt in das eine Thema, das am besten passt.",
+          "unsaved": "Themen aus den Quellen dieses Agenten erscheinen, sobald du ihn speicherst. Eigene kannst du jetzt hinzufügen.",
+          "noFolders": "Die Quellen dieses Agenten haben keine Ordner, nach denen Fragen sortiert werden könnten. Füge eigene Themen hinzu.",
+          "allHidden": "Alle Ordner der Quellen dieses Agenten sind ausgeblendet, daher werden Fragen nicht sortiert.",
+          "showFolders": "Ordner einblenden"
+        },
+        "removeTopic": {
+          "title": "\"{{name}}\" entfernen?",
+          "description": "Es kann sich überschneiden und hat daher eigene Ergebnisse. Sie verschwinden aus den Einblicken und Protokollen; wird es erneut hinzugefügt, beginnt es von vorn.",
+          "submit": "Entfernen"
+        }
       }
     },
     "logs": {
       "title": "Agenten-Protokolle",
       "lastUsedAt": "Zuletzt verwendet am",
       "noUsageHistory": "Kein Nutzungsverlauf",
-      "tableHeader": "Agenten-Endpunkt-Protokolle"
+      "tableHeader": "Agenten-Endpunkt-Protokolle",
+      "description": "API-Aufrufe, geplante Ausführungen und Fehler dieses Agenten."
     },
     "schedules": {
       "title": "Agenten-Zeitpläne",
@@ -3029,7 +3323,6 @@
     "guardrailEvents": {
       "heading": "Guardrail-Aktivität",
       "description": "Jede Kontrolle, die bei diesem Agenten angeschlagen hat, und jede, die nicht ausgeführt werden konnte.",
-      "lastDays": "Letzte {{count}} Tage",
       "blocked": "Blockiert",
       "redacted": "Geschwärzt",
       "flagged": "Markiert",
@@ -3271,7 +3564,11 @@
     "showAll_other": "Alle {{formatted}} anzeigen",
     "pageRange_one": "{{from}}–{{to}} von {{formatted}} Agent",
     "pageRange_other": "{{from}}–{{to}} von {{formatted}} Agenten",
-    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "analytics": {
+      "subtitle": "Nachrichtenvolumen, Token-Verbrauch und Nutzerfeedback für diesen Agenten."
+    },
+    "loadError": "Dieser Agent konnte nicht geladen werden."
   },
   "components": {
     "fileUpload": {
@@ -3368,9 +3665,9 @@
       "groups": {
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich",
-        "insights": "Auswertungen",
         "administration": "Administration",
-        "automations": "Automatisierungen"
+        "automations": "Automatisierungen",
+        "monitoring": "Überwachung"
       }
     },
     "openSidebar": "Seitenleiste öffnen",

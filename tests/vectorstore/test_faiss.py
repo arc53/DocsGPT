@@ -127,6 +127,11 @@ class TestFaissStore:
         # The index must stay searchable after a removal renumbers the mapping.
         assert populated.search("Paris", k=1)
 
+    def test_add_chunk_keeps_its_own_source_id(self, populated):
+        # metadata comes from the chunk API: it must not claim another source, as the other stores ensure
+        chunk_id = populated.add_chunk("Redis caches things.", {"source": "cache.txt", "source_id": "other"})
+        assert populated.documents[chunk_id]["metadata"] == {"source": "cache.txt", "source_id": "src"}
+
     def test_delete_index_with_unknown_id_raises(self, populated):
         with pytest.raises(ValueError, match="not found in index"):
             populated.delete_index(["nope"])
@@ -332,11 +337,19 @@ class TestFaissUpdateChunk:
         chunks = populated.get_chunks()
         assert [c["doc_id"] for c in chunks] == before
         assert chunks[1]["text"] == "Redis caches things."
-        assert chunks[1]["metadata"] == {"source": "cache.txt"}
+        assert chunks[1]["metadata"] == {"source": "cache.txt", "source_id": "src"}
         assert populated.documents[target] == {
             "page_content": "Redis caches things.",
-            "metadata": {"source": "cache.txt"},
+            "metadata": {"source": "cache.txt", "source_id": "src"},
         }
+
+    def test_keeps_its_own_source_id(self, make_store):
+        store = make_store(source_id="docsgpt/indexes/src/", docs_init=[_SeedDoc("Paris.", {"source": "geo.txt"})])
+        target = store.get_chunks()[0]["doc_id"]
+
+        store.update_chunk(target, "Redis caches things.", {"source": "cache.txt", "source_id": "other"})
+
+        assert store.documents[target]["metadata"] == {"source": "cache.txt", "source_id": "src"}
 
     def test_replaces_the_vector_and_keeps_rows_consistent(self, populated):
         target = populated.get_chunks()[0]["doc_id"]
@@ -388,6 +401,6 @@ class TestFaissUpdateChunk:
         chunks = reloaded.get_chunks()
         assert [c["doc_id"] for c in chunks] == before
         assert chunks[1]["text"] == "Redis caches things."
-        assert chunks[1]["metadata"] == {"source": "cache.txt"}
+        assert chunks[1]["metadata"] == {"source": "cache.txt", "source_id": "src"}
         _assert_rows_match_documents(reloaded)
         assert "Redis" in str(reloaded.search("something neutral", k=1)[0])

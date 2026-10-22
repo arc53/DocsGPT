@@ -36,6 +36,12 @@ vi.mock('../hooks/useLoadMore', () => ({
     return vi.fn();
   },
 }));
+// The drill-down filters are URL state; these tests run without them
+// (Logs.labels.test.tsx covers them under a real router).
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+}));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 
@@ -651,6 +657,16 @@ describe('Logs running rows', () => {
     } finally {
       store.state.preference.token = 'token';
     }
+  });
+
+  // IN-17: the account's copy belongs to Settings › Logs; an agent's Logs
+  // page names its own block.
+  it("prints the account subtitle in Settings, not on an agent's page", async () => {
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+    expect(container.textContent).toContain('settings.logs.subtitle');
+    await act(async () => root.render(<Logs agentId="agent-1" />));
+    expect(container.textContent).not.toContain('settings.logs.subtitle');
   });
 
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {

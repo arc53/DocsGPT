@@ -138,6 +138,8 @@ export const shadows = {
   md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
   lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
   modal: '0 4px 40px -3px rgba(0, 0, 0, 0.1)',
+  /** The docked sidebar's; only its inner edge is on screen. */
+  sidebar: '0 0 32px rgba(0, 0, 0, 0.12)',
 };
 
 export const fonts = {

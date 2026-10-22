@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from docsgpt.decisions.latency import GUARD, RELEVANCE, SpeedProfile
+from docsgpt.decisions.latency import ANALYTICS, GUARD, RELEVANCE, SpeedProfile
 from docsgpt.decisions.types import FeatureSpec, Shape
 
 logger = logging.getLogger(__name__)
@@ -182,6 +182,23 @@ INJECTION_ATTACHMENT = "injection_attachment"
 INJECTION_TOOL_DESCRIPTION = "injection_tool_description"
 INJECTION_ATTACHMENT_PARSE = "injection_attachment_parse"
 INJECTION_LAZY = "injection_lazy"
+
+
+#: Conversation analytics (``docsgpt.analytics.tasks``): the background sweep's turn calls. It has a switch, not a
+#: mode: ``DECISION_ANALYTICS_ENABLED`` is ``on``, so the model warms at start for the worker to call. It is predicted
+#: on a full state with the eight analytics questions in the background lane, against the background deadline.
+ANALYTICS_TURN = register(
+    FeatureSpec(
+        name="analytics_turn",
+        mode_setting="DECISION_ANALYTICS_ENABLED",
+        budget_setting="DECISION_BACKGROUND_TIMEOUT",
+        shape=ANALYTICS,
+    )
+)
+
+#: The label the sweep's conversation calls (goal met and the agent's tags) pass as ``feature``; it follows
+#: DECISION_ANALYTICS_ENABLED with ``ANALYTICS_TURN``.
+ANALYTICS_CONVERSATION = "analytics_conversation"
 
 
 def _rerank_shape(settings: Any, runtime: Optional[str]) -> Shape:

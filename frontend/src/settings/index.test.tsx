@@ -36,7 +36,8 @@ vi.mock('../navigation/SectionShell', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock('../navigation/SectionIndexPage', () => ({ default: () => null }));
-vi.mock('./Analytics', () => ({ default: () => null }));
+vi.mock('./AccountInsights', () => ({ default: () => null }));
+vi.mock('./AccountAnalytics', () => ({ default: () => null }));
 vi.mock('./CustomModels', () => ({ default: () => null }));
 vi.mock('./General', () => ({ default: () => null }));
 vi.mock('./Logs', () => ({ default: () => null }));

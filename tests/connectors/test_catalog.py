@@ -312,6 +312,17 @@ def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
 
     assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
+def test_neon_preset_uses_remote_oauth_catalog_contract():
+    neon = catalog.get_definition("mcp:neon")
+
+    assert neon.name == "Neon"
+    assert neon.icon == "neon"
+    assert neon.category == "database"
+    assert neon.mcp_url == "https://mcp.neon.tech/mcp"
+    assert neon.auth_kind == "mcp_oauth"
+    assert neon.capabilities == ("read", "write")
+    assert neon.docs_url == "https://neon.com/docs/ai/neon-mcp-server"
+
 
 def test_context7_preset_uses_remote_oauth_catalog_contract() -> None:
     context7 = catalog.get_definition("mcp:context7")

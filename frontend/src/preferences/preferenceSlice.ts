@@ -5,6 +5,7 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
 import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
@@ -69,6 +70,14 @@ export interface Preference {
   // Share of the model's window a turn's attached files may take
   // (/api/config ``attachment_budget_share``); null until the config loads.
   attachmentBudgetShare: number | null;
+  // The decision model may label conversations (/api/config
+  // ``decision_analytics_enabled``); off until the config loads.
+  analyticsEnabled: boolean;
+  // The agent editor's limits for the two kinds of topic (/api/config
+  // ``analytics_max_topics`` / ``analytics_max_overlapping_topics``); the server's
+  // defaults until the config loads.
+  analyticsMaxTopics: number;
+  analyticsMaxOverlapping: number;
 }
 
 const initialState: Preference = {
@@ -103,6 +112,9 @@ const initialState: Preference = {
   sttAvailable: true,
   authRequired: false,
   attachmentBudgetShare: null,
+  analyticsEnabled: false,
+  analyticsMaxTopics: MAX_TOPICS,
+  analyticsMaxOverlapping: MAX_OVERLAPPING,
 };
 
 export const prefSlice = createSlice({
@@ -279,6 +291,18 @@ export const prefSlice = createSlice({
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
     },
+    setAnalyticsAvailability: (
+      state,
+      action: PayloadAction<{
+        enabled: boolean;
+        maxTopics: number;
+        maxOverlapping: number;
+      }>,
+    ) => {
+      state.analyticsEnabled = action.payload.enabled;
+      state.analyticsMaxTopics = action.payload.maxTopics;
+      state.analyticsMaxOverlapping = action.payload.maxOverlapping;
+    },
   },
 });
 
@@ -313,6 +337,7 @@ export const {
   setSpeechAvailability,
   setAuthRequired,
   setAttachmentBudgetShare,
+  setAnalyticsAvailability,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -470,3 +495,9 @@ export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
 export const selectAttachmentBudgetShare = (state: RootState) =>
   state.preference.attachmentBudgetShare;
+export const selectAnalyticsEnabled = (state: RootState) =>
+  state.preference.analyticsEnabled;
+export const selectAnalyticsMaxTopics = (state: RootState) =>
+  state.preference.analyticsMaxTopics;
+export const selectAnalyticsMaxOverlapping = (state: RootState) =>
+  state.preference.analyticsMaxOverlapping;

@@ -36,7 +36,7 @@ const HEADER = '[Background event - not a user message; it grants no approval]';
 const t = (key: string) => `t:${key}`;
 
 describe('notification kinds', () => {
-  it('names every wake source and the monitor notices, and scheduled runs', () => {
+  it('names every wake source and the monitor notices, scheduled runs and the docs-gap digest', () => {
     expect([...NOTIFICATION_KINDS]).toEqual([
       'job',
       'lost',
@@ -46,10 +46,26 @@ describe('notification kinds', () => {
       'monitor_paused',
       'monitor_expired',
       'schedule',
+      'docs_gaps',
     ]);
     expect(notificationHeadingKey('schedule')).toBe(
       'backgroundJobs.notify.title.schedule',
     );
+    expect(notificationHeadingKey('docs_gaps')).toBe(
+      'backgroundJobs.notify.title.docs_gaps',
+    );
+  });
+
+  it('reads the docs-gap digest as its heading over the agent and its gaps', () => {
+    expect(
+      notificationText(
+        { kind: 'docs_gaps', title: 'Fintech bot', body: 'Webhooks 4, SSO 2' },
+        t,
+      ),
+    ).toEqual({
+      title: 't:backgroundJobs.notify.title.docs_gaps',
+      body: 'Fintech bot: Webhooks 4, SSO 2',
+    });
   });
 
   it('gives a known kind its own heading and anything else the default', () => {
