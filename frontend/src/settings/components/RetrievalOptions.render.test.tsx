@@ -99,6 +99,48 @@ describe('RetrievalOptions disclosure', () => {
     expect(onChange.mock.calls.at(-1)![0].retrieval.show_links).toBe(false);
   });
 
+  it('keeps the file-link switch under Advanced, open while links are off', () => {
+    const render = (showLinks: boolean) =>
+      act(() => {
+        root.render(
+          <RetrievalOptions
+            value={{
+              ...DEFAULT_RETRIEVAL_OPTIONS,
+              retrieval: {
+                ...DEFAULT_RETRIEVAL_OPTIONS.retrieval,
+                show_links: showLinks,
+              },
+            }}
+            onChange={vi.fn()}
+            alwaysOpen
+            linksAvailable
+          />,
+        );
+      });
+    const advanced = () => {
+      const trigger = Array.from(
+        container.querySelectorAll('button[aria-expanded]'),
+      ).find((b) => b.textContent?.includes('advanced'))!;
+      const body = container.querySelector(
+        `[id="${trigger.getAttribute('aria-controls')}"]`,
+      )!;
+      return { trigger, body };
+    };
+
+    render(true);
+    expect(
+      advanced().body.contains(
+        container.querySelector('#retrieval-show-links'),
+      ),
+    ).toBe(true);
+    expect(advanced().trigger.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(false);
+    expect(advanced().trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('caps the chunk-size input and explains the limit', () => {
     act(() => {
       root.render(

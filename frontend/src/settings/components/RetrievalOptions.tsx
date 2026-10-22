@@ -622,7 +622,8 @@ export default function RetrievalOptions({
     prescreen.enabled ||
     (showSimilarity && value.retrieval.score_threshold !== null) ||
     (relevanceOn && reranker.candidate_k !== null) ||
-    (filtering && strictness === 'custom');
+    (filtering && strictness === 'custom') ||
+    (linksAvailable && !queryOnly && !value.retrieval.show_links);
   const advancedOpen = advancedToggled ?? advancedSet;
 
   const relevanceGroup = decision.relevance && (
@@ -822,6 +823,24 @@ export default function RetrievalOptions({
             onCheckedChange={enablePrescreen}
           />
         </SettingRow>
+
+        {!queryOnly && linksAvailable && (
+          <SettingRow
+            label={tr('retrieval.showLinks')}
+            htmlFor="retrieval-show-links"
+            description={tr('retrieval.showLinksHint')}
+            alignStart
+          >
+            <Switch
+              id="retrieval-show-links"
+              checked={value.retrieval.show_links}
+              disabled={disabled}
+              onCheckedChange={(checked) =>
+                setRetrieval({ show_links: checked })
+              }
+            />
+          </SettingRow>
+        )}
       </SettingRows>
 
       {/* LLM screening's inputs (kept as floating-label cards) */}
@@ -943,24 +962,6 @@ export default function RetrievalOptions({
             </SettingRow>
           )}
 
-          {!queryOnly && linksAvailable && (
-            <SettingRow
-              label={tr('retrieval.showLinks')}
-              htmlFor="retrieval-show-links"
-              description={tr('retrieval.showLinksHint')}
-              alignStart
-            >
-              <Switch
-                id="retrieval-show-links"
-                checked={value.retrieval.show_links}
-                disabled={disabled}
-                onCheckedChange={(checked) =>
-                  setRetrieval({ show_links: checked })
-                }
-              />
-            </SettingRow>
-          )}
-
           {!queryOnly && (
             <SettingRow
               label={tr('retrieval.exposure')}
@@ -999,7 +1000,7 @@ export default function RetrievalOptions({
       {relevanceGroup}
 
       {/* Advanced (live): the exact relevance, its candidates, the similarity
-          threshold and LLM screening. No gap on the wrapper: a closed
+          threshold, LLM screening and a synced source's file links. No gap on the wrapper: a closed
           Collapsible is still a flex item (DESIGN.md › Disclosure). */}
       <div className="flex flex-col">
         <CollapsibleTrigger
