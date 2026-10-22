@@ -221,6 +221,31 @@ def test_subdomain_seed_allows_subdomains_when_flag_true(monkeypatch, _patch_mar
     assert sources == {"http://docs.example.com", "http://blog.example.com/post"}
 
 
+def test_unrecognized_public_suffix_helpers(monkeypatch):
+    """Unrecognized public suffix keeps the seed hostname and rejects sibling hosts."""
+    monkeypatch.setattr(
+        "docsgpt.parser.remote.crawler_markdown._extract",
+        lambda url: SimpleNamespace(domain="notavalidsuffix", suffix=""),
+    )
+
+    loader = CrawlerLoader(allow_subdomains=True)
+    base = loader._get_base_domain("https://alpha.notavalidsuffix")
+    assert base == "alpha.notavalidsuffix"
+
+    links = [
+        ("https://alpha.notavalidsuffix/page", "Seed host"),
+        ("https://child.alpha.notavalidsuffix/page", "Child host"),
+        ("https://beta.notavalidsuffix/page", "Sibling host"),
+        ("https://notavalidsuffix/page", "Suffix-only host"),
+    ]
+
+    filtered = loader._filter_links(links, base)
+    assert filtered == [
+        "https://alpha.notavalidsuffix/page",
+        "https://child.alpha.notavalidsuffix/page",
+    ]
+
+
 def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify, _patch_validate_url):
     root_html = """
     <html><head><title>Home</title></head>

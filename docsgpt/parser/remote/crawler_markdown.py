@@ -139,7 +139,15 @@ class CrawlerLoader(BaseRemote):
             links.append((full_url, a.text.strip()))
         return links
 
-    def _get_base_domain(self, url):
+    def _get_base_domain(self, url: str) -> str:
+        """Extract the base domain or hostname used for link filtering.
+
+        Args:
+            url: The seed URL to extract the base domain from.
+
+        Returns:
+            The lowercased hostname or registered domain string.
+        """
         parsed = urlparse(url)
         hostname = (parsed.hostname or "").lower()
         if not self.allow_subdomains:
@@ -148,13 +156,17 @@ class CrawlerLoader(BaseRemote):
         extracted = _extract(url)
         if extracted.suffix:
             return f"{extracted.domain}.{extracted.suffix}".lower()
-        return (extracted.domain or hostname).lower()
+        return hostname
 
-    def _filter_links(self, links, base_domain):
-        """
-        Filter the extracted links to only include those that match the crawling criteria:
-        - If allow_subdomains is True, allow any link whose domain ends with the base_domain.
-        - If allow_subdomains is False, only allow exact matches of the base_domain.
+    def _filter_links(self, links: list[tuple[str, str]], base_domain: str) -> list[str]:
+        """Filter extracted links to those matching the crawling criteria.
+
+        Args:
+            links: A list of (url, link_text) tuples extracted from a page.
+            base_domain: The base domain or hostname to match against.
+
+        Returns:
+            A list of filtered URL strings that satisfy the domain rules.
         """
         filtered = []
         base = (base_domain or "").lower()
