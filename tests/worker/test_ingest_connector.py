@@ -329,6 +329,14 @@ class TestConnectorSyncFingerprint:
         assert tuned != base
         assert tuned == worker._connector_sync_fingerprint("fp", '{"chunking": {"max_tokens": 500}}')
 
+    def test_link_switch_does_not_force_a_reingest(self):
+        from docsgpt import worker
+
+        on = worker._connector_sync_fingerprint("fp", {"retrieval": {"chunks": 4, "show_links": True}})
+        off = worker._connector_sync_fingerprint("fp", '{"retrieval": {"chunks": 4, "show_links": false}}')
+        assert on == off
+        assert on != worker._connector_sync_fingerprint("fp", {"retrieval": {"chunks": 5, "show_links": True}})
+
     def test_fingerprints_stored_before_web_links_force_one_reingest(self):
         import hashlib
         import json

@@ -3788,7 +3788,8 @@ def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: An
 
     Changing the chunking or retrieval settings changes the result, so the
     next sync re-ingests even when no file changed. So does a new
-    ``_CONNECTOR_INGEST_VERSION``.
+    ``_CONNECTOR_INGEST_VERSION``. ``retrieval.show_links`` is left out: it
+    only decides what a search returns, not what is ingested.
 
     Args:
         selection_fingerprint: The loader's fingerprint of the selected files, or ``None``.
@@ -3805,6 +3806,9 @@ def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: An
         except ValueError:
             # Not JSON: hash the raw string, which still changes when the settings do.
             pass
+    if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
+        retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
+        config = {**config, "retrieval": retrieval}
     payload = json.dumps(
         {"selection": selection_fingerprint, "config": config or {}, "version": _CONNECTOR_INGEST_VERSION},
         sort_keys=True,

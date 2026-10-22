@@ -160,15 +160,16 @@ class ConfluenceLoader(BaseConnectorLoader):
 
     def _file_urls(self, local_dir: str) -> Dict[str, str]:
         """Each downloaded file's web link, keyed by its path under ``local_dir``."""
-        if not self._file_links:
-            return {}
-        base = self._site_base or self._fetch_site_base()
-        if not base:
-            return {}
+        absolute = ("https://", "http://")
+        base = self._site_base
+        if base is None and any(not webui.startswith(absolute) for webui in self._file_links.values()):
+            base = self._fetch_site_base()
         urls = {}
         for path, webui in self._file_links.items():
-            url = webui if webui.startswith(("https://", "http://")) else f"{base.rstrip('/')}/{webui.lstrip('/')}"
-            urls[os.path.relpath(path, local_dir)] = url
+            if webui.startswith(absolute):
+                urls[os.path.relpath(path, local_dir)] = webui
+            elif base:
+                urls[os.path.relpath(path, local_dir)] = f"{base.rstrip('/')}/{webui.lstrip('/')}"
         return urls
 
     def _list_spaces(

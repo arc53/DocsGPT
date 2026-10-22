@@ -671,6 +671,20 @@ class TestDownloadFileUrls:
         assert result["file_urls"] == {}
 
 
+    @pytest.mark.unit
+    def test_absolute_links_kept_without_a_site(self, loader):
+        responses = [
+            self._page({"webui": "https://acme.atlassian.net/wiki/spaces/ENG/pages/p1"}),
+            _mock_response({"results": [], "_links": {}}),
+        ]
+        with patch("requests.get", side_effect=responses) as get:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {"My Page.html": "https://acme.atlassian.net/wiki/spaces/ENG/pages/p1"}
+        assert get.call_count == 2, "no site lookup when every link is absolute"
+
+
 class TestDownloadPage:
     pass
 
