@@ -2179,13 +2179,9 @@
           "label": "Importer un fichier",
           "heading": "Importer un nouveau document"
         },
-        "crawler": {
-          "label": "Robot d’exploration",
-          "heading": "Ajouter du contenu avec le robot d’exploration web"
-        },
-        "url": {
-          "label": "Lien",
-          "heading": "Ajouter du contenu depuis une URL"
+        "website": {
+          "label": "Site web",
+          "heading": "Ajouter un site web"
         },
         "github": {
           "label": "GitHub",
@@ -2222,8 +2218,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "Contenu initial (facultatif)"
+      },
+      "website": {
+        "pageUrl": "Adresse de la page",
+        "siteUrl": "Adresse du site web",
+        "addAnotherPage": "Ajouter une autre page",
+        "removePage": "Retirer cette adresse",
+        "maxPages": "Limite de pages",
+        "maxPagesHint": "Jusqu’à {{max}}, fixée par votre administrateur.",
+        "pathPrefix": "Rester sous",
+        "pathPrefixHint": "Seulement les adresses qui commencent par ce chemin.",
+        "pathPrefixPlaceholder": "/ (tout le site)",
+        "sitemapUrl": "URL du plan du site",
+        "sitemapUrlHint": "Laissez vide pour utiliser celui indiqué dans robots.txt.",
+        "includeSubdomains": "Inclure les sous-domaines",
+        "sync": "Tenir à jour",
+        "syncHintPage": "Récupère à nouveau les pages et met à jour ce qui a changé.",
+        "syncHintSite": "Explore à nouveau le site et met à jour ce qui a changé.",
+        "keepLinks": "Garder les liens dans le texte",
+        "keepLinksHint": "Permet aux réponses de renvoyer vers les pages que cette page cite. Stocke environ un quart de texte en plus, et la recherche peut classer un peu moins bien.",
+        "mode": {
+          "label": "Quoi ajouter",
+          "page": "Cette page",
+          "site": "Site entier",
+          "pageHint": "Ajoute exactement ces pages.",
+          "siteHint": "Ajoute cette page et les pages vers lesquelles elle mène sur le même site."
+        },
+        "discovery": {
+          "label": "Trouver les pages",
+          "hint": "Automatique lit le plan du site, puis suit les liens.",
+          "auto": "Automatique",
+          "sitemap": "Plan du site",
+          "links": "Suivre les liens"
+        }
       },
       "github": {
         "privateHint": "Dépôt privé ? Connectez votre compte GitHub pour le synchroniser.",

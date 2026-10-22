@@ -2105,13 +2105,9 @@
           "label": "上傳檔案",
           "heading": "上傳新文檔"
         },
-        "crawler": {
-          "label": "爬蟲",
-          "heading": "使用網路爬蟲新增內容"
-        },
-        "url": {
-          "label": "連結",
-          "heading": "從URL新增內容"
+        "website": {
+          "label": "網站",
+          "heading": "新增網站"
         },
         "github": {
           "label": "GitHub",
@@ -2148,8 +2144,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "初始內容（選填）"
+      },
+      "website": {
+        "pageUrl": "頁面網址",
+        "siteUrl": "網站網址",
+        "addAnotherPage": "再新增一個頁面",
+        "removePage": "移除此網址",
+        "maxPages": "頁面上限",
+        "maxPagesHint": "最多 {{max}} 個，由管理員設定。",
+        "pathPrefix": "僅限路徑",
+        "pathPrefixHint": "只包含以此路徑開頭的網址。",
+        "pathPrefixPlaceholder": "/（整個網站）",
+        "sitemapUrl": "網站地圖網址",
+        "sitemapUrlHint": "留空則使用 robots.txt 中列出的網站地圖。",
+        "includeSubdomains": "包含子網域",
+        "sync": "保持最新",
+        "syncHintPage": "重新擷取頁面並更新有變更的內容。",
+        "syncHintSite": "重新爬取網站並更新有變更的內容。",
+        "keepLinks": "在頁面文字中保留連結",
+        "keepLinksHint": "讓回答可以連結到此頁面指向的頁面。儲存的文字約多四分之一，搜尋排名可能略低。",
+        "mode": {
+          "label": "新增內容",
+          "page": "此頁面",
+          "site": "整個網站",
+          "pageHint": "只新增這些頁面。",
+          "siteHint": "新增此頁面及其在同一網站上連結到的頁面。"
+        },
+        "discovery": {
+          "label": "尋找頁面",
+          "hint": "「自動」會先讀取網站地圖，再追蹤連結。",
+          "auto": "自動",
+          "sitemap": "網站地圖",
+          "links": "追蹤連結"
+        }
       },
       "github": {
         "privateHint": "私人儲存庫？連結你的 GitHub 帳號即可同步。",

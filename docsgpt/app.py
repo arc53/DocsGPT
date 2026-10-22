@@ -281,6 +281,9 @@ def get_config():
         # The agent editor's limits for the two kinds of topic.
         "analytics_max_topics": int(settings.ANALYTICS_MAX_TOPICS),
         "analytics_max_overlapping_topics": int(settings.ANALYTICS_MAX_OVERLAPPING_TOPICS),
+        # The Website source form's page limit: its default and the cap.
+        "web_default_pages": int(settings.WEB_DEFAULT_PAGES),
+        "web_max_pages": int(settings.WEB_MAX_PAGES),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

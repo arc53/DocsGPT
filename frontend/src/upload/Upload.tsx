@@ -67,6 +67,19 @@ import RetrievalOptions, {
 } from '../settings/components/RetrievalOptions';
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
+import { SettingRow } from '../components/ui/setting-row';
+import { Switch } from '../components/ui/switch';
+import WebsiteFields from './WebsiteFields';
+import useWebPageLimits from './useWebPageLimits';
+import {
+  defaultWebsiteDraft,
+  isWebsiteDraftValid,
+  nameFromUrl,
+  pathPrefixFromUrl,
+  type SyncFrequency,
+  type WebsiteDraft,
+  websiteConfig,
+} from './website';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
 const MAX_UPLOAD_BYTES = 25000000;
@@ -133,9 +146,63 @@ function Upload({
   } = useNewSourceOptions(token);
   const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
+  // The Website form: its draft, schedule and link setting. The schedule
+  // follows the mode (never for pages, weekly for a site) until picked, and
+  // "Stay under" follows the address until typed in.
+  const webLimits = useWebPageLimits();
+  const [websiteDraft, setWebsiteDraft] = useState<WebsiteDraft>(() =>
+    defaultWebsiteDraft(webLimits.defaultPages),
+  );
+  const [syncFrequency, setSyncFrequency] = useState<SyncFrequency>('never');
+  const [syncTouched, setSyncTouched] = useState(false);
+  const [prefixTouched, setPrefixTouched] = useState(false);
+  const [keepLinks, setKeepLinks] = useState(false);
+
+  const resetWebsite = useCallback((defaultPages: number) => {
+    setWebsiteDraft(defaultWebsiteDraft(defaultPages));
+    setSyncFrequency('never');
+    setSyncTouched(false);
+    setPrefixTouched(false);
+    setKeepLinks(false);
+  }, []);
+
+  const handleWebsiteChange = (next: WebsiteDraft) => {
+    let draft = next;
+    const firstUrl = next.urls[0] ?? '';
+    if (next.pathPrefix !== websiteDraft.pathPrefix) {
+      setPrefixTouched(true);
+    } else if (
+      !prefixTouched &&
+      next.mode === 'site' &&
+      (firstUrl !== websiteDraft.urls[0] || next.mode !== websiteDraft.mode)
+    ) {
+      draft = { ...next, pathPrefix: pathPrefixFromUrl(firstUrl) };
+    }
+    if (next.mode !== websiteDraft.mode && !syncTouched) {
+      setSyncFrequency(next.mode === 'site' ? 'weekly' : 'never');
+    }
+    if (!nameTouched) {
+      setIngestor((prev) => ({ ...prev, name: nameFromUrl(firstUrl) }));
+    }
+    setWebsiteDraft(draft);
+  };
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
+    if (ingestor.type === 'website') {
+      return (
+        <WebsiteFields
+          draft={websiteDraft}
+          onChange={handleWebsiteChange}
+          maxPages={webLimits.maxPages}
+          syncFrequency={syncFrequency}
+          onSyncFrequencyChange={(value) => {
+            setSyncTouched(true);
+            setSyncFrequency(value);
+          }}
+        />
+      );
+    }
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) return null;
     return (
@@ -297,7 +364,8 @@ function Upload({
     setRejectedFiles([]);
     resetRetrievalOptions();
     setNameTouched(false);
-  }, [resetRetrievalOptions]);
+    resetWebsite(webLimits.defaultPages);
+  }, [resetRetrievalOptions, resetWebsite, webLimits.defaultPages]);
 
   const handleTaskFailure = useCallback(
     (clientTaskId: string, errorMessage?: string) => {
@@ -627,7 +695,15 @@ function Upload({
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
 
-    formData.append('data', JSON.stringify(ingestor.config));
+    if (ingestor.type === 'website') {
+      formData.append(
+        'data',
+        JSON.stringify(websiteConfig(websiteDraft, keepLinks)),
+      );
+      formData.append('sync_frequency', syncFrequency);
+    } else {
+      formData.append('data', JSON.stringify(ingestor.config));
+    }
 
     const apiHost: string = envVar('VITE_API_HOST');
     // Local files go through uploadFile; everything else is fetched remotely.
@@ -793,6 +869,8 @@ function Upload({
     if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
+    if (ingestor.type === 'website')
+      return !isWebsiteDraftValid(websiteDraft, webLimits.maxPages);
     const schema = getIngestorSchema(ingestor.type);
     if (!schema) return true;
     return schema.fields.some((field: FormField) => {
@@ -834,6 +912,7 @@ function Upload({
       config: defaultConfig.config,
     });
     setNameTouched(false);
+    resetWebsite(webLimits.defaultPages);
 
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
@@ -1078,6 +1157,24 @@ function Upload({
                     graphRAGAvailable={graphRAGAvailable}
                     availableModels={availableModels}
                     decision={decision}
+                    ingestRows={
+                      ingestor.type === 'website' ? (
+                        <SettingRow
+                          label={t('modals.uploadDoc.website.keepLinks')}
+                          description={t(
+                            'modals.uploadDoc.website.keepLinksHint',
+                          )}
+                          htmlFor="website-keep-links"
+                          alignStart
+                        >
+                          <Switch
+                            id="website-keep-links"
+                            checked={keepLinks}
+                            onCheckedChange={setKeepLinks}
+                          />
+                        </SettingRow>
+                      ) : undefined
+                    }
                   />
                 )}
               </div>

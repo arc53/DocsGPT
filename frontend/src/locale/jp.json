@@ -2105,13 +2105,9 @@
           "label": "ファイルをアップロード",
           "heading": "新しいドキュメントをアップロード"
         },
-        "crawler": {
-          "label": "クローラー",
-          "heading": "Webクローラーでコンテンツを追加"
-        },
-        "url": {
-          "label": "リンク",
-          "heading": "URLからコンテンツを追加"
+        "website": {
+          "label": "ウェブサイト",
+          "heading": "ウェブサイトを追加"
         },
         "github": {
           "label": "GitHub",
@@ -2148,8 +2144,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "初期コンテンツ（任意）"
+      },
+      "website": {
+        "pageUrl": "ページのアドレス",
+        "siteUrl": "ウェブサイトのアドレス",
+        "addAnotherPage": "別のページを追加",
+        "removePage": "このアドレスを削除",
+        "maxPages": "ページ上限",
+        "maxPagesHint": "最大 {{max}}（管理者が設定）。",
+        "pathPrefix": "対象のパス",
+        "pathPrefixHint": "このパスで始まるアドレスだけを対象にします。",
+        "pathPrefixPlaceholder": "/（サイト全体）",
+        "sitemapUrl": "サイトマップの URL",
+        "sitemapUrlHint": "空欄にすると robots.txt に記載されたものを使います。",
+        "includeSubdomains": "サブドメインを含める",
+        "sync": "最新の状態に保つ",
+        "syncHintPage": "ページを再取得して変更を反映します。",
+        "syncHintSite": "サイトを再クロールして変更を反映します。",
+        "keepLinks": "ページ本文のリンクを保持",
+        "keepLinksHint": "回答がこのページのリンク先を示せるようになります。保存されるテキストが約 4 分の 1 増え、検索の順位がやや下がることがあります。",
+        "mode": {
+          "label": "追加する内容",
+          "page": "このページ",
+          "site": "サイト全体",
+          "pageHint": "これらのページだけを追加します。",
+          "siteHint": "このページと、同じサイト内のリンク先のページを追加します。"
+        },
+        "discovery": {
+          "label": "ページの探し方",
+          "hint": "自動はサイトマップを読み、その後リンクをたどります。",
+          "auto": "自動",
+          "sitemap": "サイトマップ",
+          "links": "リンクをたどる"
+        }
       },
       "github": {
         "privateHint": "プライベートリポジトリですか？同期するには GitHub アカウントを接続してください。",

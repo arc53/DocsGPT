@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { type ReactNode, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
@@ -479,6 +479,9 @@ type RetrievalOptionsProps = {
   // The decision-model controls the operator turned on (/api/config); the
   // Relevance section is hidden while the model is off.
   decision?: DecisionFeatures;
+  // Extra `SettingRow`s at the end of the re-ingest group, for a source
+  // type's own ingest knobs (the Website source's "Keep links in page text").
+  ingestRows?: ReactNode;
 };
 
 /**
@@ -498,6 +501,7 @@ export default function RetrievalOptions({
   retrievalOnly = false,
   title,
   decision = NO_DECISION_FEATURES,
+  ingestRows,
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -1218,6 +1222,7 @@ export default function RetrievalOptions({
               }
             />
           </SettingRow>
+          {ingestRows}
         </SettingRows>
       </div>
     </div>

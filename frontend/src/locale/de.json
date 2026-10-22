@@ -2112,13 +2112,9 @@
           "label": "Datei hochladen",
           "heading": "Neues Dokument hochladen"
         },
-        "crawler": {
-          "label": "Crawler",
-          "heading": "Inhalt mit Web-Crawler hinzufügen"
-        },
-        "url": {
-          "label": "Link",
-          "heading": "Inhalt von URL hinzufügen"
+        "website": {
+          "label": "Website",
+          "heading": "Website hinzufügen"
         },
         "github": {
           "label": "GitHub",
@@ -2155,8 +2151,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "Anfangsinhalt (optional)"
+      },
+      "website": {
+        "pageUrl": "Seitenadresse",
+        "siteUrl": "Website-Adresse",
+        "addAnotherPage": "Weitere Seite hinzufügen",
+        "removePage": "Diese Adresse entfernen",
+        "maxPages": "Seitenlimit",
+        "maxPagesHint": "Bis zu {{max}}, von deinem Admin festgelegt.",
+        "pathPrefix": "Nur unterhalb von",
+        "pathPrefixHint": "Nur Adressen, die mit diesem Pfad beginnen.",
+        "pathPrefixPlaceholder": "/ (ganze Website)",
+        "sitemapUrl": "Sitemap-URL",
+        "sitemapUrlHint": "Leer lassen, um die in robots.txt angegebene zu verwenden.",
+        "includeSubdomains": "Subdomains einbeziehen",
+        "sync": "Aktuell halten",
+        "syncHintPage": "Ruft die Seiten erneut ab und übernimmt Änderungen.",
+        "syncHintSite": "Crawlt erneut und übernimmt Änderungen.",
+        "keepLinks": "Links im Seitentext behalten",
+        "keepLinksHint": "Antworten können dann auf die Seiten verlinken, auf die diese Seite verweist. Speichert etwa ein Viertel mehr Text, und die Suche kann etwas schlechter ranken.",
+        "mode": {
+          "label": "Was hinzugefügt wird",
+          "page": "Diese Seite",
+          "site": "Ganze Website",
+          "pageHint": "Fügt genau diese Seiten hinzu.",
+          "siteHint": "Fügt diese Seite und die Seiten hinzu, zu denen sie auf derselben Website führt."
+        },
+        "discovery": {
+          "label": "Seiten finden",
+          "hint": "Automatisch liest die Sitemap und folgt dann Links.",
+          "auto": "Automatisch",
+          "sitemap": "Sitemap",
+          "links": "Links folgen"
+        }
       },
       "github": {
         "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",

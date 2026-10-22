@@ -2104,13 +2104,9 @@
           "label": "上传文件",
           "heading": "上传新文档"
         },
-        "crawler": {
-          "label": "爬虫",
-          "heading": "使用网络爬虫添加内容"
-        },
-        "url": {
-          "label": "链接",
-          "heading": "从URL添加内容"
+        "website": {
+          "label": "网站",
+          "heading": "添加网站"
         },
         "github": {
           "label": "GitHub",
@@ -2147,8 +2143,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "初始内容（可选）"
+      },
+      "website": {
+        "pageUrl": "页面地址",
+        "siteUrl": "网站地址",
+        "addAnotherPage": "再添加一个页面",
+        "removePage": "移除此地址",
+        "maxPages": "页面上限",
+        "maxPagesHint": "最多 {{max}} 个，由管理员设置。",
+        "pathPrefix": "仅限路径",
+        "pathPrefixHint": "只包含以此路径开头的地址。",
+        "pathPrefixPlaceholder": "/（整个网站）",
+        "sitemapUrl": "站点地图 URL",
+        "sitemapUrlHint": "留空则使用 robots.txt 中列出的站点地图。",
+        "includeSubdomains": "包含子域名",
+        "sync": "保持更新",
+        "syncHintPage": "重新获取页面并更新有变化的内容。",
+        "syncHintSite": "重新抓取网站并更新有变化的内容。",
+        "keepLinks": "在页面文本中保留链接",
+        "keepLinksHint": "让回答可以链接到此页面指向的页面。存储的文本约多四分之一，搜索排名可能略低。",
+        "mode": {
+          "label": "添加内容",
+          "page": "此页面",
+          "site": "整个网站",
+          "pageHint": "只添加这些页面。",
+          "siteHint": "添加此页面及其在同一网站上链接到的页面。"
+        },
+        "discovery": {
+          "label": "查找页面",
+          "hint": "“自动”会先读取站点地图，再跟随链接。",
+          "auto": "自动",
+          "sitemap": "站点地图",
+          "links": "跟随链接"
+        }
       },
       "github": {
         "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",

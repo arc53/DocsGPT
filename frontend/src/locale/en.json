@@ -2112,13 +2112,9 @@
           "label": "Upload File",
           "heading": "Upload new document"
         },
-        "crawler": {
-          "label": "Crawler",
-          "heading": "Add content with Web Crawler"
-        },
-        "url": {
-          "label": "Link",
-          "heading": "Add content from URL"
+        "website": {
+          "label": "Website",
+          "heading": "Add a website"
         },
         "github": {
           "label": "GitHub",
@@ -2155,8 +2151,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "Initial content (optional)"
+      },
+      "website": {
+        "pageUrl": "Page address",
+        "siteUrl": "Website address",
+        "addAnotherPage": "Add another page",
+        "removePage": "Remove this address",
+        "maxPages": "Page limit",
+        "maxPagesHint": "Up to {{max}}, set by your admin.",
+        "pathPrefix": "Stay under",
+        "pathPrefixHint": "Only addresses that start with this path.",
+        "pathPrefixPlaceholder": "/ (whole site)",
+        "sitemapUrl": "Sitemap URL",
+        "sitemapUrlHint": "Leave empty to use the one the site lists in robots.txt.",
+        "includeSubdomains": "Include subdomains",
+        "sync": "Keep up to date",
+        "syncHintPage": "Re-fetch the pages and update what changed.",
+        "syncHintSite": "Re-crawl and update what changed.",
+        "keepLinks": "Keep links in page text",
+        "keepLinksHint": "Lets answers link to the pages this page points to. Stores about a quarter more text, and search may rank slightly lower.",
+        "mode": {
+          "label": "What to add",
+          "page": "This page",
+          "site": "Whole site",
+          "pageHint": "Adds exactly these pages.",
+          "siteHint": "Adds this page and the pages it leads to on the same site."
+        },
+        "discovery": {
+          "label": "Find pages",
+          "hint": "Automatic reads the sitemap, then follows links.",
+          "auto": "Automatic",
+          "sitemap": "Sitemap",
+          "links": "Follow links"
+        }
       },
       "github": {
         "privateHint": "Private repository? Connect your GitHub account to sync it.",

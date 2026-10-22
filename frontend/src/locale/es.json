@@ -2179,13 +2179,9 @@
           "label": "Subir archivo",
           "heading": "Subir nuevo documento"
         },
-        "crawler": {
-          "label": "Rastreador",
-          "heading": "Agregar contenido con rastreador web"
-        },
-        "url": {
-          "label": "Enlace",
-          "heading": "Agregar contenido desde URL"
+        "website": {
+          "label": "Sitio web",
+          "heading": "Añadir un sitio web"
         },
         "github": {
           "label": "GitHub",
@@ -2222,8 +2218,40 @@
         }
       },
       "fields": {
-        "url": "URL",
         "initialContent": "Contenido inicial (opcional)"
+      },
+      "website": {
+        "pageUrl": "Dirección de la página",
+        "siteUrl": "Dirección del sitio web",
+        "addAnotherPage": "Añadir otra página",
+        "removePage": "Quitar esta dirección",
+        "maxPages": "Límite de páginas",
+        "maxPagesHint": "Hasta {{max}}, fijado por tu administrador.",
+        "pathPrefix": "Solo dentro de",
+        "pathPrefixHint": "Solo direcciones que empiezan por esta ruta.",
+        "pathPrefixPlaceholder": "/ (todo el sitio)",
+        "sitemapUrl": "URL del mapa del sitio",
+        "sitemapUrlHint": "Déjalo vacío para usar el que el sitio indica en robots.txt.",
+        "includeSubdomains": "Incluir subdominios",
+        "sync": "Mantener actualizado",
+        "syncHintPage": "Vuelve a descargar las páginas y actualiza lo que cambió.",
+        "syncHintSite": "Vuelve a rastrear el sitio y actualiza lo que cambió.",
+        "keepLinks": "Conservar los enlaces en el texto",
+        "keepLinksHint": "Permite que las respuestas enlacen a las páginas a las que apunta esta página. Guarda alrededor de un cuarto más de texto y la búsqueda puede clasificar algo peor.",
+        "mode": {
+          "label": "Qué añadir",
+          "page": "Esta página",
+          "site": "Sitio completo",
+          "pageHint": "Añade exactamente estas páginas.",
+          "siteHint": "Añade esta página y las páginas a las que lleva en el mismo sitio."
+        },
+        "discovery": {
+          "label": "Encontrar páginas",
+          "hint": "Automático lee el mapa del sitio y luego sigue los enlaces.",
+          "auto": "Automático",
+          "sitemap": "Mapa del sitio",
+          "links": "Seguir enlaces"
+        }
       },
       "github": {
         "privateHint": "¿Repositorio privado? Conecta tu cuenta de GitHub para sincronizarlo.",

@@ -159,7 +159,7 @@ describe('Upload source-type tiles', () => {
       expect(tile.getAttribute('type')).toBe('button');
     }
     const crawler = found.find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     );
     expect(crawler).toBeDefined();
     expect(crawler!.querySelector('img')).toBeNull();
@@ -183,12 +183,12 @@ describe('Upload source-type tiles', () => {
   it('selects the clicked source type', async () => {
     await render();
     const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     )!;
     await act(async () => crawler.click());
     expect(tiles()).toHaveLength(0);
     expect(dialogTitle()?.textContent).toBe(
-      'modals.uploadDoc.ingestors.crawler.heading',
+      'modals.uploadDoc.ingestors.website.heading',
     );
   });
 
@@ -200,7 +200,7 @@ describe('Upload source-type tiles', () => {
   it('goes back with the header Back arrow', async () => {
     await render();
     const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     )!;
     await act(async () => crawler.click());
     const back = backButton()!;
@@ -295,8 +295,7 @@ describe('Upload source-type tiles', () => {
       .map((tile) => tile.textContent ?? '');
     expect(noAccount).toEqual([
       'modals.uploadDoc.ingestors.local_file.label',
-      'modals.uploadDoc.ingestors.url.label',
-      'modals.uploadDoc.ingestors.crawler.label',
+      'modals.uploadDoc.ingestors.website.label',
       'modals.uploadDoc.ingestors.wiki.label',
     ]);
     expect(document.body.textContent).not.toContain('connectData');
@@ -589,7 +588,7 @@ describe('Upload source-type tiles', () => {
     });
   });
 
-  it('sends a crawler source to the remote ingest with its URL', async () => {
+  it('sends a page to the remote ingest as a website source', async () => {
     const sent: { url: string; body: FormData }[] = [];
     class FakeXhr {
       upload = { addEventListener() {} };
@@ -606,7 +605,7 @@ describe('Upload source-type tiles', () => {
     vi.stubGlobal('XMLHttpRequest', FakeXhr);
     await render();
     const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     )!;
     await act(async () => crawler.click());
     const type = async (input: HTMLInputElement, value: string) => {
@@ -619,15 +618,14 @@ describe('Upload source-type tiles', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
     };
-    const inputs = Array.from(
-      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
-    );
-    // The source's name first, then the crawler's URL field.
-    await type(inputs[0], 'Docs site');
+    const nameInput = () =>
+      document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+    // The address names the source until a name is typed.
     await type(
-      document.body.querySelector<HTMLInputElement>('input[name="url"]')!,
-      'https://docs.example',
+      document.body.querySelector<HTMLInputElement>('input[type="url"]')!,
+      'docs.example.com/guide',
     );
+    expect(nameInput().value).toBe('docs.example.com');
     const train = Array.from(document.body.querySelectorAll('button')).find(
       (b) => b.textContent === 'modals.uploadDoc.train',
     )!;
@@ -635,9 +633,71 @@ describe('Upload source-type tiles', () => {
     await act(async () => train.click());
     expect(sent).toHaveLength(1);
     expect(sent[0].url).toContain('/api/remote');
-    expect(sent[0].body.get('source')).toBe('crawler');
+    expect(sent[0].body.get('source')).toBe('website');
+    expect(sent[0].body.get('name')).toBe('docs.example.com');
+    expect(sent[0].body.get('sync_frequency')).toBe('never');
     expect(JSON.parse(String(sent[0].body.get('data')))).toEqual({
-      url: 'https://docs.example',
+      entries: [{ url: 'https://docs.example.com/guide', mode: 'page' }],
+      skip: [],
+      keep_links: false,
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a whole site with its scope, synced weekly by default', async () => {
+    const sent: FormData[] = [];
+    class FakeXhr {
+      upload = { addEventListener() {} };
+      addEventListener() {}
+      open() {}
+      setRequestHeader() {}
+      send(body: FormData) {
+        sent.push(body);
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    await render();
+    const website = tiles().find((tile) =>
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
+    )!;
+    await act(async () => website.click());
+    const wholeSite = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ).find((b) => b.textContent === 'modals.uploadDoc.website.mode.site')!;
+    await act(async () => wholeSite.click());
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      const url =
+        document.body.querySelector<HTMLInputElement>('input[type="url"]')!;
+      setter.call(url, 'https://docs.example.com/Deploying/');
+      url.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // A whole site starts from one address: no "Add another page".
+    expect(document.body.textContent).not.toContain(
+      'modals.uploadDoc.website.addAnotherPage',
+    );
+    const train = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.train',
+    )!;
+    await act(async () => train.click());
+    expect(sent[0].get('sync_frequency')).toBe('weekly');
+    expect(JSON.parse(String(sent[0].get('data')))).toEqual({
+      entries: [
+        {
+          url: 'https://docs.example.com/Deploying/',
+          mode: 'site',
+          max_pages: 100,
+          // "Stay under" follows an address that ends in a folder.
+          path_prefix: '/Deploying/',
+          include_subdomains: false,
+          discovery: 'auto',
+        },
+      ],
+      skip: [],
+      keep_links: false,
     });
     vi.unstubAllGlobals();
   });
@@ -666,7 +726,7 @@ describe('Upload source-type tiles', () => {
     });
     await render();
     const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     )!;
     await act(async () => crawler.click());
     const setter = Object.getOwnPropertyDescriptor(
@@ -684,8 +744,8 @@ describe('Upload source-type tiles', () => {
       'Docs site',
     );
     await type(
-      document.body.querySelector<HTMLInputElement>('input[name="url"]')!,
-      'https://docs.example',
+      document.body.querySelector<HTMLInputElement>('input[type="url"]')!,
+      'https://docs.example.com',
     );
     const train = Array.from(document.body.querySelectorAll('button')).find(
       (b) => b.textContent === 'modals.uploadDoc.train',
@@ -704,7 +764,7 @@ describe('Upload source-type tiles', () => {
   it('leaves the disabled Train button on the default variant', async () => {
     await render();
     const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     )!;
     await act(async () => crawler.click());
     const train = Array.from(
