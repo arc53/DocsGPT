@@ -141,6 +141,15 @@
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
 
+- key: mcp:airtable
+  name: Airtable
+  description: Search, read and update records in Airtable bases.
+  icon: airtable
+  category: database
+  mcp_url: https://mcp.airtable.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://airtable.com/developers/agents/mcp/getting-started
 # Alpha Vantage only accepts redirect URIs on its allowlist (DocsGPT cloud) and
 # localhost, so a self-hosted instance on its own domain adds it as a custom
 # MCP connector with ``?apikey=<KEY>`` in the URL instead.

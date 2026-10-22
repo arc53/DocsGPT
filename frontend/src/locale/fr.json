@@ -1806,7 +1806,7 @@
       "label": "Connecteurs",
       "subtitle": "Connectez DocsGPT aux services utilisés par votre équipe. Une connexion peut synchroniser du contenu dans Connaissances et fournir des outils aux agents.",
       "search": "Rechercher des connecteurs…",
-      "addCustom": "Ajouter un outil personnalisé",
+      "addCustom": "Ajouter un connecteur personnalisé",
       "custom": {
         "custom_mcp": "Serveur MCP",
         "custom_openapi": "OpenAPI / REST"
@@ -1861,6 +1861,7 @@
         "mcp_resend": "Envoyez des e-mails et gérez contacts, audiences et domaines.",
         "mcp_calcom": "Consultez et gérez vos réservations, types d’événements, disponibilités et horaires Cal.com.",
         "mcp_context7": "Consultez la documentation à jour et des exemples de code pour les bibliothèques.",
+        "mcp_airtable": "Recherchez, lisez et modifiez des enregistrements dans les bases Airtable.",
         "mcp_alphavantage": "Consultez cours boursiers, données fondamentales, devises, cryptos, indicateurs économiques et actualités des marchés.",
         "mcp_neon": "Explorez les projets, branches et schémas Neon Postgres, et exécutez du SQL.",
         "github": "Synchronisez des dépôts dans Connaissances et laissez les agents lire le code, les tickets et les pull requests."

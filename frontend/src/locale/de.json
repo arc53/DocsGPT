@@ -1749,7 +1749,7 @@
       "label": "Konnektoren",
       "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte ins Wissen synchronisieren und Agenten Werkzeuge geben.",
       "search": "Konnektoren suchen...",
-      "addCustom": "Eigenes Werkzeug hinzufügen",
+      "addCustom": "Eigenen Konnektor hinzufügen",
       "custom": {
         "custom_mcp": "MCP-Server",
         "custom_openapi": "OpenAPI / REST"
@@ -1803,6 +1803,7 @@
         "mcp_miro": "Miro-Boards finden, Inhalte und Kommentare lesen, Diagramme erstellen und auf Kommentare antworten.",
         "mcp_resend": "E-Mails senden sowie Kontakte, Zielgruppen und Domains verwalten.",
         "mcp_calcom": "Cal.com-Buchungen, Eventtypen, Verfügbarkeit und Zeitpläne lesen und verwalten.",
+        "mcp_airtable": "Datensätze in Airtable-Bases suchen, lesen und aktualisieren.",
         "mcp_context7": "Aktuelle Dokumentation und Codebeispiele für Bibliotheken nachschlagen.",
         "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",

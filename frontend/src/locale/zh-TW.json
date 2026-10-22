@@ -1747,7 +1747,7 @@
       "label": "連接器",
       "subtitle": "將 DocsGPT 連接到團隊使用的服務。一個連線可以把內容同步到知識庫，也可以為代理提供工具。",
       "search": "搜尋連接器...",
-      "addCustom": "新增自訂工具",
+      "addCustom": "新增自訂連接器",
       "custom": {
         "custom_mcp": "MCP 伺服器",
         "custom_openapi": "OpenAPI / REST"
@@ -1801,6 +1801,7 @@
         "mcp_miro": "尋找 Miro 白板、閱讀內容和留言、建立圖表並回覆留言。",
         "mcp_resend": "傳送電子郵件並管理聯絡人、受眾和網域。",
         "mcp_calcom": "讀取並管理您的 Cal.com 預約、活動類型、空閒時間和排程。",
+        "mcp_airtable": "搜尋、讀取和更新 Airtable 資料庫中的記錄。",
         "mcp_context7": "查詢函式庫的最新文件與程式碼範例。",
         "mcp_alphavantage": "查詢股票報價、基本面資料、外匯、加密貨幣、經濟指標和市場新聞。",
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
