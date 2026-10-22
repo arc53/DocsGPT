@@ -140,10 +140,15 @@ class CrawlerLoader(BaseRemote):
         return links
 
     def _get_base_domain(self, url):
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+        if not self.allow_subdomains:
+            return hostname
+
         extracted = _extract(url)
-        # Reconstruct the domain as domain.suffix
-        base_domain = f"{extracted.domain}.{extracted.suffix}"
-        return base_domain
+        if extracted.suffix:
+            return f"{extracted.domain}.{extracted.suffix}".lower()
+        return (extracted.domain or hostname).lower()
 
     def _filter_links(self, links, base_domain):
         """
@@ -152,21 +157,20 @@ class CrawlerLoader(BaseRemote):
         - If allow_subdomains is False, only allow exact matches of the base_domain.
         """
         filtered = []
+        base = (base_domain or "").lower()
         for link, _ in links:
             parsed_link = urlparse(link)
-            if not parsed_link.netloc:
+            link_host = (parsed_link.hostname or "").lower()
+            if not link_host:
                 continue
 
-            extracted = _extract(parsed_link.netloc)
-            link_base = f"{extracted.domain}.{extracted.suffix}"
-
             if self.allow_subdomains:
-                # For subdomains: sub.example.com ends with example.com
-                if link_base == base_domain or link_base.endswith("." + base_domain):
+                # Allow exact domain match or any subdomain of base_domain
+                if link_host == base or link_host.endswith("." + base):
                     filtered.append(link)
             else:
-                # Exact domain match
-                if link_base == base_domain:
+                # Exact domain match only
+                if link_host == base:
                     filtered.append(link)
         return filtered
 
