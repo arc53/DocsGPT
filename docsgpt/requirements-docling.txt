@@ -111,7 +111,7 @@ celery==5.6.3
     #   docsgpt
 celery-redbeat==2.4.2
     # via docsgpt
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   docling-slim
     #   httpcore
@@ -780,7 +780,7 @@ pylatexenc==2.11
     # via docling-slim
 pyparsing==3.3.3
     # via httplib2
-pypdf==6.19.0
+pypdf==6.21.2
     # via docsgpt
 pypdfium2==5.14.0
     # via

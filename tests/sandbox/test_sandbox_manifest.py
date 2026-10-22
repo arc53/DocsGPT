@@ -84,7 +84,7 @@ def test_pip_packages_have_no_duplicates():
 
 
 def test_sandbox_carries_the_libraries_models_reach_for():
-    """The production misses: requests, pypdf, PyPDF2, bs4, pdfplumber, OCR, animation, YAML."""
+    """The production misses: requests, pypdf, bs4, pdfplumber, OCR, animation, YAML."""
     imports = {p["import"] for p in manifest.PIP_PACKAGES}
     assert {
         "pandas",
@@ -95,7 +95,6 @@ def test_sandbox_carries_the_libraries_models_reach_for():
         "reportlab",
         "requests",
         "pypdf",
-        "PyPDF2",
         "bs4",
         "pdfplumber",
         "pypdfium2",
@@ -123,9 +122,15 @@ def test_pdfplumber_pins_match_its_requirements():
 
 
 def test_pillow_and_pypdf_are_past_their_known_vulnerabilities():
-    """Pillow < 12.3.0 and pypdf < 6.19.0 carry published CVEs."""
-    assert _pinned_version("pillow") >= (12, 3, 0)
-    assert _pinned_version("pypdf") >= (6, 19, 0)
+    """Pillow is 13.0.0+ and pypdf 6.20.1+."""
+    assert _pinned_version("pillow") >= (13, 0, 0)
+    assert _pinned_version("pypdf") >= (6, 20, 1)
+
+
+def test_pypdf2_is_not_installed_and_points_at_pypdf():
+    """PyPDF2 is deprecated; imports of it get a pypdf hint instead."""
+    assert "PyPDF2" not in {p["import"] for p in manifest.PIP_PACKAGES}
+    assert "pypdf" in manifest.NOT_INSTALLED["PyPDF2"]["use"]
 
 
 def test_pandas_stays_on_the_2_x_series():
