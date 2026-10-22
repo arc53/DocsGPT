@@ -459,3 +459,51 @@ class TestRemoteWorkerWebsite:
         stored = SourcesRepository(pg_conn).get(str(source["id"]), "bob")["metadata"]["website"]
         assert stored["sites"] == loader.report["sites"]
         assert stored["fetched_at"] == leaf["fetched_at"]
+
+
+@pytest.mark.unit
+class TestSyncUsesTheSourcesConfig:
+    def test_sync_chunks_with_the_stored_chunking_settings(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        """A scheduled sync or Sync now re-chunks with the source's own
+        chunking settings, not the defaults."""
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "tuned-site",
+            user_id="dora",
+            type="website",
+            retriever="classic",
+            sync_frequency="weekly",
+            remote_data={"entries": [{"url": "https://example.com/", "mode": "page"}]},
+            config={"chunking": {"max_tokens": 400, "min_tokens": 50}},
+        )
+        captured: dict = {}
+        real_create = worker.ChunkerCreator.create_chunker
+
+        def _capture(strategy, **kwargs):
+            captured.update(kwargs)
+            return real_create(strategy, **kwargs)
+
+        monkeypatch.setattr(worker.ChunkerCreator, "create_chunker", _capture)
+
+        result = worker.sync(
+            task_self,
+            {"entries": [{"url": "https://example.com/", "mode": "page"}]},
+            "tuned-site",
+            "dora",
+            "website",
+            "weekly",
+            "classic",
+            str(src["id"]),
+        )
+
+        assert result == {"status": "success"}
+        assert captured["max_tokens"] == 400
+        assert captured["min_tokens"] == 50

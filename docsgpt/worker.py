@@ -1639,6 +1639,34 @@ def _record_website_report(source_id: str, user: str, report: dict, fetched_at: 
     return summary
 
 
+def _stored_source_config(doc_id: Optional[str], user: str) -> Optional[Dict[str, Any]]:
+    """Read a source's stored per-source config.
+
+    Args:
+        doc_id: The source id.
+        user: The source's owner.
+
+    Returns:
+        The ``sources.config`` dict, or ``None`` when the source or its
+        config is missing (the ingest defaults then apply).
+    """
+    if not doc_id:
+        return None
+    try:
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(str(doc_id), user)
+    except Exception as e:  # noqa: BLE001 - a sync still runs on the defaults
+        logging.warning(f"Could not read the config of source {doc_id}: {e}")
+        return None
+    config = (source or {}).get("config")
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError:
+            return None
+    return config or None
+
+
 def sync(
     self,
     source_data,
@@ -1663,6 +1691,8 @@ def sync(
             sync_frequency,
             "sync",
             doc_id,
+            # Re-chunk with the source's own settings, not the defaults.
+            config=_stored_source_config(doc_id, user),
             connection_id=connection_id,
         )
     except Exception as e:
