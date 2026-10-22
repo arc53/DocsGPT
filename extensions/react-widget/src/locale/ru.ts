@@ -37,6 +37,7 @@ export const ru = {
   workflowStep: '{step}…',
   copyAnswer: 'Копировать ответ',
   copyCode: 'Копировать код',
+  opensInNewTab: 'Открывается в новой вкладке',
   copied: 'Скопировано',
   goodResponse: 'Хороший ответ',
   badResponse: 'Плохой ответ',

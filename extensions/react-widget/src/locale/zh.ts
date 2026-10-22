@@ -37,6 +37,7 @@ export const zh = {
   workflowStep: '{step}…',
   copyAnswer: '复制回答',
   copyCode: '复制代码',
+  opensInNewTab: '在新标签页中打开',
   copied: '已复制',
   goodResponse: '回答很好',
   badResponse: '回答不好',

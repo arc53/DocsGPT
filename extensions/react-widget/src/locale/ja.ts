@@ -37,6 +37,7 @@ export const ja = {
   workflowStep: '{step}…',
   copyAnswer: '回答をコピー',
   copyCode: 'コードをコピー',
+  opensInNewTab: '新しいタブで開きます',
   copied: 'コピー済み',
   goodResponse: '良い回答',
   badResponse: '良くない回答',
