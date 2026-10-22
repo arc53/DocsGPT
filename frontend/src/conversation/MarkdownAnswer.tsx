@@ -106,10 +106,10 @@ export default function MarkdownAnswer({
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   // Every web link opens a new tab; one hidden description per answer says
-  // so to screen readers without landing in copied text. Rendered only when
-  // the markdown can hold a link (a URL, `www.`, `[text](…)` or `[text][ref]`).
+  // so to screen readers without landing in copied text. Always rendered:
+  // guessing from the markdown misses links with no URL text (an email
+  // autolink, a shortcut reference), and a hidden span costs nothing.
   const newTabHintId = useId();
-  const mayHaveLink = /https?:\/\/|www\.|\]\s*[([]/i.test(content);
   const artifacts = useStableArtifacts(artifactsProp);
   const turnArtifacts = useStableArtifacts(turnArtifactsProp);
 
@@ -302,11 +302,9 @@ export default function MarkdownAnswer({
           )}
         </Fragment>
       ))}
-      {mayHaveLink && (
-        <span id={newTabHintId} hidden>
-          {t('conversation.opensInNewTab')}
-        </span>
-      )}
+      <span id={newTabHintId} hidden>
+        {t('conversation.opensInNewTab')}
+      </span>
     </>
   );
 }

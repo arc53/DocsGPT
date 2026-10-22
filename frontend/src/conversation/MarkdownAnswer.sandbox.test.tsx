@@ -141,6 +141,23 @@ describe('MarkdownAnswer sandbox: links', () => {
     expect(hint?.textContent).toBe('conversation.opensInNewTab');
   });
 
+  // Links with no URL text in the markdown: email autolinks (GFM links a bare
+  // address too) and shortcut references.
+  it.each([
+    ['an email autolink', 'Write to <user@example.com> today.'],
+    ['a bare email address', 'Write to user@example.com today.'],
+    ['a shortcut reference', 'See [the docs].\n\n[the docs]: /docs'],
+  ])('points %s at a hint that exists', (_, content) => {
+    render(content);
+
+    const anchor = container.querySelector('a');
+    const hintId = anchor?.getAttribute('aria-describedby') ?? '';
+    expect(hintId).not.toBe('');
+    expect(document.getElementById(hintId)?.textContent).toBe(
+      'conversation.opensInNewTab',
+    );
+  });
+
   it('still blocks javascript: urls', () => {
     render('[click](javascript:alert&#40;1&#41;)');
     expect(container.querySelector('a')?.getAttribute('href')).toBe('');
