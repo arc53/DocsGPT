@@ -1034,6 +1034,29 @@
       ],
       "type": "object"
     },
+    "RemoveWebsitePagesModel": {
+      "properties": {
+        "directory_path": {
+          "description": "Tree path of a folder to remove",
+          "type": "string"
+        },
+        "file_paths": {
+          "description": "Tree paths of pages to remove",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id"
+      ],
+      "type": "object"
+    },
     "ScheduleCreate": {
       "properties": {
         "cron": {
@@ -1618,6 +1641,41 @@
         "file",
         "name",
         "user"
+      ],
+      "type": "object"
+    },
+    "WebsiteSettingsModel": {
+      "properties": {
+        "entries": {
+          "description": "What the source fetches: {url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "keep_links": {
+          "description": "Keep the URL of links inside sentences in page text",
+          "type": "boolean"
+        },
+        "skip": {
+          "description": "Pages (url) or sections (https://host/path/*) to leave out",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        },
+        "sync_frequency": {
+          "description": "never, daily, weekly or monthly",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "source_id"
       ],
       "type": "object"
     },
@@ -7210,6 +7268,77 @@
         },
         "tags": [
           "agents"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/website": {
+      "get": {
+        "description": "A Website source's config, sync schedule and last ingest report.",
+        "operationId": "get_website_settings",
+        "parameters": [
+          {
+            "description": "Source ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync.",
+        "operationId": "post_website_settings",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebsiteSettingsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/website/remove": {
+      "post": {
+        "description": "Remove pages or a folder from a Website source: their chunks and tree entries go now. A page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs.",
+        "operationId": "post_remove_website_pages",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RemoveWebsitePagesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
         ],
         "x-pat-denied": true
       }
