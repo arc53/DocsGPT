@@ -89,9 +89,9 @@ class NodeRelease(TypedDict):
 # image. pdfplumber pins pdfminer.six exactly and sets floors on Pillow and
 # pypdfium2, so bump those four together. pandas stays on 2.x: pandas 3 changes
 # copy and string-dtype semantics that model-written code relies on; numpy stays
-# on the series pandas 2.3 was released against. PyPDF2 is deprecated (its code
-# moved to pypdf) and has had no release since 3.0.1; it stays only because
-# model-written code still imports it.
+# on the series pandas 2.3 was released against. PyPDF2 is left out: it is
+# deprecated (its code moved to pypdf) and has had no release since 3.0.1, so
+# NOT_INSTALLED points its imports at pypdf.
 # reportlab is 4.4+ for its HarfBuzz shaping (through uharfbuzz), which the pdf
 # artifact renderer uses for Devanagari and other complex scripts.
 PIP_PACKAGES: Tuple[PipPackage, ...] = (
@@ -106,12 +106,11 @@ PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "arabic-reshaper==3.0.1", "import": "arabic_reshaper", "use": "join Arabic letters for reportlab"},
     {"spec": "python-bidi==0.6.11", "import": "bidi", "use": "right-to-left display order for reportlab"},
     {"spec": "lxml==6.1.3", "import": "lxml", "use": "XML and HTML parsing"},
-    {"spec": "pillow==12.3.0", "import": "PIL", "use": "images"},
+    {"spec": "pillow==13.0.0", "import": "PIL", "use": "images"},
     {"spec": "requests==2.34.2", "import": "requests", "use": "HTTP"},
     {"spec": "beautifulsoup4==4.15.0", "import": "bs4", "use": "HTML parsing"},
     {"spec": "PyYAML==6.0.3", "import": "yaml", "use": "YAML"},
-    {"spec": "pypdf==6.19.0", "import": "pypdf", "use": "read, merge and split PDFs"},
-    {"spec": "PyPDF2==3.0.1", "import": "PyPDF2", "use": "older pypdf API that existing code imports"},
+    {"spec": "pypdf==6.21.2", "import": "pypdf", "use": "read, merge and split PDFs"},
     {"spec": "pdfplumber==0.11.10", "import": "pdfplumber", "use": "PDF text, tables and page images"},
     {"spec": "pdfminer.six==20260107", "import": "pdfminer", "use": "PDF text layout (pdfplumber's engine)"},
     {"spec": "pypdfium2==5.14.0", "import": "pypdfium2", "use": "render PDF pages to images"},
@@ -313,6 +312,7 @@ _USE_PDFPLUMBER_TABLES = "pdfplumber's page.extract_tables()"
 # what to use instead. Data for the code_executor's fix hints; nothing here is
 # installed.
 NOT_INSTALLED: Dict[str, Missing] = {
+    "PyPDF2": {"package": "PyPDF2", "use": "pypdf (PyPDF2's successor: from pypdf import PdfReader, PdfWriter)"},
     "fitz": {"package": "PyMuPDF", "use": "pdfplumber (text, tables, page images) or pypdf; PyMuPDF is AGPL"},
     "pymupdf": {"package": "PyMuPDF", "use": "pdfplumber (text, tables, page images) or pypdf; PyMuPDF is AGPL"},
     "pdf2image": {"package": "pdf2image", "use": "pypdfium2, pdfplumber's page.to_image() or the pdftoppm command"},
