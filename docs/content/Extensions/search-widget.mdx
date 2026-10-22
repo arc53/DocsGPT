@@ -54,10 +54,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Search Bar Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script src="https://unpkg.com/docsgpt@0.12.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
 ```
 
-The bundle defines `renderSearchBar` (and `renderDocsGPTWidget`) on `window`. `0.12.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version.
+The bundle defines `renderSearchBar` (and `renderDocsGPTWidget`) on `window`. `0.13.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version.
 
 ### Usage
 
@@ -72,7 +72,7 @@ Then, in a `<script>` block after the widget script, use the `renderSearchBar` f
 ```html filename="html"
 <!DOCTYPE html>
 <div id="search-bar-container"></div>
-<script src="https://unpkg.com/docsgpt@0.12.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
 <script>
   window.onload = function() {
     renderSearchBar('search-bar-container', {
