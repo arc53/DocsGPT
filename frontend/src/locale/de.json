@@ -1805,6 +1805,7 @@
         "mcp_calcom": "Cal.com-Buchungen, Eventtypen, Verfügbarkeit und Zeitpläne lesen und verwalten.",
         "mcp_vercel": "Vercel-Projekte, Deployments und Build-Logs verwalten.",
         "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
+        "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",

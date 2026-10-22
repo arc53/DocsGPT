@@ -1805,6 +1805,7 @@
         "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
         "mcp_vercel": "Manage Vercel projects, deployments and build logs.",
         "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
+        "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
