@@ -144,6 +144,11 @@ export interface TreeBrowserProps {
     files: number;
     tokens: number;
   }) => React.ReactNode;
+  /**
+   * Shown above an open file's chunks (a synced Website source: hand edits
+   * are replaced at the next sync).
+   */
+  chunksNotice?: React.ReactNode;
 }
 
 /** The stored structure, with page titles as names for a Website source. */
@@ -238,6 +243,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   canEdit = true,
   variant = 'files',
   renderByline,
+  chunksNotice,
 }) => {
   const { t } = useTranslation();
   const pages = variant === 'pages';
@@ -259,12 +265,14 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     useState<OpenChunkPosition>(null);
   const chunksControllerRef = useRef<ChunksController | null>(null);
 
-  useEffect(
-    () => () => {
+  // Set on every mount: StrictMode unmounts and mounts again, and a flag
+  // that only ever turned false dropped every later refresh.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const onCurrentPathChangeRef = useRef(onCurrentPathChange);
   const onDirectoryDataLoadedRef = useRef(onDirectoryDataLoaded);
@@ -802,21 +810,30 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
 
   const currentDirectory = getCurrentDirectory();
 
-  const renderChunks = (file: { id: string; name: string }) => (
-    <Chunks
-      key={file.id}
-      embedded
-      documentId={docId}
-      documentName={sourceName}
-      handleGoBack={() => setSelectedFile(null)}
-      path={file.id}
-      fileName={file.name}
-      controllerRef={chunksControllerRef}
-      onOpenChunkChange={setOpenChunkPosition}
-      canEdit={canEdit}
-      linkedChunk={file.id === linkedFile ? linkedChunk : undefined}
-    />
-  );
+  const renderChunks = (file: { id: string; name: string }) => {
+    const chunks = (
+      <Chunks
+        key={file.id}
+        embedded
+        documentId={docId}
+        documentName={sourceName}
+        handleGoBack={() => setSelectedFile(null)}
+        path={file.id}
+        fileName={file.name}
+        controllerRef={chunksControllerRef}
+        onOpenChunkChange={setOpenChunkPosition}
+        canEdit={canEdit}
+        linkedChunk={file.id === linkedFile ? linkedChunk : undefined}
+      />
+    );
+    if (!chunksNotice) return chunks;
+    return (
+      <div className="flex flex-col gap-4">
+        {chunksNotice}
+        {chunks}
+      </div>
+    );
+  };
 
   const renderTable = () => (
     <TableContainer>

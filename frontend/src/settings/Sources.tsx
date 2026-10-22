@@ -94,6 +94,7 @@ import {
   decisionFeatures,
 } from './components/RetrievalOptions';
 import WikiSettingsModal from './WikiSettingsModal';
+import WebsiteSettingsModal from './WebsiteSettingsModal';
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
@@ -204,6 +205,8 @@ export default function Sources({
   };
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
   const [documentForWikiSettings, setDocumentForWikiSettings] =
+    useState<Doc | null>(null);
+  const [documentForWebsiteSettings, setDocumentForWebsiteSettings] =
     useState<Doc | null>(null);
   const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
     null,
@@ -478,20 +481,34 @@ export default function Sources({
       });
     }
 
-    if (canEdit && document.syncFrequency) {
-      // One row per sync frequency; the current one carries the check.
-      syncOptions.forEach((opt) => {
-        actions.push({
-          icon: document.syncFrequency === opt.value ? Check : RefreshCw,
-          label: t('settings.sources.syncFrequency.option', {
-            frequency: opt.label,
-          }),
-          onClick: () => {
-            handleManageSync(document, opt.value);
-          },
-          variant: 'default',
-        });
+    // A website source keeps its list, skips and schedule in one place.
+    if (canEdit && document.id && document.website) {
+      actions.push({
+        icon: Globe,
+        label: t('settings.sources.website.settingsTitle'),
+        onClick: () => {
+          setDocumentForWebsiteSettings(document);
+        },
+        variant: 'default',
       });
+    }
+
+    if (canEdit && document.syncFrequency) {
+      // One row per sync frequency; the current one carries the check. A
+      // website source sets it in Website settings instead.
+      if (!document.website)
+        syncOptions.forEach((opt) => {
+          actions.push({
+            icon: document.syncFrequency === opt.value ? Check : RefreshCw,
+            label: t('settings.sources.syncFrequency.option', {
+              frequency: opt.label,
+            }),
+            onClick: () => {
+              handleManageSync(document, opt.value);
+            },
+            variant: 'default',
+          });
+        });
       actions.push({
         icon: RefreshCw,
         label: t('settings.sources.syncNow'),
@@ -1128,6 +1145,15 @@ export default function Sources({
         <WikiSettingsModal
           document={documentForWikiSettings}
           onClose={() => setDocumentForWikiSettings(null)}
+        />
+      )}
+
+      {documentForWebsiteSettings && (
+        <WebsiteSettingsModal
+          document={documentForWebsiteSettings}
+          onClose={() => setDocumentForWebsiteSettings(null)}
+          onSaved={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+          onSyncNow={() => handleSyncNow(documentForWebsiteSettings)}
         />
       )}
 

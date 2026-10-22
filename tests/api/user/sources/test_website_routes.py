@@ -213,6 +213,8 @@ class TestRemovePages:
         response = self._remove(app, pg_conn, src, store, file_paths=["extra.md"])
 
         assert response.status_code == 400
+        # The UI words this one itself.
+        assert response.json["code"] == "last_entry"
         store.delete_chunks_by_source_path.assert_not_called()
 
     def test_unknown_paths_are_400(self, app, pg_conn):

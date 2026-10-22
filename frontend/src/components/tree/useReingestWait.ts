@@ -23,8 +23,11 @@ export function useReingestSseWaiter() {
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const timerRef = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
+  // Set on every mount: StrictMode unmounts and mounts again, and a flag
+  // that only ever turned false answered every later wait with 'unmounted'.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
@@ -32,9 +35,8 @@ export function useReingestSseWaiter() {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-    },
-    [],
-  );
+    };
+  }, []);
 
   const waitForTerminal = useCallback(
     (sourceId: string | undefined, opStartedAt: number) =>

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { nodeAtPath, pageAddress, withPageTitles } from './pages';
+import {
+  folderAddress,
+  nodeAtPath,
+  pageAddress,
+  withPageTitles,
+} from './pages';
 import type { FileNode } from './types';
 
 const leaf = (extra: Record<string, unknown> = {}) => ({
@@ -86,6 +91,25 @@ describe('nodeAtPath', () => {
     expect(nodeAtPath(structure, 'a/b.md')?.url).toBe('https://x.io/a/b');
     expect(nodeAtPath(structure, 'a/missing.md')).toBeNull();
     expect(nodeAtPath(structure, 'a')).toBeNull();
+  });
+});
+
+describe('folderAddress', () => {
+  it('is the section address a folder stands for', () => {
+    const structure = {
+      Deploying: {
+        'Docker.md': leaf({ url: 'https://docs.x.io/Deploying/Docker' }),
+      },
+      'docs.x.io': {
+        API: { 'a.md': leaf({ url: 'https://docs.x.io/API/a' }) },
+      },
+    };
+
+    expect(folderAddress(structure, 'Deploying')).toBe('docs.x.io/Deploying/');
+    // In a source with several hosts the first folder is the host.
+    expect(folderAddress(structure, 'docs.x.io/API')).toBe('docs.x.io/API/');
+    expect(folderAddress(structure, 'docs.x.io')).toBe('docs.x.io/');
+    expect(folderAddress(structure, 'Missing')).toBeNull();
   });
 });
 

@@ -95,6 +95,41 @@ export function nodeAtPath(
   return isLeaf(node) ? node : null;
 }
 
+function firstUrl(node: unknown): string | null {
+  if (isLeaf(node)) return typeof node.url === 'string' ? node.url : null;
+  if (!node || typeof node !== 'object') return null;
+  for (const child of Object.values(node)) {
+    const url = firstUrl(child);
+    if (url) return url;
+  }
+  return null;
+}
+
+/**
+ * The section a folder of a Website source stands for (`docs.x.io/Deploying/`),
+ * as removing the folder skips it: its path, under the host of a page inside.
+ *
+ * @param structure The source's tree.
+ * @param dirPath The folder's tree path.
+ * @returns The address without scheme, or null when the folder holds no page.
+ */
+export function folderAddress(
+  structure: DirectoryStructure,
+  dirPath: string,
+): string | null {
+  let node: unknown = structure;
+  const parts = dirPath.split('/').filter(Boolean);
+  for (const part of parts) {
+    if (!node || typeof node !== 'object' || isLeaf(node)) return null;
+    node = (node as DirectoryStructure)[part];
+  }
+  const url = firstUrl(node);
+  if (!url || isLeaf(node)) return null;
+  const host = new URL(url).host;
+  const path = parts[0] === host ? parts.slice(1) : parts;
+  return `${host}/${path.length ? `${path.join('/')}/` : ''}`;
+}
+
 /** A page's address as shown under its title: no scheme, no trailing slash. */
 export function pageAddress(url: string): string {
   return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/(?=$|\?)/, '');

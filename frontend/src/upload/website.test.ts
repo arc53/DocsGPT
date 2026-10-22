@@ -5,6 +5,7 @@ import {
   isWebsiteDraftValid,
   nameFromUrl,
   normalizeUrl,
+  pageKey,
   pathPrefixFromUrl,
   websiteConfig,
 } from './website';
@@ -106,6 +107,16 @@ describe('websiteConfig', () => {
     expect(websiteConfig(draft, false).entries[0]).not.toHaveProperty(
       'sitemap_url',
     );
+  });
+});
+
+describe('pageKey', () => {
+  it('treats scheme, www., a trailing slash and the fragment as the same page', () => {
+    const key = pageKey('https://docs.x.io/guide');
+    expect(pageKey('http://www.docs.x.io/guide/')).toBe(key);
+    expect(pageKey('https://DOCS.x.io/guide#install')).toBe(key);
+    expect(pageKey('https://docs.x.io/guides')).not.toBe(key);
+    expect(pageKey('https://docs.x.io/guide?v=2')).not.toBe(key);
   });
 });
 

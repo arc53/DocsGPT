@@ -146,6 +146,29 @@ const userService = {
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
   syncSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
+  // A Website source: its settings, and adding, refreshing and removing pages.
+  getWebsite: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.WEBSITE(sourceId), token),
+  saveWebsite: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_SAVE, data, token),
+  addWebsitePages: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_PAGES, data, token),
+  refreshWebsitePage: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_REFRESH, data, token),
+  removeWebsitePages: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_REMOVE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
   createSourceFromAttachments: (

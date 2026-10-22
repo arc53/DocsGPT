@@ -97,6 +97,22 @@ export function pathPrefixFromUrl(value: string): string {
   return url.pathname;
 }
 
+/**
+ * One key per page, as the backend compares them (`website_loader.page_key`):
+ * scheme, `www.`, the host's case, a trailing slash and the fragment don't
+ * count; the query does.
+ */
+export function pageKey(value: string): string {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const path = url.pathname.replace(/\/+$/, '');
+    return `${host}${path}${url.search}`;
+  } catch {
+    return value.trim();
+  }
+}
+
 export function websiteConfig(
   draft: WebsiteDraft,
   keepLinks: boolean,

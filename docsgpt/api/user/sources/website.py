@@ -36,8 +36,12 @@ from docsgpt.utils import check_required_fields
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 
-def _error(message: str, status: int = 400):
-    return make_response(jsonify({"success": False, "error": message}), status)
+def _error(message: str, status: int = 400, code: str | None = None):
+    """A failed response; ``code`` names an error the UI words itself."""
+    body = {"success": False, "error": message}
+    if code:
+        body["code"] = code
+    return make_response(jsonify(body), status)
 
 
 def _website_config(doc: dict):
@@ -180,7 +184,10 @@ class RemoveWebsitePages(Resource):
 
                 config = _without_pages(config, pages, section_rule)
                 if not config["entries"]:
-                    return _error("That would leave the source with nothing to fetch; delete the source instead")
+                    return _error(
+                        "That would leave the source with nothing to fetch; delete the source instead",
+                        code="last_entry",
+                    )
 
                 store = get_vector_store(str(doc["id"]))
                 for _path, url in pages:

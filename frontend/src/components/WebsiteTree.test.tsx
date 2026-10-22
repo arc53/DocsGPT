@@ -15,6 +15,10 @@ vi.mock('react-i18next', () => ({
 vi.mock('react-redux', () => ({
   useSelector: () => null,
   useDispatch: () => vi.fn(),
+  useStore: () => ({
+    getState: () => ({ notifications: { recentEvents: [] } }),
+    subscribe: () => () => undefined,
+  }),
 }));
 
 vi.mock('../hooks', () => ({
@@ -34,6 +38,7 @@ vi.mock('../api/services/userService', () => ({
       ok: true,
       json: async () => ({ page: 1, per_page: 12, total: 0, chunks: [] }),
     })),
+    getWebsite: vi.fn(async () => ({ ok: false, json: async () => ({}) })),
   },
 }));
 

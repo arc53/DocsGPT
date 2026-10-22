@@ -82,6 +82,12 @@ const endpoints = {
     TRACES: (params: string) => `/api/traces?${params}`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
+    WEBSITE: (sourceId: string) =>
+      `/api/website?id=${encodeURIComponent(sourceId)}`,
+    WEBSITE_SAVE: '/api/website',
+    WEBSITE_PAGES: '/api/website/pages',
+    WEBSITE_REFRESH: '/api/website/refresh',
+    WEBSITE_REMOVE: '/api/website/remove',
     REINGEST_SOURCE: '/api/sources/reingest',
     SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,

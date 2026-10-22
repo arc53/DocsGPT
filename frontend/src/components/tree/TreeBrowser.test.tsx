@@ -1,5 +1,7 @@
-import { act, useState } from 'react';
+import { act, StrictMode, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+
+import type { TreeBrowserController } from './types';
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -106,6 +108,42 @@ describe('TreeBrowser', () => {
     Array.from(container.querySelectorAll('tbody tr')).map((tr) =>
       tr.querySelector('td')?.textContent?.trim(),
     );
+
+  it('shows a refreshed structure under StrictMode', async () => {
+    // StrictMode mounts, unmounts and mounts again; a mounted flag that only
+    // ever turns false dropped every refresh after a delete or an add.
+    const controllerRef = {
+      current: null,
+    } as React.MutableRefObject<TreeBrowserController | null>;
+    state.structure = NESTED;
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <TreeBrowser
+            docId="doc"
+            sourceName="Contracts"
+            onBackToDocuments={onBack}
+            columnOrder="size-first"
+            topRightAction={null}
+            controllerRef={controllerRef}
+          />
+        </StrictMode>,
+      );
+    });
+    expect(rows()).toEqual(['legal', 'readme.md']);
+
+    state.structure = {
+      legal: NESTED.legal,
+      'notes.md': { type: 'md', size_bytes: 5, token_count: 10 },
+    };
+    let refreshed = false;
+    await act(async () => {
+      refreshed = (await controllerRef.current?.refreshDirectory()) ?? false;
+    });
+
+    expect(refreshed).toBe(true);
+    expect(rows()).toEqual(['legal', 'notes.md']);
+  });
 
   const openRow = async (name: string) => {
     const row = Array.from(container.querySelectorAll('tr')).find(
