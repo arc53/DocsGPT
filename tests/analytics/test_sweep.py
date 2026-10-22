@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime
 import json
 import re
@@ -16,7 +17,7 @@ from docsgpt.analytics import schema, states, tasks
 from docsgpt.analytics.states import TERMINATED_RESPONSE_PLACEHOLDER
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget
-from docsgpt.decisions.models import V02, version
+from docsgpt.decisions.models import V01, V02, version
 from docsgpt.decisions.testing import FakeDecider, installed
 from docsgpt.decisions.types import BatchResult
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -795,6 +796,55 @@ class TestDigestAndBackfill:
         estimate = tasks.backfill_estimate(7)
         assert (estimate["messages"], estimate["conversations"], estimate["turns"]) == (2, 1, 2)
         assert estimate["estimated_compute_s"] is None and not fake.calls
+
+    def test_backfill_estimate_skips_what_the_servers_model_labelled(self, db, fake):
+        _two_turns(db)
+        tasks.sweep()
+        server = _Server(answered=True)
+        with installed(server):
+            estimate = tasks.backfill_estimate(7)
+        assert (estimate["messages"], estimate["conversations"], estimate["turns"]) == (0, 0, 0)
+        assert server.probes == 1
+        assert estimate["model_version"] == VERSION and "warning" not in estimate
+
+    def test_backfill_estimate_says_when_the_server_did_not_answer(self, db, fake, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_BASE_URL", "http://decider:7095")
+        _two_turns(db)
+        tasks.sweep()
+        with installed(_Server(answered=False)):
+            estimate = tasks.backfill_estimate(7)
+        assert estimate["model_version"] == version(V01)
+        assert "did not answer" in estimate["warning"]
+
+    def test_backfill_estimate_says_when_no_server_is_set(self, db, fake, monkeypatch):
+        _two_turns(db)
+        tasks.sweep()
+        monkeypatch.setattr(settings, "DECISION_MODE", "api")  # and no DECISION_BASE_URL: the probe answers None
+        monkeypatch.setattr("docsgpt.decisions._client", None)  # the real client, not the fake
+        estimate = tasks.backfill_estimate(7)
+        assert (estimate["messages"], estimate["model_version"]) == (2, version(V01))
+        assert "DECISION_BASE_URL" in estimate["warning"] and "did not answer" not in estimate["warning"]
+
+    def test_backfill_estimate_asks_no_server_in_local_mode(self, db, fake):
+        _two_turns(db)
+        tasks.sweep()
+        estimate = tasks.backfill_estimate(7)
+        assert (estimate["messages"], estimate["model_version"]) == (0, VERSION) and "warning" not in estimate
+
+
+class _Server(FakeDecider):
+    """A client in API mode: until it probes the server it assumes a server's default model (V01), as the real
+    client does, and a probe that is answered learns the model the server runs (V02)."""
+
+    def __init__(self, answered: bool):
+        super().__init__(ANSWERS, model_version=version(V01))
+        self.mode, self.answered, self.probes = "api", answered, 0
+
+    def probe(self, timeout: float = 5.0) -> bool:
+        self.probes += 1
+        if self.answered:
+            self.info = dataclasses.replace(self.info, version=VERSION)
+        return self.answered
 
 
 def _candidates(conn, **kwargs) -> list[dict]:
