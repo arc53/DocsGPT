@@ -807,13 +807,23 @@ class TestDigestAndBackfill:
         assert server.probes == 1
         assert estimate["model_version"] == VERSION and "warning" not in estimate
 
-    def test_backfill_estimate_says_when_the_server_did_not_answer(self, db, fake):
+    def test_backfill_estimate_says_when_the_server_did_not_answer(self, db, fake, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_BASE_URL", "http://decider:7095")
         _two_turns(db)
         tasks.sweep()
         with installed(_Server(answered=False)):
             estimate = tasks.backfill_estimate(7)
         assert estimate["model_version"] == version(V01)
         assert "did not answer" in estimate["warning"]
+
+    def test_backfill_estimate_says_when_no_server_is_set(self, db, fake, monkeypatch):
+        _two_turns(db)
+        tasks.sweep()
+        monkeypatch.setattr(settings, "DECISION_MODE", "api")  # and no DECISION_BASE_URL: the probe answers None
+        monkeypatch.setattr("docsgpt.decisions._client", None)  # the real client, not the fake
+        estimate = tasks.backfill_estimate(7)
+        assert (estimate["messages"], estimate["model_version"]) == (2, version(V01))
+        assert "DECISION_BASE_URL" in estimate["warning"] and "did not answer" not in estimate["warning"]
 
     def test_backfill_estimate_asks_no_server_in_local_mode(self, db, fake):
         _two_turns(db)
