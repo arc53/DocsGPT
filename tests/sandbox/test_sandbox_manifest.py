@@ -122,12 +122,12 @@ def test_pdfplumber_pins_match_its_requirements():
 
 
 def test_pillow_and_pypdf_are_past_their_known_vulnerabilities():
-    """Pillow is 13.0.0+ and pypdf 6.20.1+."""
+    """Pillow is 13.0.0+ and pypdf 6.21.2+."""
     assert _pinned_version("pillow") >= (13, 0, 0)
-    assert _pinned_version("pypdf") >= (6, 20, 1)
+    assert _pinned_version("pypdf") >= (6, 21, 2)
 
 
-def test_pypdf2_is_not_installed_and_points_at_pypdf():
+def test_pypdf2_is_not_installed_and_points_at_pypdf() -> None:
     """PyPDF2 is deprecated; imports of it get a pypdf hint instead."""
     assert "PyPDF2" not in {p["import"] for p in manifest.PIP_PACKAGES}
     assert "pypdf" in manifest.NOT_INSTALLED["PyPDF2"]["use"]
