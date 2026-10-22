@@ -107,6 +107,11 @@ describe('AllSchedules', () => {
     const chatLink =
       container.querySelector<HTMLAnchorElement>('a[href="/c/c1"]');
     expect(chatLink?.textContent).toContain('Rotterdam market check');
+    // A text link in the meta line: the link colour and the shared focus ring.
+    expect(chatLink?.dataset.variant).toBe('link');
+    expect(chatLink?.dataset.size).toBe('text');
+    expect(chatLink?.className).toContain('text-link');
+    expect(chatLink?.className).not.toContain('text-primary');
     expect(
       container.querySelector('a[href="/agents/manage/schedules/a1"]'),
     ).not.toBeNull();
