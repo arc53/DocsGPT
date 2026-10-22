@@ -18,8 +18,9 @@ from docsgpt.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
 
-# The crawler's conventions (``crawler_markdown.py`` / ``read_webpage.py``),
-# so file and web ingestion produce the same Markdown shape.
+# Shared with the web loaders (``remote/page_content.py``) and the
+# ``read_webpage`` tool, so file and web ingestion produce the same Markdown
+# shape.
 #
 # ``table_infer_header``: a GFM table cannot start with a body row, so without
 # it markdownify puts an empty header above any table that carries no ``<th>``
@@ -58,14 +59,17 @@ def html_to_markdown(html: Union[str, bytes]) -> str:
     return soup_to_markdown(BeautifulSoup(html, "html.parser"))
 
 
-def soup_to_markdown(soup) -> str:
+def soup_to_markdown(soup, converter=None) -> str:
     """Convert a parsed ``BeautifulSoup`` tree to Markdown.
 
     Destructive: the non-content elements in ``_DROP_TAGS`` (including
     ``<title>``) are removed from ``soup``; read the title first.
 
     Args:
-        soup: The parsed document.
+        soup: The parsed document (or one element of it).
+        converter: A ``MarkdownConverter`` to use instead of the default one
+            built from ``MARKDOWNIFY_OPTIONS`` (the web extractor passes one
+            that rewrites links).
 
     Returns:
         Markdown with runs of blank lines collapsed to one.
@@ -86,7 +90,8 @@ def soup_to_markdown(soup) -> str:
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
-    markdown = MarkdownConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
+    converter = converter or MarkdownConverter(**MARKDOWNIFY_OPTIONS)
+    markdown = converter.convert_soup(soup)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 
@@ -150,13 +155,28 @@ def read_markup_head(file: Path, max_bytes: int) -> bytes:
         if max_bytes <= 0:
             return fh.read()
         head = fh.read(max_bytes + 1)
-    if len(head) <= max_bytes:
-        return head
+    return cap_markup_bytes(head, max_bytes, Path(file).name)
+
+
+def cap_markup_bytes(data: bytes, max_bytes: int, label: str = "markup") -> bytes:
+    """Head-truncate markup bytes to ``max_bytes``, as ``read_markup_head`` does.
+
+    Args:
+        data: The markup.
+        max_bytes: Size gate; ``<= 0`` keeps everything.
+        label: What to name in the warning (a file name or a URL).
+
+    Returns:
+        ``data``, or its first ``max_bytes`` cut on a line boundary and
+        without a torn trailing character.
+    """
+    if max_bytes <= 0 or len(data) <= max_bytes:
+        return data
     logger.warning(
-        f"Markup {Path(file).name} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
+        f"Markup {label} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
         f"parsing the first {max_bytes} bytes to bound memory"
     )
-    head = head[:max_bytes]
+    head = data[:max_bytes]
     if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
         # UTF-16 (BOM-declared): a byte-level line cut lands between the two
         # bytes of a code unit and the strict decode then fails outright, so

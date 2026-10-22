@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, normalize_page_url, url_to_virtual_path
-from docsgpt.parser.schema.base import Document
+from docsgpt.parser.remote.page_content import page_document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import pinned_request
 
@@ -33,6 +33,10 @@ class CrawlerLoader(BaseRemote):
         loaded_content = []
 
         while urls_to_visit:
+            # Checked before each fetch, so failed and non-page fetches count
+            # toward the limit too instead of letting the crawl run past it.
+            if self.limit is not None and len(visited_urls) >= self.limit:
+                break
             current_url = urls_to_visit.pop(0)
             page_key = normalize_page_url(current_url)
             if page_key in visited_urls:
@@ -42,23 +46,15 @@ class CrawlerLoader(BaseRemote):
             try:
                 response = pinned_request("GET", current_url, timeout=30)
                 response.raise_for_status()
-                soup = BeautifulSoup(response.text, "html.parser")
-                extra_info = {
-                    "source": current_url,
-                    "file_path": self._url_to_virtual_path(current_url),
-                }
-                # Mirror WebLoader: without a title, citations fall back to the
-                # chunk body and render as a wall of text.
-                if soup.title:
-                    title = soup.title.get_text(strip=True)
-                    if title:
-                        extra_info["title"] = title
-                loaded_content.append(
-                    Document(
-                        soup.get_text(separator="\n", strip=True),
-                        extra_info=extra_info,
-                    )
+                document = page_document(
+                    response.content, response.headers.get("Content-Type"), current_url,
                 )
+                if document is None:
+                    # Not a page (a PDF or image the site links to): no text
+                    # to keep and no links to follow.
+                    continue
+                loaded_content.append(document)
+                soup = BeautifulSoup(response.content, "html.parser")
             except Exception as e:
                 logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)
                 continue
@@ -83,10 +79,6 @@ class CrawlerLoader(BaseRemote):
             # Add new links to the list of URLs to visit if they haven't been visited yet
             urls_to_visit.extend(all_links)
             urls_to_visit = list(set(urls_to_visit))
-
-            # Stop crawling if the limit of pages to scrape is reached
-            if self.limit is not None and len(visited_urls) >= self.limit:
-                break
 
         return dedupe_virtual_paths(loaded_content)
 

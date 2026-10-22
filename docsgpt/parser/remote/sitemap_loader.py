@@ -3,16 +3,14 @@ import re
 from typing import List, Optional, Set
 
 import defusedxml.ElementTree as ET
-from bs4 import BeautifulSoup
 from defusedxml import DefusedXmlException
 
 from docsgpt.parser.remote.base import (
     BaseRemote,
     dedupe_virtual_paths,
     spans_multiple_hosts,
-    url_to_virtual_path,
 )
-from docsgpt.parser.schema.base import Document
+from docsgpt.parser.remote.page_content import page_document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 
@@ -61,19 +59,16 @@ class SitemapLoader(BaseRemote):
             try:
                 response = pinned_request("GET", url, timeout=30)
                 response.raise_for_status()
-                soup = BeautifulSoup(response.text, "html.parser")
-                documents.append(
-                    Document(
-                        soup.get_text(separator="\n", strip=True),
-                        # Without file_path the worker had no tree key (no
-                        # title, key or doc_id), so sitemap pages never
-                        # appeared in the file tree.
-                        extra_info={
-                            "source": url,
-                            "file_path": url_to_virtual_path(url, include_host),
-                        },
-                    )
+                # A shared extractor, so sitemap pages get a title like the
+                # others do (their citations showed a wall of chunk text).
+                document = page_document(
+                    response.content,
+                    response.headers.get("Content-Type"),
+                    url,
+                    include_host=include_host,
                 )
+                if document is not None:
+                    documents.append(document)
                 processed_urls += 1  # Increment the counter after processing each URL
             except Exception as e:
                 logger.error(f"Error processing URL {url}: {e}", exc_info=True)

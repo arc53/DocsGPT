@@ -225,6 +225,16 @@ class TestExtractUrls:
 # =====================================================================
 
 
+def _page_response(text: str) -> MagicMock:
+    """A fetched HTML page, shaped like a ``requests.Response``."""
+    response = MagicMock()
+    response.text = text
+    response.content = text.encode()
+    response.headers = {"Content-Type": "text/html; charset=utf-8"}
+    response.raise_for_status.return_value = None
+    return response
+
+
 @pytest.mark.unit
 class TestSitemapLoaderLoadData:
 
@@ -233,10 +243,7 @@ class TestSitemapLoaderLoadData:
     def test_load_data_success(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=10)
         mock_validate.side_effect = lambda url: url
-        response = MagicMock()
-        response.text = "Page body"
-        response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_pinned_request.return_value = _page_response("Page body")
 
         with patch.object(
             loader, "_extract_urls",
@@ -264,10 +271,7 @@ class TestSitemapLoaderLoadData:
     def test_load_data_list_input(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader()
         mock_validate.side_effect = lambda url: url
-        response = MagicMock()
-        response.text = "List body"
-        response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_pinned_request.return_value = _page_response("List body")
 
         with patch.object(
             loader, "_extract_urls",
@@ -282,10 +286,7 @@ class TestSitemapLoaderLoadData:
     def test_load_data_respects_limit(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=2)
         mock_validate.side_effect = lambda url: url
-        response = MagicMock()
-        response.text = "Limited body"
-        response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_pinned_request.return_value = _page_response("Limited body")
 
         urls = [f"https://example.com/page{i}" for i in range(10)]
         with patch.object(loader, "_extract_urls", return_value=urls):
@@ -324,10 +325,7 @@ class TestSitemapLoaderLoadData:
     def test_load_data_no_limit(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=None)
         mock_validate.side_effect = lambda url: url
-        response = MagicMock()
-        response.text = "No limit body"
-        response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_pinned_request.return_value = _page_response("No limit body")
 
         urls = [f"https://example.com/page{i}" for i in range(5)]
         with patch.object(loader, "_extract_urls", return_value=urls):
@@ -341,11 +339,8 @@ class TestSitemapLoaderDistinctPaths:
     @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_colliding_pages_get_distinct_file_paths(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=None)
-        response = MagicMock()
-        response.text = "Page body"
-        response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
-        urls = ["https://x.io/p?page=2", "https://x.io/p", "https://x.io/p.htm"]
+        mock_pinned_request.return_value = _page_response("Page body")
+        urls =["https://x.io/p?page=2", "https://x.io/p", "https://x.io/p.htm"]
 
         with patch.object(loader, "_extract_urls", return_value=urls):
             docs = loader.load_data("https://x.io/sitemap.xml")
@@ -360,10 +355,7 @@ class TestSitemapLoaderMalformedEntry:
     @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_malformed_entry_is_skipped_and_the_rest_ingest(self, mock_pinned_request, _mock_resolve):
         loader = SitemapLoader()
-        response = MagicMock()
-        response.text = "Good body"
-        response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_pinned_request.return_value = _page_response("Good body")
 
         with patch.object(
             loader, "_extract_urls",

@@ -1,15 +1,12 @@
 import logging
 
-from bs4 import BeautifulSoup
-
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.parser.remote.base import (
     BaseRemote,
     dedupe_virtual_paths,
     spans_multiple_hosts,
-    url_to_virtual_path,
 )
-from docsgpt.parser.schema.base import Document
+from docsgpt.parser.remote.page_content import page_document
 from docsgpt.security.safe_url import pinned_request
 
 headers = {
@@ -43,24 +40,14 @@ class WebLoader(BaseRemote):
             try:
                 response = pinned_request("GET", url, headers=headers, timeout=30)
                 response.raise_for_status()
-                soup = BeautifulSoup(response.text, "html.parser")
-                metadata = {"source": url}
-                if soup.title:
-                    title = soup.title.get_text(strip=True)
-                    if title:
-                        metadata["title"] = title
-                html_tag = soup.find("html")
-                if html_tag and html_tag.get("lang"):
-                    metadata["language"] = html_tag.get("lang")
-                # The worker keys the file tree by file_path; without it the
-                # tree fell back to the title, which the chunks view can't match.
-                metadata["file_path"] = url_to_virtual_path(url, include_host)
-                documents.append(
-                    Document(
-                        soup.get_text(separator="\n", strip=True),
-                        extra_info=metadata,
-                    )
+                document = page_document(
+                    response.content,
+                    response.headers.get("Content-Type"),
+                    url,
+                    include_host=include_host,
                 )
+                if document is not None:
+                    documents.append(document)
             except Exception as e:
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)
                 continue

@@ -314,9 +314,9 @@ def test_a_table_that_marks_its_header_is_unchanged(html):
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
 
 
-def test_the_crawler_gives_a_crawled_table_the_same_shape():
+def test_the_web_extractor_gives_a_crawled_table_the_same_shape():
     """File and web ingestion are meant to produce the same Markdown."""
-    from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
+    from docsgpt.parser.remote.page_content import extract_page
 
     html = (
         "<html><head><title>T</title></head><body>"
@@ -324,7 +324,7 @@ def test_the_crawler_gives_a_crawled_table_the_same_shape():
         "<tr><td>Cable</td><td>USB-C</td></tr></table></body></html>"
     )
 
-    _, _, markdown = CrawlerLoader()._process_html_to_markdown(html, "https://example.com/")
+    markdown = extract_page(html, "https://example.com/").text
 
     rows = [line for line in markdown.splitlines() if line.startswith("|")]
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]

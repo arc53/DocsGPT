@@ -19,6 +19,8 @@ def _fake_response(html: str) -> MagicMock:
     """Build a MagicMock that quacks like a requests.Response for our purposes."""
     response = MagicMock()
     response.text = html
+    response.content = html.encode()
+    response.headers = {"Content-Type": "text/html; charset=utf-8"}
     response.raise_for_status.return_value = None
     return response
 
@@ -86,7 +88,8 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         assert isinstance(result[0], Document)
-        assert result[0].text == "Test Page\nTest web page content"
+        # The <title> goes to metadata only, not the body's first line.
+        assert result[0].text == "Test web page content"
         assert result[0].extra_info == {
             "source": "https://example.com",
             "title": "Test Page",
@@ -290,9 +293,8 @@ class TestWebLoaderEdgeCases:
 
         result = web_loader.load_data("https://empty-page.com")
 
-        assert len(result) == 1
-        assert result[0].text == ""
-        assert result[0].extra_info == {"source": "https://empty-page.com", "file_path": "index.md"}
+        # An empty page has nothing to chunk; it no longer becomes an empty document.
+        assert result == []
 
     def test_url_scheme_detection(self):
         """Test URL scheme detection logic."""

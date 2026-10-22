@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -7,8 +7,10 @@ from docsgpt.parser.schema.base import Document
 
 
 class DummyResponse:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, content_type: str = "text/html; charset=utf-8") -> None:
         self.text = text
+        self.content = text.encode()
+        self.headers = {"Content-Type": content_type}
 
     def raise_for_status(self) -> None:
         return None
@@ -59,8 +61,9 @@ def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_u
     paths = {doc.extra_info.get("file_path") for doc in result}
     assert paths == {"index.md", "about.md"}
 
+    # Side-by-side links read as a list, not as glued text.
     texts = {doc.text for doc in result}
-    assert texts == {"About\nExternal", "About page"}
+    assert texts == {"* About\n* External", "About page"}
 
     assert mock_pinned_request.call_count == 2
 
@@ -175,11 +178,7 @@ class TestCrawlerLoaderGaps:
             with patch(
                 "docsgpt.parser.remote.crawler_loader.pinned_request"
             ) as mock_pinned_request:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.text = "<html><body>test</body></html>"
-                mock_response.raise_for_status.return_value = None
-                mock_pinned_request.return_value = mock_response
+                mock_pinned_request.return_value = DummyResponse("<html><body>test</body></html>")
 
                 result = loader.load_data("https://example.com")
                 assert result[0].text == "test"
