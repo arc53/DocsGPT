@@ -1038,18 +1038,43 @@ def backfill_estimate(days: int, agent_id: Optional[str] = None) -> dict:
 
     The estimate is one analytics turn call (``latency.ANALYTICS``) per unlabelled turn, as measured where the
     model runs; ``None`` until it has been measured. Wall time is longer at background priority.
+
+    A message counts when it has no label from the model a real run would label with. In API mode that is the
+    model the decision server runs, which the client knows only once the server has told it, so the server is
+    asked once (``GET /v1/models``, as ``docsgpt decisions status`` does); before that the client assumes the
+    registry's default for a server, and labels another model wrote would all count. If the server does not
+    answer, or no server is set (``DECISION_BASE_URL``), the counts keep that assumption and ``warning`` says so.
+
+    Args:
+        days: How many days back to count.
+        agent_id: Count only this agent's conversations.
+
+    Returns:
+        The counts (``messages``, ``conversations``, ``turns``), the ``model_version`` they were counted against,
+        the timing estimate, and ``warning`` in API mode when the decision server did not answer or is not set.
     """
     from docsgpt.decisions.latency import ANALYTICS
 
+    decider = decisions.get_decider()
+    answered = decider.probe()
+    model_version = decider.model_version()
     with db_readonly() as conn:
         counts = ConversationLabelsRepository(conn).count_message_candidates(
-            schema.SCHEMA_HASH, decisions.model_version() or "", days, agent_id=agent_id
+            schema.SCHEMA_HASH, model_version or "", days, agent_id=agent_id
         )
     per_turn = decisions.predict_s(ANALYTICS)
     compute = None if per_turn is None else round(per_turn * counts["turns"], 1)
-    return {
-        "enabled": enabled(), "days": days, "agent_id": agent_id, **counts,
+    report = {
+        "enabled": enabled(), "days": days, "agent_id": agent_id, **counts, "model_version": model_version,
         "seconds_per_turn": None if per_turn is None else round(per_turn, 3),
         "estimated_compute_s": compute,
         "estimated_wall_s": None if compute is None else round(compute / settings.DECISION_BACKGROUND_SHARE, 1),
     }
+    if decider.mode == "api" and answered is not True:  # a local model (``None``) has no server to ask
+        if not settings.DECISION_BASE_URL:
+            report["warning"] = (f"No decision server is set (DECISION_BASE_URL), so the counts assume it runs "
+                                 f"{model_version}; a real run labels nothing until one is set.")
+        else:
+            report["warning"] = (f"The decision server did not answer, so the counts assume it runs {model_version}; "
+                                 "messages labelled by the model it does run are counted as unlabelled.")
+    return report
