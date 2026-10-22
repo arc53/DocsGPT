@@ -120,6 +120,10 @@ def count_structure_files(node: dict) -> int:
     return total
 
 
+# Remote loaders whose documents are web pages (``source`` is the page URL).
+_WEB_PAGE_LOADERS = frozenset({"url", "crawler", "sitemap", "website"})
+
+
 def add_file_to_structure(
     directory_structure: dict,
     file_path: str,
@@ -127,6 +131,7 @@ def add_file_to_structure(
     *,
     size_bytes: int,
     token_count: int,
+    page: Optional[dict] = None,
 ) -> None:
     """Insert one chunk's stats into a nested ``directory_structure``.
 
@@ -142,6 +147,9 @@ def add_file_to_structure(
         file_type: MIME type recorded on first insert.
         size_bytes: Byte length of this chunk.
         token_count: Token count of this chunk.
+        page: For a web page, its ``url``, ``title`` and ``fetched_at``,
+            recorded on first insert so the Knowledge tree can name the page
+            and link it.
 
     Returns:
         None
@@ -169,6 +177,8 @@ def add_file_to_structure(
             "size_bytes": size_bytes,
             "token_count": token_count,
         }
+        if page:
+            current_level[leaf].update({k: v for k, v in page.items() if v})
 
 
 def graph_extraction_key(source_id, updated_at) -> str:
@@ -1422,6 +1432,7 @@ def remote_worker(
         # Build directory structure from loaded documents
         # Format matches local file uploads: nested structure with type, size_bytes, token_count
         directory_structure = {}
+        fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         for doc in raw_docs:
             # Get the file path from extra_info
             # For crawlers: file_path is a virtual path like "guides/setup.md"
@@ -1466,11 +1477,21 @@ def remote_worker(
                 }
                 file_type = mime_types.get(ext, "application/octet-stream")
 
+                # A web page keeps its address and title, so the Knowledge
+                # tree names it and links it instead of showing "index.md".
+                page = None
+                if loader in _WEB_PAGE_LOADERS and doc.extra_info and doc.extra_info.get("source"):
+                    page = {
+                        "url": doc.extra_info["source"],
+                        "title": doc.extra_info.get("title"),
+                        "fetched_at": fetched_at,
+                    }
+
                 # Build nested directory structure from path
                 # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
                 add_file_to_structure(
                     directory_structure, file_path, file_type,
-                    size_bytes=size_bytes, token_count=token_count,
+                    size_bytes=size_bytes, token_count=token_count, page=page,
                 )
 
         # ``len(directory_structure)`` counts only top-level entries, so a
@@ -1537,6 +1558,11 @@ def remote_worker(
         upload_index(full_path, file_data)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
+        website_fields = {}
+        if loader == "website":
+            website_fields = _record_website_report(
+                source_id_for_events, user, getattr(remote_loader, "report", None) or {}, fetched_at,
+            )
         publish_user_event(
             user,
             "source.ingest.completed",
@@ -1548,6 +1574,7 @@ def remote_worker(
                 "tokens": tokens,
                 # Forward-looking contract: see ingest_worker.
                 "limited": False,
+                **website_fields,
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1579,6 +1606,37 @@ def remote_worker(
         "user": user,
         "limited": False,
     }
+
+
+def _record_website_report(source_id: str, user: str, report: dict, fetched_at: str) -> dict:
+    """Keep a Website ingest's report on the source and summarise it for the event.
+
+    Website settings shows it (pages per site, whether the page limit cut a
+    site short); the completed event carries the summary so the notice can
+    say a limit was reached.
+
+    Args:
+        source_id: The source's id.
+        user: The owner.
+        report: ``WebsiteLoader.report``.
+        fetched_at: When the pages were fetched (ISO 8601).
+
+    Returns:
+        ``{"pages": int, "page_limit_reached": bool}`` for the event.
+    """
+    sites = report.get("sites") or []
+    summary = {
+        "pages": int(report.get("pages") or 0),
+        "page_limit_reached": any(site.get("limit_reached") for site in sites),
+    }
+    try:
+        with db_session() as conn:
+            SourcesRepository(conn).set_metadata_key(
+                source_id, user, "website", {"pages": summary["pages"], "sites": sites, "fetched_at": fetched_at},
+            )
+    except Exception as err:  # noqa: BLE001 - the ingest itself succeeded
+        logging.warning(f"Could not store the website report for {source_id}: {err}")
+    return summary
 
 
 def sync(

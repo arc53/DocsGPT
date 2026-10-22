@@ -43,6 +43,32 @@ class TestRemoteCreator:
 
 
 @pytest.mark.unit
+class TestWebsiteType:
+    CONFIG = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": ["https://x.io/old"]}
+
+    def test_website_is_a_registered_loader(self):
+        from docsgpt.parser.remote.remote_creator import RemoteCreator
+        from docsgpt.parser.remote.website_loader import WebsiteLoader
+
+        assert isinstance(RemoteCreator.create_loader("website"), WebsiteLoader)
+
+    @pytest.mark.parametrize("stored", [CONFIG, json.dumps(CONFIG)])
+    def test_normalize_returns_the_validated_config(self, stored):
+        from docsgpt.parser.remote.remote_creator import normalize_remote_data
+
+        result = normalize_remote_data("website", stored)
+
+        assert result["entries"][0]["discovery"] == "auto"
+        assert result["skip"] == ["https://x.io/old"]
+
+    def test_normalize_drops_an_unsyncable_config(self):
+        from docsgpt.parser.remote.remote_creator import normalize_remote_data
+
+        assert normalize_remote_data("website", {"entries": []}) is None
+        assert normalize_remote_data("website", "https://x.io") is None
+
+
+@pytest.mark.unit
 class TestNormalizeRemoteData:
     """``normalize_remote_data`` maps a stored JSONB ``remote_data`` value
     back to the ``source_data`` shape each loader expects."""

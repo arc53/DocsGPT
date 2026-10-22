@@ -1002,7 +1002,7 @@
     "RemoteUploadModel": {
       "properties": {
         "data": {
-          "description": "Data to process",
+          "description": "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: [url or https://host/path/*], keep_links}",
           "type": "string"
         },
         "name": {
@@ -1015,6 +1015,10 @@
         },
         "source": {
           "description": "Source of the data",
+          "type": "string"
+        },
+        "sync_frequency": {
+          "description": "How often to re-fetch: never (default), daily, weekly or monthly",
           "type": "string"
         },
         "user": {

@@ -21,6 +21,7 @@ from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
     safe_zip_error_message,
@@ -57,6 +58,7 @@ sources_upload_ns = Namespace(
 
 
 _IDEMPOTENCY_KEY_MAX_LEN = 256
+_SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 
 def _read_idempotency_key():
@@ -625,8 +627,18 @@ class UploadRemote(Resource):
                     required=True, description="Source of the data"
                 ),
                 "name": fields.String(required=True, description="Job name"),
-                "data": fields.String(required=True, description="Data to process"),
+                "data": fields.String(
+                    required=True,
+                    description=(
+                        "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, "
+                        "path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: "
+                        "[url or https://host/path/*], keep_links}"
+                    ),
+                ),
                 "repo_url": fields.String(description="GitHub repository URL"),
+                "sync_frequency": fields.String(
+                    description="How often to re-fetch: never (default), daily, weekly or monthly",
+                ),
             },
         )
     )
@@ -656,6 +668,11 @@ class UploadRemote(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        sync_frequency = data.get("sync_frequency") or "never"
+        if sync_frequency not in _SYNC_FREQUENCIES:
+            return make_response(
+                jsonify({"success": False, "error": f"Unknown sync_frequency {sync_frequency!r}"}), 400,
+            )
         task_name_for_dedup = (
             "ingest_connector_task"
             if data.get("source") in ConnectorCreator.get_supported_connectors()
@@ -687,6 +704,15 @@ class UploadRemote(Resource):
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
+            elif data["source"] == "website":
+                # Stored as remote_data and repeated by every sync, so it is
+                # validated here rather than failing later in the worker.
+                try:
+                    source_data = parse_website_config(config)
+                except ValueError as err:
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    return make_response(jsonify({"success": False, "error": str(err)}), 400)
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
             elif data["source"] in ("reddit", "s3"):
@@ -784,6 +810,7 @@ class UploadRemote(Resource):
                     "config": source_config,
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
+                    "sync_frequency": sync_frequency,
                 },
             }
             if predetermined_task_id is not None:

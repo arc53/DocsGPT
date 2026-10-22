@@ -404,3 +404,58 @@ class TestRemoteWorkerDeterministicSourceId:
 
         assert len(captured) == 2
         assert captured[0]["id"] != captured[1]["id"]
+
+
+@pytest.mark.unit
+class TestRemoteWorkerWebsite:
+    """A Website ingest reports its pages and names them for the Knowledge tree."""
+
+    def test_reports_pages_and_keeps_page_details_in_the_tree(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
+    ):
+        import json as _json
+
+        from docsgpt import worker
+
+        loader = MagicMock(name="website_loader")
+        loader.load_data.return_value = [
+            Document(
+                text="# Docker\nRun docker compose up.",
+                extra_info={
+                    "source": "https://docs.x.io/Deploying/Docker",
+                    "title": "Docker Deployment",
+                    "file_path": "Deploying/Docker.md",
+                },
+                doc_id="d1",
+            )
+        ]
+        loader.report = {
+            "pages": 1,
+            "sites": [{"url": "https://docs.x.io/", "found_with": "sitemap", "pages": 1, "limit_reached": True}],
+        }
+        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
+        uploaded: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
+        events: list[tuple] = []
+        monkeypatch.setattr(worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload)))
+
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        config = {"entries": [{"url": "https://docs.x.io/", "mode": "site"}], "skip": [], "keep_links": False}
+        worker.remote_worker(
+            task_self, config, "Docs", "bob", "website",
+            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
+        )
+
+        leaf = _json.loads(uploaded[0]["directory_structure"])["Deploying"]["Docker.md"]
+        assert leaf["url"] == "https://docs.x.io/Deploying/Docker"
+        assert leaf["title"] == "Docker Deployment"
+        assert leaf["fetched_at"]
+
+        completed = next(payload for kind, payload in events if kind == "source.ingest.completed")
+        assert completed["pages"] == 1
+        assert completed["page_limit_reached"] is True
+
+        stored = SourcesRepository(pg_conn).get(str(source["id"]), "bob")["metadata"]["website"]
+        assert stored["sites"] == loader.report["sites"]
+        assert stored["fetched_at"] == leaf["fetched_at"]

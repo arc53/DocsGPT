@@ -295,6 +295,32 @@ class TestUpdate:
         assert fetched["name"] == "old"
 
 
+class TestSetMetadataKey:
+    def test_sets_one_key_and_keeps_the_others(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u", metadata={"sync_state": "paused_reconnect"})
+
+        assert repo.set_metadata_key(created["id"], "u", "website", {"pages": 9}) is True
+
+        fetched = repo.get(created["id"], "u")
+        assert fetched["metadata"] == {"sync_state": "paused_reconnect", "website": {"pages": 9}}
+
+    def test_replaces_the_key_on_a_second_write(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u")
+        repo.set_metadata_key(created["id"], "u", "website", {"pages": 9})
+        repo.set_metadata_key(created["id"], "u", "website", {"pages": 3})
+
+        assert repo.get(created["id"], "u")["metadata"] == {"website": {"pages": 3}}
+
+    def test_wrong_user_is_a_noop(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u")
+
+        assert repo.set_metadata_key(created["id"], "other", "website", {"pages": 9}) is False
+        assert repo.get(created["id"], "u")["metadata"] == {}
+
+
 class TestDelete:
     def test_deletes_source(self, pg_conn):
         repo = _repo(pg_conn)

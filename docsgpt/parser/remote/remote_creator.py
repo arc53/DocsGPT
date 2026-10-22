@@ -3,6 +3,7 @@ import json
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 from docsgpt.parser.remote.web_loader import WebLoader
+from docsgpt.parser.remote.website_loader import WebsiteLoader, parse_website_config
 from docsgpt.parser.remote.reddit_loader import RedditPostsLoaderRemote
 from docsgpt.parser.remote.github_loader import GitHubLoader
 from docsgpt.parser.remote.linear_loader import LinearLoader
@@ -21,6 +22,7 @@ class RemoteCreator:
     """
 
     loaders = {
+        "website": WebsiteLoader,
         "url": WebLoader,
         "sitemap": SitemapLoader,
         "crawler": CrawlerLoader,
@@ -55,8 +57,8 @@ def normalize_remote_data(source_type, remote_data):
 
     Returns:
         Loader input: a URL string or list for url/crawler/sitemap/github,
-        a JSON string for reddit, a dict for s3; ``None`` when the row has
-        nothing syncable.
+        a JSON string for reddit, a dict for s3, the validated config for
+        website; ``None`` when the row has nothing syncable.
     """
     if remote_data is None:
         return None
@@ -73,6 +75,14 @@ def normalize_remote_data(source_type, remote_data):
                 pass
 
     loader = (source_type or "").lower()
+
+    if loader == "website":
+        # The loader takes the validated config; one that no longer
+        # validates has nothing a sync could fetch.
+        try:
+            return parse_website_config(remote_data)
+        except ValueError:
+            return None
 
     if loader in _URL_LOADER_TYPES:
         if isinstance(remote_data, dict):

@@ -804,6 +804,63 @@ class TestUploadRemote:
             response = UploadRemote().post()
         assert response.status_code == 200
 
+    def _post_website(self, app, data):
+        from docsgpt.api.user.sources.upload import UploadRemote
+
+        fake_task = MagicMock(id="website-task")
+        with patch(
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
+            return_value=fake_task,
+        ) as apply_async, app.test_request_context(
+            "/api/remote", method="POST",
+            data={"user": "u", "source": "website", "name": "Docs", **data},
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UploadRemote().post()
+        return response, apply_async
+
+    def test_uploads_website_source_with_its_config_and_sync(self, app):
+        config = {
+            "entries": [{"url": "https://docs.example.com/", "mode": "site", "max_pages": 50}],
+            "keep_links": True,
+        }
+        response, apply_async = self._post_website(
+            app, {"data": json.dumps(config), "sync_frequency": "weekly"},
+        )
+
+        assert response.status_code == 200
+        kwargs = apply_async.call_args.kwargs["kwargs"]
+        assert kwargs["loader"] == "website"
+        assert kwargs["sync_frequency"] == "weekly"
+        # The validated config is what gets stored and synced.
+        assert kwargs["source_data"]["entries"][0]["discovery"] == "auto"
+        assert kwargs["source_data"]["keep_links"] is True
+
+    def test_website_source_defaults_to_no_sync(self, app):
+        config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
+        response, apply_async = self._post_website(app, {"data": json.dumps(config)})
+
+        assert response.status_code == 200
+        assert apply_async.call_args.kwargs["kwargs"]["sync_frequency"] == "never"
+
+    def test_website_source_with_a_bad_config_is_400(self, app):
+        response, apply_async = self._post_website(app, {"data": json.dumps({"entries": []})})
+
+        assert response.status_code == 400
+        assert "at least one" in response.json["error"]
+        apply_async.assert_not_called()
+
+    def test_website_source_with_an_unknown_sync_frequency_is_400(self, app):
+        config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
+        response, apply_async = self._post_website(
+            app, {"data": json.dumps(config), "sync_frequency": "hourly"},
+        )
+
+        assert response.status_code == 400
+        apply_async.assert_not_called()
+
     def test_uploads_reddit_source(self, app):
         from docsgpt.api.user.sources.upload import UploadRemote
 
