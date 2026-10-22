@@ -67,7 +67,7 @@ URLs that users supply are checked before DocsGPT fetches them, so that nobody c
 - **Checked and pinned.** Every address the host resolves to is checked, and the request is sent to the checked address, so a DNS change between the check and the request cannot redirect it:
   - the [API Tool](/Tools/api-tool), which also does not follow redirects, and the ntfy tool (error: `URL validation error: ...`),
   - the `read_webpage` tool,
-  - URL, crawler and sitemap sources,
+  - Website sources (pages, crawls and sitemaps),
   - custom models that users add in **Settings → Custom Models** (their base URL).
 - **Checked, not pinned.** The host's address is checked once, and the client then connects on its own:
   - [MCP servers](/Tools/mcp-tools) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),

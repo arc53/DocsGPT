@@ -24,7 +24,7 @@ With a self-hosted LLM, chat, document ingestion and retrieval work offline. The
 | Embedding models | Hugging Face, the first time a model is used | Bundled in the Docker image; `docsgpt prefetch-models` for pip |
 | Decision model | Hugging Face, the first time a decision feature is turned on (all ship off) | `docsgpt decisions prefetch` on a connected machine, then copy `DECISION_CACHE_DIR` (in Docker, the `decision_models` volume) or point `DECISION_MODEL_PATH` at the copy; see [offline installs](/Models/decision-model#offline-and-air-gapped-installs) |
 
-Features whose purpose is to fetch outside content cannot work offline: URL, crawler, sitemap, GitHub and Reddit sources, the Google Drive, SharePoint and Confluence connectors, web search and other internet-facing tools, and hosted LLM or embedding providers.
+Features whose purpose is to fetch outside content cannot work offline: Website, GitHub and Reddit sources, the Google Drive, SharePoint and Confluence connectors, web search and other internet-facing tools, and hosted LLM or embedding providers.
 
 <Callout type="info">
   Keep the default document parser. `DOC_PARSER_ENGINE=anydoc` needs no models, and OCR is off unless you turn it on. Use the default backend image rather than the `-docling` variant, and don't install the `docling` extra.

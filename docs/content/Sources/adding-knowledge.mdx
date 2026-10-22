@@ -1,7 +1,7 @@
 ---
 title: Add Knowledge
 description: Add files, web pages, GitHub repositories, wikis and synced services to Knowledge, then use them in chats and agents.
-lastUpdated: 2026-10-09
+lastUpdated: 2026-10-22
 ---
 
 import { Callout } from 'nextra/components'
@@ -40,8 +40,7 @@ Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can
 | Option | What it adds |
 | --- | --- |
 | **Upload File** | Files from your computer, including `.zip` archives. See [Upload files](#upload-files). |
-| **Link** | One web page, by URL. |
-| **Crawler** | A website: starts at a URL and follows links on the same host, up to 10 pages. |
+| **Website** | Web pages by their addresses, or a whole site found through its sitemap or its links. See [Add web pages or a website](#add-web-pages-or-a-website). |
 | **GitHub** | A public repository, by its URL. Private repositories go through your GitHub connection. |
 | **New wiki** | An editable Markdown wiki that agents can read and rewrite. See [Wiki sources](/Sources/Wiki-sources). |
 | **Connect your data** | Content synced from a connected service, such as Google Drive, SharePoint, Confluence or Amazon S3. See [Connectors](/Sources/Connectors). This tile shows only when the instance has a connector that syncs. |
@@ -78,12 +77,54 @@ The upload dialog takes files **up to 25 MB each**. It lists larger files, and f
 
 Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [Document parsing and OCR](/Sources/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
 
-## Add a web page or a website
+## Add web pages or a website
 
-- **Link** reads the one page at the URL.
-- **Crawler** starts at the URL and follows links on the same host until it has tried 10 pages. Pages that fail to load count toward the 10.
+**Website** adds pages from the web and keeps each page's address, so answers and the [chat widget](/Extensions/chat-widget#sources-and-citations) link back to the page a passage came from. Under **What to add**, pick one:
 
-Both fetch pages from the DocsGPT server, not from your browser. Pages behind a sign-in can't be read, and URLs that resolve to private or internal addresses are refused.
+- **This page** fetches exactly the addresses you enter. Click **Add another page** to put several pages in one source.
+- **Whole site** starts at the address and adds the pages it leads to on the same site.
+
+The **Name** starts as the site's host name; type over it to change it.
+
+### Whole site options
+
+| Option | What it does |
+| --- | --- |
+| **Page limit** | How many pages to fetch. The default is 100; an admin sets the default and the maximum with `WEB_DEFAULT_PAGES` and `WEB_MAX_PAGES` (500). |
+| **Stay under** | Only fetch addresses that start with this path, such as `/docs`. If the address you enter ends in a folder, such as `https://example.com/docs/`, this starts as that folder. Leave it empty for the whole site. |
+| **Find pages** | **Automatic** (the default) reads the site's sitemap and, if the site has none, follows links from the start page. **Sitemap** uses only the sitemap; **Follow links** never reads it. |
+| **Sitemap URL** | Shown when **Find pages** is **Sitemap**: a sitemap to read instead of the one the site lists in `robots.txt`. You can also enter a sitemap's address, such as `https://example.com/sitemap.xml`, as the website address. |
+| **Include subdomains** | Also fetch pages on other subdomains of the same domain, such as `blog.example.com` for `example.com`. |
+
+DocsGPT looks for a sitemap in the site's `robots.txt`, then at `/sitemap.xml` and `/sitemap_index.xml`. A sitemap that lists other sitemaps is followed down to the pages, and compressed (`.xml.gz`) sitemaps are read. When a sitemap holds more pages than the limit, DocsGPT drops the addresses outside **Stay under**, the other subdomains and the skipped addresses first, then takes pages in the sitemap's own order until it reaches the limit. When a sync stops at the limit, the source's **Website settings** say **page limit reached**.
+
+### What DocsGPT keeps from a page
+
+DocsGPT keeps a page's main content as Markdown: headings, lists, tables and code. It leaves out the navigation, headers, footers, forms and sidebars of links. Images are kept as their alt text. Responses that aren't HTML, and pages with no text, are skipped.
+
+Link addresses inside the page text are dropped by default, because they add text that doesn't help search. If answers should be able to point to the pages a page links to, turn on **Keep links in page text** under **Advanced settings**. It keeps the addresses of links that sit inside sentences, stores about a quarter more text, and can rank search results slightly lower.
+
+### Keep it up to date
+
+**Keep up to date** sets how often the source is fetched again: **Never**, **Daily**, **Weekly** or **Monthly**. It starts at **Never** for pages and **Weekly** for a whole site. A sync fetches every page again, so the source follows the site as pages are added, changed and removed.
+
+Pages are fetched from the DocsGPT server, not from your browser. Pages behind a sign-in can't be read, and addresses that resolve to private or internal addresses are refused.
+
+### Manage the pages of a website source
+
+**View** on a website source lists its pages by title, with each page's address, size and the time it was fetched. Pages from a whole site are grouped by the folders in their addresses. If you can edit the source:
+
+- **Add pages** fetches more page addresses, or another whole site, into the same source. Pages are fetched right away and are kept in every sync. Adding a whole site rebuilds the source.
+- **Refresh page**, in a page's menu, fetches that page again now. If the fetch fails, the page keeps its content.
+- **Remove from source** deletes a page's chunks. A page you added by its address leaves the source's list. A page found by crawling a site, or a whole folder, is added to the source's skipped addresses, so later syncs leave it out.
+
+**Website settings**, in the source's menu on the Knowledge page, shows what the source fetches and what it skips. There you can remove an address or a site from the list, **Restore** a skipped address, switch **Keep links in page text**, change **Keep up to date**, or click **Sync now**. Changes apply at the next sync.
+
+<Callout type="warning" emoji="⚠️">
+A sync replaces a website source's chunks. On a source that is kept up to date, chunks you add or edit by hand are replaced at the next sync.
+</Callout>
+
+Sources added with the earlier **Link**, **Crawler** and sitemap options open as website sources. Their pages show titles and addresses after their next sync.
 
 ## Add a GitHub repository
 
@@ -100,7 +141,8 @@ For a private repository, use **Connect GitHub** in the form, or **Pick a reposi
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 
 - **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks.
-- **Sync: Never / Daily / Weekly / Monthly** and **Sync now** appear for sources that can be fetched again: links, crawls, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
+- **Sync: Never / Daily / Weekly / Monthly** and **Sync now** appear for sources that can be fetched again: GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
+- **Website settings** holds a website source's schedule instead of the sync rows; **Sync now** stays in the menu. See [Manage the pages of a website source](#manage-the-pages-of-a-website-source).
 - **Source settings** changes chunking and retrieval. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
 - **Test retrieval** runs a question against the source and shows which chunks come back.
 - **Convert to wiki** turns the source into editable wiki pages. This can't be undone.
