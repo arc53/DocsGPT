@@ -335,15 +335,30 @@ export async function partitionAttachmentFiles(files: File[]): Promise<{
   return { supported, unsupported };
 }
 
-/** The ``message`` of a JSON error body, if the server sent one. */
-export function parseUploadErrorMessage(body: string): string | undefined {
+/** A non-empty string field of a JSON body, or undefined. */
+function jsonStringField(body: string, key: string): string | undefined {
   if (!body) return undefined;
   try {
-    const parsed = JSON.parse(body) as { message?: unknown };
-    return typeof parsed?.message === 'string' && parsed.message
-      ? parsed.message
-      : undefined;
+    const value = (JSON.parse(body) as Record<string, unknown> | null)?.[key];
+    return typeof value === 'string' && value ? value : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** The ``message`` of a JSON error body, if the server sent one. */
+export function parseUploadErrorMessage(body: string): string | undefined {
+  return jsonStringField(body, 'message');
+}
+
+/**
+ * Why a source upload failed: the ``message`` of the JSON error body, or
+ * else its ``error``, which ``/api/remote`` uses for some errors. Auth
+ * errors put a code in ``error`` (``token_expired``) next to a readable
+ * ``message``, so ``message`` comes first.
+ */
+export function parseSourceUploadErrorMessage(
+  body: string,
+): string | undefined {
+  return jsonStringField(body, 'message') ?? jsonStringField(body, 'error');
 }

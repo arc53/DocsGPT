@@ -54,7 +54,10 @@ import { addUploadTask, updateUploadTask } from './uploadSlice';
 
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
-import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
+import {
+  FILE_UPLOAD_ACCEPT,
+  parseSourceUploadErrorMessage,
+} from '../constants/fileUpload';
 import {
   getFolderName,
   getUploadPath,
@@ -598,7 +601,11 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          parseSourceUploadErrorMessage(xhr.responseText) ??
+            (xhr.statusText || undefined),
+        );
       }
     };
 
@@ -688,7 +695,11 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          parseSourceUploadErrorMessage(xhr.responseText) ??
+            (xhr.statusText || undefined),
+        );
       }
     };
 
