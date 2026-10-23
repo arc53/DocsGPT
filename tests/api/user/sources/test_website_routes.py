@@ -177,9 +177,77 @@ class TestRemovePages:
         store.delete_chunks_by_source_path.assert_called_once_with("https://docs.x.io/extra")
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/"]
-        assert saved["remote_data"]["skip"] == []
+        # The remaining site can find the page too, so it is skipped as well:
+        # otherwise the next sync brings it back.
+        assert saved["remote_data"]["skip"] == ["https://docs.x.io/extra"]
         assert "extra.md" not in saved["directory_structure"]
         assert saved["tokens"] == "55"
+
+    def test_a_page_entry_no_site_can_reach_adds_no_rule(self, app, pg_conn):
+        src = _seed(
+            pg_conn,
+            remote_data={"entries": [
+                {"url": "https://docs.x.io/", "mode": "site", "path_prefix": "/Deploying/"},
+                {"url": "https://docs.x.io/extra", "mode": "page"},
+            ]},
+        )
+        response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["extra.md"])
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert saved["remote_data"]["skip"] == []
+
+    def test_a_folder_of_page_entries_under_a_site_gets_its_rule(self, app, pg_conn):
+        src = _seed(
+            pg_conn,
+            remote_data={"entries": [
+                {"url": "https://docs.x.io/", "mode": "site"},
+                {"url": "https://docs.x.io/Deploying/Docker", "mode": "page"},
+                {"url": "https://docs.x.io/Deploying/Kubernetes", "mode": "page"},
+            ]},
+        )
+        response = self._remove(app, pg_conn, src, MagicMock(), directory_path="Deploying")
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/"]
+        assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/*"]
+
+    def test_a_folder_no_site_can_reach_adds_no_rule(self, app, pg_conn):
+        src = _seed(
+            pg_conn,
+            remote_data={"entries": [
+                {"url": "https://docs.x.io/", "mode": "site", "path_prefix": "/blog/"},
+                {"url": "https://docs.x.io/Deploying/Docker", "mode": "page"},
+                {"url": "https://docs.x.io/Deploying/Kubernetes", "mode": "page"},
+            ]},
+        )
+        response = self._remove(app, pg_conn, src, MagicMock(), directory_path="Deploying")
+
+        assert response.status_code == 200
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["skip"] == []
+
+    def test_a_removal_past_the_skip_rule_limit_is_refused(self, app, pg_conn):
+        src = _seed(pg_conn, remote_data={**CONFIG, "skip": ["https://docs.x.io/old"]})
+        store = MagicMock()
+        with patch("docsgpt.parser.remote.website_loader.MAX_SKIP_RULES", 1):
+            response = self._remove(app, pg_conn, src, store, file_paths=["Deploying/Docker.md"])
+
+        assert response.status_code == 400
+        assert "skip rules" in response.json["error"]
+        store.delete_chunks_by_source_path.assert_not_called()
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert saved["remote_data"]["skip"] == ["https://docs.x.io/old"]
+        assert "Docker.md" in saved["directory_structure"]["Deploying"]
+
+    def test_a_page_already_skipped_gets_no_second_rule(self, app, pg_conn):
+        src = _seed(pg_conn, remote_data={**CONFIG, "skip": ["https://docs.x.io/Deploying/*"]})
+        response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["Deploying/Docker.md"])
+
+        assert response.status_code == 200
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["skip"] == [
+            "https://docs.x.io/Deploying/*"
+        ]
 
     def test_a_crawled_page_is_skipped_in_later_syncs(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -298,6 +366,46 @@ class TestAddPages:
         entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
         assert [e["url"] for e in entries][-1] == "https://docs.x.io/one"
         assert "https://docs.x.io/two" not in [e["url"] for e in entries]
+
+    def test_pages_not_fetched_yet_count_toward_the_cap(self, app, pg_conn):
+        # A page entry counts from when it is listed: one still queued, or
+        # one whose fetch failed, holds its place under the cap.
+        src = _seed(pg_conn)
+        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 5
+            first, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+            second, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/two", "mode": "page"}])
+
+        assert first.status_code == 200
+        assert second.status_code == 400
+        assert second.json["code"] == "page_limit"
+        pages_task.delay.assert_not_called()
+        entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert "https://docs.x.io/two" not in [e["url"] for e in entries]
+
+    def test_a_listed_page_already_in_the_tree_counts_once(self, app, pg_conn):
+        # ``extra`` is both a page entry and a tree page: 4 pages, not 5.
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": CONFIG["entries"] + [
+            {"url": "https://docs.x.io/Deploying/Docker/", "mode": "page"},
+        ]})
+        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 5
+            response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+
+        assert response.status_code == 200
+
+    def test_the_merged_config_is_validated(self, app, pg_conn):
+        src = _seed(pg_conn)
+        with patch(
+            "docsgpt.api.user.sources.website.parse_website_config",
+            side_effect=[{"entries": [{"url": "https://docs.x.io/new", "mode": "page"}]}, ValueError("too many")],
+        ):
+            response, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/new", "mode": "page"}])
+
+        assert response.status_code == 400
+        assert response.json["error"] == "too many"
+        pages_task.delay.assert_not_called()
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
 
     def test_a_site_on_a_full_source_is_refused(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -433,3 +541,36 @@ class TestConcurrentEdits:
         assert response.json["code"] == "source_busy"
         store.delete_chunks_by_source_path.assert_not_called()
         assert "extra.md" in SourcesRepository(pg_conn).get(str(src["id"]), USER)["directory_structure"]
+
+
+class TestAWikiIsNotEditedAsAWebsite:
+    """After a conversion the row still reads as a website; its pages are the wiki's now."""
+
+    @pytest.mark.parametrize(
+        "resource, body",
+        [
+            ("WebsiteSettings", {"entries": CONFIG["entries"], "sync_frequency": "daily"}),
+            ("AddWebsitePages", {"entries": [{"url": "https://docs.x.io/new", "mode": "page"}]}),
+            ("RefreshWebsitePage", {"file_path": "extra.md"}),
+            ("RemoveWebsitePages", {"file_paths": ["extra.md"]}),
+        ],
+    )
+    def test_each_change_is_refused(self, app, pg_conn, resource, body):
+        from docsgpt.api.user.sources import website
+
+        src = _seed(pg_conn, config={"kind": "wiki"}, sync_frequency="never")
+        store = MagicMock()
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.sync_source"
+        ) as sync_task, patch("docsgpt.api.user.sources.website.get_vector_store", return_value=store):
+            response = _call(app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body})
+
+        assert response.status_code == 400
+        assert response.json["code"] == "wiki"
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+        store.delete_chunks_by_source_path.assert_not_called()
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert saved["sync_frequency"] == "never"
+        assert saved["remote_data"] == CONFIG
+        assert "extra.md" in saved["directory_structure"]

@@ -9,6 +9,7 @@ by ``website_pages_worker``. Sources made by the older url/crawler/sitemap
 loaders read as Website sources and are converted on their first save.
 """
 
+from typing import Optional
 from urllib.parse import urlparse
 
 from flask import current_app, jsonify, make_response, request
@@ -18,10 +19,10 @@ from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
-from docsgpt.api.user.sources.routes import sources_ns
+from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, sources_ns
 from docsgpt.api.user.tasks import sync_source, website_pages
 from docsgpt.core.settings import settings
-from docsgpt.parser.remote.website_loader import page_key, parse_website_config
+from docsgpt.parser.remote.website_loader import SiteScope, page_key, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
     count_pages,
@@ -69,6 +70,16 @@ def _load_locked(conn, source_id: str, user: str, action: str) -> tuple:
     doc, ra = load_source(conn, source_id, user, action)
     locked = SourcesRepository(conn).get_for_update(str(doc["id"]))
     return (locked if locked is not None else doc), ra
+
+
+def _wiki_refusal(doc: dict):
+    """The 400 for a source converted to a wiki, or ``None``.
+
+    A converted source keeps its website ``type`` and ``remote_data``, but its
+    pages are the wiki's now: adding, refreshing or removing web pages would
+    write raw chunks into it, and a schedule would sync over it.
+    """
+    return _error(_WIKI_NO_SYNC, code="wiki") if _is_wiki(doc) else None
 
 
 def _website_config(doc: dict):
@@ -151,6 +162,9 @@ class WebsiteSettings(Resource):
                 doc, ra = _load_locked(conn, data["source_id"], user, "edit")
                 if _website_config(doc) is None:
                     return _error("Not a website source")
+                refusal = _wiki_refusal(doc)
+                if refusal is not None:
+                    return refusal
                 fields_ = {"remote_data": config, "type": "website"}
                 if sync_frequency is not None:
                     fields_["sync_frequency"] = sync_frequency
@@ -192,6 +206,9 @@ class RemoveWebsitePages(Resource):
         try:
             with db_readonly() as conn:
                 doc, _ra = load_source(conn, data["source_id"], user, "edit")
+            refusal = _wiki_refusal(doc)
+            if refusal is not None:
+                return refusal
             # Chunks are deleted here and now: wait briefly for a sync or a
             # page change on the source rather than race its index writes.
             with source_index_lock(str(doc["id"]), wait_seconds=REQUEST_WAIT_SECONDS), db_session() as conn:
@@ -219,6 +236,12 @@ class RemoveWebsitePages(Resource):
                         "That would leave the source with nothing to fetch; delete the source instead",
                         code="last_entry",
                     )
+                # The skip list grows with each removal; it is held to the
+                # same limits as a saved config.
+                try:
+                    config = parse_website_config(config)
+                except ValueError as err:
+                    return _error(str(err))
 
                 store = get_vector_store(str(doc["id"]))
                 for _path, url in pages:
@@ -281,18 +304,27 @@ class AddWebsitePages(Resource):
                 config = _website_config(doc)
                 if config is None:
                     return _error("Not a website source")
+                refusal = _wiki_refusal(doc)
+                if refusal is not None:
+                    return refusal
                 listed = {(e["mode"], page_key(e["url"])) for e in config["entries"]}
                 added = [e for e in new_entries if (e["mode"], page_key(e["url"])) not in listed]
                 # WEB_MAX_PAGES caps the whole source, so it can't grow past
                 # what a sync may fetch again.
                 cap = int(settings.WEB_MAX_PAGES)
-                held = count_pages(doc["directory_structure"]) if isinstance(doc.get("directory_structure"), dict) else 0
-                new_pages = sum(1 for e in added if e["mode"] == "page")
+                held = _held_pages(config, doc.get("directory_structure"))
+                new_pages = len({_key(e["url"]) for e in added if e["mode"] == "page"} - held["keys"])
                 adds_site = any(e["mode"] == "site" for e in added)
-                if held + new_pages > cap or (adds_site and held + new_pages >= cap):
+                total = held["count"] + new_pages
+                if total > cap or (adds_site and total >= cap):
                     return _error(f"A website source holds up to {cap} pages", code="page_limit", max_pages=cap)
-                config = {**config, "entries": config["entries"] + added}
-                SourcesRepository(conn).update(str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"})
+                try:
+                    config = parse_website_config({**config, "entries": config["entries"] + added})
+                except ValueError as err:
+                    return _error(str(err))
+                SourcesRepository(conn).update(
+                    str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
+                )
         except AccessDenied as err:
             return denied_response(err)
 
@@ -352,6 +384,9 @@ class RefreshWebsitePage(Resource):
             return denied_response(err)
         if _website_config(doc) is None:
             return _error("Not a website source")
+        refusal = _wiki_refusal(doc)
+        if refusal is not None:
+            return refusal
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
         if data["file_path"] not in dict(web_pages(structure)):
             return _error("No such page in this source")
@@ -359,8 +394,61 @@ class RefreshWebsitePage(Resource):
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
-def _without_pages(config: dict, pages: list, section_rule) -> dict:
-    """The config after removing pages: page entries leave, crawled pages are skipped.
+def _key(url: str) -> str:
+    """``page_key``, or the URL itself when it can't be parsed."""
+    try:
+        return page_key(url)
+    except ValueError:
+        return url
+
+
+def _held_pages(config: dict, structure) -> dict:
+    """The pages a source holds toward ``WEB_MAX_PAGES``.
+
+    Its page entries count from when they are listed (one still queued, or
+    one whose fetch failed, keeps its place), and so do the pages in its tree
+    (a site's crawl). A page that is both counts once.
+
+    Args:
+        config: The Website config.
+        structure: ``directory_structure``.
+
+    Returns:
+        ``{"keys": page keys held, "count": how many pages}``; tree leaves
+        without a URL (older crawls) count but have no key.
+    """
+    tree = structure if isinstance(structure, dict) else {}
+    tree_pages = web_pages(tree)
+    keys = {_key(url) for _path, url in tree_pages}
+    keys |= {_key(e["url"]) for e in config["entries"] if e["mode"] == "page"}
+    return {"keys": keys, "count": len(keys) + count_pages(tree) - len(tree_pages)}
+
+
+def _reachable(entries: list, skip: list, url: str) -> bool:
+    """Whether a site entry's crawl could still bring ``url`` back.
+
+    Args:
+        entries: The config's remaining entries.
+        skip: Its skip rules; a page they already cover needs no new rule.
+        url: A page or section address.
+
+    Returns:
+        True when some site entry's scope accepts it.
+    """
+    return any(
+        SiteScope(e["url"], e.get("path_prefix") or "", bool(e.get("include_subdomains")), skip).accepts(url)
+        for e in entries
+        if e["mode"] == "site"
+    )
+
+
+def _without_pages(config: dict, pages: list, section_rule: Optional[str]) -> dict:
+    """The config after removing pages: page entries leave, and what a site could find again is skipped.
+
+    A removed page gets a skip rule whenever a remaining site entry's scope
+    reaches it, whether it was added by address or found by the crawl;
+    otherwise the next sync brings it back. A folder gets its section rule
+    when a remaining site reaches any of its pages or the section itself.
 
     Args:
         config: The Website config.
@@ -370,15 +458,14 @@ def _without_pages(config: dict, pages: list, section_rule) -> dict:
     Returns:
         A new config.
     """
-    removed = {page_key(url) for _path, url in pages}
-    page_entries = {page_key(e["url"]) for e in config["entries"] if e["mode"] == "page"}
-    entries = [e for e in config["entries"] if not (e["mode"] == "page" and page_key(e["url"]) in removed)]
+    removed = {_key(url) for _path, url in pages}
+    entries = [e for e in config["entries"] if not (e["mode"] == "page" and _key(e["url"]) in removed)]
     skip = list(config["skip"])
-    if any(e["mode"] == "site" for e in entries):
-        crawled = [url for _path, url in pages if page_key(url) not in page_entries]
-        if section_rule:
-            new_rules = [section_rule] if crawled else []
-        else:
-            new_rules = crawled
-        skip.extend(rule for rule in new_rules if rule not in skip)
+    if section_rule:
+        section = section_rule[: -len("*")]
+        urls = [url for _path, url in pages] + [section]
+        new_rules = [section_rule] if any(_reachable(entries, skip, url) for url in urls) else []
+    else:
+        new_rules = [url for _path, url in pages if _reachable(entries, skip, url)]
+    skip.extend(rule for rule in new_rules if rule not in skip)
     return {**config, "entries": entries, "skip": skip}
