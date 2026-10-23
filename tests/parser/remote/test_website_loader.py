@@ -901,6 +901,14 @@ class TestWebsiteConfigErrors:
 
         assert (error.code, error.details) == ("invalid_address", {"url": url})
 
+    def test_control_characters_in_a_skip_rule_or_path_are_refused_on_write(self):
+        one = [{"url": "https://x.io/", "mode": "site"}]
+
+        error = self._error({"entries": one, "skip": ["https://x.io/ok", "https://x.io/a\x00b/*"]})
+        assert (error.code, error.details) == ("invalid_address", {"url": "https://x.io/a\x00b/*"})
+        error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "path_prefix": "/do\x00cs"}]})
+        assert error.code == "invalid_config"
+
     def test_an_address_nested_too_deep_is_refused_on_write(self):
         from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS, parse_website_config
 
@@ -992,6 +1000,30 @@ class TestWebsiteLoaderLenientRead:
         assert sources(docs) == ["https://x.io/0", "https://x.io/1"]
         assert loader.report["pages"] == 2
         assert loader.report["limit_reached"] is True
+
+    def test_control_characters_in_rules_and_paths_are_dropped(self):
+        # PostgreSQL refuses a NUL in JSONB: a config carrying one failed its save with a 500.
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        config = parse_website_config({
+            "entries": [{"url": "https://x.io/", "mode": "site", "path_prefix": "/do\x00cs\x01"}],
+            "skip": ["https://x.io/a\x00b", "https://x.io/ok", "https://x.io/c\x7f/*"],
+        }, enforce_page_cap=False)
+
+        assert config["entries"][0]["path_prefix"] == "/docs"
+        assert config["skip"] == ["https://x.io/ok"]
+
+    def test_a_nul_in_an_entry_address_is_refused_even_on_read(self):
+        # No stored config can hold one, so only a save can bring it.
+        from docsgpt.parser.remote.website_loader import WebsiteConfigError, parse_website_config
+
+        for raw in (
+            {"entries": [{"url": "https://x.io/a\x00b", "mode": "page"}]},
+            {"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/s\x00.xml"}]},
+        ):
+            with pytest.raises(WebsiteConfigError) as caught:
+                parse_website_config(raw, enforce_page_cap=False)
+            assert caught.value.code == "invalid_address"
 
     def test_a_load_within_the_cap_is_not_reported_as_cut(self, web):
         web({"https://x.io/a": page("A")})

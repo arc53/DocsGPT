@@ -530,10 +530,12 @@ def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
     ``MAX_URL_LENGTH`` long and ``MAX_PATH_SEGMENTS`` deep (deeper is
     ``invalid_address``: no fetch would take it); a stored config read back
     only needs addresses that parse (``_web_parts``), and its loads leave one
-    past the limits out.
+    past the limits out. A NUL is refused either way: no stored config can
+    hold one (PostgreSQL refuses it in JSONB), so only a save brings it.
     """
     url = value.strip()
-    if not (is_web_address(url) if enforce_limits else _web_parts(url) is not None):
+    readable = is_web_address(url) if enforce_limits else "\x00" not in url and _web_parts(url) is not None
+    if not readable:
         # The value is echoed back to the client: kept to a URL's length.
         raise WebsiteConfigError(
             f"{label} {url[:200]!r} is not a web address", "invalid_address", {"url": url[:MAX_URL_LENGTH]},
@@ -566,7 +568,10 @@ def parse_website_config(
             stored config turns it off, so a lowered cap or a config that
             grew past a limit (pages appended, skips added on removal) still
             lists and syncs.
-            Every entry URL must parse either way.
+            Every entry URL must parse either way, and hold no NUL. Control
+            characters in a skip rule or ``path_prefix`` are refused on a
+            write (``invalid_address`` and ``invalid_config``); a read drops
+            the rule and strips them from the path.
 
     Returns:
         ``{"entries": [...], "skip": [...], "keep_links": bool}`` with every
@@ -617,6 +622,11 @@ def parse_website_config(
             else:
                 sitemap_url = None
             path_prefix = str(item.get("path_prefix") or "")
+            if _CONTROL_CHARACTER.search(path_prefix):
+                # A NUL can't be stored at all; the others are never in a path.
+                if enforce_page_cap:
+                    raise WebsiteConfigError("Path has control characters in it")
+                path_prefix = _CONTROL_CHARACTER.sub("", path_prefix)
             if enforce_page_cap and len(path_prefix) > MAX_URL_LENGTH:
                 raise WebsiteConfigError(
                     f"Path is longer than {MAX_URL_LENGTH} characters", "url_too_long", {"max_length": MAX_URL_LENGTH},
@@ -633,6 +643,15 @@ def parse_website_config(
         raise WebsiteConfigError("A website source needs at least one page or site")
     rules = raw.get("skip") or []
     skip = [_with_scheme(r.strip()) for r in rules if isinstance(r, str) and r.strip()] if isinstance(rules, list) else []
+    # A rule with a control character matches no address a crawl meets, and
+    # one with a NUL can't be stored: refused on a write, dropped on a read.
+    bad_rule = next((rule for rule in skip if _CONTROL_CHARACTER.search(rule)), None)
+    if bad_rule is not None and enforce_page_cap:
+        raise WebsiteConfigError(
+            f"Skip rule {bad_rule[:200]!r} is not a web address", "invalid_address", {"url": bad_rule[:MAX_URL_LENGTH]},
+        )
+    if bad_rule is not None:
+        skip = [rule for rule in skip if not _CONTROL_CHARACTER.search(rule)]
     if enforce_page_cap:
         # Variants of one page (``/new``, ``/new/``, ``www.``, a fragment)
         # are one entry: the first is kept.
