@@ -49,6 +49,9 @@ CONFIG = {
 }
 
 
+GUIDE = {"url": "https://docs.x.io/", "mode": "site", "path_prefix": "/guide/", "max_pages": 30}
+
+
 def _seed(pg_conn, **kwargs):
     fields = {
         "type": "website",
@@ -607,19 +610,82 @@ class TestAddPages:
 
         assert response.status_code == 200
         assert response.json["mode"] == "append"
-        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER)
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER
+        )
         sync_task.delay.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
         assert saved[-1] == {"url": "https://docs.x.io/new", "mode": "page"}
 
-    def test_a_page_already_listed_is_not_listed_twice(self, app, pg_conn):
+    def test_a_page_already_listed_is_refused_and_nothing_queued(self, app, pg_conn):
         src = _seed(pg_conn)
-        response, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/extra#top", "mode": "page"}])
+        response, pages_task, sync_task = self._add(
+            app, pg_conn, src, [{"url": "https://docs.x.io/extra#top", "mode": "page"}]
+        )
 
-        assert response.status_code == 200
+        assert response.status_code == 400
+        assert response.json["code"] == "already_listed"
+        assert response.json["error"] == "These pages and sites are already in this source."
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+
+    def test_a_site_already_listed_is_refused_and_nothing_queued(self, app, pg_conn):
+        src = _seed(pg_conn, remote_data={"entries": [GUIDE], "skip": []})
+        same = {**GUIDE, "url": "https://www.docs.x.io/#top"}
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [same])
+
+        assert response.status_code == 400
+        assert response.json["code"] == "already_listed"
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+
+    @pytest.mark.parametrize("change", [
+        {"path_prefix": "/api/"},
+        {"include_subdomains": True},
+        {"max_pages": 90},
+        {"discovery": "links"},
+        {"sitemap_url": "https://docs.x.io/guide-map.xml"},
+    ])
+    def test_another_scope_of_a_listed_site_is_added(self, app, pg_conn, change):
+        src = _seed(pg_conn, remote_data={"entries": [GUIDE], "skip": []})
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [{**GUIDE, **change}])
+
+        assert response.status_code == 200, response.json
+        assert response.json["mode"] == "sync"
         entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
-        assert [e["url"] for e in entries] == ["https://docs.x.io/", "https://docs.x.io/extra"]
-        pages_task.delay.assert_called_once()
+        assert len(entries) == 2
+        assert all(entries[1][field] == value for field, value in change.items())
+        assert sync_task.delay.call_args.kwargs["source_data"]["entries"] == entries
+        pages_task.delay.assert_not_called()
+
+    def test_two_scopes_of_one_site_in_one_request_are_both_added(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, _, sync_task = self._add(app, pg_conn, src, [
+            {"url": "https://x.io/", "mode": "site", "path_prefix": "/guide/"},
+            {"url": "https://x.io/", "mode": "site", "path_prefix": "/api/"},
+        ])
+
+        assert response.status_code == 200, response.json
+        entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert [e.get("path_prefix") for e in entries[2:]] == ["/guide/", "/api/"]
+        sync_task.delay.assert_called_once()
+
+    def test_only_what_is_new_is_fetched(self, app, pg_conn):
+        # A listed site beside a new page: the page is appended, not a rebuild for the site.
+        src = _seed(pg_conn)
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [
+            CONFIG["entries"][0],
+            {"url": "https://docs.x.io/extra", "mode": "page"},
+            {"url": "https://docs.x.io/new", "mode": "page"},
+        ])
+
+        assert response.status_code == 200, response.json
+        assert response.json["mode"] == "append"
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER
+        )
+        sync_task.delay.assert_not_called()
 
     def test_one_page_named_several_ways_in_one_request_is_listed_once(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -632,7 +698,9 @@ class TestAddPages:
         assert response.status_code == 200
         entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
         assert [e["url"] for e in entries] == ["https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/new"]
-        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER)
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER
+        )
 
     def test_a_whole_site_rebuilds_the_source(self, app, pg_conn):
         src = _seed(pg_conn)

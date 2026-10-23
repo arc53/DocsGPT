@@ -48,6 +48,8 @@ def _error(message: str, status: int = 400, code: Optional[str] = None, **detail
     return make_response(jsonify(body), status)
 
 
+#: The ``already_listed`` wording for an add that names only what the source already lists.
+ALREADY_LISTED = "These pages and sites are already in this source."
 #: The ``queue_failed`` wording for a change saved before its task couldn't be queued.
 QUEUE_FAILED_SAVED = "The change was saved, but its task couldn't be queued; the next sync picks it up."
 #: The ``queue_failed`` wording for a refresh, which saves nothing first.
@@ -462,9 +464,11 @@ class AddWebsitePages(Resource):
             "Add pages or sites to a Website source; they stay in every sync. Pages are fetched and appended "
             "now (mode append). A site rebuilds the source like a sync (mode sync), and so does a page whose host "
             "makes a single-host source span several hosts (every page moves under a host folder), or any add on "
-            "a vector store that can't change single chunks. Refused with code page_limit when the source would "
-            "hold more than WEB_MAX_PAGES pages; a 500 with code queue_failed when the entries were saved but "
-            "the task couldn't be queued (the next sync fetches them)."
+            "a vector store that can't change single chunks. Only what the source doesn't list yet is added and "
+            "fetched: a page it lists under any spelling, or a site with the same address and settings; when "
+            "that leaves nothing, a 400 with code already_listed and nothing is queued. Refused with code "
+            "page_limit when the source would hold more than WEB_MAX_PAGES pages; a 500 with code queue_failed "
+            "when the entries were saved but the task couldn't be queued (the next sync fetches them)."
         ),
     )
     def post(self):
@@ -481,9 +485,9 @@ class AddWebsitePages(Resource):
             return _config_error(err)
         # One page named several ways (``/new``, ``/new/``, ``www.…/new#a``)
         # is one entry: the first spelling is kept, so the cap counts it once.
-        firsts: Dict[Tuple[str, str], dict] = {}
+        firsts: Dict[tuple, dict] = {}
         for entry in parsed:
-            firsts.setdefault((entry["mode"], _key(entry["url"])), entry)
+            firsts.setdefault(_entry_identity(entry), entry)
         new_entries = list(firsts.values())
         try:
             with db_session() as conn:
@@ -494,8 +498,10 @@ class AddWebsitePages(Resource):
                 refusal = _wiki_refusal(doc)
                 if refusal is not None:
                     return refusal
-                listed = {(e["mode"], page_key(e["url"])) for e in config["entries"]}
-                added = [e for e in new_entries if (e["mode"], page_key(e["url"])) not in listed]
+                listed = {_entry_identity(e) for e in config["entries"]}
+                added = [e for e in new_entries if _entry_identity(e) not in listed]
+                if not added:
+                    return _error(ALREADY_LISTED, code="already_listed")
                 # WEB_MAX_PAGES caps the whole source, so it can't grow past
                 # what a sync may fetch again.
                 cap = int(settings.WEB_MAX_PAGES)
@@ -527,13 +533,14 @@ class AddWebsitePages(Resource):
         # Read through ``_with_scheme``: an address written without a scheme
         # has no host for ``urlparse``, and would count as a new one.
         hosts = {urlparse(_with_scheme(url)).netloc for _path, url in web_pages(structure)}
-        page_urls = [e["url"] for e in new_entries if e["mode"] == "page"]
+        # Only what was added is fetched: a listed entry named again changes nothing.
+        page_urls = [e["url"] for e in added if e["mode"] == "page"]
         new_hosts = hosts | {urlparse(_with_scheme(url)).netloc for url in page_urls}
         # A site can bring any number of pages, and a first second host puts
         # every page under a host folder: both rebuild rather than append.
         # A store that can't add single chunks (Elasticsearch) rebuilds too.
         needs_sync = (
-            any(e["mode"] == "site" for e in new_entries)
+            any(e["mode"] == "site" for e in added)
             or (bool(hosts) and (len(hosts) > 1) != (len(new_hosts) > 1))
             or not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE)
         )
@@ -657,6 +664,33 @@ def _key(url: str) -> str:
         return page_key(url)
     except ValueError:
         return url
+
+
+def _entry_identity(entry: dict) -> tuple:
+    """What makes an entry the same as another: a page's address, or a site's address and every setting.
+
+    A page is one page under any spelling (``page_key``). A site's settings
+    are part of it: one address crawled under ``/guide/`` and under ``/api/``
+    (or with another limit, discovery or sitemap) is two entries.
+
+    Args:
+        entry: A parsed config entry.
+
+    Returns:
+        A hashable key.
+    """
+    if entry["mode"] != "site":
+        return ("page", _key(entry["url"]))
+    sitemap_url = entry.get("sitemap_url")
+    return (
+        "site",
+        _key(entry["url"]),
+        entry.get("path_prefix") or "",
+        bool(entry.get("include_subdomains")),
+        entry.get("discovery") or "auto",
+        _key(sitemap_url) if sitemap_url else None,
+        entry.get("max_pages"),
+    )
 
 
 def _held_pages(config: dict, structure) -> dict:
