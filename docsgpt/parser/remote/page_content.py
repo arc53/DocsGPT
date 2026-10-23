@@ -152,20 +152,59 @@ def bare_host(host: Optional[str]) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _is_dot_segment(segment: str, dots: str) -> bool:
+    """Whether a path segment is ``dots`` (``.`` or ``..``), each dot plain or written ``%2e``/``%2E``."""
+    return segment.lower().replace("%2e", ".") == dots
+
+
+def remove_dot_segments(path: str) -> str:
+    """A URL path with its ``.`` and ``..`` segments resolved (RFC 3986, 5.2.4).
+
+    Servers resolve them, so ``/docs/../admin`` is ``/admin``; a percent-encoded
+    dot (``%2e``) counts too, as many servers decode it first. Only whole
+    segments are dots: ``/a..b`` stays. ``..`` never climbs above the root.
+
+    Args:
+        path: The path part of a URL.
+
+    Returns:
+        The path the server would serve; a dot segment at the end leaves a
+        trailing slash (``/a/b/..`` is ``/a/``).
+    """
+    if "." not in path and "%2" not in path:
+        return path
+    segments = path.split("/")
+    resolved = segments[:1]  # "" for an absolute path: the root is never popped
+    for index, segment in enumerate(segments[1:], start=1):
+        is_last = index == len(segments) - 1
+        if _is_dot_segment(segment, "."):
+            pass
+        elif _is_dot_segment(segment, ".."):
+            if len(resolved) > 1:
+                resolved.pop()
+        else:
+            resolved.append(segment)
+            continue
+        if is_last:
+            resolved.append("")
+    return "/".join(resolved) or "/"
+
+
 def page_key(url: str) -> str:
-    """One key per page: scheme, ``www.``, fragment, query order and a trailing slash don't count.
+    """One key per page: scheme, ``www.``, fragment, query order, a trailing slash and dot segments don't count.
 
     Args:
         url: A page URL.
 
     Returns:
-        ``host/path`` (plus ``?query``), for comparing pages and skip rules.
+        ``host/path`` (plus ``?query``), for comparing pages and skip rules;
+        ``/docs/../a`` keys as ``/a``, the page a server answers with.
 
     Raises:
         ValueError: If the URL cannot be parsed.
     """
     parts = urlsplit(normalize_page_url(url.strip()))
-    key = f"{bare_host(parts.hostname)}{parts.path.rstrip('/')}"
+    key = f"{bare_host(parts.hostname)}{remove_dot_segments(parts.path).rstrip('/')}"
     return f"{key}?{parts.query}" if parts.query else key
 
 

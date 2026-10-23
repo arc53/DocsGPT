@@ -128,6 +128,47 @@ class TestSiteScope:
         # Without the trailing slash the section's own page is in too.
         assert SiteScope("https://x.io/", path_prefix="/guides").accepts("https://x.io/guides")
 
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/docs/../admin/secret",
+            "/docs/./../admin",
+            "/docs/%2e%2e/admin",
+            "/docs/%2E%2E/admin",
+            "/docs/.%2e/admin",
+            "/docs/a/../../admin",
+            "/docs/..",
+        ],
+    )
+    def test_dot_segments_cannot_leave_the_path(self, path):
+        scope = SiteScope("https://x.io/docs/", path_prefix="/docs")
+
+        assert not scope.accepts("https://x.io" + path)
+
+    def test_dot_segments_that_stay_inside_the_path_are_in(self):
+        scope = SiteScope("https://x.io/docs/", path_prefix="/docs")
+
+        assert scope.accepts("https://x.io/docs/a/../b")
+        assert scope.accepts("https://x.io/docs/./b")
+        # Only whole segments are dots: a name with dots in it is a name.
+        assert scope.accepts("https://x.io/docs/..hidden")
+        assert scope.accepts("https://x.io/docs/a%2e%2e")
+
+    def test_skip_rules_see_through_dot_segments(self):
+        scope = SiteScope("https://x.io/", skip=["https://x.io/changelog", "https://x.io/private/*"])
+
+        assert not scope.accepts("https://x.io/docs/../changelog")
+        assert not scope.accepts("https://x.io/a/%2e%2e/private/key")
+        assert not scope.accepts("https://x.io/./changelog/")
+
+    def test_page_key_resolves_dot_segments(self):
+        from docsgpt.parser.remote.website_loader import page_key
+
+        assert page_key("https://x.io/docs/../a") == page_key("https://x.io/a")
+        assert page_key("https://x.io/docs/%2E/a/") == page_key("https://x.io/docs/a")
+        assert page_key("https://x.io/..") == page_key("https://x.io/")
+        assert page_key("https://x.io/a..b") == "x.io/a..b"
+
     def test_skip_rules_exact_and_prefix(self):
         scope = SiteScope(
             "https://docs.example.com/",

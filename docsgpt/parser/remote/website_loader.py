@@ -38,7 +38,7 @@ from docsgpt.parser.remote.base import (
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 # page_key lives with the fetch helpers so every web loader keys pages alike;
 # it stays importable from here.
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_key
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_key, remove_dot_segments
 from docsgpt.parser.remote.page_content import bare_host as _bare_host
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.web_loader import WebLoader
@@ -112,7 +112,7 @@ def _section_key(url: str) -> str:
     host = (parts.hostname or "").rstrip(".")
     if parts.port is not None:
         host = f"{host}:{parts.port}"
-    key = f"{host}{parts.path.rstrip('/')}"
+    key = f"{host}{remove_dot_segments(parts.path).rstrip('/')}"
     return f"{key}?{parts.query}" if parts.query else key
 
 
@@ -173,8 +173,8 @@ class SiteScope:
         self.host = _bare_host(urlparse(start_url).hostname)
         self.domain = _registered_domain(self.host)
         self.include_subdomains = include_subdomains
-        prefix = (path_prefix or "").strip()
-        self.path_prefix = "/" + prefix.strip("/") if prefix.strip("/") else ""
+        prefix = remove_dot_segments("/" + (path_prefix or "").strip().strip("/")).strip("/")
+        self.path_prefix = "/" + prefix if prefix else ""
         self.skip_pages = set()
         self.skip_sections = []
         for rule in skip:
@@ -203,11 +203,12 @@ class SiteScope:
             True when it is on the site, under the path, and not skipped.
         """
         try:
-            parsed = urlparse(url)
+            parsed = urlsplit(url)
             if parsed.scheme not in ("http", "https") or not self._host_ok(_bare_host(parsed.hostname)):
                 return False
             if self.path_prefix:
-                path = parsed.path or "/"
+                # The path the server serves: ``/docs/../admin`` is not under /docs.
+                path = remove_dot_segments(parsed.path) or "/"
                 if path.rstrip("/") != self.path_prefix and not path.startswith(self.path_prefix + "/"):
                     return False
             if not self.skip_pages and not self.skip_sections:
