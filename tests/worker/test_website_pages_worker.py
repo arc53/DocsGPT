@@ -60,6 +60,9 @@ class FakeStore:
         wanted = set(paths)
         return [cid for cid, c in self.chunks.items() if c["metadata"].get("file_path") in wanted]
 
+    def get_chunks(self):
+        return [{"doc_id": cid, "text": c["text"], "metadata": dict(c["metadata"])} for cid, c in self.chunks.items()]
+
     def delete_chunks(self, chunk_ids):
         deleted = 0
         for chunk_id in list(chunk_ids):
@@ -825,6 +828,32 @@ class TestAddOnALegacyTree:
         assert tree["a.md"] == legacy_leaf
         assert tree["a-2.md"]["url"] == "https://docs.x.io/a"
         assert store.texts_for("https://docs.x.io/a.html") == ["legacy html page"]
+
+    def test_re_adding_a_page_a_legacy_leaf_holds_replaces_that_leaf(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        # The legacy leaf has no address, but its chunks do: the page goes back on its path.
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.chunks.clear()
+        store.seed("legacy A one", "https://docs.x.io/a", "a.md")
+        store.seed("legacy A two", "https://docs.x.io/a", "a.md")
+        store.seed("legacy B", "https://docs.x.io/b", "b.md")
+        legacy_leaf = {"type": "text/markdown", "size_bytes": 10, "token_count": 40}
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="url", remote_data=["https://docs.x.io/a", "https://docs.x.io/b"],
+            directory_structure={"a.md": dict(legacy_leaf), "b.md": dict(legacy_leaf)},
+        )
+        pipeline["pages"]["https://docs.x.io/a"] = "New page A"
+
+        worker.website_pages_worker(task_self, str(src["id"]), USER, "add", urls=["https://docs.x.io/a"])
+
+        tree = _tree(pg_conn, src)
+        assert sorted(tree) == ["a.md", "b.md"]
+        assert tree["a.md"]["url"] == "https://docs.x.io/a" and tree["b.md"] == legacy_leaf
+        assert store.texts_for("https://docs.x.io/a") == ["New page A"]
+        assert {c["metadata"]["file_path"] for c in store.chunks.values()} == {"a.md", "b.md"}
 
 
 @pytest.mark.unit

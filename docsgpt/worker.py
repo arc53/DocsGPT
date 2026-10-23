@@ -5872,6 +5872,22 @@ def _run_website_pages(
     in_tree: Dict[str, Dict[str, Any]] = {}
     for path, page_url in web_pages(structure):
         in_tree.setdefault(_web_page_key(page_url), {"path": path, "old_url": page_url})
+    legacy_paths = {path for path, leaf in leaves if not leaf.get("url")}
+    legacy_by_key: Optional[Dict[str, str]] = None
+
+    def _legacy_leaf(addresses: Iterable[str]) -> Optional[str]:
+        """The path of a leaf without an address whose chunks are this page's, read from the chunks once."""
+        nonlocal legacy_by_key
+        if not legacy_paths:
+            return None
+        if legacy_by_key is None:
+            legacy_by_key = {}
+            for chunk in store.get_chunks() or []:
+                metadata = chunk.get("metadata") or {}
+                if metadata.get("file_path") in legacy_paths and metadata.get("source"):
+                    legacy_by_key.setdefault(_web_page_key(metadata["source"]), metadata["file_path"])
+        return next((legacy_by_key[k] for k in map(_web_page_key, addresses) if k in legacy_by_key), None)
+
     changes: List[Dict[str, Any]] = []
     failure: Optional[BaseException] = None
     for doc in docs:
@@ -5897,6 +5913,13 @@ def _run_website_pages(
             # The loader normalised the address past recognition.
             target = {"path": _unique_page_path(url_to_virtual_path(doc_url, include_host), taken), "old_url": None}
             taken.add(target["path"])
+        if target["old_url"] is None:
+            # A page a leaf from before leaves carried their address already
+            # holds goes back on that leaf's path: its old chunks are replaced
+            # below, and a new path would leave the old leaf listing none.
+            legacy_path = _legacy_leaf([doc_url, *asked])
+            if legacy_path:
+                target = {"path": legacy_path, "old_url": None}
         if operation == "refresh" and not _refresh_in_scope(
             config, (target["old_url"], *requested.get(target["path"], ()), doc_url, *asked), doc_url,
         ):
