@@ -1,10 +1,11 @@
 """A sync changes a source's content, never the settings it was queued with.
 
-``sync`` hands ``remote_worker`` a snapshot (remote_data, sync_frequency,
-config) taken when it was queued. Anything changed while it ran (a config
-edit, saved skip rules, a schedule change, a wiki conversion) must survive
-its final write. The same goes for two jobs on one source's index: they take
-turns through ``source_index_lock``.
+``sync`` is queued with a snapshot (remote_data, sync_frequency, config); it
+re-reads the row under the index lock and crawls what the row holds then.
+Anything changed while it ran (a config edit, saved skip rules, a schedule
+change, a wiki conversion) must survive its final write, and a source
+deleted meanwhile is never re-created. Two jobs on one source's index take
+turns through ``source_index_lock``. A skipped sync tells the UI why.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 USER = "sam"
+# A syncable Website config: a sync crawls the row's own remote_data.
+SITE = {"entries": [{"url": "https://x.io/", "mode": "site"}]}
 
 
 @pytest.fixture
@@ -64,7 +67,7 @@ class TestSyncWrite:
     ):
         from docsgpt import worker
 
-        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
         events = []
         monkeypatch.setattr(
             worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
@@ -80,7 +83,7 @@ class TestSyncWrite:
     ):
         from docsgpt import worker
 
-        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
         held = []
 
         @contextmanager
@@ -224,3 +227,182 @@ class TestUploadIndexForASync:
         assert row["name"] == "Queued name"
         assert row["sync_frequency"] == "weekly"
         assert row["config"]["chunking"]["max_tokens"] == 900
+
+
+@pytest.mark.unit
+class TestSyncReadsTheRow:
+    """A queued sync crawls the source as it is when the sync starts, not as it was queued."""
+
+    def test_crawls_the_rows_current_remote_data(self, pg_conn, patch_worker_db, task_self, tmp_path, uploads):
+        from docsgpt import worker
+
+        # Since the sync was queued, a page was removed (its skip rule saved) and the source renamed.
+        current = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": ["https://x.io/secret"]}
+        src = SourcesRepository(pg_conn).create("Renamed", user_id=USER, type="website", remote_data=current)
+        loader = worker.RemoteCreator.create_loader("website")
+        queued = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": []}
+
+        result = worker.sync(task_self, queued, "Docs", USER, "website", "never", "classic", str(src["id"]),
+                             directory=str(tmp_path))
+
+        assert result == {"status": "success"}
+        crawled = loader.load_data.call_args.args[0]
+        assert crawled["skip"] == ["https://x.io/secret"]
+        assert uploads[-1]["name"] == "Renamed"
+
+    def test_a_legacy_source_converted_meanwhile_syncs_as_a_website(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        loaders = []
+        loader = worker.RemoteCreator.create_loader("website")
+        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: (loaders.append(name), loader)[1])
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://x.io/a", "mode": "page"}]},
+        )
+
+        worker.sync(task_self, "https://x.io/a", "Docs", USER, "url", "never", "classic", str(src["id"]),
+                    directory=str(tmp_path))
+
+        assert loaders == ["website"]
+        assert loader.load_data.call_args.args[0]["entries"][0]["url"] == "https://x.io/a"
+
+    def test_falls_back_to_the_queued_data_when_the_row_cant_be_read(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        @contextmanager
+        def broken():
+            raise RuntimeError("database unavailable")
+            yield
+
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
+        loader = worker.RemoteCreator.create_loader("website")
+        monkeypatch.setattr(worker, "db_readonly", broken)
+        queued = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": []}
+
+        worker.sync(task_self, queued, "Docs", USER, "website", "never", "classic", str(src["id"]),
+                    directory=str(tmp_path))
+
+        assert loader.load_data.call_args.args[0] == queued
+
+    def test_a_deleted_source_is_skipped_and_never_embedded(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+    ):
+        import uuid
+
+        from docsgpt import worker
+
+        embedded = []
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: embedded.append(1))
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
+        task_self.request.id = "sync-gone"
+        gone = str(uuid.uuid4())
+
+        result = worker.sync(task_self, {"entries": [{"url": "https://x.io/", "mode": "site"}]}, "Docs", USER,
+                             "website", "daily", "classic", gone, directory=str(tmp_path))
+
+        assert result == {"status": "skipped", "reason": "gone"}
+        assert embedded == [] and uploads == []
+        [(kind, payload)] = events
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "gone" and payload["task_id"] == "sync-gone"
+        assert payload["source_id"] == gone and payload["operation"] == "sync"
+
+
+@pytest.mark.unit
+class TestASkippedSyncTellsTheUI:
+    def test_a_busy_source_publishes_a_failed_event(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
+
+        @contextmanager
+        def busy(source_id, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        events = []
+        monkeypatch.setattr(worker, "source_index_lock", busy)
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
+        task_self.request.id = "sync-busy"
+
+        result = worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]))
+
+        assert result == {"status": "skipped", "reason": "busy"}
+        [(kind, payload)] = events
+        assert kind == "source.ingest.failed"
+        assert payload == {
+            "source_id": str(src["id"]), "job_name": "Docs", "loader": "website", "operation": "sync",
+            "error": payload["error"], "reason": "busy", "task_id": "sync-busy",
+        }
+        assert payload["error"]
+
+    def test_a_wiki_publishes_a_failed_event(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", config={"kind": "wiki"})
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
+
+        result = worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]))
+
+        assert result == {"status": "skipped", "reason": "wiki"}
+        assert [(kind, payload["reason"]) for kind, payload in events] == [("source.ingest.failed", "wiki")]
+
+    def test_a_scheduled_sync_skips_quietly(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        # Nobody is waiting on a beat run: a busy source is left to the next schedule without a notice.
+        from docsgpt import worker
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", sync_frequency="daily",
+            remote_data={"entries": [{"url": "https://x.io/", "mode": "page"}]},
+        )
+
+        @contextmanager
+        def busy(source_id, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        events = []
+        monkeypatch.setattr(worker, "source_index_lock", busy)
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
+
+        worker.sync_worker(task_self, "daily")
+
+        assert events == []
+
+
+@pytest.mark.unit
+class TestUploadIndexForADeletedSource:
+    def test_a_sync_never_recreates_a_deleted_source(self, pg_conn):
+        import uuid
+
+        sid = str(uuid.uuid4())
+        form = {
+            "user": USER, "name": "Gone", "tokens": "5", "retriever": "classic", "id": sid, "type": "website",
+            "remote_data": json.dumps({"entries": [{"url": "https://x.io/", "mode": "site"}]}),
+            "sync_frequency": "weekly", "directory_structure": json.dumps({"a.md": {"token_count": 5}}),
+            "operation": "sync",
+        }
+        storage = MagicMock()
+
+        response = _post(pg_conn, form, storage=storage)
+
+        assert response.json == {"status": "skipped", "reason": "gone"}
+        assert SourcesRepository(pg_conn).get(sid, USER) is None
+        storage.save_file.assert_not_called()

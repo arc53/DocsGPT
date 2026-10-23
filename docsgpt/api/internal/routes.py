@@ -155,7 +155,11 @@ def upload_index_files():
             existing = repo.get_for_update(source_id, user)
         if existing is None:
             existing = repo.get_by_legacy_id(source_id, user)
-        if is_sync and existing is not None:
+        if is_sync and existing is None:
+            # Deleted while the sync ran: a sync rebuilds a source, never creates one.
+            logger.info(f"Not re-creating deleted source {source_id} from a sync")
+            return {"status": "skipped", "reason": "gone"}
+        if is_sync:
             if SourceConfig.parse(existing.get("config")).kind == "wiki":
                 # Converted while the sync ran: its pages are the content now.
                 logger.info(f"Not writing a sync over wiki source {source_id}")

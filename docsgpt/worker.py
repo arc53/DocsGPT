@@ -1706,6 +1706,67 @@ def _is_wiki_config(config: Any) -> bool:
     return isinstance(config, dict) and config.get("kind") == "wiki"
 
 
+def _read_source_for_sync(doc_id: Optional[str], user: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Read a source's row as a sync starts, under its index lock.
+
+    Args:
+        doc_id: The source id.
+        user: The source's owner.
+
+    Returns:
+        ``(read, row)``: ``read`` is False when the database couldn't be read
+        (the sync then runs on what it was queued with); ``row`` is ``None``
+        when the source is gone.
+    """
+    if not doc_id:
+        return True, None
+    try:
+        with db_readonly() as conn:
+            return True, SourcesRepository(conn).get_any(str(doc_id), user)
+    except Exception as e:  # noqa: BLE001 - a sync still runs on its queued snapshot
+        logging.warning(f"Could not read source {doc_id} for its sync; using the queued data: {e}")
+        return False, None
+
+
+# Why a sync was skipped, as its failed event says it.
+_SYNC_SKIP_MESSAGES = {
+    "busy": "Another change to this source is still running; try again when it finishes",
+    "wiki": "This source is a wiki now; it no longer syncs",
+    "gone": "This source was deleted",
+}
+
+
+def _publish_sync_not_run(
+    task: Any, user: str, doc_id: Optional[str], name_job: str, loader: str, error: str,
+    reason: Optional[str] = None,
+) -> None:
+    """Close a sync that never reached ``remote_worker`` with the ``source.ingest.failed`` event it publishes.
+
+    The UI started waiting on the sync when it was queued, and nothing else
+    ends that wait when ``remote_worker`` never runs.
+
+    Args:
+        task: The bound Celery task, for its id.
+        user: The source's owner.
+        doc_id: The source.
+        name_job: Its name.
+        loader: Its loader.
+        error: The message shown.
+        reason: For a skip: ``busy``, ``wiki`` or ``gone``.
+    """
+    source_id = str(doc_id)
+    payload = {
+        "source_id": source_id,
+        "job_name": name_job,
+        "loader": loader,
+        "operation": "sync",
+        "error": error,
+        **({"reason": reason} if reason else {}),
+        **_task_id_field(task),
+    }
+    publish_user_event(user, "source.ingest.failed", payload, scope={"kind": "source", "id": source_id})
+
+
 def sync(
     self: Any,
     source_data: Any,
@@ -1718,39 +1779,73 @@ def sync(
     directory: str = "temp",
     connection_id: Optional[str] = None,
     lock_wait_seconds: float = WORKER_WAIT_SECONDS,
+    notify_skip: bool = True,
 ) -> Dict[str, Any]:
     """Re-read a remote source and rebuild its index, holding its index lock.
 
     The lock makes a sync and a Website page change (or another sync) on one
     source take turns: each rewrites the index, and a FAISS index is saved
-    whole, so the last save would win. The wiki check runs under the lock,
-    so a conversion that finished while this sync waited is respected.
+    whole, so the last save would win. The row is read under the lock, so the
+    sync crawls the source as it is then: pages removed or added while it was
+    queued (and a legacy source converted to a Website) are respected, a wiki
+    conversion that finished meanwhile skips it, and a deleted source is
+    skipped rather than re-created. The queued arguments are used only when
+    the row can't be read.
 
     Args:
         self: Celery task instance.
-        source_data: What the loader reads (the queued ``remote_data``).
-        name_job: The source's name.
+        source_data: The loader input the sync was queued with (a fallback).
+        name_job: The source's name when queued.
         user: Its owner.
-        loader: The remote loader.
-        sync_frequency: Its schedule.
-        retriever: Its retriever.
+        loader: The remote loader when queued.
+        sync_frequency: Its schedule when queued.
+        retriever: Its retriever when queued.
         doc_id: The source.
         directory: Scratch directory for the build.
         connection_id: The connection the loader reads through, if any.
         lock_wait_seconds: How long to wait for another job on the source.
+        notify_skip: Publish a ``source.ingest.failed`` event (with ``reason``)
+            when the sync is skipped. Off for scheduled syncs: nobody waits on them.
 
     Returns:
-        ``{"status": "success"}``, ``{"status": "skipped", "reason": "wiki" | "busy"}``
+        ``{"status": "success"}``, ``{"status": "skipped", "reason": "wiki" | "busy" | "gone"}``
         or ``{"status": "error", "error": ...}``.
     """
+
+    def _skipped(reason: str) -> Dict[str, Any]:
+        logging.info("Skipping sync of source %s: %s", doc_id, reason)
+        if notify_skip:
+            _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_SKIP_MESSAGES[reason], reason)
+        return {"status": "skipped", "reason": reason}
+
     try:
         with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
-            config = _stored_source_config(doc_id, user)
-            if _is_wiki_config(config):
-                # A sync wipes the index and re-reads the remote content, which
-                # would replace a wiki's pages; a converted source no longer syncs.
-                logging.info("Skipping sync of wiki source %s", doc_id)
-                return {"status": "skipped", "reason": "wiki"}
+            read, row = _read_source_for_sync(doc_id, user)
+            config = None
+            if read:
+                if row is None:
+                    return _skipped("gone")
+                config = row.get("config")
+                if isinstance(config, str):
+                    try:
+                        config = json.loads(config)
+                    except ValueError:
+                        config = None
+                if _is_wiki_config(config):
+                    # A sync wipes the index and re-reads the remote content, which
+                    # would replace a wiki's pages; a converted source no longer syncs.
+                    return _skipped("wiki")
+                loader = row.get("type") or loader
+                name_job = row.get("name") or name_job
+                retriever = row.get("retriever") or retriever
+                sync_frequency = row.get("sync_frequency") or sync_frequency
+                if row.get("connection_id"):
+                    connection_id = str(row["connection_id"])
+                source_data = normalize_remote_data(loader, row.get("remote_data"))
+                if not source_data:
+                    error = "This source has nothing left to sync"
+                    _publish_sync_not_run(self, user, doc_id, name_job, loader, error)
+                    return {"status": "error", "error": error}
             remote_worker(
                 self,
                 source_data,
@@ -1763,12 +1858,11 @@ def sync(
                 "sync",
                 doc_id,
                 # Re-chunk with the source's own settings, not the defaults.
-                config=config,
+                config=config or None,
                 connection_id=connection_id,
             )
     except SourceBusy:
-        logging.info("Skipping sync of source %s: another change to it is running", doc_id)
-        return {"status": "skipped", "reason": "busy"}
+        return _skipped("busy")
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
@@ -1856,6 +1950,7 @@ def sync_worker(self, frequency):
             self, source_data, name, user, source_type, frequency, retriever, doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
             lock_wait_seconds=0,
+            notify_skip=False,
         )
         outcome = {"success": "sync_success", "skipped": "sync_skipped"}.get(resp["status"], "sync_failure")
         sync_counts[outcome] += 1
