@@ -828,6 +828,8 @@ class UploadRemote(Resource):
                         "config": source_config,
                         "idempotency_key": scoped_key or idempotency_key,
                         "source_id": str(source_uuid),
+                        # Validated above; stored on the new source so its syncs run on schedule.
+                        "sync_frequency": sync_frequency,
                     },
                 }
                 if predetermined_task_id is not None:
