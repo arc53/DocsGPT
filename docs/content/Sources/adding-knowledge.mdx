@@ -82,7 +82,7 @@ Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [
 **Website** adds pages from the web and keeps each page's address, so answers and the [chat widget](/Extensions/chat-widget#sources-and-citations) link back to the page a passage came from. Under **What to add**, pick one:
 
 - **This page** fetches exactly the addresses you enter. Click **Add another page** to put several pages in one source.
-- **Whole site** starts at the address and adds the pages it leads to on the same site.
+- **Whole site** starts at the address and adds the pages it leads to on the same site. A site on a port, such as `example.com:8443`, stays on that port.
 
 An address typed without a scheme, such as `example.com/docs`, is fetched with `https://`. The **Name** starts as the site's host name; type over it to change it.
 
@@ -127,7 +127,7 @@ A page that redirects is followed, up to five redirects, and each new address is
 **View** on a website source lists its pages by title, with each page's address, size and the time it was fetched. Pages from a whole site are grouped by the folders in their addresses. A source with pages on more than one host has a folder per host, as written: `www.example.com` and `example.com` are two folders, and removing one leaves the other's pages. If you can edit the source:
 
 - **Add pages** fetches more page addresses, or another whole site, into the same source. Pages are fetched right away and are kept in every sync. Adding a whole site, or the source's first page on a second host, rebuilds the source like a sync.
-- **Refresh page**, in a page's menu, fetches that page again now. If the fetch fails, the page keeps its content.
+- **Refresh page**, in a page's menu, fetches that page again now. If the fetch fails, the page keeps its content. A page found by crawling that now redirects outside the source's sites, or to a skipped address, is removed instead, as the next sync would leave it out. A page you added by its address is refreshed wherever it leads.
 - **Remove from source** deletes a page's chunks. A page you added by its address leaves the source's list, and if a site in the source would find it again, it's also added to the skipped addresses. A page found by crawling a site, or a whole folder, is added to the skipped addresses, so later syncs leave it out. The skipped addresses are saved at once; the chunks are deleted in the background, and the header shows **Removing pages…** until the page list updates. If the removal fails, the pages and their chunks stay as they were, and you can remove them again. A removal that would leave the source with nothing to fetch, such as removing its only page or its only site, is refused; delete the source instead.
 
 Pages are changed one source at a time. While a sync of the source runs, added, refreshed and removed pages wait for it to finish, then their change runs. A change still running after a few minutes says so; open the source again later to see it. A sync you start, including an **Add pages** that rebuilds the source, waits for a running change too. If another change holds the source too long (half of `CELERY_VISIBILITY_TIMEOUT`, 30 minutes by default), the waiting change or sync doesn't run and says so; start it again.
@@ -138,13 +138,13 @@ On the Elasticsearch vector store, a page's chunks can't be changed on their own
 
 **Settings**, in the source's menu, shows what a website source fetches and what it skips, above its retrieval and chunking settings. There you can remove an address or a site from the list, **Restore** a skipped address, switch **Keep links in page text**, change **Keep up to date**, or click **Sync now**. Changes to the list apply at the next sync.
 
-Through the API, these actions are the `/api/website` routes in the [API reference](/API/reference). `POST /api/website` keeps the stored skipped addresses and link setting when `skip` or `keep_links` is left out. A refused request carries a `code`, such as `page_limit`, `site_limit`, `skip_limit` or `invalid_address`, and a chunk change on a busy source answers `409` with `source_busy`.
+Through the API, these actions are the `/api/website` routes in the [API reference](/API/reference). `POST /api/website` keeps the stored skipped addresses and link setting when `skip` or `keep_links` is left out. A refused request carries a `code`, such as `page_limit`, `site_limit`, `skip_limit` or `invalid_address`, and a chunk change on a busy source answers `409` with `source_busy`. A change that was saved but couldn't be queued answers `500` with `queue_failed`; the next sync applies it.
 
 <Callout type="warning" emoji="⚠️">
 A sync replaces a website source's chunks. On a source that is kept up to date, chunks you add or edit by hand are replaced at the next sync.
 </Callout>
 
-Sources added with the earlier **Link**, **Crawler** and sitemap options open as website sources. Their pages show titles and addresses after their next sync.
+Sources added with the earlier **Link**, **Crawler** and sitemap options open as website sources. Their pages show titles and addresses after their next sync. When you first change one, a sitemap source becomes a site that includes its subdomains, and an address that isn't a sitemap file, such as one without `.xml`, is also kept as a page.
 
 ## Add a GitHub repository
 
@@ -162,7 +162,7 @@ Each source on the Knowledge page has a menu. Which items appear depends on the 
 
 - **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks. While a sync or a page change runs on the source, a chunk change waits a few seconds, then is refused with "Another change to this source is running. Try again once it’s done."
 - **Sync now** appears for sources that are fetched again: websites, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
-- **Settings** opens one dialog for the source. A website source starts with its pages and schedule (see [Manage the pages of a website source](#manage-the-pages-of-a-website-source)); a GitHub or connector source starts with **Keep up to date**, its sync schedule. Then come the retrieval and chunking settings. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
+- **Settings** opens one dialog for the source. A website source starts with its pages and schedule (see [Manage the pages of a website source](#manage-the-pages-of-a-website-source)); a GitHub or connector source starts with **Keep up to date**, its sync schedule. Then come the retrieval and chunking settings. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested; for a website, GitHub or connector source, **Reingest** runs a sync, which fetches the pages or files again with the new settings. See [Per-source configuration](/Sources/Per-source-configuration).
 - **Test retrieval** runs a question against the source and shows which chunks come back.
 - **Convert to wiki** turns the source into editable wiki pages. This can't be undone, and it stops the source's sync schedule: a wiki doesn't sync.
 - **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
