@@ -684,9 +684,10 @@ class ConnectorSync(Resource):
             # A converted wiki doesn't sync: it would replace the wiki's pages,
             # and the worker skips it, so a success here would never finish.
             if SourceConfig.parse(source.get("config")).kind == "wiki":
+                # Shaped and coded as /api/sync_source's refusal.
                 message = "A wiki is edited in place and doesn't sync."
                 return make_response(
-                    jsonify({"success": False, "error": message, "message": message}), 400
+                    jsonify({"success": False, "error": message, "message": message, "code": "wiki"}), 400
                 )
 
             remote_data = source.get('remote_data') or {}

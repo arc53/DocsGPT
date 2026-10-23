@@ -653,6 +653,9 @@ class TestConnectorSync:
             r = ConnectorSync().post()
         assert r.status_code == 400
         assert r.json["success"] is False
+        # Named like /api/sync_source's refusal, so the UI words it the same way.
+        assert r.json["code"] == "wiki"
+        assert r.json["error"] == r.json["message"]
         delay.assert_not_called()
 
 class TestConnectorCallbackStatus:
