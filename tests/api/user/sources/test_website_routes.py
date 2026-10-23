@@ -185,7 +185,10 @@ class TestRemovePages:
 
         assert response.status_code == 200
         assert response.json["task_id"] == "remove-task"
-        self.pages_task.delay.assert_called_once_with(str(src["id"]), USER, "remove", file_paths=["extra.md"])
+        # The worker finds each page by its URL, so a sync that moved it meanwhile doesn't matter.
+        self.pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "https://docs.x.io/extra"}]
+        )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/"]
         # The remaining site can find the page too, so it is skipped as well:
@@ -268,7 +271,8 @@ class TestRemovePages:
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
         self.pages_task.delay.assert_called_once_with(
-            str(src["id"]), USER, "remove", file_paths=["Deploying/Docker.md"]
+            str(src["id"]), USER, "remove",
+            pages=[{"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"}],
         )
 
     def test_a_folder_becomes_one_section_rule(self, app, pg_conn):
@@ -279,7 +283,10 @@ class TestRemovePages:
         assert response.json["removed"] == 2
         # One task for the whole folder (FAISS saves once).
         self.pages_task.delay.assert_called_once_with(
-            str(src["id"]), USER, "remove", file_paths=["Deploying/Docker.md", "Deploying/Kubernetes.md"]
+            str(src["id"]), USER, "remove", pages=[
+                {"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"},
+                {"path": "Deploying/Kubernetes.md", "url": "https://docs.x.io/Deploying/Kubernetes"},
+            ],
         )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/*"]
@@ -312,6 +319,40 @@ class TestRemovePages:
 
         assert response.status_code == 404
         self.pages_task.delay.assert_not_called()
+
+    def test_a_path_named_twice_is_removed_once(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response = self._remove(app, pg_conn, src, file_paths=["extra.md", "extra.md", "extra.md"])
+
+        assert response.status_code == 200
+        assert response.json["removed"] == 1
+        assert self.pages_task.delay.call_args.kwargs["pages"] == [
+            {"path": "extra.md", "url": "https://docs.x.io/extra"}
+        ]
+
+    def test_a_page_inside_the_removed_folder_counts_once(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response = self._remove(
+            app, pg_conn, src, file_paths=["Deploying/Docker.md"], directory_path="Deploying"
+        )
+
+        assert response.status_code == 200
+        assert response.json["removed"] == 2
+        assert [p["path"] for p in self.pages_task.delay.call_args.kwargs["pages"]] == [
+            "Deploying/Docker.md", "Deploying/Kubernetes.md",
+        ]
+
+    def test_too_many_paths_in_one_request_are_refused(self, app, pg_conn):
+        src = _seed(pg_conn)
+        with patch("docsgpt.api.user.sources.website.MAX_REMOVE_PATHS", 2):
+            response = self._remove(app, pg_conn, src, file_paths=["a.md", "b.md", "c.md"])
+            # Repeats don't count toward it.
+            repeated = self._remove(app, pg_conn, src, file_paths=["extra.md"] * 3)
+
+        assert response.status_code == 400
+        assert response.json["code"] == "too_many_paths"
+        assert response.json["max_paths"] == 2
+        assert repeated.status_code == 200
 
 
 class TestAddPages:
@@ -477,6 +518,80 @@ class TestRefreshPage:
 
         assert response.status_code == 400
         pages_task.delay.assert_not_called()
+
+
+class TestBodyTypes:
+    """A body of the wrong shape is a 400, never a 500."""
+
+    @pytest.mark.parametrize("resource", ["WebsiteSettings", "AddWebsitePages", "RefreshWebsitePage",
+                                          "RemoveWebsitePages"])
+    @pytest.mark.parametrize("body", [[1, 2], 5, "x", True])
+    def test_a_body_that_isnt_an_object_is_400(self, app, pg_conn, resource, body):
+        from docsgpt.api.user.sources import website
+
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.sync_source"
+        ) as sync_task:
+            response = _call(app, pg_conn, getattr(website, resource), "POST", json=body)
+
+        assert response.status_code == 400
+        assert response.json["code"] == "invalid_body"
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "resource, body, field",
+        [
+            ("RemoveWebsitePages", {"directory_path": ["Deploying"]}, "directory_path"),
+            ("RemoveWebsitePages", {"file_paths": "extra.md"}, "file_paths"),
+            ("RemoveWebsitePages", {"file_paths": ["extra.md", 3]}, "file_paths"),
+            ("RefreshWebsitePage", {"file_path": ["extra.md"]}, "file_path"),
+            ("WebsiteSettings", {"entries": CONFIG["entries"], "skip": "https://docs.x.io/a"}, "skip"),
+            ("WebsiteSettings", {"entries": CONFIG["entries"], "skip": [1]}, "skip"),
+            ("WebsiteSettings", {"entries": CONFIG["entries"], "keep_links": "yes"}, "keep_links"),
+            ("WebsiteSettings", {"entries": CONFIG["entries"], "sync_frequency": ["daily"]}, "sync_frequency"),
+            ("WebsiteSettings", {"entries": {"url": "https://docs.x.io/"}}, "entries"),
+            ("AddWebsitePages", {"entries": "https://docs.x.io/new"}, "entries"),
+        ],
+    )
+    def test_a_field_of_the_wrong_type_is_400(self, app, pg_conn, resource, body, field):
+        from docsgpt.api.user.sources import website
+
+        src = _seed(pg_conn)
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.sync_source"
+        ) as sync_task:
+            response = _call(
+                app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
+            )
+
+        assert response.status_code == 400
+        assert response.json["code"] == "invalid_field"
+        assert response.json["field"] == field
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_not_called()
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
+
+    @pytest.mark.parametrize("source_id", [123, {"a": 1}, ["x"]])
+    def test_a_source_id_that_isnt_a_string_is_400(self, app, pg_conn, source_id):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+            "source_id": source_id, "entries": CONFIG["entries"],
+        })
+
+        assert response.status_code == 400
+        assert response.json["code"] == "invalid_field"
+        assert response.json["field"] == "source_id"
+
+    def test_a_missing_field_is_400_with_a_code(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import AddWebsitePages
+
+        response = _call(app, pg_conn, AddWebsitePages, "POST", json={"entries": CONFIG["entries"]})
+
+        assert response.status_code == 400
+        assert response.json["code"] == "missing_fields"
+        assert response.json["fields"] == ["source_id"]
 
 
 @contextmanager

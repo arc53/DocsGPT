@@ -1078,7 +1078,7 @@
           "type": "string"
         },
         "file_paths": {
-          "description": "Tree paths of pages to remove",
+          "description": "Tree paths of pages to remove, up to 1000",
           "items": {
             "type": "string"
           },

@@ -9,7 +9,7 @@ deleted there, and added pages are fetched and appended. Sources made by the old
 loaders read as Website sources and are converted on their first save.
 """
 
-from typing import Any, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from flask import Response, current_app, jsonify, make_response, request
@@ -31,10 +31,12 @@ from docsgpt.parser.remote.website_tree import (
 )
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
-from docsgpt.utils import check_required_fields
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
+
+#: How many tree paths one removal may name; a folder is one path however many pages it holds.
+MAX_REMOVE_PATHS = 1000
 
 
 def _error(message: str, status: int = 400, code: Optional[str] = None, **details: Any) -> Response:
@@ -43,6 +45,54 @@ def _error(message: str, status: int = 400, code: Optional[str] = None, **detail
     if code:
         body["code"] = code
     return make_response(jsonify(body), status)
+
+
+def _is_str_list(value: Any) -> bool:
+    """Whether ``value`` is a list of strings."""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+# The type each body field of these routes must have, and how a refusal words it.
+_FIELD_TYPES: Dict[str, Tuple[Callable[[Any], bool], str]] = {
+    "source_id": (lambda value: isinstance(value, str), "a string"),
+    "entries": (lambda value: isinstance(value, list), "a list"),
+    "skip": (_is_str_list, "a list of strings"),
+    "keep_links": (lambda value: isinstance(value, bool), "true or false"),
+    "sync_frequency": (lambda value: isinstance(value, str), "a string"),
+    "file_paths": (_is_str_list, "a list of strings"),
+    "directory_path": (lambda value: isinstance(value, str), "a string"),
+    "file_path": (lambda value: isinstance(value, str), "a string"),
+}
+
+
+def _read_body(required: List[str]) -> Tuple[dict, Optional[Response]]:
+    """The request's JSON object, with its required fields present and every known field of the right type.
+
+    A missing or unreadable body reads as ``{}`` (so it is refused for its
+    missing fields); a body that isn't an object, a missing field and a field
+    of the wrong type are each a 400 with a ``code``. A field sent as
+    ``null`` counts as left out.
+
+    Args:
+        required: The fields the route needs.
+
+    Returns:
+        ``(body, None)``, or ``({}, the 400)``.
+    """
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return {}, _error("The request body must be a JSON object", code="invalid_body")
+    missing = [name for name in required if data.get(name) is None]
+    if missing:
+        return {}, _error(
+            f"Missing required fields: {', '.join(missing)}", code="missing_fields", fields=missing
+        )
+    for name, (check, wording) in _FIELD_TYPES.items():
+        if data.get(name) is not None and not check(data[name]):
+            return {}, _error(f"{name} must be {wording}", code="invalid_field", field=name)
+    return data, None
 
 
 def _load_locked(conn, source_id: str, user: str, action: str) -> tuple:
@@ -159,10 +209,9 @@ class WebsiteSettings(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json() or {}
-        missing = check_required_fields(data, ["source_id", "entries"])
-        if missing:
-            return missing
+        data, refusal = _read_body(["source_id", "entries"])
+        if refusal is not None:
+            return refusal
         sync_frequency = data.get("sync_frequency")
         if sync_frequency is not None and sync_frequency not in _SYNC_FREQUENCIES:
             return _error(f"Unknown sync_frequency {sync_frequency!r}")
@@ -195,7 +244,9 @@ class RemoveWebsitePages(Resource):
         "RemoveWebsitePagesModel",
         {
             "source_id": fields.String(required=True, description="Source ID"),
-            "file_paths": fields.List(fields.String, description="Tree paths of pages to remove"),
+            "file_paths": fields.List(
+                fields.String, description=f"Tree paths of pages to remove, up to {MAX_REMOVE_PATHS}"
+            ),
             "directory_path": fields.String(description="Tree path of a folder to remove"),
         },
     )
@@ -213,11 +264,16 @@ class RemoveWebsitePages(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json() or {}
-        missing = check_required_fields(data, ["source_id"])
-        if missing:
-            return missing
-        file_paths = [p for p in data.get("file_paths") or [] if isinstance(p, str)]
+        data, refusal = _read_body(["source_id"])
+        if refusal is not None:
+            return refusal
+        file_paths = list(dict.fromkeys(data.get("file_paths") or []))
+        if len(file_paths) > MAX_REMOVE_PATHS:
+            return _error(
+                f"One removal names up to {MAX_REMOVE_PATHS} pages",
+                code="too_many_paths",
+                max_paths=MAX_REMOVE_PATHS,
+            )
         directory_path = (data.get("directory_path") or "").strip("/")
         try:
             with db_session() as conn:
@@ -237,7 +293,8 @@ class RemoveWebsitePages(Resource):
                 section_rule = None
                 if directory_path:
                     folder_pages = pages_under(structure, directory_path)
-                    pages.extend(p for p in folder_pages if p not in pages)
+                    named = {path for path, _url in pages}
+                    pages.extend(p for p in folder_pages if p[0] not in named)
                     section_rule = folder_skip_rule(directory_path, folder_pages)
                 if not pages:
                     return _error("No such pages in this source")
@@ -263,8 +320,11 @@ class RemoveWebsitePages(Resource):
             # The chunks and tree entries go in the worker, under the source's
             # index lock: a running sync is waited for rather than refused, and
             # no request is held open while a large folder's chunks are deleted.
+            # Each page goes with its URL: the worker finds it by that in the
+            # tree as it is then, so a sync that moved it meanwhile still
+            # removes the right page.
             task = website_pages.delay(
-                str(doc["id"]), ra.owner_id, "remove", file_paths=[path for path, _url in pages]
+                str(doc["id"]), ra.owner_id, "remove", pages=[{"path": path, "url": url} for path, url in pages]
             )
         except AccessDenied as err:
             return denied_response(err)
@@ -299,10 +359,9 @@ class AddWebsitePages(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json() or {}
-        missing = check_required_fields(data, ["source_id", "entries"])
-        if missing:
-            return missing
+        data, refusal = _read_body(["source_id", "entries"])
+        if refusal is not None:
+            return refusal
         try:
             new_entries = parse_website_config({"entries": data["entries"]})["entries"]
         except ValueError as err:
@@ -390,10 +449,9 @@ class RefreshWebsitePage(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json() or {}
-        missing = check_required_fields(data, ["source_id", "file_path"])
-        if missing:
-            return missing
+        data, refusal = _read_body(["source_id", "file_path"])
+        if refusal is not None:
+            return refusal
         try:
             with db_readonly() as conn:
                 doc, ra = load_source(conn, data["source_id"], user, "edit")
