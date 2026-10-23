@@ -26,6 +26,7 @@ from docsgpt.api.user.sources.upload import _pages_once
 from docsgpt.api.user.tasks import sync_source, website_pages
 from docsgpt.core.settings import settings
 from docsgpt.parser.remote import website_loader
+from docsgpt.parser.remote.page_content import MAX_PATH_SEGMENTS
 from docsgpt.parser.remote.website_loader import SiteScope, is_web_address, page_key, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
@@ -214,45 +215,75 @@ def _cleaned(config: dict) -> dict:
     return {**config, "entries": entries}
 
 
-def _added_value_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ()) -> Optional[Response]:
+def _within_depth(url: str) -> bool:
+    """Whether an address is at most ``MAX_PATH_SEGMENTS`` folders deep, as a load fetches one.
+
+    Args:
+        url: An address that parsed.
+
+    Returns:
+        False for a deeper one.
+    """
+    return urlparse(url).path.count("/") <= MAX_PATH_SEGMENTS
+
+
+def _added_value_refusal(config: dict, stored: dict) -> Optional[Response]:
     """The 400 for an address, path or skip rule a change adds that a write may not store, or ``None``.
 
     A config parsed without the write limits only needs addresses that
     parse, so what the change adds is checked as a strict parse checks it:
     each new address (an entry's or its ``sitemap_url``) must be an
     ``is_web_address`` (no ``user:password@`` credentials, no malformed
-    host, no control character), and a new path or skip rule can't hold a
-    control character. What the source already holds is left alone.
+    host, no control character) at most ``MAX_PATH_SEGMENTS`` folders deep;
+    a long one is ``url_too_long``, below. What the source already holds is left
+    alone. A control character in a path or skip rule is checked on the
+    request body (``_control_character_refusal``): the parse drops it.
 
     Args:
         config: The new config, parsed without the write limits.
         stored: The source's config before the change.
-        built_rules: Skip rules the server built from addresses the source already holds.
 
     Returns:
-        The refusal: ``invalid_address`` with the ``url``, or ``invalid_config``.
+        The refusal, ``invalid_address`` with the ``url``.
     """
     old_entries = stored["entries"]
     old_urls = {url for entry in old_entries for url in (entry["url"], entry.get("sitemap_url")) if url}
     for entry in config["entries"]:
         for label, url in (("Address", entry["url"]), ("Sitemap address", entry.get("sitemap_url"))):
-            if url and url not in old_urls and not is_web_address(url):
+            if url and url not in old_urls and not (is_web_address(url) and _within_depth(url)):
                 # The value is echoed back to the client: kept to a URL's length.
                 return _error(
                     f"{label} {url[:200]!r} is not a web address",
                     code="invalid_address",
                     url=url[: website_loader.MAX_URL_LENGTH],
                 )
-    old_prefixes = {entry.get("path_prefix") or "" for entry in old_entries if entry["mode"] == "site"}
+    return None
+
+
+def _control_character_refusal(raw: dict) -> Optional[Response]:
+    """The 400 when a settings body's path or skip rule holds a control character, or ``None``.
+
+    A parse without the write limits strips such characters from a path and
+    drops such a rule, so a stored row that has one still reads; a save is
+    refused instead of quietly changing what was sent. A stored config
+    never holds one (its read drops it), so any found here is new.
+
+    Args:
+        raw: The settings body as sent: ``entries`` and ``skip``.
+
+    Returns:
+        The refusal, ``invalid_config``.
+    """
+    entries = raw.get("entries") if isinstance(raw.get("entries"), list) else []
     if any(
-        _CONTROL_CHARACTER.search(entry.get("path_prefix") or "")
-        and (entry.get("path_prefix") or "") not in old_prefixes
-        for entry in config["entries"]
-        if entry["mode"] == "site"
+        isinstance(entry, dict)
+        and isinstance(entry.get("path_prefix"), str)
+        and _CONTROL_CHARACTER.search(entry["path_prefix"])
+        for entry in entries
     ):
         return _error("A path can't contain control characters", code="invalid_config")
-    old_rules = set(stored["skip"]) | set(built_rules)
-    if any(_CONTROL_CHARACTER.search(rule) and rule not in old_rules for rule in config["skip"]):
+    rules = raw.get("skip") if isinstance(raw.get("skip"), list) else []
+    if any(isinstance(rule, str) and _CONTROL_CHARACTER.search(rule) for rule in rules):
         return _error("A skip rule can't contain control characters", code="invalid_config")
     return None
 
@@ -279,7 +310,7 @@ def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ())
     Returns:
         The refusal, with a ``code`` and the limit (or the address) for the UI's wording.
     """
-    refusal = _added_value_refusal(config, stored, built_rules)
+    refusal = _added_value_refusal(config, stored)
     if refusal is not None:
         return refusal
     entries, old_entries = config["entries"], stored["entries"]
@@ -419,6 +450,9 @@ class WebsiteSettings(Resource):
                         data["keep_links"] if data.get("keep_links") is not None else stored["keep_links"]
                     ),
                 }
+                refusal = _control_character_refusal(raw)
+                if refusal is not None:
+                    return refusal
                 try:
                     config = _cleaned(parse_website_config(raw, enforce_page_cap=False))
                 except ValueError as err:

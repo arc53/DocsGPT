@@ -277,6 +277,7 @@ class TestWritesRefuseBadValues:
         {"url": "https://docs.x.io/a\u0001b", "mode": "page"},
         {**SITE, "sitemap_url": "https://bob:pw@docs.x.io/sitemap.xml"},
         {"url": "https://alice:s3cret@docs.x.io/", "mode": "site"},
+        {"url": "https://docs.x.io" + "/a" * 65, "mode": "page"},
     ])
     def test_a_save_refuses_a_new_address_that_isnt_one(self, app, pg_conn, entry):
         src = _seed(pg_conn)
@@ -298,6 +299,12 @@ class TestWritesRefuseBadValues:
         assert response.status_code == 400, response.json
         assert response.json["code"] == "invalid_config"
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
+
+    def test_a_resent_body_keeps_a_stored_path_and_rules(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=[self.SITE], skip=["https://docs.x.io/a/*"])
+
+        assert response.status_code == 200, response.json
 
     def test_adding_a_site_with_a_control_character_in_its_path_is_refused(self, app, pg_conn):
         src = _seed(pg_conn)
