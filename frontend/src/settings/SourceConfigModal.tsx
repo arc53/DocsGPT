@@ -19,6 +19,7 @@ import RetrievalOptions, {
   isPrescreenConfigValid,
   optionsToConfig,
   type RetrievalOptionsValue,
+  sourceHasFileLinks,
 } from './components/RetrievalOptions';
 
 interface SourceConfigModalProps {
@@ -206,6 +207,7 @@ export default function SourceConfigModal({
               graphRAGAvailable={graphRAGAvailable}
               availableModels={availableModels}
               decision={decision}
+              linksAvailable={sourceHasFileLinks(document?.provider)}
             />
             {willRequireReingest && !isReadOnly && (
               <Alert variant="warning">

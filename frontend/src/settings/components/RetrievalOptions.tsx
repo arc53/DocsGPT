@@ -165,6 +165,7 @@ export type RetrievalOptionsValue = {
     chunks: number;
     score_threshold: number | null;
     rephrase_query: boolean;
+    show_links: boolean;
     prescreen: {
       enabled: boolean;
       candidate_k: number;
@@ -207,6 +208,7 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
     chunks: 6,
     score_threshold: null,
     rephrase_query: true,
+    show_links: true,
     prescreen: {
       enabled: false,
       ...DEFAULT_PRESCREEN,
@@ -275,6 +277,18 @@ export function availableRetrievers(
   return options;
 }
 
+// Synced services whose files have a web link the ingest stores.
+const LINKED_FILE_PROVIDERS = new Set([
+  'google_drive',
+  'share_point',
+  'confluence',
+]);
+
+/** True when a source synced from `provider` stores each file's web link. */
+export function sourceHasFileLinks(provider?: string | null): boolean {
+  return !!provider && LINKED_FILE_PROVIDERS.has(provider);
+}
+
 /**
  * Group eyebrow: an uppercase, tracked title with a normal-weight ` · tag`
  * suffix, set above the field rows of a group.
@@ -327,6 +341,7 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
       chunks: retrieval.chunks ?? d.retrieval.chunks,
       score_threshold: retrieval.score_threshold ?? d.retrieval.score_threshold,
       rephrase_query: retrieval.rephrase_query ?? d.retrieval.rephrase_query,
+      show_links: retrieval.show_links ?? d.retrieval.show_links,
       prescreen: {
         enabled: prescreen != null,
         candidate_k: prescreen?.candidate_k ?? DEFAULT_PRESCREEN.candidate_k,
@@ -391,6 +406,7 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
       chunks: value.retrieval.chunks,
       score_threshold: value.retrieval.score_threshold,
       rephrase_query: value.retrieval.rephrase_query,
+      show_links: value.retrieval.show_links,
       prescreen: ps.enabled
         ? {
             candidate_k: ps.candidate_k,
@@ -479,6 +495,9 @@ type RetrievalOptionsProps = {
   // The decision-model controls the operator turned on (/api/config); the
   // Relevance section is hidden while the model is off.
   decision?: DecisionFeatures;
+  // Shows the file-link switch: the source is synced from a service whose
+  // files have web links (see `sourceHasFileLinks`).
+  linksAvailable?: boolean;
 };
 
 /**
@@ -498,6 +517,7 @@ export default function RetrievalOptions({
   retrievalOnly = false,
   title,
   decision = NO_DECISION_FEATURES,
+  linksAvailable = false,
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -602,7 +622,8 @@ export default function RetrievalOptions({
     prescreen.enabled ||
     (showSimilarity && value.retrieval.score_threshold !== null) ||
     (relevanceOn && reranker.candidate_k !== null) ||
-    (filtering && strictness === 'custom');
+    (filtering && strictness === 'custom') ||
+    (linksAvailable && !queryOnly && !value.retrieval.show_links);
   const advancedOpen = advancedToggled ?? advancedSet;
 
   const relevanceGroup = decision.relevance && (
@@ -802,6 +823,24 @@ export default function RetrievalOptions({
             onCheckedChange={enablePrescreen}
           />
         </SettingRow>
+
+        {!queryOnly && linksAvailable && (
+          <SettingRow
+            label={tr('retrieval.showLinks')}
+            htmlFor="retrieval-show-links"
+            description={tr('retrieval.showLinksHint')}
+            alignStart
+          >
+            <Switch
+              id="retrieval-show-links"
+              checked={value.retrieval.show_links}
+              disabled={disabled}
+              onCheckedChange={(checked) =>
+                setRetrieval({ show_links: checked })
+              }
+            />
+          </SettingRow>
+        )}
       </SettingRows>
 
       {/* LLM screening's inputs (kept as floating-label cards) */}
@@ -961,7 +1000,7 @@ export default function RetrievalOptions({
       {relevanceGroup}
 
       {/* Advanced (live): the exact relevance, its candidates, the similarity
-          threshold and LLM screening. No gap on the wrapper: a closed
+          threshold, LLM screening and a synced source's file links. No gap on the wrapper: a closed
           Collapsible is still a flex item (DESIGN.md › Disclosure). */}
       <div className="flex flex-col">
         <CollapsibleTrigger

@@ -432,6 +432,8 @@
           "similarityThresholdPlaceholder": "なし",
           "similarityThresholdHint": "リトリーバーの類似度スコアがこの値（0〜1）未満のチャンクを除外します。関連度モデルではなく、リトリーバーのスコアで絞り込みます。",
           "rephraseQuery": "検索前にクエリを言い換える",
+          "showLinks": "元のファイルにリンクする",
+          "showLinksHint": "引用とエージェントに、同期元サービスでの各ファイルのリンクが渡されます。リンクを開くには、そのサービスでファイルへのアクセス権が必要です。",
           "retriever": "リトリーバー",
           "retrievers": {
             "classic": "クラシック",

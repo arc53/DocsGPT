@@ -604,7 +604,7 @@ class GraphRAGRetriever(BaseRetriever):
             in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
             if not in_selection and not in_pool:
                 break
-            doc = {"text": text, **labels, **self._connector_labels.for_source(source_id)}
+            doc = {"text": text, **labels, **self._connector_labels.for_source(source_id, metadata)}
             if pooled:
                 doc["_base"] = in_selection
                 pool_tokens += doc_tokens

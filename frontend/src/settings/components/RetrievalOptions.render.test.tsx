@@ -68,6 +68,79 @@ describe('RetrievalOptions disclosure', () => {
     expect(inner.className.split(' ')).toContain('pt-4');
   });
 
+  it('offers the file-link switch only where the source has links', () => {
+    const onChange = vi.fn();
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={onChange}
+          alwaysOpen
+        />,
+      );
+    });
+    expect(container.querySelector('#retrieval-show-links')).toBeNull();
+
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={onChange}
+          alwaysOpen
+          linksAvailable
+        />,
+      );
+    });
+    const toggle = container.querySelector(
+      '#retrieval-show-links',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    act(() => toggle.click());
+    expect(onChange.mock.calls.at(-1)![0].retrieval.show_links).toBe(false);
+  });
+
+  it('keeps the file-link switch under Advanced, open while links are off', () => {
+    const render = (showLinks: boolean) =>
+      act(() => {
+        root.render(
+          <RetrievalOptions
+            value={{
+              ...DEFAULT_RETRIEVAL_OPTIONS,
+              retrieval: {
+                ...DEFAULT_RETRIEVAL_OPTIONS.retrieval,
+                show_links: showLinks,
+              },
+            }}
+            onChange={vi.fn()}
+            alwaysOpen
+            linksAvailable
+          />,
+        );
+      });
+    const advanced = () => {
+      const trigger = Array.from(
+        container.querySelectorAll('button[aria-expanded]'),
+      ).find((b) => b.textContent?.includes('advanced'))!;
+      const body = container.querySelector(
+        `[id="${trigger.getAttribute('aria-controls')}"]`,
+      )!;
+      return { trigger, body };
+    };
+
+    render(true);
+    expect(
+      advanced().body.contains(
+        container.querySelector('#retrieval-show-links'),
+      ),
+    ).toBe(true);
+    expect(advanced().trigger.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(false);
+    expect(advanced().trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('caps the chunk-size input and explains the limit', () => {
     act(() => {
       root.render(
