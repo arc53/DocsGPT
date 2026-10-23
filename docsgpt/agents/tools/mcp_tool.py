@@ -104,6 +104,17 @@ def _secret_fingerprint(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
 
 
+def _merge_headers(*layers: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """Merge header dicts left to right; a later layer replaces a name in any case."""
+    merged: Dict[str, str] = {}
+    for layer in layers:
+        for name, value in (layer or {}).items():
+            for existing in [k for k in merged if k.lower() == str(name).lower()]:
+                del merged[existing]
+            merged[str(name)] = value
+    return merged
+
+
 def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
     """Each MCP tool's ``x-mcp-header`` annotations, as tool name -> {property path: header token}.
 
@@ -381,22 +392,37 @@ class MCPTool(Tool):
 
     def _create_transport(self):
         """Create appropriate transport based on configuration."""
-        headers = {"Content-Type": "application/json", "User-Agent": "DocsGPT-MCP/1.0"}
-        headers.update(self.custom_headers)
-
+        auth_headers: Dict[str, str] = {}
+        reserved = set()
         if self.auth_type == "api_key":
             api_key = self.auth_credentials.get("api_key", "")
             header_name = self.auth_credentials.get("api_key_header", "X-API-Key")
+            reserved.add(header_name.lower())
             if api_key:
-                headers[header_name] = api_key
+                auth_headers[header_name] = api_key
         elif self.auth_type == "basic":
+            reserved.add("authorization")
             username = self.auth_credentials.get("username", "")
             password = self.auth_credentials.get("password", "")
             if username and password:
                 credentials = base64.b64encode(
                     f"{username}:{password}".encode()
                 ).decode()
-                headers["Authorization"] = f"Basic {credentials}"
+                auth_headers["Authorization"] = f"Basic {credentials}"
+        elif self.auth_type in ("bearer", "oauth"):
+            # httpx auth sets Authorization on each request; a custom one must not compete.
+            reserved.add("authorization")
+
+        # Custom headers never override auth headers, whatever their capitalization.
+        custom = {
+            k: v for k, v in (self.custom_headers or {}).items()
+            if str(k).lower() not in reserved
+        }
+        headers = _merge_headers(
+            {"Content-Type": "application/json", "User-Agent": "DocsGPT-MCP/1.0"},
+            custom,
+            auth_headers,
+        )
         if self.transport_type == "auto":
             if "sse" in self.server_url.lower() or self.server_url.endswith("/sse"):
                 transport_type = "sse"
@@ -407,7 +433,7 @@ class MCPTool(Tool):
         if transport_type == "stdio":
             raise ValueError("STDIO transport is disabled")
         if transport_type == "sse":
-            headers.update({"Accept": "text/event-stream", "Cache-Control": "no-cache"})
+            headers = _merge_headers(headers, {"Accept": "text/event-stream", "Cache-Control": "no-cache"})
             return SSETransport(
                 url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
             )
