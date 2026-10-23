@@ -144,16 +144,48 @@ describe('WebsiteTree', () => {
     );
   });
 
-  it('links an open page to its live address', async () => {
+  it('links an open page to its live address, in its bar', async () => {
     await render({}, { 'upgrading.md': SITE['upgrading.md'] });
     // A one-page source opens the page directly.
-    const link = container.querySelector<HTMLAnchorElement>(
+    const bar = container.querySelector('[data-testid="item-bar"]')!;
+    const link = bar.querySelector<HTMLAnchorElement>(
       'a[href="https://docs.x.io/upgrading"]',
     );
 
     expect(link?.textContent).toBe('docs.x.io/upgrading');
-    expect(container.textContent).toContain(
-      'settings.sources.website.fetchedAt',
+    expect(bar.textContent).toContain('settings.sources.website.fetchedAt');
+  });
+
+  it('keeps the source byline with a page open', async () => {
+    await render({}, { 'upgrading.md': SITE['upgrading.md'] });
+    const byline = container.querySelector('p.text-muted-foreground')!;
+    expect(byline.querySelector('a')?.getAttribute('href')).toBe(
+      'https://docs.x.io',
     );
+    expect(byline.textContent).toContain(
+      'settings.sources.website.pagesByline',
+    );
+    expect(byline.textContent).toContain('settings.sources.website.synced');
+  });
+
+  it("a one-page source's bar has Open and Refresh, but no Remove", async () => {
+    await render({}, { 'upgrading.md': SITE['upgrading.md'] });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="item-bar"] button[aria-label="settings.sources.menuAlt"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    expect(
+      Array.from(document.querySelectorAll('[role="menuitem"]')).map(
+        (el) => el.textContent,
+      ),
+    ).toEqual([
+      'settings.sources.website.openPage',
+      'settings.sources.website.refreshPage',
+    ]);
   });
 });

@@ -619,7 +619,7 @@
         "pageCount_other": "{{count}} pages",
         "synced": "{{frequency}} · synced {{when}}",
         "notSynced": "Not synced",
-        "fetchedAt": "Fetched {{when}}",
+        "fetchedAt": "fetched {{when}}",
         "addPages": "Add pages",
         "addPagesHint": "Fetched now and kept in every sync. A whole site rebuilds the source.",
         "addFailed": "Couldn’t add the pages.",
@@ -654,7 +654,10 @@
       "deleteSource": "Delete source",
       "syncStarted": "Syncing {{name}}…",
       "viaConnectionFiles_one": "via {{name}} · {{files}} file",
-      "viaConnectionFiles_other": "via {{name}} · {{files}} files"
+      "viaConnectionFiles_other": "via {{name}} · {{files}} files",
+      "item": {
+        "tokens": "{{tokens}} tokens"
+      }
     },
     "analytics": {
       "label": "Analytics",

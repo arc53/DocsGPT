@@ -148,6 +148,71 @@ describe('SourceNavigator', () => {
     expect(row('bremen')).toBeUndefined();
   });
 
+  const selected = () =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[cmdk-item][data-selected="true"]',
+      ),
+    ).map((el) => el.getAttribute('data-value'));
+
+  // cmdk keeps the last hovered row highlighted after the pointer leaves, so
+  // two rows looked selected; leaving the list returns it to the open item.
+  it('returns the highlight to the open item when the pointer leaves', async () => {
+    await render(TREE, 'rate-cards/q1.pdf');
+    expect(selected()).toEqual(['rate-cards/q1.pdf']);
+    await act(async () => {
+      row('europe')!.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true }),
+      );
+    });
+    expect(selected()).toEqual(['europe']);
+    const list = container.querySelector<HTMLElement>(
+      '[data-slot="command-list"]',
+    )!;
+    await act(async () => {
+      list.dispatchEvent(
+        new PointerEvent('pointerout', {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+    });
+    expect(selected()).toEqual(['rate-cards/q1.pdf']);
+  });
+
+  it('with nothing open, leaving the list highlights no row', async () => {
+    await render(TREE, null);
+    await act(async () => {
+      row('europe')!.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true }),
+      );
+    });
+    expect(selected()).toEqual(['europe']);
+    const list = container.querySelector<HTMLElement>(
+      '[data-slot="command-list"]',
+    )!;
+    await act(async () => {
+      list.dispatchEvent(
+        new PointerEvent('pointerout', {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+    });
+    expect(selected()).toEqual([]);
+  });
+
+  it('keeps the arrow keys walking the list', async () => {
+    await render(TREE, 'rate-cards/q1.pdf');
+    const input = container.querySelector<HTMLInputElement>('[cmdk-input]')!;
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+      );
+    });
+    expect(selected()).toEqual(['rate-cards']);
+  });
+
   // The column caps its list; the phone sheet's body already scrolls, so a
   // cap there would nest a second scroller inside it.
   it('caps the list in the column but not in the phone sheet', async () => {

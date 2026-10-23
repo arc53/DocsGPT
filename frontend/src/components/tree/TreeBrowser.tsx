@@ -17,8 +17,8 @@ import {
 } from '../../utils/dateTimeUtils';
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
-import { Eye, File, FileText, Folder } from 'lucide-react';
-import { nodeAtPath, pageAddress, withPageTitles } from './pages';
+import { ExternalLink, Eye, File, FileText, Folder } from 'lucide-react';
+import { pageAddress, withPageTitles } from './pages';
 import { EmptyState } from '../ui/empty-state';
 import { useLoaderState } from '../../hooks';
 import Chunks, {
@@ -26,9 +26,11 @@ import Chunks, {
   type OpenChunkPosition,
 } from '../Chunks';
 import type { LinkedChunk } from '../chunkUtils';
+import ItemBar from './ItemBar';
 import PathHeader, { type Crumb } from './PathHeader';
 import SourceNavigator from './SourceNavigator';
 import SkeletonLoader from '../SkeletonLoader';
+import { Button } from '../ui/button';
 import {
   Table,
   TableBody,
@@ -141,17 +143,17 @@ export interface TreeBrowserProps {
    */
   variant?: 'files' | 'pages';
   /**
-   * Replaces the counts byline under the crumbs. Gets the open file's node
-   * (null at a folder) and the source's file and token counts.
+   * Replaces the counts byline under the crumbs. Gets the source's file and
+   * token counts: the byline is always the source's, an open file has its
+   * own bar.
    */
   renderByline?: (context: {
-    openFile: FileNode | null;
     files: number;
     tokens: number;
   }) => React.ReactNode;
   /**
-   * Shown above an open file's chunks (a synced Website source: hand edits
-   * are replaced at the next sync).
+   * Shown under the open file's bar, above its chunks (a synced Website
+   * source: hand edits are replaced at the next sync).
    */
   chunksNotice?: React.ReactNode;
 }
@@ -203,6 +205,29 @@ function findFileByPathOrName(
       (leaf) => leaf.path.split('/').pop() === target || leaf.label === target,
     )
   );
+}
+
+/**
+ * The file at a full path, or null when the tree doesn't hold one there. A
+ * file is any node with a `type` (folders have none), as the table reads it.
+ *
+ * @param structure The source's tree.
+ * @param path The file's full path.
+ * @returns The file's node, or null.
+ */
+function fileAt(
+  structure: DirectoryStructure | null,
+  path: string,
+): FileNode | null {
+  let node: unknown = structure;
+  for (const part of path.split('/')) {
+    if (!node || typeof node !== 'object' || (node as FileNode).type)
+      return null;
+    node = (node as DirectoryStructure)[part];
+  }
+  return node && typeof node === 'object' && (node as FileNode).type
+    ? (node as FileNode)
+    : null;
 }
 
 function calculateDirectoryStats(structure: DirectoryStructure): {
@@ -413,6 +438,20 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     ? { id: singleFile.path, name: singleFile.label }
     : selectedFile;
 
+  // The open file's chunk count, for its bar (reported by its chunk list).
+  const [openFileChunks, setOpenFileChunks] = useState<{
+    id: string;
+    total: number;
+  } | null>(null);
+
+  // A file a refresh no longer lists (deleted from its own bar, or by a
+  // sync) closes, back to its folder.
+  useEffect(() => {
+    if (!selectedFile || !directoryStructure) return;
+    if (typeof directoryStructure !== 'object') return;
+    if (!fileAt(directoryStructure, selectedFile.id)) setSelectedFile(null);
+  }, [directoryStructure, selectedFile]);
+
   const byline = useMemo(() => {
     if (embedded || !directoryStructure) return undefined;
     let structure: unknown = directoryStructure;
@@ -429,31 +468,13 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         : {},
     );
     const files = countLeaves(navigatorNodes);
-    if (renderByline) {
-      const openPath = singleFile?.path ?? selectedFile?.id;
-      return renderByline({
-        openFile:
-          openPath && structure && typeof structure === 'object'
-            ? nodeAtPath(structure as DirectoryStructure, openPath)
-            : null,
-        files,
-        tokens: totalTokens,
-      });
-    }
+    if (renderByline) return renderByline({ files, tokens: totalTokens });
     return t('settings.sources.filesByline', {
       count: files,
       files: formatCount(files),
       tokens: formatCount(totalTokens),
     });
-  }, [
-    embedded,
-    directoryStructure,
-    navigatorNodes,
-    renderByline,
-    singleFile,
-    selectedFile,
-    t,
-  ]);
+  }, [embedded, directoryStructure, navigatorNodes, renderByline, t]);
 
   const handleNavigatorSelect = (node: NavigatorNode) => {
     const parts = node.path.split('/');
@@ -790,6 +811,79 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
 
   const currentDirectory = getCurrentDirectory();
 
+  /**
+   * The open file's bar: its name, address or size, counts and row menu (less
+   * View, and less Delete / Remove for the source's last item, which Delete
+   * source covers).
+   */
+  const renderItemBar = (file: { id: string; name: string }) => {
+    const node =
+      typeof directoryStructure === 'object'
+        ? (fileAt(directoryStructure, file.id) ?? undefined)
+        : undefined;
+    // The row menu names a file inside the open folder; the one-file
+    // shortcut opens at the root, so its name is its full path.
+    const name = singleFile ? file.id : (file.id.split('/').pop() ?? file.id);
+    const defaultViewOption = buildDefaultViewOption(name, true, file.name);
+    const options = (
+      getRowMenuOptions?.({
+        name,
+        isFile: true,
+        itemId: `file-${name}`,
+        displayName: file.name,
+        node,
+        defaultViewOption,
+      }) ?? []
+    ).filter(
+      (option) =>
+        option !== defaultViewOption &&
+        !(singleFile && option.variant === 'destructive'),
+    );
+    const url = pages && typeof node?.url === 'string' ? node.url : null;
+    const tokens = node?.token_count ?? 0;
+    const fetched =
+      pages && typeof node?.fetched_at === 'string'
+        ? formatRelative(node.fetched_at)
+        : null;
+    const chunks = openFileChunks?.id === file.id ? openFileChunks.total : null;
+    const meta = [
+      chunks !== null
+        ? t('settings.sources.chunkCount', {
+            count: chunks,
+            formatted: formatCount(chunks),
+          })
+        : null,
+      tokens > 0
+        ? t('settings.sources.item.tokens', { tokens: formatCount(tokens) })
+        : null,
+      fetched
+        ? t('settings.sources.website.fetchedAt', { when: fetched })
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return (
+      <ItemBar
+        icon={pages ? FileText : File}
+        name={file.name}
+        description={
+          url ? (
+            <Button variant="link" size="inline" asChild>
+              <a href={url} target="_blank" rel="noopener noreferrer">
+                {pageAddress(url)}
+                <ExternalLink />
+              </a>
+            </Button>
+          ) : node?.size_bytes ? (
+            formatBytes(node.size_bytes)
+          ) : undefined
+        }
+        meta={meta || undefined}
+        options={options}
+      />
+    );
+  };
+
   const renderChunks = (file: { id: string; name: string }) => {
     const chunks = (
       <Chunks
@@ -802,13 +896,14 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         fileName={file.name}
         controllerRef={chunksControllerRef}
         onOpenChunkChange={setOpenChunkPosition}
+        onTotalChange={(total) => setOpenFileChunks({ id: file.id, total })}
         canEdit={canEdit}
         linkedChunk={file.id === linkedFile ? linkedChunk : undefined}
       />
     );
-    if (!chunksNotice) return chunks;
     return (
       <div className="flex flex-col gap-4">
+        {renderItemBar(file)}
         {chunksNotice}
         {chunks}
       </div>

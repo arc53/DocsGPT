@@ -619,7 +619,7 @@
         "pageCount_other": "{{count}} Seiten",
         "synced": "{{frequency}} · synchronisiert {{when}}",
         "notSynced": "Nicht synchronisiert",
-        "fetchedAt": "Abgerufen {{when}}",
+        "fetchedAt": "abgerufen {{when}}",
         "addPages": "Seiten hinzufügen",
         "addPagesHint": "Wird jetzt abgerufen und bei jeder Synchronisierung beibehalten. Eine ganze Website baut die Quelle neu auf.",
         "addFailed": "Die Seiten konnten nicht hinzugefügt werden.",
@@ -654,7 +654,10 @@
       "deleteSource": "Quelle löschen",
       "syncStarted": "{{name}} wird synchronisiert…",
       "viaConnectionFiles_one": "über {{name}} · {{files}} Datei",
-      "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien"
+      "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien",
+      "item": {
+        "tokens": "{{tokens}} Tokens"
+      }
     },
     "analytics": {
       "label": "Analytik",

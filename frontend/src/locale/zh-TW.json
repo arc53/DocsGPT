@@ -651,7 +651,10 @@
       "deleteSource": "刪除來源",
       "syncStarted": "正在同步 {{name}}…",
       "viaConnectionFiles_one": "透過 {{name}} · {{files}} 個檔案",
-      "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案"
+      "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案",
+      "item": {
+        "tokens": "{{tokens}} Token"
+      }
     },
     "analytics": {
       "label": "分析",

@@ -12,7 +12,7 @@ import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import AddWebsitePagesModal from './AddWebsitePagesModal';
 import type { LinkedChunk } from './chunkUtils';
 import TreeBrowser from './tree/TreeBrowser';
-import { folderAddress, pageAddress } from './tree/pages';
+import { folderAddress } from './tree/pages';
 import type {
   DirectoryStructure,
   FileNode,
@@ -219,43 +219,33 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       })
     : tr('notSynced');
 
+  // Always the source's line, even with a page open (the page has its bar).
   const renderByline = ({
-    openFile,
     files,
     tokens,
   }: {
-    openFile: FileNode | null;
     files: number;
     tokens: number;
   }) => {
     const parts: React.ReactNode[] = [];
-    if (openFile && typeof openFile.url === 'string') {
-      parts.push(openLink(openFile.url, pageAddress(openFile.url)));
-      const when =
-        typeof openFile.fetched_at === 'string'
-          ? formatRelative(openFile.fetched_at)
-          : null;
-      if (when) parts.push(tr('fetchedAt', { when }));
-    } else {
-      if (hosts.length === 1) {
-        parts.push(
-          <span className="inline-flex items-center gap-1.5">
-            <Globe className="size-4" aria-hidden="true" />
-            {openLink(`https://${hosts[0]}`, hosts[0])}
-          </span>,
-        );
-      } else if (hosts.length > 1) {
-        parts.push(tr('sites', { count: hosts.length }));
-      }
+    if (hosts.length === 1) {
       parts.push(
-        tr('pagesByline', {
-          count: files,
-          pages: formatCount(files),
-          tokens: formatCount(tokens),
-        }),
+        <span className="inline-flex items-center gap-1.5">
+          <Globe className="size-4" aria-hidden="true" />
+          {openLink(`https://${hosts[0]}`, hosts[0])}
+        </span>,
       );
-      parts.push(syncLine);
+    } else if (hosts.length > 1) {
+      parts.push(tr('sites', { count: hosts.length }));
     }
+    parts.push(
+      tr('pagesByline', {
+        count: files,
+        pages: formatCount(files),
+        tokens: formatCount(tokens),
+      }),
+    );
+    parts.push(syncLine);
     return (
       <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
         {parts.map((part, index) => (

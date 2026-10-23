@@ -651,7 +651,10 @@
       "deleteSource": "ソースを削除",
       "syncStarted": "{{name}} を同期しています…",
       "viaConnectionFiles_one": "{{name}} 経由 · {{files}} ファイル",
-      "viaConnectionFiles_other": "{{name}} 経由 · {{files}} ファイル"
+      "viaConnectionFiles_other": "{{name}} 経由 · {{files}} ファイル",
+      "item": {
+        "tokens": "{{tokens}} トークン"
+      }
     },
     "analytics": {
       "label": "分析",

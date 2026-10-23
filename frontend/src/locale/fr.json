@@ -640,7 +640,7 @@
         "pageCount_many": "{{count}} pages",
         "synced": "{{frequency}} · synchronisé {{when}}",
         "notSynced": "Non synchronisé",
-        "fetchedAt": "Récupérée {{when}}",
+        "fetchedAt": "récupérée {{when}}",
         "addPages": "Ajouter des pages",
         "addPagesHint": "Récupérées maintenant et conservées à chaque synchronisation. Un site entier reconstruit la source.",
         "addFailed": "Impossible d’ajouter les pages.",
@@ -677,7 +677,10 @@
       "syncStarted": "Synchronisation de {{name}}…",
       "viaConnectionFiles_one": "via {{name}} · {{files}} fichier",
       "viaConnectionFiles_other": "via {{name}} · {{files}} fichiers",
-      "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers"
+      "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers",
+      "item": {
+        "tokens": "{{tokens}} jetons"
+      }
     },
     "analytics": {
       "label": "Statistiques",

@@ -651,7 +651,10 @@
       "deleteSource": "删除来源",
       "syncStarted": "正在同步 {{name}}…",
       "viaConnectionFiles_one": "通过 {{name}} · {{files}} 个文件",
-      "viaConnectionFiles_other": "通过 {{name}} · {{files}} 个文件"
+      "viaConnectionFiles_other": "通过 {{name}} · {{files}} 个文件",
+      "item": {
+        "tokens": "{{tokens}} 个令牌"
+      }
     },
     "analytics": {
       "label": "分析",

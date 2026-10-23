@@ -640,7 +640,7 @@
         "pageCount_many": "{{count}} páginas",
         "synced": "{{frequency}} · sincronizado {{when}}",
         "notSynced": "Sin sincronizar",
-        "fetchedAt": "Obtenida {{when}}",
+        "fetchedAt": "obtenida {{when}}",
         "addPages": "Añadir páginas",
         "addPagesHint": "Se obtienen ahora y se conservan en cada sincronización. Un sitio completo reconstruye la fuente.",
         "addFailed": "No se pudieron añadir las páginas.",
@@ -677,7 +677,10 @@
       "syncStarted": "Sincronizando {{name}}…",
       "viaConnectionFiles_one": "mediante {{name}} · {{files}} archivo",
       "viaConnectionFiles_other": "mediante {{name}} · {{files}} archivos",
-      "viaConnectionFiles_many": "mediante {{name}} · {{files}} archivos"
+      "viaConnectionFiles_many": "mediante {{name}} · {{files}} archivos",
+      "item": {
+        "tokens": "{{tokens}} tokens"
+      }
     },
     "analytics": {
       "label": "Analítica",

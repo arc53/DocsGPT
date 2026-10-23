@@ -562,6 +562,15 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   scrolls). A source with one file opens
   straight on its chunk list, and a wiki with one page on its reader at full
   width: no navigator, no table.
+- **Item bar**: an open file or page has `tree/ItemBar` above its chunks, the
+  same wherever it was opened (table, navigator, citation, the one-file
+  shortcut): a `subtle` Card with one `ListRow`, the item's icon and name, its
+  address (`link inline` with ExternalLink) or size, muted counts ("N chunks ·
+  N tokens · fetched …") and the row's ⋯ less View. The source's last item has
+  no Remove or Delete (Delete source covers it), and an empty menu draws no ⋯.
+  Notices about the item (a synced website's hand-edits note) go under the bar.
+  The header byline stays the source's. Leaving the navigator with the pointer
+  hands cmdk's highlight back to the open item, so only one row looks picked.
 - **Reader**: `ReaderPanel`, the content you read (a wiki page, an open
   chunk): a `subtle` Card with `padding="none"`, its meta (muted 12px lines)
   left and its actions right in a `min-h-14 px-6` header row, a `Separator`,

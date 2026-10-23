@@ -661,7 +661,7 @@
         "pageCount_other": "Страниц: {{count}}",
         "synced": "{{frequency}} · синхронизировано {{when}}",
         "notSynced": "Не синхронизируется",
-        "fetchedAt": "Загружено {{when}}",
+        "fetchedAt": "загружено {{when}}",
         "addPages": "Добавить страницы",
         "addPagesHint": "Загружаются сейчас и сохраняются при каждой синхронизации. Весь сайт пересобирает источник.",
         "addFailed": "Не удалось добавить страницы.",
@@ -700,7 +700,10 @@
       "viaConnectionFiles_one": "через {{name}} · файлов: {{files}}",
       "viaConnectionFiles_other": "через {{name}} · файлов: {{files}}",
       "viaConnectionFiles_many": "через {{name}} · файлов: {{files}}",
-      "viaConnectionFiles_few": "через {{name}} · файлов: {{files}}"
+      "viaConnectionFiles_few": "через {{name}} · файлов: {{files}}",
+      "item": {
+        "tokens": "токенов: {{tokens}}"
+      }
     },
     "analytics": {
       "label": "Аналитика",

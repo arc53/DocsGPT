@@ -111,6 +111,11 @@ interface ChunksProps {
   embedded?: boolean;
   /** Where the open chunk is; see {@link OpenChunkPosition}. */
   onOpenChunkChange?: (position: OpenChunkPosition) => void;
+  /**
+   * The whole list's chunk count, whenever it is read (not while a search
+   * or the flagged filter narrows it): the host's item bar shows it.
+   */
+  onTotalChange?: (total: number) => void;
   controllerRef?: React.MutableRefObject<ChunksController | null>;
   /**
    * Whether the caller may change the source (`can(source, 'edit')`). False
@@ -166,6 +171,7 @@ const Chunks: React.FC<ChunksProps> = ({
   headerMenu,
   embedded = false,
   onOpenChunkChange,
+  onTotalChange,
   controllerRef,
   canEdit = true,
   linkedChunk,
@@ -224,6 +230,17 @@ const Chunks: React.FC<ChunksProps> = ({
 
   const fileLabel = path || documentName || '';
 
+  const onTotalChangeRef = useRef(onTotalChange);
+  onTotalChangeRef.current = onTotalChange;
+  /**
+   * Keeps a count the server just gave; the whole list's (no search, no
+   * flagged filter, as the request that read it) goes to the host too.
+   */
+  const recordTotal = (total: number) => {
+    setTotalChunks(total);
+    if (!debouncedSearchTerm && !injection) onTotalChangeRef.current?.(total);
+  };
+
   // Only the latest grid fetch may write: an older response (a refresh after
   // a save, a page just left) is dropped.
   const fetchRef = useRef(0);
@@ -250,7 +267,7 @@ const Chunks: React.FC<ChunksProps> = ({
 
       setPage(data.page);
       setPerPage(data.per_page);
-      setTotalChunks(data.total);
+      recordTotal(data.total);
       setPaginatedChunks(data.chunks);
       setLoadFailed(false);
       if (!linkedOpenedRef.current) {
@@ -309,7 +326,7 @@ const Chunks: React.FC<ChunksProps> = ({
       const data = await response.json();
       if (request !== stepRef.current) return;
       const chunk: ChunkType | undefined = data.chunks?.[0];
-      if (typeof data.total === 'number') setTotalChunks(data.total);
+      if (typeof data.total === 'number') recordTotal(data.total);
       if (chunk) {
         setOpenChunk(chunk);
         setOpenPosition(position);
@@ -355,7 +372,7 @@ const Chunks: React.FC<ChunksProps> = ({
       return request === stepRef.current ? data : null;
     };
     const show = (stored: ChunkType, at: number, total: number) => {
-      setTotalChunks(total);
+      recordTotal(total);
       setOpenChunk(stored);
       setOpenPosition(at);
       setPositionLost(false);
@@ -379,7 +396,7 @@ const Chunks: React.FC<ChunksProps> = ({
           return;
         }
       }
-      setTotalChunks(total);
+      recordTotal(total);
       setPositionLost(true);
     } catch (error) {
       console.error(error);
