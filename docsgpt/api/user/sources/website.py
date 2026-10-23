@@ -21,6 +21,7 @@ from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, _with_scheme, sources_ns
+from docsgpt.api.user.sources.upload import _pages_once
 from docsgpt.api.user.tasks import sync_source, website_pages
 from docsgpt.core.settings import settings
 from docsgpt.parser.remote import website_loader
@@ -183,6 +184,29 @@ def _website_config(doc: dict) -> Optional[dict]:
     return config_from_legacy(doc.get("type"), doc.get("remote_data"))
 
 
+def _cleaned(config: dict) -> dict:
+    """A config parsed without the write limits, cleaned as the write routes store one.
+
+    Each page is listed once (by ``page_key``, the first spelling kept), and
+    a site's ``max_pages`` is cut to ``WEB_MAX_PAGES``: neither refuses a
+    save, so a source stored before either rule still saves.
+
+    Args:
+        config: ``parse_website_config(..., enforce_page_cap=False)``'s result.
+
+    Returns:
+        A new config.
+    """
+    cap = int(settings.WEB_MAX_PAGES)
+    config = _pages_once(config)
+    entries = [
+        {**entry, "max_pages": min(entry["max_pages"], cap)}
+        if entry["mode"] == "site" and entry.get("max_pages") is not None else entry
+        for entry in config["entries"]
+    ]
+    return {**config, "entries": entries}
+
+
 def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ()) -> Optional[Response]:
     """The 400 when a change grows a config past a write limit, or ``None``.
 
@@ -191,7 +215,7 @@ def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ())
     was saved before a limit existed) can still shrink, and be saved as it
     is. So the page cap, the site limit and the skip-rule limit refuse only a
     count that is past the limit and larger than the stored one, and the
-    length limit only an address or rule the source didn't hold.
+    length limit only an address, path or rule the source didn't hold.
 
     Args:
         config: The new config, parsed without the write limits.
@@ -224,6 +248,15 @@ def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ())
     if any(len(url) > max_length and url not in old_urls for url in new_urls):
         return _error(
             f"An address is longer than {max_length} characters", code="url_too_long", max_length=max_length
+        )
+    old_prefixes = {entry.get("path_prefix") or "" for entry in old_entries if entry["mode"] == "site"}
+    if any(
+        len(entry.get("path_prefix") or "") > max_length and (entry.get("path_prefix") or "") not in old_prefixes
+        for entry in entries
+        if entry["mode"] == "site"
+    ):
+        return _error(
+            f"Path is longer than {max_length} characters", code="url_too_long", max_length=max_length
         )
     old_rules = set(stored["skip"]) | set(built_rules)
     if any(len(rule.removesuffix("*")) > max_length and rule not in old_rules for rule in config["skip"]):
@@ -324,7 +357,7 @@ class WebsiteSettings(Resource):
                     ),
                 }
                 try:
-                    config = parse_website_config(raw, enforce_page_cap=False)
+                    config = _cleaned(parse_website_config(raw, enforce_page_cap=False))
                 except ValueError as err:
                     return _config_error(err)
                 refusal = _growth_refusal(config, stored)

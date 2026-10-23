@@ -142,6 +142,52 @@ class TestSaveWebsite:
         assert saved["remote_data"]["keep_links"] is True
         assert saved["sync_frequency"] == "monthly"
 
+    def test_a_page_given_twice_is_stored_once(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        src = _seed(pg_conn)
+        response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+            "source_id": str(src["id"]),
+            "entries": [
+                {"url": "https://docs.x.io/", "mode": "site"},
+                {"url": "https://docs.x.io/extra", "mode": "page"},
+                {"url": "https://docs.x.io/extra/", "mode": "page"},
+                {"url": "https://www.docs.x.io/extra#a", "mode": "page"},
+            ],
+        })
+
+        assert response.status_code == 200, response.json
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert [e["url"] for e in saved] == ["https://docs.x.io/", "https://docs.x.io/extra"]
+        assert response.json["config"]["entries"] == saved
+
+    def test_a_site_limit_past_the_page_cap_is_cut_to_it(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        src = _seed(pg_conn)
+        with patch("docsgpt.core.settings.settings.WEB_MAX_PAGES", 50):
+            response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+                "source_id": str(src["id"]),
+                "entries": [{"url": "https://docs.x.io/", "mode": "site", "max_pages": 10**15}],
+            })
+
+        assert response.status_code == 200, response.json
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"][0]["max_pages"] == 50
+
+    def test_a_new_path_past_the_length_limit_is_refused(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        src = _seed(pg_conn)
+        response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+            "source_id": str(src["id"]),
+            "entries": [{"url": "https://docs.x.io/", "mode": "site", "path_prefix": "/" + "a" * 50000}],
+        })
+
+        assert response.status_code == 400
+        assert response.json["code"] == "url_too_long"
+        assert response.json["max_length"] == 2048
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
+
     def test_saving_a_legacy_source_upgrades_it(self, app, pg_conn):
         from docsgpt.api.user.sources.website import WebsiteSettings
 
@@ -270,6 +316,22 @@ class TestOldDataPastAWriteLimit:
         assert response.status_code == 400
         assert response.json["code"] == "url_too_long"
         assert response.json["max_length"] == 2048
+
+    def test_a_settings_save_keeps_an_old_path_past_the_length_limit(self, app, pg_conn):
+        long_prefix = "/" + "a" * 2100
+        entries = [{"url": "https://docs.x.io/", "mode": "site", "path_prefix": long_prefix}]
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": entries})
+        kept, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=entries, keep_links=True)
+        added, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=entries + [
+            {"url": "https://blog.x.io/", "mode": "site", "path_prefix": long_prefix + "b"},
+        ])
+
+        assert kept.status_code == 200, kept.json
+        assert added.status_code == 400
+        assert added.json["code"] == "url_too_long"
+        assert added.json["max_length"] == 2048
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/"]
 
     def test_a_removal_that_adds_no_rule_works_past_the_skip_limit(self, app, pg_conn):
         stored = {**CONFIG, "skip": ["https://docs.x.io/old", "https://docs.x.io/extra"]}
