@@ -404,3 +404,26 @@ class TestFaissUpdateChunk:
         assert chunks[1]["metadata"] == {"source": "cache.txt", "source_id": "src"}
         _assert_rows_match_documents(reloaded)
         assert "Redis" in str(reloaded.search("something neutral", k=1)[0])
+
+
+@pytest.mark.unit
+class TestFaissDeleteChunks:
+    def test_deletes_several_chunks_with_one_save(self, populated):
+        ids = {c["metadata"]["source"]: c["doc_id"] for c in populated.get_chunks()}
+        with patch.object(populated, "_save_to_storage") as save:
+            deleted = populated.delete_chunks([ids["geo.txt"], ids["db.txt"], "missing"])
+
+        assert deleted == 2
+        save.assert_called_once()
+        assert [c["metadata"]["source"] for c in populated.get_chunks()] == ["queue.txt"]
+        _assert_rows_match_documents(populated)
+
+    def test_nothing_to_delete_saves_nothing(self, populated):
+        with patch.object(populated, "_save_to_storage") as save:
+            assert populated.delete_chunks(["missing"]) == 0
+        save.assert_not_called()
+
+    def test_delete_by_source_paths_saves_once(self, populated):
+        with patch.object(populated, "_save_to_storage") as save:
+            assert populated.delete_chunks_by_source_paths(["geo.txt", "db.txt"]) == 2
+        save.assert_called_once()

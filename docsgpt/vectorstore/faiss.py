@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
@@ -399,6 +399,25 @@ class FaissStore(BaseVectorStore):
         self.delete_index([chunk_id])
         self._save_to_storage()
         return True
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several chunks and save to storage once.
+
+        Each save rewrites the whole index, so deleting a page (or a folder of
+        pages) one chunk at a time would rewrite it once per chunk.
+
+        Args:
+            chunk_ids: Ids to delete; ones not in the index are ignored.
+
+        Returns:
+            How many were deleted.
+        """
+        present = list(dict.fromkeys(cid for cid in chunk_ids if cid in self.documents))
+        if not present:
+            return 0
+        self.delete_index(present)
+        self._save_to_storage()
+        return len(present)
 
     # -- Persistence -----------------------------------------------------
 

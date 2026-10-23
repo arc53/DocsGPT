@@ -371,6 +371,60 @@ class TestPGVectorStoreDeleteChunksBySourcePath:
 
 
 @pytest.mark.unit
+class TestPGVectorStoreChunksBySourcePaths:
+    def test_lists_ids_in_one_targeted_select(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = [(4,), (9,)]
+
+        assert store.chunk_ids_by_source_paths(["/a", "/b"]) == ["4", "9"]
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "metadata->>'source' = ANY(%s)" in sql
+        assert params == ("src1", ["/a", "/b"])
+
+    def test_no_paths_runs_no_query(self):
+        store, _, mock_cursor, _ = _make_store()
+        assert store.chunk_ids_by_source_paths([]) == []
+        assert store.delete_chunks_by_source_paths([]) == 0
+        mock_cursor.execute.assert_not_called()
+
+    def test_a_listing_error_is_raised_not_read_as_no_chunks(self):
+        store, mock_conn, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("down")
+
+        with pytest.raises(Exception, match="down"):
+            store.chunk_ids_by_source_paths(["/a"])
+        mock_conn.rollback.assert_called_once()
+
+    def test_delete_by_source_paths_is_one_targeted_delete(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.rowcount = 5
+
+        assert store.delete_chunks_by_source_paths(["/a", "/b"]) == 5
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "DELETE FROM" in sql and "metadata->>'source' = ANY(%s)" in sql
+        assert params == ("src1", ["/a", "/b"])
+        mock_conn.commit.assert_called_once()
+
+    def test_delete_chunks_is_one_statement(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.rowcount = 2
+
+        assert store.delete_chunks(["4", "9"]) == 2
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "id = ANY(%s)" in sql
+        assert params == ([4, 9], "src1")
+        mock_conn.commit.assert_called_once()
+
+    def test_a_delete_chunks_error_is_raised(self):
+        store, mock_conn, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("down")
+
+        with pytest.raises(Exception, match="down"):
+            store.delete_chunks(["4"])
+        mock_conn.rollback.assert_called_once()
+
+
+@pytest.mark.unit
 class TestPGVectorStoreConnection:
     def test_get_connection_creates_new_when_closed(self):
         store, mock_conn, _, _ = _make_store()

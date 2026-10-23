@@ -4571,14 +4571,199 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     return {"status": "embedded", "added": added, "deleted": deleted}
 
 
-def website_pages_worker(self, source_id, user, operation, urls=None, file_path=None):
+def _web_page_key(url: str) -> str:
+    """``page_key`` for a stored page URL, falling back to the URL when it can't be parsed.
+
+    Args:
+        url: A page URL.
+
+    Returns:
+        A key that is the same for address variants of one page.
+    """
+    from docsgpt.parser.remote.website_loader import page_key
+
+    try:
+        return page_key(url)
+    except ValueError:
+        return url
+
+
+def _unique_page_path(path: str, taken: set) -> str:
+    """``path``, or the first ``stem-N.md`` (N from 2) no other page has.
+
+    The same rule ``dedupe_virtual_paths`` applies within one fetch.
+
+    Args:
+        path: The page's virtual path.
+        taken: Paths other pages already have.
+
+    Returns:
+        A path not in ``taken``.
+    """
+    if path not in taken:
+        return path
+    stem = path[: -len(".md")] if path.endswith(".md") else path
+    suffix = 2
+    while f"{stem}-{suffix}.md" in taken:
+        suffix += 1
+    return f"{stem}-{suffix}.md"
+
+
+def _website_page_targets(
+    operation: str, pages: List[Tuple[str, str]], urls: Optional[List[str]], file_path: Optional[str],
+) -> Tuple[List[str], Dict[str, Dict[str, Any]], bool]:
+    """What a ``website_pages`` run fetches, and where each page goes in the tree.
+
+    A page already in the tree (matched by ``page_key``, so ``/docs/`` and
+    ``/docs#a`` are one page) keeps its path and has its stored copy
+    replaced. A new page takes its virtual path, or a free ``-N`` variant of
+    it when a different page already has that path.
+
+    Args:
+        operation: ``add`` or ``refresh``.
+        pages: ``(path, url)`` of the pages in the tree.
+        urls: For ``add``: the addresses to fetch.
+        file_path: For ``refresh``: the page's tree path.
+
+    Returns:
+        ``(urls to fetch, {page key: {"path", "old_url"}}, include_host)``;
+        ``old_url`` is the stored address of the page being replaced, or ``None``.
+
+    Raises:
+        ValueError: An unknown operation, or no page at ``file_path``.
+    """
+    from docsgpt.parser.remote.base import url_to_virtual_path
+
+    if operation == "refresh":
+        url = dict(pages).get(file_path)
+        if not url:
+            raise ValueError(f"No page at {file_path!r} in this source")
+        return [url], {_web_page_key(url): {"path": file_path, "old_url": url}}, False
+    if operation != "add":
+        raise ValueError(f"Unknown operation {operation!r}")
+    stored = {}
+    for path, url in pages:
+        stored.setdefault(_web_page_key(url), (path, url))
+    include_host = len({urlsplit(u).netloc for _, u in pages} | {urlsplit(u).netloc for u in urls or []}) > 1
+    taken = {path for path, _ in pages}
+    fetch: List[str] = []
+    targets: Dict[str, Dict[str, Any]] = {}
+    for url in urls or []:
+        key = _web_page_key(url)
+        if key in targets:
+            continue
+        fetch.append(url)
+        if key in stored:
+            targets[key] = {"path": stored[key][0], "old_url": stored[key][1]}
+        else:
+            path = _unique_page_path(url_to_virtual_path(url, include_host), taken)
+            taken.add(path)
+            targets[key] = {"path": path, "old_url": None}
+    return fetch, targets, include_host
+
+
+def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_url: Optional[str],
+                      fetched_at: str) -> Dict[str, Any]:
+    """Store a fetched page's chunks, then delete its previous copy.
+
+    The new chunks go in first: if one fails (an embedding error), the ones
+    already added are deleted again and the old copy is left as it was, so
+    the page is never left with partial or no content. The old chunks are
+    listed before anything is added, so only they are deleted afterwards.
+
+    Args:
+        store: The source's vector store.
+        chunker: The source's chunker.
+        doc: The fetched page; ``extra_info["source"]`` is its URL.
+        path: Its tree path.
+        old_url: The stored address of the copy it replaces, if any.
+        fetched_at: When it was fetched (ISO 8601).
+
+    Returns:
+        ``{"key", "path", "leaf"}``: the tree change for the page.
+
+    Raises:
+        Exception: Whatever adding a chunk raised, after the rollback.
+    """
+    url = doc.extra_info["source"]
+    doc.extra_info["file_path"] = path
+    old_ids = store.chunk_ids_by_source_paths([u for u in dict.fromkeys([old_url, url]) if u])
+    new_ids: List[str] = []
+    token_count = 0
+    size_bytes = 0
+    try:
+        for chunk in chunker.chunk(documents=[doc]):
+            metadata = dict(chunk.extra_info or {})
+            metadata.update({"source": url, "file_path": path})
+            if doc.extra_info.get("title"):
+                metadata["title"] = doc.extra_info["title"]
+            chunk_id = store.add_chunk(chunk.text, metadata=metadata)
+            if chunk_id is not None:
+                new_ids.append(chunk_id)
+            token_count += num_tokens_from_string(chunk.text)
+            size_bytes += len(chunk.text.encode("utf-8"))
+    except Exception:
+        if new_ids:
+            try:
+                store.delete_chunks(new_ids)
+            except Exception:  # noqa: BLE001 - the original error is the one to report
+                logging.error("Could not roll back the new chunks of %s", url, exc_info=True)
+        raise
+    if old_ids:
+        try:
+            store.delete_chunks(old_ids)
+        except Exception:  # noqa: BLE001 - the new copy is stored; the old one only lingers
+            logging.error("Could not delete the previous chunks of %s", url, exc_info=True)
+    return {
+        "key": _web_page_key(url),
+        "path": path,
+        "leaf": {
+            "type": "text/markdown",
+            "size_bytes": size_bytes,
+            "token_count": token_count,
+            "url": url,
+            "title": doc.extra_info.get("title"),
+            "fetched_at": fetched_at,
+        },
+    }
+
+
+def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]) -> None:
+    """Put replaced and added pages into a tree, in place.
+
+    Any entry for the same page (by ``page_key``) is removed first, so an
+    address variant doesn't leave a second entry behind.
+
+    Args:
+        structure: ``directory_structure``.
+        changes: ``_replace_web_page`` results.
+    """
+    from docsgpt.parser.remote.website_tree import remove_pages, set_page, web_pages
+
+    for change in changes:
+        stale = [path for path, url in web_pages(structure) if _web_page_key(url) == change["key"]]
+        remove_pages(structure, stale)
+        set_page(structure, change["path"], change["leaf"])
+
+
+def website_pages_worker(
+    self: Any,
+    source_id: str,
+    user: str,
+    operation: str,
+    urls: Optional[List[str]] = None,
+    file_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Add pages to a Website source, or refresh one, without re-fetching the rest.
 
     A sync wipes the index and rebuilds it; this changes only the pages named.
     Each page is fetched first, so one that can't be fetched leaves the source
-    as it was. Its old chunks (keyed by its URL) are then replaced and its tree
-    entry rewritten. The route sends whole-site additions and pages on a new
-    host to a sync instead: those rename the tree.
+    as it was. A fetched page is stored whole or not at all: its new chunks go
+    in before its old ones (keyed by its stored URL) are deleted, and a failure
+    part-way deletes the new ones again. Pages finished before a failure stay,
+    tree entry included; the failing page and the ones after it are left as
+    they were, and the task fails. The route sends whole-site additions and
+    pages on a new host to a sync instead: those rename the tree.
 
     Args:
         self: Celery task instance.
@@ -4595,15 +4780,8 @@ def website_pages_worker(self, source_id, user, operation, urls=None, file_path=
     Raises:
         ValueError: The source or page is unknown, or no page could be fetched.
     """
-    from docsgpt.parser.remote.base import url_to_virtual_path
     from docsgpt.parser.remote.web_loader import WebLoader
-    from docsgpt.parser.remote.website_tree import (
-        config_from_legacy,
-        remove_pages,
-        set_page,
-        total_tokens,
-        web_pages,
-    )
+    from docsgpt.parser.remote.website_tree import config_from_legacy, total_tokens, web_pages
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
     source_id = str(source_id)
@@ -4626,19 +4804,9 @@ def website_pages_worker(self, source_id, user, operation, urls=None, file_path=
         if not isinstance(structure, dict):
             structure = {}
         config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
-        pages = web_pages(structure)
-        if operation == "refresh":
-            url = dict(pages).get(file_path)
-            if not url:
-                raise ValueError(f"No page at {file_path!r} in this source")
-            targets = {url: file_path}
-        elif operation == "add":
-            include_host = len({urlsplit(u).netloc for _, u in pages} | {urlsplit(u).netloc for u in urls or []}) > 1
-            targets = {url: url_to_virtual_path(url, include_host) for url in urls or []}
-        else:
-            raise ValueError(f"Unknown operation {operation!r}")
+        fetch, targets, include_host = _website_page_targets(operation, web_pages(structure), urls, file_path)
 
-        docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(list(targets))
+        docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
         if not docs:
             raise ValueError("None of the pages could be fetched; the source is unchanged")
 
@@ -4652,37 +4820,36 @@ def website_pages_worker(self, source_id, user, operation, urls=None, file_path=
         )
         store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
         fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        taken = {path for path, _ in web_pages(structure)} | {t["path"] for t in targets.values()}
+        changes: List[Dict[str, Any]] = []
+        failure: Optional[BaseException] = None
         for doc in docs:
             url = doc.extra_info["source"]
-            path = targets.get(url) or url_to_virtual_path(url)
-            doc.extra_info["file_path"] = path
-            # The page may already be in the tree (added twice, or refreshed).
-            store.delete_chunks_by_source_path(url)
-            remove_pages(structure, [p for p, u in web_pages(structure) if u == url])
-            token_count = 0
-            size_bytes = 0
-            for chunk in chunker.chunk(documents=[doc]):
-                metadata = dict(chunk.extra_info or {})
-                metadata.update({"source": url, "file_path": path})
-                if doc.extra_info.get("title"):
-                    metadata["title"] = doc.extra_info["title"]
-                store.add_chunk(chunk.text, metadata=metadata)
-                token_count += num_tokens_from_string(chunk.text)
-                size_bytes += len(chunk.text.encode("utf-8"))
-            set_page(structure, path, {
-                "type": "text/markdown",
-                "size_bytes": size_bytes,
-                "token_count": token_count,
-                "url": url,
-                "title": doc.extra_info.get("title"),
-                "fetched_at": fetched_at,
-            })
+            key = _web_page_key(url)
+            if any(change["key"] == key for change in changes):
+                continue
+            target = targets.get(key)
+            if target is None:
+                # The loader normalised the address past recognition.
+                from docsgpt.parser.remote.base import url_to_virtual_path
 
-        with db_session() as conn:
-            SourcesRepository(conn).update(
-                source_id, user,
-                {"directory_structure": structure, "tokens": str(total_tokens(structure))},
-            )
+                target = {"path": _unique_page_path(url_to_virtual_path(url, include_host), taken), "old_url": None}
+                taken.add(target["path"])
+            try:
+                changes.append(_replace_web_page(store, chunker, doc, target["path"], target["old_url"], fetched_at))
+            except Exception as err:  # noqa: BLE001 - re-raised once the finished pages are saved
+                failure = err
+                break
+
+        if changes:
+            _apply_page_changes(structure, changes)
+            with db_session() as conn:
+                SourcesRepository(conn).update(
+                    source_id, user,
+                    {"directory_structure": structure, "tokens": str(total_tokens(structure))},
+                )
+        if failure is not None:
+            raise failure
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         publish_user_event(
@@ -4691,10 +4858,10 @@ def website_pages_worker(self, source_id, user, operation, urls=None, file_path=
         )
         raise
     publish_user_event(
-        user, "source.ingest.completed", {**envelope, "pages": len(docs), "limited": False},
+        user, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False},
         scope={"kind": "source", "id": source_id},
     )
-    return {"status": "ok", "pages": len(docs)}
+    return {"status": "ok", "pages": len(changes)}
 
 
 def _wiki_page_path_from_rel(rel_path):

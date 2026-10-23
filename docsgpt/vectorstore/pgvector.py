@@ -1,7 +1,7 @@
 import logging
 import math
 import re
-from typing import List, Optional, Any, Dict
+from typing import Iterable, List, Optional, Any, Dict
 
 from psycopg.types.json import Jsonb
 
@@ -859,6 +859,92 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             conn.rollback()
             logging.error(f"Error deleting chunks by source path: {e}")
+            raise
+        finally:
+            cursor.close()
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``metadata.source`` is one of ``paths``.
+
+        One targeted ``SELECT``; unlike :meth:`get_chunks`, an error is raised
+        rather than read as "no chunks".
+
+        Args:
+            paths: ``metadata.source`` values.
+
+        Returns:
+            The ids, lowest first.
+        """
+        wanted = list(dict.fromkeys(paths))
+        if not wanted:
+            return []
+        rows = self._run_statement(
+            f"SELECT id FROM {self._table_name} "
+            f"WHERE source_id = %s AND {self._metadata_column}->>'source' = ANY(%s) ORDER BY id;",
+            (self._source_id, wanted),
+            fetch=True,
+        )
+        return [str(row[0]) for row in rows]
+
+    def delete_chunks_by_source_paths(self, paths: Iterable[str]) -> int:
+        """Delete this source's chunks whose ``metadata.source`` is one of ``paths``, in one statement.
+
+        Args:
+            paths: ``metadata.source`` values.
+
+        Returns:
+            The number of rows deleted.
+        """
+        wanted = list(dict.fromkeys(paths))
+        if not wanted:
+            return 0
+        return self._run_statement(
+            f"DELETE FROM {self._table_name} "
+            f"WHERE source_id = %s AND {self._metadata_column}->>'source' = ANY(%s);",
+            (self._source_id, wanted),
+        )
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several of this source's chunks in one statement, raising on error.
+
+        Args:
+            chunk_ids: Ids to delete.
+
+        Returns:
+            The number of rows deleted.
+        """
+        ids = [int(chunk_id) for chunk_id in dict.fromkeys(chunk_ids)]
+        if not ids:
+            return 0
+        return self._run_statement(
+            f"DELETE FROM {self._table_name} WHERE id = ANY(%s) AND source_id = %s;",
+            (ids, self._source_id),
+        )
+
+    def _run_statement(self, sql: str, params: tuple, fetch: bool = False) -> Any:
+        """Run one statement and commit, rolling back and raising on error.
+
+        Args:
+            sql: The statement; only internal names are interpolated into it.
+            params: Its bound parameters.
+            fetch: Return the fetched rows instead of the row count.
+
+        Returns:
+            The rows when ``fetch``, else the affected row count.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(sql, params)
+            result = cursor.fetchall() if fetch else cursor.rowcount
+            conn.commit()
+            return result
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
             raise
         finally:
             cursor.close()

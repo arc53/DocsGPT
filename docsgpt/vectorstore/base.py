@@ -2,7 +2,7 @@ import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Iterable, List, Optional
 
 import requests
 
@@ -590,16 +590,68 @@ class BaseVectorStore(ABC):
     def delete_chunks_by_source_path(self, path) -> int:
         """Delete every chunk whose ``metadata.source`` equals ``path``.
 
-        Default implementation iterates ``get_chunks()`` and deletes the
-        matches via ``delete_chunk()`` — works for any store. Override with a
-        single targeted statement where the store supports it. Returns the
-        number of chunks deleted.
+        Default implementation lists the matches with :meth:`_scan_chunks`
+        (which raises when the store can't list, so a failed listing is never
+        a silent no-op) and deletes them with :meth:`delete_chunks`. Override
+        with a single targeted statement where the store supports it.
+
+        Args:
+            path: The ``metadata.source`` value.
+
+        Returns:
+            The number of chunks deleted.
+        """
+        return self.delete_chunks_by_source_paths([path])
+
+    def delete_chunks_by_source_paths(self, paths: Iterable[str]) -> int:
+        """Delete every chunk whose ``metadata.source`` is one of ``paths``, in one pass.
+
+        Args:
+            paths: ``metadata.source`` values.
+
+        Returns:
+            The number of chunks deleted.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
+        """
+        ids = self.chunk_ids_by_source_paths(paths)
+        return self.delete_chunks(ids) if ids else 0
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.source`` is one of ``paths``.
+
+        Args:
+            paths: ``metadata.source`` values.
+
+        Returns:
+            The ids, in :meth:`_scan_chunks` order.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
+        """
+        wanted = set(paths)
+        if not wanted:
+            return []
+        return [
+            str(chunk.get("doc_id"))
+            for chunk in self._scan_chunks()
+            if (chunk.get("metadata") or {}).get("source") in wanted
+        ]
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several chunks; stores that save per write override this to save once.
+
+        Args:
+            chunk_ids: Ids of the chunks to delete.
+
+        Returns:
+            How many were deleted.
         """
         deleted = 0
-        for chunk in self.get_chunks() or []:
-            if (chunk.get("metadata") or {}).get("source") == path:
-                if self.delete_chunk(chunk.get("doc_id")):
-                    deleted += 1
+        for chunk_id in chunk_ids:
+            if self.delete_chunk(chunk_id):
+                deleted += 1
         return deleted
 
     def _scan_chunks(self) -> List[dict]:

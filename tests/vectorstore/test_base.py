@@ -974,3 +974,52 @@ class TestBaseGetChunkByKey:
     def test_a_blank_excerpt_matches_nothing(self):
         store = _ChunkListStore([{"doc_id": "1", "text": "x", "metadata": {}}])
         assert store.get_chunk_by_key("0" * 32, excerpt="   ") is None
+
+
+@pytest.mark.unit
+class TestBaseChunksBySourcePath:
+    """Listing and deleting a page's chunks by ``metadata.source``."""
+
+    def _store(self):
+        return _ChunkListStore([
+            {"doc_id": "1", "text": "a", "metadata": {"source": "https://x.io/a"}},
+            {"doc_id": "2", "text": "b", "metadata": {"source": "https://x.io/b"}},
+            {"doc_id": "3", "text": "a2", "metadata": {"source": "https://x.io/a"}},
+        ])
+
+    def test_lists_the_ids_of_the_chunks_of_the_given_pages(self):
+        store = self._store()
+        assert store.chunk_ids_by_source_paths(["https://x.io/a"]) == ["1", "3"]
+        assert store.chunk_ids_by_source_paths(["https://x.io/a", "https://x.io/b"]) == ["1", "2", "3"]
+        assert store.chunk_ids_by_source_paths([]) == []
+
+    def test_delete_chunks_deletes_each_id_and_counts_the_deleted(self):
+        store = self._store()
+        store.delete_chunk = Mock(side_effect=lambda chunk_id: chunk_id != "3")
+        assert store.delete_chunks(["1", "3"]) == 1
+        assert [c.args[0] for c in store.delete_chunk.call_args_list] == ["1", "3"]
+
+    def test_delete_by_source_paths_deletes_every_page_in_one_pass(self):
+        store = self._store()
+        store.delete_chunks = Mock(return_value=3)
+        assert store.delete_chunks_by_source_paths(["https://x.io/a", "https://x.io/b"]) == 3
+        store.delete_chunks.assert_called_once_with(["1", "2", "3"])
+
+    def test_a_failed_listing_is_an_error_not_a_silent_no_op(self):
+        # qdrant, milvus and mongodb read a store error in ``get_chunks`` as
+        # "no chunks"; a delete that trusted it would quietly do nothing.
+        class _Down(ConcreteVectorStore):
+            def get_chunks(self, *args, **kwargs):
+                return []
+
+            def _scan_chunks(self):
+                raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError):
+            _Down().delete_chunks_by_source_path("https://x.io/a")
+        with pytest.raises(RuntimeError):
+            _Down().chunk_ids_by_source_paths(["https://x.io/a"])
+
+    def test_a_store_without_chunk_listing_cannot_delete_by_path(self):
+        with pytest.raises(NotImplementedError):
+            ConcreteVectorStore().delete_chunks_by_source_path("https://x.io/a")
