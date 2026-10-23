@@ -1029,3 +1029,93 @@ class TestAGraphSource:
         worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
 
         assert graph["store"].deleted == [] and graph["queued"] == []
+
+    def test_a_removal_whose_tree_write_fails_still_drops_the_graph_entries(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph, monkeypatch,
+    ):
+        # The chunks are gone once the delete succeeds, so a retry finds none
+        # to name: the graph must drop them before the tree write can fail.
+        from docsgpt import worker
+
+        _make_graph(pg_conn, source)
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"directory_structure": {
+            "a.md": _leaf("https://docs.x.io/a", 40), "b.md": _leaf("https://docs.x.io/b", 1),
+        }})
+        real_update = SourcesRepository.update
+        calls = {"n": 0}
+
+        def flaky_update(self, sid, user, fields):
+            if "directory_structure" in fields and calls["n"] == 0:
+                calls["n"] += 1
+                raise RuntimeError("tree write failed")
+            return real_update(self, sid, user, fields)
+
+        monkeypatch.setattr(SourcesRepository, "update", flaky_update)
+        pages = [{"path": "a.md", "url": "https://docs.x.io/a"}]
+        with pytest.raises(RuntimeError):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "remove", pages=pages)
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "remove", pages=pages)
+
+        assert graph["store"].deleted == [(str(source["id"]), ["old-1", "old-2"])]
+        assert list(_tree(pg_conn, source)) == ["b.md"]
+
+    def test_a_removal_whose_delete_fails_part_way_drops_the_deleted_chunks_from_the_graph(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph,
+    ):
+        from docsgpt import worker
+
+        _make_graph(pg_conn, source)
+        store = pipeline["store"]
+        real_delete = store.delete_chunks
+
+        def delete_one(chunk_ids):
+            real_delete(list(chunk_ids)[:1])
+            return 1
+
+        store.delete_chunks = delete_one
+        with pytest.raises(RuntimeError, match="could not be deleted"):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "remove", file_paths=["a.md"])
+
+        assert graph["store"].deleted == [(str(source["id"]), ["old-1"])]
+        assert "a.md" in _tree(pg_conn, source)
+
+
+@pytest.mark.unit
+class TestAFailureBeforeTheRun:
+    def test_a_failed_first_lookup_still_sends_a_terminal_event(
+        self, pg_conn, patch_worker_db, task_self, pipeline, monkeypatch,
+    ):
+        # The UI waits on the task id from the route; it must hear that the task ended.
+        from docsgpt import worker
+
+        task_self.request.id = "task-r5"
+
+        class Boom:
+            def __enter__(self):
+                raise RuntimeError("database unavailable")
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(worker, "db_readonly", lambda: Boom())
+        source_id = "8c3c8d1e-7a39-4c3f-9d0e-2f1f6f0f9a11"
+        with pytest.raises(RuntimeError):
+            worker.website_pages_worker(task_self, source_id, USER, "add", urls=["https://x/y"])
+
+        [(kind, payload)] = pipeline["events"]
+        assert kind == "source.ingest.failed"
+        assert payload["source_id"] == source_id and payload["task_id"] == "task-r5"
+        assert payload["operation"] == "add_pages" and "database unavailable" in payload["error"]
+
+    def test_a_source_deleted_before_the_run_sends_a_terminal_event(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        from docsgpt import worker
+
+        with pytest.raises(ValueError, match="not found"):
+            worker.website_pages_worker(
+                task_self, "8c3c8d1e-7a39-4c3f-9d0e-2f1f6f0f9a11", USER, "remove", pages=[{"path": "a.md"}],
+            )
+
+        assert [kind for kind, _ in pipeline["events"]] == ["source.ingest.failed"]
+        assert pipeline["events"][0][1]["operation"] == "remove_pages"

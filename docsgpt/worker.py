@@ -5253,8 +5253,10 @@ def _remove_web_pages(
     stored, the tree is not written, so every page still listed keeps its
     chunks and the removal can be tried again. The tree is written on the
     row re-read under a row lock, so a change made meanwhile is kept. A
-    graphrag source's graph then drops the chunks' entities and relationships
-    (``_update_page_graph``).
+    graphrag source's graph drops the chunks' entities and relationships
+    (``_update_page_graph``) as soon as the chunks are deleted, before the
+    tree is written, and drops the ones a part-way delete took: a retry only
+    finds the chunks still stored.
 
     Args:
         source_id: The source.
@@ -5300,7 +5302,25 @@ def _remove_web_pages(
         return ids + (store.chunk_ids_by_file_paths(legacy_paths) if legacy_paths else [])
 
     chunk_ids = list(dict.fromkeys(_listed()))
-    _delete_chunks_checked(store, chunk_ids, _listed)
+    cfg = SourceConfig.parse(source.get("config"))
+    try:
+        _delete_chunks_checked(store, chunk_ids, _listed)
+    except Exception:
+        # Some chunks may be gone already; a retry lists only the rest, so
+        # the graph drops the deleted ones now or never.
+        try:
+            still = {str(chunk_id) for chunk_id in _listed()}
+        except Exception:  # noqa: BLE001 - can't tell which went; the next full build settles the graph
+            still = None
+        if still is not None:
+            gone = [chunk_id for chunk_id in chunk_ids if str(chunk_id) not in still]
+            if gone:
+                _update_page_graph(cfg, source_id, user, task_id, gone)
+        raise
+    # The graph follows before the tree is written: once the chunks are gone a
+    # retry finds no ids to name, so a failed tree write would leave the
+    # page's entities in the graph for good. Dropping them is idempotent.
+    _update_page_graph(cfg, source_id, user, task_id, chunk_ids)
 
     removed_keys = {_web_page_key(url) for url in urls}
     with db_session() as conn:
@@ -5316,7 +5336,6 @@ def _remove_web_pages(
         ]
         remove_pages(tree, stale)
         repo.update(source_id, user, _tree_fields(row, tree))
-    _update_page_graph(SourceConfig.parse(source.get("config")), source_id, user, task_id, chunk_ids)
     return found
 
 
@@ -5373,19 +5392,30 @@ def website_pages_worker(
             page could be fetched.
     """
     source_id = str(source_id)
-    with db_readonly() as conn:
-        source = SourcesRepository(conn).get_any(source_id, user)
-    if not source:
-        raise ValueError(f"Source {source_id} not found or access denied")
-    source_id = str(source["id"])
     event_operation = {"add": "add_pages", "remove": "remove_pages"}.get(operation, "refresh_page")
     envelope = {
         "source_id": source_id,
-        "job_name": source.get("name", ""),
+        "job_name": "",
         "loader": "website",
         "operation": event_operation,
         **_task_id_field(self),
     }
+    try:
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        if not source:
+            raise ValueError(f"Source {source_id} not found or access denied")
+    except Exception as e:
+        # The UI is waiting on this task's id: a source it can't read (a
+        # database error, or deleted before the task ran) still ends it.
+        logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
+        publish_user_event(
+            user, "source.ingest.failed", {**envelope, "error": str(e)[:1024]},
+            scope={"kind": "source", "id": source_id},
+        )
+        raise
+    source_id = str(source["id"])
+    envelope.update({"source_id": source_id, "job_name": source.get("name", "")})
     publish_user_event(user, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
 
     try:
