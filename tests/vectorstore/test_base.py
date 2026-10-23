@@ -1023,3 +1023,28 @@ class TestBaseChunksBySourcePath:
     def test_a_store_without_chunk_listing_cannot_delete_by_path(self):
         with pytest.raises(NotImplementedError):
             ConcreteVectorStore().delete_chunks_by_source_path("https://x.io/a")
+
+
+@pytest.mark.unit
+class TestSupportsChunkEdits:
+    def test_stores_with_the_chunk_methods_support_them(self):
+        from docsgpt.vectorstore.faiss import FaissStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
+
+        assert FaissStore.supports_chunk_edits()
+        assert PGVectorStore.supports_chunk_edits()
+
+    def test_elasticsearch_does_not(self):
+        # Its add_chunk, get_chunks and delete_chunk are the base no-ops.
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
+
+        assert not ElasticsearchStore.supports_chunk_edits()
+        assert not ConcreteVectorStore.supports_chunk_edits()
+
+    def test_the_creator_answers_by_store_name(self):
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        assert VectorCreator.supports_chunk_edits("faiss")
+        assert VectorCreator.supports_chunk_edits("PGVector")
+        assert not VectorCreator.supports_chunk_edits("elasticsearch")
+        assert not VectorCreator.supports_chunk_edits("nope")

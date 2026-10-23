@@ -318,6 +318,22 @@ class TestRefreshPage:
 
 
 @pytest.mark.unit
+class TestAStoreWithoutChunkEdits:
+    def test_fails_clearly_instead_of_reporting_success(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        monkeypatch.setattr("docsgpt.worker.settings.VECTOR_STORE", "elasticsearch")
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        with pytest.raises(ValueError, match="sync"):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert pipeline["fetch_calls"] == []
+        assert pipeline["events"][-1][0] == "source.ingest.failed"
+
+
+@pytest.mark.unit
 class TestConcurrentChanges:
     """Another change lands while the pages are fetched; neither is lost."""
 

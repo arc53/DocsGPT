@@ -587,6 +587,22 @@ class BaseVectorStore(ABC):
             )
         raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
 
+    @classmethod
+    def supports_chunk_edits(cls) -> bool:
+        """Whether this store can add, list and delete single chunks.
+
+        The base ``add_chunk``, ``get_chunks`` and ``delete_chunk`` do nothing,
+        so a store that keeps them (Elasticsearch) would report a page change
+        as done while its chunks stayed as they were.
+
+        Returns:
+            True when the store overrides all three.
+        """
+        return all(
+            getattr(cls, name) is not getattr(BaseVectorStore, name)
+            for name in ("add_chunk", "get_chunks", "delete_chunk")
+        )
+
     def delete_chunks_by_source_path(self, path) -> int:
         """Delete every chunk whose ``metadata.source`` equals ``path``.
 

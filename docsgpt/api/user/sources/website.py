@@ -36,6 +36,7 @@ from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
 from docsgpt.vectorstore.index_lock import REQUEST_WAIT_SECONDS, SourceBusy, source_index_lock
+from docsgpt.vectorstore.vector_creator import VectorCreator
 
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
@@ -80,6 +81,20 @@ def _wiki_refusal(doc: dict):
     write raw chunks into it, and a schedule would sync over it.
     """
     return _error(_WIKI_NO_SYNC, code="wiki") if _is_wiki(doc) else None
+
+
+def _chunk_edits_refusal():
+    """The 400 when the vector store can't change single chunks (Elasticsearch), or ``None``.
+
+    Refreshing or removing a page edits that page's chunks; on such a store
+    the change would report success and leave the chunks as they were.
+    """
+    if VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return None
+    return _error(
+        f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead",
+        code="chunks_unsupported",
+    )
 
 
 def _website_config(doc: dict):
@@ -206,7 +221,7 @@ class RemoveWebsitePages(Resource):
         try:
             with db_readonly() as conn:
                 doc, _ra = load_source(conn, data["source_id"], user, "edit")
-            refusal = _wiki_refusal(doc)
+            refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
             if refusal is not None:
                 return refusal
             # Chunks are deleted here and now: wait briefly for a sync or a
@@ -243,9 +258,9 @@ class RemoveWebsitePages(Resource):
                 except ValueError as err:
                     return _error(str(err))
 
-                store = get_vector_store(str(doc["id"]))
-                for _path, url in pages:
-                    store.delete_chunks_by_source_path(url)
+                # One pass for every page: FAISS rewrites its whole index per
+                # save, so a folder is saved once rather than once per chunk.
+                get_vector_store(str(doc["id"])).delete_chunks_by_source_paths([url for _path, url in pages])
                 remove_pages(structure, [path for path, _url in pages])
                 SourcesRepository(conn).update(
                     str(doc["id"]),
@@ -334,8 +349,11 @@ class AddWebsitePages(Resource):
         new_hosts = hosts | {urlparse(url).netloc for url in page_urls}
         # A site can bring any number of pages, and a first second host puts
         # every page under a host folder: both rebuild rather than append.
-        needs_sync = any(e["mode"] == "site" for e in new_entries) or (
-            bool(hosts) and (len(hosts) > 1) != (len(new_hosts) > 1)
+        # A store that can't add single chunks (Elasticsearch) rebuilds too.
+        needs_sync = (
+            any(e["mode"] == "site" for e in new_entries)
+            or (bool(hosts) and (len(hosts) > 1) != (len(new_hosts) > 1))
+            or not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE)
         )
         source_id = str(doc["id"])
         if needs_sync:
@@ -384,7 +402,7 @@ class RefreshWebsitePage(Resource):
             return denied_response(err)
         if _website_config(doc) is None:
             return _error("Not a website source")
-        refusal = _wiki_refusal(doc)
+        refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
         if refusal is not None:
             return refusal
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}

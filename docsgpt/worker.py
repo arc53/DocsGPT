@@ -4948,6 +4948,10 @@ def _run_website_pages(
     from docsgpt.parser.remote.website_tree import config_from_legacy, web_pages
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
+    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        raise ValueError(
+            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead"
+        )
     # Read again under the lock: a sync that held it has rewritten the tree.
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)

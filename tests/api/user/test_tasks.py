@@ -1185,6 +1185,8 @@ INGEST_LANE_TASKS = (
     "docsgpt.api.user.tasks.sync_connector_source",
     "docsgpt.api.user.tasks.extract_graph",
     "docsgpt.api.user.tasks.convert_source_to_wiki",
+    # Up to WEB_MAX_PAGES fetches of up to 30 seconds each.
+    "docsgpt.api.user.tasks.website_pages",
 )
 
 # Work a user or the scheduler is waiting on; it must never queue behind an ingest.

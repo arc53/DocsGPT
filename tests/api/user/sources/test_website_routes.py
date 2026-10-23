@@ -174,7 +174,7 @@ class TestRemovePages:
         response = self._remove(app, pg_conn, src, store, file_paths=["extra.md"])
 
         assert response.status_code == 200
-        store.delete_chunks_by_source_path.assert_called_once_with("https://docs.x.io/extra")
+        store.delete_chunks_by_source_paths.assert_called_once_with(["https://docs.x.io/extra"])
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/"]
         # The remaining site can find the page too, so it is skipped as well:
@@ -235,7 +235,7 @@ class TestRemovePages:
 
         assert response.status_code == 400
         assert "skip rules" in response.json["error"]
-        store.delete_chunks_by_source_path.assert_not_called()
+        store.delete_chunks_by_source_paths.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/old"]
         assert "Docker.md" in saved["directory_structure"]["Deploying"]
@@ -265,7 +265,10 @@ class TestRemovePages:
 
         assert response.status_code == 200
         assert response.json["removed"] == 2
-        assert store.delete_chunks_by_source_path.call_count == 2
+        # One pass over the store for the whole folder (FAISS saves once).
+        store.delete_chunks_by_source_paths.assert_called_once_with(
+            ["https://docs.x.io/Deploying/Docker", "https://docs.x.io/Deploying/Kubernetes"]
+        )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/*"]
         assert "Deploying" not in saved["directory_structure"]
@@ -283,7 +286,7 @@ class TestRemovePages:
         assert response.status_code == 400
         # The UI words this one itself.
         assert response.json["code"] == "last_entry"
-        store.delete_chunks_by_source_path.assert_not_called()
+        store.delete_chunks_by_source_paths.assert_not_called()
 
     def test_unknown_paths_are_400(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -349,7 +352,7 @@ class TestAddPages:
     def test_pages_past_the_admin_cap_are_refused(self, app, pg_conn):
         # The seeded source holds 4 pages; the cap covers the whole source.
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 5
             response, pages_task, sync_task = self._add(app, pg_conn, src, [
                 {"url": "https://docs.x.io/one", "mode": "page"},
@@ -371,7 +374,7 @@ class TestAddPages:
         # A page entry counts from when it is listed: one still queued, or
         # one whose fetch failed, holds its place under the cap.
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 5
             first, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
             second, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/two", "mode": "page"}])
@@ -388,7 +391,7 @@ class TestAddPages:
         src = _seed(pg_conn, remote_data={**CONFIG, "entries": CONFIG["entries"] + [
             {"url": "https://docs.x.io/Deploying/Docker/", "mode": "page"},
         ]})
-        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 5
             response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
 
@@ -409,7 +412,7 @@ class TestAddPages:
 
     def test_a_site_on_a_full_source_is_refused(self, app, pg_conn):
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.settings") as fake_settings:
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 4
             response, _, sync_task = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/API/", "mode": "site"}])
 
@@ -539,7 +542,7 @@ class TestConcurrentEdits:
 
         assert response.status_code == 409
         assert response.json["code"] == "source_busy"
-        store.delete_chunks_by_source_path.assert_not_called()
+        store.delete_chunks_by_source_paths.assert_not_called()
         assert "extra.md" in SourcesRepository(pg_conn).get(str(src["id"]), USER)["directory_structure"]
 
 
@@ -569,8 +572,59 @@ class TestAWikiIsNotEditedAsAWebsite:
         assert response.json["code"] == "wiki"
         pages_task.delay.assert_not_called()
         sync_task.delay.assert_not_called()
-        store.delete_chunks_by_source_path.assert_not_called()
+        store.delete_chunks_by_source_paths.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["sync_frequency"] == "never"
         assert saved["remote_data"] == CONFIG
         assert "extra.md" in saved["directory_structure"]
+
+
+class TestAStoreWithoutChunkEdits:
+    """Elasticsearch can't change single chunks: page changes are refused or rebuilt, never faked."""
+
+    @pytest.fixture(autouse=True)
+    def _elasticsearch(self):
+        with patch("docsgpt.api.user.sources.website.settings.VECTOR_STORE", "elasticsearch"):
+            yield
+
+    @pytest.mark.parametrize(
+        "resource, body",
+        [
+            ("RefreshWebsitePage", {"file_path": "extra.md"}),
+            ("RemoveWebsitePages", {"file_paths": ["extra.md"]}),
+        ],
+    )
+    def test_refresh_and_remove_are_refused(self, app, pg_conn, resource, body):
+        from docsgpt.api.user.sources import website
+
+        src = _seed(pg_conn)
+        store = MagicMock()
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.get_vector_store", return_value=store
+        ):
+            response = _call(app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body})
+
+        assert response.status_code == 400
+        assert response.json["code"] == "chunks_unsupported"
+        pages_task.delay.assert_not_called()
+        store.delete_chunks_by_source_paths.assert_not_called()
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert saved["remote_data"] == CONFIG
+        assert "extra.md" in saved["directory_structure"]
+
+    def test_added_pages_rebuild_the_source(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import AddWebsitePages
+
+        src = _seed(pg_conn)
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.sync_source"
+        ) as sync_task:
+            sync_task.delay.return_value = MagicMock(id="sync-task")
+            response = _call(app, pg_conn, AddWebsitePages, "POST", json={
+                "source_id": str(src["id"]), "entries": [{"url": "https://docs.x.io/new", "mode": "page"}],
+            })
+
+        assert response.status_code == 200
+        assert response.json["mode"] == "sync"
+        pages_task.delay.assert_not_called()
+        sync_task.delay.assert_called_once()
