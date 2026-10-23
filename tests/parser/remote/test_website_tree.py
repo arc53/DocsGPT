@@ -112,6 +112,31 @@ class TestRemovalRules:
         bare = folder_skip_rule("x.io/blog", pages_under(structure, "x.io/blog"))
         assert SiteScope("https://x.io/", skip=[bare]).accepts("https://www.x.io/guide")
 
+    def test_a_path_folder_named_like_the_host_is_not_the_host(self):
+        # A single-host tree has no host folders: ``x.io`` here is the path
+        # segment of ``/x.io/a``, and removing it must not skip the whole host.
+        from docsgpt.parser.remote.website_loader import SiteScope
+
+        structure = {
+            "x.io": {"a.md": leaf("https://x.io/x.io/a")},
+            "other.md": leaf("https://x.io/other"),
+            "index.md": leaf("https://x.io/"),
+        }
+        rule = folder_skip_rule("x.io", pages_under(structure, "x.io"))
+        scope = SiteScope("https://x.io/", skip=[rule])
+
+        assert rule == "https://x.io/x.io/*"
+        assert not scope.accepts("https://x.io/x.io/a")
+        assert scope.accepts("https://x.io/other")
+        assert scope.accepts("https://x.io/")
+
+    def test_a_folder_escaped_from_a_leaf_name_maps_back_to_its_url(self):
+        structure = {"guide.md": leaf("https://x.io/guide"), "guide.md~": {"a.md": leaf("https://x.io/guide.md/a")}}
+
+        assert folder_skip_rule("guide.md~", pages_under(structure, "guide.md~")) == "https://x.io/guide.md/*"
+        hosts = {"point.md~": {"news.md": leaf("https://point.md/news")}, "x.io": {"a.md": leaf("https://x.io/a")}}
+        assert folder_skip_rule("point.md~", pages_under(hosts, "point.md~")) == "https://point.md/*"
+
     def test_a_folder_whose_name_is_not_in_its_urls_has_no_rule(self):
         # A folder name a URL can't account for (a dedupe suffix, say) gets
         # its pages skipped one by one instead.

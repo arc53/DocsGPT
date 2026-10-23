@@ -11,6 +11,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from docsgpt.parser.remote.base import folder_segment, folder_url_segment, url_to_virtual_path
 from docsgpt.parser.remote.website_loader import is_sitemap_url, is_web_address, parse_website_config
 
 # The old loaders' fixed page limits, kept when their sources are converted.
@@ -141,6 +142,27 @@ def total_tokens(structure: Dict[str, Any]) -> int:
     return total
 
 
+def _under_host_folder(page: Page) -> bool:
+    """Whether a page's tree path starts with a host folder (the source spans hosts).
+
+    A single-host tree has none, so a path folder named like the host
+    (``x.io/a.md`` for ``https://x.io/x.io/a``) is a path segment there.
+
+    Args:
+        page: ``(tree path, url)``.
+
+    Returns:
+        False when the page's folders are those of its URL path alone; True
+        otherwise, so a tree named some other way keeps reading its first
+        folder as the host when it is named like it.
+    """
+    path, url = page
+    try:
+        return path.split("/")[:-1] != url_to_virtual_path(url).split("/")[:-1]
+    except ValueError:
+        return True
+
+
 def folder_skip_rule(dir_path: str, pages: List[Page]) -> Optional[str]:
     """The section rule (``https://host/path/*``) that covers a folder's pages.
 
@@ -162,9 +184,10 @@ def folder_skip_rule(dir_path: str, pages: List[Page]) -> Optional[str]:
     if not pages or not parts:
         return None
     first = urlparse(pages[0][1])
-    if parts[0] == first.netloc:
+    if parts[0] == folder_segment(first.netloc) and _under_host_folder(pages[0]):
         parts = parts[1:]
-    prefix = "/" + "/".join(parts) if parts else ""
+    # A folder escaped from a leaf's name (``guide.md~``) is the URL's ``guide.md``.
+    prefix = "/" + "/".join(folder_url_segment(part) for part in parts) if parts else ""
     rule_base = f"{first.scheme}://{first.netloc}{prefix}"
     for _, url in pages:
         parsed = urlparse(url)

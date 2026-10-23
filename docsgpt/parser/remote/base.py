@@ -64,7 +64,7 @@ def url_to_virtual_path(url: str, include_host: bool = False) -> str:
     ``/p?page=1`` and ``/p?page=2`` stay two files. A URL without a query maps
     exactly as before. Paths that still collide, such as ``/a`` and
     ``/a.html``, are told apart by ``dedupe_virtual_paths``. A folder never
-    takes a leaf's name (see ``_folder_segment``): ``/guide.md/details`` is
+    takes a leaf's name (see ``folder_segment``): ``/guide.md/details`` is
     ``guide.md~/details.md``, beside ``/guide``'s ``guide.md``.
 
     Args:
@@ -96,14 +96,15 @@ def url_to_virtual_path(url: str, include_host: bool = False) -> str:
     *folders, leaf = path.split("/")
     if include_host and parsed.netloc:
         folders.insert(0, parsed.netloc)
-    return "/".join([*(_folder_segment(folder) for folder in folders), leaf])
+    return "/".join([*(folder_segment(folder) for folder in folders), leaf])
 
 
 # A folder name a leaf could also have: ``.md``, or an escaped one (``.md~``).
 _LEAF_LIKE_FOLDER = re.compile(r"\.md~*$")
+_ESCAPED_FOLDER = re.compile(r"\.md~+$")
 
 
-def _folder_segment(segment: str) -> str:
+def folder_segment(segment: str) -> str:
     """A folder's name in the virtual tree, never one a page's leaf takes.
 
     Every leaf ends in ``.md``, so ``/guide`` (``guide.md``) and
@@ -119,6 +120,18 @@ def _folder_segment(segment: str) -> str:
         The segment, with ``~`` added when it ends in ``.md`` and any ``~``.
     """
     return f"{segment}~" if _LEAF_LIKE_FOLDER.search(segment) else segment
+
+
+def folder_url_segment(name: str) -> str:
+    """The URL path segment (or host) a tree folder stands for: ``folder_segment`` undone.
+
+    Args:
+        name: A folder's name in the virtual tree.
+
+    Returns:
+        ``guide.md`` for ``guide.md~``; any other name as it is.
+    """
+    return name[:-1] if _ESCAPED_FOLDER.search(name) else name
 
 
 def spans_multiple_hosts(urls: List[str]) -> bool:
