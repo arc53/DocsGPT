@@ -107,6 +107,13 @@ export type Doc = {
   allowed_actions?: string[];
 };
 
+/**
+ * A source as the app-wide knowledge list (`/api/sources`, `getDocs`) gives
+ * it: the paginated listing's fields, `website` and `files` included, but
+ * the folder flag named `is_nested` (see `asListedDoc`).
+ */
+export type KnowledgeDoc = Doc & { is_nested?: boolean };
+
 export type GetDocsResponse = {
   docs: Doc[];
   totalDocuments: number;

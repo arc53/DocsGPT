@@ -28,7 +28,12 @@ import {
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
-import { ActiveState, Doc, DocumentsProps } from '../models/misc';
+import {
+  ActiveState,
+  Doc,
+  DocumentsProps,
+  type KnowledgeDoc,
+} from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
@@ -85,6 +90,22 @@ const NO_EVENTS: SSEEvent[] = [];
 const selectEvents = (state: {
   notifications?: { recentEvents?: SSEEvent[] };
 }) => state.notifications?.recentEvents ?? NO_EVENTS;
+
+/**
+ * A knowledge-list source in the paginated listing's shape, so a source view
+ * opened from it picks the same view as from its card: `isNested` from
+ * `is_nested`, and `website` and `files` as given (absent from an older
+ * backend, which then opens a website in the file view).
+ */
+function asListedDoc(doc: KnowledgeDoc): Doc {
+  const { is_nested: isNested, ...rest } = doc;
+  return {
+    ...rest,
+    isNested: doc.isNested ?? isNested,
+    website: doc.website ?? null,
+    files: doc.files ?? null,
+  };
+}
 
 // A sync with no word on its first ingest (live events off, or the stream
 // resumed past the event) is looked for on the list instead: from 2 minutes
@@ -221,9 +242,7 @@ export default function Sources({
     const waited = waitedFor.current === link.sourceId;
     waitedFor.current = null;
     if (!listed) return;
-    // The app-wide list names the folder flag `is_nested`.
-    const raw = listed as Doc & { is_nested?: boolean };
-    const linked = { ...listed, isNested: listed.isNested ?? raw.is_nested };
+    const linked = asListedDoc(listed);
     setDocumentToView((open) => (waited && open ? open : linked));
     setViewLink(link);
   }, [searchParams, knowledge, paginatedDocuments, linkedSyncState, reloaded]);

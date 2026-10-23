@@ -1227,6 +1227,26 @@ describe('Sources citation link', () => {
     expect(tree?.dataset.linked).toBe('c1|Leave');
   });
 
+  // The knowledge list (/api/sources) carries `website` and `files` too.
+  it('opens a website source found only in the knowledge list in its page view', async () => {
+    knowledge.docs = [
+      {
+        ...doc({ id: 'src-9', name: 'Docs site', type: 'website' }),
+        is_nested: true,
+        website: { hosts: ['docs.x.io'], pages: 12 },
+        files: 12,
+      },
+    ];
+    await render(
+      '/settings/knowledge?source=src-9&chunk=c1&q=Docker&path=Deploying%2FDocker.md',
+    );
+    const tree = viewOf('website-tree');
+    expect(tree).not.toBeNull();
+    expect(tree?.dataset.initialPath).toBe('Deploying/Docker.md');
+    expect(tree?.dataset.linked).toBe('c1|Docker');
+    expect(viewOf('file-tree')).toBeNull();
+  });
+
   it('opens a wiki at the cited page', async () => {
     await render('/settings/knowledge?source=src-1&wikiPage=guide%2Fleave.md', [
       doc({ type: 'wiki' }),
