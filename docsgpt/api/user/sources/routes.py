@@ -110,6 +110,24 @@ def _sync_refusal(text: str, code: str, status: int = 400):
     )
 
 
+def _wiki_store_refusal():
+    """The 400 when the vector store can't re-embed single wiki pages (Elasticsearch), or ``None``.
+
+    A wiki page's edit re-embeds just that page; a store that can't list and
+    delete single chunks would keep the old chunks, so search would answer
+    from the page as it was. Refused before anything is written.
+
+    Returns:
+        Optional[Response]: The refusal (code ``wiki_unsupported``), or ``None``.
+    """
+    if VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return None
+    return _sync_refusal(
+        f"Wikis need a vector store that can change single pages; the {settings.VECTOR_STORE} store can't.",
+        "wiki_unsupported",
+    )
+
+
 def _with_scheme(url: str) -> str:
     """``url``, with ``https://`` in front when it was written without a scheme, so its host can be read.
 
@@ -920,6 +938,9 @@ class CreateWikiSource(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         data = request.get_json(silent=True) or {}
         missing_fields = check_required_fields(data, ["name"])
         if missing_fields:
@@ -1082,6 +1103,9 @@ class WikiPage(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         data = request.get_json(silent=True) or {}
         missing_fields = check_required_fields(data, ["path", "content"])
         if missing_fields:
@@ -1270,6 +1294,9 @@ class ConvertSourceToWiki(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         try:
             with db_session() as conn:
                 # Owner or team editor; writes and re-embeds run as the owner.

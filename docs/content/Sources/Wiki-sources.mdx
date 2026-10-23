@@ -62,6 +62,8 @@ curl -X POST https://your-docsgpt/api/sources/wiki \
 
 No ingestion task runs for a wiki; pages are authored directly. The response returns the new `source_id`.
 
+Each page edit re-embeds only that page, so a wiki needs a vector store that can change single chunks. On Elasticsearch, creating a wiki, converting a source and editing a wiki's pages are refused, with the code `wiki_unsupported`.
+
 ## Converting an existing source into a wiki
 
 You can turn an already-ingested source into a wiki so the agent can start maintaining it:

@@ -253,6 +253,26 @@ class TestLiveWriteCheck:
         )
 
 
+    def test_a_store_without_chunk_edits_refuses_every_write(self, wiki_tool, monkeypatch, reembed_mock):
+        wiki_tool.execute_action("create", path="/a.md", content="one")
+        reembed_mock.reset_mock()
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.supports_chunk_edits",
+            classmethod(lambda cls, store: False),
+        )
+        for action, kwargs in (
+            ("create", {"path": "/b.md", "content": "x"}),
+            ("str_replace", {"path": "/a.md", "old_str": "one", "new_str": "two"}),
+            ("insert", {"path": "/a.md", "insert_line": 1, "insert_text": "x"}),
+            ("delete", {"path": "/a.md"}),
+            ("rename", {"old_path": "/a.md", "new_path": "/c.md"}),
+        ):
+            result = wiki_tool.execute_action(action, **kwargs)
+            assert result.startswith("Error:") and "vector store" in result, action
+        reembed_mock.assert_not_called()
+        assert "one" in wiki_tool.execute_action("view", path="/a.md")
+
+
 # =====================================================================
 # create / view
 # =====================================================================
