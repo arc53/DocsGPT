@@ -259,6 +259,78 @@ def _post(app, pg_conn, resource: str, src, **body):
     return response, pages_task, sync_task
 
 
+class TestWritesRefuseBadValues:
+    """A save checks every address it adds as strictly as /api/website/pages does.
+
+    It parses without the write limits (so a stored config past one still
+    saves), so what the change adds is checked here: an address with
+    ``user:password@`` credentials or a malformed host, and a control
+    character in an address, path or skip rule (a NUL can't even be stored).
+    """
+
+    SITE = {"url": "https://docs.x.io/", "mode": "site"}
+
+    @pytest.mark.parametrize("entry", [
+        {"url": "https://user:secret@evil.io/p", "mode": "page"},
+        {"url": "https://a..b/p", "mode": "page"},
+        {"url": "https://docs.x.io/a\u0000b", "mode": "page"},
+        {"url": "https://docs.x.io/a\u0001b", "mode": "page"},
+        {**SITE, "sitemap_url": "https://bob:pw@docs.x.io/sitemap.xml"},
+        {"url": "https://alice:s3cret@docs.x.io/", "mode": "site"},
+    ])
+    def test_a_save_refuses_a_new_address_that_isnt_one(self, app, pg_conn, entry):
+        src = _seed(pg_conn)
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=[self.SITE, entry])
+
+        assert response.status_code == 400, response.json
+        assert response.json["code"] == "invalid_address"
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
+
+    @pytest.mark.parametrize("body", [
+        {"entries": [{**SITE, "path_prefix": "/a\u0000"}]},
+        {"entries": [SITE], "skip": ["https://docs.x.io/a\u0000"]},
+        {"entries": [SITE], "skip": ["https://docs.x.io/a\u0007/*"]},
+    ])
+    def test_a_save_refuses_a_control_character_in_a_path_or_rule(self, app, pg_conn, body):
+        src = _seed(pg_conn)
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, **body)
+
+        assert response.status_code == 400, response.json
+        assert response.json["code"] == "invalid_config"
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
+
+    def test_adding_a_site_with_a_control_character_in_its_path_is_refused(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, _, sync_task = _post(
+            app, pg_conn, "AddWebsitePages", src, entries=[{**self.SITE, "path_prefix": "/a\u0000"}]
+        )
+
+        assert response.status_code == 400, response.json
+        assert response.json["code"] == "invalid_config"
+        sync_task.delay.assert_not_called()
+
+    def test_a_source_id_with_a_nul_is_not_found(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+            "source_id": "abc\u0000", "entries": [self.SITE],
+        })
+
+        assert response.status_code == 404
+        assert _call(app, pg_conn, WebsiteSettings, "GET", query="?id=abc%00").status_code == 404
+
+    def test_a_stored_address_a_save_keeps_is_not_checked_again(self, app, pg_conn):
+        # Stored before the rule: the source still saves, and can drop it.
+        old = {"url": "https://user:pw@docs.x.io/old", "mode": "page"}
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": CONFIG["entries"] + [old]})
+        response, _, _ = _post(
+            app, pg_conn, "WebsiteSettings", src, entries=CONFIG["entries"] + [old], sync_frequency="daily"
+        )
+
+        assert response.status_code == 200, response.json
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["sync_frequency"] == "daily"
+
+
 class TestOldDataPastAWriteLimit:
     """A write limit refuses a change that grows past it, not one that keeps what is already stored.
 

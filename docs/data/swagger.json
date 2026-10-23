@@ -7338,7 +7338,7 @@
         ]
       },
       "post": {
-        "description": "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync.",
+        "description": "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync. An address the save adds is checked as in /api/website/pages: one that isn't a web address (user:password@ credentials, a malformed host, a control character) is a 400 with code invalid_address, and a new path or skip rule with a control character one with code invalid_config. What the source already stores is saved as it is.",
         "operationId": "post_website_settings",
         "parameters": [
           {

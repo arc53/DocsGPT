@@ -10,6 +10,7 @@ loaders read as Website sources and are converted on their first save; their
 tree leaves carry no address, so a removal reads each one's from its chunks.
 """
 
+import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -41,6 +42,9 @@ _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 #: How many tree paths one removal may name; a folder is one path however many pages it holds.
 MAX_REMOVE_PATHS = 1000
+
+# C0 controls and DEL: no address, path or skip rule carries them, and a NUL can't be stored.
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _error(message: str, status: int = 400, code: Optional[str] = None, **details: Any) -> Response:
@@ -128,6 +132,9 @@ def _read_body(required: List[str]) -> Tuple[dict, Optional[Response]]:
     for name, (check, wording) in _FIELD_TYPES.items():
         if data.get(name) is not None and not check(data[name]):
             return {}, _error(f"{name} must be {wording}", code="invalid_field", field=name)
+    if "\x00" in data.get("source_id", ""):
+        # No source has one, and the database can't even be asked for it.
+        return {}, denied_response(AccessDenied(404, "Source not found"))
     return data, None
 
 
@@ -207,15 +214,59 @@ def _cleaned(config: dict) -> dict:
     return {**config, "entries": entries}
 
 
+def _added_value_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ()) -> Optional[Response]:
+    """The 400 for an address, path or skip rule a change adds that a write may not store, or ``None``.
+
+    A config parsed without the write limits only needs addresses that
+    parse, so what the change adds is checked as a strict parse checks it:
+    each new address (an entry's or its ``sitemap_url``) must be an
+    ``is_web_address`` (no ``user:password@`` credentials, no malformed
+    host, no control character), and a new path or skip rule can't hold a
+    control character. What the source already holds is left alone.
+
+    Args:
+        config: The new config, parsed without the write limits.
+        stored: The source's config before the change.
+        built_rules: Skip rules the server built from addresses the source already holds.
+
+    Returns:
+        The refusal: ``invalid_address`` with the ``url``, or ``invalid_config``.
+    """
+    old_entries = stored["entries"]
+    old_urls = {url for entry in old_entries for url in (entry["url"], entry.get("sitemap_url")) if url}
+    for entry in config["entries"]:
+        for label, url in (("Address", entry["url"]), ("Sitemap address", entry.get("sitemap_url"))):
+            if url and url not in old_urls and not is_web_address(url):
+                # The value is echoed back to the client: kept to a URL's length.
+                return _error(
+                    f"{label} {url[:200]!r} is not a web address",
+                    code="invalid_address",
+                    url=url[: website_loader.MAX_URL_LENGTH],
+                )
+    old_prefixes = {entry.get("path_prefix") or "" for entry in old_entries if entry["mode"] == "site"}
+    if any(
+        _CONTROL_CHARACTER.search(entry.get("path_prefix") or "")
+        and (entry.get("path_prefix") or "") not in old_prefixes
+        for entry in config["entries"]
+        if entry["mode"] == "site"
+    ):
+        return _error("A path can't contain control characters", code="invalid_config")
+    old_rules = set(stored["skip"]) | set(built_rules)
+    if any(_CONTROL_CHARACTER.search(rule) and rule not in old_rules for rule in config["skip"]):
+        return _error("A skip rule can't contain control characters", code="invalid_config")
+    return None
+
+
 def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ()) -> Optional[Response]:
-    """The 400 when a change grows a config past a write limit, or ``None``.
+    """The 400 when a change grows a config past a write limit or adds a value it may not store, or ``None``.
 
     The limits apply to what a change adds, not to what the source already
     holds: a source over a limit (the admin lowered ``WEB_MAX_PAGES``, or it
     was saved before a limit existed) can still shrink, and be saved as it
     is. So the page cap, the site limit and the skip-rule limit refuse only a
     count that is past the limit and larger than the stored one, and the
-    length limit only an address, path or rule the source didn't hold.
+    length limit only an address, path or rule the source didn't hold. The
+    address check (``_added_value_refusal``) runs first, by the same rule.
 
     Args:
         config: The new config, parsed without the write limits.
@@ -226,8 +277,11 @@ def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ())
             never be removed. They still count toward the skip-rule limit.
 
     Returns:
-        The refusal, with a ``code`` and the limit for the UI's wording.
+        The refusal, with a ``code`` and the limit (or the address) for the UI's wording.
     """
+    refusal = _added_value_refusal(config, stored, built_rules)
+    if refusal is not None:
+        return refusal
     entries, old_entries = config["entries"], stored["entries"]
     cap = int(settings.WEB_MAX_PAGES)
     # A site brings at least one page, so it counts toward the cap too.
@@ -303,9 +357,12 @@ class WebsiteSettings(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        source_id = request.args.get("id")
         try:
+            if source_id and "\x00" in source_id:
+                raise AccessDenied(404, "Source not found")
             with db_readonly() as conn:
-                doc, _ra = load_source(conn, request.args.get("id"), user, "view_config")
+                doc, _ra = load_source(conn, source_id, user, "view_config")
         except AccessDenied as err:
             return denied_response(err)
         config = _website_config(doc)
@@ -326,7 +383,13 @@ class WebsiteSettings(Resource):
 
     @api.expect(save_model)
     @api.doc(
-        description="Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync."
+        description=(
+            "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync. "
+            "An address the save adds is checked as in /api/website/pages: one that isn't a web address "
+            "(user:password@ credentials, a malformed host, a control character) is a 400 with code "
+            "invalid_address, and a new path or skip rule with a control character one with code invalid_config. "
+            "What the source already stores is saved as it is."
+        )
     )
     def post(self):
         decoded_token = request.decoded_token
