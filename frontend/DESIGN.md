@@ -1019,11 +1019,13 @@ spans the screen and shows only its newest card, the others behind an
 `useToastShown` (`ui/toast-layout.ts`) on its `Toast` and runs its timer
 only while shown, so a folded card never times out unseen. A new toast
 component returns only its `Toast` cards and is added to that viewport. A result the screen can't show
-dispatches `showActionToast({ variant: 'success' | 'destructive', message })`
+dispatches `showActionToast({ variant: 'success' | 'destructive' | 'info' | 'warning', message })`
 from `notifications/actionToastSlice.ts`: a chunk saved from the graph
 reader's edit drawer, which closes as it saves ("Chunk saved"); a copy from a
 reader's ⋯ menu; an admin Force logout; a page action's failure that happens
-after its confirm closed (a source file delete). `ActionToast` shows it and
+after its confirm closed (a source file delete). Background work that is
+neither is `info` (a website page change still running when the view stops
+waiting) or `warning` (one that didn't run and can be tried again). `ActionToast` shows it and
 dismisses it after 4.5s, and a new result replaces the previous one. A result
 the row shows gets no toast: Admin › Users' grant, revoke, activate and
 deactivate show their success in the row's badge. Work that finishes after

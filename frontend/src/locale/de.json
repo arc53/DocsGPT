@@ -654,7 +654,10 @@
         "saveFailed": "Die Einstellungen konnten nicht gespeichert werden.",
         "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
         "lastSynced": "Zuletzt synchronisiert {{when}}.",
-        "appliesNextSync": "Änderungen gelten ab der nächsten Synchronisierung."
+        "appliesNextSync": "Änderungen gelten ab der nächsten Synchronisierung.",
+        "stillRunning": "Die Änderung läuft noch. Öffne die Quelle später erneut, um sie zu sehen.",
+        "changeBusy": "Eine andere Änderung an dieser Quelle lief noch, daher wurde diese nicht ausgeführt. Versuche es erneut.",
+        "sourceGone": "Diese Quelle gibt es nicht mehr."
       },
       "deleteSource": "Quelle löschen",
       "syncStarted": "{{name}} wird synchronisiert…",

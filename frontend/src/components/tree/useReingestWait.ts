@@ -13,6 +13,16 @@ const CLOCK_SKEW_MS = 5 * 60_000;
 
 export type ReingestTerminal = 'completed' | 'failed' | 'timeout' | 'unmounted';
 
+/**
+ * How a wait ended, with the terminal event's `reason` when it gave one: a
+ * queued change that didn't run fails with `busy` (another change held the
+ * source too long), `wiki` (the source became a wiki) or `gone` (deleted).
+ */
+export interface ReingestOutcome {
+  terminal: ReingestTerminal;
+  reason: string | null;
+}
+
 export interface WaitForTerminalOptions {
   /** The task the mutation queued; matched when the event carries one. */
   taskId?: string | null;
@@ -40,13 +50,14 @@ type SeenEvents = {
  * Unmounting settles every pending wait with 'unmounted'.
  *
  * @returns `waitForTerminal(sourceId, opStartedAt, options?)`, called after
- *   kicking off the backend mutation, and `mountedRef`.
+ *   kicking off the backend mutation; `waitForChange`, the same wait
+ *   resolving to a {@link ReingestOutcome}; and `mountedRef`.
  */
 export function useReingestSseWaiter() {
   const store = useStore<RootState>();
   const mountedRef = useRef(true);
   const pendingRef = useRef(new Set<() => void>());
-  const settleAllRef = useRef(new Set<(value: ReingestTerminal) => void>());
+  const settleAllRef = useRef(new Set<(value: ReingestOutcome) => void>());
   const seenRef = useRef<SeenEvents | null>(null);
 
   const ringOf = useCallback(
@@ -97,19 +108,20 @@ export function useReingestSseWaiter() {
     const settleAll = settleAllRef.current;
     return () => {
       mountedRef.current = false;
-      for (const settle of Array.from(settleAll)) settle('unmounted');
+      for (const settle of Array.from(settleAll))
+        settle({ terminal: 'unmounted', reason: null });
     };
   }, []);
 
-  const waitForTerminal = useCallback(
+  const waitForChange = useCallback(
     (
       sourceId: string | undefined,
       opStartedAt: number,
       options: WaitForTerminalOptions = {},
     ) =>
-      new Promise<ReingestTerminal>((resolve) => {
+      new Promise<ReingestOutcome>((resolve) => {
         if (!mountedRef.current) {
-          resolve('unmounted');
+          resolve({ terminal: 'unmounted', reason: null });
           return;
         }
         const taskId = options.taskId || null;
@@ -130,7 +142,7 @@ export function useReingestSseWaiter() {
           return Number.isFinite(ts) && ts >= opStartedAt;
         };
 
-        const terminalFromSse = (): 'completed' | 'failed' | null => {
+        const terminalFromSse = (): ReingestOutcome | null => {
           if (!sourceId) return null;
           for (const event of ringOf()) {
             if (
@@ -139,9 +151,14 @@ export function useReingestSseWaiter() {
             )
               continue;
             if (!matches(event)) continue;
-            return event.type === 'source.ingest.completed'
-              ? 'completed'
-              : 'failed';
+            const reason = event.payload?.reason;
+            return {
+              terminal:
+                event.type === 'source.ingest.completed'
+                  ? 'completed'
+                  : 'failed',
+              reason: typeof reason === 'string' ? reason : null,
+            };
           }
           return null;
         };
@@ -160,19 +177,34 @@ export function useReingestSseWaiter() {
           const next = terminalFromSse();
           if (next) finish(next);
         };
-        const finish = (value: ReingestTerminal) => {
+        const finish = (value: ReingestOutcome) => {
           if (timer !== null) window.clearTimeout(timer);
           timer = null;
           pendingRef.current.delete(check);
           settleAllRef.current.delete(finish);
           resolve(value);
         };
-        timer = window.setTimeout(() => finish('timeout'), MAX_WAIT_MS);
+        timer = window.setTimeout(
+          () => finish({ terminal: 'timeout', reason: null }),
+          MAX_WAIT_MS,
+        );
         pendingRef.current.add(check);
         settleAllRef.current.add(finish);
       }),
     [ringOf, recordSeen],
   );
 
-  return { waitForTerminal, mountedRef };
+  const waitForTerminal = useCallback(
+    (
+      sourceId: string | undefined,
+      opStartedAt: number,
+      options: WaitForTerminalOptions = {},
+    ): Promise<ReingestTerminal> =>
+      waitForChange(sourceId, opStartedAt, options).then(
+        (outcome) => outcome.terminal,
+      ),
+    [waitForChange],
+  );
+
+  return { waitForTerminal, waitForChange, mountedRef };
 }

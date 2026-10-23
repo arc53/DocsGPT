@@ -651,7 +651,10 @@
         "saveFailed": "無法儲存設定。",
         "loadFailed": "無法載入設定。",
         "lastSynced": "上次同步於 {{when}}。",
-        "appliesNextSync": "變更將在下次同步時生效。"
+        "appliesNextSync": "變更將在下次同步時生效。",
+        "stillRunning": "變更仍在進行中。請稍後重新開啟此來源查看。",
+        "changeBusy": "此來源的另一項變更仍在進行，因此本次變更未執行。請再試一次。",
+        "sourceGone": "此來源已不存在。"
       },
       "deleteSource": "刪除來源",
       "syncStarted": "正在同步 {{name}}…",

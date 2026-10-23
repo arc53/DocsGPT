@@ -135,6 +135,37 @@ describe('useReingestSseWaiter', () => {
     expect(first.value).toBe('completed');
   });
 
+  it("waitForChange carries a failure's reason", async () => {
+    mount();
+    const result: { value: unknown } = { value: null };
+    void waiter
+      .waitForChange('src-1', Date.now(), { taskId: 'task-a' })
+      .then((value) => (result.value = value));
+    act(() => {
+      store.dispatch(
+        sseEventReceived(
+          terminal('failed', Date.now(), { task_id: 'task-a', reason: 'busy' }),
+        ),
+      );
+    });
+    await flush();
+    expect(result.value).toEqual({ terminal: 'failed', reason: 'busy' });
+
+    const plain: { value: unknown } = { value: null };
+    void waiter
+      .waitForChange('src-1', Date.now(), { taskId: 'task-b' })
+      .then((value) => (plain.value = value));
+    act(() => {
+      store.dispatch(
+        sseEventReceived(
+          terminal('completed', Date.now(), { task_id: 'task-b' }),
+        ),
+      );
+    });
+    await flush();
+    expect(plain.value).toEqual({ terminal: 'completed', reason: null });
+  });
+
   it('settles pending waits when the component unmounts', async () => {
     mount();
     const wait = start(Date.now());

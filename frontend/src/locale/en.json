@@ -654,7 +654,10 @@
         "saveFailed": "Couldn’t save the settings.",
         "loadFailed": "Couldn’t load the settings.",
         "lastSynced": "Last synced {{when}}.",
-        "appliesNextSync": "Changes apply at the next sync."
+        "appliesNextSync": "Changes apply at the next sync.",
+        "stillRunning": "This change is still running. Open the source again in a while to see it.",
+        "changeBusy": "Another change to this source was still running, so this one didn’t run. Try again.",
+        "sourceGone": "This source no longer exists."
       },
       "deleteSource": "Delete source",
       "syncStarted": "Syncing {{name}}…",

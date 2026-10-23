@@ -59,6 +59,7 @@ vi.mock('../FileTree', async () => {
       linkedChunk?: { id?: string };
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
+      onPagesChanged?: () => void;
     }) => {
       const { onCrumbsChange } = props;
       useEffect(() => {
@@ -143,30 +144,37 @@ vi.mock('../WebsiteTree', async () => {
       linkedChunk?: { id?: string };
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
+      onPagesChanged?: () => void;
     }) => {
       const { onCrumbsChange } = props;
       useEffect(() => {
         onCrumbsChange?.([{ label: 'Key Accounts' }, { label: 'Deploying' }]);
       }, [onCrumbsChange]);
       return (
-        <div
-          data-testid="website-tree"
-          data-can-edit={String(props.canEdit)}
-          data-graph={String(props.graph)}
-          data-doc={props.docId}
-          data-hosts={props.hosts.join(',')}
-          data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
-          data-initial-path={props.initialPath ?? ''}
-          data-linked={props.linkedChunk?.id ?? ''}
-        >
-          {props.embedded ? 'embedded' : 'page'}
-          {props.actionsTarget
-            ? createPortal(
-                <button type="button">ADD PAGES</button>,
-                props.actionsTarget,
-              )
-            : null}
-        </div>
+        <>
+          {/* Stands in for a finished add, refresh or removal. */}
+          <button type="button" onClick={() => props.onPagesChanged?.()}>
+            PAGES CHANGED
+          </button>
+          <div
+            data-testid="website-tree"
+            data-can-edit={String(props.canEdit)}
+            data-graph={String(props.graph)}
+            data-doc={props.docId}
+            data-hosts={props.hosts.join(',')}
+            data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
+            data-initial-path={props.initialPath ?? ''}
+            data-linked={props.linkedChunk?.id ?? ''}
+          >
+            {props.embedded ? 'embedded' : 'page'}
+            {props.actionsTarget
+              ? createPortal(
+                  <button type="button">ADD PAGES</button>,
+                  props.actionsTarget,
+                )
+              : null}
+          </div>
+        </>
       );
     },
   };
@@ -653,6 +661,16 @@ describe('GraphSourceView', () => {
     expect(
       container.querySelector('[data-testid="website-tree"]')?.contains(add),
     ).toBe(false);
+  });
+
+  it('reads the graph again once a page change finishes', async () => {
+    await renderWebsite();
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(1);
+    // A removal changes the graph without a build.
+    await act(async () => buttonByText('PAGES CHANGED')!.click());
+    await flush();
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
   });
 
   it("opens a cited chunk in a website source's page list", async () => {

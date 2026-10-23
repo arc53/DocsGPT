@@ -254,6 +254,8 @@ export default function GraphSourceView({
       linkedChunk={linked}
       actionsTarget={filesActions}
       onCrumbsChange={setFilesCrumbs}
+      // A removal changes the graph without a build.
+      onPagesChanged={retry}
     />
   ) : synced || sourceType === 'connector:file' ? (
     <ConnectorTree

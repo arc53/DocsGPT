@@ -651,7 +651,10 @@
         "saveFailed": "設定を保存できませんでした。",
         "loadFailed": "設定を読み込めませんでした。",
         "lastSynced": "最終同期 {{when}}。",
-        "appliesNextSync": "変更は次の同期から適用されます。"
+        "appliesNextSync": "変更は次の同期から適用されます。",
+        "stillRunning": "変更はまだ実行中です。しばらくしてからソースを開き直して確認してください。",
+        "changeBusy": "このソースでは別の変更がまだ実行中だったため、この変更は実行されませんでした。もう一度お試しください。",
+        "sourceGone": "このソースはもう存在しません。"
       },
       "deleteSource": "ソースを削除",
       "syncStarted": "{{name}} を同期しています…",

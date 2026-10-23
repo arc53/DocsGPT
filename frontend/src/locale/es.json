@@ -676,7 +676,10 @@
         "saveFailed": "No se pudieron guardar los ajustes.",
         "loadFailed": "No se pudieron cargar los ajustes.",
         "lastSynced": "Última sincronización {{when}}.",
-        "appliesNextSync": "Los cambios se aplican en la próxima sincronización."
+        "appliesNextSync": "Los cambios se aplican en la próxima sincronización.",
+        "stillRunning": "El cambio sigue en curso. Vuelve a abrir la fuente dentro de un rato para verlo.",
+        "changeBusy": "Otro cambio en esta fuente seguía en curso, así que este no se aplicó. Inténtalo de nuevo.",
+        "sourceGone": "Esta fuente ya no existe."
       },
       "deleteSource": "Eliminar fuente",
       "syncStarted": "Sincronizando {{name}}…",

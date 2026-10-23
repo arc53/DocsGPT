@@ -99,6 +99,7 @@ const view: MenuOption = { label: 'view', onClick: vi.fn() };
 const emitTerminal = (
   type: 'completed' | 'failed' = 'completed',
   taskId?: string,
+  extra: Record<string, unknown> = {},
 ) => {
   bus.events = [
     {
@@ -106,7 +107,7 @@ const emitTerminal = (
       type: `source.ingest.${type}`,
       ts: new Date().toISOString(),
       scope: { kind: 'source', id: 'src-1' },
-      payload: taskId ? { task_id: taskId } : {},
+      payload: { ...(taskId ? { task_id: taskId } : {}), ...extra },
     },
     ...bus.events,
   ];
@@ -318,6 +319,94 @@ describe('WebsiteTree page management', () => {
     expect(dispatch).not.toHaveBeenCalled();
     // The pages left keep their chunks; a removed open page closes itself.
     expect(controller.reloadFile).not.toHaveBeenCalled();
+  });
+
+  const startRefresh = async (taskId = 'task-1') => {
+    const controller = fakeController();
+    captured.props!.controllerRef!.current = controller;
+    service.refreshWebsitePage.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: taskId }),
+    });
+    const page = STRUCTURE['extra.md'];
+    const refresh = menu({ name: 'extra.md', isFile: true, node: page }).find(
+      (o) => o.label === 'settings.sources.website.refreshPage',
+    )!;
+    await act(async () => refresh.onClick(new Event('click')));
+    return controller;
+  };
+
+  const toasted = () =>
+    dispatch.mock.calls.map((call) => call[0].payload) as {
+      variant: string;
+      message: string;
+    }[];
+
+  it('a change still running after the wait says so and reads the tree again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await render();
+      const controller = await startRefresh();
+      service.getWebsite.mockClear();
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60_000 + 1);
+      });
+      expect(captured.props!.statusLabel).toBeNull();
+      expect(controller.refreshDirectory).toHaveBeenCalled();
+      expect(service.getWebsite).toHaveBeenCalled();
+      expect(toasted()).toEqual([
+        { variant: 'info', message: 'settings.sources.website.stillRunning' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a change that didn't run because another held the source says to try again", async () => {
+    await render();
+    const controller = await startRefresh();
+    await act(async () => emitTerminal('failed', 'task-1', { reason: 'busy' }));
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+    expect(toasted()).toEqual([
+      { variant: 'warning', message: 'settings.sources.website.changeBusy' },
+    ]);
+  });
+
+  it.each([
+    ['wiki', 'settings.sources.website.wikiSource'],
+    ['gone', 'settings.sources.website.sourceGone'],
+  ])(
+    'a change skipped because the source is %s says so',
+    async (reason, key) => {
+      await render();
+      await startRefresh();
+      await act(async () => emitTerminal('failed', 'task-1', { reason }));
+      expect(toasted()).toEqual([
+        { variant: 'destructive', message: expect.stringMatching(`^${key}`) },
+      ]);
+    },
+  );
+
+  it('tells the host once a page change has finished', async () => {
+    const onPagesChanged = vi.fn();
+    await act(async () => {
+      root.render(
+        <WebsiteTree
+          docId="src-1"
+          sourceName="Docs"
+          onBackToDocuments={() => undefined}
+          hosts={['docs.x.io']}
+          onPagesChanged={onPagesChanged}
+        />,
+      );
+    });
+    await startRefresh();
+    expect(onPagesChanged).not.toHaveBeenCalled();
+    await act(async () => emitTerminal('failed', 'task-1'));
+    expect(onPagesChanged).not.toHaveBeenCalled();
+    await startRefresh('task-2');
+    await act(async () => emitTerminal('completed', 'task-2'));
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
   });
 
   it('a remove that fails in the worker toasts it', async () => {

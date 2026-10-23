@@ -676,7 +676,10 @@
         "saveFailed": "Impossible d’enregistrer les paramètres.",
         "loadFailed": "Impossible de charger les paramètres.",
         "lastSynced": "Dernière synchronisation {{when}}.",
-        "appliesNextSync": "Les modifications s’appliquent à la prochaine synchronisation."
+        "appliesNextSync": "Les modifications s’appliquent à la prochaine synchronisation.",
+        "stillRunning": "La modification est toujours en cours. Rouvrez la source un peu plus tard pour la voir.",
+        "changeBusy": "Une autre modification de cette source était encore en cours, celle-ci n’a donc pas été appliquée. Réessayez.",
+        "sourceGone": "Cette source n’existe plus."
       },
       "deleteSource": "Supprimer la source",
       "syncStarted": "Synchronisation de {{name}}…",

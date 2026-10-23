@@ -46,6 +46,11 @@ interface WebsiteTreeProps {
   graph?: boolean;
   /** The hosts the source fetches from (the sources list's `website.hosts`). */
   hosts: string[];
+  /**
+   * Called once a page change (add, refresh, remove) has finished, so a host
+   * showing more of the source (the graph) can read it again.
+   */
+  onPagesChanged?: () => void;
   /** `sources.sync_frequency`; never (or empty) reads "Not synced". */
   syncFrequency?: string;
   /** When the source was last ingested or synced. */
@@ -144,6 +149,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   onCrumbsChange,
   graph = false,
   hosts,
+  onPagesChanged,
   syncFrequency,
   syncedAt,
   canEdit = true,
@@ -170,10 +176,12 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   const [addOpen, setAddOpen] = useState(false);
   const [removal, setRemoval] = useState<PendingRemoval | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const { waitForTerminal, mountedRef } = useReingestSseWaiter();
+  const { waitForChange, mountedRef } = useReingestSseWaiter();
 
   const tokenRef = useRef(token);
   tokenRef.current = token;
+  const onPagesChangedRef = useRef(onPagesChanged);
+  onPagesChangedRef.current = onPagesChanged;
   useEffect(() => {
     if (!canEdit) return;
     let cancelled = false;
@@ -231,7 +239,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     } = {},
   ) => {
     setStatus(label);
-    const terminal = await waitForTerminal(docId, startedAt, { taskId });
+    const { terminal, reason } = await waitForChange(docId, startedAt, {
+      taskId,
+    });
     if (!mountedRef.current) return;
     setStatus(null);
     if (terminal === 'completed') {
@@ -239,8 +249,28 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       if (affects === undefined) controllerRef.current?.reloadFile();
       else if (affects !== false) controllerRef.current?.reloadFile(affects);
       setConfigKey((key) => key + 1);
+      onPagesChangedRef.current?.();
+    } else if (terminal === 'timeout') {
+      // Still queued or running: the buttons come back, and the tree shows
+      // whatever has landed so far.
+      await controllerRef.current?.refreshDirectory();
+      setConfigKey((key) => key + 1);
+      dispatch(
+        showActionToast({ variant: 'info', message: tr('stillRunning') }),
+      );
+    } else if (terminal === 'failed' && reason === 'busy') {
+      dispatch(
+        showActionToast({ variant: 'warning', message: tr('changeBusy') }),
+      );
     } else if (terminal === 'failed') {
-      toastFailure(failure, name);
+      toastFailure(
+        reason === 'wiki'
+          ? 'wikiSource'
+          : reason === 'gone'
+            ? 'sourceGone'
+            : failure,
+        name,
+      );
     }
   };
 
