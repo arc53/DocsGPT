@@ -91,6 +91,25 @@ def _is_wiki(doc: dict) -> bool:
 _WIKI_NO_SYNC = "A wiki is edited in place and doesn't sync."
 
 
+def _sync_refusal(text: str, code: str, status: int = 400):
+    """A refused sync request, with its text under both ``error`` and ``message``.
+
+    The connection drawer reads ``error``, older callers ``message``; ``code``
+    names the refusal so the UI can word it in the reader's language.
+
+    Args:
+        text: The refusal, in English.
+        code: Its code.
+        status: The HTTP status.
+
+    Returns:
+        Response: ``{"success": false, "error", "message", "code"}``.
+    """
+    return make_response(
+        jsonify({"success": False, "error": text, "message": text, "code": code}), status
+    )
+
+
 def _with_scheme(url: str) -> str:
     """``url``, with ``https://`` in front when it was written without a scheme, so its host can be read.
 
@@ -474,17 +493,13 @@ class ManageSync(Resource):
         sync_frequency = data["sync_frequency"]
 
         if sync_frequency not in ["never", "daily", "weekly", "monthly"]:
-            return make_response(
-                jsonify({"success": False, "message": "Invalid frequency"}), 400
-            )
+            return _sync_refusal("Invalid frequency", "bad_sync_frequency")
         try:
             with db_session() as conn:
                 # Owner or team editor; the write lands as the owner.
                 doc, ra = load_source(conn, source_id, user, "edit")
                 if sync_frequency != "never" and _is_wiki(doc):
-                    return make_response(
-                        jsonify({"success": False, "message": _WIKI_NO_SYNC}), 400
-                    )
+                    return _sync_refusal(_WIKI_NO_SYNC, "wiki")
                 SourcesRepository(conn).update(
                     str(doc["id"]), ra.owner_id, {"sync_frequency": sync_frequency}
                 )
@@ -529,30 +544,16 @@ class SyncSource(Resource):
             return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID"}), 400
-            )
+            return _sync_refusal("Invalid source ID", "invalid_source")
         owner = ra.owner_id
         if _is_wiki(doc):
-            return make_response(
-                jsonify({"success": False, "message": _WIKI_NO_SYNC}), 400
-            )
+            return _sync_refusal(_WIKI_NO_SYNC, "wiki")
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Connector sources must be synced via /api/connectors/sync",
-                    }
-                ),
-                400,
-            )
+            return _sync_refusal("Connector sources must be synced via /api/connectors/sync", "connector_source")
         source_data = normalize_remote_data(source_type, doc.get("remote_data"))
         if not source_data:
-            return make_response(
-                jsonify({"success": False, "message": "Source is not syncable"}), 400
-            )
+            return _sync_refusal("Source is not syncable", "not_syncable")
         try:
             task = sync_source.delay(
                 source_data=source_data,

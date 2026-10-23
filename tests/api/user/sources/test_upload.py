@@ -850,6 +850,27 @@ class TestUploadRemote:
 
         assert response.status_code == 400
         assert "at least one" in response.json["error"]
+        # A config error without a code of its own is still one the UI can word.
+        assert response.json["code"] == "invalid_config"
+        apply_async.assert_not_called()
+
+    def test_a_website_config_error_passes_on_its_code_and_details(self, app):
+        class ConfigError(ValueError):
+            code = "page_limit"
+            details = {"max_pages": 500}
+
+        config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
+        with patch(
+            "docsgpt.api.user.sources.upload.parse_website_config",
+            side_effect=ConfigError("A website source holds up to 500 pages"),
+        ):
+            response, apply_async = self._post_website(app, {"data": json.dumps(config)})
+
+        assert response.status_code == 400
+        assert response.json == {
+            "success": False, "error": "A website source holds up to 500 pages", "code": "page_limit",
+            "max_pages": 500,
+        }
         apply_async.assert_not_called()
 
     def test_website_source_with_an_unknown_sync_frequency_is_400(self, app):
@@ -859,6 +880,7 @@ class TestUploadRemote:
         )
 
         assert response.status_code == 400
+        assert response.json["code"] == "bad_sync_frequency"
         apply_async.assert_not_called()
 
     def test_uploads_reddit_source(self, app):

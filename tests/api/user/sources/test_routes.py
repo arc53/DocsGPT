@@ -595,6 +595,8 @@ class TestManageSync:
             request.decoded_token = {"sub": "u"}
             response = ManageSync().post()
         assert response.status_code == 400
+        assert response.json["code"] == "bad_sync_frequency"
+        assert response.json["error"] == response.json["message"]
 
     def test_returns_404_missing_source(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import ManageSync
@@ -648,6 +650,8 @@ class TestManageSync:
             request.decoded_token = {"sub": user}
             response = ManageSync().post()
         assert response.status_code == 400
+        assert response.json["code"] == "wiki"
+        assert response.json["error"] == response.json["message"]
         got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
         assert got["sync_frequency"] in (None, "never")
 
@@ -695,6 +699,9 @@ class TestSyncSource:
             response = SyncSource().post()
         assert response.status_code == 400
         mock_delay.assert_not_called()
+        # The connection drawer reads ``error``; ``code`` lets the UI word it.
+        assert response.json["code"] == "wiki"
+        assert response.json["error"] == response.json["message"]
 
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.routes import SyncSource
@@ -751,6 +758,8 @@ class TestSyncSource:
             request.decoded_token = {"sub": user}
             response = SyncSource().post()
         assert response.status_code == 400
+        assert response.json["code"] == "connector_source"
+        assert response.json["error"] == response.json["message"]
 
     def test_returns_400_for_non_syncable(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SyncSource
@@ -767,6 +776,12 @@ class TestSyncSource:
             request.decoded_token = {"sub": user}
             response = SyncSource().post()
         assert response.status_code == 400
+        assert response.json == {
+            "success": False,
+            "error": "Source is not syncable",
+            "message": "Source is not syncable",
+            "code": "not_syncable",
+        }
 
     def test_triggers_sync_task(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SyncSource

@@ -61,6 +61,24 @@ _IDEMPOTENCY_KEY_MAX_LEN = 256
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 
+def _website_config_error(err: ValueError):
+    """The 400 for a Website config ``parse_website_config`` refused, with a ``code`` the UI words.
+
+    The parser's typed error carries its ``code`` and ``details`` (the limit
+    passed, say); any other ``ValueError`` is ``invalid_config``.
+
+    Args:
+        err: The parser's error.
+
+    Returns:
+        Response: ``{"success": false, "error", "code", ...details}``.
+    """
+    details = getattr(err, "details", None) or {}
+    body = {k: v for k, v in details.items() if k not in ("success", "error", "code")}
+    body.update({"success": False, "error": str(err), "code": getattr(err, "code", None) or "invalid_config"})
+    return make_response(jsonify(body), 400)
+
+
 def _read_idempotency_key():
     """Return (key, error_response). Empty header → (None, None); oversized → (None, 400)."""
     key = request.headers.get("Idempotency-Key")
@@ -671,7 +689,12 @@ class UploadRemote(Resource):
         sync_frequency = data.get("sync_frequency") or "never"
         if sync_frequency not in _SYNC_FREQUENCIES:
             return make_response(
-                jsonify({"success": False, "error": f"Unknown sync_frequency {sync_frequency!r}"}), 400,
+                jsonify({
+                    "success": False,
+                    "error": f"Unknown sync_frequency {sync_frequency!r}",
+                    "code": "bad_sync_frequency",
+                }),
+                400,
             )
         task_name_for_dedup = (
             "ingest_connector_task"
@@ -712,7 +735,7 @@ class UploadRemote(Resource):
                 except ValueError as err:
                     if scoped_key:
                         _release_claim(scoped_key)
-                    return make_response(jsonify({"success": False, "error": str(err)}), 400)
+                    return _website_config_error(err)
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
             elif data["source"] in ("reddit", "s3"):

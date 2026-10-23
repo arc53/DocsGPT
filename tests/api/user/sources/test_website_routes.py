@@ -707,6 +707,85 @@ class TestRefreshPage:
         pages_task.delay.assert_not_called()
 
 
+class _ConfigError(ValueError):
+    """Stands in for the parser's typed config error: a ``code`` and its ``details``."""
+
+    def __init__(self, message, code, **details):
+        super().__init__(message)
+        self.code = code
+        self.details = details
+
+
+class TestRefusalCodes:
+    """Each refusal carries a ``code``, so the UI can word it in the reader's language."""
+
+    @pytest.mark.parametrize(
+        "resource, body",
+        [
+            ("WebsiteSettings", {"entries": CONFIG["entries"]}),
+            ("AddWebsitePages", {"entries": [{"url": "https://docs.x.io/new", "mode": "page"}]}),
+            ("RefreshWebsitePage", {"file_path": "a.md"}),
+            ("RemoveWebsitePages", {"file_paths": ["a.md"]}),
+        ],
+    )
+    def test_a_source_that_isnt_a_website(self, app, pg_conn, resource, body):
+        src = _seed(pg_conn, type="local", remote_data=None)
+        response, _, _ = _post(app, pg_conn, resource, src, **body)
+
+        assert response.status_code == 400
+        assert response.json["code"] == "not_website"
+
+    def test_reading_a_source_that_isnt_a_website(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        src = _seed(pg_conn, type="local", remote_data=None)
+        response = _call(app, pg_conn, WebsiteSettings, "GET", query=f"?id={src['id']}")
+
+        assert response.json["code"] == "not_website"
+
+    @pytest.mark.parametrize(
+        "resource, body",
+        [("RefreshWebsitePage", {"file_path": "nope.md"}), ("RemoveWebsitePages", {"file_paths": ["nope.md"]})],
+    )
+    def test_an_unknown_page(self, app, pg_conn, resource, body):
+        response, _, _ = _post(app, pg_conn, resource, _seed(pg_conn), **body)
+
+        assert response.status_code == 400
+        assert response.json["code"] == "not_found"
+
+    def test_an_unknown_sync_frequency(self, app, pg_conn):
+        response, _, _ = _post(
+            app, pg_conn, "WebsiteSettings", _seed(pg_conn), entries=CONFIG["entries"], sync_frequency="hourly"
+        )
+
+        assert response.status_code == 400
+        assert response.json["code"] == "bad_sync_frequency"
+
+    @pytest.mark.parametrize(
+        "resource, body",
+        [
+            ("WebsiteSettings", {"entries": CONFIG["entries"]}),
+            ("AddWebsitePages", {"entries": [{"url": "https://docs.x.io/new", "mode": "page"}]}),
+        ],
+    )
+    def test_a_config_error_passes_on_its_code_and_details(self, app, pg_conn, resource, body):
+        src = _seed(pg_conn)
+        err = _ConfigError("A website source holds up to 20 sites", "site_limit", max_sites=20)
+        with patch("docsgpt.api.user.sources.website.parse_website_config", side_effect=err):
+            response, _, _ = _post(app, pg_conn, resource, src, **body)
+
+        assert response.status_code == 400
+        assert response.json == {
+            "success": False, "error": "A website source holds up to 20 sites", "code": "site_limit", "max_sites": 20,
+        }
+
+    def test_a_config_error_without_a_code_is_invalid_config(self, app, pg_conn):
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", _seed(pg_conn), entries=[{"url": ""}])
+
+        assert response.status_code == 400
+        assert response.json["code"] == "invalid_config"
+
+
 class TestBodyTypes:
     """A body of the wrong shape is a 400, never a 500."""
 

@@ -48,6 +48,18 @@ def _error(message: str, status: int = 400, code: Optional[str] = None, **detail
     return make_response(jsonify(body), status)
 
 
+def _config_error(err: ValueError) -> Response:
+    """The 400 for a config ``parse_website_config`` refused.
+
+    The parser's typed error carries a ``code`` (``site_limit``,
+    ``invalid_address``, ...) and ``details`` for its wording; any other
+    ``ValueError`` is ``invalid_config``.
+    """
+    details = getattr(err, "details", None) or {}
+    details = {k: v for k, v in details.items() if k not in ("message", "status", "code", "success", "error")}
+    return _error(str(err), code=getattr(err, "code", None) or "invalid_config", **details)
+
+
 def _is_str_list(value: Any) -> bool:
     """Whether ``value`` is a list of strings."""
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
@@ -239,7 +251,7 @@ class WebsiteSettings(Resource):
             return denied_response(err)
         config = _website_config(doc)
         if config is None:
-            return _error("Not a website source")
+            return _error("Not a website source", code="not_website")
         report = (doc.get("metadata") or {}).get("website")
         return make_response(
             jsonify({
@@ -267,13 +279,13 @@ class WebsiteSettings(Resource):
             return refusal
         sync_frequency = data.get("sync_frequency")
         if sync_frequency is not None and sync_frequency not in _SYNC_FREQUENCIES:
-            return _error(f"Unknown sync_frequency {sync_frequency!r}")
+            return _error(f"Unknown sync_frequency {sync_frequency!r}", code="bad_sync_frequency")
         try:
             with db_session() as conn:
                 doc, ra = _load_locked(conn, data["source_id"], user, "edit")
                 stored = _website_config(doc)
                 if stored is None:
-                    return _error("Not a website source")
+                    return _error("Not a website source", code="not_website")
                 refusal = _wiki_refusal(doc)
                 if refusal is not None:
                     return refusal
@@ -288,7 +300,7 @@ class WebsiteSettings(Resource):
                 try:
                     config = parse_website_config(raw, enforce_page_cap=False)
                 except ValueError as err:
-                    return _error(str(err))
+                    return _config_error(err)
                 refusal = _growth_refusal(config, stored)
                 if refusal is not None:
                     return refusal
@@ -346,7 +358,7 @@ class RemoveWebsitePages(Resource):
                     return refusal
                 stored = _website_config(doc)
                 if stored is None:
-                    return _error("Not a website source")
+                    return _error("Not a website source", code="not_website")
                 structure = doc.get("directory_structure") or {}
                 if not isinstance(structure, dict):
                     structure = {}
@@ -360,7 +372,7 @@ class RemoveWebsitePages(Resource):
                     pages.extend(p for p in folder_pages if p[0] not in named)
                     section_rule = folder_skip_rule(directory_path, folder_pages)
                 if not pages:
-                    return _error("No such pages in this source")
+                    return _error("No such pages in this source", code="not_found")
 
                 config = _without_pages(stored, pages, section_rule)
                 if not config["entries"]:
@@ -428,13 +440,13 @@ class AddWebsitePages(Resource):
         try:
             new_entries = parse_website_config({"entries": data["entries"]})["entries"]
         except ValueError as err:
-            return _error(str(err))
+            return _config_error(err)
         try:
             with db_session() as conn:
                 doc, ra = _load_locked(conn, data["source_id"], user, "edit")
                 config = _website_config(doc)
                 if config is None:
-                    return _error("Not a website source")
+                    return _error("Not a website source", code="not_website")
                 refusal = _wiki_refusal(doc)
                 if refusal is not None:
                     return refusal
@@ -456,7 +468,7 @@ class AddWebsitePages(Resource):
                         {**config, "entries": config["entries"] + added}, enforce_page_cap=False
                     )
                 except ValueError as err:
-                    return _error(str(err))
+                    return _config_error(err)
                 refusal = _growth_refusal(merged, config)
                 if refusal is not None:
                     return refusal
@@ -531,13 +543,13 @@ class RefreshWebsitePage(Resource):
         except AccessDenied as err:
             return denied_response(err)
         if _website_config(doc) is None:
-            return _error("Not a website source")
+            return _error("Not a website source", code="not_website")
         refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
         if refusal is not None:
             return refusal
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
         if data["file_path"] not in dict(web_pages(structure)):
-            return _error("No such page in this source")
+            return _error("No such page in this source", code="not_found")
         task = website_pages.delay(str(doc["id"]), ra.owner_id, "refresh", file_path=data["file_path"])
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
