@@ -1595,7 +1595,9 @@ side panel (see Side panels). Don't add another pattern.
 The three-dots menu on a card, tile or row. Pass `options: MenuOption[]`
 (`label`, `onClick`, optional lucide `icon`, `variant: 'destructive'`,
 `disabled`, `separatorBefore` for a rule above a row, which sets a
-destructive Remove apart from the reversible items; `icon` also takes an
+destructive Remove apart from the reversible items (on the first rendered
+row it draws no rule, so a host that leaves out the rows above needn't
+clear it); `icon` also takes an
 element, such as a `ConnectorIcon`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.
