@@ -1,6 +1,7 @@
 """Tests for the shared web page extractor (main content → Markdown)."""
 
 import re
+import time
 from unittest.mock import patch
 
 import pytest
@@ -226,3 +227,67 @@ class TestPageDocument:
         assert page_document(body, "application/json", URL) is None
         doc = page_document(body, "application/json", URL, explicit=True)
         assert doc.text == body.decode()
+
+    @pytest.mark.parametrize(
+        "line, title",
+        [
+            ("# Example docs", "Example docs"),
+            ("# Example docs ##", "Example docs"),
+            ("#\tTabbed  #  ", "Tabbed"),
+            ("# C# notes", "C# notes"),
+            ("# Issue#", "Issue#"),
+        ],
+    )
+    def test_markdown_title_drops_a_closing_hash_run(self, line, title):
+        doc = page_document(f"{line}\n\nBody text.".encode(), "text/markdown", URL)
+
+        assert doc.extra_info["title"] == title
+
+    @pytest.mark.parametrize("filler", [" ", "#", " #", "\t"])
+    def test_a_long_heading_line_cannot_stall_the_title(self, filler):
+        # A backtracking title pattern took 45 s on one 2 kB line.
+        body = ("# a" + filler * 20000 + "x\n\nhello").encode()
+
+        started = time.monotonic()
+        doc = page_document(body, "text/plain; charset=utf-8", URL)
+
+        assert time.monotonic() - started < 1
+        assert doc.extra_info["title"].startswith("a")
+
+    def test_title_is_read_from_the_start_of_the_text_only(self):
+        body = ("filler line\n" * 2000 + "# Late heading\n").encode()
+
+        doc = page_document(body, "text/markdown", URL)
+
+        assert "title" not in doc.extra_info
+
+    def test_json_is_never_searched_for_a_title(self):
+        with patch("docsgpt.parser.remote.page_content._ATX_TITLE") as pattern:
+            doc = page_document(b'"# not a heading"', "application/json", URL, explicit=True)
+
+        pattern.search.assert_not_called()
+        assert "title" not in doc.extra_info
+
+
+class TestKeepLinksCost:
+    def test_many_links_in_one_block_stay_linear(self):
+        # Each link used to re-read its whole block's text: quadratic in links.
+        links = "".join(f'word <a href="/l{i}">x{i}</a> ' for i in range(4000))
+        body = f"<html><body><main><p>{links}</p></main></body></html>".encode()
+
+        started = time.monotonic()
+        doc = page_document(body, "text/html", URL, keep_links=True)
+
+        assert time.monotonic() - started < 5
+        assert "[x3999](https://docs.example.com/l3999)" in doc.text
+
+    def test_bare_and_inline_links_are_still_told_apart(self):
+        body = _page(
+            "<main><ul><li><a href='/menu'>Menu entry</a></li></ul>"
+            "<p>Read the <a href='/guide'>setup guide</a> first. " + "More words here. " * 10 + "</p></main>"
+        )
+
+        doc = page_document(body.encode(), "text/html", URL, keep_links=True)
+
+        assert "[setup guide](https://docs.example.com/guide)" in doc.text
+        assert "Menu entry" in doc.text and "(https://docs.example.com/menu)" not in doc.text

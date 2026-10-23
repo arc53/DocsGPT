@@ -150,12 +150,15 @@ class _LinkConverter(MarkdownConverter):
         super().__init__(**MARKDOWNIFY_OPTIONS, escape_underscores=False, escape_asterisks=False, escape_misc=False)
         self.base_url = base_url
         self.keep_links = keep_links
+        # Each text block's text, read once: a paragraph of a thousand links
+        # re-read its whole text per link.
+        self._block_text: Dict[int, str] = {}
 
     def convert_a(self, el, text, *args, **kwargs):
         text = (text or "").strip()
         if not text:
             return ""
-        if not self.keep_links or _is_bare_link(el):
+        if not self.keep_links or _is_bare_link(el, self._block_text):
             return text
         href = (el.get("href") or "").strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
@@ -166,12 +169,26 @@ class _LinkConverter(MarkdownConverter):
         return f"[{text}]({url})"
 
 
-def _is_bare_link(link: Tag) -> bool:
-    """Whether a link is the whole text of its block (a menu item, a card, a TOC entry)."""
+def _is_bare_link(link: Tag, block_text: Optional[Dict[int, str]] = None) -> bool:
+    """Whether a link is the whole text of its block (a menu item, a card, a TOC entry).
+
+    Args:
+        link: The ``<a>`` element.
+        block_text: Block texts by ``id``, cached for one conversion (the tree
+            doesn't change while it is converted); ``None`` reads each anew.
+
+    Returns:
+        True when the link's text is all of its block's text, or it has no block.
+    """
     block = link.find_parent(_TEXT_BLOCKS)
     if block is None:
         return True
-    return block.get_text(" ", strip=True) == link.get_text(" ", strip=True)
+    if block_text is None:
+        return block.get_text(" ", strip=True) == link.get_text(" ", strip=True)
+    text = block_text.get(id(block))
+    if text is None:
+        text = block_text[id(block)] = block.get_text(" ", strip=True)
+    return text == link.get_text(" ", strip=True)
 
 
 def _text_length(element: Tag) -> int:
@@ -294,7 +311,31 @@ def extract_page(html: Union[str, bytes], url: str, keep_links: bool = False) ->
 # as written. JSON counts only for a page added by address: there it was asked
 # for, while a crawl or sitemap reaching JSON has hit an API or a feed.
 _PLAIN_TEXT_TYPES = ("text/plain", "text/markdown", "text/x-markdown")
-_ATX_TITLE = re.compile(r"^#\s+(.+?)\s*#*\s*$", re.MULTILINE)
+# A level-one ATX heading line. Linear on any input: the closing ``#`` run is
+# stripped in Python (a lazy group between optional runs backtracked cubically).
+_ATX_TITLE = re.compile(r"^#[ \t]+(.*)$", re.MULTILINE)
+# A title is the text's first heading; only this much of the start is searched.
+_TITLE_SCAN_CHARS = 4096
+
+
+def _markdown_title(text: str) -> Optional[str]:
+    """The first ``# Heading`` near the start of plain text or Markdown.
+
+    Args:
+        text: The page text.
+
+    Returns:
+        The heading without its optional closing ``#`` run, or ``None``.
+    """
+    match = _ATX_TITLE.search(text, 0, _TITLE_SCAN_CHARS)
+    if not match:
+        return None
+    title = match.group(1).rstrip(" \t")
+    # A closing run counts only after a space: ``# C#`` keeps its ``#``.
+    unclosed = title.rstrip("#")
+    if unclosed != title and (not unclosed or unclosed[-1] in " \t"):
+        title = unclosed.rstrip(" \t")
+    return title or None
 
 
 def _media_type(content_type: Optional[str]) -> str:
@@ -379,9 +420,10 @@ def page_document(
             logger.info(f"Skipping {url}: no text")
             return None
         metadata = {"source": url}
-        heading = _ATX_TITLE.search(text)
-        if heading and _media_type(content_type) in _PLAIN_TEXT_TYPES:
-            metadata["title"] = heading.group(1)
+        # JSON has no headings to title it by.
+        title = _markdown_title(text) if _media_type(content_type) in _PLAIN_TEXT_TYPES else None
+        if title:
+            metadata["title"] = title
         metadata["file_path"] = url_to_virtual_path(url, include_host)
         return Document(text, extra_info=metadata)
     page = extract_page(body, url, keep_links=keep_links)
