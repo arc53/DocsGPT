@@ -556,7 +556,8 @@
         "add": "No se pudo añadir el fragmento",
         "save": "No se pudo guardar el fragmento",
         "delete": "No se pudo eliminar el fragmento",
-        "load": "No se pudieron cargar los fragmentos"
+        "load": "No se pudieron cargar los fragmentos",
+        "busy": "Hay otro cambio en curso en esta fuente. Inténtalo de nuevo cuando termine."
       },
       "chunkPosition": "Fragmento {{n}} de {{total}} · {{tokens}} tokens",
       "chunkCrumb": "Fragmento {{n}}",
@@ -679,7 +680,20 @@
         "appliesNextSync": "Los cambios se aplican en la próxima sincronización.",
         "stillRunning": "El cambio sigue en curso. Vuelve a abrir la fuente dentro de un rato para verlo.",
         "changeBusy": "Otro cambio en esta fuente seguía en curso, así que este no se aplicó. Inténtalo de nuevo.",
-        "sourceGone": "Esta fuente ya no existe."
+        "sourceGone": "Esta fuente ya no existe.",
+        "siteLimit_one": "Una fuente puede obtener contenido de hasta {{count}} sitio.",
+        "siteLimit_other": "Una fuente puede obtener contenido de hasta {{count}} sitios.",
+        "siteLimit_many": "Una fuente puede obtener contenido de hasta {{count}} sitios.",
+        "skipLimit_one": "Una fuente puede omitir hasta {{count}} dirección.",
+        "skipLimit_other": "Una fuente puede omitir hasta {{count}} direcciones.",
+        "skipLimit_many": "Una fuente puede omitir hasta {{count}} direcciones.",
+        "urlTooLong_one": "Una dirección puede tener hasta {{count}} carácter.",
+        "urlTooLong_other": "Una dirección puede tener hasta {{count}} caracteres.",
+        "urlTooLong_many": "Una dirección puede tener hasta {{count}} caracteres.",
+        "invalidAddress": "«{{url}}» no es una dirección que esta fuente pueda obtener.",
+        "invalidConfig": "Esta configuración no es válida. Revisa las direcciones y los límites.",
+        "notFound": "Esa página o carpeta ya no está en esta fuente. Vuelve a cargarla e inténtalo de nuevo.",
+        "badSyncFrequency": "Esa frecuencia de sincronización no está disponible."
       },
       "deleteSource": "Eliminar fuente",
       "syncStarted": "Sincronizando {{name}}…",

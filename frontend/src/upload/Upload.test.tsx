@@ -913,6 +913,16 @@ describe('Upload source-type tiles', () => {
       'No pages to add',
     ],
     [
+      'its own words for a code it knows',
+      JSON.stringify({
+        success: false,
+        code: 'site_limit',
+        max_sites: 20,
+        error: 'A source holds up to 20 sites',
+      }),
+      'settings.sources.website.siteLimit',
+    ],
+    [
       'a generic line otherwise',
       '<html>Bad Request</html>',
       'common.actionFailed',

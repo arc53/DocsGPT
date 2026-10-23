@@ -540,7 +540,8 @@
         "add": "無法新增文本塊",
         "save": "無法儲存文本塊",
         "delete": "無法刪除文本塊",
-        "load": "無法載入文本塊"
+        "load": "無法載入文本塊",
+        "busy": "此來源的另一項變更正在進行。請在其完成後再試一次。"
       },
       "chunkPosition": "第 {{n}} 個文本塊，共 {{total}} 個 · {{tokens}} Token",
       "chunkCrumb": "第 {{n}} 個文本塊",
@@ -654,7 +655,17 @@
         "appliesNextSync": "變更將在下次同步時生效。",
         "stillRunning": "變更仍在進行中。請稍後重新開啟此來源查看。",
         "changeBusy": "此來源的另一項變更仍在進行，因此本次變更未執行。請再試一次。",
-        "sourceGone": "此來源已不存在。"
+        "sourceGone": "此來源已不存在。",
+        "siteLimit_one": "一個來源最多可從 {{count}} 個網站擷取內容。",
+        "siteLimit_other": "一個來源最多可從 {{count}} 個網站擷取內容。",
+        "skipLimit_one": "一個來源最多可略過 {{count}} 個網址。",
+        "skipLimit_other": "一個來源最多可略過 {{count}} 個網址。",
+        "urlTooLong_one": "網址最長 {{count}} 個字元。",
+        "urlTooLong_other": "網址最長 {{count}} 個字元。",
+        "invalidAddress": "「{{url}}」不是此來源可以擷取的網址。",
+        "invalidConfig": "這些設定無效。請檢查網址和限制。",
+        "notFound": "此來源中已沒有該頁面或資料夾。請重新載入後再試一次。",
+        "badSyncFrequency": "該同步排程無法使用。"
       },
       "deleteSource": "刪除來源",
       "syncStarted": "正在同步 {{name}}…",

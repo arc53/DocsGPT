@@ -542,7 +542,8 @@
         "add": "Der Chunk konnte nicht hinzugefügt werden",
         "save": "Der Chunk konnte nicht gespeichert werden",
         "delete": "Der Chunk konnte nicht gelöscht werden",
-        "load": "Die Chunks konnten nicht geladen werden"
+        "load": "Die Chunks konnten nicht geladen werden",
+        "busy": "Gerade läuft eine andere Änderung an dieser Quelle. Versuche es erneut, sobald sie fertig ist."
       },
       "chunkPosition": "Chunk {{n}} von {{total}} · {{tokens}} Tokens",
       "chunkCrumb": "Chunk {{n}}",
@@ -657,7 +658,17 @@
         "appliesNextSync": "Änderungen gelten ab der nächsten Synchronisierung.",
         "stillRunning": "Die Änderung läuft noch. Öffne die Quelle später erneut, um sie zu sehen.",
         "changeBusy": "Eine andere Änderung an dieser Quelle lief noch, daher wurde diese nicht ausgeführt. Versuche es erneut.",
-        "sourceGone": "Diese Quelle gibt es nicht mehr."
+        "sourceGone": "Diese Quelle gibt es nicht mehr.",
+        "siteLimit_one": "Eine Quelle kann Inhalte von bis zu {{count}} Website abrufen.",
+        "siteLimit_other": "Eine Quelle kann Inhalte von bis zu {{count}} Websites abrufen.",
+        "skipLimit_one": "Eine Quelle kann bis zu {{count}} Adresse überspringen.",
+        "skipLimit_other": "Eine Quelle kann bis zu {{count}} Adressen überspringen.",
+        "urlTooLong_one": "Eine Adresse darf höchstens {{count}} Zeichen lang sein.",
+        "urlTooLong_other": "Eine Adresse darf höchstens {{count}} Zeichen lang sein.",
+        "invalidAddress": "„{{url}}“ ist keine Adresse, die diese Quelle abrufen kann.",
+        "invalidConfig": "Diese Einstellungen sind ungültig. Prüfe die Adressen und Limits.",
+        "notFound": "Diese Seite oder dieser Ordner ist nicht mehr in der Quelle. Lade sie neu und versuche es erneut.",
+        "badSyncFrequency": "Dieser Synchronisierungsplan ist nicht verfügbar."
       },
       "deleteSource": "Quelle löschen",
       "syncStarted": "{{name}} wird synchronisiert…",

@@ -556,7 +556,8 @@
         "add": "Impossible d’ajouter le fragment",
         "save": "Impossible d’enregistrer le fragment",
         "delete": "Impossible de supprimer le fragment",
-        "load": "Impossible de charger les fragments"
+        "load": "Impossible de charger les fragments",
+        "busy": "Une autre modification de cette source est en cours. Réessayez une fois qu’elle est terminée."
       },
       "chunkPosition": "Fragment {{n}} sur {{total}} · {{tokens}} jetons",
       "chunkCrumb": "Fragment {{n}}",
@@ -679,7 +680,20 @@
         "appliesNextSync": "Les modifications s’appliquent à la prochaine synchronisation.",
         "stillRunning": "La modification est toujours en cours. Rouvrez la source un peu plus tard pour la voir.",
         "changeBusy": "Une autre modification de cette source était encore en cours, celle-ci n’a donc pas été appliquée. Réessayez.",
-        "sourceGone": "Cette source n’existe plus."
+        "sourceGone": "Cette source n’existe plus.",
+        "siteLimit_one": "Une source peut récupérer le contenu de {{count}} site au plus.",
+        "siteLimit_other": "Une source peut récupérer le contenu de {{count}} sites au plus.",
+        "siteLimit_many": "Une source peut récupérer le contenu de {{count}} sites au plus.",
+        "skipLimit_one": "Une source peut ignorer jusqu’à {{count}} adresse.",
+        "skipLimit_other": "Une source peut ignorer jusqu’à {{count}} adresses.",
+        "skipLimit_many": "Une source peut ignorer jusqu’à {{count}} adresses.",
+        "urlTooLong_one": "Une adresse peut compter jusqu’à {{count}} caractère.",
+        "urlTooLong_other": "Une adresse peut compter jusqu’à {{count}} caractères.",
+        "urlTooLong_many": "Une adresse peut compter jusqu’à {{count}} caractères.",
+        "invalidAddress": "« {{url}} » n’est pas une adresse que cette source peut récupérer.",
+        "invalidConfig": "Ces paramètres ne sont pas valides. Vérifiez les adresses et les limites.",
+        "notFound": "Cette page ou ce dossier ne fait plus partie de la source. Rechargez-la et réessayez.",
+        "badSyncFrequency": "Cette fréquence de synchronisation n’est pas disponible."
       },
       "deleteSource": "Supprimer la source",
       "syncStarted": "Synchronisation de {{name}}…",

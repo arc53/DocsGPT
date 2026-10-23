@@ -105,7 +105,8 @@ function isBlockedIpv4(host: string): boolean {
 /**
  * A typed address as a fetchable URL: trimmed, `https://` added to a bare
  * host, anything but http(s) refused, and so is a host the backend refuses
- * to fetch (localhost, a private or reserved IPv4 address).
+ * to fetch (localhost, a private or reserved IPv4 address). A bracketed IPv6
+ * address is kept; the backend decides which of those it may reach.
  */
 export function normalizeUrl(value: string): string | null {
   const trimmed = value.trim();
@@ -117,7 +118,8 @@ export function normalizeUrl(value: string): string | null {
     const url = new URL(withScheme);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     const host = url.hostname.toLowerCase();
-    if (!host.includes('.') || BLOCKED_HOSTS.has(host)) return null;
+    const ipv6 = host.startsWith('[') && host.endsWith(']');
+    if ((!ipv6 && !host.includes('.')) || BLOCKED_HOSTS.has(host)) return null;
     if (isBlockedIpv4(host)) return null;
     return withScheme;
   } catch {
@@ -294,14 +296,58 @@ const REFUSAL_KEYS = new Map<unknown, string>([
   ['wiki', 'wikiSource'],
   ['chunks_unsupported', 'chunksUnsupported'],
   ['last_entry', 'removeLast'],
+  ['invalid_config', 'invalidConfig'],
+  ['not_found', 'notFound'],
+  ['bad_sync_frequency', 'badSyncFrequency'],
 ]);
+
+/** Codes worded with the limit the refusal names: [key, detail field]. */
+const LIMIT_KEYS = new Map<unknown, [string, string]>([
+  ['page_limit', ['pageLimit', 'max_pages']],
+  ['site_limit', ['siteLimit', 'max_sites']],
+  ['skip_limit', ['skipLimit', 'max_skip']],
+  ['url_too_long', ['urlTooLong', 'max_length']],
+]);
+
+/**
+ * A refusal's `code` in the user's language, with the details it names (the
+ * limit, the address), or null for a code the UI doesn't word or one that
+ * came without its detail.
+ *
+ * @param t The translate function.
+ * @param body The response's JSON, if it parsed.
+ */
+export function websiteRefusalForCode(
+  t: TFunction,
+  body: unknown,
+): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const fields = body as Record<string, unknown>;
+  const { code } = fields;
+  const limit = LIMIT_KEYS.get(code);
+  if (limit) {
+    const count = fields[limit[1]];
+    return typeof count === 'number'
+      ? t(`settings.sources.website.${limit[0]}`, { count })
+      : null;
+  }
+  if (code === 'invalid_address')
+    return typeof fields.url === 'string' && fields.url
+      ? t('settings.sources.website.invalidAddress', {
+          url: fields.url,
+          interpolation: { escapeValue: false },
+        })
+      : null;
+  const key = REFUSAL_KEYS.get(code);
+  return key ? t(`settings.sources.website.${key}`) : null;
+}
 
 /**
  * What to tell the user when a /api/website route refuses a request.
  *
- * A code the UI knows is worded here (a wiki, a vector store that can't
- * change single pages, the last entry, the page cap). Any other 400 carries the server's own message (a config past its
- * limits, a page that isn't there), which is shown as written.
+ * A code the UI knows is worded here (see {@link websiteRefusalForCode}).
+ * Any other 400 carries the server's own message, which is shown as written
+ * as a last resort.
  *
  * @param t The translate function.
  * @param status The response's HTTP status.
@@ -314,12 +360,10 @@ export function websiteRefusal(
   status: number,
   body: unknown,
 ): string | null {
+  const worded = websiteRefusalForCode(t, body);
+  if (worded) return worded;
   if (!body || typeof body !== 'object') return null;
-  const { code, error, max_pages: maxPages } = body as Record<string, unknown>;
-  if (code === 'page_limit')
-    return t('settings.sources.website.pageLimit', { count: maxPages });
-  const key = REFUSAL_KEYS.get(code);
-  if (key) return t(`settings.sources.website.${key}`);
+  const { error } = body as Record<string, unknown>;
   if (status === 400 && typeof error === 'string' && error.trim()) return error;
   return null;
 }

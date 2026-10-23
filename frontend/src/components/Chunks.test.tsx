@@ -858,6 +858,60 @@ describe('Chunks', () => {
     expect(drawer()!.querySelector('textarea')!.value).toBe('New text');
   });
 
+  const busy = async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({ error: 'Source is busy', code: 'source_busy' }),
+  });
+
+  it('a save refused while a page change holds the source says so', async () => {
+    service.updateChunk.mockImplementation(busy);
+    await render({ embedded: true });
+    await act(async () => tile()!.click());
+    await act(async () => buttonByText('modals.chunk.edit')!.click());
+    await act(async () =>
+      setFieldValue(drawer()!.querySelector('textarea')!, 'New text'),
+    );
+    await act(async () => buttonByText('modals.chunk.save')!.click());
+    const alert = drawer()!.querySelector('[data-slot="alert"]')!;
+    expect(alert.textContent).toBe('settings.sources.chunkErrors.busy');
+    expect(drawer()!.querySelector('textarea')!.value).toBe('New text');
+  });
+
+  it('an add refused while the source is busy says so', async () => {
+    service.addChunk.mockImplementation(busy);
+    await render({ embedded: true, path: 'a.md' });
+    await act(async () => buttonByText('settings.sources.addChunk')!.click());
+    await act(async () =>
+      setFieldValue(drawer()!.querySelector('textarea')!, 'Fresh'),
+    );
+    await act(async () => buttonByText('modals.chunk.add')!.click());
+    expect(drawer()!.querySelector('[data-slot="alert"]')!.textContent).toBe(
+      'settings.sources.chunkErrors.busy',
+    );
+  });
+
+  it('a delete refused while the source is busy says so in the dialog', async () => {
+    service.deleteChunk.mockImplementation(busy);
+    await render({ embedded: true });
+    await act(async () => tile()!.click());
+    const trigger = buttonByLabel('settings.sources.menuAlt')!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const del = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'modals.chunk.delete')!;
+    await act(async () => del.click());
+    await act(async () => buttonByText('modals.chunk.delete')!.click());
+    expect(document.body.textContent).toContain(
+      'settings.sources.chunkErrors.busy',
+    );
+  });
+
   it('Add chunk opens the drawer empty, adds and stays on the grid', async () => {
     service.addChunk.mockImplementation(async () => ({ ok: true }));
     await render({ embedded: true, path: 'a.md' });

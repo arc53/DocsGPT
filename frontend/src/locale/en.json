@@ -542,7 +542,8 @@
         "add": "Could not add the chunk",
         "save": "Could not save the chunk",
         "delete": "Could not delete the chunk",
-        "load": "Could not load the chunks"
+        "load": "Could not load the chunks",
+        "busy": "Another change to this source is running. Try again once it’s done."
       },
       "chunkPosition": "Chunk {{n}} of {{total}} · {{tokens}} tokens",
       "chunkCrumb": "Chunk {{n}}",
@@ -657,7 +658,17 @@
         "appliesNextSync": "Changes apply at the next sync.",
         "stillRunning": "This change is still running. Open the source again in a while to see it.",
         "changeBusy": "Another change to this source was still running, so this one didn’t run. Try again.",
-        "sourceGone": "This source no longer exists."
+        "sourceGone": "This source no longer exists.",
+        "siteLimit_one": "A source can fetch from up to {{count}} site.",
+        "siteLimit_other": "A source can fetch from up to {{count}} sites.",
+        "skipLimit_one": "A source can skip up to {{count}} address.",
+        "skipLimit_other": "A source can skip up to {{count}} addresses.",
+        "urlTooLong_one": "An address can be up to {{count}} character long.",
+        "urlTooLong_other": "An address can be up to {{count}} characters long.",
+        "invalidAddress": "“{{url}}” isn’t an address this source can fetch.",
+        "invalidConfig": "These settings aren’t valid. Check the addresses and limits.",
+        "notFound": "That page or folder isn’t in this source any more. Reload it and try again.",
+        "badSyncFrequency": "That sync schedule isn’t available."
       },
       "deleteSource": "Delete source",
       "syncStarted": "Syncing {{name}}…",

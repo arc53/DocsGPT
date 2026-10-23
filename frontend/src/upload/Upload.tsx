@@ -2,6 +2,7 @@ import { ArrowRight, FileText, X } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
@@ -78,6 +79,7 @@ import {
   type SyncFrequency,
   type WebsiteDraft,
   websiteConfig,
+  websiteRefusalForCode,
 } from './website';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
@@ -86,19 +88,27 @@ const MAX_UPLOAD_BYTES = 25000000;
 const SERVICE_TILE_LIMIT = 6;
 
 /**
- * Why the server refused an upload or ingest: its JSON `error` or `message`
- * when it sent one, else a generic line (never the HTTP status text).
+ * Why the server refused an upload or ingest: a Website refusal `code` in
+ * the user's language, else its JSON `error` or `message` when it sent one,
+ * else a generic line (never the HTTP status text).
  *
+ * @param t The translate function.
  * @param responseText The response body.
  * @param fallback The localized generic message.
  * @returns The message for the upload toast.
  */
-function refusalMessage(responseText: string, fallback: string): string {
+function refusalMessage(
+  t: TFunction,
+  responseText: string,
+  fallback: string,
+): string {
   try {
     const data = JSON.parse(responseText) as {
       error?: unknown;
       message?: unknown;
     };
+    const worded = websiteRefusalForCode(t, data);
+    if (worded) return worded;
     for (const value of [data?.error, data?.message])
       if (typeof value === 'string' && value.trim()) return value;
   } catch {
@@ -718,7 +728,7 @@ function Upload({
       } else {
         handleTaskFailure(
           clientTaskId,
-          refusalMessage(xhr.responseText, t('common.actionFailed')),
+          refusalMessage(t, xhr.responseText, t('common.actionFailed')),
         );
       }
     };
@@ -819,7 +829,7 @@ function Upload({
       } else {
         handleTaskFailure(
           clientTaskId,
-          refusalMessage(xhr.responseText, t('common.actionFailed')),
+          refusalMessage(t, xhr.responseText, t('common.actionFailed')),
         );
       }
     };

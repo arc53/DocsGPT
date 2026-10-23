@@ -16,6 +16,18 @@ import { formatCount, intlLocale } from '../utils/dateTimeUtils';
  */
 export type LinkedChunk = { id?: string; search: string; path?: string };
 
+/**
+ * Whether a refused chunk write was turned away because a page change or a
+ * sync holds the source (409 `source_busy`): it can be tried again.
+ *
+ * @param response The refused response; its body is read.
+ */
+export async function isSourceBusy(response: Response): Promise<boolean> {
+  if (response.status !== 409) return false;
+  const data = await response.json().catch(() => null);
+  return data?.code === 'source_busy';
+}
+
 /** What a chunk card shows when the token count is genuinely unknown. */
 export const UNKNOWN_TOKEN_COUNT = '-';
 

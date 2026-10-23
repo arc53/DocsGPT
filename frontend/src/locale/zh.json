@@ -540,7 +540,8 @@
         "add": "无法添加文本块",
         "save": "无法保存文本块",
         "delete": "无法删除文本块",
-        "load": "无法加载文本块"
+        "load": "无法加载文本块",
+        "busy": "此来源的另一项更改正在进行。请在其完成后重试。"
       },
       "chunkPosition": "第 {{n}} 个文本块，共 {{total}} 个 · {{tokens}} 个令牌",
       "chunkCrumb": "第 {{n}} 个文本块",
@@ -654,7 +655,17 @@
         "appliesNextSync": "更改将在下次同步时生效。",
         "stillRunning": "更改仍在进行中。请稍后重新打开此来源查看。",
         "changeBusy": "此来源的另一项更改仍在进行，因此本次更改未执行。请重试。",
-        "sourceGone": "此来源已不存在。"
+        "sourceGone": "此来源已不存在。",
+        "siteLimit_one": "一个来源最多可从 {{count}} 个网站获取内容。",
+        "siteLimit_other": "一个来源最多可从 {{count}} 个网站获取内容。",
+        "skipLimit_one": "一个来源最多可跳过 {{count}} 个地址。",
+        "skipLimit_other": "一个来源最多可跳过 {{count}} 个地址。",
+        "urlTooLong_one": "地址最长 {{count}} 个字符。",
+        "urlTooLong_other": "地址最长 {{count}} 个字符。",
+        "invalidAddress": "“{{url}}”不是此来源可以获取的地址。",
+        "invalidConfig": "这些设置无效。请检查地址和限制。",
+        "notFound": "此来源中已没有该页面或文件夹。请重新加载后再试。",
+        "badSyncFrequency": "该同步计划不可用。"
       },
       "deleteSource": "删除来源",
       "syncStarted": "正在同步 {{name}}…",

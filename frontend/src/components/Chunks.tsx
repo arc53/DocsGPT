@@ -29,6 +29,7 @@ import {
   abbreviateCount,
   chunkPreviewText,
   formatChunkTokens,
+  isSourceBusy,
   type LinkedChunk,
 } from './chunkUtils';
 import SearchInput from './SearchInput';
@@ -138,6 +139,12 @@ interface ChunksProps {
 
 type SheetMode = 'edit' | 'add';
 
+/** Why a save failed: the source was busy (a page change or sync), or else. */
+type SaveError = 'busy' | 'failed' | null;
+
+/** A delete the source turned away while a page change or sync held it. */
+class SourceBusy extends Error {}
+
 /** Whether the chunk's cached prompt-injection score is flagged (suspected or high). */
 const isFlagged = (injection?: ChunkInjection | null): boolean =>
   Boolean(injection?.level);
@@ -219,7 +226,7 @@ const Chunks: React.FC<ChunksProps> = ({
   // discard check compares against it, not a default a later fetch moved.
   const [addBaselineTitle, setAddBaselineTitle] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const [saveError, setSaveError] = useState<SaveError>(null);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
@@ -507,20 +514,20 @@ const Chunks: React.FC<ChunksProps> = ({
       mode === 'edit' ? openChunk?.metadata?.title || '' : baseline,
     );
     setAddBaselineTitle(baseline);
-    setSaveFailed(false);
+    setSaveError(null);
     setSheetMode(mode);
     setSheetOpen(true);
   };
 
   const closeSheet = () => {
     setSheetOpen(false);
-    setSaveFailed(false);
+    setSaveError(null);
   };
 
   const handleAddChunk = async (text: string, title: string) => {
     if (!text.trim()) return;
     setSaving(true);
-    setSaveFailed(false);
+    setSaveError(null);
     try {
       const response = await userService.addChunk(
         {
@@ -534,12 +541,15 @@ const Chunks: React.FC<ChunksProps> = ({
         },
         token,
       );
-      if (!response.ok) throw new Error('Failed to add chunk');
+      if (!response.ok) {
+        setSaveError((await isSourceBusy(response)) ? 'busy' : 'failed');
+        return;
+      }
       closeSheet();
       fetchChunks();
     } catch (e) {
       console.error(e);
-      setSaveFailed(true);
+      setSaveError('failed');
     } finally {
       setSaving(false);
     }
@@ -554,7 +564,7 @@ const Chunks: React.FC<ChunksProps> = ({
     if (!text.trim()) return;
     if (text === (chunk.text || '') && title.trim() === savedTitle) return;
     setSaving(true);
-    setSaveFailed(false);
+    setSaveError(null);
     // The backend merges metadata: send a title only when the chunk had one
     // (clearing it sends '') or one was entered, never '' onto an untitled one.
     const sendTitle = !!savedTitle || !!title.trim();
@@ -568,7 +578,10 @@ const Chunks: React.FC<ChunksProps> = ({
         },
         token,
       );
-      if (!response.ok) throw new Error('Failed to update chunk');
+      if (!response.ok) {
+        setSaveError((await isSourceBusy(response)) ? 'busy' : 'failed');
+        return;
+      }
       const data = await response.json().catch(() => ({}));
       closeSheet();
       // Show the edit straight away (its token count is recomputed
@@ -591,7 +604,7 @@ const Chunks: React.FC<ChunksProps> = ({
       fetchChunks();
     } catch (e) {
       console.error(e);
-      setSaveFailed(true);
+      setSaveError('failed');
     } finally {
       setSaving(false);
     }
@@ -605,7 +618,10 @@ const Chunks: React.FC<ChunksProps> = ({
       chunk.doc_id,
       token,
     );
-    if (!response.ok) throw new Error('Failed to delete chunk');
+    if (!response.ok) {
+      if (await isSourceBusy(response)) throw new SourceBusy();
+      throw new Error('Failed to delete chunk');
+    }
     // A page change fetches by itself; otherwise refresh this page.
     if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
   };
@@ -1042,12 +1058,14 @@ const Chunks: React.FC<ChunksProps> = ({
         saving={saving}
         saveLabel={editing ? t('modals.chunk.save') : t('modals.chunk.add')}
         alert={
-          saveFailed ? (
+          saveError ? (
             <Alert variant="destructive">
               <AlertDescription>
-                {editing
-                  ? t('settings.sources.chunkErrors.save')
-                  : t('settings.sources.chunkErrors.add')}
+                {saveError === 'busy'
+                  ? t('settings.sources.chunkErrors.busy')
+                  : editing
+                    ? t('settings.sources.chunkErrors.save')
+                    : t('settings.sources.chunkErrors.add')}
               </AlertDescription>
             </Alert>
           ) : undefined
@@ -1061,7 +1079,11 @@ const Chunks: React.FC<ChunksProps> = ({
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={handleConfirmedDelete}
-        error={t('settings.sources.chunkErrors.delete')}
+        error={(reason) =>
+          reason instanceof SourceBusy
+            ? t('settings.sources.chunkErrors.busy')
+            : t('settings.sources.chunkErrors.delete')
+        }
         handleCancel={handleCancelDelete}
         submitLabel={t('modals.chunk.delete')}
         variant="destructive"

@@ -51,6 +51,17 @@ describe('normalizeUrl', () => {
       'https://localhost.dev/',
     );
   });
+
+  // The server accepts these; which ones it may reach is its call.
+  it('keeps a bracketed IPv6 address', () => {
+    expect(normalizeUrl('http://[2001:4860:4860::8888]/docs')).toBe(
+      'http://[2001:4860:4860::8888]/docs',
+    );
+    expect(normalizeUrl('[2606:4700::1111]:8080/a')).toBe(
+      'https://[2606:4700::1111]:8080/a',
+    );
+    expect(normalizeUrl('http://2001:db8::1/')).toBeNull();
+  });
 });
 
 describe('nameFromUrl', () => {
@@ -236,6 +247,40 @@ describe('websiteRefusal', () => {
     expect(websiteRefusal(t, 400, { code: 'page_limit', max_pages: 100 })).toBe(
       `${key('pageLimit')} {"count":100}`,
     );
+  });
+
+  it.each([
+    ['site_limit', { max_sites: 20 }, 'siteLimit {"count":20}'],
+    ['skip_limit', { max_skip: 1000 }, 'skipLimit {"count":1000}'],
+    ['url_too_long', { max_length: 2048 }, 'urlTooLong {"count":2048}'],
+    ['invalid_config', {}, 'invalidConfig'],
+    ['not_found', {}, 'notFound'],
+    ['bad_sync_frequency', {}, 'badSyncFrequency'],
+  ])('words %s with its details', (code, details, worded) => {
+    expect(websiteRefusal(t, 400, { code, error: 'English', ...details })).toBe(
+      key(worded),
+    );
+  });
+
+  it('names the address it refused', () => {
+    expect(
+      websiteRefusal(t, 400, {
+        code: 'invalid_address',
+        url: 'http://x.io/a',
+        error: 'English',
+      }),
+    ).toBe(
+      `${key('invalidAddress')} {"url":"http://x.io/a","interpolation":{"escapeValue":false}}`,
+    );
+  });
+
+  it("falls back to the server's message when a code lacks its detail", () => {
+    expect(
+      websiteRefusal(t, 400, { code: 'site_limit', error: 'Up to 20 sites' }),
+    ).toBe('Up to 20 sites');
+    expect(
+      websiteRefusal(t, 400, { code: 'invalid_address', error: 'Bad address' }),
+    ).toBe('Bad address');
   });
 
   it("shows the server's message for any other 400", () => {

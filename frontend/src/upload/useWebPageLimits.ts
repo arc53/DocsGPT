@@ -27,9 +27,15 @@ export default function useWebPageLimits(enabled = true) {
         if (cancelled) return;
         const defaultPages = Number(config?.web_default_pages);
         const maxPages = Number(config?.web_max_pages);
+        const cap = maxPages > 0 ? maxPages : MAX_WEB_PAGES;
         setLimits({
-          defaultPages: defaultPages > 0 ? defaultPages : DEFAULT_WEB_PAGES,
-          maxPages: maxPages > 0 ? maxPages : MAX_WEB_PAGES,
+          // Never past the cap (WEB_MAX_PAGES set below WEB_DEFAULT_PAGES),
+          // so the form opens valid.
+          defaultPages: Math.min(
+            defaultPages > 0 ? defaultPages : DEFAULT_WEB_PAGES,
+            cap,
+          ),
+          maxPages: cap,
         });
       })
       .catch(() => undefined);

@@ -143,6 +143,20 @@ describe('AddWebsitePagesModal', () => {
     });
   });
 
+  it("holds the default page limit to the admin's cap", async () => {
+    // WEB_MAX_PAGES set below WEB_DEFAULT_PAGES: the form still opens valid.
+    service.getConfig.mockResolvedValue(
+      reply(200, { web_default_pages: 200, web_max_pages: 50 }),
+    );
+    service.addWebsitePages.mockResolvedValue(
+      reply(200, { success: true, mode: 'sync', task_id: 'task-9' }),
+    );
+    await submit('fill site');
+
+    expect(service.addWebsitePages).toHaveBeenCalled();
+    expect(sentEntries()[0].max_pages).toBe(50);
+  });
+
   it('keeps a page limit the user typed before config answered', async () => {
     let answer: (value: unknown) => void = () => undefined;
     service.getConfig.mockReturnValue(
