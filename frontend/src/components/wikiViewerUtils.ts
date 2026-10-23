@@ -1,3 +1,4 @@
+import { isWikiUnsupported } from '../settings/wikiConvertUtils';
 import type { NavigatorNode } from './tree/navigatorUtils';
 
 export interface WikiPageNode {
@@ -27,6 +28,8 @@ export type SaveOutcome =
   | { status: 'saved'; page: WikiPageNode | null }
   | { status: 'conflict'; page: WikiPageNode | null }
   | { status: 'forbidden' }
+  /** The vector store can't change single pages (`wiki_unsupported`). */
+  | { status: 'unsupported' }
   | { status: 'error' };
 
 interface WikiSaveService {
@@ -59,12 +62,15 @@ export async function saveWikiPage(
     const data = await response.json();
     return { status: 'saved', page: data?.page ?? null };
   }
+  if (response.status === 403) return { status: 'forbidden' };
+  // Refused before anything was written, whatever its status.
+  const refusal = await response.json().catch(() => null);
+  if (isWikiUnsupported(refusal)) return { status: 'unsupported' };
   if (response.status === 409) {
     const refreshed = await service.getWikiPage(sourceId, path, token);
     const data = await refreshed.json();
     return { status: 'conflict', page: data?.page ?? null };
   }
-  if (response.status === 403) return { status: 'forbidden' };
   return { status: 'error' };
 }
 

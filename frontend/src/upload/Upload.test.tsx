@@ -91,11 +91,14 @@ const sourceDefaults = vi.hoisted(() =>
 );
 // What /api/config answers (the website page limits).
 const appConfig = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+// POST /api/create_wiki.
+const createWiki = vi.hoisted(() => vi.fn());
 vi.mock('../api/services/userService', () => ({
   default: {
     getConfig: () =>
       Promise.resolve({ json: () => Promise.resolve(appConfig.value) }),
     getSourceDefaults: () => sourceDefaults(),
+    createWiki: (...args: unknown[]) => createWiki(...args),
   },
 }));
 
@@ -812,6 +815,49 @@ describe('Upload source-type tiles', () => {
     expect(hint?.textContent).toBe(
       'modals.uploadDoc.fields.initialContentHint',
     );
+  });
+
+  it("says in the UI's words when the vector store can't hold a wiki", async () => {
+    createWiki.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        success: false,
+        code: 'wiki_unsupported',
+        message:
+          "Wikis need a vector store that can change single pages; the elasticsearch store can't.",
+      }),
+    });
+    const dispatch = vi.spyOn(fakeStore, 'dispatch');
+    try {
+      await openType('wiki');
+      const name =
+        document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      await act(async () => {
+        setter.call(name, 'Handbook');
+        name.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      const train = Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'modals.uploadDoc.train',
+      )!;
+      await act(async () => train.click());
+      expect(createWiki).toHaveBeenCalled();
+      const failed = dispatch.mock.calls
+        .map(
+          ([action]) =>
+            action as { payload?: { updates?: Record<string, unknown> } },
+        )
+        .find((action) => action.payload?.updates?.status === 'failed');
+      expect(failed?.payload?.updates?.errorMessage).toBe(
+        'settings.sources.wiki.unsupported',
+      );
+    } finally {
+      dispatch.mockRestore();
+    }
   });
 
   it('marks the name required without a native required (no browser tooltip)', async () => {

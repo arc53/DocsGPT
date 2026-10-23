@@ -68,6 +68,7 @@ import RetrievalOptions, {
   optionsToConfig,
 } from '../settings/components/RetrievalOptions';
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
+import { isWikiUnsupported } from '../settings/wikiConvertUtils';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import WebsiteFields from './WebsiteFields';
 import useWebPageLimits, { useReseedMaxPages } from './useWebPageLimits';
@@ -864,7 +865,13 @@ function Upload({
       .then((response) => response.json())
       .then((data) => {
         if (!data?.success) {
-          handleTaskFailure(clientTaskId, data?.message);
+          handleTaskFailure(
+            clientTaskId,
+            // The store can't hold a wiki: worded here, not the English.
+            isWikiUnsupported(data)
+              ? t('settings.sources.wiki.unsupported')
+              : data?.message,
+          );
           return;
         }
         dispatch(

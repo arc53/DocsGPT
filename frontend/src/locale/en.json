@@ -206,6 +206,7 @@
         "save": "Save",
         "saveFailed": "Could not save the page. Please try again.",
         "forbidden": "You do not have permission to edit this page.",
+        "unsupported": "This vector store can’t change single pages, so it can’t hold a wiki.",
         "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
         "editPlaceholder": "Write the page in Markdown…",
         "stamp": {

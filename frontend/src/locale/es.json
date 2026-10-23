@@ -207,6 +207,7 @@
         "save": "Guardar",
         "saveFailed": "No se pudo guardar la página. Inténtalo de nuevo.",
         "forbidden": "No tienes permiso para editar esta página.",
+        "unsupported": "Este almacén vectorial no puede cambiar páginas sueltas, así que no admite wikis.",
         "conflict": "Esta página cambió desde que la abriste y se ha recargado. Tus ediciones están abajo — vuelve a aplicarlas y guarda de nuevo.",
         "editPlaceholder": "Escribe la página en Markdown…",
         "stamp": {

@@ -205,6 +205,7 @@
         "save": "保存",
         "saveFailed": "无法保存页面，请重试。",
         "forbidden": "您没有权限编辑此页面。",
+        "unsupported": "此向量存储无法单独更改页面，因此无法承载 Wiki。",
         "conflict": "此页面在您打开后已被修改，并已重新加载。您的编辑内容在下方——请重新应用并再次保存。",
         "editPlaceholder": "使用 Markdown 编写页面…",
         "stamp": {

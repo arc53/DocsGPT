@@ -404,6 +404,27 @@ describe('WikiViewer', () => {
     expect(editor()?.value).toBe('My edit');
   });
 
+  it("says in the UI's words when the vector store can't change wiki pages", async () => {
+    service.updateWikiPage.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        success: false,
+        code: 'wiki_unsupported',
+        message: 'Wikis need a vector store that can change single pages.',
+      }),
+    });
+    await render(true);
+    await openEditor();
+    await typeDraft('My edit');
+    await save();
+    const alert = sheet()!.querySelector('[data-slot="alert"]');
+    expect(alert?.getAttribute('data-variant')).toBe('destructive');
+    expect(alert?.textContent).toContain('settings.sources.wiki.unsupported');
+    expect(alert?.textContent).not.toContain('Wikis need');
+    expect(editor()?.value).toBe('My edit');
+  });
+
   // PATTERNS.md › Source views: the navigator shows only when there is more
   // than one thing to open; a one-page wiki reads full width, like a
   // one-file source.

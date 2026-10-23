@@ -206,6 +206,7 @@
         "save": "Speichern",
         "saveFailed": "Die Seite konnte nicht gespeichert werden. Bitte versuche es erneut.",
         "forbidden": "Du hast keine Berechtigung, diese Seite zu bearbeiten.",
+        "unsupported": "Dieser Vektorspeicher kann keine einzelnen Seiten ändern und daher kein Wiki aufnehmen.",
         "conflict": "Diese Seite wurde seit dem Öffnen geändert und neu geladen. Deine Änderungen stehen unten – übernimm sie erneut und speichere noch einmal.",
         "editPlaceholder": "Schreibe die Seite in Markdown…",
         "stamp": {

@@ -207,6 +207,7 @@
         "save": "Enregistrer",
         "saveFailed": "Impossible d’enregistrer la page. Veuillez réessayer.",
         "forbidden": "Vous n’avez pas l’autorisation de modifier cette page.",
+        "unsupported": "Cette base vectorielle ne peut pas modifier une page seule, elle ne peut donc pas accueillir de wiki.",
         "conflict": "Cette page a changé depuis son ouverture et a été rechargée. Vos modifications figurent ci-dessous — réappliquez-les et enregistrez à nouveau.",
         "editPlaceholder": "Rédigez la page en Markdown…",
         "stamp": {

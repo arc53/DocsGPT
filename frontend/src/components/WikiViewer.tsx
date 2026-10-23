@@ -47,7 +47,9 @@ interface WikiViewerProps {
   initialPath?: string;
 }
 
-type EditError = { kind: 'conflict' | 'forbidden' | 'failed' } | null;
+type EditError = {
+  kind: 'conflict' | 'forbidden' | 'unsupported' | 'failed';
+} | null;
 
 /** Bars in the reader body while a page loads. */
 function ReaderBars() {
@@ -232,6 +234,9 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         case 'forbidden':
           setEditError({ kind: 'forbidden' });
           break;
+        case 'unsupported':
+          setEditError({ kind: 'unsupported' });
+          break;
         default:
           setEditError({ kind: 'failed' });
       }
@@ -287,7 +292,9 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         <AlertDescription>
           {editError.kind === 'forbidden'
             ? t('settings.sources.wiki.forbidden')
-            : t('settings.sources.wiki.saveFailed')}
+            : editError.kind === 'unsupported'
+              ? t('settings.sources.wiki.unsupported')
+              : t('settings.sources.wiki.saveFailed')}
         </AlertDescription>
       </Alert>
     );
