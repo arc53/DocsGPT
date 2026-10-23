@@ -354,7 +354,8 @@ class TestRemovePages:
         assert response.json["task_id"] == "remove-task"
         # The worker finds each page by its URL, so a sync that moved it meanwhile doesn't matter.
         self.pages_task.delay.assert_called_once_with(
-            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "https://docs.x.io/extra"}]
+            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "https://docs.x.io/extra"}],
+            actor_id=USER,
         )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/"]
@@ -441,7 +442,7 @@ class TestRemovePages:
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
         self.pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "remove",
-            pages=[{"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"}],
+            pages=[{"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"}], actor_id=USER,
         )
 
     def test_a_folder_becomes_one_section_rule(self, app, pg_conn):
@@ -455,7 +456,7 @@ class TestRemovePages:
             str(src["id"]), USER, "remove", pages=[
                 {"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"},
                 {"path": "Deploying/Kubernetes.md", "url": "https://docs.x.io/Deploying/Kubernetes"},
-            ],
+            ], actor_id=USER,
         )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/*"]
@@ -536,7 +537,7 @@ class TestRemovePages:
         assert saved["skip"] == ["https://docs.x.io/new", "https://docs.x.io/old"]
         self.pages_task.delay.assert_called_once_with(str(src["id"]), USER, "remove", pages=[
             {"path": "new.md", "url": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old"},
-        ])
+        ], actor_id=USER)
 
     def test_a_redirected_page_entry_in_a_removed_folder_leaves_the_list(self, app, pg_conn):
         tree = {"index.md": _leaf("https://docs.x.io/", 5), "guide": {
@@ -587,7 +588,7 @@ class TestAddPages:
 
         assert response.status_code == 200
         assert response.json["mode"] == "append"
-        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"])
+        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER)
         sync_task.delay.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
         assert saved[-1] == {"url": "https://docs.x.io/new", "mode": "page"}
@@ -612,7 +613,7 @@ class TestAddPages:
         assert response.status_code == 200
         entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
         assert [e["url"] for e in entries] == ["https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/new"]
-        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"])
+        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"], actor_id=USER)
 
     def test_a_whole_site_rebuilds_the_source(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -768,6 +769,7 @@ class TestRefreshPage:
         # With its address: the worker finds it by that, wherever a sync moved it.
         pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md", url="https://docs.x.io/Deploying/Docker",
+            actor_id=USER,
         )
 
     def test_a_page_named_by_address_is_found_wherever_it_is(self, app, pg_conn):
@@ -780,6 +782,7 @@ class TestRefreshPage:
         assert response.status_code == 200
         pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md", url="https://docs.x.io/Deploying/Docker",
+            actor_id=USER,
         )
 
     def test_a_redirected_page_is_found_by_the_address_it_was_asked_for(self, app, pg_conn):
@@ -789,7 +792,7 @@ class TestRefreshPage:
 
         assert response.status_code == 200
         pages_task.delay.assert_called_once_with(
-            str(src["id"]), USER, "refresh", file_path="new.md", url="https://docs.x.io/new",
+            str(src["id"]), USER, "refresh", file_path="new.md", url="https://docs.x.io/new", actor_id=USER,
         )
 
     def test_an_address_no_longer_in_the_source_is_400(self, app, pg_conn):

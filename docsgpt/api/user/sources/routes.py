@@ -587,6 +587,8 @@ class SyncSource(Resource):
                 doc_id=str(doc["id"]),
                 # S3 and GitHub sources made from a connection read with its keys.
                 connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+                # The sync runs as the owner; its events also reach the caller.
+                actor_id=user,
             )
         except Exception as err:
             current_app.logger.error(
@@ -600,7 +602,7 @@ class SyncSource(Resource):
 _RECONNECT_TO_SYNC = "The owner needs to reconnect this source's account before it can be synced."
 
 
-def _remote_rebuild(doc: dict, owner: str) -> Optional[Callable[[], Any]] | Response:
+def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], Any]] | Response:
     """How a source with no stored files is rebuilt instead of re-ingested: a sync of its stored config.
 
     Reingest re-reads the files a source keeps in storage; a Website,
@@ -612,6 +614,7 @@ def _remote_rebuild(doc: dict, owner: str) -> Optional[Callable[[], Any]] | Resp
     Args:
         doc: The source row, already authorised for the caller.
         owner: Its owner; the sync runs as them.
+        actor: The caller, who also receives the sync's events (a team editor isn't the owner).
 
     Returns:
         A callable that queues the sync and returns its task; a refusal
@@ -663,6 +666,7 @@ def _remote_rebuild(doc: dict, owner: str) -> Optional[Callable[[], Any]] | Resp
         retriever=doc.get("retriever") or "classic",
         doc_id=source_id,
         connection_id=_connection_id(doc),
+        actor_id=actor,
     )
 
 
@@ -716,7 +720,7 @@ class ReingestSource(Resource):
         if not doc.get("file_path"):
             # Nothing stored to read back: a Website, crawler or connector
             # source is rebuilt by syncing it with its stored config.
-            rebuild = _remote_rebuild(doc, owner)
+            rebuild = _remote_rebuild(doc, owner, user)
             if isinstance(rebuild, Response):
                 return rebuild
         # Drop the stale chunk-progress row so the sources list stops
@@ -739,6 +743,7 @@ class ReingestSource(Resource):
                     source_id=resolved_source_id,
                     user=owner,
                     idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
+                    actor_id=user,
                 )
         except Exception as err:
             current_app.logger.error(

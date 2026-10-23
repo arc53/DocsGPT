@@ -258,6 +258,8 @@ class TestSyncSource:
         assert resp.status_code == status
         if status == 200:
             assert delay.call_args.kwargs["user"] == OWNER
+            # The editor who asked receives the sync's events too.
+            assert delay.call_args.kwargs["actor_id"] == user
         else:
             delay.assert_not_called()
 
@@ -277,6 +279,68 @@ class TestReingest:
         assert resp.status_code == status
         if status == 200:
             assert delay.call_args.kwargs["user"] == OWNER
+            assert delay.call_args.kwargs["actor_id"] == user
+
+
+WEBSITE = "docsgpt.api.user.sources.website"
+
+
+class TestWebsiteWrites:
+    """A team editor's Website change runs as the owner; the editor receives its events."""
+
+    def _post(self, app, pg_conn, resource, body):
+        from docsgpt.api.user.sources import website
+
+        pages = MagicMock(return_value=MagicMock(id="t-pages"))
+        sync = MagicMock(return_value=MagicMock(id="t-sync"))
+        with _patch_db(pg_conn, WEBSITE), patch(f"{WEBSITE}.website_pages.delay", pages), patch(
+            f"{WEBSITE}.sync_source.delay", sync
+        ):
+            resp = _call(app, EDITOR, "/api/website", getattr(website, resource)().post, method="POST", json=body)
+        return resp, pages, sync
+
+    def _website(self, pg_conn):
+        leaf = {"type": "text/markdown", "size_bytes": 1, "token_count": 1, "url": "https://docs.x.io/a"}
+        return _shared_source(
+            pg_conn, type="website",
+            directory_structure={"a.md": leaf, "b.md": {**leaf, "url": "https://docs.x.io/b"}},
+            remote_data={"entries": [{"url": "https://docs.x.io/a"}, {"url": "https://docs.x.io/b"}], "skip": []},
+        )
+
+    @pytest.mark.parametrize("resource, body", [
+        ("AddWebsitePages", {"entries": [{"url": "https://docs.x.io/c"}]}),
+        ("RefreshWebsitePage", {"file_path": "a.md"}),
+        ("RemoveWebsitePages", {"file_paths": ["a.md"]}),
+    ])
+    def test_a_page_change_carries_the_editor(self, app, pg_conn, resource, body):
+        sid = self._website(pg_conn)
+        resp, pages, _sync = self._post(app, pg_conn, resource, {"source_id": sid, **body})
+        assert resp.status_code == 200, resp.json
+        assert pages.call_args.args[1] == OWNER
+        assert pages.call_args.kwargs["actor_id"] == EDITOR
+
+    def test_a_site_added_carries_the_editor(self, app, pg_conn):
+        sid = self._website(pg_conn)
+        resp, _pages, sync = self._post(
+            app, pg_conn, "AddWebsitePages",
+            {"source_id": sid, "entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+        )
+        assert resp.status_code == 200, resp.json
+        assert sync.call_args.kwargs["user"] == OWNER
+        assert sync.call_args.kwargs["actor_id"] == EDITOR
+
+    def test_a_reingest_that_syncs_carries_the_editor(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import ReingestSource
+
+        sid = self._website(pg_conn)
+        sync = MagicMock(return_value=MagicMock(id="t-sync"))
+        with _patch_db(pg_conn, ROUTES), patch(f"{ROUTES}.sync_source.delay", sync):
+            resp = _call(
+                app, EDITOR, "/api/sources/reingest", ReingestSource().post, method="POST", json={"source_id": sid}
+            )
+        assert resp.status_code == 200, resp.json
+        assert sync.call_args.kwargs["user"] == OWNER
+        assert sync.call_args.kwargs["actor_id"] == EDITOR
 
 
 class TestConfig:

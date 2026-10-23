@@ -1105,6 +1105,7 @@ class ManageSourceFiles(Resource):
                         "source_id": resolved_source_id,
                         "user": owner,
                         "idempotency_key": scoped_key or idempotency_key,
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -1217,6 +1218,7 @@ class ManageSourceFiles(Resource):
                         "source_id": resolved_source_id,
                         "user": owner,
                         "idempotency_key": scoped_key or idempotency_key,
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -1347,6 +1349,7 @@ class ManageSourceFiles(Resource):
                         "source_id": resolved_source_id,
                         "user": owner,
                         "idempotency_key": scoped_key or idempotency_key,
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )

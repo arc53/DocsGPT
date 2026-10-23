@@ -430,7 +430,7 @@ class RemoveWebsitePages(Resource):
                 str(doc["id"]), ra.owner_id, "remove", pages=[
                     {"path": path, "url": url, **({"requested_url": requested[path]} if path in requested else {})}
                     for path, url in pages
-                ],
+                ], actor_id=user,
             )
         except Exception as err:
             # The config is saved, so the next sync leaves the pages out.
@@ -542,9 +542,10 @@ class AddWebsitePages(Resource):
                     sync_frequency=doc.get("sync_frequency") or "never",
                     retriever=doc.get("retriever") or "classic",
                     doc_id=source_id,
+                    actor_id=user,
                 )
             else:
-                task = website_pages.delay(source_id, ra.owner_id, "add", urls=page_urls)
+                task = website_pages.delay(source_id, ra.owner_id, "add", urls=page_urls, actor_id=user)
         except Exception as err:
             # The entries are saved: the next sync fetches them.
             return _queue_failed(QUEUE_FAILED_SAVED, err)
@@ -610,7 +611,9 @@ class RefreshWebsitePage(Resource):
         # The worker finds the page by its address under the index lock: a
         # sync that runs first can give its path to another page.
         try:
-            task = website_pages.delay(str(doc["id"]), ra.owner_id, "refresh", file_path=path, url=url)
+            task = website_pages.delay(
+                str(doc["id"]), ra.owner_id, "refresh", file_path=path, url=url, actor_id=user
+            )
         except Exception as err:
             return _queue_failed(QUEUE_FAILED_REFRESH, err)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)

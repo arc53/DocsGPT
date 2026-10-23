@@ -1184,7 +1184,7 @@ class TestManageSourceFiles:
         ), patch(
             "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
-        ), app.test_request_context(
+        ) as apply_async, app.test_request_context(
             "/api/manage_source_files", method="POST",
             data={
                 "source_id": str(src["id"]),
@@ -1198,6 +1198,8 @@ class TestManageSourceFiles:
             response = ManageSourceFiles().post()
         assert response.status_code == 200
         assert "a.txt" in response.json["removed_files"]
+        # The caller receives the reingest's events (a team editor isn't the owner).
+        assert apply_async.call_args.kwargs["kwargs"]["actor_id"] == user
 
     def test_remove_directory_missing_path(self, app, pg_conn):
         from docsgpt.api.user.sources.upload import ManageSourceFiles
