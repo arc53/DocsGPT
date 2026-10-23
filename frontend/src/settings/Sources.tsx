@@ -271,18 +271,29 @@ export default function Sources({
   const [startedSync, setStartedSync] = useState<
     (StartedSync & { sourceId: string }) | null
   >(null);
-  // Only a website view waits for a started sync (and says when it ended),
-  // so only there is its Sync now off meanwhile.
+  // Only a website view waits for a started sync (and says when it ended):
+  // its page list, or the graph view around it. Only there is its Sync now
+  // off meanwhile.
+  const viewWaits =
+    !!documentToView?.website &&
+    (isGraphSource(documentToView) || !!documentToView.isNested);
   const viewSync =
-    documentToView?.website && startedSync?.sourceId === documentToView.id
+    viewWaits && startedSync?.sourceId === documentToView?.id
       ? startedSync
       : null;
   const settleSync = (settled: StartedSync) =>
     setStartedSync((current) => (current === settled ? null : current));
+  // The website view whose page change or sync is in flight (it says so
+  // through onBusyChange): its Sync now is off too, so a sync doesn't queue
+  // behind a change and refuse as busy.
+  const [busyViewId, setBusyViewId] = useState<string | null>(null);
+  const reportBusy = (id: string) => (busy: boolean) =>
+    setBusyViewId((current) => (busy ? id : current === id ? null : current));
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);
     setStartedSync(null);
+    setBusyViewId(null);
   };
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
@@ -378,7 +389,9 @@ export default function Sources({
     onPatched: patchDoc,
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
-    syncingId: viewSync?.sourceId ?? null,
+    syncingId:
+      viewSync?.sourceId ??
+      (busyViewId && busyViewId === documentToView?.id ? busyViewId : null),
   });
 
   /**
@@ -581,6 +594,7 @@ export default function Sources({
           syncedAt={documentToView.date}
           sync={viewSync}
           onSyncSettled={settleSync}
+          onBusyChange={reportBusy(documentToView.id || '')}
           onPagesChanged={() =>
             documentToView.id && refreshOpenSource(documentToView.id)
           }
@@ -599,6 +613,7 @@ export default function Sources({
             syncedAt={documentToView.date}
             sync={viewSync}
             onSyncSettled={settleSync}
+            onBusyChange={reportBusy(documentToView.id || '')}
             onPagesChanged={() =>
               documentToView.id && refreshOpenSource(documentToView.id)
             }

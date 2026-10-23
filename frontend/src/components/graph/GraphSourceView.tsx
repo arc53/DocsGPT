@@ -24,6 +24,7 @@ import FileTree from '../FileTree';
 import GraphView, { type GraphLoadStatus } from '../GraphView';
 import PathHeader, { type Crumb } from '../tree/PathHeader';
 import WebsiteTree from '../WebsiteTree';
+import { type WebsiteSync, useWebsiteChanges } from '../tree/useWebsiteChanges';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -66,16 +67,24 @@ interface GraphSourceViewProps {
   syncFrequency?: string;
   /** When the source was last ingested or synced (a Website source's byline). */
   syncedAt?: string;
-  /** A Website source: a sync the host started, for its page list to wait on. */
-  sync?: { startedAt: number; taskId: string | null } | null;
-  /** A Website source: its page list's wait for `sync` ended. */
-  onSyncSettled?: (sync: { startedAt: number; taskId: string | null }) => void;
+  /**
+   * A Website source: a sync the host started. The view waits for it on
+   * every tab, as for its page list's own changes (see `useWebsiteChanges`).
+   */
+  sync?: WebsiteSync | null;
+  /** A Website source: the view's wait for `sync` ended. */
+  onSyncSettled?: (sync: WebsiteSync) => void;
   /**
    * A Website source: called once a page change (add, refresh, remove, a
    * sync) has finished, after the graph is read again, so the host can read
    * the source again too.
    */
   onPagesChanged?: () => void;
+  /**
+   * A Website source: whether a page change or a sync is in flight, each
+   * time that turns, so the host holds its Sync now meanwhile.
+   */
+  onBusyChange?: (busy: boolean) => void;
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
@@ -112,6 +121,7 @@ export default function GraphSourceView({
   sync,
   onSyncSettled,
   onPagesChanged,
+  onBusyChange,
   onBackToDocuments,
   headerAction,
   headerMenu,
@@ -181,6 +191,21 @@ export default function GraphSourceView({
     if (wasBuilding.current && !build.building) retry();
     wasBuilding.current = build.building;
   }, [build.building, retry]);
+
+  // A Website source's page changes and the syncs the host starts: held
+  // here, not by the Files tab's page list, which is mounted only while that
+  // tab is open, so they finish (and say so) whichever tab shows.
+  const changes = useWebsiteChanges({
+    docId,
+    sync: website ? sync : null,
+    onSyncSettled,
+    // A removal changes the graph without a build.
+    onPagesChanged: () => {
+      retry();
+      onPagesChanged?.();
+    },
+    onBusyChange,
+  });
 
   // "Open in Files" is a one-off request: leaving the Files tab drops it, so
   // a later visit opens the tree at its root rather than on that file again.
@@ -267,13 +292,7 @@ export default function GraphSourceView({
       linkedChunk={linked}
       actionsTarget={filesActions}
       onCrumbsChange={setFilesCrumbs}
-      sync={sync}
-      onSyncSettled={onSyncSettled}
-      // A removal changes the graph without a build.
-      onPagesChanged={() => {
-        retry();
-        onPagesChanged?.();
-      }}
+      changes={changes}
     />
   ) : synced || sourceType === 'connector:file' ? (
     <ConnectorTree
@@ -350,6 +369,13 @@ export default function GraphSourceView({
         actions={
           <>
             {headerAction}
+            {/* A change still running, where the Files tab's page list
+                would say so: on the other tabs, or a source without one. */}
+            {changes.status && !(tab === 'files' && isNested && website) ? (
+              <div className="text-muted-foreground text-sm">
+                {changes.status}
+              </div>
+            ) : null}
             {/* The Files tab's own action (Add file, Add pages, Sync)
                 portals in here, beside Test retrieval, like on a plain
                 source. */}

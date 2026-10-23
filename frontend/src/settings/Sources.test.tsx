@@ -926,6 +926,63 @@ describe('Sources access', () => {
     expect(syncItem().hasAttribute('data-disabled')).toBe(false);
   });
 
+  const syncNowItem = () =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.syncNow')!;
+
+  it.each([
+    ['website-tree', WEBSITE_OWNER],
+    [
+      'graph',
+      { ...WEBSITE_OWNER, config: { kind: 'graphrag' } as Doc['config'] },
+    ],
+  ] as const)(
+    "the %s view's Sync now is off while the view reports a change in flight",
+    async (testId, fields) => {
+      await openView(doc(fields));
+      const onBusyChange = viewProps[testId].onBusyChange as (
+        busy: boolean,
+      ) => void;
+      expect(onBusyChange).toBeInstanceOf(Function);
+      await act(async () => onBusyChange(true));
+      await viewMenu();
+      expect(syncNowItem().hasAttribute('data-disabled')).toBe(true);
+      await clickItem('settings.sources.editConfig');
+      expect(configModal.props!.syncing).toBe(true);
+
+      await act(async () => onBusyChange(false));
+      expect(configModal.props!.syncing).toBe(false);
+      await viewMenu();
+      expect(syncNowItem().hasAttribute('data-disabled')).toBe(false);
+    },
+  );
+
+  it("a graph website view's Sync now is off until the view's wait for the sync ends", async () => {
+    service.syncSource.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, task_id: 'task-s' }),
+    });
+    await openView(
+      doc({ ...WEBSITE_OWNER, config: { kind: 'graphrag' } as Doc['config'] }),
+    );
+    await viewMenu();
+    await clickItem('settings.sources.syncNow');
+    const sync = viewProps.graph.sync as { taskId: string };
+    expect(sync.taskId).toBe('task-s');
+    await viewMenu();
+    expect(syncNowItem().hasAttribute('data-disabled')).toBe(true);
+
+    const onSyncSettled = viewProps.graph.onSyncSettled as (
+      settled: unknown,
+    ) => void;
+    await act(async () => onSyncSettled(sync));
+    expect(viewProps.graph.sync).toBeFalsy();
+    // The menu is still open, and its Sync now is back.
+    expect(syncNowItem().hasAttribute('data-disabled')).toBe(false);
+  });
+
   it('a refused Sync now hands the tree nothing to wait on', async () => {
     service.syncSource.mockResolvedValue({
       ok: false,

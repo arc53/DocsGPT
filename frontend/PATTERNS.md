@@ -598,7 +598,13 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   header's action row after Test retrieval, only while that tab is open (the
   Files tab's Add file or Sync now, portalled through `TreeBrowser`'s
   `actionsTarget`), as on the agent pages; the embedded tree draws no row of
-  its own. The Graph tab's toolbar holds the
+  its own. A website source's page changes and the syncs started from its ⋯
+  are held by the graph view (`tree/useWebsiteChanges`), not by the Files
+  tab's WebsiteTree, which mounts only while that tab is open: they finish
+  and toast whichever tab shows, the running one's muted label ("Syncing the
+  source…") sits after Test retrieval on the other tabs, and the view reports
+  them (`onBusyChange`) so the ⋯'s Sync now is off meanwhile. Overlapping
+  changes each hold the busy state until the last ends. The Graph tab's toolbar holds the
   entity search (`graph/GraphEntitySearch`: a `SearchInput` whose results
   over the server's `/graph/nodes?q=` open in a Command anchored under it,
   the field keeping focus and driving the list with the arrows and Enter),

@@ -20,7 +20,11 @@ import type {
   RowMenuContext,
   TreeBrowserController,
 } from './tree/types';
-import { useReingestSseWaiter } from './tree/useReingestWait';
+import {
+  type WebsiteChanges,
+  type WebsiteSync,
+  useWebsiteChanges,
+} from './tree/useWebsiteChanges';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import type { MenuOption } from './ui/dropdown-menu';
@@ -59,14 +63,27 @@ interface WebsiteTreeProps {
    * A sync of this source the host started (the source's ⋯ → Sync now), with
    * when its request went out and the task it queued. The tree waits for it
    * as for its own changes: busy meanwhile, then read again. A new object
-   * starts a new wait; the same one is waited for once.
+   * starts a new wait; the same one is waited for once. Ignored with
+   * `changes`, whose owner waits for it.
    */
-  sync?: { startedAt: number; taskId: string | null } | null;
+  sync?: WebsiteSync | null;
   /**
    * The wait for `sync` ended: the sync finished, failed, was skipped or is
    * still running past the wait. Not called when the tree unmounts first.
    */
-  onSyncSettled?: (sync: { startedAt: number; taskId: string | null }) => void;
+  onSyncSettled?: (sync: WebsiteSync) => void;
+  /**
+   * Whether a page change or a sync is in flight, each time that turns, so
+   * the host can hold its own Sync now meanwhile. Ignored with `changes`.
+   */
+  onBusyChange?: (busy: boolean) => void;
+  /**
+   * The source's changes, held by a host that outlives the tree (the graph
+   * source's Files tab is mounted only while open; see `useWebsiteChanges`).
+   * Without it the tree holds its own, with `sync`, `onSyncSettled`,
+   * `onPagesChanged` and `onBusyChange`.
+   */
+  changes?: WebsiteChanges;
   canEdit?: boolean;
   initialPath?: string;
   linkedChunk?: LinkedChunk;
@@ -177,6 +194,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   syncedAt,
   sync,
   onSyncSettled,
+  onBusyChange,
+  changes: hostChanges,
   canEdit = true,
   initialPath,
   linkedChunk,
@@ -202,15 +221,19 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   const [configKey, setConfigKey] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [removal, setRemoval] = useState<PendingRemoval | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const { waitForChange, mountedRef } = useReingestSseWaiter();
+  // A host's changes outlive the tree; without one the tree holds its own.
+  const ownChanges = useWebsiteChanges({
+    docId,
+    sync: hostChanges ? null : sync,
+    onSyncSettled: hostChanges ? undefined : onSyncSettled,
+    onPagesChanged: hostChanges ? undefined : onPagesChanged,
+    onBusyChange: hostChanges ? undefined : onBusyChange,
+  });
+  const changes = hostChanges ?? ownChanges;
+  const status = changes.status;
 
   const tokenRef = useRef(token);
   tokenRef.current = token;
-  const onPagesChangedRef = useRef(onPagesChanged);
-  onPagesChangedRef.current = onPagesChanged;
-  const onSyncSettledRef = useRef(onSyncSettled);
-  onSyncSettledRef.current = onSyncSettled;
   // Another source's entries never stand in for this one's.
   useEffect(() => setPageEntries(null), [docId]);
   useEffect(() => {
@@ -241,6 +264,22 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     };
   }, [docId, canEdit, configKey]);
 
+  // A finished change reads what it touched again, while the tree shows.
+  const { attach } = changes;
+  useEffect(
+    () =>
+      attach({
+        reload: async (affects) => {
+          await controllerRef.current?.refreshDirectory();
+          if (affects === undefined) controllerRef.current?.reloadFile();
+          else if (affects !== false)
+            controllerRef.current?.reloadFile(affects);
+          setConfigKey((key) => key + 1);
+        },
+      }),
+    [attach],
+  );
+
   const toastFailure = useCallback(
     (key: string, name?: string, message?: string | null) =>
       dispatch(
@@ -263,86 +302,11 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     setConfigKey((key) => key + 1);
   };
 
-  /**
-   * Waits for a background change to finish, then reloads the tree and the
-   * open page's chunks when the change could have touched them: `affects`
-   * is the changed page's path or a test on the open page's path, `false`
-   * for a change that leaves every remaining page as it was (a removal; a
-   * removed open page closes by itself), and omitted for a rebuild.
-   * Resolves with how the wait ended, `unmounted` when the tree went first.
-   */
-  const awaitChange = async (
-    label: string,
-    startedAt: number,
-    failure: string,
-    {
-      name,
-      taskId,
-      affects,
-    }: {
-      name?: string;
-      taskId?: string | null;
-      affects?: string | ((path: string) => boolean) | false;
-    } = {},
-  ) => {
-    setStatus(label);
-    const { terminal, reason } = await waitForChange(docId, startedAt, {
-      taskId,
-    });
-    // An unmount (StrictMode's too) ends the wait; a later one owns the status.
-    if (!mountedRef.current || terminal === 'unmounted') return 'unmounted';
-    setStatus(null);
-    if (terminal === 'completed') {
-      await controllerRef.current?.refreshDirectory();
-      if (affects === undefined) controllerRef.current?.reloadFile();
-      else if (affects !== false) controllerRef.current?.reloadFile(affects);
-      setConfigKey((key) => key + 1);
-      onPagesChangedRef.current?.();
-    } else if (terminal === 'timeout') {
-      // Still queued or running: the buttons come back, and the tree shows
-      // whatever has landed so far.
-      await controllerRef.current?.refreshDirectory();
-      setConfigKey((key) => key + 1);
-      dispatch(
-        showActionToast({ variant: 'info', message: tr('stillRunning') }),
-      );
-    } else if (terminal === 'failed' && reason === 'out_of_scope') {
-      // A refreshed page that now leads outside the source: the worker
-      // removed it, as a sync would.
-      await controllerRef.current?.refreshDirectory();
-      setConfigKey((key) => key + 1);
-      onPagesChangedRef.current?.();
-      dispatch(
-        showActionToast({
-          variant: 'warning',
-          message: tr('refreshOutOfScope', {
-            name,
-            interpolation: { escapeValue: false },
-          }),
-        }),
-      );
-    } else if (terminal === 'failed' && reason === 'busy') {
-      dispatch(
-        showActionToast({ variant: 'warning', message: tr('changeBusy') }),
-      );
-    } else if (terminal === 'failed') {
-      toastFailure(
-        reason === 'wiki'
-          ? 'wikiSource'
-          : reason === 'gone'
-            ? 'sourceGone'
-            : failure,
-        name,
-      );
-    }
-    return terminal;
-  };
-
   const refreshPage = async (path: string, name: string, url?: string) => {
     const startedAt = Date.now();
     let taskId: string | null = null;
     // Taken at once: the menu turns its changes off until this one is done.
-    setStatus(tr('refreshing'));
+    const hold = changes.begin(tr('refreshing'));
     let refusal: string | null = null;
     try {
       const response = await userService.refreshWebsitePage(
@@ -361,14 +325,15 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       }
       taskId = typeof data?.task_id === 'string' ? data.task_id : null;
     } catch {
-      if (mountedRef.current) setStatus(null);
+      changes.end(hold);
       toastFailure('refreshFailed', name, refusal);
       return;
     }
-    await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
+    await changes.awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
       name,
       taskId,
       affects: path,
+      hold,
     });
   };
 
@@ -396,7 +361,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       throw new RemoveRefused(refusal ?? tr('removeFailed'));
     const { name } = removal;
     setRemoval(null);
-    void awaitChange(tr('removing'), startedAt, 'removeFailed', {
+    void changes.awaitChange(tr('removing'), startedAt, 'removeFailed', {
       name,
       taskId: typeof data.task_id === 'string' ? data.task_id : null,
       affects: false,
@@ -440,28 +405,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       ? 'entry'
       : 'crawled';
   };
-
-  // A sync the host started is waited for like the tree's own changes.
-  const awaitChangeRef = useRef(awaitChange);
-  awaitChangeRef.current = awaitChange;
-  const waitedSync = useRef<typeof sync>(null);
-  useEffect(() => {
-    if (!sync || waitedSync.current === sync) return;
-    waitedSync.current = sync;
-    void awaitChangeRef
-      .current(tr('syncing'), sync.startedAt, 'syncFailed', {
-        taskId: sync.taskId,
-      })
-      .then((terminal) => {
-        if (terminal !== 'unmounted') onSyncSettledRef.current?.(sync);
-      });
-    // StrictMode's second run starts the wait again; the first one ends
-    // with the unmount it saw and leaves the status alone.
-    return () => {
-      waitedSync.current = null;
-    };
-    // tr reads t, which is stable per language.
-  }, [sync]);
 
   const openLink = (url: string | null, label: string) =>
     url ? (
@@ -684,16 +627,21 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
             // address they were added under, too); a rebuild may change any
             // page.
             const added = new Set(change.urls.map(pageKey));
-            void awaitChange(tr('addingPages'), startedAt, 'addFailed', {
-              taskId,
-              affects:
-                change.mode === 'append'
-                  ? (path) =>
-                      pageKeysOf(pageAt(structureRef.current, path)).some(
-                        (key) => added.has(key),
-                      )
-                  : undefined,
-            });
+            void changes.awaitChange(
+              tr('addingPages'),
+              startedAt,
+              'addFailed',
+              {
+                taskId,
+                affects:
+                  change.mode === 'append'
+                    ? (path) =>
+                        pageKeysOf(pageAt(structureRef.current, path)).some(
+                          (key) => added.has(key),
+                        )
+                    : undefined,
+              },
+            );
           }}
           onQueueFailed={warnQueueFailed}
         />

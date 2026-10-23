@@ -20,23 +20,55 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// The graph builds the SSE stream records (graphBuildSlice); the token reads null.
-const { redux } = vi.hoisted(() => ({
+// The graph builds the SSE stream records (graphBuildSlice); the token reads
+// null. `bus` is the notifications ring a page change's wait reads.
+const { redux, bus, dispatch } = vi.hoisted(() => ({
   redux: { builds: {} as Record<string, unknown> },
+  bus: { events: [] as unknown[], listeners: new Set<() => void>() },
+  dispatch: vi.fn(),
 }));
-vi.mock('react-redux', () => ({
-  useSelector: (selector: (state: unknown) => unknown) => {
-    try {
-      return (
-        selector({ preference: {}, graphBuild: { builds: redux.builds } }) ??
-        null
-      );
-    } catch {
-      return null;
-    }
-  },
-  useDispatch: () => vi.fn(),
-}));
+vi.mock('react-redux', () => {
+  const store = {
+    getState: () => ({ notifications: { recentEvents: bus.events } }),
+    subscribe: (listener: () => void) => {
+      bus.listeners.add(listener);
+      return () => bus.listeners.delete(listener);
+    },
+  };
+  return {
+    useSelector: (selector: (state: unknown) => unknown) => {
+      try {
+        return (
+          selector({ preference: {}, graphBuild: { builds: redux.builds } }) ??
+          null
+        );
+      } catch {
+        return null;
+      }
+    },
+    useDispatch: () => dispatch,
+    useStore: () => store,
+  };
+});
+
+/** A terminal ingest event for the source, as the SSE stream adds it. */
+const emitTerminal = (
+  type: 'completed' | 'failed',
+  taskId: string,
+  extra: Record<string, unknown> = {},
+) => {
+  bus.events = [
+    {
+      id: `${Date.now()}-${bus.events.length}`,
+      type: `source.ingest.${type}`,
+      ts: new Date().toISOString(),
+      scope: { kind: 'source', id: 'doc' },
+      payload: { task_id: taskId, ...extra },
+    },
+    ...bus.events,
+  ];
+  for (const listener of Array.from(bus.listeners)) listener();
+};
 
 vi.mock('../../hooks', () => ({
   useDebouncedValue: (value: unknown) => value,
@@ -144,12 +176,15 @@ vi.mock('../WebsiteTree', async () => {
       linkedChunk?: { id?: string };
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
-      onPagesChanged?: () => void;
-      sync?: { startedAt: number; taskId: string | null } | null;
-      onSyncSettled?: (sync: {
-        startedAt: number;
-        taskId: string | null;
-      }) => void;
+      changes?: {
+        status: string | null;
+        awaitChange: (
+          label: string,
+          startedAt: number,
+          failure: string,
+          options?: { taskId?: string | null; affects?: unknown },
+        ) => Promise<unknown>;
+      };
     }) => {
       const { onCrumbsChange } = props;
       useEffect(() => {
@@ -157,16 +192,19 @@ vi.mock('../WebsiteTree', async () => {
       }, [onCrumbsChange]);
       return (
         <>
-          {/* Stands in for a finished add, refresh or removal. */}
-          <button type="button" onClick={() => props.onPagesChanged?.()}>
-            PAGES CHANGED
-          </button>
-          {/* Stands in for the end of the wait for a handed sync. */}
+          {/* Stands in for a removal the list queued (task-r). */}
           <button
             type="button"
-            onClick={() => props.sync && props.onSyncSettled?.(props.sync)}
+            onClick={() =>
+              void props.changes?.awaitChange(
+                'REMOVING',
+                Date.now(),
+                'removeFailed',
+                { taskId: 'task-r', affects: false },
+              )
+            }
           >
-            SYNC SETTLED
+            START REMOVE
           </button>
           <div
             data-testid="website-tree"
@@ -177,7 +215,7 @@ vi.mock('../WebsiteTree', async () => {
             data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
             data-initial-path={props.initialPath ?? ''}
             data-linked={props.linkedChunk?.id ?? ''}
-            data-sync-task={props.sync?.taskId ?? ''}
+            data-status={props.changes?.status ?? ''}
           >
             {props.embedded ? 'embedded' : 'page'}
             {props.actionsTarget
@@ -250,6 +288,9 @@ describe('GraphSourceView', () => {
   let root: Root;
 
   beforeEach(() => {
+    bus.events = [];
+    bus.listeners.clear();
+    dispatch.mockReset();
     service.getSourceGraph.mockReset();
     service.getSourceGraphNodes.mockReset();
     service.getSourceGraphNode.mockReset();
@@ -676,38 +717,81 @@ describe('GraphSourceView', () => {
     ).toBe(false);
   });
 
-  it('reads the graph again once a page change finishes', async () => {
-    await renderWebsite();
-    await openTab('settings.sources.graphrag.view.tabs.files');
+  const files = 'settings.sources.graphrag.view.tabs.files';
+  // The title row and byline, above the tabs.
+  const header = () =>
+    container.querySelector('[role="tablist"]')!.parentElement!
+      .previousElementSibling as HTMLElement;
+  const graph = 'settings.sources.graphrag.view.tabs.graph';
+
+  it('reads the graph again once a page change finishes, and tells the host', async () => {
+    const onPagesChanged = vi.fn();
+    await renderWebsite({ onPagesChanged });
+    await openTab(files);
     expect(service.getSourceGraph).toHaveBeenCalledTimes(1);
+    await act(async () => buttonByText('START REMOVE')!.click());
+    // The page list shows the change the view holds.
+    expect(
+      container
+        .querySelector('[data-testid="website-tree"]')
+        ?.getAttribute('data-status'),
+    ).toBe('REMOVING');
     // A removal changes the graph without a build.
-    await act(async () => buttonByText('PAGES CHANGED')!.click());
+    await act(async () => emitTerminal('completed', 'task-r'));
     await flush();
     expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('hands a sync to its page list, and tells the host a page change finished', async () => {
+  it('waits for a sync the host started on the Graph tab, and says so there', async () => {
+    const sync = { startedAt: Date.now(), taskId: 'task-s' };
+    const onSyncSettled = vi.fn();
     const onPagesChanged = vi.fn();
-    await renderWebsite({
-      sync: { startedAt: 1, taskId: 'task-s' },
-      onPagesChanged,
-    });
-    await openTab('settings.sources.graphrag.view.tabs.files');
-    const tree = container.querySelector('[data-testid="website-tree"]');
-    expect(tree?.getAttribute('data-sync-task')).toBe('task-s');
-    await act(async () => buttonByText('PAGES CHANGED')!.click());
+    const onBusyChange = vi.fn();
+    await renderWebsite({ sync, onSyncSettled, onPagesChanged, onBusyChange });
+    // The Files tab's page list isn't mounted: the view waits itself.
+    expect(container.querySelector('[data-testid="website-tree"]')).toBeNull();
+    expect(header().textContent).toContain('settings.sources.website.syncing');
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => emitTerminal('completed', 'task-s'));
+    await flush();
+    expect(onSyncSettled).toHaveBeenCalledWith(sync);
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(header().textContent).not.toContain(
+      'settings.sources.website.syncing',
+    );
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps a page change's wait when the Files tab is left", async () => {
+    const onPagesChanged = vi.fn();
+    await renderWebsite({ onPagesChanged });
+    await openTab(files);
+    await act(async () => buttonByText('START REMOVE')!.click());
+    await openTab(graph);
+    expect(container.querySelector('[data-testid="website-tree"]')).toBeNull();
+    expect(header().textContent).toContain('REMOVING');
+
+    await act(async () => emitTerminal('completed', 'task-r'));
     await flush();
     expect(onPagesChanged).toHaveBeenCalledTimes(1);
     expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(header().textContent).not.toContain('REMOVING');
   });
 
-  it('tells the host its page list stopped waiting for the sync', async () => {
-    const sync = { startedAt: 1, taskId: 'task-s' };
-    const onSyncSettled = vi.fn();
-    await renderWebsite({ sync, onSyncSettled });
-    await openTab('settings.sources.graphrag.view.tabs.files');
-    await act(async () => buttonByText('SYNC SETTLED')!.click());
-    expect(onSyncSettled).toHaveBeenCalledWith(sync);
+  it('shows the running change once, in the page list, on the Files tab', async () => {
+    await renderWebsite({ sync: { startedAt: Date.now(), taskId: 'task-s' } });
+    await openTab(files);
+    expect(
+      container
+        .querySelector('[data-testid="website-tree"]')
+        ?.getAttribute('data-status'),
+    ).toBe('settings.sources.website.syncing');
+    expect(header().textContent).not.toContain(
+      'settings.sources.website.syncing',
+    );
   });
 
   it("opens a cited chunk in a website source's page list", async () => {

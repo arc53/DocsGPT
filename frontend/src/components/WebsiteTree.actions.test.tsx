@@ -970,6 +970,70 @@ describe('WebsiteTree page management', () => {
       expect(onPagesChanged).toHaveBeenCalledTimes(1);
     });
 
+    it('stays busy until every overlapping change has ended', async () => {
+      const onBusyChange = vi.fn();
+      const renderWith = (sync: { startedAt: number; taskId: string } | null) =>
+        act(async () => {
+          root.render(
+            <WebsiteTree
+              docId="src-1"
+              sourceName="Docs"
+              onBackToDocuments={() => undefined}
+              hosts={['docs.x.io']}
+              syncFrequency="weekly"
+              sync={sync}
+              onBusyChange={onBusyChange}
+            />,
+          );
+        });
+      await renderWith(null);
+      await act(async () => {
+        captured.props!.onDirectoryDataLoaded!({
+          directory_structure: STRUCTURE,
+        });
+      });
+      captured.props!.controllerRef!.current = fakeController();
+      expect(onBusyChange).toHaveBeenLastCalledWith(false);
+      service.refreshWebsitePage.mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, task_id: 'task-r' }),
+      });
+      const page = {
+        name: 'extra.md',
+        isFile: true,
+        node: STRUCTURE['extra.md'],
+      };
+      const refresh = menu(page).find(
+        (o) => o.label === 'settings.sources.website.refreshPage',
+      )!;
+      await act(async () => refresh.onClick(new Event('click')));
+      expect(onBusyChange).toHaveBeenLastCalledWith(true);
+      // The source's ⋯ → Sync now while the refresh runs.
+      await renderWith({ startedAt: Date.now(), taskId: 'task-s' });
+      expect(captured.props!.statusLabel).toBe(
+        'settings.sources.website.syncing',
+      );
+
+      // The refresh finishes first: the sync still holds the tree.
+      await act(async () => emitTerminal('completed', 'task-r'));
+      expect(captured.props!.statusLabel).toBe(
+        'settings.sources.website.syncing',
+      );
+      expect(menu(page).at(-1)!.disabled).toBe(true);
+      expect(container.textContent).not.toContain(
+        'settings.sources.website.addPages',
+      );
+      expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+      await act(async () => emitTerminal('completed', 'task-s'));
+      expect(captured.props!.statusLabel).toBeNull();
+      expect(menu(page).at(-1)!.disabled).toBe(false);
+      expect(container.textContent).toContain(
+        'settings.sources.website.addPages',
+      );
+      expect(onBusyChange).toHaveBeenLastCalledWith(false);
+    });
+
     it.each([
       ['busy', 'warning', 'settings.sources.website.changeBusy'],
       ['wiki', 'destructive', 'settings.sources.website.wikiSource'],
