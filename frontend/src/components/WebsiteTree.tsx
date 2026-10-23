@@ -234,8 +234,12 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
 
   const tokenRef = useRef(token);
   tokenRef.current = token;
-  // Another source's entries never stand in for this one's.
-  useEffect(() => setPageEntries(null), [docId]);
+  // Another source's entries and first address never stand in for this
+  // one's (a source the caller only reads never loads its own).
+  useEffect(() => {
+    setPageEntries(null);
+    setFirstEntryOrigin(null);
+  }, [docId]);
   useEffect(() => {
     if (!canEdit) return;
     let cancelled = false;

@@ -1142,4 +1142,50 @@ describe('WebsiteTree page management', () => {
     );
     act(() => bylineRoot.unmount());
   });
+
+  it("doesn't link another source by the previous source's first address", async () => {
+    service.getWebsite.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        config: {
+          entries: [{ url: 'http://docs.x.io:8080/guide/', mode: 'site' }],
+        },
+      }),
+    });
+    await render();
+    // The same tree, now for a source the caller only reads (no config read).
+    await act(async () => {
+      root.render(
+        <WebsiteTree
+          docId="src-2"
+          sourceName="Blog"
+          onBackToDocuments={() => undefined}
+          hosts={['blog.y.io']}
+          canEdit={false}
+        />,
+      );
+    });
+    await act(async () => {
+      captured.props!.onDirectoryDataLoaded!({
+        directory_structure: {
+          'a.md': {
+            type: 'text/markdown',
+            token_count: 1,
+            url: 'https://blog.y.io/a',
+          },
+        },
+      });
+    });
+    const byline = document.createElement('div');
+    const bylineRoot = createRoot(byline);
+    await act(async () =>
+      bylineRoot.render(
+        <>{captured.props!.renderByline!({ files: 1, tokens: 1 })}</>,
+      ),
+    );
+    expect(byline.querySelector('a')?.getAttribute('href')).toBe(
+      'https://blog.y.io',
+    );
+    act(() => bylineRoot.unmount());
+  });
 });

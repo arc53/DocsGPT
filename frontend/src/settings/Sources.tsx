@@ -579,6 +579,9 @@ export default function Sources({
         />
       ) : isGraphSource(documentToView) ? (
         <GraphSourceView
+          // One view per source: another source's waits and state never
+          // carry over.
+          key={documentToView.id}
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
           sourceType={documentToView.type}
@@ -602,6 +605,7 @@ export default function Sources({
       ) : documentToView.isNested ? (
         documentToView.website ? (
           <WebsiteTree
+            key={documentToView.id}
             docId={documentToView.id || ''}
             canEdit={viewCanEdit}
             sourceName={documentToView.name}
