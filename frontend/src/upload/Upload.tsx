@@ -620,13 +620,15 @@ function Upload({
       // in place (Map.set keeps the first position).
       const byPath = new Map(files.map((file) => [getUploadPath(file), file]));
       acceptedFiles.forEach((file) => byPath.set(getUploadPath(file), file));
-      setPickedFiles(Array.from(byPath.values()));
+      const merged = Array.from(byPath.values());
+      setPickedFiles(merged);
       setRejectedFiles(
         rejections
           .filter((rejection) => !isHiddenUpload(rejection.file))
           .map((rejection) => getUploadPath(rejection.file)),
       );
-      const firstFile = acceptedFiles[0];
+      // An untouched name follows the list's first file, not the latest pick.
+      const firstFile = merged[0];
       const pickedName = firstFile
         ? (getFolderName(firstFile) ?? firstFile.name)
         : undefined;

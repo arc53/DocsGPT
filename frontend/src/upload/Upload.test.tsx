@@ -1208,6 +1208,17 @@ describe('Upload local file step', () => {
     expect(rows[1].textContent).toContain('b.pdf');
   });
 
+  it('keeps the name from the first file when a later pick adds more', async () => {
+    await openLocalFile();
+    await pick([makeFile('a.pdf', 'application/pdf')]);
+    await pick([makeFile('b.pdf', 'application/pdf')]);
+    const names = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
+    ).map((el) => el.value);
+    expect(names).toContain('a.pdf');
+    expect(names).not.toContain('b.pdf');
+  });
+
   const removeButtons = () =>
     Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
