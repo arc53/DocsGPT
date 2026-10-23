@@ -49,6 +49,9 @@ import WikiSettingsModal from './WikiSettingsModal';
 /** Where a source's menu shows: its card in the grid, or its opened view. */
 export type SourceMenuPlace = 'card' | 'view';
 
+/** A sync the server accepted: when its request went out and its task. */
+export type StartedSync = { startedAt: number; taskId: string | null };
+
 interface UseSourceActionsOptions {
   /** Opens the source (the card's View). */
   onView: (doc: Doc) => void;
@@ -60,6 +63,11 @@ interface UseSourceActionsOptions {
   onChanged: () => void;
   /** Updates the source in place (a saved schedule or config), no refetch. */
   onPatched: (id: string, patch: Partial<Doc>) => void;
+  /**
+   * A sync the server accepted (Sync now from a menu or Source settings), so
+   * an open view of the source can wait for it to finish.
+   */
+  onSyncStarted?: (doc: Doc, sync: StartedSync) => void;
 }
 
 /**
@@ -78,6 +86,7 @@ export function useSourceActions({
   onDeleted,
   onChanged,
   onPatched,
+  onSyncStarted,
 }: UseSourceActionsOptions) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -144,10 +153,15 @@ export function useSourceActions({
       }),
     );
 
-  /** Starts a sync and says so, or says why it couldn't. */
+  /**
+   * Starts a sync and says so, or says why it couldn't. An accepted one goes
+   * to `onSyncStarted`, with when the request went out (before it, so the
+   * sync's own events can't predate it) and its task.
+   */
   const syncNow = async (doc: Doc) => {
     if (!doc.id) return;
     const failed = t('settings.sources.errors.sync');
+    const startedAt = Date.now();
     try {
       // The server finds a connector source's connection itself.
       const response = doc.type?.startsWith('connector')
@@ -170,6 +184,10 @@ export function useSourceActions({
           }),
         }),
       );
+      onSyncStarted?.(doc, {
+        startedAt,
+        taskId: typeof data?.task_id === 'string' ? data.task_id : null,
+      });
     } catch {
       showActionError(failed);
     }

@@ -84,7 +84,7 @@ import {
   sourcePrimary,
   syncSchedule,
 } from './sourceKinds';
-import { useSourceActions } from './useSourceActions';
+import { type StartedSync, useSourceActions } from './useSourceActions';
 
 const NO_EVENTS: SSEEvent[] = [];
 const selectEvents = (state: {
@@ -264,9 +264,16 @@ export default function Sources({
       return doc && fresh ? { ...doc, ...fresh } : doc;
     });
   }, [paginatedDocuments]);
+  // The last sync started from a menu or Source settings; the open website
+  // view waits for it when it is its own (see WebsiteTree's `sync`). Leaving
+  // the view drops it, so opening the source later doesn't wait again.
+  const [startedSync, setStartedSync] = useState<
+    (StartedSync & { sourceId: string }) | null
+  >(null);
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);
+    setStartedSync(null);
   };
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
@@ -360,7 +367,31 @@ export default function Sources({
     },
     onChanged: () => refreshDocs(undefined, currentPage, rowsPerPage),
     onPatched: patchDoc,
+    onSyncStarted: (doc, sync) =>
+      doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
   });
+
+  /**
+   * Reads the open source again after its pages changed (added, refreshed,
+   * removed or synced in its view): this page of cards, which the open view
+   * follows, and the app's knowledge list, which also carries a source opened
+   * from off this page (its hosts, page count and sync date).
+   */
+  const refreshOpenSource = (id: string) => {
+    refreshDocs(undefined, currentPage, rowsPerPage);
+    getDocs(token)
+      .then((docs) => {
+        if (!docs) return;
+        dispatch(setSourceDocs(docs));
+        const fresh = docs.find((d) => d.id === id);
+        if (!fresh) return;
+        const listed = asListedDoc(fresh);
+        setDocumentToView((open) =>
+          open?.id === id ? { ...open, ...listed } : open,
+        );
+      })
+      .catch((error) => console.error(error));
+  };
 
   // The first load opens on the URL's page; a new search starts on page 1.
   const searchedTerm = useRef(debouncedSearchTerm);
@@ -551,6 +582,12 @@ export default function Sources({
             hosts={documentToView.website.hosts}
             syncFrequency={documentToView.syncFrequency}
             syncedAt={documentToView.date}
+            sync={
+              startedSync?.sourceId === documentToView.id ? startedSync : null
+            }
+            onPagesChanged={() =>
+              documentToView.id && refreshOpenSource(documentToView.id)
+            }
             initialPath={link?.chunk?.path}
             linkedChunk={link?.chunk}
           />

@@ -831,6 +831,78 @@ describe('Sources access', () => {
     expect(await viewMenu()).toContain('settings.sources.syncNow');
   });
 
+  const WEBSITE_OWNER: Partial<Doc> = {
+    isNested: true,
+    website: { hosts: ['docs.x.io'], pages: 9 },
+    syncFrequency: 'weekly',
+    date: '2026-10-20T10:00:00Z',
+    access: 'owner',
+    allowed_actions: [...OWNER, 'use', 'view_config'],
+  };
+
+  it("a website view's Sync now hands the sync to the tree to wait on", async () => {
+    service.syncSource.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, task_id: 'task-s' }),
+    });
+    await openView(doc(WEBSITE_OWNER));
+    expect(viewProps['website-tree'].sync).toBeFalsy();
+    const before = Date.now();
+    await viewMenu();
+    await clickItem('settings.sources.syncNow');
+    expect(service.syncSource).toHaveBeenCalledWith(
+      { source_id: 'src-1' },
+      null,
+    );
+    const sync = viewProps['website-tree'].sync as {
+      startedAt: number;
+      taskId: string | null;
+    };
+    expect(sync.taskId).toBe('task-s');
+    expect(sync.startedAt).toBeGreaterThanOrEqual(before);
+    expect(sync.startedAt).toBeLessThanOrEqual(Date.now());
+    // The toast still says it started.
+    expect(toasts()).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({ variant: 'success' }),
+      }),
+    ]);
+  });
+
+  it('a refused Sync now hands the tree nothing to wait on', async () => {
+    service.syncSource.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ success: false, message: 'Nothing to sync.' }),
+    });
+    await openView(doc(WEBSITE_OWNER));
+    await viewMenu();
+    await clickItem('settings.sources.syncNow');
+    expect(viewProps['website-tree'].sync).toBeFalsy();
+  });
+
+  it('a finished page change reads the open website source again', async () => {
+    await openView(doc(WEBSITE_OWNER));
+    const fetchPage = vi.mocked(getDocsWithPagination);
+    fetchPage.mockClear();
+    vi.mocked(getDocs).mockResolvedValueOnce([
+      doc({
+        ...WEBSITE_OWNER,
+        website: { hosts: ['docs.x.io', 'blog.x.io'], pages: 12 },
+        date: '2026-10-23T09:00:00Z',
+      }),
+    ]);
+    const onPagesChanged = viewProps['website-tree'].onPagesChanged as
+      (() => void) | undefined;
+    expect(onPagesChanged).toBeInstanceOf(Function);
+    await act(async () => onPagesChanged!());
+    // The card's page count and the byline's hosts and date follow.
+    expect(fetchPage).toHaveBeenCalled();
+    expect(viewProps['website-tree'].hosts).toEqual(['docs.x.io', 'blog.x.io']);
+    expect(viewProps['website-tree'].syncedAt).toBe('2026-10-23T09:00:00Z');
+  });
+
   it('a GraphRAG website source hands its pages to the graph view', async () => {
     const website = { hosts: ['docs.x.io'], pages: 9 };
     await openView(
