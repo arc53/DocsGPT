@@ -231,8 +231,12 @@ vi.mock('../WebsiteTree', async () => {
   };
 });
 vi.mock('../ConnectorTree', () => ({
-  default: (props: { canEdit?: boolean }) => (
-    <div data-testid="connector-tree" data-can-edit={String(props.canEdit)} />
+  default: (props: { canEdit?: boolean; canSync?: boolean }) => (
+    <div
+      data-testid="connector-tree"
+      data-can-edit={String(props.canEdit)}
+      data-can-sync={String(props.canSync)}
+    />
   ),
 }));
 
@@ -655,6 +659,28 @@ describe('GraphSourceView', () => {
     expect(
       container.querySelector('[data-testid="connector-tree"]'),
     ).not.toBeNull();
+  });
+
+  it("passes on whether the source can sync, so a removed connection's source has no Sync now", async () => {
+    await act(async () => {
+      root.render(
+        <GraphSourceView
+          docId="doc"
+          sourceName="Key Accounts"
+          sourceType="connector:file"
+          synced
+          canSync={false}
+          onBackToDocuments={vi.fn()}
+        />,
+      );
+    });
+    await flush();
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    expect(
+      container
+        .querySelector('[data-testid="connector-tree"]')
+        ?.getAttribute('data-can-sync'),
+    ).toBe('false');
   });
 
   const renderWebsite = async (

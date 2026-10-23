@@ -597,6 +597,7 @@ export default function Sources({
           sourceName={documentToView.name}
           sourceType={documentToView.type}
           synced={viewSynced}
+          canSync={canSyncSource(documentToView)}
           isNested={!!documentToView.isNested}
           canEdit={viewCanEdit}
           onBackToDocuments={closeDocument}

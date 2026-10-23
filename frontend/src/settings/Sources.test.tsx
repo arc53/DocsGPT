@@ -1062,6 +1062,20 @@ describe('Sources access', () => {
     },
   );
 
+  it('a graph source whose connection was removed tells the view it cannot sync', async () => {
+    await openView(
+      doc({
+        isNested: true,
+        type: 'connector:file',
+        connectionId: null,
+        config: { kind: 'graphrag' } as Doc['config'],
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    expect(viewProps.graph.canSync).toBe(false);
+  });
+
   it('a GraphRAG website source hands its pages to the graph view', async () => {
     const website = { hosts: ['docs.x.io'], pages: 9 };
     await openView(

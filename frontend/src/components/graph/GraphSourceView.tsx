@@ -53,6 +53,12 @@ interface GraphSourceViewProps {
    */
   synced?: boolean;
   /**
+   * Whether the source can sync at all (`canSyncSource`): false hides the
+   * Files tab's Sync now (a connector source whose connection was removed).
+   * Defaults to true.
+   */
+  canSync?: boolean;
+  /**
    * Whether the source has a folder structure (`bool(directory_structure)`).
    * Without one the Files tab shows the chunk list, as the plain source view
    * does. Defaults to true.
@@ -116,6 +122,7 @@ export default function GraphSourceView({
   sourceName,
   sourceType,
   synced = false,
+  canSync = true,
   isNested = true,
   website,
   syncFrequency,
@@ -302,6 +309,7 @@ export default function GraphSourceView({
     <ConnectorTree
       embedded
       canEdit={canEdit}
+      canSync={canSync}
       docId={docId}
       sourceName={sourceName}
       sourceType={sourceType}
