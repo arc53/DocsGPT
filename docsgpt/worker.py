@@ -4177,8 +4177,10 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
         source_id: The source to sync.
 
     Returns:
-        ``{"status": "success" | "paused" | "disabled" | "skipped"}`` plus
-        the ingest result.
+        ``{"status": "success", "result": ...}`` with the ingest result,
+        ``{"status": "paused" | "disabled"}``, ``{"status": "skipped", "reason": ...}``
+        (``wiki``, or the sync's own ``busy`` / ``gone`` / ``wiki``; none when the
+        source or its connection is missing) or the sync's ``{"status": "error", "error": ...}``.
     """
     from docsgpt.connectors.service import ConnectionUnavailable, connector_enabled, normalize_status
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -4236,6 +4238,9 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
         )
     except ConnectionUnavailable:
         return {"status": "paused"}
+    if isinstance(result, dict) and result.get("status") in ("skipped", "error"):
+        # Busy, deleted or made a wiki meanwhile (or its row couldn't be read): it didn't sync.
+        return result
     return {"status": "success", "result": result}
 
 
@@ -4419,6 +4424,7 @@ def _ingest_connector(
         "job_name": job_name,
         "loader": source_type,
         "operation": operation_mode,
+        **_task_id_field(self),
     }
     if self.request.retries == 0:
         publish_user_event(
@@ -4477,6 +4483,7 @@ def _ingest_connector(
                         "job_name": job_name,
                         "loader": source_type,
                         "operation": operation_mode,
+                        **_task_id_field(self),
                         "tokens": 0,
                         "no_changes": True,
                     },
@@ -4513,6 +4520,7 @@ def _ingest_connector(
                         "job_name": job_name,
                         "loader": source_type,
                         "operation": operation_mode,
+                        **_task_id_field(self),
                         "tokens": 0,
                         "no_changes": True,
                     },
@@ -4676,6 +4684,7 @@ def _ingest_connector(
                     "job_name": job_name,
                     "loader": source_type,
                     "operation": operation_mode,
+                    **_task_id_field(self),
                     "tokens": tokens,
                 },
                 scope={"kind": "source", "id": source_id_for_events},
@@ -4701,6 +4710,7 @@ def _ingest_connector(
                 "job_name": job_name,
                 "loader": source_type,
                 "operation": operation_mode,
+                **_task_id_field(self),
                 "error": str(e)[:1024],
             },
             scope={"kind": "source", "id": source_id_for_events},

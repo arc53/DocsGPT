@@ -462,6 +462,70 @@ class TestConnectorSyncTakesTheIndexLock:
 
 
 @pytest.mark.unit
+class TestConnectorSyncEventsCarryItsTaskId:
+    """The UI waits on a Sync now by the task id the route returned; a scheduled sync's events mustn't end it."""
+
+    def _capture(self, worker, monkeypatch):
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
+        return events
+
+    def test_a_sync_that_ran(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        task_self.request.id = "task-manual-1"
+        src = _gdrive_source(pg_conn, {})
+        events = self._capture(worker, monkeypatch)
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert [kind for kind, _ in events] == ["source.ingest.queued", "source.ingest.completed"]
+        assert all(payload.get("task_id") == "task-manual-1" for _, payload in events)
+
+    def test_an_unchanged_sync(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        task_self.request.id = "task-manual-2"
+        _mock_connector_pipeline.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+        events = self._capture(worker, monkeypatch)
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert events[-1][0] == "source.ingest.completed" and events[-1][1]["no_changes"] is True
+        assert all(payload.get("task_id") == "task-manual-2" for _, payload in events)
+
+    def test_an_empty_download(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        task_self.request.id = "task-manual-3"
+        _mock_connector_pipeline.download_to_directory.return_value = {"files_downloaded": 0, "empty_result": True}
+        src = _gdrive_source(pg_conn, {})
+        events = self._capture(worker, monkeypatch)
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert events[-1][0] == "source.ingest.completed"
+        assert all(payload.get("task_id") == "task-manual-3" for _, payload in events)
+
+    def test_a_failed_sync(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        task_self.request.id = "task-manual-4"
+        _mock_connector_pipeline.download_to_directory.side_effect = RuntimeError("drive down")
+        src = _gdrive_source(pg_conn, {})
+        events = self._capture(worker, monkeypatch)
+
+        with pytest.raises(RuntimeError):
+            _sync(worker, task_self, str(src["id"]))
+
+        assert events[-1][0] == "source.ingest.failed"
+        assert all(payload.get("task_id") == "task-manual-4" for _, payload in events)
+
+
+@pytest.mark.unit
 class TestARefusedConnectorSyncUpload:
     """The API answers 200 ``skipped`` when the source was deleted, or became a wiki, while the sync ran."""
 
