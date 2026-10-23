@@ -1941,6 +1941,7 @@
         "noSourcesHint": "Pick content from {{name}} to add it to Knowledge.",
         "indexing": "Indexing",
         "firstSyncStarted": "First sync started {{time}}",
+        "dismissFailedSync": "Dismiss {{name}}",
         "sourceMenu": "Source actions",
         "syncStarting": "Starting the sync…",
         "syncRefusedWiki": "This source is a wiki now: it’s edited in place and no longer syncs.",

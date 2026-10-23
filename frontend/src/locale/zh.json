@@ -1938,6 +1938,7 @@
         "noSourcesHint": "从 {{name}} 选择内容以添加到知识库。",
         "indexing": "正在索引",
         "firstSyncStarted": "首次同步已开始（{{time}}）",
+        "dismissFailedSync": "忽略 {{name}}",
         "sourceMenu": "来源操作",
         "syncStarting": "正在开始同步…",
         "syncRefusedWiki": "此来源现在是 Wiki：直接在此编辑，不再同步。",

@@ -1938,6 +1938,7 @@
         "noSourcesHint": "{{name}} からコンテンツを選んでナレッジに追加します。",
         "indexing": "インデックス作成中",
         "firstSyncStarted": "初回同期を開始（{{time}}）",
+        "dismissFailedSync": "{{name}} を閉じる",
         "sourceMenu": "ソースの操作",
         "syncStarting": "同期を開始しています…",
         "syncRefusedWiki": "このソースは Wiki になりました。直接編集するもので、同期はしません。",

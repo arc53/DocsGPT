@@ -2008,6 +2008,7 @@
         "noSourcesHint": "Choisissez du contenu dans {{name}} pour l’ajouter aux connaissances.",
         "indexing": "Indexation",
         "firstSyncStarted": "Première synchronisation lancée {{time}}",
+        "dismissFailedSync": "Ignorer {{name}}",
         "sourceMenu": "Actions de la source",
         "syncStarting": "Lancement de la synchronisation…",
         "syncRefusedWiki": "Cette source est désormais un wiki : elle se modifie sur place et ne se synchronise plus.",

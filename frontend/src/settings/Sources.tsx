@@ -5,6 +5,7 @@ import {
   HardDrive,
   Network,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +21,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardFooter, CardTitle } from '../components/ui/card';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import { IconButton } from '../components/ui/icon-button';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import {
   Tooltip,
@@ -48,6 +50,7 @@ import {
   type KnowledgeLink,
   readKnowledgeLink,
 } from './knowledgeLink';
+import { cn } from '../lib/utils';
 import { can } from '../utils/accessUtils';
 import {
   EMPTY_VALUE,
@@ -66,6 +69,7 @@ import {
   selectConnections,
   selectConnectorsLoaded,
   selectStartedSyncs,
+  syncForgotten,
 } from '../connectors/connectorsSlice';
 import {
   firstIngestState,
@@ -775,16 +779,40 @@ export default function Sources({
                 const connection = connections.find(
                   (c) => c.id === sync.connectionId,
                 );
+                const failed = sync.state === 'failed';
                 return (
                   // Not a source yet: nothing to open or manage, so no
                   // stretched button and no ⋯ until its real card is listed.
+                  // A failed one can only be dismissed.
                   <Card
                     key={`pending-${sync.id}`}
                     variant="filled"
                     padding="lg"
                     className="min-h-[130px] self-start"
                   >
-                    <div className="flex w-full flex-1 flex-col items-start">
+                    {failed && (
+                      <div className="absolute top-5 right-6 z-10">
+                        <IconButton
+                          variant="ghost-on-accent"
+                          size="icon-xs"
+                          icon={X}
+                          label={t(
+                            'settings.connectors.detail.dismissFailedSync',
+                            {
+                              name: sync.name,
+                              interpolation: { escapeValue: false },
+                            },
+                          )}
+                          onClick={() => dispatch(syncForgotten([sync.id]))}
+                        />
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        'flex w-full flex-1 flex-col items-start',
+                        failed && 'pr-9',
+                      )}
+                    >
                       <CardTitle
                         className="line-clamp-2 w-full min-w-0 wrap-anywhere"
                         title={sync.name}
@@ -793,7 +821,7 @@ export default function Sources({
                       </CardTitle>
                     </div>
                     <div className="flex flex-col items-start justify-start gap-1">
-                      {sync.state === 'failed' ? (
+                      {failed ? (
                         <Badge variant="destructive">
                           {t('settings.sources.ingestFailed')}
                         </Badge>

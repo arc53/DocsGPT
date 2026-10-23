@@ -6,6 +6,7 @@ import {
   RotateCw,
   Trash2,
   Unplug,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +24,7 @@ import { Card } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { ListRow, ListRows } from '../components/ui/list-row';
@@ -546,6 +548,21 @@ function indexingSyncs(
 }
 
 /**
+ * The syncs started this session that the server doesn't list and whose
+ * first ingest failed: shown as failed until dismissed.
+ */
+function failedSyncs(
+  started: StartedSync[],
+  listed: Set<string>,
+  events: SSEEvent[],
+): StartedSync[] {
+  return started.filter(
+    (sync) =>
+      !listed.has(sync.id) && firstIngestState(events, sync.id) === 'failed',
+  );
+}
+
+/**
  * One account in a service's account list: its name, account line, status
  * and ⋯. With several accounts the row picks which one's knowledge and tools
  * show below: a stretched button covers the row and the ⋯ sits above it, so
@@ -659,6 +676,7 @@ function AccountContent({
   connector,
   detail,
   indexing,
+  failedFirst,
   onSyncMore,
   onRefreshTools,
   onToggleTool,
@@ -670,11 +688,14 @@ function AccountContent({
   detail: ConnectionDetail;
   /** This account's syncs that are still on their first ingest. */
   indexing: StartedSync[];
+  /** This account's syncs whose first ingest failed, until dismissed. */
+  failedFirst: StartedSync[];
 } & Omit<
   AccountHandlers,
   'onReconnect' | 'onDisconnect' | 'onRemove' | 'onRename'
 >) {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
   // Sources whose Sync now the server hasn't answered yet: one start each.
@@ -687,7 +708,8 @@ function AccountContent({
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   const connected = detail.status === 'connected';
-  const hasSources = detail.sources.length + indexing.length > 0;
+  const hasSources =
+    detail.sources.length + indexing.length + failedFirst.length > 0;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
 
   const openSource = (source: ConnectionSource) =>
@@ -798,6 +820,39 @@ function AccountContent({
                       <Badge variant="neutral">
                         {t('settings.connectors.detail.indexing')}
                       </Badge>
+                    }
+                  />
+                ))}
+                {failedFirst.map((sync) => (
+                  <ListRow
+                    key={sync.id}
+                    title={sync.name}
+                    description={t(
+                      'settings.connectors.detail.firstSyncStarted',
+                      {
+                        time: formatRelative(sync.startedAt) ?? '',
+                        interpolation: { escapeValue: false },
+                      },
+                    )}
+                    trailing={
+                      <>
+                        <Badge variant="destructive">
+                          {t('settings.sources.ingestFailed')}
+                        </Badge>
+                        <IconButton
+                          variant="ghost-on-accent"
+                          size="icon-xs"
+                          icon={X}
+                          label={t(
+                            'settings.connectors.detail.dismissFailedSync',
+                            {
+                              name: sync.name,
+                              interpolation: { escapeValue: false },
+                            },
+                          )}
+                          onClick={() => dispatch(syncForgotten([sync.id]))}
+                        />
+                      </>
                     }
                   />
                 ))}
@@ -981,12 +1036,15 @@ function ServiceSection({
   onPick,
   onConnect,
   indexing,
+  failedFirst,
   ...handlers
 }: {
   service: ConnectorDefinition;
   heading: string;
   /** Syncs still on their first ingest, any account's. */
   indexing: StartedSync[];
+  /** Syncs whose first ingest failed, any account's. */
+  failedFirst: StartedSync[];
   /** A part's own description; the parent's is in the panel header. */
   description?: string;
   accounts: ConnectionDetail[];
@@ -1091,6 +1149,9 @@ function ServiceSection({
           connector={service}
           detail={shown}
           indexing={indexing.filter((sync) => sync.connectionId === shown.id)}
+          failedFirst={failedFirst.filter(
+            (sync) => sync.connectionId === shown.id,
+          )}
           onSyncMore={handlers.onSyncMore}
           onRefreshTools={handlers.onRefreshTools}
           onToggleTool={handlers.onToggleTool}
@@ -1210,6 +1271,7 @@ export default function ConnectionDrawer({
   );
   const listed = listedSourceIds(shownDetails);
   const indexing = indexingSyncs(ownSyncs, listed, events, now);
+  const failedFirst = failedSyncs(ownSyncs, listed, events);
   const finishedKey = ownSyncs
     .filter(
       (sync) =>
@@ -1471,6 +1533,7 @@ export default function ConnectionDrawer({
         onPick={(id) => setPicked((state) => ({ ...state, [service.key]: id }))}
         onConnect={() => onConnect(service)}
         indexing={indexing}
+        failedFirst={failedFirst}
         {...handlers}
       />
     ));

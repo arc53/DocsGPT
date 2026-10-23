@@ -182,6 +182,7 @@ vi.mock('../upload/Upload', () => ({
   },
 }));
 
+import { syncForgotten } from '../connectors/connectorsSlice';
 import type { Doc } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import Sources from './Sources';
@@ -1780,6 +1781,12 @@ describe('Sources citation link', () => {
       expect(where()).toBe('');
       // Nothing left to poll for.
       expect(vi.getTimerCount()).toBe(0);
+      // Its card can only be dismissed, which forgets the sync.
+      const dismiss = card.querySelector<HTMLButtonElement>(
+        'button[aria-label="settings.connectors.detail.dismissFailedSync"]',
+      )!;
+      await act(async () => dismiss.click());
+      expect(dispatch).toHaveBeenCalledWith(syncForgotten(['src-new']));
     });
 
     it('checks the list every 30 s after 2 minutes, and opens the source once it appears', async () => {

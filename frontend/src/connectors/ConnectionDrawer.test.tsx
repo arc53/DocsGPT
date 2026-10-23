@@ -821,47 +821,66 @@ describe('ConnectionDrawer', () => {
       startedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
     });
 
-    it.each(['completed', 'failed'])(
-      'stops showing a sync as indexing once its ingest %s, listed or not',
-      async (outcome) => {
-        // Never listed: the source was deleted, or can't be listed.
-        connectors.getConnection.mockResolvedValue({
-          success: true,
-          connection: { ...DETAIL, sources: [] },
-        });
-        connectors.listConnections.mockResolvedValue({
-          success: true,
-          connections: [
-            {
-              id: 'conn-1',
-              connector_key: 'google_drive',
-              status: 'connected',
-            },
-          ],
-        });
-        await render(DRIVE, { startedSyncs: [started()] });
-        expect(text()).toContain('Contracts');
-        await act(async () => {
-          store.dispatch(
-            sseEventReceived({
-              id: 'ev-1',
-              type: `source.ingest.${outcome}`,
-              scope: { kind: 'source', id: 'src-new' },
-              payload: {},
-            }),
-          );
-        });
-        // The account still shows, without the sync.
-        expect(text()).toContain('lena@example.com');
-        expect(text()).not.toContain('Contracts');
-        expect(text()).not.toContain('settings.connectors.detail.indexing');
-        // A finished one the reload still doesn't list is forgotten, so the
-        // next drawer doesn't reload for it again; a failed one is kept.
-        expect(startedIds()).toEqual(
-          outcome === 'completed' ? [] : ['src-new'],
+    const renderUnlisted = async () => {
+      // Never listed: the source was deleted, or can't be listed.
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      connectors.listConnections.mockResolvedValue({
+        success: true,
+        connections: [
+          {
+            id: 'conn-1',
+            connector_key: 'google_drive',
+            status: 'connected',
+          },
+        ],
+      });
+      await render(DRIVE, { startedSyncs: [started()] });
+      expect(text()).toContain('Contracts');
+    };
+    const ingestEnded = (outcome: 'completed' | 'failed') =>
+      act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: 'ev-1',
+            type: `source.ingest.${outcome}`,
+            scope: { kind: 'source', id: 'src-new' },
+            payload: {},
+          }),
         );
-      },
-    );
+      });
+
+    it('stops showing a sync once its ingest completed, listed or not', async () => {
+      await renderUnlisted();
+      await ingestEnded('completed');
+      // The account still shows, without the sync.
+      expect(text()).toContain('lena@example.com');
+      expect(text()).not.toContain('Contracts');
+      expect(text()).not.toContain('settings.connectors.detail.indexing');
+      // A finished one the reload still doesn't list is forgotten, so the
+      // next drawer doesn't reload for it again.
+      expect(startedIds()).toEqual([]);
+    });
+
+    it('shows a failed first sync as failed until it is dismissed', async () => {
+      await renderUnlisted();
+      await ingestEnded('failed');
+      const row = accountRow('Contracts');
+      expect(row.textContent).toContain('settings.sources.ingestFailed');
+      expect(row.textContent).not.toContain(
+        'settings.connectors.detail.indexing',
+      );
+      expect(startedIds()).toEqual(['src-new']);
+      const dismiss = row.querySelector<HTMLButtonElement>(
+        'button[aria-label^="settings.connectors.detail.dismissFailedSync"]',
+      )!;
+      await act(async () => dismiss.click());
+      expect(startedIds()).toEqual([]);
+      expect(text()).not.toContain('Contracts');
+      expect(text()).toContain('lena@example.com');
+    });
 
     it('gives up on a sync with no word on its ingest after 15 minutes', async () => {
       connectors.getConnection.mockResolvedValue({
