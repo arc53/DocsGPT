@@ -476,4 +476,12 @@ describe('MCPServerModal', () => {
     expect(testMCPConnection).not.toHaveBeenCalled();
     expect(text()).toContain('settings.tools.mcp.errors.headerValueRequired');
   });
+  it('leaves saved headers alone when opened without their names', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    await render({ header_names: undefined });
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection.mock.calls[0][0].config).not.toHaveProperty(
+      'headers',
+    );
+  });
 });

@@ -165,3 +165,13 @@ def test_new_tool_sends_what_was_typed():
 def test_invalid_headers_are_refused(monkeypatch, headers):
     with pytest.raises(ValueError):
         _merge(monkeypatch, headers)
+
+
+@pytest.mark.unit
+def test_a_form_without_headers_keeps_the_saved_ones(monkeypatch):
+    import docsgpt.api.user.tools.mcp as mcp_routes
+
+    monkeypatch.setattr(mcp_routes, "decrypt_credentials", lambda blob, uid: dict(STORED))
+    existing = {"config": {"encrypted_headers": "sealed"}}
+    assert mcp_routes._merge_mcp_headers({}, existing, "owner", False) == STORED
+    assert mcp_routes._merge_mcp_headers({}, existing, "owner", True) == {}

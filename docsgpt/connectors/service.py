@@ -292,6 +292,11 @@ def serialize_tool(
         "status": bool(row.get("status")),
         "credential_mode": row.get("credential_mode") or "owner",
         "actions": actions,
+        # An MCP tool's saved custom headers, by name only: the values are secrets.
+        # None when the row carries no config, so a reconnect leaves them as saved.
+        "header_names": list((_json(row.get("config")) or {}).get("header_names") or [])
+        if row.get("name") == "mcp_tool" and "config" in row
+        else None,
     }
 
 

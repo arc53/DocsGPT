@@ -242,21 +242,22 @@ def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, m
     Header values are secrets, write-only like the API key. An empty value
     keeps the stored one for the same name (in any capitalization) while the
     origin is unchanged; a new origin never inherits them, and a name the
-    client no longer sends is dropped.
+    client no longer sends is dropped. A config with no ``headers`` at all
+    (a form that doesn't show them) keeps every saved one.
 
     Raises:
         ValueError: ``headers`` is not an object of valid header names to strings.
     """
+    saved: dict = {}
+    existing_config = (existing_doc or {}).get("config") or {}
+    if not moved and existing_config.get("encrypted_headers"):
+        saved = decrypt_credentials(existing_config["encrypted_headers"], owner_id)
+    if "headers" not in config:
+        return dict(saved)
     incoming = config.get("headers") or {}
     if not isinstance(incoming, dict):
         raise ValueError("headers must be an object")
-    stored: dict = {}
-    existing_config = (existing_doc or {}).get("config") or {}
-    if not moved and existing_config.get("encrypted_headers"):
-        stored = {
-            str(k).lower(): v
-            for k, v in decrypt_credentials(existing_config["encrypted_headers"], owner_id).items()
-        }
+    stored = {str(k).lower(): v for k, v in saved.items()}
     merged: dict = {}
     for raw_name, value in incoming.items():
         name = str(raw_name).strip()

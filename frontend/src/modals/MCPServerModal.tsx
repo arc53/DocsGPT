@@ -393,11 +393,14 @@ export default function MCPServerModal({
       config.redirect_uri = `${baseURL.replace(/\/$/, '')}/api/mcp_server/callback`;
     }
     // An empty value keeps a saved header's value; a removed row drops it.
-    config.headers = Object.fromEntries(
-      headers
-        .filter((row) => row.name.trim())
-        .map((row) => [row.name.trim(), row.value.trim()]),
-    );
+    // Opened without the saved names (an older caller), the form sends no
+    // headers, and the server keeps the saved ones.
+    if (!server?.id || Array.isArray(server?.header_names))
+      config.headers = Object.fromEntries(
+        headers
+          .filter((row) => row.name.trim())
+          .map((row) => [row.name.trim(), row.value.trim()]),
+      );
     return config;
   };
 

@@ -139,6 +139,8 @@ export type ConnectionTool = {
   status: boolean;
   credential_mode: CredentialMode;
   actions: ConnectionToolAction[];
+  /** An MCP tool's saved custom headers, by name (values never come back). */
+  header_names?: string[] | null;
 };
 
 export type ConnectionSource = {
