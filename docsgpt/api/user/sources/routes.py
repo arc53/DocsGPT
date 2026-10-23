@@ -3,7 +3,7 @@
 import json
 import math
 import uuid
-from typing import Any, Callable, Optional
+from typing import Any, Callable, NamedTuple, Optional
 from urllib.parse import urlparse
 
 from flask import Response, current_app, jsonify, make_response, redirect, request
@@ -29,7 +29,12 @@ from docsgpt.api.user.resource_access import (
     settings_many,
 )
 from docsgpt.api.user.sources.access import denied_response, load_source
-from docsgpt.api.user.sources.upload import _read_idempotency_key, reingest_idempotency_key
+from docsgpt.api.user.sources.upload import (
+    _claim_task_or_get_cached,
+    _read_idempotency_key,
+    _release_claim,
+    reingest_idempotency_key,
+)
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
@@ -652,7 +657,20 @@ _CONNECTION_REMOVED_EDITOR = (
 )
 
 
-def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], Any]] | Response:
+class _Rebuild(NamedTuple):
+    """How a source with no stored files is rebuilt: the task it queues, and a call that queues it.
+
+    ``queue(task_id, idempotency_key)`` queues the task under ``task_id``
+    (``None`` lets Celery pick one) and returns it. The key reaches a task
+    that guards on one (a connector sync); ``sync_source`` takes none, so a
+    repeated request is answered by the route's claim on it instead.
+    """
+
+    task_name: str
+    queue: Callable[[Optional[str], str], Any]
+
+
+def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[_Rebuild] | Response:
     """How a source with no stored files is rebuilt instead of re-ingested: a sync of its stored config.
 
     Reingest re-reads the files a source keeps in storage; a Website,
@@ -667,11 +685,10 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], 
         actor: The caller, who also receives the sync's events (a team editor isn't the owner).
 
     Returns:
-        A callable that queues the sync and returns its task; a refusal
-        (a connector source whose connection was removed, 409
-        ``connection_missing``, or whose owner must reconnect, 409
-        ``reconnect_needed``); or ``None`` when the source has nothing to
-        sync, so the reingest task runs and reports that.
+        The sync to queue (``_Rebuild``); a refusal (a connector source
+        whose connection was removed, 409 ``connection_missing``, or whose
+        owner must reconnect, 409 ``reconnect_needed``); or ``None`` when the
+        source has nothing to sync, so the reingest task runs and reports that.
     """
     source_id = str(doc["id"])
     source_type = doc.get("type") or ""
@@ -699,35 +716,42 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], 
             except ValueError:
                 remote_data = {}
         selection = remote_data if isinstance(remote_data, dict) else {}
-        return lambda: ingest_connector_task.delay(
-            job_name=doc.get("name"),
-            user=owner,
-            source_type=provider,
-            connection_id=str(session["id"]),
-            file_ids=selection.get("file_ids", []),
-            folder_ids=selection.get("folder_ids", []),
-            recursive=selection.get("recursive", True),
-            retriever=doc.get("retriever") or "classic",
-            operation_mode="sync",
-            doc_id=source_id,
-            sync_frequency=doc.get("sync_frequency") or "never",
+        connector_kwargs = {
+            "job_name": doc.get("name"),
+            "user": owner,
+            "source_type": provider,
+            "connection_id": str(session["id"]),
+            "file_ids": selection.get("file_ids", []),
+            "folder_ids": selection.get("folder_ids", []),
+            "recursive": selection.get("recursive", True),
+            "retriever": doc.get("retriever") or "classic",
+            "operation_mode": "sync",
+            "doc_id": source_id,
+            "sync_frequency": doc.get("sync_frequency") or "never",
             # The sync runs as the owner; its events also reach the caller.
-            actor_id=actor,
+            "actor_id": actor,
+        }
+        return _Rebuild(
+            "ingest_connector_task",
+            lambda task_id, key: ingest_connector_task.apply_async(
+                kwargs={**connector_kwargs, "idempotency_key": key}, task_id=task_id,
+            ),
         )
     source_data = normalize_remote_data(source_type, doc.get("remote_data"))
     if not source_data:
         return None
-    return lambda: sync_source.delay(
-        source_data=source_data,
-        job_name=doc.get("name", ""),
-        user=owner,
-        loader=source_type,
-        sync_frequency=doc.get("sync_frequency") or "never",
-        retriever=doc.get("retriever") or "classic",
-        doc_id=source_id,
-        connection_id=_connection_id(doc),
-        actor_id=actor,
-    )
+    sync_kwargs = {
+        "source_data": source_data,
+        "job_name": doc.get("name", ""),
+        "user": owner,
+        "loader": source_type,
+        "sync_frequency": doc.get("sync_frequency") or "never",
+        "retriever": doc.get("retriever") or "classic",
+        "doc_id": source_id,
+        "connection_id": _connection_id(doc),
+        "actor_id": actor,
+    }
+    return _Rebuild("sync_source", lambda task_id, _key: sync_source.apply_async(kwargs=sync_kwargs, task_id=task_id))
 
 
 @sources_ns.route("/sources/reingest")
@@ -746,7 +770,9 @@ class ReingestSource(Resource):
         "``{success, task_id}`` and the task's source.ingest events carry that "
         "task_id. A connector source can be refused with a 409: code "
         "connection_missing when its connection was removed, reconnect_needed "
-        "when the owner must sign it in again."
+        "when the owner must sign it in again. Honours an Idempotency-Key "
+        "header: a repeat with the same key runs nothing new, and a rebuild's "
+        "repeat answers with the first request's task_id."
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -788,6 +814,16 @@ class ReingestSource(Resource):
             rebuild = _remote_rebuild(doc, owner, user)
             if isinstance(rebuild, Response):
                 return rebuild
+        # One key per request (or per client Idempotency-Key): a key per
+        # source would replay the last completed reingest for 24h.
+        idempotency_key = reingest_idempotency_key(owner, resolved_source_id, client_key)
+        rebuild_task_id = None
+        if rebuild is not None and client_key:
+            # A client's repeat is answered with the first request's task,
+            # not a second sync: claimed here, before anything is queued.
+            rebuild_task_id, cached = _claim_task_or_get_cached(idempotency_key, rebuild.task_name)
+            if cached is not None:
+                return make_response(jsonify({"success": True, "task_id": cached["task_id"]}), 200)
         # Drop the stale chunk-progress row so the sources list stops
         # deriving a 'failed' status; reingest never rewrites it itself.
         try:
@@ -801,14 +837,12 @@ class ReingestSource(Resource):
             )
         try:
             if rebuild is not None:
-                task = rebuild()
+                task = rebuild.queue(rebuild_task_id, idempotency_key)
             else:
-                # One key per request (or per client Idempotency-Key): a key
-                # per source would replay the last completed reingest for 24h.
                 task = reingest_source_task.delay(
                     source_id=resolved_source_id,
                     user=owner,
-                    idempotency_key=reingest_idempotency_key(owner, resolved_source_id, client_key),
+                    idempotency_key=idempotency_key,
                     actor_id=user,
                 )
         except Exception as err:
@@ -816,6 +850,9 @@ class ReingestSource(Resource):
                 f"Error starting reingest for source {source_id}: {err}",
                 exc_info=True,
             )
+            if rebuild_task_id is not None:
+                # Nothing was queued: a retry with the same key runs.
+                _release_claim(idempotency_key)
             return make_response(jsonify({"success": False}), 400)
         try:
             with db_session() as conn:

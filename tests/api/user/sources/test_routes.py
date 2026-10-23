@@ -1225,24 +1225,49 @@ class TestReingestSource:
         assert response.status_code == 400
 
 
-def _reingest(app, pg_conn, user, source_id, **patches):
-    """POST /api/sources/reingest with the sync and reingest tasks stubbed; returns (response, mocks)."""
+def _reingest(app, pg_conn, user, source_id, headers=None, mocks=None, **patches):
+    """POST /api/sources/reingest with the sync and reingest tasks stubbed; returns (response, mocks).
+
+    ``mocks["sync"]`` and ``mocks["connector"]`` are called with each queued
+    task's kwargs; ``mocks["task_ids"]`` lists the task id each was queued
+    under (``None`` when the route didn't pick one). Pass ``mocks`` back in to
+    send a second request against the same stubs.
+    """
     from docsgpt.api.user.sources.routes import ReingestSource
 
-    mocks = {
-        "reingest": MagicMock(return_value=MagicMock(id="reingest-task")),
-        "sync": MagicMock(return_value=MagicMock(id="sync-task")),
-        "connector": MagicMock(return_value=MagicMock(id="connector-task")),
-    }
-    with _patch_db(pg_conn), patch(
+    if mocks is None:
+        mocks = {
+            "reingest": MagicMock(return_value=MagicMock(id="reingest-task")),
+            "sync": MagicMock(return_value=MagicMock(id="sync-task")),
+            "connector": MagicMock(return_value=MagicMock(id="connector-task")),
+            "task_ids": [],
+        }
+
+    def _apply_async(name):
+        def queue(kwargs=None, task_id=None, **_options):
+            mocks["task_ids"].append(task_id)
+            result = mocks[name](**(kwargs or {}))
+            return MagicMock(id=task_id) if task_id else result
+
+        return queue
+
+    @contextmanager
+    def _yield():
+        yield pg_conn
+
+    with _patch_db(pg_conn), patch("docsgpt.api.user.sources.upload.db_session", _yield), patch(
+        "docsgpt.api.user.sources.upload.db_readonly", _yield,
+    ), patch(
         "docsgpt.api.user.sources.routes.reingest_source_task.delay", mocks["reingest"],
     ), patch(
-        "docsgpt.api.user.sources.routes.sync_source.delay", mocks["sync"],
+        "docsgpt.api.user.sources.routes.sync_source.apply_async", side_effect=_apply_async("sync"),
     ), patch(
-        "docsgpt.api.user.sources.routes.ingest_connector_task.delay", mocks["connector"],
+        "docsgpt.api.user.sources.routes.ingest_connector_task.apply_async", side_effect=_apply_async("connector"),
     ), patch(
         "docsgpt.connectors.service.owner_sync_connection", patches.get("connection", MagicMock(return_value=None)),
-    ), app.test_request_context("/api/sources/reingest", method="POST", json={"source_id": source_id}):
+    ), app.test_request_context(
+        "/api/sources/reingest", method="POST", json={"source_id": source_id}, headers=headers or {},
+    ):
         from flask import request
         request.decoded_token = {"sub": user}
         response = ReingestSource().post()
@@ -1404,6 +1429,91 @@ class TestReingestARemoteSource:
 
         assert response.json == {"success": True, "task_id": "reingest-task"}
         mocks["sync"].assert_not_called()
+
+
+class TestReingestARemoteSourceWithAnIdempotencyKey:
+    """A rebuild honours the Idempotency-Key header as a reingest does: one key, one sync."""
+
+    def _website(self, pg_conn, user):
+        return _seed_source(
+            pg_conn, user, name="Docs", type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/a", "mode": "page"}]},
+        )
+
+    def test_a_repeated_key_queues_one_sync_and_answers_its_task(self, app, pg_conn):
+        user = "u-rebuild-key"
+        src = self._website(pg_conn, user)
+        headers = {"Idempotency-Key": "retry-1"}
+
+        first, mocks = _reingest(app, pg_conn, user, str(src["id"]), headers=headers)
+        second, mocks = _reingest(app, pg_conn, user, str(src["id"]), headers=headers, mocks=mocks)
+
+        assert first.status_code == 200 and second.status_code == 200, (first.json, second.json)
+        assert mocks["sync"].call_count == 1
+        assert first.json["task_id"] == mocks["task_ids"][0]
+        assert second.json == {"success": True, "task_id": first.json["task_id"]}
+
+    def test_another_key_or_none_queues_another_sync(self, app, pg_conn):
+        user = "u-rebuild-keys"
+        src = self._website(pg_conn, user)
+
+        _, mocks = _reingest(app, pg_conn, user, str(src["id"]), headers={"Idempotency-Key": "a"})
+        _reingest(app, pg_conn, user, str(src["id"]), headers={"Idempotency-Key": "b"}, mocks=mocks)
+        _reingest(app, pg_conn, user, str(src["id"]), mocks=mocks)
+        _reingest(app, pg_conn, user, str(src["id"]), mocks=mocks)
+
+        assert mocks["sync"].call_count == 4
+
+    def test_a_connector_rebuild_carries_the_reingest_key(self, app, pg_conn):
+        user = "u-rebuild-key-drive"
+        src = _seed_source(
+            pg_conn, user, name="Drive", type="connector:file", remote_data={"provider": "google_drive"},
+        )
+        linked = _connection(pg_conn, user, source=src)
+        connection = MagicMock(return_value={"id": linked})
+        headers = {"Idempotency-Key": "retry-2"}
+
+        first, mocks = _reingest(app, pg_conn, user, str(src["id"]), headers=headers, connection=connection)
+        second, mocks = _reingest(
+            app, pg_conn, user, str(src["id"]), headers=headers, mocks=mocks, connection=connection,
+        )
+
+        assert mocks["connector"].call_count == 1
+        assert mocks["connector"].call_args.kwargs["idempotency_key"] == f"reingest-source:{user}:{src['id']}:retry-2"
+        assert second.json["task_id"] == first.json["task_id"] == mocks["task_ids"][0]
+
+    def test_a_keyless_connector_rebuild_gets_a_key_of_its_own(self, app, pg_conn):
+        user = "u-rebuild-nokey-drive"
+        src = _seed_source(
+            pg_conn, user, name="Drive", type="connector:file", remote_data={"provider": "google_drive"},
+        )
+        connection = MagicMock(return_value={"id": _connection(pg_conn, user, source=src)})
+
+        _, mocks = _reingest(app, pg_conn, user, str(src["id"]), connection=connection)
+        _reingest(app, pg_conn, user, str(src["id"]), mocks=mocks, connection=connection)
+
+        keys = [call.kwargs["idempotency_key"] for call in mocks["connector"].call_args_list]
+        assert len(set(keys)) == 2
+        assert all(key.startswith(f"reingest-source:{user}:{src['id']}:") for key in keys)
+
+    def test_a_failed_dispatch_frees_the_key_for_a_retry(self, app, pg_conn):
+        user = "u-rebuild-key-retry"
+        src = self._website(pg_conn, user)
+        headers = {"Idempotency-Key": "retry-3"}
+        mocks = {
+            "reingest": MagicMock(),
+            "sync": MagicMock(side_effect=[RuntimeError("broker down"), MagicMock(id="sync-task")]),
+            "connector": MagicMock(),
+            "task_ids": [],
+        }
+
+        failed, mocks = _reingest(app, pg_conn, user, str(src["id"]), headers=headers, mocks=mocks)
+        retried, mocks = _reingest(app, pg_conn, user, str(src["id"]), headers=headers, mocks=mocks)
+
+        assert failed.status_code == 400
+        assert retried.status_code == 200
+        assert mocks["sync"].call_count == 2
+        assert retried.json["task_id"] == mocks["task_ids"][1]
 
 
 class TestDirectoryStructure:

@@ -334,13 +334,13 @@ class TestWebsiteWrites:
 
         sid = self._website(pg_conn)
         sync = MagicMock(return_value=MagicMock(id="t-sync"))
-        with _patch_db(pg_conn, ROUTES), patch(f"{ROUTES}.sync_source.delay", sync):
+        with _patch_db(pg_conn, ROUTES), patch(f"{ROUTES}.sync_source.apply_async", sync):
             resp = _call(
                 app, EDITOR, "/api/sources/reingest", ReingestSource().post, method="POST", json={"source_id": sid}
             )
         assert resp.status_code == 200, resp.json
-        assert sync.call_args.kwargs["user"] == OWNER
-        assert sync.call_args.kwargs["actor_id"] == EDITOR
+        assert sync.call_args.kwargs["kwargs"]["user"] == OWNER
+        assert sync.call_args.kwargs["kwargs"]["actor_id"] == EDITOR
 
 
 class TestConfig:

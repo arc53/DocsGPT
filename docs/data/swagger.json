@@ -5758,7 +5758,7 @@
     },
     "/api/sources/reingest": {
       "post": {
-        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again.",
+        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again. Honours an Idempotency-Key header: a repeat with the same key runs nothing new, and a rebuild's repeat answers with the first request's task_id.",
         "operationId": "post_reingest_source",
         "parameters": [
           {
