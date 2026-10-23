@@ -193,6 +193,9 @@ describe('pageKey', () => {
     ['http://x.io:80/a', 'x.io/a'],
     ['http://x.io:443/a', 'x.io:443/a'],
     ['https://x.io:80/a', 'x.io:80/a'],
+    // An IPv6 host keeps its brackets, port or not.
+    ['https://[2001:DB8::1]:8443/a', '[2001:db8::1]:8443/a'],
+    ['https://[2001:db8::1]/a', '[2001:db8::1]/a'],
     // Dot segments resolve, a percent-encoded dot too; only whole segments.
     ['https://x.io/docs/../a', 'x.io/a'],
     ['https://x.io/docs/./a', 'x.io/docs/a'],

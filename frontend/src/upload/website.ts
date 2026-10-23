@@ -271,6 +271,8 @@ export function pageKey(value: string): string {
   const [hostname, port] = splitHost(netloc);
   let host = hostname.toLowerCase().replace(/\.+$/, '');
   if (host.startsWith('www.')) host = host.slice(4);
+  // An IPv6 host keeps its brackets, as the backend's key does.
+  if (host.includes(':')) host = `[${host}]`;
   const defaultPort = scheme ? DEFAULT_PORTS[scheme[1].toLowerCase()] : null;
   if (port !== null && port !== defaultPort) host = `${host}:${port}`;
 
