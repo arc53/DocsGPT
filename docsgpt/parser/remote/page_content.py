@@ -308,11 +308,84 @@ def remove_dot_segments(path: str) -> str:
     return "/".join(resolved) or "/"
 
 
+# Characters RFC 3986 never needs encoded: ``%41`` is ``A`` to every server.
+_UNRESERVED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+_PERCENT_TRIPLET = re.compile(r"%([0-9A-Fa-f]{2})")
+# Encoded separators: a server may decode them into a path's ``/`` or ``\``.
+_ENCODED_SEPARATOR = re.compile(r"%(?:2F|5C)", re.IGNORECASE)
+
+
+def _encode_char(char: str) -> str:
+    """One character as UTF-8 percent triplets; a lone surrogate as U+FFFD, as a browser writes it."""
+    if 0xD800 <= ord(char) <= 0xDFFF:
+        char = "�"
+    return "".join(f"%{byte:02X}" for byte in char.encode("utf-8"))
+
+
+def normalize_percent_encoding(text: str) -> str:
+    """A URL path (or query) in one spelling, however it was percent-encoded.
+
+    Every non-ASCII character, space and control character is percent-encoded
+    as UTF-8; then each ``%XX`` that encodes an unreserved character
+    (``A-Z a-z 0-9 - . _ ~``) is decoded and every other one gets upper-case
+    hex digits. ``%2F`` stays encoded: it is not the path's ``/``. A ``%``
+    not followed by two hex digits is left as it is.
+
+    Args:
+        text: The path or query, as written.
+
+    Returns:
+        ``/caf%C3%A9`` for ``/café``, ``/caf%c3%a9`` and ``/caf%C3%A9`` alike;
+        ``/~a`` for ``/%7Ea``.
+    """
+    text = "".join(_encode_char(char) if ord(char) <= 0x20 or ord(char) >= 0x7F else char for char in text)
+
+    def triplet(match: "re.Match[str]") -> str:
+        char = chr(int(match.group(1), 16))
+        return char if char in _UNRESERVED else f"%{match.group(1).upper()}"
+
+    return _PERCENT_TRIPLET.sub(triplet, text)
+
+
+def normalized_path(path: str) -> str:
+    """A key's path: percent-encoding normalised (``normalize_percent_encoding``), then dot segments resolved.
+
+    Args:
+        path: The path part of a URL.
+
+    Returns:
+        The path the server would serve, in one spelling.
+    """
+    return remove_dot_segments(normalize_percent_encoding(path))
+
+
+def is_ambiguous_path(path: str) -> bool:
+    """Whether servers could read a path as another one: an encoded ``/`` or ``\\``, or a dot segment.
+
+    Scope and skip checks treat such a path as out of scope rather than
+    guess how the server resolves (or decodes) it.
+
+    Args:
+        path: The path part of a URL, as written.
+
+    Returns:
+        True for ``/docs/..%2Fadmin``, ``/a%5Cb``, ``/docs/./a`` or
+        ``/a/%2e%2e/b``; a name with dots in it (``/a..b``) is no dot segment.
+    """
+    normalized = normalize_percent_encoding(path)
+    if _ENCODED_SEPARATOR.search(normalized):
+        return True
+    return any(segment in (".", "..") for segment in normalized.split("/"))
+
+
 def page_key(url: str) -> str:
     """One key per page: scheme, ``www.``, fragment, query order, a trailing slash and dot segments don't count.
 
     A port does, unless it is the scheme's own: ``x.io:8443/a`` is another
-    server's page than ``x.io/a`` (and ``x.io:443/a``).
+    server's page than ``x.io/a`` (and ``x.io:443/a``). The host is compared
+    in its ASCII form (``ascii_host``) and the path and query in one
+    percent-encoding (``normalize_percent_encoding``), so ``/café`` and
+    ``/caf%c3%a9`` are one page.
 
     Args:
         url: A page URL.
@@ -325,8 +398,8 @@ def page_key(url: str) -> str:
         ValueError: If the URL cannot be parsed.
     """
     parts = urlsplit(normalize_page_url(url.strip()))
-    key = f"{host_with_port(parts, bare_host(parts.hostname))}{remove_dot_segments(parts.path).rstrip('/')}"
-    return f"{key}?{parts.query}" if parts.query else key
+    key = f"{host_with_port(parts, bare_host(parts.hostname))}{normalized_path(parts.path).rstrip('/')}"
+    return f"{key}?{normalize_percent_encoding(parts.query)}" if parts.query else key
 
 
 class FetchBudget:

@@ -45,8 +45,10 @@ from docsgpt.parser.remote.page_content import (
     fetch_page,
     final_url,
     host_with_port,
+    is_ambiguous_path,
+    normalize_percent_encoding,
+    normalized_path,
     page_key,
-    remove_dot_segments,
 )
 from docsgpt.parser.remote.page_content import bare_host as _bare_host
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
@@ -120,8 +122,8 @@ def _section_key(url: str) -> str:
     """
     parts = urlsplit(normalize_page_url(url.strip()))
     host = host_with_port(parts, ascii_host(parts.hostname).rstrip("."))
-    key = f"{host}{remove_dot_segments(parts.path).rstrip('/')}"
-    return f"{key}?{parts.query}" if parts.query else key
+    key = f"{host}{normalized_path(parts.path).rstrip('/')}"
+    return f"{key}?{normalize_percent_encoding(parts.query)}" if parts.query else key
 
 
 def _registered_domain(host: str) -> str:
@@ -188,7 +190,8 @@ class SiteScope:
             self.port = None
         self.domain = _registered_domain(self.host)
         self.include_subdomains = include_subdomains
-        prefix = remove_dot_segments("/" + (path_prefix or "").strip().strip("/")).strip("/")
+        # Spelled as page keys spell paths, so ``/Café`` and ``/Caf%C3%A9`` are one prefix.
+        prefix = normalized_path("/" + (path_prefix or "").strip().strip("/")).strip("/")
         self.path_prefix = "/" + prefix if prefix else ""
         self.skip_pages = set()
         self.skip_sections = []
@@ -216,6 +219,10 @@ class SiteScope:
 
         Returns:
             True when it is on the site, under the path, and not skipped.
+            Never for a path servers could read as another one (an encoded
+            ``/`` or ``\\``, or a dot segment; see ``is_ambiguous_path``):
+            ``/docs/..%2Fadmin`` may be served from outside ``/docs``.
+            Paths and rules are compared in one percent-encoding.
         """
         try:
             parsed = urlsplit(url)
@@ -223,9 +230,10 @@ class SiteScope:
                 return False
             if explicit_port(parsed) != self.port:
                 return False
+            if is_ambiguous_path(parsed.path):
+                return False
             if self.path_prefix:
-                # The path the server serves: ``/docs/../admin`` is not under /docs.
-                path = remove_dot_segments(parsed.path) or "/"
+                path = normalized_path(parsed.path) or "/"
                 if path.rstrip("/") != self.path_prefix and not path.startswith(self.path_prefix + "/"):
                     return False
             if not self.skip_pages and not self.skip_sections:

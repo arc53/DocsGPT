@@ -146,14 +146,73 @@ class TestSiteScope:
 
         assert not scope.accepts("https://x.io" + path)
 
-    def test_dot_segments_that_stay_inside_the_path_are_in(self):
+    def test_any_dot_segment_is_out_of_scope(self):
+        # Conservative: servers resolve (and decode) dot segments differently.
         scope = SiteScope("https://x.io/docs/", path_prefix="/docs")
 
-        assert scope.accepts("https://x.io/docs/a/../b")
-        assert scope.accepts("https://x.io/docs/./b")
+        assert not scope.accepts("https://x.io/docs/a/../b")
+        assert not scope.accepts("https://x.io/docs/./b")
+        assert not SiteScope("https://x.io/").accepts("https://x.io/a/%2E/b")
         # Only whole segments are dots: a name with dots in it is a name.
         assert scope.accepts("https://x.io/docs/..hidden")
         assert scope.accepts("https://x.io/docs/a%2e%2e")
+
+    @pytest.mark.parametrize("path", ["/docs/..%2Fadmin", "/docs/a%2fb", "/docs/a%5Cb", "/docs/%2e%2e%2fadmin"])
+    def test_an_encoded_slash_or_backslash_is_out_of_scope(self, path):
+        # A server may decode it into a separator and serve another folder.
+        assert not SiteScope("https://x.io/docs/", path_prefix="/docs").accepts("https://x.io" + path)
+        assert not SiteScope("https://x.io/").accepts("https://x.io" + path)
+
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            ("https://x.io/café", "https://x.io/caf%C3%A9"),
+            ("https://x.io/caf%c3%a9", "https://x.io/caf%C3%A9"),
+            ("https://x.io/~user", "https://x.io/%7Euser"),
+            ("https://x.io/%7euser", "https://x.io/~user"),
+            ("https://x.io/a b", "https://x.io/a%20b"),
+            ("https://x.io/%41bc", "https://x.io/Abc"),
+            ("https://x.io/a%2d_%2E", "https://x.io/a-_."),
+            ("https://x.io/p?q=caf%c3%a9", "https://x.io/p?q=café"),
+        ],
+    )
+    def test_page_key_normalises_percent_encoding(self, a, b):
+        from docsgpt.parser.remote.website_loader import page_key
+
+        assert page_key(a) == page_key(b)
+
+    def test_page_key_keeps_reserved_characters_encoded(self):
+        from docsgpt.parser.remote.website_loader import page_key
+
+        assert page_key("https://x.io/a%2fb") == "x.io/a%2Fb"
+        assert page_key("https://x.io/a%2fb") != page_key("https://x.io/a/b")
+        assert page_key("https://x.io/a%3Fb") == "x.io/a%3Fb"
+        assert page_key("https://x.io/caf%c3%a9") == "x.io/caf%C3%A9"
+        assert page_key("https://x.io/100%") == "x.io/100%"
+
+    def test_skip_rules_match_any_spelling_of_a_page(self):
+        scope = SiteScope("https://x.io/", skip=["https://x.io/caf%C3%A9", "https://x.io/private/*", "https://x.io/Ünï/*"])
+
+        assert not scope.accepts("https://x.io/café")
+        assert not scope.accepts("https://x.io/caf%c3%a9")
+        assert not scope.accepts("https://x.io/%70rivate/secret")
+        assert not scope.accepts("https://x.io/%C3%9Cn%C3%AF/a")
+        assert scope.accepts("https://x.io/cafe")
+
+    def test_stay_under_a_path_matches_any_spelling_of_it(self):
+        scope = SiteScope("https://x.io/", path_prefix="/Café")
+
+        assert scope.accepts("https://x.io/Caf%c3%a9/a")
+        assert scope.accepts("https://x.io/Café/b")
+        assert not scope.accepts("https://x.io/cafe/a")
+        assert SiteScope("https://x.io/", path_prefix="/%64ocs").accepts("https://x.io/docs/a")
+
+    def test_page_entries_spelled_two_ways_are_one(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        config = parse_website_config({"entries": [{"url": "https://x.io/café"}, {"url": "https://x.io/caf%C3%A9"}]})
+
+        assert [entry["url"] for entry in config["entries"]] == ["https://x.io/café"]
 
     def test_skip_rules_see_through_dot_segments(self):
         scope = SiteScope("https://x.io/", skip=["https://x.io/changelog", "https://x.io/private/*"])
