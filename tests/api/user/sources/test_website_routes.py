@@ -151,7 +151,9 @@ class TestSaveWebsite:
         assert response.status_code == 200
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["type"] == "website"
 
-    @pytest.mark.parametrize("body", [{"entries": []}, {"entries": [{"url": "https://x.io"}], "sync_frequency": "hourly"}])
+    @pytest.mark.parametrize(
+        "body", [{"entries": []}, {"entries": [{"url": "https://x.io"}], "sync_frequency": "hourly"}]
+    )
     def test_rejects_bad_input(self, app, pg_conn, body):
         from docsgpt.api.user.sources.website import WebsiteSettings
 
@@ -304,12 +306,15 @@ class TestAddPages:
         ) as sync_task:
             pages_task.delay.return_value = MagicMock(id="pages-task")
             sync_task.delay.return_value = MagicMock(id="sync-task")
-            response = _call(app, pg_conn, AddWebsitePages, "POST", json={"source_id": str(src["id"]), "entries": entries})
+            response = _call(
+                app, pg_conn, AddWebsitePages, "POST", json={"source_id": str(src["id"]), "entries": entries}
+            )
         return response, pages_task, sync_task
 
     def test_pages_on_the_same_host_are_appended(self, app, pg_conn):
         src = _seed(pg_conn)
-        response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/new", "mode": "page"}])
+        new_page = [{"url": "https://docs.x.io/new", "mode": "page"}]
+        response, pages_task, sync_task = self._add(app, pg_conn, src, new_page)
 
         assert response.status_code == 200
         assert response.json["mode"] == "append"
@@ -344,7 +349,8 @@ class TestAddPages:
     def test_a_page_on_a_new_host_rebuilds_the_source(self, app, pg_conn):
         # Every page then needs a host folder in the tree.
         src = _seed(pg_conn)
-        response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": "https://github.com/a/b", "mode": "page"}])
+        other_host = [{"url": "https://github.com/a/b", "mode": "page"}]
+        response, pages_task, sync_task = self._add(app, pg_conn, src, other_host)
 
         assert response.json["mode"] == "sync"
         sync_task.delay.assert_called_once()
@@ -435,7 +441,9 @@ class TestRefreshPage:
 
         with patch("docsgpt.api.user.sources.website.website_pages") as pages_task:
             pages_task.delay.return_value = MagicMock(id="refresh-task")
-            response = _call(app, pg_conn, RefreshWebsitePage, "POST", json={"source_id": str(src["id"]), "file_path": file_path})
+            response = _call(
+                app, pg_conn, RefreshWebsitePage, "POST", json={"source_id": str(src["id"]), "file_path": file_path}
+            )
         return response, pages_task
 
     def test_queues_the_page(self, app, pg_conn):
@@ -489,7 +497,9 @@ class TestConcurrentEdits:
 
         assert response.status_code == 200
         urls = [e["url"] for e in SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]]
-        assert urls == ["https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/other", "https://docs.x.io/new"]
+        assert urls == [
+            "https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/other", "https://docs.x.io/new",
+        ]
 
     def test_a_removal_keeps_a_page_added_meanwhile(self, app, pg_conn):
         from docsgpt.api.user.sources.website import RemoveWebsitePages
@@ -566,7 +576,9 @@ class TestAWikiIsNotEditedAsAWebsite:
         with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
             "docsgpt.api.user.sources.website.sync_source"
         ) as sync_task, patch("docsgpt.api.user.sources.website.get_vector_store", return_value=store):
-            response = _call(app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body})
+            response = _call(
+                app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
+            )
 
         assert response.status_code == 400
         assert response.json["code"] == "wiki"
@@ -602,7 +614,9 @@ class TestAStoreWithoutChunkEdits:
         with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
             "docsgpt.api.user.sources.website.get_vector_store", return_value=store
         ):
-            response = _call(app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body})
+            response = _call(
+                app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
+            )
 
         assert response.status_code == 400
         assert response.json["code"] == "chunks_unsupported"

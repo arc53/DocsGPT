@@ -9,10 +9,10 @@ by ``website_pages_worker``. Sources made by the older url/crawler/sitemap
 loaders read as Website sources and are converted on their first save.
 """
 
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
-from flask import current_app, jsonify, make_response, request
+from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Resource
 
 from docsgpt.api import api
@@ -41,7 +41,7 @@ from docsgpt.vectorstore.vector_creator import VectorCreator
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 
-def _error(message: str, status: int = 400, code: str | None = None, **details):
+def _error(message: str, status: int = 400, code: Optional[str] = None, **details: Any) -> Response:
     """A failed response; ``code`` names an error the UI words itself, with ``details`` for its message."""
     body = {"success": False, "error": message, **details}
     if code:
@@ -73,7 +73,7 @@ def _load_locked(conn, source_id: str, user: str, action: str) -> tuple:
     return (locked if locked is not None else doc), ra
 
 
-def _wiki_refusal(doc: dict):
+def _wiki_refusal(doc: dict) -> Optional[Response]:
     """The 400 for a source converted to a wiki, or ``None``.
 
     A converted source keeps its website ``type`` and ``remote_data``, but its
@@ -83,7 +83,7 @@ def _wiki_refusal(doc: dict):
     return _error(_WIKI_NO_SYNC, code="wiki") if _is_wiki(doc) else None
 
 
-def _chunk_edits_refusal():
+def _chunk_edits_refusal() -> Optional[Response]:
     """The 400 when the vector store can't change single chunks (Elasticsearch), or ``None``.
 
     Refreshing or removing a page edits that page's chunks; on such a store
@@ -97,7 +97,7 @@ def _chunk_edits_refusal():
     )
 
 
-def _website_config(doc: dict):
+def _website_config(doc: dict) -> Optional[dict]:
     """The source's Website config, converting an older web source; ``None`` for any other."""
     return config_from_legacy(doc.get("type"), doc.get("remote_data"))
 
@@ -116,7 +116,9 @@ class WebsiteSettings(Resource):
                     "include_subdomains, discovery: auto|sitemap|links, sitemap_url}"
                 ),
             ),
-            "skip": fields.List(fields.String, description="Pages (url) or sections (https://host/path/*) to leave out"),
+            "skip": fields.List(
+                fields.String, description="Pages (url) or sections (https://host/path/*) to leave out"
+            ),
             "keep_links": fields.Boolean(description="Keep the URL of links inside sentences in page text"),
             "sync_frequency": fields.String(description="never, daily, weekly or monthly"),
         },
@@ -153,7 +155,9 @@ class WebsiteSettings(Resource):
         )
 
     @api.expect(save_model)
-    @api.doc(description="Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync.")
+    @api.doc(
+        description="Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync."
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -369,7 +373,12 @@ class AddWebsitePages(Resource):
         else:
             task = website_pages.delay(source_id, ra.owner_id, "add", urls=page_urls)
         return make_response(
-            jsonify({"success": True, "task_id": task.id, "mode": "sync" if needs_sync else "append", "config": config}),
+            jsonify({
+                "success": True,
+                "task_id": task.id,
+                "mode": "sync" if needs_sync else "append",
+                "config": config,
+            }),
             200,
         )
 

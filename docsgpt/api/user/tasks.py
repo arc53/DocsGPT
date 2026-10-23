@@ -1,6 +1,6 @@
 import logging
 from datetime import timedelta
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.exc import DataError
 
@@ -274,7 +274,14 @@ def sync_connector_source(self, source_id):
 
 
 @celery.task(bind=True)
-def website_pages(self, source_id, user, operation, urls=None, file_path=None):
+def website_pages(
+    self: Any,
+    source_id: str,
+    user: str,
+    operation: str,
+    urls: Optional[List[str]] = None,
+    file_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Add pages to a Website source, or refresh one (``website_pages_worker``).
 
     Not retried: a page that can't be fetched fails the same way again, and

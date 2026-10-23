@@ -12,7 +12,9 @@ OLD = "2026-01-01T00:00:00+00:00"
 
 
 def _leaf(url, tokens, title="Old"):
-    return {"type": "text/markdown", "size_bytes": 10, "token_count": tokens, "url": url, "title": title, "fetched_at": OLD}
+    return {
+        "type": "text/markdown", "size_bytes": 10, "token_count": tokens, "url": url, "title": title, "fetched_at": OLD,
+    }
 
 
 class FakeStore:
@@ -229,7 +231,9 @@ class TestAddPages:
         src = SourcesRepository(pg_conn).create(
             "Docs", user_id=USER, type="website",
             remote_data={"entries": [{"url": "https://docs.x.io/docs", "mode": "page"}]},
-            directory_structure={"docs.md": _leaf("https://docs.x.io/docs", 10), "docs-2.md": _leaf("https://docs.x.io/d2", 1)},
+            directory_structure={
+                "docs.md": _leaf("https://docs.x.io/docs", 10), "docs-2.md": _leaf("https://docs.x.io/d2", 1),
+            },
             tokens="11",
         )
         store = pipeline["store"]
@@ -397,7 +401,9 @@ class TestConcurrentChanges:
         assert pipeline["store"].texts_for("https://docs.x.io/b") == []
         assert "b.md" not in _tree(pg_conn, source)
 
-    def test_runs_holding_the_source_index_lock(self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch):
+    def test_runs_holding_the_source_index_lock(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch,
+    ):
         from docsgpt import worker
 
         held = []

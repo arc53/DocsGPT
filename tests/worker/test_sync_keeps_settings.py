@@ -66,7 +66,9 @@ class TestSyncWrite:
 
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
         events = []
-        monkeypatch.setattr(worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload)))
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
         task_self.request.id = "sync-task-1"
         worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]), directory=str(tmp_path))
 
