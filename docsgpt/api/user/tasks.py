@@ -554,6 +554,7 @@ def ingest_connector_task(
     source_id=None,
     connection_id=None,
 ):
+    """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never")."""
     from docsgpt.worker import ingest_connector
 
     resp = ingest_connector(

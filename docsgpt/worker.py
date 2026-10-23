@@ -4348,7 +4348,7 @@ def ingest_connector(
     retriever: str = "classic",
     operation_mode: str = "upload",
     doc_id=None,
-    sync_frequency: str = "never",
+    sync_frequency: Optional[str] = "never",
     config=None,
     idempotency_key=None,
     source_id=None,
@@ -4380,7 +4380,8 @@ def ingest_connector(
         retriever: Type of retriever to use
         operation_mode: "upload" for initial ingestion, "sync" for incremental sync
         doc_id: Document ID for sync operations (required when operation_mode="sync")
-        sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
+        sync_frequency: How often to sync ("never", "daily", "weekly", "monthly"),
+            stored on a new source; ``None`` is "never".
         config: Per-source ``SourceConfig`` dict. ``None``/``{}`` → classic
             defaults (byte-identical to prior behavior). A sync uses the
             row's own instead, and doesn't run if the row can't be read.
@@ -4401,6 +4402,7 @@ def ingest_connector(
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
     )
+    sync_frequency = sync_frequency or "never"
     if operation_mode != "sync" or not doc_id:
         return _ingest_connector(
             self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,

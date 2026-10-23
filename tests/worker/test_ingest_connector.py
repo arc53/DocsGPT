@@ -460,6 +460,34 @@ class TestConnectorSyncTakesTheIndexLock:
         assert "operation" not in uploads[0]
         assert uploads[0]["config"]
 
+    @pytest.mark.parametrize("given, stored", [("weekly", "weekly"), (None, "never")])
+    def test_the_schedule_asked_for_is_stored_on_the_new_source(
+        self, task_self, monkeypatch, _mock_connector_pipeline, given, stored,
+    ):
+        # /api/remote validates sync_frequency and passes it on; a new connector source keeps it.
+        from docsgpt import worker
+
+        uploads = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload", sync_frequency=given,
+        )
+
+        assert uploads[0]["sync_frequency"] == stored
+
+    def test_the_task_passes_the_schedule_on(self, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.api.user import tasks
+
+        seen = []
+        monkeypatch.setattr(worker, "ingest_connector", lambda *a, **k: seen.append(k) or {})
+
+        tasks.ingest_connector_task.run("job", "dave", "google_drive", sync_frequency="weekly")
+
+        assert seen[0]["sync_frequency"] == "weekly"
+
 
 @pytest.mark.unit
 class TestConnectorSyncEventsCarryItsTaskId:
