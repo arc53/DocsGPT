@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-23
 ---
 
 import { Callout } from 'nextra/components'
@@ -74,6 +74,17 @@ Notes:
 - Returns `400` if GraphRAG isn't available on the workspace (wrong vector store or flag off).
 - Re-running the action rebuilds the graph from scratch rather than no-opping against an existing one.
 - You cannot switch a source to `graphrag` through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api) — use the upload-time selector or this dedicated endpoint.
+
+## When pages change
+
+On a GraphRAG [website source](/Sources/adding-knowledge#manage-the-pages-of-a-website-source), page changes update the graph without rebuilding it:
+
+- **Add pages** and **Refresh page** first take the replaced page's old chunks out of the graph, then extract only the new chunks. Chunks already in the graph aren't sent to the LLM again, so the cost is about one LLM call per new chunk. **Add pages** says so when the source has a graph, and the graph view's header shows **Building graph…** while the extraction runs.
+- **Remove from source** takes the removed pages' chunks out of the graph, with no LLM call. A relationship that came only from those chunks is deleted, and so is an entity left with no chunk and no relationship.
+
+An entity that several pages mention merges their descriptions into one text, and that text can't be split by page. After you remove a page, such an entity keeps its description from that page until the next full build.
+
+A sync, a re-ingest or **Enable GraphRAG** still rebuilds the whole graph and extracts every chunk again.
 
 ## Configuration
 

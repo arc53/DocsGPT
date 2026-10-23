@@ -124,9 +124,11 @@ Pages are fetched from the DocsGPT server, not from your browser. Pages behind a
 
 - **Add pages** fetches more page addresses, or another whole site, into the same source. Pages are fetched right away and are kept in every sync. Adding a whole site rebuilds the source.
 - **Refresh page**, in a page's menu, fetches that page again now. If the fetch fails, the page keeps its content.
-- **Remove from source** deletes a page's chunks. A page you added by its address leaves the source's list, and if a site in the source would find it again, it's also added to the skipped addresses. A page found by crawling a site, or a whole folder, is added to the skipped addresses, so later syncs leave it out.
+- **Remove from source** deletes a page's chunks. A page you added by its address leaves the source's list, and if a site in the source would find it again, it's also added to the skipped addresses. A page found by crawling a site, or a whole folder, is added to the skipped addresses, so later syncs leave it out. The skipped addresses are saved at once; the chunks are deleted in the background, and the header shows **Removing pages…** until the page list updates. If the removal fails, the pages and their chunks stay as they were, and you can remove them again.
 
-Pages are changed one source at a time. While a sync of the source runs, added and refreshed pages wait for it to finish, and **Remove from source** says the source is busy; try again when the sync is done.
+Pages are changed one source at a time. While a sync of the source runs, added, refreshed and removed pages wait for it to finish, then their change runs.
+
+On a [GraphRAG](/Sources/GraphRAG#when-pages-change) source, the knowledge graph follows these changes: added and refreshed pages are extracted into it, and removed pages leave it.
 
 On the Elasticsearch vector store, a page's chunks can't be changed on their own. **Refresh page** and **Remove from source** are refused there, and **Add pages** rebuilds the source like a sync. To drop a page you added by its address, remove it from the list in **Settings** and click **Sync now**.
 
