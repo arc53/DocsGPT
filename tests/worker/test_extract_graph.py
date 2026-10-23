@@ -72,6 +72,20 @@ class TestExtractGraphWorker:
         assert extract.call_args.kwargs["config"].kind == "graphrag"
         assert result == {"nodes": 3, "edges": 2, "chunks_processed": 2}
 
+    def test_a_page_change_passes_its_chunk_ids(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        # A page change extracts only the chunks it stored, not the source's backlog.
+        from docsgpt import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}, {"doc_id": "c2", "text": "beta"}])
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        extract = MagicMock(return_value={"nodes": 1, "edges": 0, "chunks_processed": 1})
+        monkeypatch.setattr("docsgpt.graphrag.extraction.extract_graph_for_source", extract)
+
+        worker.extract_graph_worker(task_self, source_id, "alice", chunk_ids=["c2"])
+
+        assert extract.call_args.kwargs["chunk_ids"] == ["c2"]
+
     def test_unavailable_returns_status_no_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

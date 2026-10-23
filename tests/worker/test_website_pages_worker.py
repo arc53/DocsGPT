@@ -960,11 +960,13 @@ class TestAGraphSource:
         worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
 
         assert graph["store"].deleted == [(str(source["id"]), ["old-1", "old-2"])]
-        # No reset: the rest of the graph stays, and only unextracted chunks are billed.
+        # No reset: the rest of the graph stays, and only the page's new chunks are billed.
         assert graph["store"].reset == []
         [(args, kwargs)] = graph["queued"]
         assert args == (str(source["id"]), USER)
         assert "task-g1" in kwargs["idempotency_key"]
+        new_ids = [cid for cid, c in pipeline["store"].chunks.items() if c["metadata"]["source"] == "https://docs.x.io/a"]
+        assert kwargs["chunk_ids"] == new_ids
 
     def test_an_added_page_is_extracted(self, pg_conn, patch_worker_db, task_self, source, pipeline, graph):
         from docsgpt import worker

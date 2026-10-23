@@ -4952,16 +4952,19 @@ def _website_page_targets(
 
 
 def _update_page_graph(
-    cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str], extract: bool,
+    cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str],
+    new_chunk_ids: Iterable[str] = (),
 ) -> None:
     """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
 
     The deleted chunks' entities and relationships come out first
     (``GraphStore.delete_chunks``, no LLM call). Then, for added or refreshed
-    pages, ``extract_graph`` is queued without the reset a full rebuild does:
-    extraction skips every chunk already done, so only the new chunks are
-    sent to the model. The key carries the page task's id, so each change
-    queues its own run rather than deduping against the last full build.
+    pages, ``extract_graph`` is queued without the reset a full rebuild does,
+    naming the new chunks: only they are sent to the model, within the
+    source's chunk cap, so a source the full build left over its cap doesn't
+    bill its backlog on every page change. The key carries the page task's
+    id, so each change queues its own run rather than deduping against the
+    last full build.
 
     A no-op for any other source, or when GraphRAG is unavailable. Never
     raises: a failure is logged and leaves the graph as it was (nothing is
@@ -4974,7 +4977,7 @@ def _update_page_graph(
         user: Its owner.
         task_id: The page task's id, for the extraction's idempotency key.
         old_chunk_ids: Ids of the chunks the change deleted.
-        extract: Whether the change stored new chunks to extract.
+        new_chunk_ids: Ids of the chunks the change stored, to extract.
     """
     if cfg.kind != "graphrag":
         return
@@ -4982,16 +4985,17 @@ def _update_page_graph(
 
     if not graphrag_available():
         return
+    new_ids = [str(chunk_id) for chunk_id in new_chunk_ids]
     try:
         if old_chunk_ids:
             from docsgpt.graphrag.store import GraphStore
 
             GraphStore().delete_chunks(source_id, old_chunk_ids)
-        if extract:
+        if new_ids:
             from docsgpt.api.user.tasks import extract_graph
 
             key = f"extract-graph:{source_id}:pages:{task_id or uuid.uuid4().hex}"
-            extract_graph.delay(source_id, user, idempotency_key=key)
+            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids)
     except Exception as e:  # noqa: BLE001 - the page change is done; the graph catches up at the next build
         logging.warning(f"Could not update the graph of {source_id} after a page change: {e}", exc_info=True)
 
@@ -5312,7 +5316,7 @@ def _remove_web_pages(
         ]
         remove_pages(tree, stale)
         repo.update(source_id, user, _tree_fields(row, tree))
-    _update_page_graph(SourceConfig.parse(source.get("config")), source_id, user, task_id, chunk_ids, extract=False)
+    _update_page_graph(SourceConfig.parse(source.get("config")), source_id, user, task_id, chunk_ids)
     return found
 
 
@@ -5507,8 +5511,8 @@ def _run_website_pages(
         # The tree is written: every replaced copy's chunks were deleted, kept or
         # not (a page removed meanwhile loses both copies); only kept pages add any.
         old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
-        added = any(change["new_ids"] for change in kept)
-        _update_page_graph(cfg, source_id, user, task_id, old_ids, extract=added)
+        new_ids = [chunk_id for change in kept for chunk_id in change["new_ids"]]
+        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
     if failure is not None:
         raise failure
     return kept
@@ -5750,7 +5754,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     }
 
 
-def extract_graph_worker(self, source_id, user):
+def extract_graph_worker(self, source_id, user, chunk_ids=None):
     """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
@@ -5765,6 +5769,8 @@ def extract_graph_worker(self, source_id, user):
         self: Celery task instance.
         source_id: Source whose graph is being built.
         user: Owner identifier used to load the source and attribute token usage.
+        chunk_ids: For a page change, the chunks it stored: only they are
+            extracted (``extract_graph_for_source``). ``None`` for a build.
 
     Returns:
         ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
@@ -5844,6 +5850,7 @@ def extract_graph_worker(self, source_id, user):
                 config=cfg,
                 request_id=getattr(self.request, "id", None),
                 progress_cb=_progress,
+                chunk_ids=chunk_ids,
             )
             if isinstance(summary, dict):
                 span.set(

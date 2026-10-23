@@ -247,9 +247,12 @@ def _emit_graph_poison_event(task_name, bound):
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None):
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None):
+    """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks."""
     from docsgpt.worker import extract_graph_worker
 
+    if chunk_ids is not None:
+        return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids)
     resp = extract_graph_worker(self, source_id, user)
     return resp
 
