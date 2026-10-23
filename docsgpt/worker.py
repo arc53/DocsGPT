@@ -107,6 +107,9 @@ def count_structure_files(node: dict) -> int:
     ``token_count`` key. ``len()`` on the root only sees top-level entries,
     which undercounts any repo with subdirectories.
 
+    The tree is walked without recursion: a web page's path follows its URL,
+    which can nest deeper than Python's recursion limit.
+
     Args:
         node: A ``directory_structure`` mapping (or any subtree of one).
 
@@ -116,12 +119,14 @@ def count_structure_files(node: dict) -> int:
     if not isinstance(node, dict):
         return 0
     total = 0
-    for value in node.values():
-        if isinstance(value, dict):
-            if "token_count" in value and "size_bytes" in value:
-                total += 1
-            else:
-                total += count_structure_files(value)
+    stack = [node]
+    while stack:
+        for value in stack.pop().values():
+            if isinstance(value, dict):
+                if "token_count" in value and "size_bytes" in value:
+                    total += 1
+                else:
+                    stack.append(value)
     return total
 
 
@@ -5121,7 +5126,9 @@ def _tree_leaves(structure: Any, prefix: str = "") -> List[Tuple[str, Dict[str, 
     """Every file in a tree, web page or not: a leaf is a node with a ``token_count``.
 
     A tree from before leaves carried their page's ``url`` has leaves without
-    one; their paths are taken all the same.
+    one; their paths are taken all the same. The tree is walked without
+    recursion: a page's path follows its URL, which can nest deeper than
+    Python's recursion limit.
 
     Args:
         structure: ``directory_structure``.
@@ -5131,12 +5138,22 @@ def _tree_leaves(structure: Any, prefix: str = "") -> List[Tuple[str, Dict[str, 
         ``(path, leaf)`` for each leaf, depth first in stored order.
     """
     leaves: List[Tuple[str, Dict[str, Any]]] = []
-    for name, node in (structure or {}).items() if isinstance(structure, dict) else ():
-        path = f"{prefix}/{name}" if prefix else name
+    if not isinstance(structure, dict):
+        return leaves
+    # Each frame is a folder's remaining children; the deepest is walked first.
+    stack = [(prefix, iter(structure.items()))]
+    while stack:
+        folder, children = stack[-1]
+        entry = next(children, None)
+        if entry is None:
+            stack.pop()
+            continue
+        name, node = entry
+        path = f"{folder}/{name}" if folder else name
         if isinstance(node, dict) and "token_count" in node:
             leaves.append((path, node))
         elif isinstance(node, dict):
-            leaves.extend(_tree_leaves(node, path))
+            stack.append((path, iter(node.items())))
     return leaves
 
 
