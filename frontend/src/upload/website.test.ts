@@ -107,6 +107,20 @@ describe('normalizeUrl', () => {
       'https://docs.x.io/@team?by=a@b',
     );
   });
+
+  // URL finds a host in each; the server's urlsplit doesn't.
+  it('refuses anything but scheme:// before the host, and a backslash in it', () => {
+    expect(normalizeUrl('https:/x.io/a')).toBeNull();
+    expect(normalizeUrl('https:x.io/a')).toBeNull();
+    expect(normalizeUrl('https:///x.io')).toBeNull();
+    expect(normalizeUrl('https:\\\\x.io/a')).toBeNull();
+    expect(normalizeUrl('https://x.io\\a')).toBeNull();
+    expect(normalizeUrl('///x.io/a')).toBeNull();
+  });
+
+  it('takes a scheme-relative address as https', () => {
+    expect(normalizeUrl('//x.io/a')).toBe('https://x.io/a');
+  });
 });
 
 describe('nameFromUrl', () => {
@@ -276,6 +290,22 @@ describe('pageKey', () => {
     ['https://bücher.de/a', 'xn--bcher-kva.de/a'],
     ['https://xn--bcher-kva.de/a', 'xn--bcher-kva.de/a'],
     ['https://www.Bücher.de:8080/a', 'xn--bcher-kva.de:8080/a'],
+    // ASCII first, then www. and trailing dots, as the backend's bare_host.
+    ['https://ｗｗｗ.x.io/a', 'x.io/a'],
+    ['https://x.io\u3002/a', 'x.io/a'],
+    ['https://ＷＷＷ.Ｘ.ＩＯ/a', 'x.io/a'],
+    // A label IDNA2008 refuses keeps the host as given (lower-cased).
+    ['https://😀.ws/', '😀.ws'],
+    ['https://www.😀.ws/a', '😀.ws/a'],
+    ['https://☃.net/', '☃.net'],
+    ['https://ü-.de/', 'ü-.de'],
+    ['https://a\u05d0.com/', 'a\u05d0.com'],
+    ['https://\u0661\u0662.com/', '\u0661\u0662.com'],
+    // ...and one it takes is encoded, a middle dot between two ls too.
+    ['https://l\u00b7l.com/', 'xn--ll-0ea.com'],
+    ['https://пример.рф/', 'xn--e1afmkfd.xn--p1ai'],
+    // A label typed in punycode stays as written.
+    ['https://xn--e28h.bücher.de/a', 'xn--e28h.xn--bcher-kva.de/a'],
   ])('keys %s as the backend does', (url, key) => {
     expect(pageKey(url)).toBe(key);
   });

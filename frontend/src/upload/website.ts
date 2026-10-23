@@ -128,27 +128,42 @@ function hasBadLabel(host: string): boolean {
 }
 
 /**
+ * A scheme and exactly two slashes, then the host: `https:/x.io`,
+ * `https:x.io` and `https:///x.io` have no host as the server reads them
+ * (`urlsplit`), though `URL` finds one.
+ */
+const SCHEME_AND_AUTHORITY = /^[a-z][a-z0-9+.-]*:\/\/(?!\/)([^/?#]*)/i;
+
+/**
  * A typed address as a fetchable URL: trimmed, `https://` added to a bare
- * host (`host:port` included), anything but http(s) refused, and so is a
- * host the backend refuses to fetch (localhost, a private or reserved IPv4
- * address) and what it can't parse as one: credentials (`user:pass@`),
- * control characters, whitespace in the host, an empty or over-long label.
- * A bracketed IPv6 address is kept; the backend decides which of those it
- * may reach.
+ * host (`host:port` included) and `https:` to a scheme-relative one
+ * (`//x.io/a`), anything but http(s) refused, and so is a host the backend
+ * refuses to fetch (localhost, a private or reserved IPv4 address) and what
+ * it can't parse as one: anything but `scheme://` before the host,
+ * credentials (`user:pass@`), control characters, whitespace or a backslash
+ * in the host, an empty or over-long label. A bracketed IPv6 address is
+ * kept; the backend decides which of those it may reach.
  */
 export function normalizeUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed || CONTROL_CHARS.test(trimmed)) return null;
-  const withScheme =
-    /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !HOST_PORT.test(trimmed)
+  const withScheme = /^\/\/(?!\/)/.test(trimmed)
+    ? `https:${trimmed}`
+    : /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !HOST_PORT.test(trimmed)
       ? trimmed
       : `https://${trimmed}`;
   try {
     const url = new URL(withScheme);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    // The authority as written: URL drops an empty `@` and maps some spaces.
-    const authority = /^[a-z][a-z0-9+.-]*:\/*([^/?#]*)/i.exec(withScheme)?.[1];
-    if (!authority || authority.includes('@') || /\s/.test(authority))
+    // The authority as written: URL drops an empty `@`, maps some spaces
+    // and reads a backslash as a slash.
+    const authority = SCHEME_AND_AUTHORITY.exec(withScheme)?.[1];
+    if (
+      !authority ||
+      authority.includes('@') ||
+      authority.includes('\\') ||
+      /\s/.test(authority)
+    )
       return null;
     const host = url.hostname.toLowerCase();
     const ipv6 = host.startsWith('[') && host.endsWith(']');
@@ -283,15 +298,178 @@ function normalizePercent(path: string): string {
   );
 }
 
-/** A host name in its ASCII (IDNA) form, as `bücher.de` is `xn--bcher-kva.de`. */
+const PUNYCODE_BASE = 36;
+const PUNYCODE_T_MIN = 1;
+const PUNYCODE_T_MAX = 26;
+
+/** RFC 3492's bias adaptation. */
+function punycodeAdapt(delta: number, points: number, first: boolean): number {
+  let d = first ? Math.floor(delta / 700) : Math.floor(delta / 2);
+  d += Math.floor(d / points);
+  let k = 0;
+  const limit = ((PUNYCODE_BASE - PUNYCODE_T_MIN) * PUNYCODE_T_MAX) >> 1;
+  while (d > limit) {
+    d = Math.floor(d / (PUNYCODE_BASE - PUNYCODE_T_MIN));
+    k += PUNYCODE_BASE;
+  }
+  return k + Math.floor(((PUNYCODE_BASE - PUNYCODE_T_MIN + 1) * d) / (d + 38));
+}
+
+/** A punycode label (without `xn--`) decoded (RFC 3492), or null. */
+function punycodeDecode(input: string): string | null {
+  const output: number[] = [];
+  const basic = Math.max(input.lastIndexOf('-'), 0);
+  for (let j = 0; j < basic; j += 1) output.push(input.charCodeAt(j));
+  let n = 128;
+  let bias = 72;
+  let i = 0;
+  for (let at = basic > 0 ? basic + 1 : 0; at < input.length;) {
+    const old = i;
+    let w = 1;
+    for (let k = PUNYCODE_BASE; ; k += PUNYCODE_BASE) {
+      if (at >= input.length) return null;
+      const code = input.charCodeAt(at++);
+      const digit =
+        code >= 48 && code <= 57
+          ? code - 22
+          : code >= 65 && code <= 90
+            ? code - 65
+            : code >= 97 && code <= 122
+              ? code - 97
+              : PUNYCODE_BASE;
+      if (digit >= PUNYCODE_BASE) return null;
+      i += digit * w;
+      const t =
+        k <= bias
+          ? PUNYCODE_T_MIN
+          : k >= bias + PUNYCODE_T_MAX
+            ? PUNYCODE_T_MAX
+            : k - bias;
+      if (digit < t) break;
+      w *= PUNYCODE_BASE - t;
+    }
+    const length = output.length + 1;
+    bias = punycodeAdapt(i - old, length, old === 0);
+    n += Math.floor(i / length);
+    i %= length;
+    if (n > 0x10ffff) return null;
+    output.splice(i, 0, n);
+    i += 1;
+  }
+  return String.fromCodePoint(...output);
+}
+
+/**
+ * Letters, marks and digits: what IDNA2008 (RFC 5892) lets a label hold,
+ * near enough. Symbols (an emoji), punctuation and format characters are
+ * refused, but for the few allowed in context (see {@link inContext}); a
+ * joiner, allowed after a virama, is refused here.
+ */
+const IDNA2008_CHAR = /^[\p{Ll}\p{Lo}\p{Lm}\p{Mn}\p{Mc}\p{Nd}-]$/u;
+
+/** RFC 5892's CONTEXTO characters, each where it may stand. */
+function inContext(chars: string[], at: number): boolean {
+  const char = chars[at];
+  const before = chars[at - 1] ?? '';
+  const after = chars[at + 1] ?? '';
+  if (char === '·') return before === 'l' && after === 'l';
+  if (char === '͵') return /\p{Script=Greek}/u.test(after);
+  if (char === '׳' || char === '״') return /\p{Script=Hebrew}/u.test(before);
+  if (char === '・')
+    return chars.some((c) =>
+      /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(c),
+    );
+  return false;
+}
+
+// RFC 5893's bidi classes, as far as a label of letters, marks and digits
+// needs them.
+const RTL_LETTER =
+  /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}\p{Script=Adlam}]/u;
+const ARABIC_DIGIT = /[٠-٩]/;
+const EUROPEAN_DIGIT = /[0-9۰-۹]/;
+const MARK = /\p{M}/u;
+const isRtl = (c: string) =>
+  RTL_LETTER.test(c) &&
+  !MARK.test(c) &&
+  !ARABIC_DIGIT.test(c) &&
+  !EUROPEAN_DIGIT.test(c);
+const isLtr = (c: string) =>
+  c !== '-' &&
+  !MARK.test(c) &&
+  !RTL_LETTER.test(c) &&
+  !ARABIC_DIGIT.test(c) &&
+  !EUROPEAN_DIGIT.test(c);
+
+/**
+ * RFC 5893's rule for a label with right-to-left characters (or Arabic
+ * digits): it starts with a right-to-left letter, holds no left-to-right
+ * one, ends on a letter or digit, and doesn't mix the two kinds of digit.
+ */
+function bidiOk(chars: string[]): boolean {
+  if (!chars.some((c) => RTL_LETTER.test(c) || ARABIC_DIGIT.test(c)))
+    return true;
+  if (!isRtl(chars[0]) || chars.some(isLtr)) return false;
+  const last = [...chars].reverse().find((c) => !MARK.test(c)) ?? '';
+  if (!isRtl(last) && !ARABIC_DIGIT.test(last) && !EUROPEAN_DIGIT.test(last))
+    return false;
+  return !(
+    chars.some((c) => EUROPEAN_DIGIT.test(c)) &&
+    chars.some((c) => ARABIC_DIGIT.test(c))
+  );
+}
+
+/**
+ * Whether the backend's `idna.alabel` takes a label `URL` wrote in punycode:
+ * IDNA2008 is stricter than the URL standard's UTS #46, which encodes
+ * `😀.ws` as `xn--e28h.ws` where the backend keeps `😀.ws`. Close to the
+ * rules, not all of them (a joiner after a virama, the rarer bidi cases).
+ */
+function idna2008Label(label: string): boolean {
+  if (label.length > MAX_LABEL_LENGTH) return false;
+  const decoded = punycodeDecode(label.slice(4));
+  if (!decoded) return false;
+  if (decoded.startsWith('-') || decoded.endsWith('-')) return false;
+  if (decoded.slice(2, 4) === '--') return false;
+  const chars = Array.from(decoded);
+  if (MARK.test(chars[0] ?? '')) return false;
+  return (
+    chars.every(
+      (char, at) => IDNA2008_CHAR.test(char) || inContext(chars, at),
+    ) && bidiOk(chars)
+  );
+}
+
+/** What UTS #46 reads as a label separator: `.`, `。`, `．` and `｡`. */
+const LABEL_DOTS = /[.\u3002\uff0e\uff61]/;
+
+/**
+ * A host name in its ASCII (IDNA) form, as `bücher.de` is `xn--bcher-kva.de`
+ * and `ｗｗｗ.x.io` is `www.x.io`, as the backend's `ascii_host` writes it:
+ * the host as given when a label it would encode is one IDNA2008 refuses.
+ */
 function asciiHost(host: string): string {
   // eslint-disable-next-line no-control-regex
   if (!/[^\u0000-\u007f]/.test(host)) return host;
+  let mapped: string;
   try {
-    return new URL(`http://${host}/`).hostname;
+    mapped = new URL(`http://${host}/`).hostname;
   } catch {
     return host;
   }
+  // Only the labels written with non-ASCII characters are encoded; an
+  // ASCII one (`xn--e28h` as typed) is kept whatever it says.
+  const given = host.split(LABEL_DOTS);
+  const labels = mapped.split('.');
+  const encoded = labels.every(
+    (label, index) =>
+      !label.startsWith('xn--') ||
+      (given.length === labels.length &&
+        // eslint-disable-next-line no-control-regex
+        !/[^\u0000-\u007f]/.test(given[index])) ||
+      idna2008Label(label),
+  );
+  return encoded ? mapped : host;
 }
 
 /** The port a scheme leaves out of the key. */
@@ -344,9 +522,9 @@ export function pageKey(value: string): string {
   const query = mark === -1 ? '' : sortedQuery(rest.slice(mark + 1));
 
   const [hostname, port] = splitHost(netloc);
-  let host = hostname.toLowerCase().replace(/\.+$/, '');
+  // ASCII first, as the backend's `bare_host`: `ｗｗｗ.x.io` is `www.x.io`.
+  let host = asciiHost(hostname).toLowerCase().replace(/\.+$/, '');
   if (host.startsWith('www.')) host = host.slice(4);
-  host = asciiHost(host);
   // An IPv6 host keeps its brackets, as the backend's key does.
   if (host.includes(':')) host = `[${host}]`;
   const defaultPort = scheme ? DEFAULT_PORTS[scheme[1].toLowerCase()] : null;
