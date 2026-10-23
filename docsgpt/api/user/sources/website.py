@@ -481,12 +481,15 @@ class RemoveWebsitePages(Resource):
         # Each page goes with its URL and every address that redirected to
         # it: the worker finds it by those in the tree as it is then, so a
         # sync that moved it meanwhile still removes the right page. A leaf
-        # stored without an address goes with "", so it is found by its path.
+        # stored without an address goes with the one read from its chunks
+        # (a sync that ran first gave its path to another page, and a url
+        # loader's chunks carry no path); only one whose address couldn't be
+        # found goes with "", and is found by its path.
         try:
             task = website_pages.delay(
                 str(doc["id"]), ra.owner_id, "remove", pages=[
                     {"path": path, "url": url, "requested_urls": requested.get(path, [])}
-                    for path, url in pages
+                    for path, url in addressed
                 ], actor_id=user,
             )
         except Exception as err:

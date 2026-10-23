@@ -742,9 +742,11 @@ class TestRemoveFromAnOlderSource:
         saved = self._saved(pg_conn, src)
         assert saved["type"] == "website"
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/extra"]
-        # The leaf has no address, so the worker finds it by its path.
+        # The leaf has no address: it goes with the one read from its chunks,
+        # so the worker removes that page, not whatever holds its path later.
         pages_task.delay.assert_called_once_with(
-            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "", "requested_urls": []}],
+            str(src["id"]), USER, "remove",
+            pages=[{"path": "extra.md", "url": "https://docs.x.io/extra", "requested_urls": []}],
             actor_id=USER,
         )
 
@@ -795,6 +797,34 @@ class TestRemoveFromAnOlderSource:
 
         assert response.status_code == 200, response.json
         assert [e["url"] for e in self._saved(pg_conn, src)["remote_data"]["entries"]] == ["https://docs.x.io/"]
+
+    def test_a_page_keyed_by_its_title_is_queued_with_its_address(self, app, pg_conn):
+        # Its chunks carry no file_path, so the worker can only find them by the address.
+        tree = {"Home": _legacy_leaf(5), "Extra page": _legacy_leaf(7)}
+        chunks = [
+            {"doc_id": "c1", "text": "home", "metadata": {"source": "https://docs.x.io/", "title": "Home"}},
+            {"doc_id": "c2", "text": "x", "metadata": {"source": "https://docs.x.io/extra", "title": "Extra page"}},
+        ]
+        src = _seed(
+            pg_conn, type="url", remote_data={"urls": ["https://docs.x.io/", "https://docs.x.io/extra"]},
+            directory_structure=tree,
+        )
+        response, pages_task = self._remove(app, pg_conn, src, chunks=chunks, file_paths=["Extra page"])
+
+        assert response.status_code == 200, response.json
+        assert pages_task.delay.call_args.kwargs["pages"] == [
+            {"path": "Extra page", "url": "https://docs.x.io/extra", "requested_urls": []},
+        ]
+
+    def test_a_folder_of_unaddressed_leaves_is_queued_with_their_addresses(self, app, pg_conn):
+        src = _seed(pg_conn, type="crawler", remote_data="https://docs.x.io/", directory_structure=LEGACY_TREE)
+        response, pages_task = self._remove(app, pg_conn, src, directory_path="Deploying")
+
+        assert response.status_code == 200, response.json
+        assert pages_task.delay.call_args.kwargs["pages"] == [
+            {"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker", "requested_urls": []},
+            {"path": "Deploying/Kubernetes.md", "url": "https://docs.x.io/Deploying/Kubernetes", "requested_urls": []},
+        ]
 
     def test_a_website_source_not_synced_since_is_handled_too(self, app, pg_conn):
         src = _seed(pg_conn, directory_structure=LEGACY_TREE)
