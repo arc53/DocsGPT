@@ -790,16 +790,24 @@ def header_charset(content_type: Optional[str]) -> Optional[str]:
 
     Returns:
         The charset label as written, or ``None`` when there is none or it
-        names no codec.
+        names no text encoding: Python also knows ``base64``, ``zlib`` or
+        ``rot13`` as codecs, but bytes-to-bytes ones that no text decodes by,
+        and ``idna``/``punycode`` encode host names, not pages.
     """
     match = re.search(r"charset\s*=\s*[\"']?([\w.:-]+)", content_type or "", re.IGNORECASE)
     if not match:
         return None
     try:
-        codecs.lookup(match.group(1))
+        codec = codecs.lookup(match.group(1))
     except LookupError:
         return None
+    if not getattr(codec, "_is_text_encoding", True) or codec.name in _HOST_NAME_CODECS:
+        return None
     return match.group(1)
+
+
+# Codecs Python counts as text encodings that no page is written in.
+_HOST_NAME_CODECS = frozenset({"idna", "punycode"})
 
 
 def html_soup(html: Union[str, bytes], encoding: Optional[str] = None, parser: str = "html.parser") -> BeautifulSoup:
@@ -837,7 +845,13 @@ def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str)
     if isinstance(body, str):
         body = body.encode("utf-8")
     body = cap_markup_bytes(body, int(settings.MARKUP_MAX_BYTES), url)
-    return body.decode(header_charset(content_type) or "utf-8", errors="replace")
+    try:
+        return body.decode(header_charset(content_type) or "utf-8", errors="replace")
+    except (LookupError, UnicodeError, ValueError) as e:
+        # A codec that refuses ``errors="replace"`` or fails outright: the
+        # page is still read, as UTF-8.
+        logger.info(f"Decoding {url} by its declared charset failed ({e}); reading it as UTF-8")
+        return body.decode("utf-8", errors="replace")
 
 
 def page_document(

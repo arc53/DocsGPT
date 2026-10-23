@@ -334,6 +334,25 @@ class TestPageDocument:
 
         assert doc.extra_info["title"] == "Café"
 
+    @pytest.mark.parametrize("charset", ["base64", "rot13", "zlib", "hex", "bz2", "uu", "idna", "punycode"])
+    def test_a_header_charset_that_is_no_text_encoding_keeps_the_page(self, charset):
+        # Python knows these names, but as bytes-to-bytes codecs (or ones
+        # that refuse ``errors="replace"``): decoding by them raised.
+        html = f"<html><body><main>{ARTICLE}</main></body></html>".encode()
+
+        text = page_document("# Hello\nplain text".encode(), f"text/plain; charset={charset}", URL)
+        page = page_document(html, f"text/html; charset={charset}", URL)
+
+        assert text.text == "# Hello\nplain text"
+        assert "Install the package" in page.text
+
+    @pytest.mark.parametrize("charset", ["base64", "rot13", "zlib", "hex", "bz2"])
+    def test_header_charset_names_only_text_encodings(self, charset):
+        from docsgpt.parser.remote.page_content import header_charset
+
+        assert header_charset(f"text/html; charset={charset}") is None
+        assert header_charset("text/html; charset=Shift_JIS") == "Shift_JIS"
+
     def test_plain_text_uses_the_declared_charset(self):
         doc = page_document("Grüße aus Köln".encode("latin-1"), "text/plain; charset=latin-1", URL)
 
