@@ -109,6 +109,32 @@ class TestMainContent:
         assert re.search(r"(?m)^[*-] Quickstart$", page.text)
         assert re.search(r"(?m)^[*-] Concepts$", page.text)
 
+    def test_links_inside_a_sentence_stay_in_the_sentence(self):
+        body = (
+            f"<main>{ARTICLE}<p>Install with <a href='/pip'>pip</a> <a href='/conda'>conda</a> "
+            "or from source.</p></main>"
+        )
+        page = extract_page(_page(body), URL)
+
+        assert "Install with pip conda or from source." in page.text
+        assert not re.search(r"(?m)^[*-] pip$", page.text)
+
+    def test_links_ending_a_sentence_stay_in_the_sentence(self):
+        body = f"<main>{ARTICLE}<p>See also <a href='/a'>Alpha</a> <a href='/b'>Beta</a></p></main>"
+        page = extract_page(_page(body), URL)
+
+        assert "See also Alpha Beta" in page.text
+
+    def test_a_short_article_beside_a_long_sidebar_keeps_its_extract(self):
+        # A docs page whose sidebar out-weighs the article: stripping the menu
+        # is not the extractor eating the content.
+        sidebar = "<nav><ul>" + "".join(f"<li><a href='/s{i}'>Sidebar entry {i}</a></li>" for i in range(60)) + "</ul></nav>"
+        article = "<h1>Short page</h1><p>Only a short paragraph of real content lives here.</p>"
+        page = extract_page(_page(f"<div>{sidebar}<div>{article}</div></div>" + FOOTER), URL)
+
+        assert "# Short page" in page.text
+        assert "Sidebar entry" not in page.text
+
 
 class TestLinks:
     PROSE = (

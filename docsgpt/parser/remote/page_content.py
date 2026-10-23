@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional, Union
 from urllib.parse import quote, urldefrag, urljoin, urlparse, urlsplit
 
 import requests
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from markdownify import MarkdownConverter
 
 from docsgpt.core.settings import settings
@@ -231,13 +231,21 @@ class FetchBudget:
         return True
 
 # Site chrome: never the page's content.
-_CHROME_TAGS = [
-    "script", "style", "noscript", "template", "svg", "iframe", "form", "button", "select",
-    "nav", "footer",
-]
+_CHROME_TAGS = ["script", "style", "svg", "iframe", "nav", "footer"]
+# Controls and hidden markup: removed too, but a page may render its content
+# inside one (a whole-page <form>, a JS app's <noscript> or <template>), so
+# the near-empty guard measures the page before these go.
+_CONTROL_TAGS = ["noscript", "template", "form", "button", "select"]
 _CHROME_ROLES = ["navigation", "banner", "contentinfo", "search"]
 # Heading permalinks ("¶", "#") and edit links.
 _ANCHOR_SELECTORS = "a.headerlink, a.anchor, a.hash-link, a[aria-hidden=true], .mw-editsection"
+# Elements that start a block of their own: beside a link run they are
+# layout, not the sentence the links sit in.
+_BLOCK_TAGS = frozenset({
+    "address", "article", "aside", "blockquote", "details", "dd", "div", "dl", "dt", "figcaption", "figure",
+    "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre",
+    "section", "summary", "table", "ul",
+})
 # Elements whose text a link must fill on its own to count as a bare link.
 _TEXT_BLOCKS = ["p", "li", "td", "th", "dd", "dt", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "figcaption"]
 
@@ -343,7 +351,10 @@ def _pick_root(soup: BeautifulSoup) -> Tag:
 
 
 def _strip_chrome(root: Tag) -> None:
-    """Remove site chrome in place: scripts, menus, page headers and footers, link-list asides, permalinks."""
+    """Remove site chrome in place: scripts, menus, page headers and footers, link-list asides, permalinks.
+
+    Controls (``_CONTROL_TAGS``) are left for ``_strip_controls``.
+    """
     for tag in root.find_all(_CHROME_TAGS):
         tag.decompose()
     for role in _CHROME_ROLES:
@@ -364,6 +375,12 @@ def _strip_chrome(root: Tag) -> None:
         tag.decompose()
 
 
+def _strip_controls(root: Tag) -> None:
+    """Remove forms, buttons, selects and ``<noscript>``/``<template>`` markup in place."""
+    for tag in root.find_all(_CONTROL_TAGS):
+        tag.decompose()
+
+
 def _images_to_alt_text(root: Tag) -> None:
     """Replace each image with its alt text, in place."""
     for img in root.find_all("img"):
@@ -371,11 +388,35 @@ def _images_to_alt_text(root: Tag) -> None:
         img.replace_with(NavigableString(alt))
 
 
+def _holds_running_text(parent: Tag) -> bool:
+    """Whether an element's own children include text: a sentence, not a stack of blocks.
+
+    Args:
+        parent: The element whose children are checked.
+
+    Returns:
+        True when a direct child is non-blank text, or an inline element
+        (``<code>``, ``<strong>``...) other than a link that holds text.
+    """
+    for child in parent.children:
+        if isinstance(child, Comment):
+            continue
+        if isinstance(child, NavigableString):
+            if child.strip():
+                return True
+        elif isinstance(child, Tag) and child.name != "a" and child.name not in _BLOCK_TAGS:
+            if child.get_text(strip=True):
+                return True
+    return False
+
+
 def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
     """Turn runs of adjacent links (card grids, tag lists) into a list.
 
     With no text between them, markdownify glues their labels into one word
-    ("QuickstartConcepts").
+    ("QuickstartConcepts"). Links inside running text ("Install with pip
+    conda or from source") stay in their sentence, a space put between any
+    that touch.
     """
     for parent in [root, *root.find_all(True)]:
         run = []
@@ -391,6 +432,12 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
                 run = []
         if len(run) > 1:
             runs.append(run)
+        if runs and _holds_running_text(parent):
+            for links in runs:
+                for link in links[1:]:
+                    if getattr(link.previous_sibling, "name", None) == "a":
+                        link.insert_before(NavigableString(" "))
+            continue
         for links in runs:
             listing = soup.new_tag("ul")
             links[0].insert_before(listing)
@@ -424,7 +471,8 @@ def extract_page(
     Returns:
         The Markdown, the ``<title>`` (else the first heading) and the
         ``lang`` attribute. When the extract is near-empty against the page's
-        text, the text is the page's plain text instead.
+        text without its chrome (the controls stripped after it can hold the
+        content), the text is that plain text instead.
     """
     if isinstance(html, bytes):
         html = cap_markup_bytes(html, int(settings.MARKUP_MAX_BYTES), url)
@@ -433,9 +481,12 @@ def extract_page(
     language = (soup.html.get("lang") if soup.html else None) or None
     root = _pick_root(soup)
     title = title or _first_heading(root)
-    plain = root.get_text("\n", strip=True)
-
+    # Measured once the chrome is gone: a long menu beside a short article
+    # isn't content the extract lost. Only the controls, which can hold a
+    # page's content, count against the extract.
     _strip_chrome(root)
+    plain = root.get_text("\n", strip=True)
+    _strip_controls(root)
     _images_to_alt_text(root)
     _listify_link_runs(soup, root)
     markdown = soup_to_markdown(root, converter=_LinkConverter(url, keep_links))
