@@ -468,6 +468,25 @@ class TestRemovePages:
 
         assert held == ["locked", "delete", "released"]
 
+    def test_a_busy_source_says_so_in_the_failed_event(
+        self, pg_conn, patch_worker_db, task_self, two_pages, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        @contextmanager
+        def busy_lock(source_id, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        monkeypatch.setattr(worker, "source_index_lock", busy_lock)
+        with pytest.raises(SourceBusy):
+            worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["a.md"])
+
+        failed = [payload for kind, payload in pipeline["events"] if kind == "source.ingest.failed"]
+        assert [payload.get("reason") for payload in failed] == ["busy"]
+        assert pipeline["store"].log == []
+
     def test_a_wiki_is_left_alone(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
         from docsgpt import worker
 

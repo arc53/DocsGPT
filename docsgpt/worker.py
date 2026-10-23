@@ -5414,10 +5414,12 @@ def website_pages_worker(
                 changes = _run_website_pages(source_id, user, operation, urls, file_path, task_id)
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
-        publish_user_event(
-            user, "source.ingest.failed", {**envelope, "error": str(e)[:1024]},
-            scope={"kind": "source", "id": source_id},
-        )
+        failed = {**envelope, "error": str(e)[:1024]}
+        # Another change held the source past the wait: the UI says this one
+        # didn't run, as it does for a skipped sync.
+        if isinstance(e, SourceBusy):
+            failed["reason"] = "busy"
+        publish_user_event(user, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
         raise
     publish_user_event(
         user, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False},
