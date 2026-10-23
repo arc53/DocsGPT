@@ -182,7 +182,6 @@
       "addChunk": "新增區塊",
       "preLoaded": "預載入",
       "private": "私人",
-      "sync": "同步",
       "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
@@ -194,8 +193,7 @@
         "never": "從不",
         "daily": "每天",
         "weekly": "每週",
-        "monthly": "每月",
-        "option": "同步：{{frequency}}"
+        "monthly": "每月"
       },
       "actions": "操作",
       "view": "查看",
@@ -250,7 +248,6 @@
         "pageLoadFailed": "無法載入此頁面。",
         "editTitle": "編輯頁面",
         "settings": {
-          "action": "Wiki 設定",
           "title": "Wiki 設定",
           "outsideEdits": {
             "label": "允許 API 和小工具使用者編輯此 Wiki",
@@ -395,7 +392,7 @@
         "saveToSource": "儲存到來源",
         "savedToSource": "已儲存。此來源現在使用你測試過的設定。"
       },
-      "editConfig": "來源設定",
+      "editConfig": "設定",
       "shareWithTeam": "與團隊分享",
       "deleteWarning": "要刪除「{{name}}」嗎？",
       "chunks": "文本塊",
@@ -639,7 +636,6 @@
         "removeFailed": "無法移除。",
         "removeLast": "這是此來源擷取的最後一項。請改為刪除此來源。",
         "handEditsNote": "保持最新：{{frequency}}。你在此處新增或編輯的區塊會在下次同步時被取代。",
-        "settingsTitle": "網站設定",
         "fetches": "此來源擷取的內容",
         "siteSummary": "整個網站 · {{find}} · 頁面上限 {{max}}",
         "limitReached": "已達頁面上限",
@@ -647,12 +643,15 @@
         "removeFromList": "從清單中移除",
         "skipped": "已略過",
         "restore": "還原",
-        "save": "儲存",
         "saveFailed": "無法儲存設定。",
         "loadFailed": "無法載入設定。",
         "lastSynced": "上次同步於 {{when}}。",
         "appliesNextSync": "變更將在下次同步時生效。"
-      }
+      },
+      "deleteSource": "刪除來源",
+      "syncStarted": "正在同步 {{name}}…",
+      "viaConnectionFiles_one": "透過 {{name}} · {{files}} 個檔案",
+      "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案"
     },
     "analytics": {
       "label": "分析",

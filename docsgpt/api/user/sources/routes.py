@@ -83,6 +83,14 @@ def _connection_id(row: dict) -> str | None:
     return str(value) if value else None
 
 
+def _is_wiki(doc: dict) -> bool:
+    """Whether a source row is a wiki (a sync would replace its pages)."""
+    return SourceConfig.parse(doc.get("config")).kind == "wiki"
+
+
+_WIKI_NO_SYNC = "A wiki is edited in place and doesn't sync."
+
+
 def _website_summary(row: dict) -> Optional[dict]:
     """Where a web source comes from, for its Knowledge card.
 
@@ -283,6 +291,14 @@ class PaginatedSources(Resource):
                     ),
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
+                    # How many files the tree holds (a synced source's card
+                    # says it); None for a flat source.
+                    "files": (
+                        count_pages(doc["directory_structure"])
+                        if isinstance(doc.get("directory_structure"), dict)
+                        and doc["directory_structure"]
+                        else None
+                    ),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -447,6 +463,10 @@ class ManageSync(Resource):
             with db_session() as conn:
                 # Owner or team editor; the write lands as the owner.
                 doc, ra = load_source(conn, source_id, user, "edit")
+                if sync_frequency != "never" and _is_wiki(doc):
+                    return make_response(
+                        jsonify({"success": False, "message": _WIKI_NO_SYNC}), 400
+                    )
                 SourcesRepository(conn).update(
                     str(doc["id"]), ra.owner_id, {"sync_frequency": sync_frequency}
                 )
@@ -495,6 +515,10 @@ class SyncSource(Resource):
                 jsonify({"success": False, "message": "Invalid source ID"}), 400
             )
         owner = ra.owner_id
+        if _is_wiki(doc):
+            return make_response(
+                jsonify({"success": False, "message": _WIKI_NO_SYNC}), 400
+            )
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
             return make_response(
@@ -1201,10 +1225,14 @@ def _source_is_blank(doc):
 
 
 def _enable_wiki_inline(conn, doc, owner):
-    """Flip a blank source to wiki mode + agentic exposure with no task."""
+    """Flip a blank source to wiki mode + agentic exposure with no task.
+
+    The schedule goes too: a sync would replace the wiki's pages.
+    """
     cfg = SourceConfig.parse(doc.get("config"))
     SourcesRepository(conn).update(
-        str(doc["id"]), owner, {"config": cfg.wiki_enabled()}
+        str(doc["id"]), owner,
+        {"config": cfg.wiki_enabled(), "sync_frequency": "never"},
     )
 
 

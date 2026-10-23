@@ -43,6 +43,12 @@ interface GraphSourceViewProps {
   /** The source's `type`; `connector:file` sources browse as a connector tree. */
   sourceType?: string;
   /**
+   * Synced from a connection or on a schedule, whatever its type (an S3 or
+   * GitHub source): the Files tab browses as a connector tree too (Sync
+   * now, no Add file).
+   */
+  synced?: boolean;
+  /**
    * Whether the source has a folder structure (`bool(directory_structure)`).
    * Without one the Files tab shows the chunk list, as the plain source view
    * does. Defaults to true.
@@ -51,6 +57,8 @@ interface GraphSourceViewProps {
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
+  /** The source's ⋯, last in the title row. */
+  headerMenu?: ReactNode;
   /**
    * Whether the caller may change the source (`can(source, 'edit')`). False
    * hides the Files tab's writes and the graph chunk drawer's Edit.
@@ -74,9 +82,11 @@ export default function GraphSourceView({
   docId,
   sourceName,
   sourceType,
+  synced = false,
   isNested = true,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   canEdit = true,
   linkedChunk,
 }: GraphSourceViewProps) {
@@ -202,12 +212,13 @@ export default function GraphSourceView({
       onOpenChunkChange={setOpenChunkPosition}
       linkedChunk={linked}
     />
-  ) : sourceType === 'connector:file' ? (
+  ) : synced || sourceType === 'connector:file' ? (
     <ConnectorTree
       embedded
       canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
+      sourceType={sourceType}
       onBackToDocuments={onBackToDocuments}
       initialPath={filesPath}
       linkedChunk={linked}
@@ -274,6 +285,7 @@ export default function GraphSourceView({
             ) : null}
           </>
         }
+        menu={headerMenu}
       />
       <Tabs value={tab} onValueChange={(value) => changeTab(value as GraphTab)}>
         <TabsList>

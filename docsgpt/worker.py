@@ -1667,6 +1667,23 @@ def _stored_source_config(doc_id: Optional[str], user: str) -> Optional[Dict[str
     return config or None
 
 
+def _is_wiki_config(config: Any) -> bool:
+    """Whether a stored ``sources.config`` marks the source as a wiki.
+
+    Args:
+        config: The config as stored: a dict, its JSON text, or ``None``.
+
+    Returns:
+        True for ``kind == "wiki"``.
+    """
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError:
+            return False
+    return isinstance(config, dict) and config.get("kind") == "wiki"
+
+
 def sync(
     self,
     source_data,
@@ -1679,6 +1696,12 @@ def sync(
     directory="temp",
     connection_id=None,
 ):
+    config = _stored_source_config(doc_id, user)
+    if _is_wiki_config(config):
+        # A sync wipes the index and re-reads the remote content, which
+        # would replace a wiki's pages; a converted source no longer syncs.
+        logging.info("Skipping sync of wiki source %s", doc_id)
+        return {"status": "skipped", "reason": "wiki"}
     try:
         remote_worker(
             self,
@@ -1692,7 +1715,7 @@ def sync(
             "sync",
             doc_id,
             # Re-chunk with the source's own settings, not the defaults.
-            config=_stored_source_config(doc_id, user),
+            config=config,
             connection_id=connection_id,
         )
     except Exception as e:
@@ -1712,7 +1735,7 @@ def sync_worker(self, frequency):
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata "
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config "
                 "FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
@@ -1728,6 +1751,11 @@ def sync_worker(self, frequency):
         doc_id = str(doc.get("id"))
 
         sync_counts["total_sync_count"] += 1
+
+        if _is_wiki_config(doc.get("config")):
+            # A sync would replace a wiki's pages with the remote content.
+            sync_counts["sync_skipped"] += 1
+            continue
 
         # Connector sources sync from their connection, whose token the
         # worker can refresh. Legacy ones with no connection still need the
@@ -3972,6 +4000,9 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
         enabled = connection is not None and connector_enabled(conn, connection)
     if not source or not connection:
         return {"status": "skipped"}
+    if _is_wiki_config(source.get("config")):
+        # A sync would replace a wiki's pages with the connector's files.
+        return {"status": "skipped", "reason": "wiki"}
     if not enabled:
         return {"status": "disabled"}
     if normalize_status(connection) != "connected":
@@ -4050,6 +4081,14 @@ def ingest_connector(
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
     )
+    if (
+        operation_mode == "sync"
+        and doc_id
+        and _is_wiki_config(_stored_source_config(doc_id, user))
+    ):
+        # A sync would replace a wiki's pages with the connector's files.
+        logging.info("Skipping sync of wiki source %s", doc_id)
+        return {"status": "skipped", "reason": "wiki"}
 
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
     # sync mode reuses ``doc_id``; otherwise the caller-supplied
@@ -4873,8 +4912,10 @@ def convert_source_to_wiki_worker(self, source_id, user):
         )
 
     with db_session() as conn:
+        # A wiki is edited in place, so it stops syncing: a sync would
+        # replace its pages with the remote content.
         SourcesRepository(conn).update(
-            source_id, user, {"config": cfg.wiki_enabled()}
+            source_id, user, {"config": cfg.wiki_enabled(), "sync_frequency": "never"}
         )
 
     return {

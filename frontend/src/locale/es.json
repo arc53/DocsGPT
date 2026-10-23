@@ -181,10 +181,9 @@
       "searchPlaceholder": "Buscar...",
       "addNew": "Agregar Nuevo",
       "addSource": "Añadir conocimiento",
-      "addChunk": "Agregar Fragmento",
+      "addChunk": "Agregar fragmento",
       "preLoaded": "Precargado",
       "private": "Privado",
-      "sync": "Sincronizar",
       "syncDone": "Listo",
       "syncNow": "Sincronizar ahora",
       "syncing": "Sincronizando...",
@@ -196,8 +195,7 @@
         "never": "Nunca",
         "daily": "Diario",
         "weekly": "Semanal",
-        "monthly": "Mensual",
-        "option": "Sincronización: {{frequency}}"
+        "monthly": "Mensual"
       },
       "actions": "Acciones",
       "view": "Ver",
@@ -256,7 +254,6 @@
         "pageLoadFailed": "No se pudo cargar esta página.",
         "editTitle": "Editar página",
         "settings": {
-          "action": "Configuración del wiki",
           "title": "Configuración del wiki",
           "outsideEdits": {
             "label": "Permitir que los usuarios de la API y del widget editen este wiki",
@@ -411,7 +408,7 @@
         "saveToSource": "Guardar en la fuente",
         "savedToSource": "Guardado. La fuente usa ahora los ajustes que probaste."
       },
-      "editConfig": "Configuración de la fuente",
+      "editConfig": "Configuración",
       "shareWithTeam": "Compartir con el equipo",
       "deleteWarning": "¿Eliminar \"{{name}}\"?",
       "chunks": "Fragmentos",
@@ -664,7 +661,6 @@
         "removeFailed": "No se pudo quitar.",
         "removeLast": "Es lo último que obtiene esta fuente. Elimina la fuente en su lugar.",
         "handEditsNote": "Se mantiene actualizado: {{frequency}}. Los fragmentos que añadas o edites aquí se reemplazan en la próxima sincronización.",
-        "settingsTitle": "Ajustes del sitio web",
         "fetches": "Qué obtiene esta fuente",
         "siteSummary": "Sitio completo · {{find}} · límite de páginas {{max}}",
         "limitReached": "límite de páginas alcanzado",
@@ -672,12 +668,16 @@
         "removeFromList": "Quitar de la lista",
         "skipped": "Omitidas",
         "restore": "Restaurar",
-        "save": "Guardar",
         "saveFailed": "No se pudieron guardar los ajustes.",
         "loadFailed": "No se pudieron cargar los ajustes.",
         "lastSynced": "Última sincronización {{when}}.",
         "appliesNextSync": "Los cambios se aplican en la próxima sincronización."
-      }
+      },
+      "deleteSource": "Eliminar fuente",
+      "syncStarted": "Sincronizando {{name}}…",
+      "viaConnectionFiles_one": "mediante {{name}} · {{files}} archivo",
+      "viaConnectionFiles_other": "mediante {{name}} · {{files}} archivos",
+      "viaConnectionFiles_many": "mediante {{name}} · {{files}} archivos"
     },
     "analytics": {
       "label": "Analítica",

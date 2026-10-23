@@ -392,6 +392,28 @@ class TestConvertSourceToWiki:
         assert cfg.kind == "wiki"
         assert cfg.retrieval.exposure == "agentic_tool"
 
+    def test_blank_source_conversion_clears_the_sync_schedule(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-convert-scheduled"
+        src = SourcesRepository(pg_conn).create(
+            "blank", user_id=user, type="url", directory_structure={},
+            sync_frequency="weekly",
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert got["sync_frequency"] == "never"
+
     def test_fileful_source_enqueues_task(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import ConvertSourceToWiki
         from docsgpt.storage.db.repositories.sources import SourcesRepository

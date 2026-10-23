@@ -263,6 +263,16 @@ describe('Chunks', () => {
     expect(handleGoBack).toHaveBeenCalledTimes(1);
   });
 
+  it("standalone: the source's menu comes last in the title row", async () => {
+    await render({
+      headerAction: <button type="button">retrieval</button>,
+      headerMenu: <button type="button">source menu</button>,
+    });
+    const menu = buttonByText('source menu')!;
+    expect(menu.previousElementSibling?.textContent).toBe('retrieval');
+    expect(menu.nextElementSibling).toBeNull();
+  });
+
   it('embedded: draws no header', async () => {
     await render({ embedded: true });
     expect(container.querySelector('[data-slot="breadcrumb-item"]')).toBeNull();

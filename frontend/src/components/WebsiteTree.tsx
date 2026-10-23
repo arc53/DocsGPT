@@ -1,4 +1,4 @@
-import { ExternalLink, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ExternalLink, Globe, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -30,6 +30,8 @@ interface WebsiteTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval). */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row. */
+  headerMenu?: React.ReactNode;
   /** The hosts the source fetches from (the sources list's `website.hosts`). */
   hosts: string[];
   /** `sources.sync_frequency`; never (or empty) reads "Not synced". */
@@ -66,6 +68,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   hosts,
   syncFrequency,
   syncedAt,
@@ -310,7 +313,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           shape="pill"
           onClick={() => setAddOpen(true)}
         >
-          <Plus />
           {tr('addPages')}
         </Button>
       ) : null}
@@ -342,6 +344,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         variant="pages"
         renderByline={renderByline}
         topRightAction={topRightAction}
+        headerMenu={headerMenu}
         statusLabel={status}
         getRowMenuOptions={getRowMenuOptions}
         controllerRef={controllerRef}

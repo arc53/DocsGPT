@@ -10,10 +10,19 @@ vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
 }));
 
-const updateSourceConfig = vi.hoisted(() => vi.fn());
-vi.mock('../api/services/userService', () => ({
-  default: { updateSourceConfig },
-}));
+const { updateSourceConfig, service } = vi.hoisted(() => {
+  const updateSourceConfig = vi.fn();
+  return {
+    updateSourceConfig,
+    service: {
+      updateSourceConfig,
+      manageSync: vi.fn(),
+      getWebsite: vi.fn(),
+      saveWebsite: vi.fn(),
+    },
+  };
+});
+vi.mock('../api/services/userService', () => ({ default: service }));
 
 import type { Doc } from '../models/misc';
 import type { DecisionFeatures } from './components/RetrievalOptions';
@@ -153,5 +162,218 @@ describe('SourceConfigModal access', () => {
       candidate_k: null,
     });
     expect(config.retrieval.prescreen).toBe(null);
+  });
+});
+
+describe('SourceConfigModal first section, by kind', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const onSaved = vi.fn();
+  const onSyncNow = vi.fn();
+  const setModalState = vi.fn();
+
+  const WEBSITE = {
+    entries: [
+      {
+        url: 'https://docs.x.io/',
+        mode: 'site',
+        max_pages: 100,
+        discovery: 'auto',
+      },
+      { url: 'https://github.com/a/b', mode: 'page' },
+    ],
+    skip: ['https://docs.x.io/changelog', 'https://docs.x.io/Deploying/*'],
+    keep_links: false,
+  };
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    service.getWebsite.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        config: WEBSITE,
+        sync_frequency: 'weekly',
+        report: {
+          sites: [{ url: 'https://docs.x.io/', limit_reached: true }],
+        },
+      }),
+    });
+    service.saveWebsite.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+    service.manageSync.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    vi.clearAllMocks();
+  });
+
+  const render = async (document: Doc) => {
+    await act(async () => {
+      root.render(
+        <SourceConfigModal
+          modalState="ACTIVE"
+          setModalState={setModalState}
+          document={document}
+          onReingest={vi.fn()}
+          onEnableGraphRAG={vi.fn()}
+          onSaved={onSaved}
+          onSyncNow={onSyncNow}
+        />,
+      );
+    });
+  };
+
+  const buttons = () => Array.from(document.body.querySelectorAll('button'));
+  const button = (label: string) =>
+    buttons().find((b) => b.textContent === label);
+  const scheduleTrigger = () =>
+    document.body.querySelector<HTMLButtonElement>(
+      'button[role="combobox"][data-testid="source-schedule"]',
+    );
+
+  const pickSchedule = async (value: string) => {
+    await act(async () => {
+      scheduleTrigger()!.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const option = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) => o.textContent === `settings.sources.syncFrequency.${value}`)!;
+    await act(async () => option.click());
+  };
+
+  it('an upload has no schedule and no Sync now', async () => {
+    await render(doc({}));
+    expect(scheduleTrigger()).toBeNull();
+    expect(button('settings.sources.syncNow')).toBeUndefined();
+  });
+
+  it('a synced source keeps its schedule here and saves it', async () => {
+    await render(
+      doc({ type: 's3', connectionId: 'conn-1', syncFrequency: 'daily' }),
+    );
+    expect(scheduleTrigger()?.textContent).toBe(
+      'settings.sources.syncFrequency.daily',
+    );
+    await pickSchedule('weekly');
+    await act(async () => button('settings.sources.configModal.save')!.click());
+    expect(service.manageSync).toHaveBeenCalledWith(
+      { source_id: 'src-1', sync_frequency: 'weekly' },
+      null,
+    );
+    // Only the schedule changed: the config isn't written.
+    expect(updateSourceConfig).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledWith({ syncFrequency: 'weekly' });
+    expect(setModalState).toHaveBeenCalledWith('INACTIVE');
+  });
+
+  it('keeps a failed schedule change in the dialog', async () => {
+    service.manageSync.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ success: false }),
+    });
+    await render(doc({ type: 'github', syncFrequency: 'daily' }));
+    await pickSchedule('monthly');
+    await act(async () => button('settings.sources.configModal.save')!.click());
+    expect(document.body.textContent).toContain(
+      'settings.sources.errors.syncFrequency',
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+  });
+
+  it('runs Sync now from the footer of a synced source', async () => {
+    await render(doc({ type: 'connector:file', syncFrequency: 'never' }));
+    await act(async () => button('settings.sources.syncNow')!.click());
+    expect(onSyncNow).toHaveBeenCalled();
+    expect(setModalState).toHaveBeenCalledWith('INACTIVE');
+  });
+
+  it('a viewer sees no schedule and no Sync now', async () => {
+    await render(
+      doc({
+        type: 's3',
+        connectionId: 'conn-1',
+        syncFrequency: 'daily',
+        access: 'viewer',
+        allowed_actions: ['use', 'view_config'],
+      }),
+    );
+    expect(scheduleTrigger()).toBeNull();
+    expect(button('settings.sources.syncNow')).toBeUndefined();
+  });
+
+  it('a website lists what it fetches and what it skips', async () => {
+    await render(
+      doc({
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+      }),
+    );
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('docs.x.io');
+    expect(text).toContain('github.com/a/b');
+    expect(text).toContain('settings.sources.website.limitReached');
+    expect(text).toContain('docs.x.io/changelog');
+    expect(text).toContain('docs.x.io/Deploying/*');
+    expect(button('settings.sources.syncNow')).toBeDefined();
+  });
+
+  it('a website saves removed entries, restored skips and the schedule', async () => {
+    await render(
+      doc({
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+      }),
+    );
+    const removeButtons = () =>
+      buttons().filter(
+        (b) =>
+          b.getAttribute('aria-label') ===
+          'settings.sources.website.removeFromList',
+      );
+    await act(async () => removeButtons()[1].click());
+    // The last entry left can't be removed.
+    expect(removeButtons().every((b) => b.disabled)).toBe(true);
+    await act(async () => button('settings.sources.website.restore')!.click());
+    await act(async () => button('settings.sources.configModal.save')!.click());
+    expect(service.saveWebsite).toHaveBeenCalledWith(
+      {
+        source_id: 'src-1',
+        entries: [WEBSITE.entries[0]],
+        skip: ['https://docs.x.io/Deploying/*'],
+        keep_links: false,
+        sync_frequency: 'weekly',
+      },
+      null,
+    );
+    expect(service.manageSync).not.toHaveBeenCalled();
+    expect(updateSourceConfig).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledWith({ syncFrequency: 'weekly' });
+    expect(setModalState).toHaveBeenCalledWith('INACTIVE');
+  });
+
+  it('a wiki has no schedule even with a leftover one', async () => {
+    await render(
+      doc({ type: 'url', syncFrequency: 'weekly', config: { kind: 'wiki' } }),
+    );
+    expect(scheduleTrigger()).toBeNull();
+    expect(button('settings.sources.syncNow')).toBeUndefined();
   });
 });

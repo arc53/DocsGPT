@@ -101,6 +101,8 @@ interface ChunksProps {
   fileName?: string;
   /** Extra header control (Test retrieval); standalone only. */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row; standalone only. */
+  headerMenu?: React.ReactNode;
   /**
    * Rendered inside a source view that draws the header itself (TreeBrowser):
    * no PathHeader here. The host's crumbs show the open chunk
@@ -161,6 +163,7 @@ const Chunks: React.FC<ChunksProps> = ({
   path,
   fileName,
   headerAction,
+  headerMenu,
   embedded = false,
   onOpenChunkChange,
   controllerRef,
@@ -679,6 +682,7 @@ const Chunks: React.FC<ChunksProps> = ({
             })
       }
       actions={headerAction}
+      menu={headerMenu}
     />
   );
 

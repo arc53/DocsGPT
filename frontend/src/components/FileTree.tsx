@@ -29,6 +29,8 @@ interface FileTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control, rendered left of "Add file". */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row; not drawn when embedded. */
+  headerMenu?: React.ReactNode;
   /**
    * Inside another source view (the graph source's Files tab): no Sources
    * crumb, badge or byline, and no headerAction; Add file stays.
@@ -54,6 +56,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   embedded = false,
   actionsTarget,
   initialPath,
@@ -254,7 +257,6 @@ const FileTree: React.FC<FileTreeProps> = ({
     isFile,
     defaultViewOption,
   }: RowMenuContext): MenuOption[] => {
-    // Read-only: View only, so a one-file source draws no header menu.
     if (!canEdit) return [defaultViewOption];
     return [
       defaultViewOption,
@@ -263,6 +265,7 @@ const FileTree: React.FC<FileTreeProps> = ({
         label: t('settings.sources.delete'),
         onClick: () => confirmDeleteItem(name, isFile),
         variant: 'destructive',
+        separatorBefore: true,
       },
     ];
   };
@@ -321,6 +324,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       sortEntries={false}
       controllerRef={controllerRef}
       topRightAction={topRightAction}
+      headerMenu={headerMenu}
       statusLabel={statusLabel}
       getRowMenuOptions={getRowMenuOptions}
       extraContent={extraContent}

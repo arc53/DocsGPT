@@ -215,11 +215,29 @@ describe('WebsiteTree page management', () => {
     );
   });
 
+  it("passes the source's menu to the title row", async () => {
+    const headerMenu = <button type="button">source menu</button>;
+    await act(async () => {
+      root.render(
+        <WebsiteTree
+          docId="src-1"
+          sourceName="Docs"
+          onBackToDocuments={() => undefined}
+          hosts={['docs.x.io']}
+          headerMenu={headerMenu}
+        />,
+      );
+    });
+    expect(captured.props!.headerMenu).toBe(headerMenu);
+  });
+
   it('opens Add pages from the header', async () => {
     await render();
     const add = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('settings.sources.website.addPages'),
     )!;
+    // A primary button is text only.
+    expect(add.querySelector('svg')).toBeNull();
     await act(async () => add.click());
     expect(document.body.textContent).toContain('add-pages-modal');
   });

@@ -70,6 +70,27 @@ describe('PathHeader', () => {
     expect(html).toContain('Sync');
   });
 
+  it("draws the source's menu last, after the actions", () => {
+    const html = render(
+      <PathHeader
+        root={{ label: 'Docs' }}
+        actions={<button type="button">Sync now</button>}
+        menu={<button type="button">menu</button>}
+      />,
+    );
+    expect(html.indexOf('Sync now')).toBeLessThan(html.indexOf('menu'));
+  });
+
+  it('draws the menu alone when there are no actions', () => {
+    const html = render(
+      <PathHeader
+        root={{ label: 'Docs' }}
+        menu={<button type="button">menu</button>}
+      />,
+    );
+    expect(html).toContain('menu');
+  });
+
   it('puts the kind badge after the crumbs and the byline under the row', () => {
     const html = render(
       <PathHeader

@@ -117,6 +117,23 @@ class TestConvertSourceToWikiWorker:
         assert deleted == {"g1", "g2", "i1"}
         assert delay.call_count == 2
 
+    def test_convert_clears_the_sync_schedule(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A wiki is edited in place; a scheduled sync would replace its pages."""
+        from docsgpt import worker
+
+        repo = SourcesRepository(pg_conn)
+        source_id = _seed_source(pg_conn)
+        repo.update(source_id, "alice", {"sync_frequency": "weekly"})
+        _patch_store(monkeypatch, [_chunk("body.", source="guide.md", doc_id="g1")])
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        assert repo.get_any(source_id, "alice")["sync_frequency"] == "never"
+
     def test_chunk_without_doc_id_not_deleted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

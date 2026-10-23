@@ -96,7 +96,7 @@ The **Name** starts as the site's host name; type over it to change it.
 | **Sitemap URL** | Shown when **Find pages** is **Sitemap**: a sitemap to read instead of the one the site lists in `robots.txt`. You can also enter a sitemap's address, such as `https://example.com/sitemap.xml`, as the website address. |
 | **Include subdomains** | Also fetch pages on other subdomains of the same domain, such as `blog.example.com` for `example.com`. |
 
-DocsGPT looks for a sitemap in the site's `robots.txt`, then at `/sitemap.xml` and `/sitemap_index.xml`. A sitemap that lists other sitemaps is followed down to the pages, and compressed (`.xml.gz`) sitemaps are read. When a sitemap holds more pages than the limit, DocsGPT drops the addresses outside **Stay under**, the other subdomains and the skipped addresses first, then takes pages in the sitemap's own order until it reaches the limit. When a sync stops at the limit, the source's **Website settings** say **page limit reached**.
+DocsGPT looks for a sitemap in the site's `robots.txt`, then at `/sitemap.xml` and `/sitemap_index.xml`. A sitemap that lists other sitemaps is followed down to the pages, and compressed (`.xml.gz`) sitemaps are read. When a sitemap holds more pages than the limit, DocsGPT drops the addresses outside **Stay under**, the other subdomains and the skipped addresses first, then takes pages in the sitemap's own order until it reaches the limit. When a sync stops at the limit, the source's **Settings** say **page limit reached**.
 
 A source holds at most `WEB_MAX_PAGES` pages (100 by default) across everything it fetches, so a sync never has more to fetch than that. Pages added by their address count first, and sites share what is left in the order they were added. **Add pages** is refused when the source would go past the limit.
 
@@ -120,7 +120,7 @@ Pages are fetched from the DocsGPT server, not from your browser. Pages behind a
 - **Refresh page**, in a page's menu, fetches that page again now. If the fetch fails, the page keeps its content.
 - **Remove from source** deletes a page's chunks. A page you added by its address leaves the source's list. A page found by crawling a site, or a whole folder, is added to the source's skipped addresses, so later syncs leave it out.
 
-**Website settings**, in the source's menu on the Knowledge page, shows what the source fetches and what it skips. There you can remove an address or a site from the list, **Restore** a skipped address, switch **Keep links in page text**, change **Keep up to date**, or click **Sync now**. Changes apply at the next sync.
+**Settings**, in the source's menu, shows what a website source fetches and what it skips, above its retrieval and chunking settings. There you can remove an address or a site from the list, **Restore** a skipped address, switch **Keep links in page text**, change **Keep up to date**, or click **Sync now**. Changes to the list apply at the next sync.
 
 <Callout type="warning" emoji="⚠️">
 A sync replaces a website source's chunks. On a source that is kept up to date, chunks you add or edit by hand are replaced at the next sync.
@@ -143,13 +143,14 @@ For a private repository, use **Connect GitHub** in the form, or **Pick a reposi
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 
 - **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks.
-- **Sync: Never / Daily / Weekly / Monthly** and **Sync now** appear for sources that can be fetched again: GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
-- **Website settings** holds a website source's schedule instead of the sync rows; **Sync now** stays in the menu. See [Manage the pages of a website source](#manage-the-pages-of-a-website-source).
-- **Source settings** changes chunking and retrieval. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
+- **Sync now** appears for sources that are fetched again: websites, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
+- **Settings** opens one dialog for the source. A website source starts with its pages and schedule (see [Manage the pages of a website source](#manage-the-pages-of-a-website-source)); a GitHub or connector source starts with **Keep up to date**, its sync schedule. Then come the retrieval and chunking settings. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
 - **Test retrieval** runs a question against the source and shows which chunks come back.
 - **Convert to wiki** turns the source into editable wiki pages. This can't be undone.
 - **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
 - **Delete** removes the source and its index.
+
+An open source keeps the same actions in its header: **Test retrieval**, then its main action (**Add file** for an upload, **Add pages** for a website, **Sync now** for a synced source), then the ⋯ menu with the rest. **Delete source** there returns you to the Knowledge page.
 
 To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 

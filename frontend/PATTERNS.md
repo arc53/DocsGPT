@@ -509,8 +509,32 @@ wiki, a knowledge graph) is one shell:
   have none); `byline` is one muted `text-sm` line of counts ("33 files ·
   11,420 tokens", "12 pages · 8,111 tokens · …", "371 entities · 1,172
   relationships"), where a kind that needs explaining adds one sentence. No
-  explainer box. Actions on the right: Test retrieval (`outline field pill`)
-  and the kind's one primary action (Add file, Sync).
+  explainer box. Actions on the right, source-level only: Test retrieval
+  (`outline field pill`), the kind's one primary action (`default field
+  pill`, text only: Add file for an upload, Add pages for a website, Sync now
+  for a synced source, none for a wiki or a graph), then the source's ⋯
+  (`ActionMenu size="toolbar"`, PathHeader's `menu`, always last). The ⋯ is
+  `settings/useSourceActions`' `menuOptions(doc, 'view')`: the card's menu less
+  View and Test retrieval (and less Sync now where that is the primary); its
+  Delete is "Delete source" and returns to the list. File and page actions
+  never sit in this row.
+- **Synced sources** (`settings/sourceKinds` `isSyncedSource`: a connection, a
+  connector type or a schedule, whatever the stored type, so S3 and GitHub
+  too) open in `ConnectorTree`: the connection's badge, the schedule in the
+  byline ("12 files · 13,080 tokens · Weekly · synced 2 days ago"), Sync now,
+  and no Add file or file Delete (a sync replaces them). A website keeps
+  WebsiteTree and Add pages, with Sync now in its ⋯.
+- **Source menu** (the card's ⋯ and the view's): View, Reingest (a failed
+  ingest only), Sync now, Settings, Test retrieval, Convert to wiki, Share with
+  team, then Delete after a rule (`separatorBefore`); never more than that, and
+  no per-value rows (the schedule is a field in Settings). Settings is one
+  dialog, `SourceConfigModal`: its first section depends on the kind (a
+  website's pages, skips, Keep links and schedule; a synced source's "Keep up
+  to date"; nothing for an upload), then RetrievalOptions, with Sync now in the
+  footer; a viewer with `view_config` reads only the retrieval part. A wiki's
+  Settings is WikiSettingsModal. A card whose source has a schedule shows
+  "{frequency} · synced {when}" instead of its date, and "via {connection} ·
+  N files" for a connection.
 - **Add forms** (Upload, Website, New wiki in Add knowledge): Name first, the
   kind's fields, then the `Advanced settings` disclosure, and one submit, "Add to
   Knowledge", for all three. A wiki's "Initial content" is a default Textarea

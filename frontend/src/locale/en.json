@@ -180,10 +180,9 @@
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
       "addSource": "Add knowledge",
-      "addChunk": "Add Chunk",
+      "addChunk": "Add chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
-      "sync": "Sync",
       "syncDone": "Done",
       "syncNow": "Sync now",
       "syncing": "Syncing...",
@@ -195,8 +194,7 @@
         "never": "Never",
         "daily": "Daily",
         "weekly": "Weekly",
-        "monthly": "Monthly",
-        "option": "Sync: {{frequency}}"
+        "monthly": "Monthly"
       },
       "actions": "Actions",
       "view": "View",
@@ -252,7 +250,6 @@
         "pageLoadFailed": "Could not load this page.",
         "editTitle": "Edit page",
         "settings": {
-          "action": "Wiki settings",
           "title": "Wiki settings",
           "outsideEdits": {
             "label": "Let API and widget users edit this wiki",
@@ -397,7 +394,7 @@
         "saveToSource": "Save to source",
         "savedToSource": "Saved. The source now uses the settings you tested."
       },
-      "editConfig": "Source settings",
+      "editConfig": "Settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Delete \"{{name}}\"?",
       "chunks": "Chunks",
@@ -642,7 +639,6 @@
         "removeFailed": "Couldn’t remove it.",
         "removeLast": "That’s the last thing this source fetches. Delete the source instead.",
         "handEditsNote": "Kept up to date: {{frequency}}. Chunks you add or edit here are replaced at the next sync.",
-        "settingsTitle": "Website settings",
         "fetches": "What this source fetches",
         "siteSummary": "Whole site · {{find}} · page limit {{max}}",
         "limitReached": "page limit reached",
@@ -650,12 +646,15 @@
         "removeFromList": "Remove from the list",
         "skipped": "Skipped",
         "restore": "Restore",
-        "save": "Save",
         "saveFailed": "Couldn’t save the settings.",
         "loadFailed": "Couldn’t load the settings.",
         "lastSynced": "Last synced {{when}}.",
         "appliesNextSync": "Changes apply at the next sync."
-      }
+      },
+      "deleteSource": "Delete source",
+      "syncStarted": "Syncing {{name}}…",
+      "viaConnectionFiles_one": "via {{name}} · {{files}} file",
+      "viaConnectionFiles_other": "via {{name}} · {{files}} files"
     },
     "analytics": {
       "label": "Analytics",

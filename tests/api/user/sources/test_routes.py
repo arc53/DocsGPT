@@ -157,6 +157,30 @@ class TestPaginatedSources:
         assert data["currentPage"] == 1
         assert len(data["paginated"]) == 2
 
+    def test_counts_files_in_the_tree(self, app, pg_conn):
+        """A card shows how many files a synced source holds."""
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        user = "u-files"
+        _seed_source(
+            pg_conn, user, name="bucket",
+            directory_structure={
+                "a.pdf": {"type": "application/pdf", "token_count": 10},
+                "docs": {"b.md": {"type": "text/markdown", "token_count": 5}},
+            },
+        )
+        _seed_source(pg_conn, user, name="flat")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        by_name = {d["name"]: d for d in response.json["paginated"]}
+        assert by_name["bucket"]["files"] == 2
+        assert by_name["flat"]["files"] is None
+
     def test_search_filter(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import PaginatedSources
 
@@ -536,8 +560,71 @@ class TestManageSync:
         got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
         assert got["sync_frequency"] == "weekly"
 
+    def test_a_wiki_cannot_be_scheduled(self, app, pg_conn):
+        """A sync would replace a wiki's pages with the remote content."""
+        from docsgpt.api.user.sources.routes import ManageSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-sync-wiki"
+        src = _seed_source(pg_conn, user, name="wiki", config={"kind": "wiki"})
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/manage_sync",
+            method="POST",
+            json={"source_id": str(src["id"]), "sync_frequency": "weekly"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ManageSync().post()
+        assert response.status_code == 400
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert got["sync_frequency"] in (None, "never")
+
+    def test_a_wiki_can_still_be_set_to_never(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import ManageSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-sync-wiki-never"
+        src = _seed_source(
+            pg_conn, user, name="wiki", config={"kind": "wiki"},
+            sync_frequency="weekly",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/manage_sync",
+            method="POST",
+            json={"source_id": str(src["id"]), "sync_frequency": "never"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ManageSync().post()
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert got["sync_frequency"] == "never"
+
 
 class TestSyncSource:
+    def test_returns_400_for_a_wiki(self, app, pg_conn):
+        """Sync now on a wiki would replace its pages with the remote content."""
+        from docsgpt.api.user.sources.routes import SyncSource
+
+        user = "u-sync-now-wiki"
+        src = _seed_source(
+            pg_conn, user, name="wiki", type="crawler", config={"kind": "wiki"},
+            remote_data=json.dumps({"url": "https://example.com"}),
+        )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.sync_source.delay",
+        ) as mock_delay, app.test_request_context(
+            "/api/sync_source", method="POST", json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+        assert response.status_code == 400
+        mock_delay.assert_not_called()
+
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.routes import SyncSource
 

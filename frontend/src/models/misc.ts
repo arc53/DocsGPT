@@ -99,6 +99,8 @@ export type Doc = {
   // A Website source's hosts and page count (also older link, crawler and
   // sitemap sources); null for every other kind.
   website?: { hosts: string[]; pages: number } | null;
+  // How many files the source's tree holds; null for a flat source.
+  files?: number | null;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;

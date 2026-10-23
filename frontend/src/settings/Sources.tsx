@@ -1,25 +1,15 @@
 import {
-  BookOpen,
   CalendarIcon,
-  Check,
-  Eye,
   FileText,
   Globe,
   HardDrive,
   Network,
   RefreshCw,
-  Search,
-  SlidersHorizontal,
-  Trash2,
-  Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-
-import userService from '../api/services/userService';
-import modelService from '../api/services/modelService';
 
 import PageToolbar from '../components/PageToolbar';
 import RoleBadge from '../components/RoleBadge';
@@ -28,7 +18,7 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardFooter, CardTitle } from '../components/ui/card';
-import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import {
@@ -38,12 +28,8 @@ import {
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
-import type { Model } from '../models/types';
-import { showActionToast } from '../notifications/actionToastSlice';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
-import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import { getDocsWithPagination } from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
   selectToken,
@@ -56,15 +42,10 @@ import {
   type KnowledgeLink,
   readKnowledgeLink,
 } from './knowledgeLink';
-import {
-  addUploadTask,
-  removeUploadTask,
-  selectUploadTasks,
-  updateUploadTask,
-} from '../upload/uploadSlice';
 import { can } from '../utils/accessUtils';
 import {
   EMPTY_VALUE,
+  formatCount,
   formatDate,
   formatRelative,
 } from '../utils/dateTimeUtils';
@@ -83,18 +64,15 @@ import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
-import ConvertToWikiModal from './ConvertToWikiModal';
-import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
-import SourceConfigModal from './SourceConfigModal';
-import TestRetrievalModal from './TestRetrievalModal';
 import {
-  type DecisionFeatures,
-  NO_DECISION_FEATURES,
-  decisionFeatures,
-} from './components/RetrievalOptions';
-import WikiSettingsModal from './WikiSettingsModal';
-import WebsiteSettingsModal from './WebsiteSettingsModal';
+  isGraphSource,
+  isSyncedSource,
+  isWikiSource,
+  sourcePrimary,
+  syncSchedule,
+} from './sourceKinds';
+import { useSourceActions } from './useSourceActions';
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
@@ -130,7 +108,6 @@ export default function Sources({
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
-  const uploadTasks = useSelector(selectUploadTasks);
   const connections = useSelector(selectConnections);
   // Signing in again reloads the connections, which lifts the pause.
   const { reconnect, modals: signInModals } = useSignInAgain();
@@ -161,12 +138,6 @@ export default function Sources({
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
   const currentDocuments = paginatedDocuments ?? [];
-  const syncOptions = [
-    { label: t('settings.sources.syncFrequency.never'), value: 'never' },
-    { label: t('settings.sources.syncFrequency.daily'), value: 'daily' },
-    { label: t('settings.sources.syncFrequency.weekly'), value: 'weekly' },
-    { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
-  ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   // A citation's "Open in Knowledge" (see knowledgeLink.ts): the source opens
   // on the cited chunk or wiki page, once. The source comes from this page
@@ -199,52 +170,23 @@ export default function Sources({
     });
     setViewLink(link);
   }, [searchParams, knowledge, paginatedDocuments]);
+  // A refreshed page carries the open source's new state (converted to a
+  // wiki, a finished graph build), and the view follows it.
+  useEffect(() => {
+    setDocumentToView((doc) => {
+      const fresh = doc?.id
+        ? paginatedDocuments?.find((d) => d.id === doc.id)
+        : undefined;
+      return doc && fresh ? { ...doc, ...fresh } : doc;
+    });
+  }, [paginatedDocuments]);
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);
   };
-  const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
-  const [documentForWikiSettings, setDocumentForWikiSettings] =
-    useState<Doc | null>(null);
-  const [documentForWebsiteSettings, setDocumentForWebsiteSettings] =
-    useState<Doc | null>(null);
-  const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
-    null,
-  );
-  const [configModalState, setConfigModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [documentToTest, setDocumentToTest] = useState<Doc | null>(null);
-  const [testRetrievalState, setTestRetrievalState] =
-    useState<ActiveState>('INACTIVE');
-  const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
-  const [convertModalState, setConvertModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [documentToGraphRAG, setDocumentToGraphRAG] = useState<Doc | null>(
-    null,
-  );
-  const [graphRAGModalState, setGraphRAGModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
-  const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
-  const [decision, setDecision] =
-    useState<DecisionFeatures>(NO_DECISION_FEATURES);
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
-
-  /**
-   * Shows a failed source action as a destructive toast: the forbidden
-   * message on a 403, else the action's own.
-   */
-  const showActionError = (message: string, status?: number) =>
-    dispatch(
-      showActionToast({
-        variant: 'destructive',
-        message:
-          status === 403 ? t('settings.sources.errors.forbidden') : message,
-      }),
-    );
 
   const refreshDocs = useCallback(
     (
@@ -305,302 +247,37 @@ export default function Sources({
     ],
   );
 
-  const handleManageSync = (doc: Doc, sync_frequency: string) => {
-    setLoading(true);
-    userService
-      .manageSync({ source_id: doc.id, sync_frequency }, token)
-      .then((response: Response) => {
-        if (!response.ok) {
-          showActionError(
-            t('settings.sources.errors.syncFrequency'),
-            response.status,
-          );
-          return null;
-        }
-        return getDocs(token);
-      })
-      .then((data) => {
-        if (data === null) return null;
-        dispatch(setSourceDocs(data));
-        return getDocsWithPagination(
-          sortField,
-          sortOrder,
-          currentPage,
-          rowsPerPage,
-          searchTerm,
-          token,
-        );
-      })
-      .then((paginatedData) => {
-        if (paginatedData === null) return;
-        dispatch(
-          setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
-        );
-        setTotalDocuments(paginatedData ? paginatedData.totalDocuments : 0);
-      })
-      .catch((error) => {
-        console.error('Error in handleManageSync:', error);
-        showActionError(t('settings.sources.errors.syncFrequency'));
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+  /**
+   * Updates one source in place (a saved schedule or config): its card, the
+   * app's knowledge list and an open view of it, without reloading the grid.
+   */
+  const patchDoc = (id: string, patch: Partial<Doc>) => {
+    const apply = (list: Doc[]) =>
+      list.map((d) => (d.id === id ? { ...d, ...patch } : d));
+    if (paginatedDocuments)
+      dispatch(setPaginatedDocuments(apply(paginatedDocuments)));
+    if (knowledge) dispatch(setSourceDocs(apply(knowledge)));
+    setDocumentToView((doc) => (doc?.id === id ? { ...doc, ...patch } : doc));
   };
 
-  const handleSyncNow = async (doc: Doc) => {
-    if (!doc.id) {
-      return;
-    }
-    const syncFailed = t('settings.sources.errors.sync');
-    try {
-      let response: Response;
-      if (doc.type?.startsWith('connector')) {
-        // The server finds the connector from the source itself.
-        response = await userService.syncConnector(doc.id, token);
-      } else {
-        response = await userService.syncSource({ source_id: doc.id }, token);
-      }
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        console.error('Sync now failed:', data?.error || data?.message);
-        showActionError(syncFailed, response.status);
-      }
-    } catch (error) {
-      console.error('Error syncing source:', error);
-      showActionError(syncFailed);
-    }
-  };
-
-  const handleReingest = async (doc: Doc) => {
-    if (!doc.id) {
-      return;
-    }
-    const sourceId = doc.id;
-    // Drop stale toast rows for this source (a finished/dismissed task
-    // would swallow the reingest's SSE events), then open a fresh one.
-    uploadTasks
-      .filter((task) => task.sourceId === sourceId)
-      .forEach((task) => dispatch(removeUploadTask(task.id)));
-    const reingestTaskId = `reingest-${sourceId}-${Date.now()}`;
-    dispatch(
-      addUploadTask({
-        id: reingestTaskId,
-        fileName: doc.name || sourceId,
-        progress: 0,
-        status: 'training',
-        sourceId,
-      }),
-    );
-    try {
-      const response = await userService.reingestSource(
-        { source_id: sourceId },
-        token,
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        console.error('Reingest failed:', data?.error || data?.message);
-        dispatch(
-          updateUploadTask({
-            id: reingestTaskId,
-            updates: {
-              status: 'failed',
-              errorMessage: data?.error || data?.message,
-            },
-          }),
-        );
-        showActionError(t('settings.sources.errors.reingest'), response.status);
-        return;
-      }
+  const actions = useSourceActions({
+    onView: (doc) => setDocumentToView(doc),
+    onDelete: (doc) =>
+      handleDeleteDocument(
+        currentDocuments.findIndex((d) => d.id === doc.id),
+        doc,
+      ),
+    // A delete refetches the page, so the total stays right and a page left
+    // empty steps back (the server clamps it; refreshDocs follows). Deleting
+    // the open source returns to the list.
+    onDeleted: (doc) => {
+      if (documentToView?.id === doc.id) closeDocument();
       refreshDocs(undefined, currentPage, rowsPerPage);
-    } catch (error) {
-      console.error('Error reingesting source:', error);
-      showActionError(t('settings.sources.errors.reingest'));
-      dispatch(
-        updateUploadTask({
-          id: reingestTaskId,
-          updates: { status: 'failed' },
-        }),
-      );
-    }
-  };
+    },
+    onChanged: () => refreshDocs(undefined, currentPage, rowsPerPage),
+    onPatched: patchDoc,
+  });
 
-  const [documentToDelete, setDocumentToDelete] = useState<{
-    index: number;
-    document: Doc;
-  } | null>(null);
-  const [deleteModalState, setDeleteModalState] =
-    useState<ActiveState>('INACTIVE');
-
-  const handleDeleteConfirmation = (index: number, document: Doc) => {
-    setDocumentToDelete({ index, document });
-    setDeleteModalState('ACTIVE');
-  };
-
-  // Returned to ConfirmationModal: it stays pending while the delete runs
-  // and keeps a failure (its message) in the dialog. A delete then refetches
-  // the page, so the total stays right and a page left empty steps back
-  // (the server clamps it; refreshDocs follows).
-  const handleConfirmedDelete = async () => {
-    if (!documentToDelete) return;
-    await handleDeleteDocument(
-      documentToDelete.index,
-      documentToDelete.document,
-    );
-    setDocumentToDelete(null);
-    refreshDocs(undefined, currentPage, rowsPerPage);
-  };
-
-  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
-    const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
-    const isGraphRAG = document.config?.kind === 'graphrag';
-    // The server's allowed_actions decide every write (utils/accessUtils).
-    const canEdit = can(document, 'edit');
-    const actions: MenuOption[] = [
-      {
-        icon: isGraphRAG ? Network : Eye,
-        label: isWiki
-          ? t('settings.sources.wiki.view')
-          : isGraphRAG
-            ? t('settings.sources.graphrag.view.action')
-            : t('settings.sources.view'),
-        onClick: () => {
-          setDocumentToView(document);
-        },
-        variant: 'default',
-      },
-    ];
-
-    if (canEdit && document.ingestStatus === 'failed') {
-      actions.push({
-        icon: RefreshCw,
-        label: t('settings.sources.reingest'),
-        onClick: () => {
-          handleReingest(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    // A website source keeps its list, skips and schedule in one place.
-    if (canEdit && document.id && document.website) {
-      actions.push({
-        icon: Globe,
-        label: t('settings.sources.website.settingsTitle'),
-        onClick: () => {
-          setDocumentForWebsiteSettings(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    if (canEdit && document.syncFrequency) {
-      // One row per sync frequency; the current one carries the check. A
-      // website source sets it in Website settings instead.
-      if (!document.website)
-        syncOptions.forEach((opt) => {
-          actions.push({
-            icon: document.syncFrequency === opt.value ? Check : RefreshCw,
-            label: t('settings.sources.syncFrequency.option', {
-              frequency: opt.label,
-            }),
-            onClick: () => {
-              handleManageSync(document, opt.value);
-            },
-            variant: 'default',
-          });
-        });
-      actions.push({
-        icon: RefreshCw,
-        label: t('settings.sources.syncNow'),
-        onClick: () => {
-          handleSyncNow(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    // Editors edit the config; a viewer may read it (view_config).
-    if (document.id && !isWiki && (canEdit || can(document, 'view_config'))) {
-      actions.push({
-        icon: canEdit ? SlidersHorizontal : Eye,
-        label: canEdit
-          ? t('settings.sources.editConfig')
-          : t('settings.sources.viewConfig'),
-        onClick: () => {
-          setDocumentToConfigure(document);
-          setConfigModalState('ACTIVE');
-        },
-        variant: 'default',
-      });
-    }
-
-    // A wiki's own settings are the owner's (manage_settings).
-    if (document.id && isWiki && can(document, 'manage_settings')) {
-      actions.push({
-        icon: SlidersHorizontal,
-        label: t('settings.sources.wiki.settings.action'),
-        onClick: () => {
-          setDocumentForWikiSettings(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    if (document.id) {
-      actions.push({
-        icon: Search,
-        label: t('settings.sources.testRetrieval.action'),
-        onClick: () => {
-          setDocumentToTest(document);
-          setTestRetrievalState('ACTIVE');
-        },
-        variant: 'default',
-      });
-    }
-
-    if (
-      document.id &&
-      !isWiki &&
-      canEdit &&
-      document.ingestStatus !== 'processing' &&
-      document.ingestStatus !== 'failed'
-    ) {
-      actions.push({
-        icon: BookOpen,
-        label: t('settings.sources.wiki.convert.action'),
-        onClick: () => {
-          setDocumentToConvert(document);
-          setConvertModalState('ACTIVE');
-        },
-        variant: 'default',
-      });
-    }
-
-    // Owner-only unless the owner lets editors share (editors_can_share).
-    if (document.id && can(document, 'share')) {
-      actions.push({
-        icon: Users,
-        label: t('settings.sources.shareWithTeam'),
-        onClick: () => {
-          setDocumentToShare(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    if (can(document, 'delete')) {
-      actions.push({
-        icon: Trash2,
-        label: t('settings.sources.delete'),
-        onClick: () => {
-          handleDeleteConfirmation(index, document);
-        },
-        variant: 'destructive',
-      });
-    }
-
-    return actions;
-  };
   // The first load opens on the URL's page; a new search starts on page 1.
   const searchedTerm = useRef(debouncedSearchTerm);
   useEffect(() => {
@@ -623,85 +300,65 @@ export default function Sources({
     refreshDocs(undefined, currentPage, rowsPerPage);
   }, [graphBuilds, dispatch, refreshDocs, currentPage, rowsPerPage]);
 
-  useEffect(() => {
-    let cancelled = false;
-    userService
-      .getConfig()
-      .then((response) => response.json())
-      .then((config) => {
-        if (!cancelled) {
-          setGraphRAGAvailable(!!config?.graphrag_available);
-          setHybridAvailable(!!config?.hybrid_available);
-          setDecision(decisionFeatures(config));
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Chunk, file, wiki and graph writes follow the source's `edit` action.
+  const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
 
-  // Models back the graphrag extraction-model picker in the source settings
-  // modal; only fetched when the instance supports graphrag.
-  useEffect(() => {
-    if (!graphRAGAvailable) return;
-    let cancelled = false;
-    modelService
-      .getModels(token)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled && data)
-          setAvailableModels(modelService.transformModels(data.models || []));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [graphRAGAvailable, token]);
-
-  // Rendered inside the open source view's own header row.
+  // The open source's title row: Test retrieval, the kind's primary action
+  // (drawn by the view: Add file, Add pages, Sync now), then the source's ⋯.
   const testRetrievalAction = documentToView ? (
     <Button
       type="button"
       variant="outline"
       shape="pill"
       size="field"
-      onClick={() => {
-        setDocumentToTest(documentToView);
-        setTestRetrievalState('ACTIVE');
-      }}
+      onClick={() => actions.openTestRetrieval(documentToView)}
     >
       {t('settings.sources.testRetrieval.action')}
     </Button>
   ) : null;
-
-  // Chunk, file, wiki and graph writes follow the source's `edit` action.
-  const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
+  const viewMenuOptions = documentToView
+    ? actions.menuOptions(documentToView, 'view')
+    : [];
+  const viewMenu =
+    viewMenuOptions.length > 0 ? (
+      <ActionMenu
+        size="toolbar"
+        options={viewMenuOptions}
+        triggerLabel={t('settings.sources.menuAlt')}
+        triggerTestId="source-view-menu"
+      />
+    ) : null;
+  const viewConnection = documentToView?.connectionId
+    ? connections.find((c) => c.id === documentToView.connectionId)
+    : undefined;
+  const viewSynced = documentToView ? isSyncedSource(documentToView) : false;
   // The link only applies to the source it opened.
   const link =
     viewLink && viewLink.sourceId === documentToView?.id ? viewLink : null;
 
   return documentToView ? (
     <div className="flex flex-col">
-      {documentToView.config?.kind === 'wiki' ||
-      documentToView.type === 'wiki' ? (
+      {isWikiSource(documentToView) ? (
         <WikiViewer
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
           canEdit={viewCanEdit}
           onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          headerMenu={viewMenu}
           initialPath={link?.wikiPage}
         />
-      ) : documentToView.config?.kind === 'graphrag' ? (
+      ) : isGraphSource(documentToView) ? (
         <GraphSourceView
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
           sourceType={documentToView.type}
+          synced={viewSynced}
           isNested={!!documentToView.isNested}
           canEdit={viewCanEdit}
           onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          headerMenu={viewMenu}
           linkedChunk={link?.chunk}
         />
       ) : documentToView.isNested ? (
@@ -712,19 +369,28 @@ export default function Sources({
             sourceName={documentToView.name}
             onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            headerMenu={viewMenu}
             hosts={documentToView.website.hosts}
             syncFrequency={documentToView.syncFrequency}
             syncedAt={documentToView.date}
             initialPath={link?.chunk?.path}
             linkedChunk={link?.chunk}
           />
-        ) : documentToView.type === 'connector:file' ? (
+        ) : viewSynced ? (
+          // Synced from a connection or on a schedule, whatever its stored
+          // type (an S3 or GitHub source is typed by its loader): Sync now,
+          // no Add file, since a sync replaces the files.
           <ConnectorTree
             docId={documentToView.id || ''}
             canEdit={viewCanEdit}
             sourceName={documentToView.name}
+            sourceType={documentToView.type}
+            connection={viewConnection}
+            syncFrequency={documentToView.syncFrequency}
+            syncedAt={documentToView.date}
             onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            headerMenu={viewMenu}
             initialPath={link?.chunk?.path}
             linkedChunk={link?.chunk}
           />
@@ -735,6 +401,7 @@ export default function Sources({
             sourceName={documentToView.name}
             onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            headerMenu={viewMenu}
             initialPath={link?.chunk?.path}
             linkedChunk={link?.chunk}
           />
@@ -745,26 +412,28 @@ export default function Sources({
           documentName={documentToView.name}
           canEdit={viewCanEdit}
           handleGoBack={closeDocument}
-          headerAction={testRetrievalAction}
+          headerAction={
+            <>
+              {testRetrievalAction}
+              {/* A flat synced source has no tree to sync from: the
+                  button starts the sync and toasts. */}
+              {viewCanEdit && sourcePrimary(documentToView) === 'syncNow' ? (
+                <Button
+                  type="button"
+                  shape="pill"
+                  size="field"
+                  onClick={() => void actions.syncNow(documentToView)}
+                >
+                  {t('settings.sources.syncNow')}
+                </Button>
+              ) : null}
+            </>
+          }
+          headerMenu={viewMenu}
           linkedChunk={link?.chunk}
         />
       )}
-      <TestRetrievalModal
-        modalState={testRetrievalState}
-        setModalState={setTestRetrievalState}
-        document={documentToTest}
-        hybridAvailable={hybridAvailable}
-        graphRAGAvailable={graphRAGAvailable}
-        availableModels={availableModels}
-        decision={decision}
-        // The open source and the list both show the saved config.
-        onSaved={(retrieval) => {
-          setDocumentToView((doc) =>
-            doc ? { ...doc, config: { ...doc.config, retrieval } } : doc,
-          );
-          refreshDocs(undefined, currentPage, rowsPerPage);
-        }}
-      />
+      {actions.modals}
     </div>
   ) : (
     <div className="flex w-full max-w-full flex-col">
@@ -837,7 +506,7 @@ export default function Sources({
             )
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {currentDocuments.map((document, index) => {
+              {currentDocuments.map((document) => {
                 const docId = document.id ? document.id.toString() : '';
                 const connection = document.connectionId
                   ? connections.find((c) => c.id === document.connectionId)
@@ -872,7 +541,7 @@ export default function Sources({
                     </button>
                     <div className="absolute top-5 right-6 z-10">
                       <ActionMenu
-                        options={getActionOptions(index, document)}
+                        options={actions.menuOptions(document, 'card')}
                         triggerLabel={t('settings.sources.menuAlt')}
                         triggerTestId={`menu-button-${docId}`}
                         open={actionMenuDocId === docId}
@@ -965,10 +634,17 @@ export default function Sources({
                               className="truncate"
                               title={connection.account_label}
                             >
-                              {t('settings.sources.viaConnection', {
-                                name: connection.name,
-                                interpolation: { escapeValue: false },
-                              })}
+                              {document.files
+                                ? t('settings.sources.viaConnectionFiles', {
+                                    name: connection.name,
+                                    count: document.files,
+                                    files: formatCount(document.files),
+                                    interpolation: { escapeValue: false },
+                                  })
+                                : t('settings.sources.viaConnection', {
+                                    name: connection.name,
+                                    interpolation: { escapeValue: false },
+                                  })}
                             </span>
                           </span>
                         )}
@@ -992,22 +668,23 @@ export default function Sources({
                                 count: document.website.pages,
                               })}
                             </span>
-                            {document.syncFrequency &&
-                              document.syncFrequency !== 'never' && (
-                                <span className="flex items-center gap-2">
-                                  <RefreshCw className="size-3.5 shrink-0" />
-                                  {t('settings.sources.website.synced', {
-                                    frequency: t(
-                                      `settings.sources.syncFrequency.${document.syncFrequency}`,
-                                    ),
-                                    when:
-                                      formatRelative(document.date) ??
-                                      EMPTY_VALUE,
-                                  })}
-                                </span>
-                              )}
                           </>
-                        ) : (
+                        ) : null}
+                        {/* A scheduled source says how it stays current
+                            instead of its date; a website without one shows
+                            neither. */}
+                        {syncSchedule(document) ? (
+                          <span className="flex items-center gap-2">
+                            <RefreshCw className="size-3.5 shrink-0" />
+                            {t('settings.sources.website.synced', {
+                              frequency: t(
+                                `settings.sources.syncFrequency.${syncSchedule(document)}`,
+                              ),
+                              when:
+                                formatRelative(document.date) ?? EMPTY_VALUE,
+                            })}
+                          </span>
+                        ) : document.website ? null : (
                           <span className="flex items-center gap-2">
                             <CalendarIcon className="size-3.5" />
                             {document.date
@@ -1072,118 +749,7 @@ export default function Sources({
 
       {signInModals}
 
-      {deleteModalState === 'ACTIVE' && documentToDelete && (
-        <ConfirmationModal
-          message={t('settings.sources.deleteWarning', {
-            interpolation: { escapeValue: false },
-            name: documentToDelete.document.name,
-          })}
-          description={t('settings.sources.deleteConsequence')}
-          modalState={deleteModalState}
-          setModalState={setDeleteModalState}
-          handleSubmit={handleConfirmedDelete}
-          error={(error) =>
-            error instanceof Error && error.message
-              ? error.message
-              : t('settings.sources.errors.delete')
-          }
-          handleCancel={() => {
-            setDeleteModalState('INACTIVE');
-            setDocumentToDelete(null);
-          }}
-          submitLabel={t('settings.sources.delete')}
-          variant="destructive"
-        />
-      )}
-
-      {documentToShare && documentToShare.id && (
-        <ShareToTeamModal
-          resourceType="source"
-          resourceId={documentToShare.id}
-          resourceName={documentToShare.name}
-          onClose={() => setDocumentToShare(null)}
-        />
-      )}
-
-      <SourceConfigModal
-        modalState={configModalState}
-        setModalState={(state) => {
-          setConfigModalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToConfigure(null);
-          }
-        }}
-        document={documentToConfigure}
-        onReingest={handleReingest}
-        hybridAvailable={hybridAvailable}
-        graphRAGAvailable={graphRAGAvailable}
-        availableModels={availableModels}
-        decision={decision}
-        onEnableGraphRAG={(doc) => {
-          setDocumentToGraphRAG(doc);
-          setGraphRAGModalState('ACTIVE');
-        }}
-      />
-
-      <TestRetrievalModal
-        modalState={testRetrievalState}
-        setModalState={(state) => {
-          setTestRetrievalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToTest(null);
-          }
-        }}
-        document={documentToTest}
-        hybridAvailable={hybridAvailable}
-        graphRAGAvailable={graphRAGAvailable}
-        availableModels={availableModels}
-        decision={decision}
-        onSaved={() => refreshDocs(undefined, currentPage, rowsPerPage)}
-      />
-
-      {documentForWikiSettings && (
-        <WikiSettingsModal
-          document={documentForWikiSettings}
-          onClose={() => setDocumentForWikiSettings(null)}
-        />
-      )}
-
-      {documentForWebsiteSettings && (
-        <WebsiteSettingsModal
-          document={documentForWebsiteSettings}
-          onClose={() => setDocumentForWebsiteSettings(null)}
-          onSaved={() => refreshDocs(undefined, currentPage, rowsPerPage)}
-          onSyncNow={() => handleSyncNow(documentForWebsiteSettings)}
-        />
-      )}
-
-      <ConvertToWikiModal
-        modalState={convertModalState}
-        setModalState={(state) => {
-          setConvertModalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToConvert(null);
-          }
-        }}
-        document={documentToConvert}
-        onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
-      />
-
-      <EnableGraphRAGModal
-        modalState={graphRAGModalState}
-        setModalState={(state) => {
-          setGraphRAGModalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToGraphRAG(null);
-          }
-        }}
-        document={documentToGraphRAG}
-        onEnabled={() => {
-          // The "building" badge is now driven by SSE progress events; just
-          // refresh so the source flips to graphrag kind in the list.
-          refreshDocs(undefined, currentPage, rowsPerPage);
-        }}
-      />
+      {actions.modals}
     </div>
   );
 }

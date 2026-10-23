@@ -10,7 +10,18 @@ const {
   uploadProps,
   reconnect,
   knowledge,
+  configModal,
+  viewProps,
 } = vi.hoisted(() => ({
+  // The last props Source settings was given (its onSaved patches the card).
+  configModal: {
+    props: null as null | {
+      modalState: string;
+      onSaved: (patch: Record<string, unknown>) => void;
+    },
+  },
+  // The last props each view was given.
+  viewProps: {} as Record<string, Record<string, unknown>>,
   // The app-wide knowledge list (`preference.sourceDocs`); null is unloaded.
   knowledge: { docs: undefined as unknown },
   reconnect: vi.fn(),
@@ -20,32 +31,44 @@ const {
   // link it was given, and its Back leaves it.
   view:
     (testId: string) =>
-    ({
-      canEdit,
-      linkedChunk,
-      initialPath,
-      handleGoBack,
-      onBackToDocuments,
-    }: {
+    (props: {
       canEdit?: boolean;
       linkedChunk?: { id?: string; search: string };
       initialPath?: string;
       handleGoBack?: () => void;
       onBackToDocuments?: () => void;
-    }) => (
-      <div
-        data-testid={testId}
-        data-can-edit={String(canEdit)}
-        data-linked={
-          linkedChunk ? `${linkedChunk.id}|${linkedChunk.search}` : ''
-        }
-        data-initial-path={initialPath ?? ''}
-      >
-        <button type="button" onClick={handleGoBack ?? onBackToDocuments}>
-          VIEW BACK
-        </button>
-      </div>
-    ),
+      headerAction?: React.ReactNode;
+      headerMenu?: React.ReactNode;
+    }) => {
+      const {
+        canEdit,
+        linkedChunk,
+        initialPath,
+        handleGoBack,
+        onBackToDocuments,
+        headerAction,
+        headerMenu,
+      } = props;
+      viewProps[testId] = props;
+      return (
+        <div
+          data-testid={testId}
+          data-can-edit={String(canEdit)}
+          data-linked={
+            linkedChunk ? `${linkedChunk.id}|${linkedChunk.search}` : ''
+          }
+          data-initial-path={initialPath ?? ''}
+        >
+          <button type="button" onClick={handleGoBack ?? onBackToDocuments}>
+            VIEW BACK
+          </button>
+          <div data-testid="view-actions">
+            {headerAction}
+            {headerMenu}
+          </div>
+        </div>
+      );
+    },
   dispatch: vi.fn(),
   service: {
     getConfig: vi.fn(),
@@ -99,11 +122,19 @@ vi.mock('../components/FileTree', () => ({ default: view('file-tree') }));
 vi.mock('../components/ConnectorTree', () => ({
   default: view('connector-tree'),
 }));
+vi.mock('../components/WebsiteTree', () => ({
+  default: view('website-tree'),
+}));
 vi.mock('../components/WikiViewer', () => ({ default: view('wiki') }));
 vi.mock('../components/graph/GraphSourceView', () => ({
   default: view('graph'),
 }));
-vi.mock('./SourceConfigModal', () => ({ default: () => null }));
+vi.mock('./SourceConfigModal', () => ({
+  default: (props: NonNullable<typeof configModal.props>) => {
+    configModal.props = props;
+    return null;
+  },
+}));
 vi.mock('./TestRetrievalModal', () => ({ default: () => null }));
 vi.mock('./ConvertToWikiModal', () => ({ default: () => null }));
 vi.mock('./WikiSettingsModal', () => ({
@@ -390,6 +421,21 @@ describe('Sources access', () => {
     expect(card.textContent).not.toContain('settings.tools.viaConnection');
   });
 
+  it('counts the files of a synced source on its card', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 's3',
+        name: 'Amazon S3',
+        status: 'connected',
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1', files: 12 } as Partial<Doc>));
+    connectors.connections = [];
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.textContent).toContain('settings.sources.viaConnectionFiles');
+  });
+
   it('offers no Reconnect on a synced source that is running', async () => {
     connectors.connections = [
       {
@@ -497,10 +543,9 @@ describe('Sources access', () => {
     await render(
       doc({ ...wiki, access: 'owner', allowed_actions: [...OWNER, 'use'] }),
     );
-    expect(await menuItems()).toContain(
-      'settings.sources.wiki.settings.action',
-    );
-    await clickItem('settings.sources.wiki.settings.action');
+    // Labelled Settings, like every source's.
+    expect(await menuItems()).toContain('settings.sources.editConfig');
+    await clickItem('settings.sources.editConfig');
     expect(
       document.querySelector('[data-testid="wiki-settings"]')?.textContent,
     ).toBe('Contracts');
@@ -514,17 +559,8 @@ describe('Sources access', () => {
       await render(
         doc({ ...wiki, access: 'editor', allowed_actions: allowed }),
       );
-      expect(await menuItems()).not.toContain(
-        'settings.sources.wiki.settings.action',
-      );
+      expect(await menuItems()).not.toContain('settings.sources.editConfig');
     }
-  });
-
-  it('a classic source has no Wiki settings', async () => {
-    await render(doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }));
-    expect(await menuItems()).not.toContain(
-      'settings.sources.wiki.settings.action',
-    );
   });
 
   it('sync and reingest are editor actions', async () => {
@@ -533,7 +569,8 @@ describe('Sources access', () => {
     let items = await menuItems();
     expect(items).toContain('settings.sources.reingest');
     expect(items).toContain('settings.sources.syncNow');
-    expect(items).toContain('settings.sources.syncFrequency.option');
+    // The schedule lives in Settings, not as menu rows.
+    expect(items).not.toContain('settings.sources.syncFrequency.option');
 
     await act(async () => root.unmount());
     root = createRoot(container);
@@ -561,21 +598,110 @@ describe('Sources access', () => {
     ]);
   });
 
-  it('a failed sync-frequency change shows an error toast', async () => {
-    service.manageSync.mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({ success: false }),
+  it('a successful Sync now says the sync started', async () => {
+    service.syncConnector.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
     });
-    await render(doc({ syncFrequency: 'daily' }));
+    await render(doc({ type: 'connector:file', syncFrequency: 'weekly' }));
     await menuItems();
-    const weekly = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).filter(
-      (el) => el.textContent === 'settings.sources.syncFrequency.option',
-    )[2];
-    await act(async () => weekly.click());
-    expect(toasts()).toHaveLength(1);
+    await clickItem('settings.sources.syncNow');
+    expect(service.syncConnector).toHaveBeenCalledWith('src-1', null);
+    expect(toasts()).toEqual([
+      expect.objectContaining({
+        payload: {
+          variant: 'success',
+          message: 'settings.sources.syncStarted',
+        },
+      }),
+    ]);
+  });
+
+  it('a synced card: Sync now, one Settings, no schedule rows, Delete set apart', async () => {
+    await render(
+      doc({
+        type: 's3',
+        connectionId: 'conn-1',
+        syncFrequency: 'weekly',
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    expect(await menuItems()).toEqual([
+      'settings.sources.view',
+      'settings.sources.syncNow',
+      'settings.sources.editConfig',
+      'settings.sources.testRetrieval.action',
+      'settings.sources.wiki.convert.action',
+      'settings.sources.shareWithTeam',
+      'settings.sources.delete',
+    ]);
+    const separator = document.querySelector(
+      '[role="menu"] [role="separator"]',
+    );
+    expect(separator?.nextElementSibling?.textContent).toBe(
+      'settings.sources.delete',
+    );
+  });
+
+  it('a website card has one Settings item, not two', async () => {
+    await render(
+      doc({
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    const items = await menuItems();
+    expect(items).not.toContain('settings.sources.website.settingsTitle');
+    expect(
+      items.filter((item) => item === 'settings.sources.editConfig'),
+    ).toHaveLength(1);
+  });
+
+  it('a wiki: Settings opens Wiki settings, and no Sync now', async () => {
+    await render(
+      doc({
+        type: 'url',
+        syncFrequency: 'weekly',
+        config: { kind: 'wiki' },
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use'],
+      }),
+    );
+    const items = await menuItems();
+    expect(items).not.toContain('settings.sources.syncNow');
+    await clickItem('settings.sources.editConfig');
+    expect(
+      document.querySelector('[data-testid="wiki-settings"]')?.textContent,
+    ).toBe('Contracts');
+  });
+
+  it('a schedule saved in Settings updates the card, not the whole grid', async () => {
+    const listed = doc({ type: 's3', syncFrequency: 'never' });
+    await render(listed);
+    await menuItems();
+    await clickItem('settings.sources.editConfig');
+    expect(configModal.props!.modalState).toBe('ACTIVE');
+    vi.mocked(getDocsWithPagination).mockClear();
+    dispatch.mockClear();
+    await act(async () =>
+      configModal.props!.onSaved({ syncFrequency: 'weekly' }),
+    );
+    expect(getDocsWithPagination).not.toHaveBeenCalled();
+    const patched = dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action?.type === 'preference/setPaginatedDocuments');
+    expect(patched?.payload).toEqual([{ ...listed, syncFrequency: 'weekly' }]);
+  });
+
+  it('a scheduled card says how it stays current instead of its date', async () => {
+    await render(
+      doc({ type: 's3', syncFrequency: 'weekly', date: '2026-10-21' }),
+    );
+    expect(container.textContent).toContain('settings.sources.website.synced');
   });
 
   it('a failed reingest shows an error toast', async () => {
@@ -617,6 +743,138 @@ describe('Sources access', () => {
       expect(canEditOf(testId)).toBe('false');
     },
   );
+
+  const viewMenu = async () => {
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="source-view-menu"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((el) => el.textContent);
+  };
+
+  it('the opened source has the card menu, less View and Test retrieval, last', async () => {
+    await openView(
+      doc({
+        isNested: true,
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    const actions = container.querySelector('[data-testid="view-actions"]')!;
+    expect(actions.firstElementChild?.textContent).toBe(
+      'settings.sources.testRetrieval.action',
+    );
+    expect(actions.lastElementChild?.getAttribute('data-testid')).toBe(
+      'source-view-menu',
+    );
+    expect(await viewMenu()).toEqual([
+      'settings.sources.editConfig',
+      'settings.sources.wiki.convert.action',
+      'settings.sources.shareWithTeam',
+      'settings.sources.deleteSource',
+    ]);
+  });
+
+  it('a website view keeps Sync now in its menu', async () => {
+    await openView(
+      doc({
+        isNested: true,
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    expect(await viewMenu()).toContain('settings.sources.syncNow');
+  });
+
+  it.each([
+    ['an S3 source', { type: 's3', connectionId: 'conn-1' }],
+    ['a scheduled GitHub source', { type: 'github', syncFrequency: 'weekly' }],
+  ] as const)(
+    '%s opens with the synced header, Sync now not repeated in its menu',
+    async (_, fields) => {
+      connectors.connections = [
+        { id: 'conn-1', name: 'Amazon S3', icon: 's3', status: 'connected' },
+      ];
+      await openView(
+        doc({
+          ...fields,
+          isNested: true,
+          access: 'owner',
+          allowed_actions: [...OWNER, 'use', 'view_config'],
+        }),
+      );
+      connectors.connections = [];
+      expect(
+        container.querySelector('[data-testid="connector-tree"]'),
+      ).not.toBeNull();
+      expect(container.querySelector('[data-testid="file-tree"]')).toBeNull();
+      expect(viewProps['connector-tree'].sourceType).toBe(fields.type);
+      if ('connectionId' in fields)
+        expect(viewProps['connector-tree'].connection).toEqual(
+          expect.objectContaining({ name: 'Amazon S3' }),
+        );
+      expect(await viewMenu()).not.toContain('settings.sources.syncNow');
+    },
+  );
+
+  it('a flat synced source gets Sync now beside Test retrieval', async () => {
+    await openView(
+      doc({
+        type: 'github',
+        syncFrequency: 'weekly',
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    const labels = Array.from(
+      container.querySelectorAll('[data-testid="view-actions"] > button'),
+    ).map((b) => b.textContent);
+    expect(labels).toEqual([
+      'settings.sources.testRetrieval.action',
+      'settings.sources.syncNow',
+      '',
+    ]);
+  });
+
+  it('Delete from the opened source returns to the list', async () => {
+    const handleDeleteDocument = vi.fn(async () => undefined);
+    const listed = doc({
+      isNested: true,
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use'],
+    });
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Sources
+            paginatedDocuments={[listed]}
+            handleDeleteDocument={handleDeleteDocument}
+          />
+        </MemoryRouter>,
+      );
+    });
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Contracts"]')!.click(),
+    );
+    await viewMenu();
+    await clickItem('settings.sources.deleteSource');
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent === 'settings.sources.delete')!;
+    await act(async () => submit.click());
+    expect(handleDeleteDocument).toHaveBeenCalledWith(0, listed);
+    expect(container.querySelector('[data-testid="file-tree"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Contracts"]')).not.toBeNull();
+  });
 
   it('the source view is editable for an editor', async () => {
     await openView(

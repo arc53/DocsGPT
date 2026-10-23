@@ -362,7 +362,9 @@ describe('TreeBrowser', () => {
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'a.pdf']);
   });
 
-  it("a one-file source keeps the row menu's Delete in the header", async () => {
+  // The title row holds source-level actions only: a one-file source's
+  // file actions are not moved into it.
+  it("a one-file source keeps its file's menu out of the title row", async () => {
     const getRowMenuOptions = vi.fn(
       ({
         defaultViewOption,
@@ -375,12 +377,21 @@ describe('TreeBrowser', () => {
     await render({ docs: { 'a.pdf': { type: 'pdf' } } }, {
       getRowMenuOptions,
     } as Partial<React.ComponentProps<typeof TreeBrowser>>);
-    expect(getRowMenuOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'docs/a.pdf', isFile: true }),
-    );
     expect(
       container.querySelector('button[aria-label="settings.sources.menuAlt"]'),
-    ).not.toBeNull();
+    ).toBeNull();
+  });
+
+  it("draws the source's menu last in the title row", async () => {
+    await render({ 'a.pdf': { type: 'pdf' }, 'b.pdf': { type: 'pdf' } }, {
+      topRightAction: <button type="button">primary</button>,
+      headerMenu: <button type="button">source menu</button>,
+    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    const menu = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'source menu',
+    )!;
+    expect(menu.previousElementSibling?.textContent).toBe('primary');
+    expect(menu.nextElementSibling).toBeNull();
   });
 
   it('canEdit false reaches the chunk list: no Add chunk', async () => {

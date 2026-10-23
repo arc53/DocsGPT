@@ -68,6 +68,11 @@ export interface TreeBrowserProps {
   /** Top-right action area (e.g. Add File button, Sync button). */
   topRightAction: React.ReactNode;
   /**
+   * The source's ⋯, last in the title row (PathHeader's `menu`). Never
+   * portalled: an embedded tree's host draws its own.
+   */
+  headerMenu?: React.ReactNode;
+  /**
    * Optional status text shown to the left of the search field while a
    * mutation is in progress (e.g. "Uploading files...").
    */
@@ -228,6 +233,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   columnOrder,
   sortEntries = false,
   topRightAction,
+  headerMenu,
   statusLabel,
   getRowMenuOptions,
   extraContent,
@@ -744,46 +750,19 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   // the previous trail.
   useEffect(() => () => onCrumbsChangeRef.current?.([]), []);
 
-  // A single-file source shows no table, so its row menu (Delete) moves to
-  // the header, less the View option (the file is already open). The path
-  // sits at the root, so the file's name is its full path.
+  // A single-file source shows no table and opens on its file. The path
+  // sits at the root, so the file's name is its full path. The title row
+  // holds source-level actions only: the file's own (Delete, Refresh) are
+  // not in it.
   useEffect(() => {
     if (singleFile) setCurrentPath((prev) => (prev.length ? [] : prev));
   }, [singleFile]);
-  const singleFileMenu = (() => {
-    if (!singleFile || !getRowMenuOptions) return null;
-    const defaultViewOption = buildDefaultViewOption(
-      singleFile.path,
-      true,
-      singleFile.label,
-    );
-    const options = getRowMenuOptions({
-      name: singleFile.path,
-      isFile: true,
-      itemId: `file-${singleFile.path}`,
-      displayName: singleFile.label,
-      node:
-        directoryStructure && typeof directoryStructure === 'object'
-          ? (nodeAtPath(directoryStructure, singleFile.path) ?? undefined)
-          : undefined,
-      defaultViewOption,
-    }).filter((option) => option !== defaultViewOption);
-    if (options.length === 0) return null;
-    return (
-      <ActionMenu
-        size="toolbar"
-        options={options}
-        triggerLabel={t('settings.sources.menuAlt')}
-      />
-    );
-  })();
 
   const headerActions = (
     <>
       {statusLabel && (
         <div className="text-muted-foreground text-sm">{statusLabel}</div>
       )}
-      {singleFileMenu}
       {topRightAction}
     </>
   );
@@ -804,6 +783,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         badge={embedded ? undefined : badge}
         byline={byline}
         actions={headerActions}
+        menu={embedded ? undefined : headerMenu}
       />
     );
   };

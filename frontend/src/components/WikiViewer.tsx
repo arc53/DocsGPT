@@ -41,6 +41,8 @@ interface WikiViewerProps {
   onBackToDocuments: () => void;
   /** Extra header control, right-aligned in the title row. */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row. */
+  headerMenu?: React.ReactNode;
   /** The page to open first, when it exists (a citation opened in Knowledge). */
   initialPath?: string;
 }
@@ -65,6 +67,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   canEdit = false,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   initialPath,
 }) => {
   const { t } = useTranslation();
@@ -456,6 +459,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         }
         byline={byline}
         actions={headerAction}
+        menu={headerMenu}
       />
       {renderBody()}
       {canEdit && selectedPath ? (

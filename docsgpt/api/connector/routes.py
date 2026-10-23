@@ -22,6 +22,7 @@ from docsgpt.api.user.tasks import (
 )
 from docsgpt.connectors import oauth_flows, service
 from docsgpt.core.settings import settings
+from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
@@ -680,6 +681,13 @@ class ConnectorSync(Resource):
                 )
             owner_id = ra.owner_id
             is_owner = ra.access == "owner"
+            # A converted wiki doesn't sync: it would replace the wiki's pages,
+            # and the worker skips it, so a success here would never finish.
+            if SourceConfig.parse(source.get("config")).kind == "wiki":
+                message = "A wiki is edited in place and doesn't sync."
+                return make_response(
+                    jsonify({"success": False, "error": message, "message": message}), 400
+                )
 
             remote_data = source.get('remote_data') or {}
             if isinstance(remote_data, str):

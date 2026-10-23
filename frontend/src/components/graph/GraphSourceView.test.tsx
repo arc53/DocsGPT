@@ -232,6 +232,7 @@ describe('GraphSourceView', () => {
           linkedChunk={linkedChunk}
           onBackToDocuments={onBack}
           headerAction={<button type="button">Test retrieval</button>}
+          headerMenu={<button type="button">source menu</button>}
         />,
       );
     });
@@ -275,6 +276,13 @@ describe('GraphSourceView', () => {
     );
     await render();
     expect(container.textContent).toContain('1 entity · 1 relationship');
+  });
+
+  it("puts the source's menu last in the title row", async () => {
+    await render();
+    const menu = buttonByText('source menu')!;
+    expect(menu.previousElementSibling?.textContent).toBe('Test retrieval');
+    expect(menu.nextElementSibling).toBeNull();
   });
 
   it('heads the view with the whole graph totals and the kind badge', async () => {
@@ -522,6 +530,25 @@ describe('GraphSourceView', () => {
 
   it('uses the connector tree for a connector source', async () => {
     await render('connector:file');
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    expect(
+      container.querySelector('[data-testid="connector-tree"]'),
+    ).not.toBeNull();
+  });
+
+  it('uses the connector tree for a synced source typed by its loader', async () => {
+    await act(async () => {
+      root.render(
+        <GraphSourceView
+          docId="doc"
+          sourceName="Key Accounts"
+          sourceType="s3"
+          synced
+          onBackToDocuments={vi.fn()}
+        />,
+      );
+    });
+    await flush();
     await openTab('settings.sources.graphrag.view.tabs.files');
     expect(
       container.querySelector('[data-testid="connector-tree"]'),

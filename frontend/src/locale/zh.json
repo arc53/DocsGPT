@@ -182,7 +182,6 @@
       "addChunk": "添加块",
       "preLoaded": "预加载",
       "private": "私有",
-      "sync": "同步",
       "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
@@ -194,8 +193,7 @@
         "never": "从不",
         "daily": "每天",
         "weekly": "每周",
-        "monthly": "每月",
-        "option": "同步：{{frequency}}"
+        "monthly": "每月"
       },
       "actions": "操作",
       "view": "查看",
@@ -250,7 +248,6 @@
         "pageLoadFailed": "无法加载此页面。",
         "editTitle": "编辑页面",
         "settings": {
-          "action": "Wiki 设置",
           "title": "Wiki 设置",
           "outsideEdits": {
             "label": "允许 API 和小组件用户编辑此 Wiki",
@@ -395,7 +392,7 @@
         "saveToSource": "保存到来源",
         "savedToSource": "已保存。该来源现在使用你测试过的设置。"
       },
-      "editConfig": "来源设置",
+      "editConfig": "设置",
       "shareWithTeam": "与团队共享",
       "deleteWarning": "删除“{{name}}”？",
       "chunks": "文本块",
@@ -639,7 +636,6 @@
         "removeFailed": "无法移除。",
         "removeLast": "这是此来源获取的最后一项。请改为删除此来源。",
         "handEditsNote": "保持更新：{{frequency}}。你在此处添加或编辑的分块会在下次同步时被替换。",
-        "settingsTitle": "网站设置",
         "fetches": "此来源获取的内容",
         "siteSummary": "整个网站 · {{find}} · 页面上限 {{max}}",
         "limitReached": "已达页面上限",
@@ -647,12 +643,15 @@
         "removeFromList": "从列表中移除",
         "skipped": "已跳过",
         "restore": "恢复",
-        "save": "保存",
         "saveFailed": "无法保存设置。",
         "loadFailed": "无法加载设置。",
         "lastSynced": "上次同步于 {{when}}。",
         "appliesNextSync": "更改将在下次同步时生效。"
-      }
+      },
+      "deleteSource": "删除来源",
+      "syncStarted": "正在同步 {{name}}…",
+      "viaConnectionFiles_one": "通过 {{name}} · {{files}} 个文件",
+      "viaConnectionFiles_other": "通过 {{name}} · {{files}} 个文件"
     },
     "analytics": {
       "label": "分析",

@@ -182,7 +182,6 @@
       "addChunk": "チャンクを追加",
       "preLoaded": "プリロード済み",
       "private": "プライベート",
-      "sync": "同期",
       "syncDone": "完了",
       "syncNow": "今すぐ同期",
       "syncing": "同期中...",
@@ -194,8 +193,7 @@
         "never": "なし",
         "daily": "毎日",
         "weekly": "毎週",
-        "monthly": "毎月",
-        "option": "同期: {{frequency}}"
+        "monthly": "毎月"
       },
       "actions": "アクション",
       "view": "表示",
@@ -250,7 +248,6 @@
         "pageLoadFailed": "このページを読み込めませんでした。",
         "editTitle": "ページを編集",
         "settings": {
-          "action": "Wiki設定",
           "title": "Wiki設定",
           "outsideEdits": {
             "label": "APIとウィジェットの利用者にこのWikiの編集を許可",
@@ -395,7 +392,7 @@
         "saveToSource": "ソースに保存",
         "savedToSource": "保存しました。ソースはテストした設定を使用します。"
       },
-      "editConfig": "ソース設定",
+      "editConfig": "設定",
       "shareWithTeam": "チームと共有",
       "deleteWarning": "「{{name}}」を削除しますか？",
       "chunks": "チャンク",
@@ -639,7 +636,6 @@
         "removeFailed": "削除できませんでした。",
         "removeLast": "このソースが取得する最後の項目です。代わりにソースを削除してください。",
         "handEditsNote": "最新の状態に保つ：{{frequency}}。ここで追加・編集したチャンクは次の同期で置き換えられます。",
-        "settingsTitle": "ウェブサイト設定",
         "fetches": "このソースが取得する内容",
         "siteSummary": "サイト全体 · {{find}} · ページ上限 {{max}}",
         "limitReached": "ページ上限に到達",
@@ -647,12 +643,15 @@
         "removeFromList": "リストから削除",
         "skipped": "除外済み",
         "restore": "元に戻す",
-        "save": "保存",
         "saveFailed": "設定を保存できませんでした。",
         "loadFailed": "設定を読み込めませんでした。",
         "lastSynced": "最終同期 {{when}}。",
         "appliesNextSync": "変更は次の同期から適用されます。"
-      }
+      },
+      "deleteSource": "ソースを削除",
+      "syncStarted": "{{name}} を同期しています…",
+      "viaConnectionFiles_one": "{{name}} 経由 · {{files}} ファイル",
+      "viaConnectionFiles_other": "{{name}} 経由 · {{files}} ファイル"
     },
     "analytics": {
       "label": "分析",

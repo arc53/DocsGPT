@@ -1,7 +1,9 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-const { tree } = vi.hoisted(() => ({
+const { tree, dispatch, sync } = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  sync: { connector: vi.fn(), source: vi.fn() },
   tree: {
     structure: {
       'a.docx': { type: 'docx' },
@@ -16,7 +18,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('react-redux', () => ({
   useSelector: () => null,
-  useDispatch: () => vi.fn(),
+  useDispatch: () => dispatch,
   useStore: () => ({ getState: () => ({}), subscribe: () => () => {} }),
 }));
 
@@ -36,11 +38,21 @@ vi.mock('../api/services/userService', () => ({
         directory_structure: tree.structure,
       }),
     })),
+    syncConnector: sync.connector,
+    syncSource: sync.source,
     getDocumentChunks: vi.fn(async () => ({
       ok: true,
       json: async () => ({ page: 1, per_page: 12, total: 0, chunks: [] }),
     })),
   },
+}));
+
+// The sync's progress waits on the event stream; it finishes at once here.
+vi.mock('./tree/useReingestWait', () => ({
+  useReingestSseWaiter: () => ({
+    waitForTerminal: async () => 'completed',
+    mountedRef: { current: true },
+  }),
 }));
 
 import ConnectorTree, { providerLabel } from './ConnectorTree';
@@ -76,6 +88,13 @@ describe('ConnectorTree and FileTree headers', () => {
   };
 
   const badge = () => container.querySelector('[data-slot="badge"]');
+  // The title row's controls, in order.
+  const titleRow = () =>
+    Array.from(
+      Array.from(container.querySelectorAll('button'))
+        .find((b) => b.textContent === 'source menu')!
+        .parentElement!.querySelectorAll('button'),
+    ).map((b) => b.textContent);
   const retrieval = <button type="button">retrieval</button>;
 
   it('ConnectorTree shows the provider badge, headerAction and Sync', async () => {
@@ -90,7 +109,115 @@ describe('ConnectorTree and FileTree headers', () => {
     expect(badge()!.textContent).toBe('Google Drive');
     expect(badge()!.getAttribute('data-variant')).toBe('neutral');
     expect(container.textContent).toContain('retrieval');
-    expect(container.textContent).toContain('settings.sources.sync');
+    expect(container.textContent).toContain('settings.sources.syncNow');
+  });
+
+  it('shows the connection as the badge when it is known', async () => {
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="test-2"
+        onBackToDocuments={vi.fn()}
+        sourceType="s3"
+        connection={{ name: 'Amazon S3', icon: 's3' }}
+      />,
+    );
+    expect(badge()!.textContent).toBe('Amazon S3');
+    expect(badge()!.querySelector('svg')).not.toBeNull();
+  });
+
+  it('puts the schedule in the byline', async () => {
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="test-2"
+        onBackToDocuments={vi.fn()}
+        syncFrequency="weekly"
+        syncedAt="2026-10-21T10:00:00Z"
+      />,
+    );
+    const byline = container.querySelector('p.text-muted-foreground');
+    expect(byline?.textContent).toBe(
+      'settings.sources.filesByline · settings.sources.website.synced',
+    );
+  });
+
+  it('puts the source menu last in the title row', async () => {
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="Drive"
+        onBackToDocuments={vi.fn()}
+        headerAction={retrieval}
+        headerMenu={<button type="button">source menu</button>}
+      />,
+    );
+    expect(titleRow()).toEqual([
+      'retrieval',
+      'settings.sources.syncNow',
+      'source menu',
+    ]);
+  });
+
+  const toasts = () =>
+    dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'actionToast/showActionToast')
+      .map((action) => action.payload);
+
+  const confirmSync = async () => {
+    const open = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.syncNow',
+    )!;
+    await act(async () => open.click());
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent === 'settings.sources.syncNow')!;
+    await act(async () => submit.click());
+  };
+
+  it('syncs a loader-typed source through sync_source and says so', async () => {
+    dispatch.mockReset();
+    sync.source.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 't' }),
+    });
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="test-2"
+        onBackToDocuments={vi.fn()}
+        sourceType="s3"
+      />,
+    );
+    await confirmSync();
+    expect(sync.source).toHaveBeenCalledWith({ source_id: 'doc' }, null);
+    expect(sync.connector).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([
+      { variant: 'success', message: 'settings.sources.syncStarted' },
+    ]);
+  });
+
+  it('a failed sync is a destructive toast', async () => {
+    dispatch.mockReset();
+    sync.connector.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ success: false, error: 'boom' }),
+    });
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="Drive"
+        onBackToDocuments={vi.fn()}
+        sourceType="connector:file"
+      />,
+    );
+    await confirmSync();
+    expect(sync.connector).toHaveBeenCalledWith('doc', null);
+    expect(toasts()).toEqual([
+      { variant: 'destructive', message: 'settings.sources.errors.sync' },
+    ]);
   });
 
   it('embedded ConnectorTree drops the badge and headerAction, keeps Sync', async () => {
@@ -105,7 +232,7 @@ describe('ConnectorTree and FileTree headers', () => {
     );
     expect(badge()).toBeNull();
     expect(container.textContent).not.toContain('retrieval');
-    expect(container.textContent).toContain('settings.sources.sync');
+    expect(container.textContent).toContain('settings.sources.syncNow');
     expect(container.textContent).not.toContain('settings.sources.label');
   });
 
@@ -176,7 +303,7 @@ describe('ConnectorTree and FileTree headers', () => {
       />,
     );
     expect(container.textContent).toContain('retrieval');
-    expect(container.textContent).not.toContain('settings.sources.sync');
+    expect(container.textContent).not.toContain('settings.sources.syncNow');
   });
 
   it('read-only FileTree hides Add file and the row Delete', async () => {
@@ -205,6 +332,54 @@ describe('ConnectorTree and FileTree headers', () => {
     );
     expect(container.textContent).toContain('settings.sources.addFile');
     expect(await openFirstRowMenu()).toContain('settings.sources.delete');
+    // Delete is set apart by a rule.
+    const separator = document.querySelector(
+      '[role="menu"] [role="separator"]',
+    );
+    expect(separator?.nextElementSibling?.textContent).toBe(
+      'settings.sources.delete',
+    );
+  });
+
+  it('FileTree puts the source menu after Add file', async () => {
+    await render(
+      <FileTree
+        docId="doc"
+        sourceName="Files"
+        onBackToDocuments={vi.fn()}
+        headerAction={retrieval}
+        headerMenu={<button type="button">source menu</button>}
+      />,
+    );
+    expect(titleRow()).toEqual([
+      'retrieval',
+      'settings.sources.addFile',
+      'source menu',
+    ]);
+  });
+
+  it('a one-file FileTree has no file menu in the title row', async () => {
+    tree.structure = { 'a.docx': { type: 'docx' } };
+    try {
+      await render(
+        <FileTree
+          docId="doc"
+          sourceName="Files"
+          onBackToDocuments={vi.fn()}
+          canEdit
+        />,
+      );
+      expect(
+        container.querySelector(
+          'button[aria-label="settings.sources.menuAlt"]',
+        ),
+      ).toBeNull();
+    } finally {
+      tree.structure = {
+        'a.docx': { type: 'docx' },
+        'b.docx': { type: 'docx' },
+      };
+    }
   });
 
   it('a read-only one-file FileTree has no header menu and no Add chunk', async () => {

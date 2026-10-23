@@ -1,15 +1,18 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Check, Cloud, RefreshCw } from 'lucide-react';
 
 import userService from '../api/services/userService';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
+import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import type { TreeBrowserController } from './tree/types';
@@ -20,8 +23,22 @@ interface ConnectorTreeProps {
   docId: string;
   sourceName: string;
   onBackToDocuments: () => void;
-  /** Extra header control, rendered left of the Sync button. */
+  /** Extra header control, rendered left of the Sync now button. */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row; not drawn when embedded. */
+  headerMenu?: React.ReactNode;
+  /**
+   * The source's stored type. A `connector*` source syncs through the
+   * connector endpoint; one typed by its loader (S3, GitHub) through the
+   * remote-source one.
+   */
+  sourceType?: string;
+  /** The connection the source syncs from, when known: the header badge. */
+  connection?: { name: string; icon: string };
+  /** `sources.sync_frequency`; a schedule other than never joins the byline. */
+  syncFrequency?: string;
+  /** When the source was last ingested or synced. */
+  syncedAt?: string;
   /**
    * Inside another source view (the graph source's Files tab): no Sources
    * crumb, badge or byline, and no headerAction; Sync stays.
@@ -37,7 +54,7 @@ interface ConnectorTreeProps {
   onCrumbsChange?: (crumbs: Crumb[]) => void;
   /**
    * Whether the caller may change the source (`can(source, 'edit')`).
-   * False hides Sync and the chunk writes; browsing stays.
+   * False hides Sync now and the chunk writes; browsing stays.
    */
   canEdit?: boolean;
 }
@@ -68,6 +85,11 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  headerMenu,
+  sourceType = 'connector:file',
+  connection,
+  syncFrequency,
+  syncedAt,
   embedded = false,
   actionsTarget,
   initialPath,
@@ -76,6 +98,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   canEdit = true,
 }) => {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
 
   const [isSyncing, setIsSyncing] = useState(false);
@@ -88,20 +111,40 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const controllerRef = useRef<TreeBrowserController | null>(null);
   const { waitForTerminal, mountedRef } = useReingestSseWaiter();
 
+  /** A failed sync as a destructive toast: the forbidden message on a 403. */
+  const toastSyncFailed = (status?: number) =>
+    dispatch(
+      showActionToast({
+        variant: 'destructive',
+        message:
+          status === 403
+            ? t('settings.sources.errors.forbidden')
+            : t('settings.sources.errors.sync'),
+      }),
+    );
+
   const handleSync = async () => {
     if (isSyncing) return;
-
-    const provider = sourceProvider;
 
     setIsSyncing(true);
     setSyncProgress(0);
 
     try {
-      const response = await userService.syncConnector(docId, token);
-      const data = await response.json();
+      const response = sourceType.startsWith('connector')
+        ? await userService.syncConnector(docId, token)
+        : await userService.syncSource({ source_id: docId }, token);
+      const data = await response.json().catch(() => ({}));
 
-      if (data.success) {
-        console.log('Sync started successfully:', data.task_id);
+      if (response.ok !== false && data?.success) {
+        dispatch(
+          showActionToast({
+            variant: 'success',
+            message: t('settings.sources.syncStarted', {
+              name: sourceName,
+              interpolation: { escapeValue: false },
+            }),
+          }),
+        );
         setSyncProgress(10);
 
         // Sync mode reuses the source uuid for ``scope.id``, so we wait
@@ -112,6 +155,8 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         const terminal = await waitForTerminal(docId, opStartedAt);
 
         if (terminal === 'timeout') {
+          // Still running past the wait: the toast said it started, and the
+          // tree refreshes when the source is opened again.
           console.error('Sync timed out waiting for SSE terminal');
         } else if (terminal === 'unmounted') {
           return;
@@ -122,7 +167,6 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           // ``completed`` with ``no_changes: true`` — treated as success
           // here; refreshing the directory is cheap and idempotent.
           setSyncProgress(100);
-          console.log('Sync completed successfully');
 
           try {
             const refreshed = await controllerRef.current?.refreshDirectory();
@@ -139,13 +183,14 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             console.error('Error refreshing directory structure:', err);
           }
         } else if (terminal === 'failed') {
-          console.error('Sync task failed (per SSE)');
+          toastSyncFailed();
         }
       } else {
-        console.error('Sync failed:', data.error);
+        toastSyncFailed(response.status);
       }
     } catch (err) {
-      console.error('Error syncing connector:', err);
+      console.error('Error syncing source:', err);
+      toastSyncFailed();
     } finally {
       setIsSyncing(false);
       setSyncProgress(0);
@@ -176,11 +221,32 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             ? `${syncProgress}%`
             : syncDone
               ? t('settings.sources.syncDone')
-              : t('settings.sources.sync')}
+              : t('settings.sources.syncNow')}
         </Button>
       ) : null}
     </>
   );
+
+  // The files and tokens, then the schedule when it runs:
+  // "12 files · 13,080 tokens · Weekly · synced 2 days ago".
+  const schedule =
+    syncFrequency && syncFrequency !== 'never' ? syncFrequency : null;
+  const renderByline = ({ files, tokens }: { files: number; tokens: number }) =>
+    [
+      t('settings.sources.filesByline', {
+        count: files,
+        files: formatCount(files),
+        tokens: formatCount(tokens),
+      }),
+      schedule
+        ? t('settings.sources.website.synced', {
+            frequency: t(`settings.sources.syncFrequency.${schedule}`),
+            when: formatRelative(syncedAt) ?? '',
+          })
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
 
   const extraContent = (
     <ConfirmationModal
@@ -196,7 +262,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       handleSubmit={() => {
         void handleSync();
       }}
-      submitLabel={t('settings.sources.sync')}
+      submitLabel={t('settings.sources.syncNow')}
       cancelLabel={t('cancel')}
     />
   );
@@ -213,17 +279,24 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       initialPath={initialPath}
       linkedChunk={linkedChunk}
       badge={
-        sourceProvider ? (
+        connection ? (
+          <Badge variant="neutral">
+            <ConnectorIcon icon={connection.icon} />
+            {connection.name}
+          </Badge>
+        ) : sourceProvider ? (
           <Badge variant="neutral">
             <Cloud />
             {providerLabel(sourceProvider)}
           </Badge>
         ) : undefined
       }
+      renderByline={renderByline}
       columnOrder="tokens-first"
       sortEntries
       controllerRef={controllerRef}
       topRightAction={topRightAction}
+      headerMenu={headerMenu}
       extraContent={extraContent}
       onDirectoryDataLoaded={(data) => {
         if (data && data.provider) {

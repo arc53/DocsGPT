@@ -184,7 +184,6 @@
       "addChunk": "Ajouter un fragment",
       "preLoaded": "Préchargé",
       "private": "Privé",
-      "sync": "Synchroniser",
       "syncDone": "Terminé",
       "syncNow": "Synchroniser maintenant",
       "syncing": "Synchronisation…",
@@ -196,8 +195,7 @@
         "never": "Jamais",
         "daily": "Quotidienne",
         "weekly": "Hebdomadaire",
-        "monthly": "Mensuelle",
-        "option": "Synchronisation : {{frequency}}"
+        "monthly": "Mensuelle"
       },
       "actions": "Actions",
       "view": "Afficher",
@@ -256,7 +254,6 @@
         "pageLoadFailed": "Impossible de charger cette page.",
         "editTitle": "Modifier la page",
         "settings": {
-          "action": "Paramètres du wiki",
           "title": "Paramètres du wiki",
           "outsideEdits": {
             "label": "Autoriser les utilisateurs de l’API et du widget à modifier ce wiki",
@@ -411,7 +408,7 @@
         "saveToSource": "Enregistrer dans la source",
         "savedToSource": "Enregistré. La source utilise désormais les paramètres testés."
       },
-      "editConfig": "Paramètres de la source",
+      "editConfig": "Paramètres",
       "shareWithTeam": "Partager avec l’équipe",
       "deleteWarning": "Supprimer « {{name}} » ?",
       "chunks": "Fragments",
@@ -664,7 +661,6 @@
         "removeFailed": "Impossible de la retirer.",
         "removeLast": "C’est la dernière chose que récupère cette source. Supprimez plutôt la source.",
         "handEditsNote": "Tenu à jour : {{frequency}}. Les fragments que vous ajoutez ou modifiez ici sont remplacés à la prochaine synchronisation.",
-        "settingsTitle": "Paramètres du site web",
         "fetches": "Ce que récupère cette source",
         "siteSummary": "Site entier · {{find}} · limite de pages {{max}}",
         "limitReached": "limite de pages atteinte",
@@ -672,12 +668,16 @@
         "removeFromList": "Retirer de la liste",
         "skipped": "Ignorées",
         "restore": "Restaurer",
-        "save": "Enregistrer",
         "saveFailed": "Impossible d’enregistrer les paramètres.",
         "loadFailed": "Impossible de charger les paramètres.",
         "lastSynced": "Dernière synchronisation {{when}}.",
         "appliesNextSync": "Les modifications s’appliquent à la prochaine synchronisation."
-      }
+      },
+      "deleteSource": "Supprimer la source",
+      "syncStarted": "Synchronisation de {{name}}…",
+      "viaConnectionFiles_one": "via {{name}} · {{files}} fichier",
+      "viaConnectionFiles_other": "via {{name}} · {{files}} fichiers",
+      "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers"
     },
     "analytics": {
       "label": "Statistiques",

@@ -83,7 +83,11 @@ describe('WikiViewer', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (canEdit = false, initialPath?: string) => {
+  const render = async (
+    canEdit = false,
+    initialPath?: string,
+    header: Partial<React.ComponentProps<typeof WikiViewer>> = {},
+  ) => {
     await act(async () => {
       root.render(
         <TooltipProvider>
@@ -93,6 +97,7 @@ describe('WikiViewer', () => {
             canEdit={canEdit}
             onBackToDocuments={vi.fn()}
             initialPath={initialPath}
+            {...header}
           />
         </TooltipProvider>,
       );
@@ -140,6 +145,16 @@ describe('WikiViewer', () => {
     } finally {
       i18next.language = language;
     }
+  });
+
+  it("puts the source's menu last in the title row", async () => {
+    await render(false, undefined, {
+      headerAction: <button type="button">retrieval</button>,
+      headerMenu: <button type="button">source menu</button>,
+    });
+    const menu = buttonByText('source menu')!;
+    expect(menu.previousElementSibling?.textContent).toBe('retrieval');
+    expect(menu.nextElementSibling).toBeNull();
   });
 
   it('renders the living wiki badge and the page and token counts', async () => {

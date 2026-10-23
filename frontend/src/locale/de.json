@@ -183,7 +183,6 @@
       "addChunk": "Chunk hinzufügen",
       "preLoaded": "Vorgeladen",
       "private": "Privat",
-      "sync": "Synchronisieren",
       "syncDone": "Fertig",
       "syncNow": "Jetzt synchronisieren",
       "syncing": "Synchronisiere...",
@@ -195,8 +194,7 @@
         "never": "Nie",
         "daily": "Täglich",
         "weekly": "Wöchentlich",
-        "monthly": "Monatlich",
-        "option": "Synchronisierung: {{frequency}}"
+        "monthly": "Monatlich"
       },
       "actions": "Aktionen",
       "view": "Anzeigen",
@@ -252,7 +250,6 @@
         "pageLoadFailed": "Diese Seite konnte nicht geladen werden.",
         "editTitle": "Seite bearbeiten",
         "settings": {
-          "action": "Wiki-Einstellungen",
           "title": "Wiki-Einstellungen",
           "outsideEdits": {
             "label": "API- und Widget-Nutzern erlauben, dieses Wiki zu bearbeiten",
@@ -397,7 +394,7 @@
         "saveToSource": "In Quelle speichern",
         "savedToSource": "Gespeichert. Die Quelle verwendet jetzt die getesteten Einstellungen."
       },
-      "editConfig": "Quelleneinstellungen",
+      "editConfig": "Einstellungen",
       "shareWithTeam": "Mit Team teilen",
       "deleteWarning": "\"{{name}}\" löschen?",
       "chunks": "Chunks",
@@ -642,7 +639,6 @@
         "removeFailed": "Konnte nicht entfernt werden.",
         "removeLast": "Das ist das Letzte, was diese Quelle abruft. Lösche stattdessen die Quelle.",
         "handEditsNote": "Aktuell gehalten: {{frequency}}. Chunks, die du hier hinzufügst oder bearbeitest, werden bei der nächsten Synchronisierung ersetzt.",
-        "settingsTitle": "Website-Einstellungen",
         "fetches": "Was diese Quelle abruft",
         "siteSummary": "Ganze Website · {{find}} · Seitenlimit {{max}}",
         "limitReached": "Seitenlimit erreicht",
@@ -650,12 +646,15 @@
         "removeFromList": "Von der Liste entfernen",
         "skipped": "Übersprungen",
         "restore": "Wiederherstellen",
-        "save": "Speichern",
         "saveFailed": "Die Einstellungen konnten nicht gespeichert werden.",
         "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
         "lastSynced": "Zuletzt synchronisiert {{when}}.",
         "appliesNextSync": "Änderungen gelten ab der nächsten Synchronisierung."
-      }
+      },
+      "deleteSource": "Quelle löschen",
+      "syncStarted": "{{name}} wird synchronisiert…",
+      "viaConnectionFiles_one": "über {{name}} · {{files}} Datei",
+      "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien"
     },
     "analytics": {
       "label": "Analytik",
