@@ -1,5 +1,7 @@
 """Tests for the Website source's tree and config edits."""
 
+from unittest.mock import patch
+
 import pytest
 
 from docsgpt.parser.remote.website_tree import (
@@ -111,3 +113,27 @@ class TestLegacyConfig:
     def test_nothing_to_convert(self):
         assert config_from_legacy("crawler", None) is None
         assert config_from_legacy("github", {"repo_url": "https://github.com/a/b"}) is None
+
+    def test_a_legacy_url_source_over_the_cap_still_reads(self):
+        urls = [f"https://x.io/{i}" for i in range(3)]
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            config = config_from_legacy("url", {"urls": urls})
+
+        assert [e["url"] for e in config["entries"]] == urls
+
+    def test_a_website_source_over_a_lowered_cap_still_reads(self):
+        stored = {"entries": [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]}
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            config = config_from_legacy("website", stored)
+
+        assert config is not None and len(config["entries"]) == 3
+
+    def test_a_legacy_source_drops_malformed_urls_without_raising(self):
+        config = config_from_legacy("url", {"urls": ["http://[x", "https://x.io/a"]})
+
+        assert [e["url"] for e in config["entries"]] == ["https://x.io/a"]
+        assert config_from_legacy("url", "http://[x") is None
+        assert config_from_legacy("crawler", {"url": "http://[x"}) is None
+        assert config_from_legacy("website", {"entries": [{"url": "http://[x", "mode": "page"}]}) is None

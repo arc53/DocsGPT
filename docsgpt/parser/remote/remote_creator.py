@@ -78,9 +78,10 @@ def normalize_remote_data(source_type, remote_data):
 
     if loader == "website":
         # The loader takes the validated config; one that no longer
-        # validates has nothing a sync could fetch.
+        # validates has nothing a sync could fetch. A stored config is read
+        # leniently: a lowered WEB_MAX_PAGES must not stop its syncs.
         try:
-            return parse_website_config(remote_data)
+            return parse_website_config(remote_data, enforce_page_cap=False)
         except ValueError:
             return None
 

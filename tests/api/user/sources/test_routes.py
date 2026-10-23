@@ -333,6 +333,66 @@ class TestPaginatedSources:
         assert rows["legacy"]["website"] == {"hosts": ["y.io"], "pages": 3}
         assert rows["upload"]["website"] is None
 
+    def test_a_bad_stored_web_row_does_not_break_the_listing(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        user = "u-web-bad"
+        leaf = {"type": "text/markdown", "size_bytes": 1, "token_count": 1}
+        _seed_source(pg_conn, user, name="bad-legacy", type="url", remote_data={"url": "http://[x"})
+        _seed_source(
+            pg_conn, user, name="bad-website", type="website",
+            remote_data={"entries": [{"url": "http://[x", "mode": "page"}]},
+        )
+        _seed_source(
+            pg_conn, user, name="good", type="website",
+            remote_data={"entries": [{"url": "https://x.io/", "mode": "site"}]},
+            directory_structure={"index.md": {**leaf, "url": "https://x.io/"}},
+        )
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10&sort=name&order=asc"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        rows = {row["name"]: row for row in response.json["paginated"]}
+        assert rows["bad-legacy"]["website"] is None
+        assert rows["bad-website"]["website"] is None
+        assert rows["good"]["website"] == {"hosts": ["x.io"], "pages": 1}
+
+    def test_one_failing_summary_does_not_fail_the_listing(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        user = "u-web-raise"
+        _seed_source(
+            pg_conn, user, name="web", type="website",
+            remote_data={"entries": [{"url": "https://x.io/", "mode": "site"}]},
+        )
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.config_from_legacy", side_effect=RuntimeError("boom")
+        ), app.test_request_context("/api/sources/paginated?page=1&rows=10"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        assert response.json["paginated"][0]["website"] is None
+
+    def test_a_converted_wiki_has_no_website_summary(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        user = "u-web-wiki"
+        leaf = {"type": "text/markdown", "size_bytes": 1, "token_count": 1}
+        _seed_source(
+            pg_conn, user, name="wiki", type="website", config={"kind": "wiki"},
+            remote_data={"entries": [{"url": "https://x.io/", "mode": "site"}]},
+            directory_structure={"index.md": {**leaf, "url": "https://x.io/"}},
+        )
+        with _patch_db(pg_conn), app.test_request_context("/api/sources/paginated?page=1&rows=10"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.json["paginated"][0]["website"] is None
+
     def test_exposes_stalled_ingest_status(self, app, pg_conn):
         """A source whose ingest the reconciler escalated to 'stalled'
         surfaces ingestStatus='failed' so the UI can badge it.

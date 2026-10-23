@@ -44,6 +44,16 @@ logger = logging.getLogger(__name__)
 
 ENTRY_MODES = ("page", "site")
 DISCOVERY_MODES = ("auto", "sitemap", "links")
+
+# Write limits on a config, so one saved source can't make every listing,
+# sync and settings view walk an unbounded list. URLs past 2048 characters are
+# refused by many servers and browsers anyway. Twenty sites is far more than
+# a real source needs, and each site fans out into discovery fetches. Skip
+# rules grow one per removed page (a folder adds one section rule), so the cap
+# leaves room for years of pruning; a rule is a URL plus an optional ``*``.
+MAX_URL_LENGTH = 2048
+MAX_SITE_ENTRIES = 20
+MAX_SKIP_RULES = 1000
 # Well-known sitemap locations, tried when robots.txt names none.
 _WELL_KNOWN_SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml")
 _SITEMAP_LINE = re.compile(r"^\s*sitemap\s*:\s*(\S+)", re.IGNORECASE)
@@ -208,18 +218,61 @@ def _clamp_pages(requested: Optional[int]) -> int:
     return max(1, min(limit, int(settings.WEB_MAX_PAGES)))
 
 
-def parse_website_config(raw: Union[str, Dict[str, Any], None]) -> Dict[str, Any]:
+def is_web_address(url: str) -> bool:
+    """Whether ``url`` names a fetchable http(s) address, as the loaders would dial it.
+
+    A missing scheme is taken as ``http://``, as ``validate_url`` does. No DNS
+    lookup: the SSRF check runs at fetch time.
+
+    Args:
+        url: An address as the user wrote it.
+
+    Returns:
+        True when it parses, is http or https, and names a host (and a valid
+        port, when it has one).
+    """
+    try:
+        candidate = url if urlsplit(url).scheme else "http://" + url
+        parts = urlsplit(candidate)
+        host = parts.hostname
+        parts.port  # noqa: B018 - raises ValueError on a port out of range
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(host)
+
+
+def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
+    """The stripped address of an entry field, or ``ValueError`` when it isn't one."""
+    url = value.strip()
+    if not is_web_address(url):
+        raise ValueError(f"{label} {url[:200]!r} is not a web address")
+    if enforce_limits and len(url) > MAX_URL_LENGTH:
+        raise ValueError(f"{label} is longer than {MAX_URL_LENGTH} characters")
+    return url
+
+
+def parse_website_config(
+    raw: Union[str, Dict[str, Any], None], enforce_page_cap: bool = True,
+) -> Dict[str, Any]:
     """Validate a Website source's config (as stored in ``remote_data``).
 
     Args:
         raw: The config, as a dict or its JSON.
+        enforce_page_cap: Apply the write limits: ``WEB_MAX_PAGES`` on the
+            entries, ``MAX_SITE_ENTRIES``, ``MAX_SKIP_RULES`` and
+            ``MAX_URL_LENGTH``. Writes keep it on. Reading a stored config
+            turns it off, so a lowered cap or a config that grew past a limit
+            (pages appended, skips added on removal) still lists and syncs.
+            Every entry URL must parse either way.
 
     Returns:
         ``{"entries": [...], "skip": [...], "keep_links": bool}`` with every
         entry's fields filled in.
 
     Raises:
-        ValueError: If the config is malformed or has no entries.
+        ValueError: If the config is malformed, has no entries, an entry URL
+            isn't a web address, or (with ``enforce_page_cap``) a limit is
+            passed.
     """
     if isinstance(raw, str):
         try:
@@ -228,36 +281,54 @@ def parse_website_config(raw: Union[str, Dict[str, Any], None]) -> Dict[str, Any
             raise ValueError(f"Website config is not JSON: {e}") from e
     if not isinstance(raw, dict):
         raise ValueError("Website config must be an object")
+    items = raw.get("entries") or []
+    if not isinstance(items, list):
+        raise ValueError("Website entries must be a list")
     entries = []
-    for item in raw.get("entries") or []:
+    for item in items:
         if not isinstance(item, dict) or not isinstance(item.get("url"), str) or not item["url"].strip():
             raise ValueError("Each website entry needs a url")
         mode = item.get("mode") or "page"
         if mode not in ENTRY_MODES:
             raise ValueError(f"Unknown website entry mode {mode!r}")
-        entry = {"url": item["url"].strip(), "mode": mode}
+        entry = {"url": _entry_url(item["url"], "Address", enforce_page_cap), "mode": mode}
         if mode == "site":
             discovery = item.get("discovery") or "auto"
             if discovery not in DISCOVERY_MODES:
                 raise ValueError(f"Unknown page discovery {discovery!r}")
             max_pages = item.get("max_pages")
-            if max_pages is not None and (not isinstance(max_pages, int) or isinstance(max_pages, bool) or max_pages < 1):
+            if max_pages is not None and (
+                not isinstance(max_pages, int) or isinstance(max_pages, bool) or max_pages < 1
+            ):
                 raise ValueError("max_pages must be a positive whole number")
             sitemap_url = item.get("sitemap_url")
+            if isinstance(sitemap_url, str) and sitemap_url.strip():
+                sitemap_url = _entry_url(sitemap_url, "Sitemap address", enforce_page_cap)
+            else:
+                sitemap_url = None
             entry.update({
                 "max_pages": max_pages,
                 "path_prefix": str(item.get("path_prefix") or ""),
                 "include_subdomains": bool(item.get("include_subdomains")),
                 "discovery": discovery,
-                "sitemap_url": sitemap_url.strip() if isinstance(sitemap_url, str) and sitemap_url.strip() else None,
+                "sitemap_url": sitemap_url,
             })
         entries.append(entry)
     if not entries:
         raise ValueError("A website source needs at least one page or site")
-    cap = int(settings.WEB_MAX_PAGES)
-    if sum(1 for entry in entries if entry["mode"] == "page") > cap:
-        raise ValueError(f"A website source holds up to {cap} pages")
-    skip = [rule.strip() for rule in raw.get("skip") or [] if isinstance(rule, str) and rule.strip()]
+    rules = raw.get("skip") or []
+    skip = [rule.strip() for rule in rules if isinstance(rule, str) and rule.strip()] if isinstance(rules, list) else []
+    if enforce_page_cap:
+        cap = int(settings.WEB_MAX_PAGES)
+        # A site brings at least one page, so it counts toward the cap too.
+        if len(entries) > cap:
+            raise ValueError(f"A website source holds up to {cap} pages")
+        if sum(1 for entry in entries if entry["mode"] == "site") > MAX_SITE_ENTRIES:
+            raise ValueError(f"A website source holds up to {MAX_SITE_ENTRIES} sites")
+        if len(skip) > MAX_SKIP_RULES:
+            raise ValueError(f"A website source holds up to {MAX_SKIP_RULES} skip rules")
+        if any(len(rule.removesuffix("*")) > MAX_URL_LENGTH for rule in skip):
+            raise ValueError(f"A skip rule is longer than {MAX_URL_LENGTH} characters")
     return {"entries": entries, "skip": skip, "keep_links": bool(raw.get("keep_links"))}
 
 
@@ -280,7 +351,8 @@ class WebsiteLoader(BaseRemote):
             order. ``WEB_MAX_PAGES`` caps the total, so sites get what the
             pages leave.
         """
-        config = parse_website_config(inputs)
+        # A stored config: the write limits don't apply, the fetch budget does.
+        config = parse_website_config(inputs, enforce_page_cap=False)
         keep_links = config["keep_links"]
         cap = int(settings.WEB_MAX_PAGES)
         documents: List[Document] = []

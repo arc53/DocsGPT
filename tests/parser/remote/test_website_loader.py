@@ -379,3 +379,90 @@ class TestParseWebsiteConfig:
 
         with pytest.raises(ValueError):
             parse_website_config(raw)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://[x",
+            "ftp://x.io/a",
+            "https://",
+            "javascript:alert(1)",
+            "https://x.io:99999/",
+            "https://x.io/" + "a" * 2100,
+        ],
+    )
+    def test_rejects_an_entry_url_that_is_not_a_web_address(self, url):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        with pytest.raises(ValueError):
+            parse_website_config({"entries": [{"url": url, "mode": "page"}]})
+
+    def test_rejects_a_sitemap_url_that_is_not_a_web_address(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        with pytest.raises(ValueError):
+            parse_website_config({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "http://[x"}]})
+
+    def test_an_address_without_a_scheme_is_accepted_as_written(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        config = parse_website_config({"entries": [{"url": "x.io/docs", "mode": "page"}]})
+
+        assert config["entries"] == [{"url": "x.io/docs", "mode": "page"}]
+
+    def test_caps_sites_entries_and_skip_rules_on_write(self):
+        from docsgpt.parser.remote import website_loader
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        sites = [{"url": f"https://s{i}.io/", "mode": "site"} for i in range(website_loader.MAX_SITE_ENTRIES + 1)]
+        with pytest.raises(ValueError, match="sites"):
+            parse_website_config({"entries": sites})
+
+        one = [{"url": "https://x.io/", "mode": "site"}]
+        rules = [f"https://x.io/p{i}" for i in range(website_loader.MAX_SKIP_RULES + 1)]
+        with pytest.raises(ValueError, match="skip"):
+            parse_website_config({"entries": one, "skip": rules})
+        with pytest.raises(ValueError, match="skip"):
+            parse_website_config({"entries": one, "skip": ["https://x.io/" + "a" * 2100]})
+
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            mixed = [{"url": "https://x.io/a", "mode": "page"}, {"url": "https://x.io/", "mode": "site"}]
+            assert len(parse_website_config({"entries": mixed})["entries"]) == 2
+            with pytest.raises(ValueError, match="up to 2"):
+                parse_website_config({"entries": mixed + [{"url": "https://y.io/", "mode": "site"}]})
+
+    def test_a_stored_config_reads_past_the_write_limits(self):
+        # Reads are lenient: a lowered WEB_MAX_PAGES, or a config that grew
+        # past a limit, must not lock the source or break its listing.
+        from docsgpt.parser.remote import website_loader
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        pages = [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]
+        sites = [{"url": f"https://s{i}.io/", "mode": "site"} for i in range(website_loader.MAX_SITE_ENTRIES + 1)]
+        rules = [f"https://x.io/p{i}" for i in range(website_loader.MAX_SKIP_RULES + 1)]
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            config = parse_website_config({"entries": pages + sites, "skip": rules}, enforce_page_cap=False)
+
+        assert len(config["entries"]) == 3 + len(sites)
+        assert len(config["skip"]) == len(rules)
+
+    def test_a_stored_config_with_a_bad_url_still_fails(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        with pytest.raises(ValueError):
+            parse_website_config({"entries": [{"url": "http://[x", "mode": "page"}]}, enforce_page_cap=False)
+
+
+class TestWebsiteLoaderLenientRead:
+    def test_a_lowered_cap_does_not_fail_the_load(self, web):
+        web({f"https://x.io/{i}": page(f"P{i}") for i in range(3)})
+        loader = WebsiteLoader()
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            fake_settings.WEB_DEFAULT_PAGES = 2
+            docs = loader.load_data({"entries": [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]})
+
+        # Page entries are fetched as stored; the lowered cap only limits sites.
+        assert len(docs) == 3

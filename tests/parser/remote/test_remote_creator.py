@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 @pytest.mark.unit
@@ -66,6 +66,22 @@ class TestWebsiteType:
 
         assert normalize_remote_data("website", {"entries": []}) is None
         assert normalize_remote_data("website", "https://x.io") is None
+
+    def test_normalize_reads_a_config_over_a_lowered_cap(self):
+        # The page cap is a write limit; a sync of a stored source still runs.
+        from docsgpt.parser.remote.remote_creator import normalize_remote_data
+
+        stored = {"entries": [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]}
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            config = normalize_remote_data("website", stored)
+
+        assert config is not None and len(config["entries"]) == 3
+
+    def test_normalize_drops_a_config_with_a_bad_url(self):
+        from docsgpt.parser.remote.remote_creator import normalize_remote_data
+
+        assert normalize_remote_data("website", {"entries": [{"url": "http://[x", "mode": "page"}]}) is None
 
 
 @pytest.mark.unit

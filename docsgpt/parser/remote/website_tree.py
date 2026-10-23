@@ -11,7 +11,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from docsgpt.parser.remote.website_loader import parse_website_config
+from docsgpt.parser.remote.website_loader import is_web_address, parse_website_config
 
 # The old loaders' fixed page limits, kept when their sources are converted.
 _LEGACY_CRAWL_PAGES = 10
@@ -190,15 +190,17 @@ def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str,
 
     Returns:
         The validated config, or ``None`` for a source that isn't a web
-        source or has nothing to fetch.
+        source or has nothing to fetch. Never raises: this reads stored rows
+        (the Knowledge listing, settings, syncs), so the write limits don't
+        apply and an old loader's unparseable URLs are dropped.
     """
     loader = (source_type or "").lower()
     if loader == "website":
         try:
-            return parse_website_config(remote_data)
+            return parse_website_config(remote_data, enforce_page_cap=False)
         except ValueError:
             return None
-    urls = _urls(remote_data)
+    urls = [url for url in _urls(remote_data) if is_web_address(url)]
     if not urls:
         return None
     if loader == "url":
@@ -212,4 +214,7 @@ def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str,
         }]
     else:
         return None
-    return parse_website_config({"entries": entries})
+    try:
+        return parse_website_config({"entries": entries}, enforce_page_cap=False)
+    except ValueError:
+        return None

@@ -101,18 +101,27 @@ def _website_summary(row: dict) -> Optional[dict]:
         ``{"hosts": [...], "pages": n}`` for a Website source (or one made by
         the url, crawler or sitemap loaders), else ``None``. Hosts come from
         the source's entries, without ``www.``; pages are its tree's leaves.
+        A wiki (a web source converted to one) is edited in place, so it gets
+        ``None``; so does a row whose stored config can't be read, rather
+        than failing the whole listing.
     """
-    config = config_from_legacy(row.get("type"), row.get("remote_data"))
-    if config is None:
+    try:
+        if _is_wiki(row):
+            return None
+        config = config_from_legacy(row.get("type"), row.get("remote_data"))
+        if config is None:
+            return None
+        hosts: list[str] = []
+        for entry in config["entries"]:
+            host = (urlparse(entry["url"]).hostname or "").removeprefix("www.")
+            if host and host not in hosts:
+                hosts.append(host)
+        structure = row.get("directory_structure")
+        pages = count_pages(structure) if isinstance(structure, dict) else 0
+        return {"hosts": hosts, "pages": pages}
+    except Exception as err:  # noqa: BLE001 - one bad row must not fail the listing
+        current_app.logger.warning(f"Website summary of source {row.get('id')} unavailable: {err}")
         return None
-    hosts: list[str] = []
-    for entry in config["entries"]:
-        host = (urlparse(entry["url"]).hostname or "").removeprefix("www.")
-        if host and host not in hosts:
-            hosts.append(host)
-    structure = row.get("directory_structure")
-    pages = count_pages(structure) if isinstance(structure, dict) else 0
-    return {"hosts": hosts, "pages": pages}
 
 
 def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
