@@ -1015,6 +1015,28 @@ describe('ConnectWizard', () => {
     ).toEqual([]);
   });
 
+  it.each([
+    ['reconnect', 'settings.connectors.wizard.setupReconnect'],
+    ['disabled', 'settings.connectors.wizard.setupDisabled'],
+    ['tools_unavailable', 'settings.connectors.wizard.toolsUnavailable'],
+    ['writes_forbidden', 'settings.connectors.github.writesForbidden'],
+    ['something_new', 'settings.connectors.wizard.syncFailed'],
+  ])("words a setup refused as %s in the UI's language", async (code, key) => {
+    service.setup.mockResolvedValue({
+      success: false,
+      code,
+      error: 'English words from the server',
+    });
+    await render(drive);
+    await click('settings.connectors.wizard.signIn');
+    await click('pick-folder');
+    await click('modals.uploadDoc.train');
+    expect(document.body.textContent).toContain(key);
+    expect(document.body.textContent).not.toContain(
+      'English words from the server',
+    );
+  });
+
   describe('done footer', () => {
     it('opens the new source in Knowledge once content is synced', async () => {
       service.setup.mockResolvedValue({

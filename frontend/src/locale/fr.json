@@ -2088,6 +2088,8 @@
         "methodOauth": "Se connecter avec {{name}}",
         "methodToken": "Utiliser un jeton d’accès",
         "credentialsRejected": "{{name}} n’a pas accepté ces identifiants. Vérifiez-les et réessayez.",
+        "setupReconnect": "Reconnectez-vous à {{name}} pour terminer la configuration.",
+        "setupDisabled": "Un administrateur a désactivé {{name}}, il ne peut donc pas être configuré.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
         "addTools": "Permettre aux agents d’utiliser {{name}}",
         "addToolsDescription": {

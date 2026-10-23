@@ -2088,6 +2088,8 @@
         "methodOauth": "Iniciar sesión con {{name}}",
         "methodToken": "Usar un token de acceso",
         "credentialsRejected": "{{name}} no aceptó estas credenciales. Revísalas e inténtalo de nuevo.",
+        "setupReconnect": "Vuelve a iniciar sesión en {{name}} para terminar de configurarlo.",
+        "setupDisabled": "Un administrador desactivó {{name}}, así que no se puede configurar.",
         "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
         "addTools": "Permitir que los agentes usen {{name}}",
         "addToolsDescription": {

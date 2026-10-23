@@ -2017,6 +2017,8 @@
         "methodOauth": "Mit {{name}} anmelden",
         "methodToken": "Zugriffstoken verwenden",
         "credentialsRejected": "{{name}} hat diese Zugangsdaten nicht akzeptiert. Prüfe sie und versuche es erneut.",
+        "setupReconnect": "Melde dich erneut bei {{name}} an, um die Einrichtung abzuschließen.",
+        "setupDisabled": "Ein Admin hat {{name}} deaktiviert, daher lässt es sich nicht einrichten.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
         "addTools": "Agenten {{name}} nutzen lassen",
         "addToolsDescription": {

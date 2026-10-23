@@ -2012,6 +2012,8 @@
         "methodOauth": "{{name}} でサインイン",
         "methodToken": "アクセストークンを使用",
         "credentialsRejected": "{{name}} がこの認証情報を受け付けませんでした。確認してもう一度お試しください。",
+        "setupReconnect": "設定を完了するには、{{name}} にもう一度サインインしてください。",
+        "setupDisabled": "管理者が {{name}} をオフにしたため、設定できません。",
         "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度試すか、オフにして続行してください。",
         "addTools": "エージェントに {{name}} の使用を許可",
         "addToolsDescription": {

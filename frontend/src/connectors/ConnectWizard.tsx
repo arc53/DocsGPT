@@ -489,6 +489,28 @@ export default function ConnectWizard({
     }
   };
 
+  /**
+   * A refused setup in the user's language, by its code: the server's own
+   * words are English, so a code without a key reads as the generic failure.
+   */
+  const setupRefusal = (code: unknown): string => {
+    const named = { name, interpolation: { escapeValue: false } };
+    switch (code) {
+      case 'tools_unavailable':
+        return t('settings.connectors.wizard.toolsUnavailable', named);
+      case 'writes_forbidden':
+        return t('settings.connectors.github.writesForbidden');
+      // The account's sign-in stopped working since the wizard opened.
+      case 'reconnect':
+        return t('settings.connectors.wizard.setupReconnect', named);
+      // An admin turned the connector (an MCP preset) off meanwhile.
+      case 'disabled':
+        return t('settings.connectors.wizard.setupDisabled', named);
+      default:
+        return t('settings.connectors.wizard.syncFailed');
+    }
+  };
+
   const addSource = async () => {
     if (!activeConnectionId) return;
     if (!wantsTools && !syncReady) {
@@ -517,16 +539,7 @@ export default function ConnectWizard({
         idempotencyKey,
       );
       if (!data?.success) {
-        setError(
-          data?.code === 'tools_unavailable'
-            ? t('settings.connectors.wizard.toolsUnavailable', {
-                name,
-                interpolation: { escapeValue: false },
-              })
-            : data?.code === 'writes_forbidden'
-              ? t('settings.connectors.github.writesForbidden')
-              : data?.error || t('settings.connectors.wizard.syncFailed'),
-        );
+        setError(setupRefusal(data?.code));
         return;
       }
       connectedRef.current = true;
