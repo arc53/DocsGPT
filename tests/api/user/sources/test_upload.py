@@ -1100,6 +1100,41 @@ class TestManageSourceFiles:
         assert response.json["success"] is True
         assert "new.txt" in response.json["added_files"]
 
+    def test_each_keyless_change_dispatches_its_own_reingest_key(self, app, pg_conn):
+        """Without an Idempotency-Key, two file changes must not share a key:
+        the task's guard would replay the first reingest for 24h instead of
+        embedding the second change.
+        """
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+
+        user = "u-add-twice"
+        src = _seed_source(pg_conn, user=user, file_path="/data/src")
+        keys = []
+        for name in ("one.txt", "two.txt"):
+            with _patch_db(pg_conn), patch(
+                "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+                return_value=MagicMock(),
+            ), patch(
+                "docsgpt.api.user.tasks.reingest_source_task.apply_async",
+                return_value=MagicMock(id="reingest-1"),
+            ) as mock_apply, app.test_request_context(
+                "/api/manage_source_files", method="POST",
+                data={
+                    "source_id": str(src["id"]),
+                    "operation": "add",
+                    "file": (io.BytesIO(b"content"), name),
+                },
+                content_type="multipart/form-data",
+            ):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                response = ManageSourceFiles().post()
+            assert response.status_code == 200
+            keys.append(mock_apply.call_args.kwargs["kwargs"]["idempotency_key"])
+
+        assert all(key and key.startswith(f"reingest-source:{user}:{src['id']}:") for key in keys)
+        assert keys[0] != keys[1]
+
     def test_remove_missing_file_paths_returns_400(self, app, pg_conn):
         from docsgpt.api.user.sources.upload import ManageSourceFiles
 

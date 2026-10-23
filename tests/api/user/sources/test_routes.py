@@ -997,11 +997,35 @@ class TestReingestSource:
         assert response.json["task_id"] == "reingest-task-1"
         assert mock_delay.call_args.kwargs["source_id"] == str(src["id"])
         assert mock_delay.call_args.kwargs["user"] == user
-        # Scoped idempotency key engages the task's lease so repeated
-        # clicks collapse onto one reingest instead of racing.
-        assert mock_delay.call_args.kwargs["idempotency_key"] == (
-            f"reingest-source:{user}:{src['id']}"
+        assert mock_delay.call_args.kwargs["idempotency_key"].startswith(
+            f"reingest-source:{user}:{src['id']}:"
         )
+
+    def test_each_reingest_gets_its_own_key_unless_the_client_names_one(self, app, pg_conn):
+        """A per-source key would replay the last completed reingest for 24h
+        instead of running a new one; a client's Idempotency-Key still
+        collapses its own repeats.
+        """
+        from docsgpt.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest-again"
+        src = _seed_source(pg_conn, user, name="again-src", type="file")
+
+        def reingest(headers):
+            with _patch_db(pg_conn), patch(
+                "docsgpt.api.user.sources.routes.reingest_source_task.delay",
+                return_value=MagicMock(id="t"),
+            ) as mock_delay, app.test_request_context(
+                "/api/sources/reingest", method="POST",
+                json={"source_id": str(src["id"])}, headers=headers,
+            ):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                assert ReingestSource().post().status_code == 200
+            return mock_delay.call_args.kwargs["idempotency_key"]
+
+        assert reingest({}) != reingest({})
+        assert reingest({"Idempotency-Key": "k1"}) == reingest({"Idempotency-Key": "k1"})
 
     def test_team_editor_reingests_as_owner(self, app, pg_conn):
         """A team editor (not the owner) can reingest a shared source; the
@@ -1051,8 +1075,8 @@ class TestReingestSource:
         assert mock_delay.call_args.kwargs["source_id"] == sid
         # Dispatched AS the owner, not the editor caller.
         assert mock_delay.call_args.kwargs["user"] == owner
-        assert mock_delay.call_args.kwargs["idempotency_key"] == (
-            f"reingest-source:{owner}:{sid}"
+        assert mock_delay.call_args.kwargs["idempotency_key"].startswith(
+            f"reingest-source:{owner}:{sid}:"
         )
 
     def test_clears_stalled_ingest_progress_row(self, app, pg_conn):

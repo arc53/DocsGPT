@@ -29,6 +29,7 @@ from docsgpt.api.user.resource_access import (
     settings_many,
 )
 from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.upload import _read_idempotency_key, reingest_idempotency_key
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
@@ -696,6 +697,9 @@ class ReingestSource(Resource):
         if missing_fields:
             return missing_fields
         source_id = data["source_id"]
+        client_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
         # Run the reingest AS the owner: ``user`` when they own the source,
         # the real owner when ``user`` holds a team ``editor`` grant (reingest
         # is an editor-allowed write). Vector partitions are keyed by source_id
@@ -738,11 +742,12 @@ class ReingestSource(Resource):
             if rebuild is not None:
                 task = rebuild()
             else:
-                # Scoped key so repeated clicks collapse onto one reingest.
+                # One key per request (or per client Idempotency-Key): a key
+                # per source would replay the last completed reingest for 24h.
                 task = reingest_source_task.delay(
                     source_id=resolved_source_id,
                     user=owner,
-                    idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
+                    idempotency_key=reingest_idempotency_key(owner, resolved_source_id, client_key),
                     actor_id=user,
                 )
         except Exception as err:

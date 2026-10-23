@@ -136,6 +136,26 @@ def _scoped_idempotency_key(idempotency_key, scope):
     return f"{scope}:{idempotency_key}"
 
 
+def reingest_idempotency_key(owner: str, source_id: str, client_key: Optional[str] = None) -> str:
+    """The guard key for one reingest dispatch.
+
+    A reingest's ``source_id`` is the same every time, so a key derived from
+    it alone would make ``with_idempotency`` replay the last completed run
+    for 24h instead of reading the source's new state. A client's
+    ``Idempotency-Key`` still collapses its own repeats; without one each
+    request gets a fresh key, and the source's index lock keeps runs apart.
+
+    Args:
+        owner: The source owner the task runs as.
+        source_id: The source being reingested.
+        client_key: The request's ``Idempotency-Key`` header, if any.
+
+    Returns:
+        ``reingest-source:{owner}:{source_id}:{client key or a fresh uuid}``.
+    """
+    return f"reingest-source:{owner}:{source_id}:{client_key or uuid.uuid4().hex}"
+
+
 def _parse_source_config(raw):
     """Strict-validate an optional ``config`` JSON blob from the request.
 
@@ -1106,7 +1126,7 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
                         "actor_id": user,
                     },
                     task_id=predetermined_task_id,
@@ -1219,7 +1239,7 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
                         "actor_id": user,
                     },
                     task_id=predetermined_task_id,
@@ -1350,7 +1370,7 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
                         "actor_id": user,
                     },
                     task_id=predetermined_task_id,
