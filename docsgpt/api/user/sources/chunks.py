@@ -517,7 +517,11 @@ class DeleteChunk(Resource):
         try:
             with _index_lock(str(doc["id"])):
                 store = get_vector_store(str(doc["id"]))
-                deleted = store.delete_chunk(chunk_id)
+                # Only a chunk this source lists is deleted, as an update
+                # checks: a store whose delete isn't scoped to the source
+                # would otherwise remove another source's chunk by its id.
+                listed = any(c.get("doc_id") == chunk_id for c in store.get_chunks() or [])
+                deleted = listed and store.delete_chunk(chunk_id)
             if deleted:
                 return make_response(
                     jsonify({"message": "Chunk deleted successfully"}), 200

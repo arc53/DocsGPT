@@ -494,6 +494,7 @@ class TestDeleteChunk:
         src = _seed_source(pg_conn, user=user)
 
         fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [{"doc_id": "c", "text": "t", "metadata": {}}]
         fake_store.delete_chunk.return_value = True
 
         with _patch_db(pg_conn), patch(
@@ -506,6 +507,7 @@ class TestDeleteChunk:
             request.decoded_token = {"sub": user}
             response = DeleteChunk().delete()
         assert response.status_code == 200
+        fake_store.delete_chunk.assert_called_once_with("c")
 
     def test_returns_404_chunk_not_found(self, app, pg_conn):
         from docsgpt.api.user.sources.chunks import DeleteChunk
@@ -514,6 +516,7 @@ class TestDeleteChunk:
         src = _seed_source(pg_conn, user=user)
 
         fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [{"doc_id": "c", "text": "t", "metadata": {}}]
         fake_store.delete_chunk.return_value = False
 
         with _patch_db(pg_conn), patch(
@@ -526,6 +529,64 @@ class TestDeleteChunk:
             request.decoded_token = {"sub": user}
             response = DeleteChunk().delete()
         assert response.status_code == 404
+
+
+class _SharedCollection:
+    """Chunks of every source in one collection, as MongoDB, Qdrant and Milvus keep them.
+
+    ``store(source_id)`` lists only that source's chunks, but its
+    ``delete_chunk`` removes an id whichever source holds it: the store
+    alone doesn't keep one source's delete off another's chunks.
+    """
+
+    def __init__(self):
+        self.chunks = {}
+
+    def add(self, source_id, chunk_id, text):
+        self.chunks[chunk_id] = {"source_id": str(source_id), "text": text}
+
+    def store(self, source_id):
+        collection = self
+        store = MagicMock()
+        store.get_chunks.side_effect = lambda: [
+            {"doc_id": cid, "text": c["text"], "metadata": {}}
+            for cid, c in collection.chunks.items() if c["source_id"] == str(source_id)
+        ]
+        store.delete_chunk.side_effect = lambda chunk_id: collection.chunks.pop(chunk_id, None) is not None
+        return store
+
+
+class TestDeleteChunkAcrossSources:
+    def test_a_chunk_of_another_source_is_not_deleted(self, app, pg_conn):
+        """An editor of one source names a chunk id from a source they only view."""
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        victim, attacker = "u-xsrc-victim", "u-xsrc-attacker"
+        theirs = _seed_source(pg_conn, user=victim, name="victim-src")
+        mine = _seed_source(pg_conn, user=attacker, name="attacker-src")
+        team = TeamsRepository(pg_conn).create("Acme", "acme-xsrc", victim)
+        TeamMembersRepository(pg_conn).add_member(team["id"], attacker, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(theirs["id"]), owner_id=victim, granted_by=victim, access_level="viewer",
+        )
+        collection = _SharedCollection()
+        collection.add(theirs["id"], "victim-chunk", "secret")
+        collection.add(mine["id"], "own-chunk", "mine")
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", side_effect=collection.store,
+        ), app.test_request_context(
+            f"/api/delete_chunk?id={mine['id']}&chunk_id=victim-chunk", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": attacker}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == 404
+        assert "victim-chunk" in collection.chunks
 
 
 class TestUpdateChunk:

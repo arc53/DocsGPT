@@ -447,6 +447,7 @@ class TestChunkWrites:
 
         sid = _shared_source(pg_conn)
         store = MagicMock()
+        store.get_chunks.return_value = [{"doc_id": "c1", "text": "a", "metadata": {}}]
         store.delete_chunk.return_value = True
         with _patch_db(pg_conn, CHUNKS), patch(f"{CHUNKS}.get_vector_store", return_value=store):
             resp = _call(
