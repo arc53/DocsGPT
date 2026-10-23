@@ -5433,7 +5433,8 @@ def website_pages_worker(
         user: Its owner (the route resolves it).
         operation: ``add`` (fetch ``urls``), ``refresh`` (re-fetch the page
             ``url``) or ``remove`` (delete ``pages``).
-        urls: Page URLs to add; they are already in the source's config.
+        urls: Page URLs to add, listed in the config by the route; only
+            those it still lists as pages when the run starts are fetched.
         file_path: Tree path of the page to refresh; only a task queued
             without ``url`` finds the page by it.
         file_paths: Tree paths of pages to remove, from a task queued before
@@ -5546,6 +5547,16 @@ def _run_website_pages(
     if not isinstance(structure, dict):
         structure = {}
     config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
+    if operation == "add":
+        # The route listed each address before queueing; a removal that got
+        # the lock first may have taken it out again since. Only addresses
+        # the config still lists as pages are fetched, so an older add can't
+        # bring back a page the config now leaves out.
+        listed = {_web_page_key(e["url"]) for e in config.get("entries") or [] if e.get("mode") == "page"}
+        urls = [page_url for page_url in urls or [] if _web_page_key(page_url) in listed]
+        if not urls:
+            logging.info("website_pages add on %s: every page left the config before the run", source_id)
+            return []
     # Every leaf's path is taken, not only the pages': a leaf from before
     # leaves carried their address must not be overwritten by a new page.
     leaves = _tree_leaves(structure)

@@ -83,13 +83,19 @@ class ParagraphChunker:
         return out
 
 
+# The page entries the tests add: an add fetches only addresses its source's config lists.
+LISTED = ["a", "b", "c", "guide/b", "gone", "old"]
+
+
 @pytest.fixture
 def source(pg_conn):
     return SourcesRepository(pg_conn).create(
         "Docs",
         user_id=USER,
         type="website",
-        remote_data={"entries": [{"url": "https://docs.x.io/a", "mode": "page"}], "keep_links": True},
+        remote_data={
+            "entries": [{"url": f"https://docs.x.io/{page}", "mode": "page"} for page in LISTED], "keep_links": True,
+        },
         directory_structure={"a.md": _leaf("https://docs.x.io/a", 40)},
         tokens="40",
     )
@@ -218,7 +224,9 @@ class TestAddPages:
 
         src = SourcesRepository(pg_conn).create(
             "Docs", user_id=USER, type="website",
-            remote_data={"entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+            remote_data={"entries": [
+                {"url": "https://docs.x.io/", "mode": "site"}, {"url": "https://docs.x.io/docs#intro", "mode": "page"},
+            ]},
             directory_structure={"docs.md": _leaf("https://docs.x.io/docs/", 10)},
             tokens="10",
         )
@@ -241,7 +249,9 @@ class TestAddPages:
 
         src = SourcesRepository(pg_conn).create(
             "Docs", user_id=USER, type="website",
-            remote_data={"entries": [{"url": "https://docs.x.io/docs", "mode": "page"}]},
+            remote_data={"entries": [
+                {"url": "https://docs.x.io/docs", "mode": "page"}, {"url": "https://docs.x.io/docs.html", "mode": "page"},
+            ]},
             directory_structure={
                 "docs.md": _leaf("https://docs.x.io/docs", 10), "docs-2.md": _leaf("https://docs.x.io/d2", 1),
             },
@@ -727,7 +737,7 @@ class TestAddOnALegacyTree:
         store.seed("legacy html page", "https://docs.x.io/a.html", "a.md")
         legacy_leaf = {"type": "text/markdown", "size_bytes": 10, "token_count": 40}  # before leaves had a url
         src = SourcesRepository(pg_conn).create(
-            "Docs", user_id=USER, type="url", remote_data="https://docs.x.io/a.html",
+            "Docs", user_id=USER, type="url", remote_data=["https://docs.x.io/a.html", "https://docs.x.io/a"],
             directory_structure={"a.md": legacy_leaf},
         )
         pipeline["pages"]["https://docs.x.io/a"] = "New page A"
@@ -1021,6 +1031,41 @@ class TestConcurrentChanges:
         assert sorted(row["directory_structure"]) == ["a.md", "b.md", "z.md"]
         assert row["remote_data"]["skip"] == ["https://docs.x.io/z"]
         assert int(row["tokens"]) == 40 + 3 + row["directory_structure"]["b.md"]["token_count"]
+
+    def test_an_add_queued_before_a_removal_does_not_bring_the_page_back(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        # The removal took the lock first: /b left the config before the add ran.
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"remote_data": {
+            "entries": [{"url": "https://docs.x.io/a", "mode": "page"}, {"url": "https://docs.x.io/c", "mode": "page"}],
+        }})
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        pipeline["pages"]["https://docs.x.io/c#top"] = "C"
+        result = worker.website_pages_worker(
+            task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b", "https://docs.x.io/c#top"],
+        )
+
+        assert result["pages"] == 1
+        assert pipeline["fetch_calls"][0][0] == ["https://docs.x.io/c#top"]
+        assert sorted(_tree(pg_conn, source)) == ["a.md", "c.md"]
+
+    def test_an_add_whose_pages_all_left_the_config_changes_nothing(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"remote_data": {
+            "entries": [{"url": "https://docs.x.io/a", "mode": "page"}],
+        }})
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        result = worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert result["pages"] == 0
+        assert pipeline["fetch_calls"] == []
+        assert list(_tree(pg_conn, source)) == ["a.md"]
+        assert pipeline["events"][-1][0] == "source.ingest.completed"
 
     def test_a_page_removed_mid_refresh_is_not_brought_back(
         self, pg_conn, patch_worker_db, task_self, source, pipeline,
