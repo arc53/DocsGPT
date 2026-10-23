@@ -79,6 +79,22 @@ class TestRemovalRules:
         assert folder_skip_rule("docs.x.io/Deploying", pages) == "https://docs.x.io/Deploying/*"
         assert folder_skip_rule("docs.x.io", pages) == "https://docs.x.io/*"
 
+    def test_removing_a_www_host_folder_leaves_the_bare_host_folder(self):
+        from docsgpt.parser.remote.website_loader import SiteScope
+
+        structure = {
+            "www.x.io": {"guide.md": leaf("https://www.x.io/guide")},
+            "x.io": {"blog": {"post.md": leaf("https://x.io/blog/post")}},
+        }
+        rule = folder_skip_rule("www.x.io", pages_under(structure, "www.x.io"))
+        scope = SiteScope("https://x.io/", skip=[rule])
+
+        assert rule == "https://www.x.io/*"
+        assert not scope.accepts("https://www.x.io/guide")
+        assert scope.accepts("https://x.io/blog/post")
+        bare = folder_skip_rule("x.io/blog", pages_under(structure, "x.io/blog"))
+        assert SiteScope("https://x.io/", skip=[bare]).accepts("https://www.x.io/guide")
+
     def test_a_folder_whose_name_is_not_in_its_urls_has_no_rule(self):
         # A folder name a URL can't account for (a dedupe suffix, say) gets
         # its pages skipped one by one instead.

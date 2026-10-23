@@ -139,7 +139,10 @@ def folder_skip_rule(dir_path: str, pages: List[Page]) -> Optional[str]:
     """The section rule (``https://host/path/*``) that covers a folder's pages.
 
     The tree folder is the URL path (with the host first when the source
-    spans hosts), so the rule is rebuilt from a page's URL.
+    spans hosts), so the rule is rebuilt from a page's URL. A host folder is
+    the host as written, and so is the rule's host: ``www.x.io`` and
+    ``x.io`` are two folders, and a section rule matches its host exactly
+    (``SiteScope``), so removing one folder leaves the other's pages.
 
     Args:
         dir_path: The folder's tree path.

@@ -88,14 +88,35 @@ def fetch_budget_for(cap: int) -> int:
     return _FETCHES_PER_PAGE * int(cap) + _DISCOVERY_FETCHES
 
 # The bundled public-suffix snapshot is enough to tell a registered domain;
-# the default extractor would fetch the live list on first use.
-_domains = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
+# the default extractor would fetch the live list on first use. Its private
+# part counts too: each github.io or vercel.app tenant is a domain of its own.
+_domains = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, include_psl_private_domains=True)
 
 
 def _bare_host(host: Optional[str]) -> str:
     """A host compared case-insensitively, with ``www.`` treated as the bare host."""
     host = (host or "").lower().rstrip(".")
     return host[4:] if host.startswith("www.") else host
+
+
+def _section_key(url: str) -> str:
+    """A ``page_key`` whose host is kept as written (``www.`` included), for section rules.
+
+    Args:
+        url: A page URL, or a section rule without its ``*``.
+
+    Returns:
+        ``host[:port]/path`` (plus ``?query``).
+
+    Raises:
+        ValueError: If the URL cannot be parsed.
+    """
+    parts = urlsplit(normalize_page_url(url.strip()))
+    host = (parts.hostname or "").rstrip(".")
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    key = f"{host}{parts.path.rstrip('/')}"
+    return f"{key}?{parts.query}" if parts.query else key
 
 
 def _registered_domain(host: str) -> str:
@@ -132,9 +153,13 @@ def _in_section(key: str, section: str) -> bool:
     (``https://host/*``, a removed host folder) also holds the host's root
     page, ``host/index.md``, with or without a query.
 
+    The tree has a folder per host as written, so a section names its host
+    exactly: ``https://www.x.io/*`` covers the ``www.x.io`` folder and not
+    the ``x.io`` one. Both keys are ``_section_key``.
+
     Args:
-        key: A candidate page's ``page_key``.
-        section: The rule's ``page_key``, without the ``*``.
+        key: A candidate page's ``_section_key``.
+        section: The rule's ``_section_key``, without the ``*``.
 
     Returns:
         True when the rule covers the page.
@@ -162,6 +187,8 @@ class SiteScope:
             include_subdomains: Also accept other hosts of the same registered
                 domain (``docs.example.co.uk`` for ``example.co.uk``).
             skip: Exact page URLs, or sections written ``https://host/path/*``.
+                A page rule ignores ``www.`` as ``page_key`` does; a section
+                matches its host exactly (see ``_in_section``).
         """
         self.host = _bare_host(urlparse(start_url).hostname)
         self.domain = _registered_domain(self.host)
@@ -174,7 +201,7 @@ class SiteScope:
             rule = (rule or "").strip()
             try:
                 if rule.endswith("*"):
-                    self.skip_sections.append(page_key(rule[:-1]))
+                    self.skip_sections.append(_section_key(rule[:-1]))
                 elif rule:
                     self.skip_pages.add(page_key(rule))
             except ValueError:
@@ -198,6 +225,7 @@ class SiteScope:
         try:
             parsed = urlparse(url)
             key = page_key(url)
+            section_key = _section_key(url)
         except ValueError:
             return False
         if parsed.scheme not in ("http", "https") or not self._host_ok(_bare_host(parsed.hostname)):
@@ -208,7 +236,7 @@ class SiteScope:
                 return False
         if key in self.skip_pages:
             return False
-        return not any(_in_section(key, section) for section in self.skip_sections)
+        return not any(_in_section(section_key, section) for section in self.skip_sections)
 
 
 def _fetch(url: str, max_bytes: int, budget: Optional[FetchBudget] = None) -> Optional[requests.Response]:
@@ -327,14 +355,29 @@ def is_web_address(url: str) -> bool:
     return parts.scheme in ("http", "https") and bool(host)
 
 
+def _with_scheme(url: str) -> str:
+    """``url`` with ``https://`` in front when it was written without a scheme (``example.com/docs``).
+
+    Args:
+        url: A stripped address.
+
+    Returns:
+        The address, so ``urlparse`` finds its host.
+    """
+    try:
+        return url if urlsplit(url).scheme else "https://" + url
+    except ValueError:
+        return url
+
+
 def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
-    """The stripped address of an entry field, or ``ValueError`` when it isn't one."""
+    """The stripped address of an entry field, with a scheme, or ``ValueError`` when it isn't one."""
     url = value.strip()
     if not is_web_address(url):
         raise ValueError(f"{label} {url[:200]!r} is not a web address")
     if enforce_limits and len(url) > MAX_URL_LENGTH:
         raise ValueError(f"{label} is longer than {MAX_URL_LENGTH} characters")
-    return url
+    return _with_scheme(url)
 
 
 def parse_website_config(
@@ -353,7 +396,8 @@ def parse_website_config(
 
     Returns:
         ``{"entries": [...], "skip": [...], "keep_links": bool}`` with every
-        entry's fields filled in.
+        entry's fields filled in. An address or skip rule written without a
+        scheme (``example.com/docs``) gets ``https://``, so its host parses.
 
     Raises:
         ValueError: If the config is malformed, has no entries, an entry URL
@@ -403,7 +447,7 @@ def parse_website_config(
     if not entries:
         raise ValueError("A website source needs at least one page or site")
     rules = raw.get("skip") or []
-    skip = [rule.strip() for rule in rules if isinstance(rule, str) and rule.strip()] if isinstance(rules, list) else []
+    skip = [_with_scheme(r.strip()) for r in rules if isinstance(r, str) and r.strip()] if isinstance(rules, list) else []
     if enforce_page_cap:
         cap = int(settings.WEB_MAX_PAGES)
         # A site brings at least one page, so it counts toward the cap too.

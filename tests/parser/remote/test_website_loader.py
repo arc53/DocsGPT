@@ -141,7 +141,7 @@ class TestSiteScope:
     def test_a_host_folder_rule_covers_the_host_root_page(self):
         # A removed host folder in a multi-host source holds host/index.md.
         scope = SiteScope("https://a.io/", skip=["https://b.io/*"], include_subdomains=False)
-        wide = SiteScope("https://a.io/", skip=["https://www.a.io/*"])
+        wide = SiteScope("https://a.io/", skip=["https://a.io/*"])
 
         assert not wide.accepts("https://a.io/")
         assert not wide.accepts("https://a.io")
@@ -149,6 +149,43 @@ class TestSiteScope:
         assert not wide.accepts("https://a.io/docs")
         assert scope.accepts("https://a.io/")
         assert not SiteScope("https://b.io/", skip=["https://b.io/*"]).accepts("https://b.io/")
+
+    def test_a_section_rule_covers_only_its_own_host_folder(self):
+        # The tree has a folder per host as written, www. included: removing
+        # the www.a.io folder must leave the a.io folder's pages alone.
+        www_removed = SiteScope("https://a.io/", skip=["https://www.a.io/*", "https://www.a.io/blog/*"])
+        bare_removed = SiteScope("https://a.io/", skip=["https://a.io/docs/*"])
+
+        assert not www_removed.accepts("https://www.a.io/guide")
+        assert not www_removed.accepts("https://www.a.io/")
+        assert www_removed.accepts("https://a.io/guide")
+        assert www_removed.accepts("https://a.io/blog/post")
+        assert not bare_removed.accepts("https://a.io/docs/x")
+        assert bare_removed.accepts("https://www.a.io/docs/x")
+        # A page rule names the page itself, which www. doesn't change.
+        assert not SiteScope("https://a.io/", skip=["https://www.a.io/p"]).accepts("https://a.io/p")
+
+    @pytest.mark.parametrize(
+        "start, other, own",
+        [
+            ("https://alice.github.io/", "https://mallory.github.io/x", "https://docs.alice.github.io/x"),
+            ("https://foo.vercel.app/", "https://bar.vercel.app/x", "https://preview.foo.vercel.app/x"),
+            ("https://myapp.herokuapp.com/", "https://evil.herokuapp.com/x", "https://api.myapp.herokuapp.com/x"),
+        ],
+    )
+    def test_subdomains_never_cross_a_shared_hosting_suffix(self, start, other, own):
+        # github.io and friends are public suffixes too (the private part of
+        # the list): each tenant is its own registered domain.
+        scope = SiteScope(start, include_subdomains=True)
+
+        assert not scope.accepts(other)
+        assert scope.accepts(own)
+
+    def test_the_suffix_list_is_read_offline(self):
+        from docsgpt.parser.remote import website_loader
+
+        with patch("requests.Session.send", side_effect=AssertionError("no network")):
+            assert website_loader._registered_domain("a.b.github.io") == "b.github.io"
 
 
 class TestDiscoverSitemaps:
@@ -304,6 +341,22 @@ class TestWebsiteLoaderSites:
         assert sources(docs) == ["https://x.io/docs/a"]
         assert "https://x.io/" in fake.fetched
 
+    def test_an_out_of_scope_start_page_does_not_use_up_the_page_limit(self, web):
+        fake = web({
+            "https://x.io/": page("Home", links=["/docs/a", "/docs/b"]),
+            "https://x.io/docs/a": page("A"),
+            "https://x.io/docs/b": page("B"),
+        })
+        loader = WebsiteLoader()
+        docs = loader.load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "discovery": "links", "path_prefix": "/docs", "max_pages": 1},
+        ]})
+
+        assert sources(docs) == ["https://x.io/docs/a"]
+        assert loader.report["sites"][0]["limit_reached"] is True
+        # The start page is still a fetch.
+        assert fake.fetched[0] == "https://x.io/"
+
     def test_a_skipped_start_page_is_not_reimported(self, web):
         web({
             "https://x.io/": page("Home", links=["/a"]),
@@ -455,12 +508,30 @@ class TestParseWebsiteConfig:
         with pytest.raises(ValueError):
             parse_website_config({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "http://[x"}]})
 
-    def test_an_address_without_a_scheme_is_accepted_as_written(self):
+    def test_an_address_without_a_scheme_gets_https(self):
         from docsgpt.parser.remote.website_loader import parse_website_config
 
-        config = parse_website_config({"entries": [{"url": "x.io/docs", "mode": "page"}]})
+        config = parse_website_config({
+            "entries": [
+                {"url": "x.io/docs", "mode": "page"},
+                {"url": " y.io ", "mode": "site", "sitemap_url": "y.io/sitemap.xml"},
+                {"url": "http://z.io/", "mode": "page"},
+            ],
+            "skip": ["y.io/old", "y.io/blog/*", "https://y.io/a"],
+        })
 
-        assert config["entries"] == [{"url": "x.io/docs", "mode": "page"}]
+        assert config["entries"][0] == {"url": "https://x.io/docs", "mode": "page"}
+        assert config["entries"][1]["url"] == "https://y.io"
+        assert config["entries"][1]["sitemap_url"] == "https://y.io/sitemap.xml"
+        assert config["entries"][2]["url"] == "http://z.io/"
+        assert config["skip"] == ["https://y.io/old", "https://y.io/blog/*", "https://y.io/a"]
+
+    def test_a_stored_scheme_less_site_still_has_a_host(self, web):
+        web({"https://x.io/docs": page("Docs", links=["/docs/a"]), "https://x.io/docs/a": page("A")})
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": "x.io/docs", "mode": "site", "discovery": "links"}]})
+
+        assert sorted(sources(docs)) == ["https://x.io/docs", "https://x.io/docs/a"]
 
     def test_caps_sites_entries_and_skip_rules_on_write(self):
         from docsgpt.parser.remote import website_loader

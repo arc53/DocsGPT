@@ -64,11 +64,14 @@ class CrawlerLoader(BaseRemote):
         # page); only its content is dropped.
         seed_key = normalize_page_url(url)
         keep_seed = self.accept is None or self.accept(url)
+        # Fetches charged to the limit: every one but a start page that isn't
+        # kept (the fetch budget is still charged for it).
+        charged = 0
 
         while urls_to_visit:
             # Checked before each fetch, so failed and non-page fetches count
             # toward the limit too instead of letting the crawl run past it.
-            if self.limit is not None and len(visited_urls) >= self.limit:
+            if self.limit is not None and charged >= self.limit:
                 self.limit_reached = any(normalize_page_url(u) not in visited_urls for u in urls_to_visit)
                 break
             current_url = urls_to_visit.pop(0)
@@ -79,6 +82,8 @@ class CrawlerLoader(BaseRemote):
                 self.limit_reached = True
                 break
             visited_urls.add(page_key)
+            if keep_seed or page_key != seed_key:
+                charged += 1
 
             try:
                 # Capped at the page size gate: the links come from the same
