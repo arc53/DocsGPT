@@ -219,6 +219,47 @@ class TestPageDocument:
         assert doc.extra_info["title"] == "Example docs"
         assert doc.extra_info["file_path"]
 
+    @pytest.mark.parametrize("codec", ["iso-8859-2", "shift_jis"])
+    def test_html_uses_the_header_charset_when_the_page_has_no_meta(self, codec):
+        text = {"iso-8859-2": "Zażółć gęślą jaźń", "shift_jis": "設定ガイド"}[codec]
+        html = (
+            f"<html><head><title>{text}</title></head><body><main><h1>{text}</h1>"
+            f"<p>{text} is the guide to the product.</p></main></body></html>"
+        ).encode(codec)
+
+        doc = page_document(html, f"text/html; charset={codec}", URL)
+
+        assert doc.extra_info["title"] == text
+        assert f"{text} is the guide" in doc.text
+
+    def test_the_header_charset_wins_over_the_meta_tag(self):
+        text = "Résumé — “quoted” €5"
+        html = (
+            f"<html><head><meta charset='iso-8859-1'><title>{text}</title></head>"
+            f"<body><main><p>{text} and more words here.</p></main></body></html>"
+        ).encode("utf-8")
+
+        doc = page_document(html, 'text/html; charset="UTF-8"', URL)
+
+        assert doc.extra_info["title"] == text
+
+    def test_a_byte_order_mark_wins_over_the_header_charset(self):
+        html = "﻿<html><head><title>Café crème</title></head><body><main><p>Body.</p></main></body></html>"
+
+        doc = page_document(html.encode("utf-8"), "text/html; charset=iso-8859-1", URL)
+
+        assert doc.extra_info["title"] == "Café crème"
+
+    def test_an_unknown_header_charset_falls_back_to_the_page(self):
+        html = (
+            "<html><head><meta charset='windows-1252'><title>Caf\xe9</title></head>"
+            f"<body><main>{ARTICLE}</main></body></html>"
+        ).encode("cp1252")
+
+        doc = page_document(html, "text/html; charset=x-bogus", URL)
+
+        assert doc.extra_info["title"] == "Café"
+
     def test_plain_text_uses_the_declared_charset(self):
         doc = page_document("Grüße aus Köln".encode("latin-1"), "text/plain; charset=latin-1", URL)
 

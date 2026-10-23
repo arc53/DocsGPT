@@ -349,3 +349,31 @@ def test_the_queue_of_pages_to_visit_is_capped(mock_fetch, mock_validate_url):
     # Five pages may queue ten links; the rest are dropped, not held.
     assert len(considered) <= 1 + 10
     assert crawler.limit_reached is True
+
+
+class _BytesResponse:
+    """A fetched response with raw bytes and, for a redirect, the address it landed on."""
+
+    def __init__(self, content: bytes, content_type: str = "text/html", url: str = "") -> None:
+        self.content = content
+        self.headers = {"Content-Type": content_type}
+        self.url = url
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_links_are_read_in_the_header_charset(mock_fetch, mock_validate_url):
+    # No <meta charset>: only the Content-Type says the bytes are ISO-8859-2.
+    home = "<html><body><p>Start</p><p><a href='/zażółć'>Zażółć</a></p></body></html>".encode("iso-8859-2")
+    pages = {
+        "http://example.com": _BytesResponse(home, "text/html; charset=iso-8859-2"),
+        "http://example.com/zażółć": _BytesResponse(b"<html><body>Leaf</body></html>"),
+    }
+    mock_fetch.side_effect = lambda url, *_, **__: pages[url]
+
+    result = CrawlerLoader(limit=5).load_data("http://example.com")
+
+    assert [doc.extra_info["source"] for doc in result] == ["http://example.com", "http://example.com/zażółć"]

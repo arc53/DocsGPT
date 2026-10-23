@@ -1,11 +1,19 @@
 import logging
 from collections import deque
 from typing import Callable, List, Optional, Union
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, is_html, page_document, page_key
+from docsgpt.parser.remote.page_content import (
+    FetchBudget,
+    fetch_page,
+    final_url,
+    header_charset,
+    html_soup,
+    is_html,
+    page_document,
+    page_key,
+)
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 
@@ -131,7 +139,9 @@ class CrawlerLoader(BaseRemote):
                 if not is_html(content_type):
                     # Plain text or Markdown: kept, but its "links" are text.
                     continue
-                soup = BeautifulSoup(body, "html.parser")
+                # The header's charset, as for the page text: a link's path
+                # read in the wrong one is a different address.
+                soup = html_soup(body, header_charset(content_type))
             except Exception as e:
                 logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)
                 continue

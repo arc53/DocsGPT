@@ -12,6 +12,7 @@ lower. ``keep_links`` keeps them for links inside sentences only; menus and
 lists of bare links never carry them.
 """
 
+import codecs
 import logging
 import re
 from dataclasses import dataclass
@@ -406,7 +407,9 @@ def _first_heading(root: Tag) -> Optional[str]:
     return text or None
 
 
-def extract_page(html: Union[str, bytes], url: str, keep_links: bool = False) -> PageContent:
+def extract_page(
+    html: Union[str, bytes], url: str, keep_links: bool = False, encoding: Optional[str] = None,
+) -> PageContent:
     """Extract a page's main content as Markdown.
 
     Args:
@@ -415,6 +418,8 @@ def extract_page(html: Union[str, bytes], url: str, keep_links: bool = False) ->
             wrongly as text).
         url: The page's address, for resolving relative links.
         keep_links: Keep the URL of links that sit inside a sentence.
+        encoding: The charset the HTTP ``Content-Type`` declares
+            (``header_charset``); it wins over a ``<meta>`` tag, as in browsers.
 
     Returns:
         The Markdown, the ``<title>`` (else the first heading) and the
@@ -423,7 +428,7 @@ def extract_page(html: Union[str, bytes], url: str, keep_links: bool = False) ->
     """
     if isinstance(html, bytes):
         html = cap_markup_bytes(html, int(settings.MARKUP_MAX_BYTES), url)
-    soup = BeautifulSoup(html, "html.parser")
+    soup = html_soup(html, encoding)
     title = soup.title.get_text(strip=True) if soup.title else ""
     language = (soup.html.get("lang") if soup.html else None) or None
     root = _pick_root(soup)
@@ -500,6 +505,46 @@ def _is_plain_text(content_type: Optional[str], explicit: bool) -> bool:
     return explicit and (media == "application/json" or media.endswith("+json"))
 
 
+_BOMS = (codecs.BOM_UTF8, codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
+
+
+def header_charset(content_type: Optional[str]) -> Optional[str]:
+    """The charset a ``Content-Type`` header declares, when Python knows it.
+
+    Args:
+        content_type: The response's ``Content-Type``.
+
+    Returns:
+        The charset label as written, or ``None`` when there is none or it
+        names no codec.
+    """
+    match = re.search(r"charset\s*=\s*[\"']?([\w.:-]+)", content_type or "", re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        codecs.lookup(match.group(1))
+    except LookupError:
+        return None
+    return match.group(1)
+
+
+def html_soup(html: Union[str, bytes], encoding: Optional[str] = None) -> BeautifulSoup:
+    """Parse a page, decoding bytes by the header's charset when it gives one.
+
+    Args:
+        html: The page.
+        encoding: The ``Content-Type`` charset (``header_charset``); ``None``
+            leaves BeautifulSoup to read the page's ``<meta>`` or guess. A
+            byte-order mark wins over it, as in browsers.
+
+    Returns:
+        The parsed page.
+    """
+    if isinstance(html, bytes) and encoding and not html.startswith(_BOMS):
+        return BeautifulSoup(html, "html.parser", from_encoding=encoding)
+    return BeautifulSoup(html, "html.parser")
+
+
 def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str) -> str:
     """Size-cap and decode a plain-text body by its declared charset (UTF-8 otherwise).
 
@@ -514,11 +559,7 @@ def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str)
     if isinstance(body, str):
         body = body.encode("utf-8")
     body = cap_markup_bytes(body, int(settings.MARKUP_MAX_BYTES), url)
-    match = re.search(r"charset\s*=\s*\"?([\w.:-]+)", content_type or "", re.IGNORECASE)
-    try:
-        return body.decode(match.group(1) if match else "utf-8", errors="replace")
-    except LookupError:
-        return body.decode("utf-8", errors="replace")
+    return body.decode(header_charset(content_type) or "utf-8", errors="replace")
 
 
 def page_document(
@@ -560,7 +601,7 @@ def page_document(
             metadata["title"] = title
         metadata["file_path"] = url_to_virtual_path(url, include_host)
         return Document(text, extra_info=metadata)
-    page = extract_page(body, url, keep_links=keep_links)
+    page = extract_page(body, url, keep_links=keep_links, encoding=header_charset(content_type))
     if not page.text.strip():
         logger.info(f"Skipping {url}: no text")
         return None
