@@ -487,8 +487,16 @@ class FetchBudget:
         self.remaining -= 1
         return True
 
-# Site chrome: never the page's content.
-_CHROME_TAGS = ["script", "style", "svg", "iframe", "nav", "footer"]
+# Site chrome: never the page's content. Headers and footers go only at page
+# level (see ``_strip_chrome``).
+_CHROME_TAGS = ["script", "style", "svg", "iframe", "nav"]
+# What keeps a footer: an article's byline or a quote's attribution is content.
+_FOOTER_KEEPERS = ("article", "main", "blockquote")
+# Elements whose adjacent links stay on their line, a space between them: a
+# list can't sit in a heading or a table cell.
+_ONE_LINE_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6", "td", "th")
+# Code: its links are left exactly as written.
+_CODE_TAGS = ("pre", "code")
 # Controls and hidden markup: removed too, but a page may render its content
 # inside one (a whole-page <form>, a JS app's <noscript> or <template>), so
 # the near-empty guard measures the page before these go.
@@ -729,6 +737,9 @@ def _is_link_list(total: int, linked: int) -> bool:
 def _strip_chrome(root: Tag) -> None:
     """Remove site chrome in place: scripts, menus, page headers and footers, link-list asides, permalinks.
 
+    A footer inside an article, ``<main>`` or a quote (its byline or
+    attribution) stays, as an article's header does.
+
     Controls (``_CONTROL_TAGS``) are left for ``_strip_controls``.
     """
     for tag in root.find_all(_CHROME_TAGS):
@@ -741,6 +752,10 @@ def _strip_chrome(root: Tag) -> None:
     page_headers = [tag for tag in root.find_all("header") if not _has_ancestor(tag, ("article", "main"), in_article)]
     # Innermost first, so no header is removed after the one around it.
     for tag in reversed(page_headers):
+        tag.decompose()
+    in_content: Dict[int, bool] = {}
+    page_footers = [tag for tag in root.find_all("footer") if not _has_ancestor(tag, _FOOTER_KEEPERS, in_content)]
+    for tag in reversed(page_footers):
         tag.decompose()
     complementary = {id(tag) for tag in root.select("[role=complementary]")}
     asides = [tag for tag in root.find_all(True) if tag.name == "aside" or id(tag) in complementary]
@@ -806,10 +821,13 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
     With no text between them, markdownify glues their labels into one word
     ("QuickstartConcepts"). Links inside running text ("Install with pip
     conda or from source") stay in their sentence, a space put between any
-    that touch.
+    that touch; so do links in a heading or table cell, where a list can't
+    go. Links in code are left as written.
     """
     # Measured once up front: moving links into a list changes no element's text.
     measures = _measure_text(root)
+    in_code: Dict[int, bool] = {}
+    in_line: Dict[int, bool] = {}
     for parent in [root, *root.find_all(True)]:
         run = []
         runs = []
@@ -824,7 +842,12 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
                 run = []
         if len(run) > 1:
             runs.append(run)
-        if runs and _holds_running_text(parent, measures):
+        if not runs:
+            continue
+        if parent.name in _CODE_TAGS or _has_ancestor(parent, _CODE_TAGS, in_code):
+            continue
+        one_line = parent.name in _ONE_LINE_TAGS or _has_ancestor(parent, _ONE_LINE_TAGS, in_line)
+        if one_line or _holds_running_text(parent, measures):
             for links in runs:
                 for link in links[1:]:
                     if getattr(link.previous_sibling, "name", None) == "a":

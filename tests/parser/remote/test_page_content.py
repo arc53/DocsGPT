@@ -135,6 +135,36 @@ class TestMainContent:
 
         assert "See also Alpha Beta" in page.text
 
+    def test_adjacent_links_in_a_heading_or_table_cell_stay_on_their_line(self):
+        body = (
+            f"<main>{ARTICLE}<h2><a href='/a'>Part</a><a href='/b'>One</a></h2><p>Body text paragraph.</p>"
+            "<table><tr><th>Name</th><th>Links</th></tr>"
+            "<tr><td>Foo</td><td><a href='/d'>Docs</a> <a href='/api'>API</a></td></tr></table></main>"
+        )
+        page = extract_page(_page(body), URL)
+
+        assert "## Part One" in page.text
+        assert "| Foo | Docs API |" in page.text
+
+    def test_adjacent_links_in_code_are_kept_as_written(self):
+        body = f"<main>{ARTICLE}<p>Code:</p><pre><a href='/x'>foo</a><a href='/y'>bar</a>()</pre></main>"
+        page = extract_page(_page(body), URL)
+
+        assert "foobar()" in page.text
+
+    def test_a_quote_or_article_footer_is_content_but_the_page_footer_is_not(self):
+        body = (
+            "<div><article><p>Article text that is long enough to stand as the content here.</p>"
+            "<footer>Posted by Ada</footer></article><article><p>A second post.</p></article>"
+            "<blockquote><p>Simplicity is prerequisite for reliability.</p><footer>Edsger Dijkstra</footer>"
+            f"</blockquote></div>{FOOTER}"
+        )
+        page = extract_page(_page(body), URL)
+
+        assert "Edsger Dijkstra" in page.text
+        assert "Posted by Ada" in page.text
+        assert "Copyright" not in page.text
+
     def test_a_short_article_beside_a_long_sidebar_keeps_its_extract(self):
         # A docs page whose sidebar out-weighs the article: stripping the menu
         # is not the extractor eating the content.
