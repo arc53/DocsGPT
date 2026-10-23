@@ -12,7 +12,7 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document, page_key
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError
@@ -81,6 +81,9 @@ class SitemapLoader(BaseRemote):
         self.budget = budget
         # Whether the last walk found more pages than the limit took.
         self.limit_reached = False
+        # page_key of every page URL the current walk collected, so
+        # duplicates and variants (``/a``, ``/a/``, ``/a#x``) count once.
+        self._collected: Set[str] = set()
 
     def load_data(self, inputs: Union[str, List[str]]) -> List[Document]:
         """Walk a sitemap and load the pages it lists.
@@ -120,10 +123,12 @@ class SitemapLoader(BaseRemote):
             sitemap_urls: Sitemap or sitemap-index URLs.
 
         Returns:
-            Accepted page URLs, in sitemap order, at most ``limit`` of them.
+            Accepted page URLs, in sitemap order, at most ``limit`` of them,
+            each page once (by ``page_key``, across all the sitemaps).
             ``limit_reached`` says whether the sitemaps list more.
         """
         visited: Set[str] = set()
+        self._collected = set()
         urls: List[str] = []
         # One URL past the limit tells "exactly the limit" from "more left".
         wanted = None if self.limit is None else self.limit + 1
@@ -149,9 +154,17 @@ class SitemapLoader(BaseRemote):
         include_host = spans_multiple_hosts(urls)
         documents = []
         processed_urls = 0  # Counter for processed URLs
+        loaded = set()
         for url in urls:
             if self.limit is not None and processed_urls >= self.limit:
                 break  # Stop processing if the limit is reached
+            try:
+                key = page_key(url)
+            except ValueError:
+                key = url
+            if key in loaded:
+                continue
+            loaded.add(key)
 
             try:
                 url = validate_url(url)
@@ -234,7 +247,9 @@ class SitemapLoader(BaseRemote):
         budget = self.limit if budget is None else budget
         if budget is not None and budget <= 0:
             return []
-        visited = set() if visited is None else visited
+        if visited is None:
+            visited = set()
+            self._collected = set()
         key = sitemap_url.strip()
         if key in visited:
             logger.warning(f"Skipping already-visited sitemap: {sitemap_url}")
@@ -314,7 +329,9 @@ class SitemapLoader(BaseRemote):
             was allowed to follow.
         """
         budget = self.limit if budget is None else budget
-        visited = set() if visited is None else visited
+        if visited is None:
+            visited = set()
+            self._collected = set()
         try:
             # Remove namespaces
             text = re.sub(' xmlns="[^"]+"', '', sitemap_content.decode('utf-8'), count=1)
@@ -333,8 +350,13 @@ class SitemapLoader(BaseRemote):
             if not loc.text or not loc.text.strip():
                 continue
             url = loc.text.strip()
-            if self.accept is not None and not self.accept(url):
+            try:
+                key = page_key(url)
+            except ValueError:
                 continue
+            if key in self._collected or (self.accept is not None and not self.accept(url)):
+                continue
+            self._collected.add(key)
             urls.append(url)
 
         # Check for nested sitemaps

@@ -587,8 +587,53 @@ class TestWebsiteLoaderLenientRead:
             fake_settings.WEB_DEFAULT_PAGES = 2
             docs = loader.load_data({"entries": [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]})
 
-        # Page entries are fetched as stored; the lowered cap only limits sites.
-        assert len(docs) == 3
+        # The stored config still reads, but the cap holds: page entries are
+        # taken in order and the cut is reported.
+        assert sources(docs) == ["https://x.io/0", "https://x.io/1"]
+        assert loader.report["pages"] == 2
+        assert loader.report["limit_reached"] is True
+
+    def test_a_load_within_the_cap_is_not_reported_as_cut(self, web):
+        web({"https://x.io/a": page("A")})
+        loader = WebsiteLoader()
+        loader.load_data({"entries": [{"url": "https://x.io/a", "mode": "page"}]})
+
+        assert loader.report["limit_reached"] is False
+
+
+class TestWebsiteLoaderDedupe:
+    def test_sitemap_duplicates_and_variants_do_not_use_up_the_limit(self, web):
+        fake = web({
+            "https://x.io/sitemap.xml": urlset(
+                "https://x.io/p0", "https://x.io/p0", "https://x.io/p0/", "https://x.io/p1",
+                "https://x.io/p1#x", "https://www.x.io/p1", "https://x.io/p2", "https://x.io/p3",
+            ),
+            **{f"https://x.io/p{i}": page(f"P{i}") for i in range(4)},
+        })
+        loader = WebsiteLoader()
+        docs = loader.load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/sitemap.xml", "max_pages": 4},
+        ]})
+
+        assert sources(docs) == [f"https://x.io/p{i}" for i in range(4)]
+        assert loader.report["sites"][0]["limit_reached"] is False
+        assert [u for u in fake.fetched if "/p" in u] == [f"https://x.io/p{i}" for i in range(4)]
+
+    def test_a_site_reports_only_the_pages_it_added(self, web):
+        web({
+            "https://x.io/sitemap.xml": urlset("https://x.io/a", "https://x.io/b"),
+            "https://x.io/a": page("A"),
+            "https://x.io/b": page("B"),
+        })
+        loader = WebsiteLoader()
+        docs = loader.load_data({"entries": [
+            {"url": "https://x.io/a", "mode": "page"},
+            {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/sitemap.xml"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/a", "https://x.io/b"]
+        assert loader.report["pages"] == 2
+        assert loader.report["sites"][0]["pages"] == 1
 
 
 class TestPlainTextPages:

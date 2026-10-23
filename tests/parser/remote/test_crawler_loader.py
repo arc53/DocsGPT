@@ -275,3 +275,77 @@ def test_links_that_only_mention_the_site_are_not_crawled(mock_fetch, mock_valid
     assert sorted(requested) == ["http://example.com", "http://example.com/docs"]
     sources = {doc.extra_info.get("source") for doc in result}
     assert sources == {"http://example.com", "http://example.com/docs"}
+
+
+def _site(pages):
+    """A ``fetch_page`` stand-in answering from a URL -> HTML map; others raise."""
+
+    def fetch(url, *_, **__):
+        if url not in pages:
+            raise AssertionError(f"Unexpected request for URL: {url}")
+        return DummyResponse(pages[url])
+
+    return fetch
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_a_capped_crawl_takes_pages_breadth_first_in_link_order(mock_fetch, mock_validate_url):
+    links = "".join(f"<p><a href='/p{i}'>P{i}</a></p>" for i in range(12))
+    pages = {"http://example.com": f"<html><body>{links}</body></html>"}
+    pages.update({
+        f"http://example.com/p{i}": f"<html><body><a href='/deep{i}'>Page {i}</a></body></html>" for i in range(12)
+    })
+    mock_fetch.side_effect = _site(pages)
+
+    crawler = CrawlerLoader(limit=4)
+    result = crawler.load_data("http://example.com")
+
+    assert [doc.extra_info["source"] for doc in result] == [
+        "http://example.com", "http://example.com/p0", "http://example.com/p1", "http://example.com/p2",
+    ]
+    assert crawler.limit_reached is True
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_slash_www_and_scheme_variants_are_one_page(mock_fetch, mock_validate_url):
+    variants = ["/a", "/a/", "http://www.example.com/a", "https://example.com/a/", "/b"]
+    anchors = "".join(f"<p><a href='{href}'>link {i}</a></p>" for i, href in enumerate(variants))
+    mock_fetch.side_effect = _site({
+        "http://example.com": f"<html><body>{anchors}</body></html>",
+        "http://example.com/a": "<html><body>A</body></html>",
+        "http://example.com/b": "<html><body>B</body></html>",
+    })
+
+    result = CrawlerLoader(limit=3, accept=lambda url: True).load_data("http://example.com")
+
+    assert [doc.extra_info["source"] for doc in result] == [
+        "http://example.com", "http://example.com/a", "http://example.com/b",
+    ]
+    assert mock_fetch.call_count == 3
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_the_queue_of_pages_to_visit_is_capped(mock_fetch, mock_validate_url):
+    from docsgpt.parser.remote import crawler_loader
+
+    links = "".join(f"<a href='/p{i}'>P{i}</a> " for i in range(500))
+    pages = {"http://example.com": f"<html><body><p>{links}</p></body></html>"}
+    pages.update({f"http://example.com/p{i}": "<html><body>Leaf</body></html>" for i in range(500)})
+    mock_fetch.side_effect = _site(pages)
+
+    considered = []
+
+    def accept(url):
+        considered.append(url)
+        return True
+
+    with patch.object(crawler_loader, "_QUEUE_PER_PAGE", 2):
+        crawler = CrawlerLoader(limit=5, accept=accept)
+        crawler.load_data("http://example.com")
+
+    # Five pages may queue ten links; the rest are dropped, not held.
+    assert len(considered) <= 1 + 10
+    assert crawler.limit_reached is True

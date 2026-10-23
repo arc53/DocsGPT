@@ -36,7 +36,10 @@ from docsgpt.parser.remote.base import (
     url_to_virtual_path,
 )
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page
+# page_key lives with the fetch helpers so every web loader keys pages alike;
+# it stays importable from here.
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_key
+from docsgpt.parser.remote.page_content import bare_host as _bare_host
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.schema.base import Document
@@ -93,12 +96,6 @@ def fetch_budget_for(cap: int) -> int:
 _domains = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, include_psl_private_domains=True)
 
 
-def _bare_host(host: Optional[str]) -> str:
-    """A host compared case-insensitively, with ``www.`` treated as the bare host."""
-    host = (host or "").lower().rstrip(".")
-    return host[4:] if host.startswith("www.") else host
-
-
 def _section_key(url: str) -> str:
     """A ``page_key`` whose host is kept as written (``www.`` included), for section rules.
 
@@ -125,23 +122,6 @@ def _registered_domain(host: str) -> str:
     if not extracted.domain or not extracted.suffix:
         return ""
     return f"{extracted.domain}.{extracted.suffix}"
-
-
-def page_key(url: str) -> str:
-    """One key per page: scheme, ``www.``, fragment, query order and a trailing slash don't count.
-
-    Args:
-        url: A page URL.
-
-    Returns:
-        ``host/path`` (plus ``?query``), for comparing pages and skip rules.
-
-    Raises:
-        ValueError: If the URL cannot be parsed.
-    """
-    parts = urlsplit(normalize_page_url(url.strip()))
-    key = f"{_bare_host(parts.hostname)}{parts.path.rstrip('/')}"
-    return f"{key}?{parts.query}" if parts.query else key
 
 
 def _in_section(key: str, section: str) -> bool:
@@ -467,8 +447,9 @@ class WebsiteLoader(BaseRemote):
 
     def __init__(self) -> None:
         """Start with an empty report."""
-        # What the last load did, per site: how pages were found and whether
-        # the page limit cut it short. Read by the worker for its notice.
+        # What the last load did: its page count, per site how pages were
+        # found and whether the page limit cut it short, and whether the limit
+        # left anything out at all. Read by the worker for its notice.
         self.report: Dict[str, Any] = {}
 
     def load_data(self, inputs: Union[str, Dict[str, Any]]) -> List[Document]:
@@ -480,7 +461,9 @@ class WebsiteLoader(BaseRemote):
         Returns:
             One document per page: the pages first, then each site's, in entry
             order. ``WEB_MAX_PAGES`` caps the total, so sites get what the
-            pages leave. Every fetch, discovery included, is charged to one
+            pages leave; page entries past it (a stored config read after the
+            cap was lowered) are left out in entry order, and ``report``
+            says so. Every fetch, discovery included, is charged to one
             budget (``fetch_budget_for``), so failed or non-HTML fetches can't
             multiply across sites.
         """
@@ -493,8 +476,12 @@ class WebsiteLoader(BaseRemote):
         seen = set()
         site_reports = []
 
+        # Page entries the cap left out (a stored config past a lowered cap).
+        pages_cut = 0
+
         entries = sorted(config["entries"], key=lambda entry: entry["mode"] != "page")
         for entry in entries:
+            report = None
             if entry["mode"] == "page":
                 try:
                     key = page_key(entry["url"])
@@ -502,6 +489,9 @@ class WebsiteLoader(BaseRemote):
                     logger.warning(f"Skipping unparseable page {entry['url']!r}")
                     continue
                 if key in seen:
+                    continue
+                if len(documents) >= cap:
+                    pages_cut += 1
                     continue
                 docs = WebLoader(keep_links=keep_links, budget=fetches).load_data([entry["url"]])
             else:
@@ -513,19 +503,33 @@ class WebsiteLoader(BaseRemote):
                     continue
                 docs, report = self._load_site(entry, config["skip"], keep_links, pages_left, fetches)
                 site_reports.append(report)
+            added = 0
             for doc in docs:
                 key = page_key(doc.extra_info["source"])
                 if key in seen:
                     continue
                 seen.add(key)
                 documents.append(doc)
+                added += 1
+            if report is not None:
+                # A page already loaded (by a page entry or an earlier site)
+                # isn't this site's.
+                report["pages"] = added
 
+        if pages_cut:
+            logger.info(f"Website load: {pages_cut} page entries left out at the {cap}-page cap")
         # Name pages after the whole load, so one host stays path-only and
         # several hosts get a folder each.
         include_host = spans_multiple_hosts([d.extra_info["source"] for d in documents])
         for doc in documents:
             doc.extra_info["file_path"] = url_to_virtual_path(doc.extra_info["source"], include_host)
-        self.report = {"pages": len(documents), "sites": site_reports}
+        self.report = {
+            "pages": len(documents),
+            "sites": site_reports,
+            # Whether the page limit left anything out: a page entry past the
+            # cap, or a site cut short.
+            "limit_reached": bool(pages_cut) or any(site["limit_reached"] for site in site_reports),
+        }
         return dedupe_virtual_paths(documents)
 
     @staticmethod

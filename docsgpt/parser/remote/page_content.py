@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Dict, Optional, Union
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlsplit
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -24,7 +24,7 @@ from markdownify import MarkdownConverter
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.html_parser import MARKDOWNIFY_OPTIONS, cap_markup_bytes, soup_to_markdown
-from docsgpt.parser.remote.base import url_to_virtual_path
+from docsgpt.parser.remote.base import normalize_page_url, url_to_virtual_path
 from docsgpt.parser.schema.base import Document
 from docsgpt.security.safe_url import pinned_fetch_bytes
 
@@ -89,6 +89,29 @@ def fetch_page(
     # response's content, so callers read ``content`` and ``text`` as usual.
     response._content = body
     return response
+
+
+def bare_host(host: Optional[str]) -> str:
+    """A host compared case-insensitively, with ``www.`` treated as the bare host."""
+    host = (host or "").lower().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
+
+
+def page_key(url: str) -> str:
+    """One key per page: scheme, ``www.``, fragment, query order and a trailing slash don't count.
+
+    Args:
+        url: A page URL.
+
+    Returns:
+        ``host/path`` (plus ``?query``), for comparing pages and skip rules.
+
+    Raises:
+        ValueError: If the URL cannot be parsed.
+    """
+    parts = urlsplit(normalize_page_url(url.strip()))
+    key = f"{bare_host(parts.hostname)}{parts.path.rstrip('/')}"
+    return f"{key}?{parts.query}" if parts.query else key
 
 
 class FetchBudget:

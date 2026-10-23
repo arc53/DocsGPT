@@ -1,12 +1,18 @@
 import logging
+from collections import deque
 from typing import Callable, List, Optional, Union
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
-from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, normalize_page_url, url_to_virtual_path
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, is_html, page_document
+from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, is_html, page_document, page_key
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
+
+# Links a crawl holds waiting, per page of its limit (or in all, with no
+# limit). A crawl of N pages fetches at most N of them, so more is dead weight.
+_QUEUE_PER_PAGE = 10
+_MAX_QUEUE = 10_000
 
 
 class CrawlerLoader(BaseRemote):
@@ -52,37 +58,39 @@ class CrawlerLoader(BaseRemote):
             logging.error(f"URL validation failed: {e}")
             return []
 
-        # Keyed by normalize_page_url, so fragment and query-order variants of
-        # one page are fetched once.
-        visited_urls = set()
+        # Breadth-first in link order, so a capped crawl takes the same pages
+        # every time. Keyed by page_key, so fragment, query-order, slash,
+        # www. and scheme variants of one page are fetched once; ``seen``
+        # holds every page queued or fetched.
         start = urlparse(url)
         site = (start.scheme, start.hostname)
-        urls_to_visit = [url]
+        seed_key = page_key(url)
+        seen = {seed_key}
+        queue = deque([url])
+        # Links waiting beyond this are dropped: the crawl can't reach them.
+        max_queue = _QUEUE_PER_PAGE * self.limit if self.limit is not None else _MAX_QUEUE
         loaded_content = []
         # The start page is fetched for its links even when the scope leaves
         # it out (starting at / with Stay under /docs, or a skipped start
         # page); only its content is dropped.
-        seed_key = normalize_page_url(url)
         keep_seed = self.accept is None or self.accept(url)
         # Fetches charged to the limit: every one but a start page that isn't
         # kept (the fetch budget is still charged for it).
         charged = 0
 
-        while urls_to_visit:
+        while queue:
             # Checked before each fetch, so failed and non-page fetches count
             # toward the limit too instead of letting the crawl run past it.
             if self.limit is not None and charged >= self.limit:
-                self.limit_reached = any(normalize_page_url(u) not in visited_urls for u in urls_to_visit)
+                self.limit_reached = True
                 break
-            current_url = urls_to_visit.pop(0)
-            page_key = normalize_page_url(current_url)
-            if page_key in visited_urls:
-                continue
+            current_url = queue.popleft()
+            current_key = page_key(current_url)
             if self.budget is not None and not self.budget.take():
                 self.limit_reached = True
                 break
-            visited_urls.add(page_key)
-            if keep_seed or page_key != seed_key:
+            is_seed = current_key == seed_key
+            if keep_seed or not is_seed:
                 charged += 1
 
             try:
@@ -97,7 +105,7 @@ class CrawlerLoader(BaseRemote):
                     # Not a page (a PDF or image the site links to): no text
                     # to keep and no links to follow.
                     continue
-                if keep_seed or page_key != seed_key:
+                if keep_seed or not is_seed:
                     loaded_content.append(document)
                 if not is_html(content_type):
                     # Plain text or Markdown: kept, but its "links" are text.
@@ -107,16 +115,19 @@ class CrawlerLoader(BaseRemote):
                 logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)
                 continue
 
-            # Parse the HTML content to extract all links. A malformed href
+            # Queue the page's links in document order. A malformed href
             # (``http://[bad``) makes urljoin or the key parse raise; skip it
             # rather than abort the crawl.
-            all_links = []
             for a in soup.find_all('a', href=True):
+                if len(queue) >= max_queue:
+                    break
                 try:
                     link = urljoin(current_url, a['href'])
-                    link_key = normalize_page_url(link)
+                    link_key = page_key(link)
                     parsed_link = urlparse(link)
                 except ValueError:
+                    continue
+                if link_key in seen:
                     continue
                 if self.accept is not None:
                     on_site = self.accept(link)
@@ -124,12 +135,9 @@ class CrawlerLoader(BaseRemote):
                     # Compare the host itself: a substring match also follows
                     # share links and lookalike hosts that contain the site URL.
                     on_site = (parsed_link.scheme, parsed_link.hostname) == site
-                if on_site and link_key not in visited_urls:
-                    all_links.append(link)
-
-            # Add new links to the list of URLs to visit if they haven't been visited yet
-            urls_to_visit.extend(all_links)
-            urls_to_visit = list(set(urls_to_visit))
+                if on_site:
+                    seen.add(link_key)
+                    queue.append(link)
 
         return dedupe_virtual_paths(loaded_content)
 
