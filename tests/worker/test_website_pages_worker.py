@@ -1856,6 +1856,7 @@ class TestAGraphSource:
             "c3": {"page_content": "c", "metadata": {"source": "https://docs.x.io/other"}},
         }
         store.index_to_docstore_id = {0: "c1", 1: "c2", 2: "c3"}
+        store._paired_sidecar = None
         store.storage = MagicMock()
         store.storage.save_file.side_effect = OSError("S3 PutObject failed")
         monkeypatch.setattr(settings, "VECTOR_STORE", "faiss")
