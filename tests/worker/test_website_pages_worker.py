@@ -991,6 +991,114 @@ class TestRedirectedPages:
 
 
 @pytest.mark.unit
+class TestAPageSeveralAddressesLeadTo:
+    """Two page entries that redirect to one page: the leaf keeps both addresses (``requested_urls``)."""
+
+    @pytest.fixture
+    def aliased(self, pg_conn):
+        return SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [
+                {"url": f"https://docs.x.io/{p}", "mode": "page"} for p in ("other", "old-a", "old-b")
+            ]},
+            directory_structure={"other.md": _leaf("https://docs.x.io/other", 1)},
+        )
+
+    def _loader(self, monkeypatch, pipeline, aliases_key):
+        from docsgpt.parser.remote import web_loader
+
+        def load(self, inputs):
+            pipeline["fetch_calls"].append((list(inputs), self.keep_links))
+            extra = {"source": "https://docs.x.io/new", "title": "T", "requested_url": inputs[0]}
+            if aliases_key:
+                extra["requested_urls"] = list(inputs)
+            return [Document("text new", extra_info=extra)]
+
+        monkeypatch.setattr(web_loader.WebLoader, "load_data", load)
+
+    @pytest.mark.parametrize("aliases_key", [True, False])
+    def test_adding_the_second_address_merges_it_into_the_leaf(
+        self, pg_conn, patch_worker_db, task_self, aliased, pipeline, monkeypatch, aliases_key,
+    ):
+        from docsgpt import worker
+
+        self._loader(monkeypatch, pipeline, aliases_key)
+        worker.website_pages_worker(task_self, str(aliased["id"]), USER, "add", urls=["https://docs.x.io/old-a"])
+        worker.website_pages_worker(task_self, str(aliased["id"]), USER, "add", urls=["https://docs.x.io/old-b"])
+
+        tree = _tree(pg_conn, aliased)
+        assert sorted(tree) == ["new.md", "other.md"]
+        assert tree["new.md"]["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
+        assert tree["new.md"]["requested_url"] == "https://docs.x.io/old-a"
+        assert pipeline["store"].texts_for("https://docs.x.io/new") == ["text new"]
+
+    @pytest.mark.parametrize("alias", ["https://docs.x.io/old-a", "https://docs.x.io/old-b"])
+    def test_a_removal_by_any_address_finds_the_page(
+        self, pg_conn, patch_worker_db, task_self, aliased, pipeline, alias,
+    ):
+        from docsgpt import worker
+
+        repo = SourcesRepository(pg_conn)
+        repo.update(str(aliased["id"]), USER, {"directory_structure": {
+            "other.md": _leaf("https://docs.x.io/other", 1),
+            "new.md": {
+                **_leaf("https://docs.x.io/new", 4), "requested_url": "https://docs.x.io/old-a",
+                "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
+            },
+        }})
+        pipeline["store"].seed("new page", "https://docs.x.io/new", "new.md")
+
+        result = worker.website_pages_worker(
+            task_self, str(aliased["id"]), USER, "remove", pages=[{"path": "gone.md", "url": alias}],
+        )
+
+        assert result["pages"] == 1
+        assert list(_tree(pg_conn, aliased)) == ["other.md"]
+        assert pipeline["store"].texts_for("https://docs.x.io/new") == []
+
+    def test_a_removal_item_carrying_every_alias_finds_a_page_stored_under_any(
+        self, pg_conn, patch_worker_db, task_self, aliased, pipeline,
+    ):
+        # A sync since the route ran stored the page as fetched from /old-b, which no longer redirects.
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(aliased["id"]), USER, {"directory_structure": {
+            "other.md": _leaf("https://docs.x.io/other", 1), "old-b.md": _leaf("https://docs.x.io/old-b", 4),
+        }})
+        pipeline["store"].seed("old b", "https://docs.x.io/old-b", "old-b.md")
+
+        worker.website_pages_worker(task_self, str(aliased["id"]), USER, "remove", pages=[{
+            "path": "new.md", "url": "https://docs.x.io/new",
+            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
+        }])
+
+        assert list(_tree(pg_conn, aliased)) == ["other.md"]
+        assert pipeline["store"].texts_for("https://docs.x.io/old-b") == []
+
+    def test_a_refresh_of_a_page_with_several_addresses_keeps_them(
+        self, pg_conn, patch_worker_db, task_self, aliased, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(aliased["id"]), USER, {"directory_structure": {
+            "new.md": {
+                **_leaf("https://docs.x.io/new", 4), "requested_url": "https://docs.x.io/old-a",
+                "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
+            },
+        }})
+        self._loader(monkeypatch, pipeline, True)
+
+        worker.website_pages_worker(
+            task_self, str(aliased["id"]), USER, "refresh", file_path="new.md", url="https://docs.x.io/old-b",
+        )
+
+        assert pipeline["fetch_calls"][-1][0] == ["https://docs.x.io/old-a"]
+        leaf = _tree(pg_conn, aliased)["new.md"]
+        assert leaf["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
+        assert leaf["fetched_at"] != OLD
+
+
+@pytest.mark.unit
 class TestARefreshStaysInScope:
     """A crawled page that now leads outside its site's scope, or to a skipped address, leaves as a sync drops it."""
 

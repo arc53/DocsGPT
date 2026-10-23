@@ -498,6 +498,46 @@ class TestRemoteWorkerWebsite:
         leaf = _json.loads(uploaded[0]["directory_structure"])["new.md"]
         assert leaf["url"] == "https://docs.x.io/new"
         assert leaf["requested_url"] == "https://docs.x.io/old"
+        assert leaf["requested_urls"] == ["https://docs.x.io/old"]
+
+    def test_a_page_several_entries_lead_to_keeps_every_address(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
+    ):
+        # /old-a and /old-b both redirect to /new: removing the page must find both entries.
+        import json as _json
+
+        from docsgpt import worker
+
+        loader = MagicMock(name="website_loader")
+        loader.load_data.return_value = [
+            Document(
+                text="# New\nMoved here.",
+                extra_info={
+                    "source": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old-a",
+                    "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b", "https://docs.x.io/new#x"],
+                    "title": "New", "file_path": "new.md",
+                },
+                doc_id="d1",
+            )
+        ]
+        loader.report = {"pages": 1, "sites": []}
+        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
+        uploaded: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
+        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
+
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        config = {"entries": [{"url": f"https://docs.x.io/{p}", "mode": "page"} for p in ("old-a", "old-b")]}
+        worker.remote_worker(
+            task_self, config, "Docs", "bob", "website",
+            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
+        )
+
+        leaf = _json.loads(uploaded[0]["directory_structure"])["new.md"]
+        # The page's own address (a fragment of it) is not an alias.
+        assert leaf["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
+        assert leaf["requested_url"] == "https://docs.x.io/old-a"
 
     @pytest.mark.parametrize("report, reached", [
         # Page entries cut by the page cap: no site reached its own limit.
