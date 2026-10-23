@@ -18,6 +18,7 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 import connectorsReducer from '../connectors/connectorsSlice';
 import notificationsReducer, {
   sseEventReceived,
+  sseHealthChanged,
 } from '../notifications/notificationsSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
@@ -119,6 +120,8 @@ describe('MessageInput send with a failed attachment', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     store = makeStore();
+    // The event stream is up unless a test takes it down.
+    store.dispatch(sseHealthChanged('healthy'));
     onSubmit = vi.fn<(text: string) => void>();
   });
 
@@ -612,6 +615,73 @@ describe('MessageInput send with a failed attachment', () => {
     const [row] = store.getState().upload.attachments;
     expect(row.status).toBe('failed');
     expect(row.errorMessage).toBe('Could not parse the file');
+  });
+
+  it('completes a stored file the status reports when its event was missed', async () => {
+    vi.useFakeTimers();
+    taskStatus('SUCCESS', { token_count: 12, mime_type: 'application/pdf' });
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('completed');
+    expect(row.token_count).toBe(12);
+  });
+
+  it('asks the status every few seconds while the event stream is down', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    const getTaskStatus = taskStatus('SUCCESS', {
+      token_count: 40,
+      mime_type: 'image/jpeg',
+      metadata: { extraction: { status: 'ok' } },
+    });
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getTaskStatus).toHaveBeenCalledWith('celery-slow', null);
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('completed');
+    expect(row.token_count).toBe(40);
+    expect(row.mimeType).toBe('image/jpeg');
+
+    // Done: no more questions.
+    const calls = getTaskStatus.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getTaskStatus.mock.calls.length).toBe(calls);
+  });
+
+  it('keeps a file a worker is still on alive while the stream is down', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+    });
+    expect(statusOf()).toBe('processing');
+  });
+
+  it('stops asking once the event stream is back', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    const getTaskStatus = taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getTaskStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      store.dispatch(sseHealthChanged('healthy'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getTaskStatus).toHaveBeenCalledTimes(1);
   });
 
   it('gives up on a file no worker took within an hour', async () => {

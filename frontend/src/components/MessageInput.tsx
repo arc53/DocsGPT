@@ -77,6 +77,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_QUEUE_CHECK_MS,
   ATTACHMENT_QUEUE_MAX_CHECKS,
+  ATTACHMENT_STREAM_DOWN_POLL_MS,
   ATTACHMENT_UPLOAD_CONCURRENCY,
   checkAttachmentTask,
   createTaskQueue,
@@ -93,6 +94,7 @@ import {
 import { UserToolType } from '../settings/types';
 import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
 import { showActionToast } from '../notifications/actionToastSlice';
+import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
 import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
 
@@ -502,6 +504,30 @@ export default function MessageInput({
     (clientId: string, attachmentId: string, taskId: string) => {
       let handled = false;
 
+      const complete = (details: {
+        tokenCount?: number;
+        mimeType?: string;
+        extractionStatus?: string;
+      }) => {
+        handled = true;
+        dispatch(
+          updateAttachment({
+            id: clientId,
+            updates: {
+              status: 'completed',
+              progress: 100,
+              ...(details.tokenCount !== undefined
+                ? { token_count: details.tokenCount }
+                : {}),
+              ...(details.mimeType ? { mimeType: details.mimeType } : {}),
+              ...(details.extractionStatus
+                ? { extractionStatus: details.extractionStatus }
+                : {}),
+            },
+          }),
+        );
+      };
+
       const check = () => {
         const state = store.getState();
         const row = state.upload.attachments.find((a) => a.id === clientId);
@@ -515,25 +541,17 @@ export default function MessageInput({
           if (event.type === 'attachment.completed') {
             const payload = (event.payload || {}) as Record<string, unknown>;
             const tokenCount = Number(payload.token_count);
-            handled = true;
-            dispatch(
-              updateAttachment({
-                id: clientId,
-                updates: {
-                  status: 'completed',
-                  progress: 100,
-                  ...(Number.isFinite(tokenCount)
-                    ? { token_count: tokenCount }
-                    : {}),
-                  ...(typeof payload.mime_type === 'string'
-                    ? { mimeType: payload.mime_type }
-                    : {}),
-                  ...(typeof payload.extraction_status === 'string'
-                    ? { extractionStatus: payload.extraction_status }
-                    : {}),
-                },
-              }),
-            );
+            complete({
+              tokenCount: Number.isFinite(tokenCount) ? tokenCount : undefined,
+              mimeType:
+                typeof payload.mime_type === 'string'
+                  ? payload.mime_type
+                  : undefined,
+              extractionStatus:
+                typeof payload.extraction_status === 'string'
+                  ? payload.extraction_status
+                  : undefined,
+            });
             return true;
           }
           if (event.type === 'attachment.failed') {
@@ -564,6 +582,8 @@ export default function MessageInput({
       // file still queued waits on, up to an hour. Once the worker has it,
       // an idle window, not a total cap: a big zip (one task per member) or a
       // slow scan keeps reporting progress, and each report restarts it.
+      // While the event stream is down neither clock can hear the outcome,
+      // so the task status is asked every few seconds instead.
       const activityOf = () =>
         store.getState().upload.attachments.find((a) => a.id === clientId)
           ?.activity ?? 0;
@@ -571,14 +591,19 @@ export default function MessageInput({
       let started = lastActivity > 0;
       let queueChecks = 0;
       let timer: number | undefined;
+      let streamDownPoll: number | undefined;
       let unsubscribe: (() => void) | null = null;
       const arm = (ms: number, onElapsed: () => void) => {
         window.clearTimeout(timer);
         timer = window.setTimeout(onElapsed, ms);
       };
-      const fail = (reason: string, errorMessage?: string) => {
+      const stop = () => {
         window.clearTimeout(timer);
+        window.clearInterval(streamDownPoll);
         unsubscribe?.();
+      };
+      const fail = (reason: string, errorMessage?: string) => {
+        stop();
         if (handled) return;
         handled = true;
         console.warn(`trackAttachment: ${reason}`, clientId, attachmentId);
@@ -599,7 +624,10 @@ export default function MessageInput({
           ? await checkAttachmentTask(taskId, token)
           : ({ state: 'unknown' } as const);
         if (handled || started) return;
-        if (task.state === 'failed') {
+        if (task.state === 'completed') {
+          stop();
+          complete(task);
+        } else if (task.state === 'failed') {
           fail('the parse task failed', task.message);
         } else if (task.state === 'unavailable') {
           fail('no worker is running');
@@ -612,14 +640,50 @@ export default function MessageInput({
           arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
         }
       };
-      if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
-      else arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
-      unsubscribe = store.subscribe(() => {
+      let polling = false;
+      const pollWhileStreamDown = async () => {
+        if (handled || polling) return;
+        polling = true;
+        const task = await checkAttachmentTask(taskId, token);
+        polling = false;
+        if (handled) return;
         if (check()) {
-          window.clearTimeout(timer);
-          unsubscribe?.();
+          stop();
           return;
         }
+        if (task.state === 'completed') {
+          stop();
+          complete(task);
+        } else if (task.state === 'failed') {
+          fail('the parse task failed', task.message);
+        } else if (task.state === 'started') {
+          // Progress events cannot arrive either: a worker still on the
+          // file is the activity that keeps it alive.
+          started = true;
+          arm(ATTACHMENT_IDLE_MS, onIdle);
+        }
+      };
+      const followStreamHealth = () => {
+        const down = !selectPushChannelHealthy(store.getState());
+        if (down && streamDownPoll === undefined && taskId) {
+          streamDownPoll = window.setInterval(
+            () => void pollWhileStreamDown(),
+            ATTACHMENT_STREAM_DOWN_POLL_MS,
+          );
+        } else if (!down && streamDownPoll !== undefined) {
+          window.clearInterval(streamDownPoll);
+          streamDownPoll = undefined;
+        }
+      };
+      if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
+      else arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
+      followStreamHealth();
+      unsubscribe = store.subscribe(() => {
+        if (check()) {
+          stop();
+          return;
+        }
+        followStreamHealth();
         const activity = activityOf();
         if (activity !== lastActivity) {
           lastActivity = activity;
