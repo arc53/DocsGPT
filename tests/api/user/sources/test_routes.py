@@ -1194,6 +1194,19 @@ class TestReingestARemoteSource:
         assert response.status_code == 400 and response.json["code"] == "wiki"
         mocks["sync"].assert_not_called() and mocks["reingest"].assert_not_called()
 
+    def test_a_wiki_with_stored_files_is_refused(self, app, pg_conn):
+        """A wiki converted from an upload keeps its files; re-reading them would replace the wiki's pages."""
+        user = "u-reingest-upload-wiki"
+        src = _seed_source(
+            pg_conn, user, name="Notes", type="local", config={"kind": "wiki"}, file_path=f"inputs/{user}/notes",
+        )
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
+
+        assert response.status_code == 400 and response.json["code"] == "wiki"
+        mocks["reingest"].assert_not_called()
+        mocks["sync"].assert_not_called()
+
     def test_a_source_with_stored_files_still_reingests(self, app, pg_conn):
         user = "u-reingest-local"
         src = _seed_source(pg_conn, user, name="Files", type="local", file_path=f"inputs/{user}/files")

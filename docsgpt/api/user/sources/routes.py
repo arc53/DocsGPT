@@ -615,12 +615,10 @@ def _remote_rebuild(doc: dict, owner: str) -> Optional[Callable[[], Any]] | Resp
 
     Returns:
         A callable that queues the sync and returns its task; a refusal
-        (a wiki, or a connector source whose owner must reconnect); or
-        ``None`` when the source has nothing to sync, so the reingest task
-        runs and reports that.
+        (a connector source whose owner must reconnect); or ``None`` when
+        the source has nothing to sync, so the reingest task runs and
+        reports that.
     """
-    if _is_wiki(doc):
-        return _sync_refusal("A wiki is edited in place and can't be re-ingested.", "wiki")
     source_id = str(doc["id"])
     source_type = doc.get("type") or ""
     if source_type.startswith("connector"):
@@ -712,6 +710,10 @@ class ReingestSource(Resource):
             )
         owner = ra.owner_id
         resolved_source_id = str(doc["id"])
+        # A wiki's pages are edited in place: neither a sync nor re-reading
+        # the files it was converted from may replace them.
+        if _is_wiki(doc):
+            return _sync_refusal("A wiki is edited in place and can't be re-ingested.", "wiki")
         rebuild = None
         if not doc.get("file_path"):
             # Nothing stored to read back: a Website, crawler or connector
