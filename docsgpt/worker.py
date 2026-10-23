@@ -1670,6 +1670,7 @@ def remote_worker(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                actor_id=actor_id,
             )
             assert_index_complete(source_uuid)
         elif operation_mode == "sync":
@@ -1680,6 +1681,7 @@ def remote_worker(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                actor_id=actor_id,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})

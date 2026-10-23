@@ -126,6 +126,32 @@ def test_embed_and_store_documents_progress_band(
     assert currents == sorted(currents)
 
 
+def test_embed_progress_reaches_the_owner_and_the_editor_who_asked(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """A team editor's sync shows its embedding progress on the editor's screen too."""
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_vector_creator.create_vectorstore.return_value = MagicMock()
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(2)]
+
+    with patch("docsgpt.parser.embedding_pipeline.publish_user_event") as publish:
+        embed_and_store_documents(
+            docs, str(tmp_path / "store"), "sid", MagicMock(),
+            user_id="owner", actor_id="editor",
+        )
+        recipients = {c.args[0] for c in publish.call_args_list if c.args[1] == "source.ingest.progress"}
+        assert recipients == {"owner", "editor"}
+
+        publish.reset_mock()
+        embed_and_store_documents(
+            docs, str(tmp_path / "store2"), "sid", MagicMock(),
+            user_id="owner", actor_id="owner",
+        )
+        recipients = [c.args[0] for c in publish.call_args_list if c.args[1] == "source.ingest.progress"]
+        assert set(recipients) == {"owner"}
+        assert len(recipients) == len(set(c.args[2]["current"] for c in publish.call_args_list))
+
+
 @patch("docsgpt.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog
