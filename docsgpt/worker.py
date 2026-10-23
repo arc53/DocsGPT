@@ -1662,34 +1662,6 @@ def _record_website_report(source_id: str, user: str, report: dict, fetched_at: 
     return summary
 
 
-def _stored_source_config(doc_id: Optional[str], user: str) -> Optional[Dict[str, Any]]:
-    """Read a source's stored per-source config.
-
-    Args:
-        doc_id: The source id.
-        user: The source's owner.
-
-    Returns:
-        The ``sources.config`` dict, or ``None`` when the source or its
-        config is missing (the ingest defaults then apply).
-    """
-    if not doc_id:
-        return None
-    try:
-        with db_readonly() as conn:
-            source = SourcesRepository(conn).get_any(str(doc_id), user)
-    except Exception as e:  # noqa: BLE001 - a sync still runs on the defaults
-        logging.warning(f"Could not read the config of source {doc_id}: {e}")
-        return None
-    config = (source or {}).get("config")
-    if isinstance(config, str):
-        try:
-            config = json.loads(config)
-        except ValueError:
-            return None
-    return config or None
-
-
 def _is_wiki_config(config: Any) -> bool:
     """Whether a stored ``sources.config`` marks the source as a wiki.
 
@@ -1716,16 +1688,15 @@ def _read_source_for_sync(doc_id: Optional[str], user: str) -> Tuple[bool, Optio
 
     Returns:
         ``(read, row)``: ``read`` is False when the database couldn't be read
-        (the sync then runs on what it was queued with); ``row`` is ``None``
-        when the source is gone.
+        (the sync then doesn't run); ``row`` is ``None`` when the source is gone.
     """
     if not doc_id:
         return True, None
     try:
         with db_readonly() as conn:
             return True, SourcesRepository(conn).get_any(str(doc_id), user)
-    except Exception as e:  # noqa: BLE001 - a sync still runs on its queued snapshot
-        logging.warning(f"Could not read source {doc_id} for its sync; using the queued data: {e}")
+    except Exception as e:  # noqa: BLE001 - the caller refuses the sync
+        logging.warning(f"Could not read source {doc_id} for its sync; not running it: {e}")
         return False, None
 
 
@@ -1735,6 +1706,10 @@ _SYNC_SKIP_MESSAGES = {
     "wiki": "This source is a wiki now; it no longer syncs",
     "gone": "This source was deleted",
 }
+
+# A sync whose row couldn't be read doesn't run: the queued snapshot has no
+# config (it would re-chunk on the defaults) and can't tell a wiki.
+_SYNC_UNREADABLE = "Couldn't read this source to sync it; try again"
 
 
 def _publish_sync_not_run(
@@ -1790,12 +1765,12 @@ def sync(
     sync crawls the source as it is then: pages removed or added while it was
     queued (and a legacy source converted to a Website) are respected, a wiki
     conversion that finished meanwhile skips it, and a deleted source is
-    skipped rather than re-created. The queued arguments are used only when
-    the row can't be read.
+    skipped rather than re-created. If the row can't be read, the sync
+    doesn't run: the queued arguments carry no config and can't tell a wiki.
 
     Args:
         self: Celery task instance.
-        source_data: The loader input the sync was queued with (a fallback).
+        source_data: The loader input the sync was queued with (the row's wins).
         name_job: The source's name when queued.
         user: Its owner.
         loader: The remote loader when queued.
@@ -1822,31 +1797,32 @@ def sync(
     try:
         with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
             read, row = _read_source_for_sync(doc_id, user)
-            config = None
-            if read:
-                if row is None:
-                    return _skipped("gone")
-                config = row.get("config")
-                if isinstance(config, str):
-                    try:
-                        config = json.loads(config)
-                    except ValueError:
-                        config = None
-                if _is_wiki_config(config):
-                    # A sync wipes the index and re-reads the remote content, which
-                    # would replace a wiki's pages; a converted source no longer syncs.
-                    return _skipped("wiki")
-                loader = row.get("type") or loader
-                name_job = row.get("name") or name_job
-                retriever = row.get("retriever") or retriever
-                sync_frequency = row.get("sync_frequency") or sync_frequency
-                if row.get("connection_id"):
-                    connection_id = str(row["connection_id"])
-                source_data = normalize_remote_data(loader, row.get("remote_data"))
-                if not source_data:
-                    error = "This source has nothing left to sync"
-                    _publish_sync_not_run(self, user, doc_id, name_job, loader, error)
-                    return {"status": "error", "error": error}
+            if not read:
+                _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_UNREADABLE)
+                return {"status": "error", "error": _SYNC_UNREADABLE}
+            if row is None:
+                return _skipped("gone")
+            config = row.get("config")
+            if isinstance(config, str):
+                try:
+                    config = json.loads(config)
+                except ValueError:
+                    config = None
+            if _is_wiki_config(config):
+                # A sync wipes the index and re-reads the remote content, which
+                # would replace a wiki's pages; a converted source no longer syncs.
+                return _skipped("wiki")
+            loader = row.get("type") or loader
+            name_job = row.get("name") or name_job
+            retriever = row.get("retriever") or retriever
+            sync_frequency = row.get("sync_frequency") or sync_frequency
+            if row.get("connection_id"):
+                connection_id = str(row["connection_id"])
+            source_data = normalize_remote_data(loader, row.get("remote_data"))
+            if not source_data:
+                error = "This source has nothing left to sync"
+                _publish_sync_not_run(self, user, doc_id, name_job, loader, error)
+                return {"status": "error", "error": error}
             remote_worker(
                 self,
                 source_data,
@@ -4233,7 +4209,7 @@ def ingest_connector(
         sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
         config: Per-source ``SourceConfig`` dict. ``None``/``{}`` → classic
             defaults (byte-identical to prior behavior). A sync uses the
-            row's own instead, unless the row can't be read.
+            row's own instead, and doesn't run if the row can't be read.
         idempotency_key: When provided, the ``source_id`` is derived
             deterministically so a retried upload reuses the same source row.
         source_id: When supplied, the worker uses it verbatim so SSE envelopes
@@ -4244,7 +4220,8 @@ def ingest_connector(
             ``reason``) when a sync is skipped. Off for scheduled syncs.
 
     Returns:
-        The ingest summary, or ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``.
+        The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``,
+        or ``{"status": "error", "error": ...}`` for a sync whose row can't be read.
     """
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
@@ -4264,32 +4241,34 @@ def ingest_connector(
     try:
         with source_index_lock(str(doc_id)):
             read, row = _read_source_for_sync(doc_id, user)
-            if read:
-                if row is None:
-                    return _skipped("gone")
-                config = row.get("config")
-                if isinstance(config, str):
-                    try:
-                        config = json.loads(config)
-                    except ValueError:
-                        config = None
-                if _is_wiki_config(config):
-                    # A sync would replace a wiki's pages with the connector's files.
-                    return _skipped("wiki")
-                config = config or None
-                job_name = row.get("name") or job_name
-                retriever = row.get("retriever") or retriever
-                sync_frequency = row.get("sync_frequency") or sync_frequency
-                selection = row.get("remote_data")
-                if isinstance(selection, str):
-                    try:
-                        selection = json.loads(selection)
-                    except ValueError:
-                        selection = None
-                if isinstance(selection, dict):
-                    file_ids = selection.get("file_ids", file_ids)
-                    folder_ids = selection.get("folder_ids", folder_ids)
-                    recursive = selection.get("recursive", recursive)
+            if not read:
+                _publish_sync_not_run(self, user, doc_id, job_name, source_type, _SYNC_UNREADABLE)
+                return {"status": "error", "error": _SYNC_UNREADABLE}
+            if row is None:
+                return _skipped("gone")
+            config = row.get("config")
+            if isinstance(config, str):
+                try:
+                    config = json.loads(config)
+                except ValueError:
+                    config = None
+            if _is_wiki_config(config):
+                # A sync would replace a wiki's pages with the connector's files.
+                return _skipped("wiki")
+            config = config or None
+            job_name = row.get("name") or job_name
+            retriever = row.get("retriever") or retriever
+            sync_frequency = row.get("sync_frequency") or sync_frequency
+            selection = row.get("remote_data")
+            if isinstance(selection, str):
+                try:
+                    selection = json.loads(selection)
+                except ValueError:
+                    selection = None
+            if isinstance(selection, dict):
+                file_ids = selection.get("file_ids", file_ids)
+                folder_ids = selection.get("folder_ids", folder_ids)
+                recursive = selection.get("recursive", recursive)
             return _ingest_connector(
                 self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
                 operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,

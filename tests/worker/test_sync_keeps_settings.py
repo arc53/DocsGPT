@@ -269,9 +269,10 @@ class TestSyncReadsTheRow:
         assert loaders == ["website"]
         assert loader.load_data.call_args.args[0]["entries"][0]["url"] == "https://x.io/a"
 
-    def test_falls_back_to_the_queued_data_when_the_row_cant_be_read(
+    def test_does_not_run_when_the_row_cant_be_read(
         self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
     ):
+        """The queued snapshot has no config and can't tell a wiki: rebuilding from it could lose both."""
         from docsgpt import worker
 
         @contextmanager
@@ -282,12 +283,20 @@ class TestSyncReadsTheRow:
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
         loader = worker.RemoteCreator.create_loader("website")
         monkeypatch.setattr(worker, "db_readonly", broken)
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
         queued = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": []}
 
-        worker.sync(task_self, queued, "Docs", USER, "website", "never", "classic", str(src["id"]),
-                    directory=str(tmp_path))
+        result = worker.sync(task_self, queued, "Docs", USER, "website", "never", "classic", str(src["id"]),
+                             directory=str(tmp_path))
 
-        assert loader.load_data.call_args.args[0] == queued
+        assert result["status"] == "error"
+        loader.load_data.assert_not_called()
+        assert uploads == []
+        [(kind, payload)] = events
+        assert kind == "source.ingest.failed" and payload["source_id"] == str(src["id"])
 
     def test_a_deleted_source_is_skipped_and_never_embedded(
         self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,

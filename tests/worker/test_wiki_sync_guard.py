@@ -144,3 +144,35 @@ class TestSyncSkipsAWiki:
 
         assert result == {"status": "skipped", "reason": "wiki"}
         creator.assert_not_called()
+
+    def test_connector_sync_does_not_run_when_the_row_cant_be_read(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """Unread, the row might be a wiki: the sync must not replace its pages."""
+        from contextlib import contextmanager
+
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "Drive", user_id="erin", type="connector:file", sync_frequency="never", config=WIKI_CONFIG,
+        )
+
+        @contextmanager
+        def broken():
+            raise RuntimeError("database unavailable")
+            yield
+
+        monkeypatch.setattr(worker, "db_readonly", broken)
+        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **k: None)
+        creator = MagicMock(name="ConnectorCreator.create_connector")
+        monkeypatch.setattr(
+            "docsgpt.parser.connectors.connector_creator.ConnectorCreator.create_connector",
+            creator,
+        )
+
+        result = worker.ingest_connector(
+            task_self, "Drive", "erin", "google_drive", operation_mode="sync", doc_id=str(src["id"]),
+        )
+
+        assert result["status"] == "error"
+        creator.assert_not_called()
