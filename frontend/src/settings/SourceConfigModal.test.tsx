@@ -325,6 +325,27 @@ describe('SourceConfigModal first section, by kind', () => {
     expect(setModalState).toHaveBeenCalledWith('INACTIVE');
   });
 
+  it('turns Sync now off while a sync of the source is still running', async () => {
+    await act(async () => {
+      root.render(
+        <SourceConfigModal
+          modalState="ACTIVE"
+          setModalState={setModalState}
+          document={doc({ type: 'connector:file', syncFrequency: 'never' })}
+          onReingest={vi.fn()}
+          onEnableGraphRAG={vi.fn()}
+          onSaved={onSaved}
+          onSyncNow={onSyncNow}
+          syncing
+        />,
+      );
+    });
+    const sync = button('settings.sources.syncNow')!;
+    expect(sync.disabled).toBe(true);
+    await act(async () => sync.click());
+    expect(onSyncNow).not.toHaveBeenCalled();
+  });
+
   it('turns Sync now off while there are unsaved changes, and says why', async () => {
     await render(
       doc({ type: 's3', connectionId: 'conn-1', syncFrequency: 'daily' }),

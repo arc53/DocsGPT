@@ -18,6 +18,7 @@ const {
     props: null as null | {
       modalState: string;
       onSaved: (patch: Record<string, unknown>) => void;
+      syncing?: boolean;
     },
   },
   // The last props each view was given.
@@ -893,6 +894,36 @@ describe('Sources access', () => {
         payload: expect.objectContaining({ variant: 'success' }),
       }),
     ]);
+  });
+
+  it("a website view's Sync now is off until the tree's wait for the sync ends", async () => {
+    service.syncSource.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, task_id: 'task-s' }),
+    });
+    await openView(doc(WEBSITE_OWNER));
+    await viewMenu();
+    await clickItem('settings.sources.syncNow');
+    const syncItem = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((el) => el.textContent === 'settings.sources.syncNow')!;
+    await viewMenu();
+    expect(syncItem().hasAttribute('data-disabled')).toBe(true);
+    // Settings, from the same view, says the same in its footer.
+    await clickItem('settings.sources.editConfig');
+    expect(configModal.props!.syncing).toBe(true);
+
+    const sync = viewProps['website-tree'].sync;
+    const onSyncSettled = viewProps['website-tree'].onSyncSettled as (
+      settled: unknown,
+    ) => void;
+    await act(async () => onSyncSettled(sync));
+    expect(viewProps['website-tree'].sync).toBeFalsy();
+    expect(configModal.props!.syncing).toBe(false);
+    await viewMenu();
+    expect(syncItem().hasAttribute('data-disabled')).toBe(false);
   });
 
   it('a refused Sync now hands the tree nothing to wait on', async () => {

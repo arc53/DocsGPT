@@ -270,6 +270,14 @@ export default function Sources({
   const [startedSync, setStartedSync] = useState<
     (StartedSync & { sourceId: string }) | null
   >(null);
+  // Only a website view waits for a started sync (and says when it ended),
+  // so only there is its Sync now off meanwhile.
+  const viewSync =
+    documentToView?.website && startedSync?.sourceId === documentToView.id
+      ? startedSync
+      : null;
+  const settleSync = (settled: StartedSync) =>
+    setStartedSync((current) => (current === settled ? null : current));
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);
@@ -369,6 +377,7 @@ export default function Sources({
     onPatched: patchDoc,
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
+    syncingId: viewSync?.sourceId ?? null,
   });
 
   /**
@@ -569,9 +578,8 @@ export default function Sources({
           website={documentToView.website}
           syncFrequency={documentToView.syncFrequency}
           syncedAt={documentToView.date}
-          sync={
-            startedSync?.sourceId === documentToView.id ? startedSync : null
-          }
+          sync={viewSync}
+          onSyncSettled={settleSync}
           onPagesChanged={() =>
             documentToView.id && refreshOpenSource(documentToView.id)
           }
@@ -588,9 +596,8 @@ export default function Sources({
             hosts={documentToView.website.hosts}
             syncFrequency={documentToView.syncFrequency}
             syncedAt={documentToView.date}
-            sync={
-              startedSync?.sourceId === documentToView.id ? startedSync : null
-            }
+            sync={viewSync}
+            onSyncSettled={settleSync}
             onPagesChanged={() =>
               documentToView.id && refreshOpenSource(documentToView.id)
             }

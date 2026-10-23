@@ -146,6 +146,10 @@ vi.mock('../WebsiteTree', async () => {
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
       onPagesChanged?: () => void;
       sync?: { startedAt: number; taskId: string | null } | null;
+      onSyncSettled?: (sync: {
+        startedAt: number;
+        taskId: string | null;
+      }) => void;
     }) => {
       const { onCrumbsChange } = props;
       useEffect(() => {
@@ -156,6 +160,13 @@ vi.mock('../WebsiteTree', async () => {
           {/* Stands in for a finished add, refresh or removal. */}
           <button type="button" onClick={() => props.onPagesChanged?.()}>
             PAGES CHANGED
+          </button>
+          {/* Stands in for the end of the wait for a handed sync. */}
+          <button
+            type="button"
+            onClick={() => props.sync && props.onSyncSettled?.(props.sync)}
+          >
+            SYNC SETTLED
           </button>
           <div
             data-testid="website-tree"
@@ -688,6 +699,15 @@ describe('GraphSourceView', () => {
     await flush();
     expect(onPagesChanged).toHaveBeenCalledTimes(1);
     expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+  });
+
+  it('tells the host its page list stopped waiting for the sync', async () => {
+    const sync = { startedAt: 1, taskId: 'task-s' };
+    const onSyncSettled = vi.fn();
+    await renderWebsite({ sync, onSyncSettled });
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    await act(async () => buttonByText('SYNC SETTLED')!.click());
+    expect(onSyncSettled).toHaveBeenCalledWith(sync);
   });
 
   it("opens a cited chunk in a website source's page list", async () => {

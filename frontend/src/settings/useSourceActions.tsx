@@ -68,6 +68,11 @@ interface UseSourceActionsOptions {
    * an open view of the source can wait for it to finish.
    */
   onSyncStarted?: (doc: Doc, sync: StartedSync) => void;
+  /**
+   * The source whose sync an open view is still waiting for: its Sync now,
+   * in the ⋯ and in Source settings, is off until the wait ends.
+   */
+  syncingId?: string | null;
 }
 
 /**
@@ -87,6 +92,7 @@ export function useSourceActions({
   onChanged,
   onPatched,
   onSyncStarted,
+  syncingId = null,
 }: UseSourceActionsOptions) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -287,6 +293,7 @@ export function useSourceActions({
         icon: RefreshCw,
         label: t('settings.sources.syncNow'),
         onClick: () => void syncNow(doc),
+        disabled: doc.id === syncingId,
       });
     }
 
@@ -409,6 +416,7 @@ export function useSourceActions({
         onEnableGraphRAG={setToGraph}
         onSaved={(patch) => toConfigure?.id && onPatched(toConfigure.id, patch)}
         onSyncNow={() => toConfigure && void syncNow(toConfigure)}
+        syncing={!!toConfigure?.id && toConfigure.id === syncingId}
       />
 
       <TestRetrievalModal

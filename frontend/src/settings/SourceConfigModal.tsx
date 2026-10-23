@@ -62,6 +62,8 @@ interface SourceConfigModalProps {
   onSaved?: (patch: Partial<Doc>) => void;
   /** Starts a sync; offered in the footer of a website or synced source. */
   onSyncNow?: () => void;
+  /** A sync of this source is still running (its open view waits for it). */
+  syncing?: boolean;
 }
 
 /**
@@ -84,6 +86,7 @@ export default function SourceConfigModal({
   onEnableGraphRAG,
   onSaved,
   onSyncNow,
+  syncing = false,
 }: SourceConfigModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -277,7 +280,7 @@ export default function SourceConfigModal({
       variant="outline"
       size="lg"
       shape="pill"
-      disabled={saving || hasChanges}
+      disabled={saving || hasChanges || syncing}
       onClick={() => {
         onSyncNow?.();
         closeModal();

@@ -62,6 +62,11 @@ interface WebsiteTreeProps {
    * starts a new wait; the same one is waited for once.
    */
   sync?: { startedAt: number; taskId: string | null } | null;
+  /**
+   * The wait for `sync` ended: the sync finished, failed, was skipped or is
+   * still running past the wait. Not called when the tree unmounts first.
+   */
+  onSyncSettled?: (sync: { startedAt: number; taskId: string | null }) => void;
   canEdit?: boolean;
   initialPath?: string;
   linkedChunk?: LinkedChunk;
@@ -171,6 +176,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   syncFrequency,
   syncedAt,
   sync,
+  onSyncSettled,
   canEdit = true,
   initialPath,
   linkedChunk,
@@ -203,6 +209,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   tokenRef.current = token;
   const onPagesChangedRef = useRef(onPagesChanged);
   onPagesChangedRef.current = onPagesChanged;
+  const onSyncSettledRef = useRef(onSyncSettled);
+  onSyncSettledRef.current = onSyncSettled;
   // Another source's entries never stand in for this one's.
   useEffect(() => setPageEntries(null), [docId]);
   useEffect(() => {
@@ -261,6 +269,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
    * is the changed page's path or a test on the open page's path, `false`
    * for a change that leaves every remaining page as it was (a removal; a
    * removed open page closes by itself), and omitted for a rebuild.
+   * Resolves with how the wait ended, `unmounted` when the tree went first.
    */
   const awaitChange = async (
     label: string,
@@ -281,7 +290,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       taskId,
     });
     // An unmount (StrictMode's too) ends the wait; a later one owns the status.
-    if (!mountedRef.current || terminal === 'unmounted') return;
+    if (!mountedRef.current || terminal === 'unmounted') return 'unmounted';
     setStatus(null);
     if (terminal === 'completed') {
       await controllerRef.current?.refreshDirectory();
@@ -326,6 +335,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         name,
       );
     }
+    return terminal;
   };
 
   const refreshPage = async (path: string, name: string, url?: string) => {
@@ -438,9 +448,13 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   useEffect(() => {
     if (!sync || waitedSync.current === sync) return;
     waitedSync.current = sync;
-    void awaitChangeRef.current(tr('syncing'), sync.startedAt, 'syncFailed', {
-      taskId: sync.taskId,
-    });
+    void awaitChangeRef
+      .current(tr('syncing'), sync.startedAt, 'syncFailed', {
+        taskId: sync.taskId,
+      })
+      .then((terminal) => {
+        if (terminal !== 'unmounted') onSyncSettledRef.current?.(sync);
+      });
     // StrictMode's second run starts the wait again; the first one ends
     // with the unmount it saw and leaves the status alone.
     return () => {

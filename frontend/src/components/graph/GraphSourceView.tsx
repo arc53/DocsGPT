@@ -68,6 +68,8 @@ interface GraphSourceViewProps {
   syncedAt?: string;
   /** A Website source: a sync the host started, for its page list to wait on. */
   sync?: { startedAt: number; taskId: string | null } | null;
+  /** A Website source: its page list's wait for `sync` ended. */
+  onSyncSettled?: (sync: { startedAt: number; taskId: string | null }) => void;
   /**
    * A Website source: called once a page change (add, refresh, remove, a
    * sync) has finished, after the graph is read again, so the host can read
@@ -108,6 +110,7 @@ export default function GraphSourceView({
   syncFrequency,
   syncedAt,
   sync,
+  onSyncSettled,
   onPagesChanged,
   onBackToDocuments,
   headerAction,
@@ -265,6 +268,7 @@ export default function GraphSourceView({
       actionsTarget={filesActions}
       onCrumbsChange={setFilesCrumbs}
       sync={sync}
+      onSyncSettled={onSyncSettled}
       // A removal changes the graph without a build.
       onPagesChanged={() => {
         retry();

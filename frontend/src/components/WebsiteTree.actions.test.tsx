@@ -911,6 +911,52 @@ describe('WebsiteTree page management', () => {
       );
     });
 
+    it('tells the host when its wait for the sync ends, whatever the outcome', async () => {
+      const onSyncSettled = vi.fn();
+      const sync = { startedAt: Date.now(), taskId: 'task-s' };
+      const renderWith = (value: typeof sync | null) =>
+        act(async () => {
+          root.render(
+            <WebsiteTree
+              docId="src-1"
+              sourceName="Docs"
+              onBackToDocuments={() => undefined}
+              hosts={['docs.x.io']}
+              sync={value}
+              onSyncSettled={onSyncSettled}
+            />,
+          );
+        });
+      await renderWith(null);
+      captured.props!.controllerRef!.current = fakeController();
+      await renderWith(sync);
+      expect(onSyncSettled).not.toHaveBeenCalled();
+      await act(async () =>
+        emitTerminal('failed', 'task-s', { reason: 'busy' }),
+      );
+      expect(onSyncSettled).toHaveBeenCalledTimes(1);
+      expect(onSyncSettled).toHaveBeenCalledWith(sync);
+    });
+
+    it('does not tell the host a sync ended when the tree unmounts first', async () => {
+      const onSyncSettled = vi.fn();
+      await act(async () => {
+        root.render(
+          <WebsiteTree
+            docId="src-1"
+            sourceName="Docs"
+            onBackToDocuments={() => undefined}
+            hosts={['docs.x.io']}
+            sync={{ startedAt: Date.now(), taskId: 'task-s' }}
+            onSyncSettled={onSyncSettled}
+          />,
+        );
+      });
+      await act(async () => root.render(<></>));
+      await act(async () => emitTerminal('completed', 'task-s'));
+      expect(onSyncSettled).not.toHaveBeenCalled();
+    });
+
     it('waits for the same sync once, across renders', async () => {
       const controller = fakeController();
       await renderSyncing(null);
