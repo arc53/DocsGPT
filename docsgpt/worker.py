@@ -5251,7 +5251,9 @@ class PageOutOfScope(ValueError):
     reason = "out_of_scope"
 
 
-def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]], final_url: str) -> bool:
+def _refresh_in_scope(
+    source_type: Optional[str], config: Dict[str, Any], addresses: Iterable[Optional[str]], final_url: str,
+) -> bool:
     """Whether a sync would still keep a refreshed page fetched as ``final_url``.
 
     A page entry is fetched wherever it leads, so a page any of whose
@@ -5261,7 +5263,15 @@ def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]]
     of scope). A config with no entries (an old source whose address didn't
     parse) can't say, and keeps it.
 
+    A source of an old web type (``url``, ``crawler``, ``sitemap``) keeps
+    the page: a refresh leaves its type alone, and its sync runs the old
+    loader, which keeps what it fetched (a sitemap's pages on any host). The
+    Website config converted from it (``config_from_legacy``) is narrower,
+    and would remove pages its own sync keeps. A page add or removal makes
+    the row a ``website``, and from then on its scope applies.
+
     Args:
+        source_type: ``sources.type``.
         config: The source's Website config.
         addresses: The page's stored address, the one it was asked for, and
             the ones the fetch reported.
@@ -5272,6 +5282,8 @@ def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]]
     """
     from docsgpt.parser.remote.website_loader import SiteScope
 
+    if (source_type or "").lower() != "website":
+        return True
     entries = config.get("entries") or []
     if not entries:
         return True
@@ -6055,7 +6067,7 @@ def _run_website_pages(
             if legacy_path:
                 target = {"path": legacy_path, "old_url": None}
         if operation == "refresh" and not _refresh_in_scope(
-            config, (target["old_url"], *requested.get(target["path"], ()), doc_url, *asked), doc_url,
+            source.get("type"), config, (target["old_url"], *requested.get(target["path"], ()), doc_url, *asked), doc_url,
         ):
             # A crawled page that now leads out of its site's scope, or to a
             # skipped address: the next sync drops it, so the refresh does

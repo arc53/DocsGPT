@@ -1283,6 +1283,23 @@ class TestARefreshStaysInScope:
 
         assert _tree(pg_conn, crawled)["docs"]["a.md"]["url"] == "https://docs.x.io/blog/a"
 
+    def test_a_legacy_sitemap_page_on_another_host_is_refreshed(self, pg_conn, patch_worker_db, task_self, pipeline):
+        # A sync of a legacy sitemap row keeps any host its sitemap lists; the
+        # conversion's single-host scope must not judge (and remove) the page.
+        from docsgpt import worker
+
+        url = "https://other.org/p"
+        pipeline["store"].seed("old p", url, "other.org/p.md")
+        src = SourcesRepository(pg_conn).create(
+            "Legacy sitemap", user_id=USER, type="sitemap", remote_data="https://x.io/sitemap.xml",
+            directory_structure={"other.org": {"p.md": _leaf(url, 3)}},
+        )
+        pipeline["pages"][url] = "new p"
+        worker.website_pages_worker(task_self, str(src["id"]), USER, "refresh", file_path="other.org/p.md", url=url)
+
+        assert pipeline["store"].texts_for(url) == ["new p"]
+        assert _tree(pg_conn, src)["other.org"]["p.md"]["fetched_at"] != OLD
+
 
 @pytest.mark.unit
 class TestThePageCount:
