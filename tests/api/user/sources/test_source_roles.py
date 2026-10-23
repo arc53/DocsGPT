@@ -568,6 +568,31 @@ class TestConnectorSync:
         resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
         assert resp.status_code == 409
         assert "owner" in resp.json["error"].lower()
+        assert resp.json["message"] == resp.json["error"]
+        # The UI words the refusal itself.
+        assert resp.json["code"] == "reconnect_needed"
+        delay.assert_not_called()
+
+    def test_owner_sync_after_the_connection_was_removed_says_so(self, app, pg_conn):
+        """The connection was removed keeping its sources: connection_id is NULL now."""
+        from sqlalchemy import text
+
+        sid = _connector_source(pg_conn)
+        connection = _owner_session(pg_conn)
+        pg_conn.execute(
+            text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = CAST(:s AS uuid)"),
+            {"c": connection, "s": sid},
+        )
+        pg_conn.execute(text("DELETE FROM connector_sessions WHERE id = CAST(:c AS uuid)"), {"c": connection})
+
+        resp, delay = _connector_sync(app, pg_conn, OWNER, {"source_id": sid})
+
+        assert resp.status_code == 409
+        assert resp.json["code"] == "connection_missing"
+        assert resp.json["error"] == (
+            "This source's account connection was removed; connect the account again to sync it."
+        )
+        assert resp.json["message"] == resp.json["error"]
         delay.assert_not_called()
 
     @pytest.mark.parametrize("user, status", [(VIEWER, 403), (STRANGER, 404)])

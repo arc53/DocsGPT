@@ -665,9 +665,19 @@ class ConnectorSync(Resource):
                 lookup = dict(data)
                 if not (lookup.get('connection_id') or lookup.get('session_token')):
                     if not source_connection:
+                        # Its connection was removed with "keep sources"
+                        # (connection_id is NULL now): connecting the
+                        # account again is the way back.
+                        message = (
+                            "This source's account connection was removed; "
+                            "connect the account again to sync it."
+                        )
                         return make_response(
-                            jsonify({"success": False, "error": "connection_id is required"}),
-                            400,
+                            jsonify({
+                                "success": False, "error": message, "message": message,
+                                "code": "connection_missing",
+                            }),
+                            409,
                         )
                     lookup['connection_id'] = source_connection
                 session = service.resolve_request_connection(user_id, source_type, lookup)
@@ -687,7 +697,7 @@ class ConnectorSync(Resource):
                         "before it can be synced."
                     )
                     return make_response(
-                        jsonify({"success": False, "error": message, "message": message}),
+                        jsonify({"success": False, "error": message, "message": message, "code": "reconnect_needed"}),
                         409,
                     )
 

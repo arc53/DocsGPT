@@ -536,9 +536,10 @@ class TestConnectorSync:
             r = ConnectorSync().post()
         assert r.status_code == 400
 
-    def test_owner_without_a_connection_returns_400(self, app, pg_conn):
+    def test_owner_without_a_connection_returns_409_connection_missing(self, app, pg_conn):
         # The owner names a connection (or the source has its own); team
         # editors don't send one (their sync uses the owner's connection).
+        # A source with neither had its connection removed: connect again.
         from docsgpt.api.connector.routes import ConnectorSync
         from docsgpt.storage.db.repositories.sources import SourcesRepository
 
@@ -552,7 +553,8 @@ class TestConnectorSync:
             from flask import request
             request.decoded_token = {"sub": user}
             r = ConnectorSync().post()
-        assert r.status_code == 400
+        assert r.status_code == 409
+        assert r.json["code"] == "connection_missing"
 
     def test_returns_404_source_not_found(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorSync
