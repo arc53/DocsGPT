@@ -3,10 +3,10 @@
 import json
 import math
 import uuid
-from typing import Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
-from flask import current_app, jsonify, make_response, redirect, request
+from flask import Response, current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError
 
@@ -17,6 +17,7 @@ from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
+    ingest_connector_task,
     reembed_wiki_page,
     reingest_source_task,
     sync_source,
@@ -596,6 +597,77 @@ class SyncSource(Resource):
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
+_RECONNECT_TO_SYNC = "The owner needs to reconnect this source's account before it can be synced."
+
+
+def _remote_rebuild(doc: dict, owner: str) -> Optional[Callable[[], Any]] | Response:
+    """How a source with no stored files is rebuilt instead of re-ingested: a sync of its stored config.
+
+    Reingest re-reads the files a source keeps in storage; a Website,
+    crawler or connector source keeps none, so its settings (a chunking
+    change, say) take effect when its content is fetched again. The sync
+    publishes ``source.ingest.*`` events (``operation: "sync"``) carrying its
+    own ``task_id``, which the route returns as the reingest's.
+
+    Args:
+        doc: The source row, already authorised for the caller.
+        owner: Its owner; the sync runs as them.
+
+    Returns:
+        A callable that queues the sync and returns its task; a refusal
+        (a wiki, or a connector source whose owner must reconnect); or
+        ``None`` when the source has nothing to sync, so the reingest task
+        runs and reports that.
+    """
+    if _is_wiki(doc):
+        return _sync_refusal("A wiki is edited in place and can't be re-ingested.", "wiki")
+    source_id = str(doc["id"])
+    source_type = doc.get("type") or ""
+    if source_type.startswith("connector"):
+        provider = _get_provider_from_remote_data(doc.get("remote_data"))
+        if not provider:
+            return None
+        from docsgpt.connectors import service as connector_service
+
+        with db_readonly() as conn:
+            session = connector_service.owner_sync_connection(conn, owner, provider, _connection_id(doc))
+        if session is None:
+            return _sync_refusal(_RECONNECT_TO_SYNC, "reconnect_needed", 409)
+        remote_data = doc.get("remote_data")
+        if isinstance(remote_data, str):
+            try:
+                remote_data = json.loads(remote_data)
+            except ValueError:
+                remote_data = {}
+        selection = remote_data if isinstance(remote_data, dict) else {}
+        return lambda: ingest_connector_task.delay(
+            job_name=doc.get("name"),
+            user=owner,
+            source_type=provider,
+            connection_id=str(session["id"]),
+            file_ids=selection.get("file_ids", []),
+            folder_ids=selection.get("folder_ids", []),
+            recursive=selection.get("recursive", True),
+            retriever=doc.get("retriever") or "classic",
+            operation_mode="sync",
+            doc_id=source_id,
+            sync_frequency=doc.get("sync_frequency") or "never",
+        )
+    source_data = normalize_remote_data(source_type, doc.get("remote_data"))
+    if not source_data:
+        return None
+    return lambda: sync_source.delay(
+        source_data=source_data,
+        job_name=doc.get("name", ""),
+        user=owner,
+        loader=source_type,
+        sync_frequency=doc.get("sync_frequency") or "never",
+        retriever=doc.get("retriever") or "classic",
+        doc_id=source_id,
+        connection_id=_connection_id(doc),
+    )
+
+
 @sources_ns.route("/sources/reingest")
 class ReingestSource(Resource):
     reingest_source_model = api.model(
@@ -606,7 +678,11 @@ class ReingestSource(Resource):
     @api.expect(reingest_source_model)
     @api.doc(
         description="Re-run ingestion for a source — e.g. to recover a "
-        "stalled embed flagged by the reconciler."
+        "stalled embed flagged by the reconciler, or to apply a chunking "
+        "change. A source with no stored files (Website, crawler, connector) "
+        "is synced from its stored config instead; either way the answer is "
+        "``{success, task_id}`` and the task's source.ingest events carry that "
+        "task_id."
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -636,6 +712,13 @@ class ReingestSource(Resource):
             )
         owner = ra.owner_id
         resolved_source_id = str(doc["id"])
+        rebuild = None
+        if not doc.get("file_path"):
+            # Nothing stored to read back: a Website, crawler or connector
+            # source is rebuilt by syncing it with its stored config.
+            rebuild = _remote_rebuild(doc, owner)
+            if isinstance(rebuild, Response):
+                return rebuild
         # Drop the stale chunk-progress row so the sources list stops
         # deriving a 'failed' status; reingest never rewrites it itself.
         try:
@@ -648,12 +731,15 @@ class ReingestSource(Resource):
                 exc_info=True,
             )
         try:
-            # Scoped key so repeated clicks collapse onto one reingest.
-            task = reingest_source_task.delay(
-                source_id=resolved_source_id,
-                user=owner,
-                idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
-            )
+            if rebuild is not None:
+                task = rebuild()
+            else:
+                # Scoped key so repeated clicks collapse onto one reingest.
+                task = reingest_source_task.delay(
+                    source_id=resolved_source_id,
+                    user=owner,
+                    idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error starting reingest for source {source_id}: {err}",

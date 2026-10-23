@@ -1102,6 +1102,108 @@ class TestReingestSource:
         assert response.status_code == 400
 
 
+def _reingest(app, pg_conn, user, source_id, **patches):
+    """POST /api/sources/reingest with the sync and reingest tasks stubbed; returns (response, mocks)."""
+    from docsgpt.api.user.sources.routes import ReingestSource
+
+    mocks = {
+        "reingest": MagicMock(return_value=MagicMock(id="reingest-task")),
+        "sync": MagicMock(return_value=MagicMock(id="sync-task")),
+        "connector": MagicMock(return_value=MagicMock(id="connector-task")),
+    }
+    with _patch_db(pg_conn), patch(
+        "docsgpt.api.user.sources.routes.reingest_source_task.delay", mocks["reingest"],
+    ), patch(
+        "docsgpt.api.user.sources.routes.sync_source.delay", mocks["sync"],
+    ), patch(
+        "docsgpt.api.user.sources.routes.ingest_connector_task.delay", mocks["connector"],
+    ), patch(
+        "docsgpt.connectors.service.owner_sync_connection", patches.get("connection", MagicMock(return_value=None)),
+    ), app.test_request_context("/api/sources/reingest", method="POST", json={"source_id": source_id}):
+        from flask import request
+        request.decoded_token = {"sub": user}
+        response = ReingestSource().post()
+    return response, mocks
+
+
+class TestReingestARemoteSource:
+    """A source with no stored files (Website, crawler, connector) is rebuilt by a sync of its stored config.
+
+    The UI waits on the returned ``task_id``; the sync's events carry that id.
+    """
+
+    @pytest.mark.parametrize("type_, remote_data", [
+        ("website", {"entries": [{"url": "https://docs.x.io/a", "mode": "page"}]}),
+        ("crawler", {"urls": ["https://docs.x.io/"]}),
+        ("url", "https://docs.x.io/a"),
+    ])
+    def test_queues_a_sync(self, app, pg_conn, type_, remote_data):
+        user = "u-reingest-site"
+        src = _seed_source(pg_conn, user, name="Docs", type=type_, remote_data=remote_data, sync_frequency="weekly")
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
+
+        assert response.status_code == 200
+        assert response.json == {"success": True, "task_id": "sync-task"}
+        mocks["reingest"].assert_not_called()
+        kwargs = mocks["sync"].call_args.kwargs
+        assert kwargs["doc_id"] == str(src["id"]) and kwargs["user"] == user and kwargs["loader"] == type_
+        assert kwargs["source_data"]
+
+    def test_a_connector_source_queues_a_connector_sync(self, app, pg_conn):
+        user = "u-reingest-drive"
+        src = _seed_source(
+            pg_conn, user, name="Drive", type="connector:file", sync_frequency="daily",
+            remote_data={"provider": "google_drive", "file_ids": ["f1"], "folder_ids": ["d1"], "recursive": False},
+        )
+        connection = MagicMock(return_value={"id": "conn-1"})
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]), connection=connection)
+
+        assert response.status_code == 200
+        assert response.json == {"success": True, "task_id": "connector-task"}
+        mocks["reingest"].assert_not_called()
+        kwargs = mocks["connector"].call_args.kwargs
+        assert kwargs["operation_mode"] == "sync" and kwargs["doc_id"] == str(src["id"])
+        assert kwargs["user"] == user and kwargs["connection_id"] == "conn-1"
+        assert kwargs["source_type"] == "google_drive"
+        assert kwargs["file_ids"] == ["f1"] and kwargs["folder_ids"] == ["d1"] and kwargs["recursive"] is False
+        assert connection.call_args.args[1:3] == (user, "google_drive")
+
+    def test_a_connector_source_without_a_usable_connection_is_refused(self, app, pg_conn):
+        user = "u-reingest-drive-off"
+        src = _seed_source(
+            pg_conn, user, name="Drive", type="connector:file", remote_data={"provider": "google_drive"},
+        )
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
+
+        assert response.status_code == 409
+        assert response.json["success"] is False and response.json["code"] == "reconnect_needed"
+        mocks["connector"].assert_not_called() and mocks["reingest"].assert_not_called()
+
+    def test_a_wiki_is_refused(self, app, pg_conn):
+        user = "u-reingest-wiki"
+        src = _seed_source(
+            pg_conn, user, name="Docs", type="website", config={"kind": "wiki"},
+            remote_data={"entries": [{"url": "https://docs.x.io/a", "mode": "page"}]},
+        )
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
+
+        assert response.status_code == 400 and response.json["code"] == "wiki"
+        mocks["sync"].assert_not_called() and mocks["reingest"].assert_not_called()
+
+    def test_a_source_with_stored_files_still_reingests(self, app, pg_conn):
+        user = "u-reingest-local"
+        src = _seed_source(pg_conn, user, name="Files", type="local", file_path=f"inputs/{user}/files")
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
+
+        assert response.json == {"success": True, "task_id": "reingest-task"}
+        mocks["sync"].assert_not_called()
+
+
 class TestDirectoryStructure:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.routes import DirectoryStructure

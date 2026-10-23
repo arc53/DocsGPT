@@ -1090,6 +1090,55 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
     return row
 
 
+def owner_sync_connection(
+    conn, owner_id: str, provider: str, connection_id: Optional[str] = None,
+) -> Optional[dict]:
+    """The owner's usable connection for ``provider``, or None.
+
+    Used when a sync of a connector source is queued for its owner without a
+    browser naming a connection (a team editor's Sync now, a Reingest): the
+    sync runs with the owner's account, the source's own connection when it
+    has one, else the owner's first connection for the provider. A connection
+    that is not connected (signed out, flagged for reconnect, holding no
+    credentials), cannot be decrypted, or has an expired access token that
+    can't be refreshed counts as missing.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The source owner's ``sub``.
+        provider: The source's connector provider.
+        connection_id: The source's own connection, if it names one.
+
+    Returns:
+        Optional[dict]: The connection row, or None when the owner must reconnect.
+    """
+    from docsgpt.parser.connectors.connector_creator import ConnectorCreator
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    repo = ConnectorSessionsRepository(conn)
+    if connection_id:
+        row = repo.get_for_user(str(connection_id), owner_id)
+        candidates = [row] if owns_connector_session(row, owner_id, provider) else []
+    else:
+        candidates = [s for s in repo.list_for_user(owner_id) if owns_connector_session(s, owner_id, provider)]
+    for session in candidates:
+        if normalize_status(session) != STATUS_CONNECTED:
+            continue
+        try:
+            token_info = read_secrets(session).get("token_info") or {}
+        except CredentialDecryptionError:
+            continue
+        if isinstance(token_info, dict) and token_info and not token_info.get("refresh_token"):
+            try:
+                if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
+                    continue
+            except Exception:
+                # Providers without an expiry check leave the verdict to the sync.
+                pass
+        return session
+    return None
+
+
 # ---------------------------------------------------------------------------
 # MCP OAuth token storage
 # ---------------------------------------------------------------------------

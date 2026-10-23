@@ -26,7 +26,6 @@ from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
-    owns_connector_session,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -586,53 +585,6 @@ class ConnectorDisconnect(Resource):
             return make_response(jsonify({"success": False, "error": "Failed to disconnect session"}), 500)
 
 
-def _owner_connector_session(
-    conn, owner_id: str, provider: str, connection_id: Optional[str] = None,
-) -> Optional[dict]:
-    """The owner's usable connection for ``provider``, or None.
-
-    Used when a team editor syncs a shared connector source: the sync runs
-    with the owner's account, the source's own connection when it has one,
-    else the owner's first connection for the provider. A connection that is
-    not connected (signed out, flagged for reconnect, holding no
-    credentials), cannot be decrypted, or has an expired access token that
-    can't be refreshed counts as missing.
-
-    Args:
-        conn: Open database connection.
-        owner_id: The source owner's ``sub``.
-        provider: The source's connector provider.
-        connection_id: The source's own connection, if it names one.
-
-    Returns:
-        Optional[dict]: The connection row, or None when the owner must reconnect.
-    """
-    from docsgpt.security.encryption import CredentialDecryptionError
-
-    repo = ConnectorSessionsRepository(conn)
-    if connection_id:
-        row = repo.get_for_user(str(connection_id), owner_id)
-        candidates = [row] if owns_connector_session(row, owner_id, provider) else []
-    else:
-        candidates = [s for s in repo.list_for_user(owner_id) if owns_connector_session(s, owner_id, provider)]
-    for session in candidates:
-        if service.normalize_status(session) != service.STATUS_CONNECTED:
-            continue
-        try:
-            token_info = service.read_secrets(session).get("token_info") or {}
-        except CredentialDecryptionError:
-            continue
-        if isinstance(token_info, dict) and token_info and not token_info.get("refresh_token"):
-            try:
-                if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
-                    continue
-            except Exception:
-                # Providers without an expiry check leave the verdict to the sync.
-                pass
-        return session
-    return None
-
-
 @connectors_ns.route("/api/connectors/sync")
 class ConnectorSync(Resource):
     @api.expect(
@@ -728,7 +680,7 @@ class ConnectorSync(Resource):
                 # A grantee can't name a connection: theirs would read the
                 # source's files with another account.
                 with db_readonly() as conn:
-                    session = _owner_connector_session(conn, owner_id, source_type, source_connection)
+                    session = service.owner_sync_connection(conn, owner_id, source_type, source_connection)
                 if session is None:
                     message = (
                         "The owner needs to reconnect this source's account "
