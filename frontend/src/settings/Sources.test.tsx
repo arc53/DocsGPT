@@ -26,7 +26,13 @@ const {
   knowledge: { docs: undefined as unknown },
   reconnect: vi.fn(),
   uploadProps: vi.fn(),
-  connectors: { connections: [] as Record<string, unknown>[] },
+  connectors: {
+    connections: [] as Record<string, unknown>[],
+    // Syncs this session started (connectorsSlice.startedSyncs).
+    startedSyncs: [] as Record<string, unknown>[],
+    // The recent notification events (notifications.recentEvents).
+    events: [] as Record<string, unknown>[],
+  },
   // The heavy children: each view reports the canEdit and the citation
   // link it was given, and its Back leaves it.
   view:
@@ -91,7 +97,12 @@ vi.mock('react-redux', () => ({
       preference: { token: null, sourceDocs: knowledge.docs },
       upload: { tasks: [] },
       graphBuild: { builds: {} },
-      connectors: { connections: connectors.connections, loaded: true },
+      connectors: {
+        connections: connectors.connections,
+        loaded: true,
+        startedSyncs: connectors.startedSyncs,
+      },
+      notifications: { recentEvents: connectors.events },
     }),
 }));
 
@@ -155,7 +166,7 @@ vi.mock('../upload/Upload', () => ({
 }));
 
 import type { Doc } from '../models/misc';
-import { getDocsWithPagination } from '../preferences/preferenceApi';
+import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import Sources from './Sources';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -1219,6 +1230,77 @@ describe('Sources citation link', () => {
     await render('/settings/knowledge?source=gone&chunk=c1&q=x');
     expect(viewOf('chunks')).toBeNull();
     expect(where()).toBe('');
+  });
+
+  describe('a source whose first sync is still running', () => {
+    const started = {
+      id: 'src-new',
+      name: 'Handbook',
+      connectionId: 'conn-drive',
+      startedAt: '2026-10-23T10:00:00Z',
+    };
+    const ingest = (type: string) => ({
+      id: `evt-${type}`,
+      type,
+      scope: { kind: 'source', id: 'src-new' },
+    });
+
+    beforeEach(() => {
+      dispatch.mockReset();
+      vi.mocked(getDocs).mockReset();
+      vi.mocked(getDocs).mockResolvedValue([]);
+      connectors.startedSyncs = [started];
+      connectors.events = [];
+    });
+
+    afterEach(() => {
+      connectors.startedSyncs = [];
+      connectors.events = [];
+    });
+
+    it('keeps the link while it indexes, then opens the source once listed', async () => {
+      // The store applies the list read back, as the real slice does.
+      dispatch.mockImplementation(
+        (action: { type?: string; payload?: unknown }) => {
+          if (action?.type === 'preference/setSourceDocs')
+            knowledge.docs = action.payload;
+        },
+      );
+      await render('/settings/knowledge?source=src-new');
+      // Not listed yet: the list shows and the link waits.
+      expect(viewOf('file-tree')).toBeNull();
+      expect(where()).toBe('?source=src-new');
+
+      // The first ingest finishes: the knowledge list is read again, and
+      // the source opens from it; the link is spent.
+      const fresh = {
+        ...doc({ id: 'src-new', name: 'Handbook' }),
+        is_nested: true,
+      };
+      vi.mocked(getDocs).mockResolvedValue([fresh] as never);
+      connectors.events = [ingest('source.ingest.completed')];
+      await render('/settings/knowledge?source=src-new');
+      expect(getDocs).toHaveBeenCalledTimes(1);
+      expect(viewOf('file-tree')).not.toBeNull();
+      expect(where()).toBe('');
+    });
+
+    it('drops the link when the first sync fails', async () => {
+      await render('/settings/knowledge?source=src-new');
+      expect(where()).toBe('?source=src-new');
+      connectors.events = [ingest('source.ingest.failed')];
+      await render('/settings/knowledge?source=src-new');
+      expect(where()).toBe('');
+      expect(viewOf('file-tree')).toBeNull();
+    });
+
+    it('drops the link when the finished source still is not listed', async () => {
+      connectors.events = [ingest('source.ingest.completed')];
+      await render('/settings/knowledge?source=src-new');
+      // Read again once; still missing, so the plain list stays.
+      expect(getDocs).toHaveBeenCalledTimes(1);
+      expect(where()).toBe('');
+    });
   });
 
   it('Back drops the link: the source opened again lists from the start', async () => {

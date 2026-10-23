@@ -29,7 +29,8 @@ import {
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
-import { getDocsWithPagination } from '../preferences/preferenceApi';
+import type { SSEEvent } from '../notifications/notificationsSlice';
+import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
   selectToken,
@@ -59,6 +60,7 @@ import {
   loadConnectors,
   selectConnections,
   selectConnectorsLoaded,
+  selectStartedSyncs,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
@@ -73,6 +75,31 @@ import {
   syncSchedule,
 } from './sourceKinds';
 import { useSourceActions } from './useSourceActions';
+
+const NO_EVENTS: SSEEvent[] = [];
+const selectEvents = (state: {
+  notifications?: { recentEvents?: SSEEvent[] };
+}) => state.notifications?.recentEvents ?? NO_EVENTS;
+
+/**
+ * Where a source's first ingest stands, from the recent events: a synced
+ * source is listed only once it has finished.
+ *
+ * @param events The recent notification events, newest first.
+ * @param sourceId The source to look for.
+ * @returns The newest terminal state, or null while it still runs.
+ */
+const firstIngestState = (
+  events: SSEEvent[],
+  sourceId: string,
+): 'completed' | 'failed' | null => {
+  for (const event of events) {
+    if (event.scope?.id !== sourceId) continue;
+    if (event.type === 'source.ingest.completed') return 'completed';
+    if (event.type === 'source.ingest.failed') return 'failed';
+  }
+  return null;
+};
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
@@ -146,6 +173,20 @@ export default function Sources({
   const knowledge = useSelector(selectSourceDocs);
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewLink, setViewLink] = useState<KnowledgeLink | null>(null);
+  // The wizard's Open in Knowledge can come before the source exists: a
+  // sync started this session is listed once its first ingest finishes,
+  // and the link waits for that (the upload toast shows it indexing).
+  const startedSyncs = useSelector(selectStartedSyncs);
+  const events = useSelector(selectEvents);
+  const linkedId = searchParams.get('source');
+  const linkedSyncState =
+    linkedId && startedSyncs.some((sync) => sync.id === linkedId)
+      ? (firstIngestState(events, linkedId) ?? 'indexing')
+      : null;
+  // The source whose finished ingest has been read back into the list.
+  const [reloadedFor, setReloadedFor] = useState<string | null>(null);
+  // A link that waited opens only if the user hasn't opened another source.
+  const waitedFor = useRef<string | null>(null);
   useEffect(() => {
     const link = readKnowledgeLink(searchParams);
     if (!link) return;
@@ -153,6 +194,26 @@ export default function Sources({
       paginatedDocuments?.find((d) => d.id === link.sourceId) ??
       knowledge?.find((d) => d.id === link.sourceId);
     if (!listed && knowledge == null) return; // the list is still loading
+    if (!listed && linkedSyncState === 'indexing') {
+      waitedFor.current = link.sourceId;
+      return;
+    }
+    if (
+      !listed &&
+      linkedSyncState === 'completed' &&
+      reloadedFor !== link.sourceId
+    ) {
+      // Finished: read the lists again, then open it or give up.
+      waitedFor.current = link.sourceId;
+      refreshDocs(undefined, currentPage, rowsPerPage);
+      getDocs(token)
+        .then((docs) => {
+          if (docs) dispatch(setSourceDocs(docs));
+        })
+        .catch((error) => console.error(error))
+        .finally(() => setReloadedFor(link.sourceId));
+      return;
+    }
     setSearchParams(
       (params) => {
         const next = new URLSearchParams(params);
@@ -161,15 +222,21 @@ export default function Sources({
       },
       { replace: true },
     );
+    const waited = waitedFor.current === link.sourceId;
+    waitedFor.current = null;
     if (!listed) return;
     // The app-wide list names the folder flag `is_nested`.
     const raw = listed as Doc & { is_nested?: boolean };
-    setDocumentToView({
-      ...listed,
-      isNested: listed.isNested ?? raw.is_nested,
-    });
+    const linked = { ...listed, isNested: listed.isNested ?? raw.is_nested };
+    setDocumentToView((open) => (waited && open ? open : linked));
     setViewLink(link);
-  }, [searchParams, knowledge, paginatedDocuments]);
+  }, [
+    searchParams,
+    knowledge,
+    paginatedDocuments,
+    linkedSyncState,
+    reloadedFor,
+  ]);
   // A refreshed page carries the open source's new state (converted to a
   // wiki, a finished graph build), and the view follows it.
   useEffect(() => {
