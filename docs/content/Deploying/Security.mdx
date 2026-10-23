@@ -1,7 +1,7 @@
 ---
 title: Security Checklist
 description: Harden a DocsGPT install before other people or the internet can reach it - bind addresses, the choice of AUTH_TYPE, the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-23
 ---
 
 import { Callout } from 'nextra/components'
@@ -67,12 +67,14 @@ URLs that users supply are checked before DocsGPT fetches them, so that nobody c
 - **Checked and pinned.** Every address the host resolves to is checked, and the request is sent to the checked address, so a DNS change between the check and the request cannot redirect it:
   - the [API Tool](/Tools/api-tool), which also does not follow redirects, and the ntfy tool (error: `URL validation error: ...`),
   - the `read_webpage` tool,
-  - Website sources (pages, crawls and sitemaps),
+  - Website sources (pages, crawls and sitemaps), which follow up to five redirects and check each new address like the first,
   - custom models that users add in **Settings → Custom Models** (their base URL).
 - **Checked, not pinned.** The host's address is checked once, and the client then connects on its own:
   - [MCP servers](/Tools/mcp-tools) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),
   - S3 sources with a custom endpoint,
   - API Tool URLs in an imported agent (unsafe ones are dropped with a warning; the imported tool is pinned when it runs).
+
+A page download by the `read_webpage` tool or a Website source also has an overall time limit, not only a per-read timeout: twice the read timeout, and at least 30 seconds. A server that sends a byte at a time can't hold a fetch open.
 
 There is no allowlist and no setting that relaxes either check. That rules out services on your LAN, on the Docker host, and other services in the same Compose project (their addresses are private).
 
