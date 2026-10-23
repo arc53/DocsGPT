@@ -459,3 +459,55 @@ class TestConnectorSyncTakesTheIndexLock:
 
         assert "operation" not in uploads[0]
         assert uploads[0]["config"]
+
+
+@pytest.mark.unit
+class TestARefusedConnectorSyncUpload:
+    """The API answers 200 ``skipped`` when the source was deleted, or became a wiki, while the sync ran."""
+
+    @pytest.fixture
+    def refused(self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+        from docsgpt.vectorstore import vector_creator
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        store = MagicMock(name="vector_store")
+        monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+        after = {"events": [], "graph": [], "store": store, "answer": {"status": "skipped", "reason": "gone"}}
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: after["answer"])
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: after["events"].append((kind, payload))
+        )
+        monkeypatch.setattr(worker, "_maybe_enqueue_graph_extraction", lambda *a, **k: after["graph"].append(a))
+        return after
+
+    def test_a_deleted_source_fails_with_gone_and_drops_its_vectors(
+        self, pg_conn, patch_worker_db, task_self, refused,
+    ):
+        from docsgpt import worker
+
+        task_self.request.id = "task-refused"
+        src = _gdrive_source(pg_conn, {})
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "skipped" and result["reason"] == "gone"
+        kind, payload = refused["events"][-1]
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "gone" and payload["task_id"] == "task-refused" and payload["error"]
+        assert "source.ingest.completed" not in [k for k, _ in refused["events"]]
+        refused["store"].delete_index.assert_called_once()
+        assert refused["graph"] == []
+
+    def test_a_wiki_keeps_its_vectors(self, pg_conn, patch_worker_db, task_self, refused):
+        from docsgpt import worker
+
+        refused["answer"] = {"status": "skipped", "reason": "wiki"}
+        src = _gdrive_source(pg_conn, {})
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "skipped" and result["reason"] == "wiki"
+        assert refused["events"][-1][1]["reason"] == "wiki"
+        refused["store"].delete_index.assert_not_called()

@@ -606,7 +606,22 @@ def _worker_api_url() -> str:
     return settings.WORKER_API_URL or settings.API_URL
 
 
-def upload_index(full_path, file_data):
+def upload_index(full_path: str, file_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Send a built index and the source's fields to the API, which stores them.
+
+    Args:
+        full_path: The local directory holding the index (FAISS files).
+        file_data: The source's fields, as the form of ``/api/upload_index``.
+
+    Returns:
+        The API's JSON answer (``{}`` when the body isn't a JSON object). For a
+        sync the API refuses with ``{"status": "skipped", "reason": "gone" | "wiki"}``
+        when the source was deleted, or became a wiki, while the sync ran.
+
+    Raises:
+        requests.RequestException: The call failed or answered an HTTP error.
+        FileNotFoundError: A FAISS index file is missing.
+    """
     files = None
     try:
         headers = {}
@@ -651,6 +666,51 @@ def upload_index(full_path, file_data):
         if settings.VECTOR_STORE == "faiss" and files is not None:
             for file in files.values():
                 file.close()
+    try:
+        answer = response.json()
+    except ValueError:
+        return {}
+    return answer if isinstance(answer, dict) else {}
+
+
+def _upload_refusal(answer: Any) -> Optional[str]:
+    """Why the API refused a sync's upload (``gone`` or ``wiki``), or ``None`` when it stored it.
+
+    Args:
+        answer: What ``upload_index`` returned (``None`` from a stub counts as stored).
+
+    Returns:
+        The refusal's reason, or ``None``.
+    """
+    if isinstance(answer, dict) and answer.get("status") == "skipped":
+        return str(answer.get("reason") or "gone")
+    return None
+
+
+def _drop_refused_sync_vectors(reason: str, source_id: str) -> None:
+    """Clear what a refused sync wrote to the vector store for a source deleted while it ran.
+
+    A sync wipes and re-fills the source's chunks before it uploads; on a store
+    other than FAISS they are already written under the source's id, and the
+    delete that ran meanwhile has already cleared it, so nothing else would.
+    FAISS keeps the index in the sync's scratch directory, which the API never
+    saved. A source that became a wiki keeps its chunks: they may already be
+    the wiki's pages. Best effort: a failure is logged.
+
+    Args:
+        reason: The API's refusal.
+        source_id: The source.
+    """
+    if reason != "gone" or settings.VECTOR_STORE == "faiss":
+        return
+    try:
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, source_id=source_id, embeddings_key=settings.EMBEDDINGS_KEY,
+        ).delete_index()
+    except Exception as err:  # noqa: BLE001 - the sync's outcome is already decided
+        logging.warning(f"Could not drop the vectors of deleted source {source_id}: {err}")
 
 
 # Define the main function for ingesting and processing documents.
@@ -1579,7 +1639,17 @@ def remote_worker(
                 logging.warning(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
-        upload_index(full_path, file_data)
+        refused = _upload_refusal(upload_index(full_path, file_data))
+        if refused:
+            # Deleted, or made a wiki, while the sync ran: nothing was stored,
+            # so it neither completes nor builds a graph or a website report.
+            logging.info(f"The API refused the sync of source {source_id_for_events}: {refused}")
+            _drop_refused_sync_vectors(refused, source_id_for_events)
+            _publish_sync_not_run(
+                self, user, source_id_for_events, name_job, loader,
+                _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused,
+            )
+            return {"id": source_id_for_events, "status": "skipped", "reason": refused}
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
         website_fields = {}
@@ -1827,7 +1897,7 @@ def sync(
                 error = "This source has nothing left to sync"
                 _publish_sync_not_run(self, user, doc_id, name_job, loader, error)
                 return {"status": "error", "error": error}
-            remote_worker(
+            result = remote_worker(
                 self,
                 source_data,
                 name_job,
@@ -1842,6 +1912,9 @@ def sync(
                 config=config or None,
                 connection_id=connection_id,
             )
+            if isinstance(result, dict) and result.get("status") == "skipped":
+                # The API refused the upload; remote_worker has said why.
+                return {"status": "skipped", "reason": result.get("reason")}
     except SourceBusy:
         return _skipped("busy")
     except Exception as e:
@@ -4224,8 +4297,9 @@ def ingest_connector(
             ``reason``) when a sync is skipped. Off for scheduled syncs.
 
     Returns:
-        The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``,
-        or ``{"status": "error", "error": ...}`` for a sync whose row can't be read.
+        The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
+        (also when the API refused the sync's upload), or ``{"status": "error", "error": ...}``
+        for a sync whose row can't be read.
     """
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
@@ -4573,7 +4647,17 @@ def _ingest_connector(
                         upd_err,
                     )
 
-            upload_index(vector_store_path, file_data)
+            refused = _upload_refusal(upload_index(vector_store_path, file_data))
+            if refused:
+                # Deleted, or made a wiki, while the sync ran: nothing was
+                # stored, so it neither completes nor builds a graph.
+                logging.info(f"The API refused the sync of source {source_id_for_events}: {refused}")
+                _drop_refused_sync_vectors(refused, source_id_for_events)
+                _publish_sync_not_run(
+                    self, user, source_id_for_events, job_name, source_type,
+                    _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused,
+                )
+                return {"id": source_id_for_events, "status": "skipped", "reason": refused}
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
 

@@ -396,6 +396,116 @@ class TestASkippedSyncTellsTheUI:
         assert events == []
 
 
+@pytest.fixture
+def refused_upload(monkeypatch):
+    """A sync whose upload the API refuses, with what it does afterwards recorded."""
+    from docsgpt import worker
+    from docsgpt.vectorstore import vector_creator
+
+    loader = MagicMock(name="remote_loader")
+    loader.load_data.return_value = [
+        Document(text="page body", extra_info={"file_path": "guide.md", "title": "Guide"}, doc_id="d1"),
+    ]
+    loader.report = {"pages": 1, "sites": []}
+    monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
+    monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
+    monkeypatch.setattr(worker, "assert_index_complete", lambda *a, **k: None)
+    store = MagicMock(name="vector_store")
+    monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+    after = {"events": [], "graph": [], "reports": [], "answer": {"status": "skipped", "reason": "gone"}}
+    monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: after["answer"])
+    monkeypatch.setattr(
+        worker, "publish_user_event", lambda user, kind, payload, **kw: after["events"].append((kind, payload))
+    )
+    monkeypatch.setattr(worker, "_maybe_enqueue_graph_extraction", lambda *a, **k: after["graph"].append(a))
+    monkeypatch.setattr(worker, "_record_website_report", lambda *a, **k: after["reports"].append(a) or {})
+    after["store"] = store
+    return after
+
+
+@pytest.mark.unit
+class TestARefusedSyncUploadIsNotCompleted:
+    """The API answers 200 ``skipped`` when the source was deleted, or became a wiki, while the sync ran."""
+
+    def _run(self, worker, task_self, src, tmp_path):
+        task_self.request.id = "sync-refused"
+        return worker.sync(task_self, {}, "Docs", USER, "website", "daily", "classic", str(src["id"]),
+                           directory=str(tmp_path))
+
+    def test_a_deleted_source_fails_with_gone_and_drops_its_vectors(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, refused_upload, monkeypatch,
+    ):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+
+        result = self._run(worker, task_self, src, tmp_path)
+
+        assert result == {"status": "skipped", "reason": "gone"}
+        kinds = [kind for kind, _ in refused_upload["events"]]
+        assert kinds == ["source.ingest.queued", "source.ingest.failed"]
+        failed = refused_upload["events"][-1][1]
+        assert failed["reason"] == "gone" and failed["task_id"] == "sync-refused"
+        assert failed["operation"] == "sync" and failed["error"]
+        # The sync re-filled the index under the deleted id; nothing else would clear it.
+        refused_upload["store"].delete_index.assert_called_once()
+        assert refused_upload["graph"] == [] and refused_upload["reports"] == []
+
+    def test_a_wiki_keeps_its_vectors(self, pg_conn, patch_worker_db, task_self, tmp_path, refused_upload,
+                                      monkeypatch):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        refused_upload["answer"] = {"status": "skipped", "reason": "wiki"}
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+
+        result = self._run(worker, task_self, src, tmp_path)
+
+        assert result == {"status": "skipped", "reason": "wiki"}
+        assert [(kind, payload.get("reason")) for kind, payload in refused_upload["events"]][-1] == (
+            "source.ingest.failed", "wiki",
+        )
+        refused_upload["store"].delete_index.assert_not_called()
+        assert refused_upload["graph"] == []
+
+    def test_faiss_has_no_vectors_to_drop(self, pg_conn, patch_worker_db, task_self, tmp_path, refused_upload,
+                                          monkeypatch):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+
+        # The API refused before saving the files: the index only ever lived in the scratch directory.
+        monkeypatch.setattr(settings, "VECTOR_STORE", "faiss")
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+
+        assert self._run(worker, task_self, src, tmp_path) == {"status": "skipped", "reason": "gone"}
+        refused_upload["store"].delete_index.assert_not_called()
+
+    def test_upload_index_returns_the_apis_answer(self, monkeypatch, tmp_path):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        answer = MagicMock(status_code=200)
+        answer.json.return_value = {"status": "skipped", "reason": "gone"}
+        monkeypatch.setattr(worker.requests, "post", lambda *a, **k: answer)
+
+        assert worker.upload_index(str(tmp_path), {"id": "s"}) == {"status": "skipped", "reason": "gone"}
+
+    def test_upload_index_tolerates_a_body_that_is_not_json(self, monkeypatch, tmp_path):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        answer = MagicMock(status_code=200)
+        answer.json.side_effect = ValueError("no json")
+        monkeypatch.setattr(worker.requests, "post", lambda *a, **k: answer)
+
+        assert worker.upload_index(str(tmp_path), {"id": "s"}) == {}
+
+
 @pytest.mark.unit
 class TestUploadIndexForAConnectorSync:
     def _seed(self, pg_conn, **fields):
