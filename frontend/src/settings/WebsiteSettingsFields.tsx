@@ -27,9 +27,22 @@ import {
   type SyncFrequency,
   type WebsiteEntry,
 } from '../upload/website';
-import { formatRelative } from '../utils/dateTimeUtils';
+import { EMPTY_VALUE, formatRelative } from '../utils/dateTimeUtils';
 
 type SiteReport = { url: string; limit_reached?: boolean };
+
+/**
+ * A stable React key per item, so the same value listed twice (a config
+ * written before the list was deduplicated) still gets its own row.
+ */
+function rowKeys(values: string[]): string[] {
+  const seen = new Map<string, number>();
+  return values.map((value) => {
+    const count = seen.get(value) ?? 0;
+    seen.set(value, count + 1);
+    return count ? `${value}#${count}` : value;
+  });
+}
 
 /** What a Website source fetches, skips and keeps, and how often it syncs. */
 export type WebsiteSettings = {
@@ -208,13 +221,18 @@ export default function WebsiteSettingsFields({
     if (entry.mode === 'page') return tr('pageEntry');
     const summary = tr('siteSummary', {
       find: ur(`discovery.${entry.discovery ?? 'auto'}`),
-      max: entry.max_pages ?? '—',
+      max: entry.max_pages ?? EMPTY_VALUE,
     });
     const reached = reports.some(
       (report) => report.url === entry.url && report.limit_reached,
     );
     return reached ? `${summary} · ${tr('limitReached')}` : summary;
   };
+
+  const entryKeys = rowKeys(
+    settings.entries.map((entry) => `${entry.mode}-${entry.url}`),
+  );
+  const skipKeys = rowKeys(settings.skip);
 
   return (
     <div className="flex flex-col gap-5">
@@ -226,7 +244,7 @@ export default function WebsiteSettingsFields({
               const Icon = entry.mode === 'site' ? Globe : FileText;
               return (
                 <ListRow
-                  key={`${entry.mode}-${entry.url}`}
+                  key={entryKeys[index]}
                   leading={
                     <Icon
                       aria-hidden="true"
@@ -242,7 +260,10 @@ export default function WebsiteSettingsFields({
                       variant="ghost-destructive"
                       size="icon-sm"
                       icon={Trash2}
-                      label={tr('removeFromList')}
+                      label={tr('removeFromList', {
+                        address: pageAddress(entry.url),
+                        interpolation: { escapeValue: false },
+                      })}
                       // A source must keep something to fetch.
                       disabled={settings.entries.length === 1}
                       onClick={() =>
@@ -269,15 +290,19 @@ export default function WebsiteSettingsFields({
           />
           <Card variant="outline" padding="none">
             <ListRows>
-              {settings.skip.map((rule) => (
+              {settings.skip.map((rule, index) => (
                 <ListRow
-                  key={rule}
+                  key={skipKeys[index]}
                   title={<span title={rule}>{pageAddress(rule)}</span>}
                   trailing={
                     <Button
                       type="button"
                       variant="link"
                       size="inline"
+                      aria-label={tr('restoreAddress', {
+                        address: pageAddress(rule),
+                        interpolation: { escapeValue: false },
+                      })}
                       onClick={() =>
                         set({ skip: settings.skip.filter((r) => r !== rule) })
                       }

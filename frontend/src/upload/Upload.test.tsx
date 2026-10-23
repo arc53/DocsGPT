@@ -3,12 +3,17 @@ import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { services?: string; account?: string }) =>
+    t: (
+      key: string,
+      opts?: { services?: string; account?: string; address?: string },
+    ) =>
       opts?.services
         ? `${key}(${opts.services})`
         : opts?.account
           ? `${key}(${opts.account})`
-          : key,
+          : opts?.address
+            ? `${key}(${opts.address})`
+            : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -874,6 +879,28 @@ describe('Upload source-type tiles', () => {
     Array.from(document.body.querySelectorAll('button')).find(
       (b) => b.textContent === 'modals.uploadDoc.train',
     )!;
+
+  it("names each address's remove button by its address", async () => {
+    await openType('website');
+    const addAnother = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'modals.uploadDoc.website.addAnotherPage',
+      )!;
+    await act(async () => addAnother().click());
+    await act(async () => addAnother().click());
+    const inputs = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="url"]'),
+    );
+    await typeUrl(inputs[1], 'https://docs.example.com/b');
+    const labels = Array.from(document.body.querySelectorAll('button')).map(
+      (b) => b.getAttribute('aria-label'),
+    );
+    expect(labels).toContain(
+      'modals.uploadDoc.website.removeAddress(docs.example.com/b)',
+    );
+    // An empty row has no address to name.
+    expect(labels).toContain('modals.uploadDoc.website.removePage');
+  });
 
   it('holds no more page addresses than the source can, and says so', async () => {
     appConfig.value = { web_default_pages: 2, web_max_pages: 2 };

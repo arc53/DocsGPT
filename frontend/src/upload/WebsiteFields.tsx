@@ -2,6 +2,7 @@ import { Plus, X } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { pageAddress } from '../components/tree/pages';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { IconButton } from '../components/ui/icon-button';
@@ -97,7 +98,15 @@ export default function WebsiteFields({
               <IconButton
                 variant="ghost-muted"
                 icon={X}
-                label={tr('removePage')}
+                // Named by its address, so each row's button is told apart.
+                label={
+                  url.trim()
+                    ? tr('removeAddress', {
+                        address: pageAddress(url.trim()),
+                        interpolation: { escapeValue: false },
+                      })
+                    : tr('removePage')
+                }
                 onClick={() =>
                   set({ urls: draft.urls.filter((_, i) => i !== index) })
                 }

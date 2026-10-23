@@ -636,7 +636,7 @@
         "removeFromSource": "Remove from source",
         "removeTitle": "Remove “{{name}}”?",
         "removeEntry": "Its chunks are deleted and the page is taken off this source’s list.",
-        "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in the source's Settings.",
+        "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in the source’s Settings.",
         "removeFolder": "Its pages’ chunks are deleted and later syncs skip every address under {{address}}.",
         "remove": "Remove",
         "removeAndSkip": "Remove and skip",
@@ -649,9 +649,10 @@
         "siteSummary": "Whole site · {{find}} · page limit {{max}}",
         "limitReached": "page limit reached",
         "pageEntry": "Page",
-        "removeFromList": "Remove from the list",
+        "removeFromList": "Remove {{address}} from the list",
         "skipped": "Skipped",
         "restore": "Restore",
+        "restoreAddress": "Restore {{address}}",
         "saveFailed": "Couldn’t save the settings.",
         "loadFailed": "Couldn’t load the settings.",
         "lastSynced": "Last synced {{when}}.",
@@ -2245,13 +2246,14 @@
       },
       "fields": {
         "initialContent": "Initial content",
-        "initialContentHint": "Markdown. You can add and edit pages after it's created."
+        "initialContentHint": "Markdown. You can add and edit pages after it’s created."
       },
       "website": {
         "pageUrl": "Page address",
         "siteUrl": "Website address",
         "addAnotherPage": "Add another page",
         "removePage": "Remove this address",
+        "removeAddress": "Remove {{address}}",
         "maxPages": "Page limit",
         "maxPagesHint": "Up to {{max}}, set by admin.",
         "pathPrefix": "Stay under",

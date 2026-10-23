@@ -2,7 +2,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    // A row's address is part of its buttons' names.
+    t: (key: string, opts?: { address?: string }) =>
+      opts?.address ? `${key} ${opts.address}` : key,
+  }),
 }));
 
 vi.mock('react-redux', () => ({
@@ -376,10 +380,10 @@ describe('SourceConfigModal first section, by kind', () => {
       }),
     );
     const removeButtons = () =>
-      buttons().filter(
-        (b) =>
-          b.getAttribute('aria-label') ===
-          'settings.sources.website.removeFromList',
+      buttons().filter((b) =>
+        b
+          .getAttribute('aria-label')
+          ?.startsWith('settings.sources.website.removeFromList'),
       );
     await act(async () => removeButtons()[1].click());
     // The last entry left can't be removed.
@@ -400,6 +404,59 @@ describe('SourceConfigModal first section, by kind', () => {
     expect(updateSourceConfig).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalledWith({ syncFrequency: 'weekly' });
     expect(setModalState).toHaveBeenCalledWith('INACTIVE');
+  });
+
+  it("names each row's buttons by its address", async () => {
+    await render(
+      doc({
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+      }),
+    );
+    const labels = buttons().map((b) => b.getAttribute('aria-label'));
+    expect(labels).toContain(
+      'settings.sources.website.removeFromList docs.x.io',
+    );
+    expect(labels).toContain(
+      'settings.sources.website.removeFromList github.com/a/b',
+    );
+    expect(labels).toContain(
+      'settings.sources.website.restoreAddress docs.x.io/changelog',
+    );
+    expect(labels).toContain(
+      'settings.sources.website.restoreAddress docs.x.io/Deploying/*',
+    );
+  });
+
+  it('draws an entry listed twice as two rows without a key clash', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    service.getWebsite.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        config: {
+          ...WEBSITE,
+          entries: [...WEBSITE.entries, WEBSITE.entries[1]],
+          skip: [...WEBSITE.skip, WEBSITE.skip[0]],
+        },
+        sync_frequency: 'weekly',
+      }),
+    });
+    await render(
+      doc({
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+      }),
+    );
+    const removes = buttons().filter((b) =>
+      b
+        .getAttribute('aria-label')
+        ?.startsWith('settings.sources.website.removeFromList'),
+    );
+    expect(removes).toHaveLength(3);
+    expect(
+      error.mock.calls.some((call) => String(call[0]).includes('same key')),
+    ).toBe(false);
+    error.mockRestore();
   });
 
   const saveEdited = async () => {
