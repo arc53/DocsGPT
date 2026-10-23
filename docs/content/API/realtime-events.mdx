@@ -1,7 +1,7 @@
 ---
 title: Realtime Events & Notifications
 description: Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -56,7 +56,7 @@ Event types:
 | `source.ingest.queued` | source | An upload, remote ingest or re-ingest was queued. | `source_id`, `filename` or `job_name`, `operation` |
 | `source.ingest.progress` | source | Parsing or embedding progressed. | `current`, `total`, `stage` (`parsing` or `embedding`) |
 | `source.ingest.completed` | source | The source is ready. | `source_id`, `tokens`, `operation`, and `filename` (uploads and re-ingests) or `job_name` and `loader` (remote and connector sources) |
-| `source.ingest.failed` | source | Ingestion failed, or a sync or page change you started didn't run. | `source_id`, `operation`, `error`; `reason` when it didn't run or was undone: `busy`, `wiki` or `gone` for a sync; `busy` for a page change; `out_of_scope` for a refreshed page that now leads outside the source and was removed; `no_files`, `busy` or `gone` for a re-ingest |
+| `source.ingest.failed` | source | Ingestion failed, or a sync or page change you started didn't run. | `source_id`, `operation`, `error`; `reason` when it didn't run or was undone: `busy`, `wiki` or `gone` for a sync; `busy` for a page change; `out_of_scope` for a refreshed page that now leads outside the source and was removed; `no_files`, `busy`, `wiki` or `gone` for a re-ingest |
 | `graph.extract.progress`, `graph.extract.completed`, `graph.extract.failed` | source | [GraphRAG](/Sources/GraphRAG) extraction progressed, finished or failed. | `source_id`; `progress`: `current`, `total`, `nodes`, `edges`; `completed`: `nodes`, `edges`, `chunks_processed`, `skipped_over_cap`, `failed_chunks`; `failed`: `error` |
 | `attachment.queued`, `attachment.progress`, `attachment.completed`, `attachment.failed` | attachment | A chat attachment is being processed. | `attachment_id`, `filename` |
 | `tool.approval.required` | conversation | A turn paused on tools that need approval. | `conversation_id`, `message_id`, `pending_tool_calls` |
