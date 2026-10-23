@@ -5797,6 +5797,58 @@ def _remove_web_pages(
     return found
 
 
+def _sync_instead_of_overfilling(
+    source: Dict[str, Any], config: Dict[str, Any], structure: Dict[str, Any], urls: List[str], user: str,
+    actor_id: Optional[str],
+) -> Optional[str]:
+    """Queue a sync of the source when appending ``urls`` would take it past ``WEB_MAX_PAGES``.
+
+    The route checks the cap against the tree it reads, but a sync that held
+    the lock meanwhile may have filled the tree with a site's pages from a
+    config read before the pages were listed. Appending them then would leave
+    the source over its cap. A sync fetches page entries first and gives the
+    sites what is left, so it makes room for them instead. Pages are counted
+    as the route counts them (``held_pages``): the tree's pages and the listed
+    page entries, each page once.
+
+    Args:
+        source: The source row, read under the index lock.
+        config: Its Website config, which lists ``urls`` as page entries.
+        structure: Its ``directory_structure``.
+        urls: The addresses the add would fetch.
+        user: Its owner.
+        actor_id: The user who asked for the add, told about the sync too.
+
+    Returns:
+        The queued sync's task id, or ``None`` when the pages fit (or add none).
+    """
+    from docsgpt.parser.remote.website_tree import held_pages
+
+    cap = int(settings.WEB_MAX_PAGES)
+    held = held_pages(config, structure)
+    tree_held = held_pages({}, structure)["keys"]
+    adds_pages = any(_web_page_key(page_url) not in tree_held for page_url in urls)
+    if not adds_pages or held["count"] <= cap:
+        return None
+    from docsgpt.api.user.tasks import sync_source
+
+    source_id = str(source["id"])
+    logging.info(
+        "website_pages add on %s: %s pages held past the cap of %s; syncing instead", source_id, held["count"], cap,
+    )
+    task = sync_source.delay(
+        source_data=config,
+        job_name=source.get("name", ""),
+        user=user,
+        loader="website",
+        sync_frequency=source.get("sync_frequency") or "never",
+        retriever=source.get("retriever") or "classic",
+        doc_id=source_id,
+        **({"actor_id": actor_id} if actor_id else {}),
+    )
+    return str(task.id)
+
+
 def website_pages_worker(
     self: Any,
     source_id: str,
@@ -5857,7 +5909,11 @@ def website_pages_worker(
 
     Returns:
         ``{"status": "ok", "pages": n}``, plus ``failed_pages`` (the
-        addresses that gave no page) when an add fetched only some.
+        addresses that gave no page) when an add fetched only some, or
+        ``"mode": "sync"`` and ``sync_task_id`` when the added pages no
+        longer fit within ``WEB_MAX_PAGES`` and a sync was queued instead
+        (``_sync_instead_of_overfilling``). The completed event carries the
+        same fields.
 
     Raises:
         ValueError: The source or page is unknown, the source is a wiki, or no
@@ -5893,12 +5949,13 @@ def website_pages_worker(
     try:
         task_id = envelope.get("task_id")
         failed_pages: List[str] = []
+        sync_task_id: Optional[str] = None
         with source_index_lock(source_id):
             if operation == "remove":
                 changes = _remove_web_pages(source_id, user, file_paths, task_id, pages=pages)
             else:
-                changes, failed_pages = _run_website_pages(
-                    source_id, user, operation, urls, file_path, task_id, url=url,
+                changes, failed_pages, sync_task_id = _run_website_pages(
+                    source_id, user, operation, urls, file_path, task_id, url=url, actor_id=actor_id,
                 )
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
@@ -5913,17 +5970,20 @@ def website_pages_worker(
         raise
     # Addresses asked for that gave no page: the run still succeeded with the rest.
     failed_field = {"failed_pages": failed_pages} if failed_pages else {}
+    # Pages that no longer fit beside the tree: a sync was queued to fetch them instead.
+    sync_field = {"mode": "sync", "sync_task_id": sync_task_id} if sync_task_id else {}
     _publish_source_event(
-        user, actor_id, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False, **failed_field},
+        user, actor_id, "source.ingest.completed",
+        {**envelope, "pages": len(changes), "limited": False, **failed_field, **sync_field},
         scope={"kind": "source", "id": source_id},
     )
-    return {"status": "ok", "pages": len(changes), **failed_field}
+    return {"status": "ok", "pages": len(changes), **failed_field, **sync_field}
 
 
 def _run_website_pages(
     source_id: str, user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
-    task_id: Optional[str] = None, url: Optional[str] = None,
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+    task_id: Optional[str] = None, url: Optional[str] = None, actor_id: Optional[str] = None,
+) -> Tuple[List[Dict[str, Any]], List[str], Optional[str]]:
     """The body of ``website_pages_worker``, run holding the source's index lock.
 
     Once the pages are saved, a graphrag source's graph drops the replaced
@@ -5943,10 +6003,13 @@ def _run_website_pages(
         file_path: For ``refresh``: the page's tree path, for a task queued without ``url``.
         task_id: The page task's id.
         url: For ``refresh``: the page's address.
+        actor_id: The user who asked for the change, passed to a sync queued instead.
 
     Returns:
-        ``(changes, failed_pages)``: the page changes written, and the
-        addresses fetched that gave no page.
+        ``(changes, failed_pages, sync_task_id)``: the page changes written,
+        the addresses fetched that gave no page, and the id of the sync
+        queued instead of an add that would take the source past
+        ``WEB_MAX_PAGES`` (``None`` otherwise).
 
     Raises:
         ValueError: As ``website_pages_worker``.
@@ -5981,7 +6044,10 @@ def _run_website_pages(
         urls = [page_url for page_url in urls or [] if _web_page_key(page_url) in listed]
         if not urls:
             logging.info("website_pages add on %s: every page left the config before the run", source_id)
-            return [], []
+            return [], [], None
+        sync_task_id = _sync_instead_of_overfilling(source, config, structure, urls, user, actor_id)
+        if sync_task_id is not None:
+            return [], [], sync_task_id
     # Every leaf's path is taken, not only the pages': a leaf from before
     # leaves carried their address must not be overwritten by a new page.
     leaves = _tree_leaves(structure)
@@ -6106,7 +6172,7 @@ def _run_website_pages(
         _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
     if failure is not None:
         raise failure
-    return kept, failed_pages
+    return kept, failed_pages, None
 
 
 def _wiki_page_path_from_rel(rel_path):

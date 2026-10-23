@@ -1302,6 +1302,120 @@ class TestARefreshStaysInScope:
 
 
 @pytest.mark.unit
+class TestTheCapHolds:
+    """A queued add whose pages no longer fit (a sync filled the tree meanwhile) syncs instead of appending."""
+
+    SITE = {"url": "https://docs.x.io/", "mode": "site", "max_pages": 50}
+
+    @pytest.fixture
+    def queued_sync(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from docsgpt.api.user import tasks
+
+        task = MagicMock(name="sync_source")
+        task.delay.return_value = MagicMock(id="sync-1")
+        monkeypatch.setattr(tasks, "sync_source", task)
+        return task
+
+    def _full(self, pg_conn, monkeypatch, cap, pages):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "WEB_MAX_PAGES", cap)
+        # The sync filled the tree from a config read before the pages were listed.
+        return SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", sync_frequency="weekly",
+            remote_data={"entries": [self.SITE, *({"url": u, "mode": "page"} for u in pages)]},
+            directory_structure={f"s{i}.md": _leaf(f"https://docs.x.io/s{i}", 5) for i in range(cap)},
+        )
+
+    def test_an_add_past_the_cap_queues_a_sync(
+        self, pg_conn, patch_worker_db, task_self, pipeline, monkeypatch, queued_sync,
+    ):
+        from docsgpt import worker
+
+        src = self._full(pg_conn, monkeypatch, 2, ["https://docs.x.io/p0"])
+        pipeline["pages"]["https://docs.x.io/p0"] = "P0"
+
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "add", urls=["https://docs.x.io/p0"], actor_id="editor-1",
+        )
+
+        assert result == {"status": "ok", "pages": 0, "mode": "sync", "sync_task_id": "sync-1"}
+        assert pipeline["fetch_calls"] == []
+        assert sorted(_tree(pg_conn, src)) == ["s0.md", "s1.md"]
+        kwargs = queued_sync.delay.call_args.kwargs
+        assert kwargs["doc_id"] == str(src["id"]) and kwargs["loader"] == "website"
+        assert kwargs["user"] == USER and kwargs["actor_id"] == "editor-1"
+        assert kwargs["sync_frequency"] == "weekly"
+        assert [e["url"] for e in kwargs["source_data"]["entries"]] == ["https://docs.x.io/", "https://docs.x.io/p0"]
+        kind, payload = pipeline["events"][-1]
+        assert kind == "source.ingest.completed"
+        assert payload["mode"] == "sync" and payload["sync_task_id"] == "sync-1" and payload["pages"] == 0
+
+    def test_an_add_that_fits_is_appended(
+        self, pg_conn, patch_worker_db, task_self, pipeline, monkeypatch, queued_sync,
+    ):
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+
+        src = self._full(pg_conn, monkeypatch, 2, ["https://docs.x.io/p0"])
+        monkeypatch.setattr(settings, "WEB_MAX_PAGES", 3)
+        pipeline["pages"]["https://docs.x.io/p0"] = "P0"
+
+        result = worker.website_pages_worker(task_self, str(src["id"]), USER, "add", urls=["https://docs.x.io/p0"])
+
+        assert result == {"status": "ok", "pages": 1}
+        assert "p0.md" in _tree(pg_conn, src)
+        queued_sync.delay.assert_not_called()
+
+    def test_a_page_the_tree_holds_already_is_replaced_in_place(
+        self, pg_conn, patch_worker_db, task_self, pipeline, monkeypatch, queued_sync,
+    ):
+        # It adds no page: the sync that filled the tree fetched it too.
+        from docsgpt import worker
+
+        src = self._full(pg_conn, monkeypatch, 2, ["https://docs.x.io/s1"])
+        pipeline["pages"]["https://docs.x.io/s1"] = "S1"
+
+        result = worker.website_pages_worker(task_self, str(src["id"]), USER, "add", urls=["https://docs.x.io/s1"])
+
+        assert result == {"status": "ok", "pages": 1}
+        queued_sync.delay.assert_not_called()
+
+    @pytest.mark.parametrize("structure", [
+        {},
+        {"a.md": _leaf("https://docs.x.io/a", 1), "legacy.md": {"type": "t", "size_bytes": 1, "token_count": 1}},
+        {"d": {"e": {"a.md": _leaf("https://docs.x.io/a", 1)}}, "a-2.md": _leaf("https://docs.x.io/a#x", 1)},
+        {"new.md": {
+            **_leaf("https://docs.x.io/new", 1), "requested_url": "https://docs.x.io/old-a",
+            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b", "https://docs.x.io/new/"],
+        }},
+    ])
+    def test_pages_are_counted_as_the_route_counts_them(self, structure):
+        from docsgpt.api.user.sources.website import _held_pages
+        from docsgpt.parser.remote.website_tree import held_pages
+
+        config = {"entries": [
+            self.SITE, {"url": "https://docs.x.io/a", "mode": "page"}, {"url": "https://docs.x.io/old-b", "mode": "page"},
+            {"url": "https://docs.x.io/c", "mode": "page"},
+        ]}
+
+        assert held_pages(config, structure) == _held_pages(config, structure)
+
+    def test_a_deep_tree_is_counted_without_recursion(self):
+        from docsgpt.parser.remote.website_tree import held_pages
+
+        tree = node = {}
+        for depth in range(5000):
+            node[f"d{depth}"] = {}
+            node = node[f"d{depth}"]
+        node["p.md"] = _leaf("https://docs.x.io/p", 1)
+
+        assert held_pages({"entries": []}, tree)["count"] == 1
+
+
+@pytest.mark.unit
 class TestThePageCount:
     """Settings show ``metadata.website.pages``; page changes keep it to the tree."""
 

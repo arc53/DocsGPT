@@ -255,3 +255,54 @@ def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str,
         return parse_website_config({"entries": entries}, enforce_page_cap=False)
     except ValueError:
         return None
+
+
+def held_pages(config: Dict[str, Any], structure: Any) -> Dict[str, Any]:
+    """The pages a Website source holds toward ``WEB_MAX_PAGES``, as the add route counts them.
+
+    Its page entries count from when they are listed (one still queued, or
+    one whose fetch failed, keeps its place), and so do the pages in its tree
+    (a site's crawl). A page that is both counts once, a redirected one too
+    (its entries list the addresses its leaf keeps as ``requested_urls``, or
+    an older leaf's ``requested_url``). Leaves without a ``url`` (older
+    crawls) count but have no key. The tree is walked without recursion, so
+    a deep path can't exhaust the stack.
+
+    Args:
+        config: The Website config (``entries`` with ``url`` and ``mode``).
+        structure: ``directory_structure``.
+
+    Returns:
+        ``{"keys": page keys held, "count": how many pages}``.
+    """
+    from docsgpt.parser.remote.website_loader import page_key
+
+    def key(url: str) -> str:
+        try:
+            return page_key(url)
+        except ValueError:
+            return url
+
+    tree_keys: set = set()
+    aliases: set = set()
+    unaddressed = 0
+    stack = [structure] if isinstance(structure, dict) else []
+    while stack:
+        node = stack.pop()
+        for child in node.values():
+            if _is_leaf(child):
+                if not child.get("url"):
+                    unaddressed += 1
+                    continue
+                tree_keys.add(key(child["url"]))
+                listed = child.get("requested_urls")
+                asked = [u for u in listed if isinstance(u, str) and u] if isinstance(listed, list) else []
+                if isinstance(child.get("requested_url"), str) and child["requested_url"]:
+                    asked.append(child["requested_url"])
+                aliases.update(key(address) for address in asked)
+            elif isinstance(child, dict):
+                stack.append(child)
+    asked_keys = aliases - tree_keys
+    entry_keys = {key(e["url"]) for e in (config or {}).get("entries") or [] if e.get("mode") == "page"}
+    count = len(tree_keys) + len(entry_keys - tree_keys - asked_keys) + unaddressed
+    return {"keys": tree_keys | asked_keys | entry_keys, "count": count}
