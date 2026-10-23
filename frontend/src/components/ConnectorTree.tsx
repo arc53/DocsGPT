@@ -85,6 +85,15 @@ export function providerLabel(provider: string): string {
     .join(' ');
 }
 
+/**
+ * Why the worker skipped a queued sync, by its failed event's `reason`: the
+ * source became a wiki, or was deleted (`busy` is a warning, worded apart).
+ */
+const SKIPPED_SYNC_KEYS: Record<string, string> = {
+  wiki: 'settings.connectors.detail.syncRefusedWiki',
+  gone: 'settings.sources.website.sourceGone',
+};
+
 const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   docId,
   sourceName,
@@ -114,7 +123,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     useState<ActiveState>('INACTIVE');
 
   const controllerRef = useRef<TreeBrowserController | null>(null);
-  const { waitForTerminal, mountedRef } = useReingestSseWaiter();
+  const { waitForChange, mountedRef } = useReingestSseWaiter();
 
   /**
    * A failed sync as a destructive toast: the forbidden message on a 403,
@@ -164,7 +173,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         // sync of this same source short-circuiting the current op; a
         // sync's events also carry its task id, which decides when present.
         const opStartedAt = Date.now();
-        const terminal = await waitForTerminal(docId, opStartedAt, {
+        const { terminal, reason } = await waitForChange(docId, opStartedAt, {
           taskId: typeof data?.task_id === 'string' ? data.task_id : null,
         });
 
@@ -196,8 +205,21 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           } catch (err) {
             console.error('Error refreshing directory structure:', err);
           }
+        } else if (terminal === 'failed' && reason === 'busy') {
+          // The worker skipped it: another change held the source too long.
+          dispatch(
+            showActionToast({
+              variant: 'warning',
+              message: t('settings.sources.website.changeBusy'),
+            }),
+          );
         } else if (terminal === 'failed') {
-          toastSyncFailed();
+          const skipped = reason ? SKIPPED_SYNC_KEYS[reason] : undefined;
+          if (skipped)
+            dispatch(
+              showActionToast({ variant: 'destructive', message: t(skipped) }),
+            );
+          else toastSyncFailed();
         }
       } else {
         toastSyncFailed(response.status, data);

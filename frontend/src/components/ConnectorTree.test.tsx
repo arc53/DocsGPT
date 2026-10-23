@@ -1,17 +1,25 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-const { tree, dispatch, sync, waitForTerminal } = vi.hoisted(() => ({
-  dispatch: vi.fn(),
-  waitForTerminal: vi.fn(async () => 'completed'),
-  sync: { connector: vi.fn(), source: vi.fn() },
-  tree: {
-    structure: {
-      'a.docx': { type: 'docx' },
-      'b.docx': { type: 'docx' },
-    } as Record<string, unknown>,
-  },
-}));
+const { tree, dispatch, sync, waitForTerminal, waitForChange } = vi.hoisted(
+  () => ({
+    dispatch: vi.fn(),
+    waitForTerminal: vi.fn(async () => 'completed'),
+    waitForChange: vi.fn(
+      async (): Promise<{ terminal: string; reason: string | null }> => ({
+        terminal: 'completed',
+        reason: null,
+      }),
+    ),
+    sync: { connector: vi.fn(), source: vi.fn() },
+    tree: {
+      structure: {
+        'a.docx': { type: 'docx' },
+        'b.docx': { type: 'docx' },
+      } as Record<string, unknown>,
+    },
+  }),
+);
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -52,6 +60,7 @@ vi.mock('../api/services/userService', () => ({
 vi.mock('./tree/useReingestWait', () => ({
   useReingestSseWaiter: () => ({
     waitForTerminal,
+    waitForChange,
     mountedRef: { current: true },
   }),
 }));
@@ -195,7 +204,7 @@ describe('ConnectorTree and FileTree headers', () => {
     expect(sync.source).toHaveBeenCalledWith({ source_id: 'doc' }, null);
     expect(sync.connector).not.toHaveBeenCalled();
     // The sync's events carry its task id, so the wait matches them.
-    expect(waitForTerminal).toHaveBeenCalledWith('doc', expect.any(Number), {
+    expect(waitForChange).toHaveBeenCalledWith('doc', expect.any(Number), {
       taskId: 't',
     });
     expect(toasts()).toEqual([
@@ -249,6 +258,36 @@ describe('ConnectorTree and FileTree headers', () => {
     await confirmSync();
     expect(toasts()).toEqual([{ variant: 'destructive', message }]);
   });
+
+  it.each([
+    [null, 'destructive', 'settings.sources.errors.sync'],
+    ['busy', 'warning', 'settings.sources.website.changeBusy'],
+    ['wiki', 'destructive', 'settings.connectors.detail.syncRefusedWiki'],
+    ['gone', 'destructive', 'settings.sources.website.sourceGone'],
+  ])(
+    'a sync the worker did not run says why (reason %s)',
+    async (reason, variant, message) => {
+      dispatch.mockReset();
+      sync.connector.mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, task_id: 't' }),
+      });
+      waitForChange.mockResolvedValueOnce({ terminal: 'failed', reason });
+      await render(
+        <ConnectorTree
+          docId="doc"
+          sourceName="Drive"
+          onBackToDocuments={vi.fn()}
+          sourceType="connector:file"
+        />,
+      );
+      await confirmSync();
+      expect(toasts()).toEqual([
+        { variant: 'success', message: 'settings.sources.syncStarted' },
+        { variant, message },
+      ]);
+    },
+  );
 
   it('embedded ConnectorTree drops the badge and headerAction, keeps Sync', async () => {
     await render(
