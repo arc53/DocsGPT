@@ -26,7 +26,7 @@ aiofiles==25.1.0
     # via daytona
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.5
+aiohttp==3.14.4
     # via
     #   aiohttp-retry
     #   daytona
@@ -54,7 +54,7 @@ annotated-types==0.8.0
     # via pydantic
 anthropic==1.15.0
     # via docsgpt
-antlr4-python3-runtime==4.13.2
+antlr4-python3-runtime==4.9.3
     # via omegaconf
 anyio==4.15.1
     # via
@@ -78,10 +78,14 @@ attrs==26.1.0
     #   jsonschema
     #   jsonschema-path
     #   referencing
-authlib==1.9.1
+authlib==1.8.0
     # via fastmcp-slim
-beartype==0.23.1
+beartype==0.22.9 ; python_full_version < '3.15'
     # via py-key-value-aio
+beartype==0.23.1 ; python_full_version >= '3.15'
+    # via
+    #   fastmcp-slim
+    #   py-key-value-aio
 beautifulsoup4==4.15.0
     # via
     #   docling-slim
@@ -95,11 +99,11 @@ blinker==1.9.0
     # via flask
 boto3==1.43.114
     # via docsgpt
-botocore==1.43.114
+botocore==1.43.118
     # via
     #   boto3
     #   s3transfer
-cachetools==7.2.2
+cachetools==7.2.1
     # via py-key-value-aio
 caio==0.12.9
     # via aiofile
@@ -121,7 +125,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.2
     # via requests
-click==8.5.0
+click==8.1.8
     # via
     #   celery
     #   click-didyoumean
@@ -195,19 +199,19 @@ dill==0.4.1
     # via multiprocess
 distro==1.9.0
     # via google-genai
-dnspython==2.9.0
+dnspython==2.8.0
     # via email-validator
-doclang==0.8.0
+doclang==0.7.3
     # via docling-core
 docling==2.140.0
     # via docsgpt
-docling-core==2.101.1
+docling-core==2.100.0
     # via
     #   docling-parse
     #   docling-slim
 docling-ibm-models==4.0.3
     # via docling-slim
-docling-parse==7.22.3
+docling-parse==7.22.2
     # via docling-slim
 docling-slim==2.140.0
     # via docling
@@ -227,7 +231,7 @@ exceptiongroup==1.3.1
     # via fastmcp-slim
 faiss-cpu==1.15.1
     # via docsgpt
-faker==40.43.0
+faker==40.41.0
     # via polyfactory
 fast-ebook==0.2.0
     # via docsgpt
@@ -237,7 +241,7 @@ fastmcp==4.1.0
     # via docsgpt
 fastmcp-slim==4.1.0
     # via fastmcp
-filelock==4.2.0
+filelock==4.0.12
     # via
     #   huggingface-hub
     #   tldextract
@@ -262,11 +266,11 @@ fsspec==2026.9.0
     # via
     #   huggingface-hub
     #   torch
-google-api-core==2.42.0
+google-api-core==2.41.0
     # via google-api-python-client
 google-api-python-client==2.201.0
     # via docsgpt
-google-auth==2.62.0
+google-auth==2.60.0
     # via
     #   google-api-core
     #   google-api-python-client
@@ -322,7 +326,7 @@ httplib2==0.32.0
     # via
     #   google-api-python-client
     #   google-auth-httplib2
-httptools==0.9.0
+httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
     # via
@@ -457,13 +461,13 @@ mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.3.1
     # via fastembed
-more-itertools==11.2.1
+more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
 mpire==2.10.2
     # via semchunk
-mpmath==1.4.1
+mpmath==1.3.0
     # via sympy
 msal==1.39.0
     # via docsgpt
@@ -488,7 +492,7 @@ numpy==2.5.4
     #   faiss-cpu
     #   fastembed
     #   onnxruntime
-    #   opencv-python
+    #   opencv-python-headless
     #   pandas
     #   qdrant-client
     #   rapidocr
@@ -499,11 +503,11 @@ numpy==2.5.4
     #   transformers
 oauthlib==4.0.0
     # via requests-oauthlib
-obstore==0.12.0
+obstore==0.11.1
     # via daytona
 olefile==0.47
     # via python-oxmsg
-omegaconf==2.4.0
+omegaconf==2.3.1
     # via rapidocr
 onnxruntime==1.31.0
     # via
@@ -515,7 +519,7 @@ openapi-pydantic==0.6.0
     # via fastmcp-slim
 openapi3-parser==2.0.0
     # via docsgpt
-opencv-python==5.0.0.93
+opencv-python-headless==5.0.0.93
     # via rapidocr
 openpyxl==3.1.5
     # via
@@ -523,6 +527,7 @@ openpyxl==3.1.5
     #   docsgpt
 opentelemetry-api==1.45.1
     # via
+    #   anthropic
     #   daytona
     #   docsgpt
     #   fastmcp-slim
@@ -662,7 +667,7 @@ pathable==0.6.0
     # via jsonschema-path
 pdf2image==1.17.0
     # via docsgpt
-pendulum==3.3.0
+pendulum==3.2.0
     # via cel-python
 pgvector==0.5.1
     # via docsgpt
@@ -678,9 +683,9 @@ pillow==12.3.0
     #   python-pptx
     #   rapidocr
     #   torchvision
-platformdirs==4.13.3
+platformdirs==4.12.3
     # via fastmcp-slim
-pluggy==1.7.0
+pluggy==1.6.0
     # via docling-slim
 polyfactory==3.3.0
     # via docling-slim
@@ -722,7 +727,7 @@ py-key-value-aio==0.4.6
     # via fastmcp-slim
 py-rust-stemmers==0.1.8
     # via fastembed
-py-vapid==1.9.6
+py-vapid==1.9.4
     # via pywebpush
 pyasn1==0.6.4
     # via pyasn1-modules
@@ -730,9 +735,9 @@ pyasn1-modules==0.4.2
     # via google-auth
 pyclipper==1.4.0
     # via rapidocr
-pycparser==3.11 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.13.5
+pydantic==2.14.1
     # via
     #   anthropic
     #   daytona
@@ -966,7 +971,7 @@ sympy==1.14.0
     # via torch
 tabulate==0.10.0
     # via docling-core
-tenacity==9.2.1
+tenacity==9.1.4
     # via
     #   celery-redbeat
     #   google-genai
@@ -1032,11 +1037,11 @@ tree-sitter-python==0.25.0
     # via docling-core
 tree-sitter-typescript==0.23.2
     # via docling-core
-truststore==0.10.5 ; sys_platform != 'emscripten'
+truststore==0.10.4 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
     #   httpx2
-typer==0.27.3
+typer==0.26.8
     # via
     #   doclang
     #   docling-core
@@ -1082,6 +1087,7 @@ typing-extensions==4.16.0
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   python-docx
     #   python-oxmsg
     #   python-pptx
@@ -1108,9 +1114,9 @@ tzdata==2026.5
     #   tzlocal
 tzlocal==5.4.4
     # via celery
-uncalled-for==0.4.1
+uncalled-for==0.4.0
     # via fastmcp-slim
-update-checker==1.0.1
+update-checker==1.0.0
     # via praw
 uritemplate==4.2.0
     # via google-api-python-client
@@ -1163,7 +1169,7 @@ werkzeug==3.1.9
     #   flask-restx
 win32-setctime==1.2.0 ; sys_platform == 'win32'
     # via loguru
-wrapt==2.5.1
+wrapt==2.5.0
     # via
     #   deprecated
     #   opentelemetry-instrumentation
