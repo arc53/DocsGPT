@@ -1261,3 +1261,16 @@ class TestAPageChangeExtractsOnlyItsChunks:
 
         # One extracted chunk (c1) is left, so one more fits under the cap of two.
         assert calls == ["NEW c0"]
+
+    def test_a_redelivered_build_spends_only_what_is_left_of_the_cap(self, monkeypatch):
+        # A build killed part-way is redelivered: the chunks it extracted count
+        # toward the cap, so the source never holds more than the cap.
+        chunks = [_chunk(f"c{i}", f"text {i}") for i in range(6)]
+        _ProgressGraphStore.progress.update({"c0": "done", "c1": "done"})
+
+        calls, summary = self._run(monkeypatch, chunks, cap=3)
+
+        assert calls == ["text 2"]
+        assert summary["chunks_processed"] == 1
+        assert summary["skipped_over_cap"] == 3
+        assert sorted(c for c, s in _ProgressGraphStore.progress.items() if s == "done") == ["c0", "c1", "c2"]
