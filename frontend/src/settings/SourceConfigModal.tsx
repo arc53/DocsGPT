@@ -17,7 +17,7 @@ import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { cn, focusRing } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
-import type { SyncFrequency } from '../upload/website';
+import { type SyncFrequency, websiteRefusal } from '../upload/website';
 import { can } from '../utils/accessUtils';
 import { canSyncSource } from './sourceKinds';
 import WebsiteSettingsFields, {
@@ -163,7 +163,11 @@ export default function SourceConfigModal({
         token,
       );
       if (!response.ok) {
-        setError(t('settings.sources.website.saveFailed'));
+        const data = await response.json().catch(() => null);
+        setError(
+          websiteRefusal(t, response.status, data) ??
+            t('settings.sources.website.saveFailed'),
+        );
         return null;
       }
       website.markSaved();

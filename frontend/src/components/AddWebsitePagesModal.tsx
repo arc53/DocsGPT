@@ -13,6 +13,7 @@ import {
   isWebsiteDraftValid,
   type WebsiteDraft,
   websiteConfig,
+  websiteRefusal,
 } from '../upload/website';
 import { Alert, AlertDescription } from './ui/alert';
 import { Modal, ModalActions } from './ui/modal';
@@ -63,17 +64,16 @@ export default function AddWebsitePagesModal({
         },
         token,
       );
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
       if (!response.ok || !data?.success) {
         setError(
-          data?.code === 'page_limit'
-            ? t('settings.sources.website.pageLimit', {
-                count: data.max_pages,
-              })
-            : t('settings.sources.website.addFailed'),
+          websiteRefusal(t, response.status, data) ??
+            t('settings.sources.website.addFailed'),
         );
         return;
       }
+      // `mode: 'sync'` (a site, a new host, or a store that can't add single
+      // chunks) rebuilds the source; its task's events end the wait the same way.
       onQueued(
         startedAt,
         typeof data.task_id === 'string' ? data.task_id : null,

@@ -154,9 +154,12 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         // Sync mode reuses the source uuid for ``scope.id``, so we wait
         // on the same SSE channel FileTree uses for ingest terminals.
         // ``opStartedAt`` guards against a stale terminal from a prior
-        // sync of this same source short-circuiting the current op.
+        // sync of this same source short-circuiting the current op; a
+        // sync's events also carry its task id, which decides when present.
         const opStartedAt = Date.now();
-        const terminal = await waitForTerminal(docId, opStartedAt);
+        const terminal = await waitForTerminal(docId, opStartedAt, {
+          taskId: typeof data?.task_id === 'string' ? data.task_id : null,
+        });
 
         if (terminal === 'timeout') {
           // Still running past the wait: the toast said it started, and the

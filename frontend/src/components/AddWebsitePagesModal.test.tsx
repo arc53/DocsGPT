@@ -176,4 +176,49 @@ describe('AddWebsitePagesModal', () => {
     );
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('says a wiki takes no pages', async () => {
+    service.addWebsitePages.mockResolvedValue(
+      reply(400, { success: false, code: 'wiki', error: 'A wiki…' }),
+    );
+    await submit();
+
+    expect(document.body.textContent).toContain(
+      'settings.sources.website.wikiSource',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's message for a refusal without a code", async () => {
+    service.addWebsitePages.mockResolvedValue(
+      reply(400, { success: false, error: 'A source holds up to 20 sites' }),
+    );
+    await submit();
+
+    expect(document.body.textContent).toContain(
+      'A source holds up to 20 sites',
+    );
+  });
+
+  it('says the add failed when the server breaks', async () => {
+    service.addWebsitePages.mockResolvedValue(
+      reply(500, { success: false, error: 'Traceback' }),
+    );
+    await submit();
+
+    expect(document.body.textContent).toContain(
+      'settings.sources.website.addFailed',
+    );
+    expect(document.body.textContent).not.toContain('Traceback');
+  });
+
+  it('an add the server runs as a sync waits like any add', async () => {
+    service.addWebsitePages.mockResolvedValue(
+      reply(200, { success: true, mode: 'sync', task_id: 'task-3' }),
+    );
+    await submit();
+
+    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-3');
+    expect(onClose).toHaveBeenCalled();
+  });
 });

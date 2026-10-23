@@ -7,7 +7,7 @@ import userService from '../api/services/userService';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { pageKey } from '../upload/website';
+import { pageKey, websiteRefusal } from '../upload/website';
 import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import AddWebsitePagesModal from './AddWebsitePagesModal';
 import type { LinkedChunk } from './chunkUtils';
@@ -86,6 +86,9 @@ function pageOrigin(
   return null;
 }
 
+/** A remove the server refused; its message is what the dialog shows. */
+class RemoveRefused extends Error {}
+
 /** What a remove asks to confirm: its copy depends on where the page came from. */
 type PendingRemoval = {
   name: string;
@@ -163,11 +166,12 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   }, [docId, canEdit, configKey]);
 
   const toastFailure = useCallback(
-    (key: string, name?: string) =>
+    (key: string, name?: string, message?: string | null) =>
       dispatch(
         showActionToast({
           variant: 'destructive',
-          message: tr(key, { name, interpolation: { escapeValue: false } }),
+          message:
+            message ?? tr(key, { name, interpolation: { escapeValue: false } }),
         }),
       ),
     // tr reads t, which is stable per language.
@@ -208,17 +212,21 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     let taskId: string | null = null;
     // Taken at once: the menu turns its changes off until this one is done.
     setStatus(tr('refreshing'));
+    let refusal: string | null = null;
     try {
       const response = await userService.refreshWebsitePage(
         { source_id: docId, file_path: path },
         token,
       );
-      if (!response.ok) throw new Error('refresh failed');
       const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        refusal = websiteRefusal(t, response.status, data);
+        throw new Error('refresh failed');
+      }
       taskId = typeof data?.task_id === 'string' ? data.task_id : null;
     } catch {
       if (mountedRef.current) setStatus(null);
-      toastFailure('refreshFailed', name);
+      toastFailure('refreshFailed', name, refusal);
       return;
     }
     await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
@@ -236,7 +244,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     const response = await userService.removeWebsitePages(body, token);
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.success)
-      throw new Error(data?.code === 'last_entry' ? 'last_entry' : 'failed');
+      throw new RemoveRefused(
+        websiteRefusal(t, response.status, data) ?? tr('removeFailed'),
+      );
     setRemoval(null);
     await controllerRef.current?.refreshDirectory();
     setConfigKey((key) => key + 1);
@@ -460,8 +470,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
             submitLabel={removalCopy.submit}
             variant="destructive"
             error={(reason) =>
-              reason instanceof Error && reason.message === 'last_entry'
-                ? tr('removeLast')
+              reason instanceof RemoveRefused
+                ? reason.message
                 : tr('removeFailed')
             }
           />

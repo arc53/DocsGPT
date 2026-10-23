@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,6 +10,7 @@ import {
   pathPrefixFromUrl,
   tooManyPages,
   websiteConfig,
+  websiteRefusal,
 } from './website';
 
 describe('normalizeUrl', () => {
@@ -213,5 +215,50 @@ describe('isWebsiteDraftValid', () => {
     expect(tooManyPages(pages(2), 2)).toBe(false);
     // A whole site uses only its first address.
     expect(tooManyPages({ ...pages(3), mode: 'site' }, 2)).toBe(false);
+  });
+});
+
+describe('websiteRefusal', () => {
+  const t = ((key: string, opts?: Record<string, unknown>) =>
+    opts ? `${key} ${JSON.stringify(opts)}` : key) as unknown as TFunction;
+  const key = (name: string) => `settings.sources.website.${name}`;
+
+  it('words the codes the UI knows', () => {
+    expect(websiteRefusal(t, 409, { code: 'source_busy', error: 'x' })).toBe(
+      key('sourceBusy'),
+    );
+    expect(websiteRefusal(t, 400, { code: 'wiki', error: 'x' })).toBe(
+      key('wikiSource'),
+    );
+    expect(
+      websiteRefusal(t, 400, { code: 'chunks_unsupported', error: 'x' }),
+    ).toBe(key('chunksUnsupported'));
+    expect(websiteRefusal(t, 400, { code: 'last_entry', error: 'x' })).toBe(
+      key('removeLast'),
+    );
+    expect(websiteRefusal(t, 400, { code: 'page_limit', max_pages: 100 })).toBe(
+      `${key('pageLimit')} {"count":100}`,
+    );
+  });
+
+  it("shows the server's message for any other 400", () => {
+    expect(
+      websiteRefusal(t, 400, {
+        success: false,
+        error: 'The skip list holds up to 1000 rules',
+      }),
+    ).toBe('The skip list holds up to 1000 rules');
+    expect(websiteRefusal(t, 400, { code: 'other', error: 'Bad entry' })).toBe(
+      'Bad entry',
+    );
+  });
+
+  it('leaves the rest to the caller', () => {
+    expect(websiteRefusal(t, 400, { success: false })).toBeNull();
+    expect(websiteRefusal(t, 400, { error: '   ' })).toBeNull();
+    expect(websiteRefusal(t, 500, { error: 'Traceback' })).toBeNull();
+    expect(websiteRefusal(t, 403, { error: 'Forbidden' })).toBeNull();
+    expect(websiteRefusal(t, 400, null)).toBeNull();
+    expect(websiteRefusal(t, 400, 'oops')).toBeNull();
   });
 });

@@ -5,7 +5,8 @@ import type { TreeBrowserProps } from './tree/TreeBrowser';
 import type { RowMenuContext } from './tree/types';
 import type { MenuOption } from './ui/dropdown-menu';
 
-const { bus, captured, service } = vi.hoisted(() => ({
+const { bus, captured, dispatch, service } = vi.hoisted(() => ({
+  dispatch: vi.fn(),
   // The notifications ring the reingest waiter reads, and its listeners.
   bus: { events: [] as unknown[], listeners: new Set<() => void>() },
   captured: {
@@ -36,7 +37,7 @@ vi.mock('react-redux', () => {
   };
   return {
     useSelector: () => 'token',
-    useDispatch: () => vi.fn(),
+    useDispatch: () => dispatch,
     useStore: () => store,
   };
 });
@@ -88,14 +89,17 @@ const STRUCTURE = {
 const view: MenuOption = { label: 'view', onClick: vi.fn() };
 
 /** A terminal ingest event for the source, as the SSE stream adds it. */
-const emitTerminal = (type: 'completed' | 'failed' = 'completed') => {
+const emitTerminal = (
+  type: 'completed' | 'failed' = 'completed',
+  taskId?: string,
+) => {
   bus.events = [
     {
       id: `${Date.now()}-${bus.events.length}`,
       type: `source.ingest.${type}`,
       ts: new Date().toISOString(),
       scope: { kind: 'source', id: 'src-1' },
-      payload: {},
+      payload: taskId ? { task_id: taskId } : {},
     },
     ...bus.events,
   ];
@@ -252,6 +256,110 @@ describe('WebsiteTree page management', () => {
       { source_id: 'src-1', directory_path: 'Deploying' },
       'token',
     );
+  });
+
+  /** Opens Remove on the page added by address and confirms it. */
+  const removeEntry = async () => {
+    const remove = menu({
+      name: 'extra.md',
+      isFile: true,
+      node: STRUCTURE['extra.md'],
+    }).at(-1)!;
+    await act(async () => remove.onClick(new Event('click')));
+    const submit = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.website.remove',
+    )!;
+    await act(async () => submit.click());
+  };
+
+  const refused = (status: number, body: unknown) => ({
+    ok: false,
+    status,
+    json: async () => body,
+  });
+
+  it.each([
+    [409, { code: 'source_busy', error: 'busy' }, 'sourceBusy'],
+    [400, { code: 'wiki', error: 'wiki' }, 'wikiSource'],
+    [400, { code: 'chunks_unsupported', error: 'no' }, 'chunksUnsupported'],
+    [400, { code: 'last_entry', error: 'last' }, 'removeLast'],
+  ])('a refused remove (%i %o) says why', async (status, body, key) => {
+    service.removeWebsitePages.mockResolvedValue(refused(status, body));
+    await render();
+    await removeEntry();
+    expect(document.body.textContent).toContain(
+      `settings.sources.website.${key}`,
+    );
+    expect(document.body.textContent).not.toContain(
+      'settings.sources.website.removeFailed',
+    );
+  });
+
+  it("a remove refused without a code shows the server's message", async () => {
+    service.removeWebsitePages.mockResolvedValue(
+      refused(400, {
+        success: false,
+        error: 'The skip list holds up to 1000 rules',
+      }),
+    );
+    await render();
+    await removeEntry();
+    expect(document.body.textContent).toContain(
+      'The skip list holds up to 1000 rules',
+    );
+  });
+
+  it('a remove that fails otherwise says it failed', async () => {
+    service.removeWebsitePages.mockResolvedValue(
+      refused(500, { success: false }),
+    );
+    await render();
+    await removeEntry();
+    expect(document.body.textContent).toContain(
+      'settings.sources.website.removeFailed',
+    );
+  });
+
+  it('a refused refresh toasts why', async () => {
+    service.refreshWebsitePage.mockResolvedValue(
+      refused(400, { code: 'chunks_unsupported', error: 'no' }),
+    );
+    await render();
+    const refresh = menu({
+      name: 'extra.md',
+      isFile: true,
+      node: STRUCTURE['extra.md'],
+    }).find((o) => o.label === 'settings.sources.website.refreshPage')!;
+    await act(async () => refresh.onClick(new Event('click')));
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          variant: 'destructive',
+          message: 'settings.sources.website.chunksUnsupported',
+        }),
+      }),
+    );
+  });
+
+  it('a refresh waits for its own task', async () => {
+    await render();
+    const controller = fakeController();
+    captured.props!.controllerRef!.current = controller;
+    service.refreshWebsitePage.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 'task-1' }),
+    });
+    const refresh = menu({
+      name: 'extra.md',
+      isFile: true,
+      node: STRUCTURE['extra.md'],
+    }).find((o) => o.label === 'settings.sources.website.refreshPage')!;
+    await act(async () => refresh.onClick(new Event('click')));
+
+    await act(async () => emitTerminal('completed', 'task-other'));
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+    await act(async () => emitTerminal('completed', 'task-1'));
+    expect(controller.refreshDirectory).toHaveBeenCalled();
   });
 
   it("passes the source's menu to the title row", async () => {

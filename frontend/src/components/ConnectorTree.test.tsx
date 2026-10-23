@@ -1,8 +1,9 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-const { tree, dispatch, sync } = vi.hoisted(() => ({
+const { tree, dispatch, sync, waitForTerminal } = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  waitForTerminal: vi.fn(async () => 'completed'),
   sync: { connector: vi.fn(), source: vi.fn() },
   tree: {
     structure: {
@@ -50,7 +51,7 @@ vi.mock('../api/services/userService', () => ({
 // The sync's progress waits on the event stream; it finishes at once here.
 vi.mock('./tree/useReingestWait', () => ({
   useReingestSseWaiter: () => ({
-    waitForTerminal: async () => 'completed',
+    waitForTerminal,
     mountedRef: { current: true },
   }),
 }));
@@ -193,6 +194,10 @@ describe('ConnectorTree and FileTree headers', () => {
     await confirmSync();
     expect(sync.source).toHaveBeenCalledWith({ source_id: 'doc' }, null);
     expect(sync.connector).not.toHaveBeenCalled();
+    // The sync's events carry its task id, so the wait matches them.
+    expect(waitForTerminal).toHaveBeenCalledWith('doc', expect.any(Number), {
+      taskId: 't',
+    });
     expect(toasts()).toEqual([
       { variant: 'success', message: 'settings.sources.syncStarted' },
     ]);

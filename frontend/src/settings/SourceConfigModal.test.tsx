@@ -386,6 +386,49 @@ describe('SourceConfigModal first section, by kind', () => {
     expect(setModalState).toHaveBeenCalledWith('INACTIVE');
   });
 
+  const saveEdited = async () => {
+    await render(
+      doc({
+        website: { hosts: ['docs.x.io'], pages: 9 },
+        syncFrequency: 'weekly',
+      }),
+    );
+    await act(async () => button('settings.sources.website.restore')!.click());
+    await act(async () => button('settings.sources.configModal.save')!.click());
+  };
+
+  it.each([
+    [{ code: 'wiki', error: 'A wiki…' }, 'settings.sources.website.wikiSource'],
+    [
+      { success: false, error: 'A source fetches from up to 20 sites' },
+      'A source fetches from up to 20 sites',
+    ],
+  ])('a refused website save says why (%o)', async (body, message) => {
+    service.saveWebsite.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => body,
+    });
+    await saveEdited();
+    expect(document.body.textContent).toContain(message);
+    expect(document.body.textContent).not.toContain(
+      'settings.sources.website.saveFailed',
+    );
+    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+  });
+
+  it('a website save that breaks says it failed', async () => {
+    service.saveWebsite.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ success: false }),
+    });
+    await saveEdited();
+    expect(document.body.textContent).toContain(
+      'settings.sources.website.saveFailed',
+    );
+  });
+
   it('a wiki has no schedule even with a leftover one', async () => {
     await render(
       doc({ type: 'url', syncFrequency: 'weekly', config: { kind: 'wiki' } }),

@@ -4,6 +4,8 @@
  * each fetched as written) or "Whole site" (one start address and its scope).
  */
 
+import type { TFunction } from 'i18next';
+
 export type WebsiteMode = 'page' | 'site';
 export type WebsiteDiscovery = 'auto' | 'sitemap' | 'links';
 export type SyncFrequency = 'never' | 'daily' | 'weekly' | 'monthly';
@@ -285,4 +287,41 @@ export function isWebsiteDraftValid(
       return !!normalizeUrl(draft.sitemapUrl);
   }
   return true;
+}
+
+/** Refusal codes of the /api/website routes and the website key that words each. */
+const REFUSAL_KEYS = new Map<unknown, string>([
+  ['source_busy', 'sourceBusy'],
+  ['wiki', 'wikiSource'],
+  ['chunks_unsupported', 'chunksUnsupported'],
+  ['last_entry', 'removeLast'],
+]);
+
+/**
+ * What to tell the user when a /api/website route refuses a request.
+ *
+ * A code the UI knows is worded here (a source busy with a sync, a wiki, a
+ * vector store that can't change single pages, the last entry, the page
+ * cap). Any other 400 carries the server's own message (a config past its
+ * limits, a page that isn't there), which is shown as written.
+ *
+ * @param t The translate function.
+ * @param status The response's HTTP status.
+ * @param body The response's JSON, if it parsed.
+ * @returns The message, or null when the caller's generic one fits (a
+ *   server error, a 403, a body without a message).
+ */
+export function websiteRefusal(
+  t: TFunction,
+  status: number,
+  body: unknown,
+): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const { code, error, max_pages: maxPages } = body as Record<string, unknown>;
+  if (code === 'page_limit')
+    return t('settings.sources.website.pageLimit', { count: maxPages });
+  const key = REFUSAL_KEYS.get(code);
+  if (key) return t(`settings.sources.website.${key}`);
+  if (status === 400 && typeof error === 'string' && error.trim()) return error;
+  return null;
 }
