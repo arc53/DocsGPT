@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
-from urllib.parse import urldefrag, urljoin, urlparse, urlsplit
+from urllib.parse import quote, urldefrag, urljoin, urlparse, urlsplit
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -283,7 +283,24 @@ class _LinkConverter(MarkdownConverter):
         url = urljoin(self.base_url, href)
         if urlparse(url).scheme not in ("http", "https"):
             return text
-        return f"[{text}]({url})"
+        return f"[{text}]({_link_destination(url)})"
+
+
+def _link_destination(url: str) -> str:
+    """A URL written as a Markdown link destination that nothing in it can end early.
+
+    Whitespace and ``<``/``>`` are percent-encoded; a URL with ``(`` or ``)``
+    is wrapped in angle brackets (``[text](<url>)``), since an unbalanced
+    parenthesis would close a bare destination.
+
+    Args:
+        url: An absolute http(s) URL.
+
+    Returns:
+        The destination to put between the link's parentheses.
+    """
+    url = re.sub(r"[\s<>]", lambda m: quote(m.group(0), safe=""), url)
+    return f"<{url}>" if "(" in url or ")" in url else url
 
 
 def _is_bare_link(link: Tag, block_text: Optional[Dict[int, str]] = None) -> bool:

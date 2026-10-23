@@ -136,6 +136,18 @@ class TestLinks:
         assert "[Next page]" not in page.text
         assert "Next page" in page.text
 
+    def test_a_destination_with_parentheses_or_spaces_is_kept_whole(self):
+        prose = (
+            "<p>See <a href='https://en.wikipedia.org/wiki/Foo_(bar)'>Foo</a> and "
+            "<a href='/files/release notes.pdf'>the notes</a> and <a href='/q?a=<b>'>a query</a>.</p>"
+        )
+        page = extract_page(_page(f"<main>{ARTICLE}{prose}</main>"), URL, keep_links=True)
+
+        assert "[Foo](<https://en.wikipedia.org/wiki/Foo_(bar)>)" in page.text
+        # Spaces and angle brackets are escaped, so they can't end the destination.
+        assert "[the notes](https://docs.example.com/files/release%20notes.pdf)" in page.text
+        assert "[a query](https://docs.example.com/q?a=%3Cb%3E)" in page.text
+
 
 class TestMetadataAndGuards:
     def test_title_and_language(self):
