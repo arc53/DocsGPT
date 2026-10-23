@@ -523,6 +523,7 @@ def _pinned_session(
     url: str,
     headers: dict[str, str] | None,
     *,
+    url_credentials: bool = True,
     watchdog: _Watchdog | None = None,
 ) -> tuple[requests.Session, str, dict[str, str]]:
     """Run the SSRF guard once and build a session pinned to the chosen IP.
@@ -534,6 +535,8 @@ def _pinned_session(
     Args:
         url: The URL to validate and pin.
         headers: Caller headers; ``Host`` is replaced.
+        url_credentials: Send the URL's ``user:password@`` as Basic auth;
+            off, it is dropped and never sent.
         watchdog: When given, every connection the session opens is
             reported to it, so it can cut them when time is up.
 
@@ -551,8 +554,8 @@ def _pinned_session(
     host = _ascii_host(host)
 
     # The dialed URL is rebuilt from the validated IP alone: userinfo is sent
-    # as Basic auth, never copied, so no user-written authority text reaches
-    # the parser that picks the connect host.
+    # as Basic auth (or dropped), never copied, so no user-written authority
+    # text reaches the parser that picks the connect host.
     netloc = _ip_to_url_host(ip)
     if parts.port is not None:
         netloc = f"{netloc}:{parts.port}"
@@ -565,7 +568,7 @@ def _pinned_session(
     request_headers["Host"] = host_header
 
     session = requests.Session()
-    if parts.username is not None:
+    if url_credentials and parts.username is not None:
         session.auth = (unquote(parts.username), unquote(parts.password or ""))
     if watchdog is not None:
         session.mount("http://", _WatchedAdapter(watchdog=watchdog))
@@ -719,6 +722,8 @@ def pinned_fetch_bytes(
     ``truncate`` the read stops at the ceiling and returns the first
     ``max_bytes`` instead of raising (a page watched for changes).
 
+    A ``user:password@`` in the URL is dropped, never sent as Basic auth.
+
     ``timeout`` bounds the connect and each socket read; the fetch as a
     whole — headers and body — is bounded by ``total_timeout``, so a server
     that trickles header lines or body bytes just inside the read timeout
@@ -751,7 +756,11 @@ def pinned_fetch_bytes(
     if total_timeout is None:
         total_timeout = max(2 * timeout, _MIN_TOTAL_TIMEOUT)
     watchdog = _Watchdog(total_timeout)
-    session, pinned_url, request_headers = _pinned_session(url, headers, watchdog=watchdog)
+    # A fetched page or image is public: credentials in its address are never
+    # sent, here or on a redirect hop (no session auth to carry over).
+    session, pinned_url, request_headers = _pinned_session(
+        url, headers, url_credentials=False, watchdog=watchdog
+    )
     try:
         watchdog.start()
         result = _read_pinned(

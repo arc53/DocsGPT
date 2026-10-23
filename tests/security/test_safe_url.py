@@ -1246,6 +1246,31 @@ def test_a_host_dns_cannot_encode_is_a_validation_error(url):
         validate_user_base_url(url)
 
 
+@pytest.mark.unit
+def test_pinned_fetch_bytes_never_sends_url_credentials(local_server):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    seen: list[tuple[str, str | None]] = []
+
+    def record(handler, status: int = 200, location: str | None = None):
+        seen.append((handler.path, handler.headers.get("Authorization")))
+        handler.send_response(status)
+        if location:
+            handler.send_header("Location", location)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/a"] = lambda handler: record(handler, 302, f"http://bob:pw@127.0.0.1:{port}/b")
+    routes["/b"] = record
+
+    body, _ = pinned_fetch_bytes(f"http://alice:s3cret@127.0.0.1:{port}/b", max_bytes=100, timeout=5)
+    pinned_fetch_bytes(f"http://alice:s3cret@127.0.0.1:{port}/a", max_bytes=100, timeout=5, allow_redirects=True)
+
+    assert body == b"ok"
+    assert seen == [("/b", None), ("/a", None), ("/b", None)]
+
+
 # guarded_async_client: per-request SSRF guard for async SDKs (MCP)
 
 
