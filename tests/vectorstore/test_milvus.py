@@ -132,7 +132,7 @@ class TestMilvusStore:
         assert populated.delete_chunks([b_id]) == 0
         assert [c["doc_id"] for c in other.get_chunks()] == [b_id]
 
-    def test_delete_index_removes_only_this_source(self, populated):
+    def test_delete_index_removes_only_this_source(self, populated, tmp_path):
         from docsgpt.vectorstore.milvus import MilvusStore
 
         with patch(
@@ -141,7 +141,8 @@ class TestMilvusStore:
         ), patch("docsgpt.vectorstore.milvus.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "test_model"
             mock_settings.MILVUS_COLLECTION_NAME = "test_collection"
-            mock_settings.MILVUS_URI = ":memory:"
+            # A file under tmp_path: Milvus Lite treats any URI as a local file and writes beside it.
+            mock_settings.MILVUS_URI = str(tmp_path / "milvus.db")
             mock_settings.MILVUS_TOKEN = ""
             other = MilvusStore.__new__(MilvusStore)
         # Share the open Milvus Lite handle: one file, two logical sources.
