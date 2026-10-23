@@ -197,10 +197,12 @@ def ingest_remote(
 @with_idempotency(
     task_name="reingest_source_task", on_poison=_emit_ingest_poison_event,
 )
-def reingest_source_task(self, source_id, user, idempotency_key=None):
+def reingest_source_task(self, source_id, user, idempotency_key=None, actor_id=None):
+    """Re-ingest a source's stored files; ``actor_id`` (a team editor who asked) hears its events too."""
     from docsgpt.worker import reingest_source_worker
 
-    resp = reingest_source_worker(self, source_id, user)
+    # Only when given, so the worker's call shape is unchanged otherwise.
+    resp = reingest_source_worker(self, source_id, user, **({"actor_id": actor_id} if actor_id else {}))
     return resp
 
 
@@ -287,21 +289,24 @@ def website_pages(
     file_paths: Optional[List[str]] = None,
     pages: Optional[List[Dict[str, str]]] = None,
     url: Optional[str] = None,
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Add pages to a Website source, refresh one, or remove some (``website_pages_worker``).
 
     Not retried: a page that can't be fetched fails the same way again, and
     the worker has already reported it. A failed removal changes nothing, so
     it can be asked for again. A removal names its pages as ``pages``
-    (``{"path", "url"}``, found by address); ``file_paths`` is still accepted
-    from tasks queued before it. A refresh names its page by ``url`` too;
-    a task queued before that has only ``file_path``.
+    (``{"path", "url", "requested_urls"?}``, found by address); ``file_paths``
+    is still accepted from tasks queued before it. A refresh names its page
+    by ``url`` too; a task queued before that has only ``file_path``.
+    ``actor_id`` is the user who asked, when not the owner (a team editor):
+    the ``source.ingest.*`` events go to them too.
     """
     from docsgpt.worker import website_pages_worker
 
     return website_pages_worker(
         self, source_id, user, operation, urls=urls, file_path=file_path, file_paths=file_paths, pages=pages,
-        url=url,
+        url=url, **({"actor_id": actor_id} if actor_id else {}),
     )
 
 
@@ -316,7 +321,9 @@ def sync_source(
     retriever,
     doc_id,
     connection_id=None,
+    actor_id=None,
 ):
+    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too."""
     resp = sync(
         self,
         source_data,
@@ -327,6 +334,8 @@ def sync_source(
         retriever,
         doc_id,
         connection_id=connection_id,
+        # Only when given, so the worker's call shape is unchanged otherwise.
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 

@@ -1003,7 +1003,7 @@ _REINGEST_NO_FILES = "This source keeps no files to re-ingest; sync it to rebuil
 _REINGEST_WIKI = "This source is a wiki now; its pages are edited in place and it isn't re-ingested"
 
 
-def reingest_source_worker(self, source_id, user):
+def reingest_source_worker(self, source_id, user, actor_id=None):
     """
     Re-ingestion worker that handles incremental updates by:
     1. Adding chunks from newly added files
@@ -1013,6 +1013,8 @@ def reingest_source_worker(self, source_id, user):
         self: Task instance
         source_id: ID of the source to re-ingest
         user: User identifier
+        actor_id: The user who asked for the reingest (a team editor), who
+            gets its ``source.ingest.*`` events too; ``None`` for the owner.
 
     Returns:
         dict: Information about the re-ingestion task
@@ -1048,8 +1050,8 @@ def reingest_source_worker(self, source_id, user):
 
     def _not_run(reason: str, error: str) -> Dict[str, Any]:
         logging.info("Not re-ingesting source %s: %s", source_id, reason)
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": str(source_id),
@@ -1099,8 +1101,8 @@ def reingest_source_worker(self, source_id, user):
             "operation": "reingest",
         }
         if self.request.retries == 0:
-            publish_user_event(
-                user,
+            _publish_source_event(
+                user, actor_id,
                 "source.ingest.queued",
                 queued,
                 scope={"kind": "source", "id": source_id},
@@ -1201,8 +1203,8 @@ def reingest_source_worker(self, source_id, user):
             try:
                 if not added_files and not removed_files:
                     logging.info("No changes detected.")
-                    publish_user_event(
-                        user,
+                    _publish_source_event(
+                        user, actor_id,
                         "source.ingest.completed",
                         {
                             "source_id": source_id,
@@ -1406,8 +1408,8 @@ def reingest_source_worker(self, source_id, user):
                     # Surface the per-block failures so the toast can warn
                     # rather than claim a clean success.
                     completed_payload["warnings"] = inner_warnings
-                publish_user_event(
-                    user,
+                _publish_source_event(
+                    user, actor_id,
                     "source.ingest.completed",
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
@@ -1432,8 +1434,8 @@ def reingest_source_worker(self, source_id, user):
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
         close_failed_ingest_progress(source_id, task=self, error=e)
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": str(source_id),
@@ -1462,6 +1464,26 @@ def _task_id_field(task: Any) -> Dict[str, str]:
     return {"task_id": task_id} if isinstance(task_id, str) and task_id else {}
 
 
+def _publish_source_event(
+    user: str, actor_id: Optional[str], event_type: str, payload: Dict[str, Any], **kwargs: Any,
+) -> None:
+    """Publish a source event to the source's owner, and to whoever asked for the change.
+
+    A team editor changes a source they don't own: the job runs as the owner,
+    and without a copy of its events the editor's view would never see it end.
+
+    Args:
+        user: The source's owner.
+        actor_id: The user who asked for the change; ``None`` or the owner sends one event.
+        event_type: The event type (``source.ingest.*``).
+        payload: Its payload.
+        **kwargs: Passed to ``publish_user_event`` (``scope``).
+    """
+    publish_user_event(user, event_type, payload, **kwargs)
+    if actor_id and str(actor_id) != str(user):
+        publish_user_event(str(actor_id), event_type, payload, **kwargs)
+
+
 def remote_worker(
     self,
     source_data,
@@ -1477,6 +1499,7 @@ def remote_worker(
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    actor_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1511,8 +1534,8 @@ def remote_worker(
         **_task_id_field(self),
     }
     if self.request.retries == 0:
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.queued",
             queued,
             scope={"kind": "source", "id": source_id_for_events},
@@ -1706,7 +1729,7 @@ def remote_worker(
             _drop_refused_sync_vectors(refused, source_id_for_events)
             _publish_sync_not_run(
                 self, user, source_id_for_events, name_job, loader,
-                _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused,
+                _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused, actor_id=actor_id,
             )
             return {"id": source_id_for_events, "status": "skipped", "reason": refused}
         if connection_id:
@@ -1716,8 +1739,8 @@ def remote_worker(
             website_fields = _record_website_report(
                 source_id_for_events, user, getattr(remote_loader, "report", None) or {}, fetched_at,
             )
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.completed",
             {
                 "source_id": source_id_for_events,
@@ -1736,8 +1759,8 @@ def remote_worker(
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,
@@ -1847,7 +1870,7 @@ _SYNC_UNREADABLE = "Couldn't read this source to sync it; try again"
 
 def _publish_sync_not_run(
     task: Any, user: str, doc_id: Optional[str], name_job: str, loader: str, error: str,
-    reason: Optional[str] = None,
+    reason: Optional[str] = None, actor_id: Optional[str] = None,
 ) -> None:
     """Close a sync that never reached ``remote_worker`` with the ``source.ingest.failed`` event it publishes.
 
@@ -1862,6 +1885,7 @@ def _publish_sync_not_run(
         loader: Its loader.
         error: The message shown.
         reason: For a skip: ``busy``, ``wiki`` or ``gone``.
+        actor_id: The user who asked for the sync, if not the owner; told too.
     """
     source_id = str(doc_id)
     payload = {
@@ -1873,7 +1897,9 @@ def _publish_sync_not_run(
         **({"reason": reason} if reason else {}),
         **_task_id_field(task),
     }
-    publish_user_event(user, "source.ingest.failed", payload, scope={"kind": "source", "id": source_id})
+    _publish_source_event(
+        user, actor_id, "source.ingest.failed", payload, scope={"kind": "source", "id": source_id},
+    )
 
 
 def sync(
@@ -1889,6 +1915,7 @@ def sync(
     connection_id: Optional[str] = None,
     lock_wait_seconds: float = WORKER_WAIT_SECONDS,
     notify_skip: bool = True,
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Re-read a remote source and rebuild its index, holding its index lock.
 
@@ -1915,23 +1942,28 @@ def sync(
         lock_wait_seconds: How long to wait for another job on the source.
         notify_skip: Publish a ``source.ingest.failed`` event (with ``reason``)
             when the sync is skipped. Off for scheduled syncs: nobody waits on them.
+        actor_id: The user who asked for the sync (a team editor), who gets its
+            ``source.ingest.*`` events too; ``None`` for the owner.
 
     Returns:
         ``{"status": "success"}``, ``{"status": "skipped", "reason": "wiki" | "busy" | "gone"}``
         or ``{"status": "error", "error": ...}``.
     """
 
+    # Who else hears how the sync went: the team editor who asked for it.
+    actor = {"actor_id": actor_id} if actor_id else {}
+
     def _skipped(reason: str) -> Dict[str, Any]:
         logging.info("Skipping sync of source %s: %s", doc_id, reason)
         if notify_skip:
-            _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_SKIP_MESSAGES[reason], reason)
+            _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_SKIP_MESSAGES[reason], reason, **actor)
         return {"status": "skipped", "reason": reason}
 
     try:
         with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
             read, row = _read_source_for_sync(doc_id, user)
             if not read:
-                _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_UNREADABLE)
+                _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_UNREADABLE, **actor)
                 return {"status": "error", "error": _SYNC_UNREADABLE}
             if row is None:
                 return _skipped("gone")
@@ -1954,7 +1986,7 @@ def sync(
             source_data = normalize_remote_data(loader, row.get("remote_data"))
             if not source_data:
                 error = "This source has nothing left to sync"
-                _publish_sync_not_run(self, user, doc_id, name_job, loader, error)
+                _publish_sync_not_run(self, user, doc_id, name_job, loader, error, **actor)
                 return {"status": "error", "error": error}
             result = remote_worker(
                 self,
@@ -1970,6 +2002,7 @@ def sync(
                 # Re-chunk with the source's own settings, not the defaults.
                 config=config or None,
                 connection_id=connection_id,
+                **actor,
             )
             if isinstance(result, dict) and result.get("status") == "skipped":
                 # The API refused the upload; remote_worker has said why.
@@ -5671,6 +5704,7 @@ def website_pages_worker(
     file_paths: Optional[List[str]] = None,
     pages: Optional[List[Dict[str, str]]] = None,
     url: Optional[str] = None,
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Add pages to a Website source, refresh one or remove some, without re-fetching the rest.
 
@@ -5711,13 +5745,16 @@ def website_pages_worker(
             without ``url`` finds the page by it.
         file_paths: Tree paths of pages to remove, from a task queued before
             ``pages``; matched by path.
-        pages: ``{"path", "url"}`` of the pages to remove, matched by address
-            (by path only for a leaf without one).
+        pages: ``{"path", "url", "requested_urls"?}`` of the pages to remove,
+            matched by address (by path for a leaf without one).
         url: Address of the page to refresh, matched by ``page_key`` in the
             tree as it is when the run starts.
+        actor_id: The user who asked for the change (a team editor), who gets
+            its ``source.ingest.*`` events too; ``None`` for the owner.
 
     Returns:
-        ``{"status": "ok", "pages": n}``.
+        ``{"status": "ok", "pages": n}``, plus ``failed_pages`` (the
+        addresses that gave no page) when an add fetched only some.
 
     Raises:
         ValueError: The source or page is unknown, the source is a wiki, or no
@@ -5741,14 +5778,14 @@ def website_pages_worker(
         # The UI is waiting on this task's id: a source it can't read (a
         # database error, or deleted before the task ran) still ends it.
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
-        publish_user_event(
-            user, "source.ingest.failed", {**envelope, "error": str(e)[:1024]},
+        _publish_source_event(
+            user, actor_id, "source.ingest.failed", {**envelope, "error": str(e)[:1024]},
             scope={"kind": "source", "id": source_id},
         )
         raise
     source_id = str(source["id"])
     envelope.update({"source_id": source_id, "job_name": source.get("name", "")})
-    publish_user_event(user, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
+    _publish_source_event(user, actor_id, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
 
     try:
         task_id = envelope.get("task_id")
@@ -5769,12 +5806,12 @@ def website_pages_worker(
             failed["reason"] = "busy"
         elif isinstance(e, PageOutOfScope):
             failed["reason"] = e.reason
-        publish_user_event(user, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
+        _publish_source_event(user, actor_id, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
         raise
     # Addresses asked for that gave no page: the run still succeeded with the rest.
     failed_field = {"failed_pages": failed_pages} if failed_pages else {}
-    publish_user_event(
-        user, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False, **failed_field},
+    _publish_source_event(
+        user, actor_id, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False, **failed_field},
         scope={"kind": "source", "id": source_id},
     )
     return {"status": "ok", "pages": len(changes), **failed_field}
