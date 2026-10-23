@@ -387,7 +387,12 @@ export default function Sources({
       if (documentToView?.id === doc.id) closeDocument();
       refreshDocs(undefined, currentPage, rowsPerPage);
     },
-    onChanged: () => refreshDocs(undefined, currentPage, rowsPerPage),
+    // An open source (one opened from a citation may be off this page)
+    // follows its own reingest, wiki conversion or graph enable.
+    onChanged: () =>
+      documentToView?.id
+        ? refreshOpenSource(documentToView.id)
+        : refreshDocs(undefined, currentPage, rowsPerPage),
     onPatched: (id, patch) => {
       patchDoc(id, patch);
       // The open view reads what it keeps of the settings again.

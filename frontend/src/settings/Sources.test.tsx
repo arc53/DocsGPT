@@ -12,7 +12,13 @@ const {
   knowledge,
   configModal,
   viewProps,
+  changeModals,
 } = vi.hoisted(() => ({
+  // The callbacks Convert to wiki and Enable GraphRAG were given.
+  changeModals: {
+    onConverted: null as null | (() => void),
+    onEnabled: null as null | (() => void),
+  },
   // The last props Source settings was given (its onSaved patches the card).
   configModal: {
     props: null as null | {
@@ -148,13 +154,23 @@ vi.mock('./SourceConfigModal', () => ({
   },
 }));
 vi.mock('./TestRetrievalModal', () => ({ default: () => null }));
-vi.mock('./ConvertToWikiModal', () => ({ default: () => null }));
+vi.mock('./ConvertToWikiModal', () => ({
+  default: (props: { onConverted: () => void }) => {
+    changeModals.onConverted = props.onConverted;
+    return null;
+  },
+}));
 vi.mock('./WikiSettingsModal', () => ({
   default: ({ document }: { document: { name: string } }) => (
     <div data-testid="wiki-settings">{document.name}</div>
   ),
 }));
-vi.mock('./EnableGraphRAGModal', () => ({ default: () => null }));
+vi.mock('./EnableGraphRAGModal', () => ({
+  default: (props: { onEnabled: () => void }) => {
+    changeModals.onEnabled = props.onEnabled;
+    return null;
+  },
+}));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../connectors/SignInAgainNotice', () => ({
   useSignInAgain: () => ({ reconnect, modals: null }),
@@ -1026,6 +1042,25 @@ describe('Sources access', () => {
     );
     expect(viewProps['website-tree'].settingsVersion).toBe(before + 1);
   });
+
+  it.each(['onConverted', 'onEnabled'] as const)(
+    'an open source follows its own change (%s) from the knowledge list',
+    async (callback) => {
+      await openView(doc({ isNested: true, access: 'owner' }));
+      // A source opened from a citation may be off this page: the
+      // knowledge list carries its new state.
+      vi.mocked(getDocs).mockResolvedValueOnce([
+        doc({
+          isNested: true,
+          access: 'owner',
+          config: { kind: 'graphrag' } as Doc['config'],
+        }),
+      ]);
+      await act(async () => changeModals[callback]!());
+      expect(getDocs).toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="graph"]')).not.toBeNull();
+    },
+  );
 
   it('a GraphRAG website source hands its pages to the graph view', async () => {
     const website = { hosts: ['docs.x.io'], pages: 9 };
