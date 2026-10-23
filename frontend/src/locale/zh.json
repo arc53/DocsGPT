@@ -629,7 +629,7 @@
         "removeFromSource": "从来源中移除",
         "removeTitle": "移除“{{name}}”？",
         "removeEntry": "其分块将被删除，该页面会从此来源的列表中移除。",
-        "removeCrawled": "它来自对 {{host}} 的抓取。其分块将被删除，之后的同步会跳过它。你可以在网站设置中恢复它。",
+        "removeCrawled": "它来自对 {{host}} 的抓取。其分块将被删除，之后的同步会跳过它。你可以在来源的设置中恢复它。",
         "removeFolder": "其页面的分块将被删除，之后的同步会跳过 {{address}} 下的所有地址。",
         "remove": "移除",
         "removeAndSkip": "移除并跳过",

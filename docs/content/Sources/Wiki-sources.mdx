@@ -74,6 +74,7 @@ curl -X POST https://your-docsgpt/api/sources/<source_id>/wiki/convert \
 - A **blank** source is enabled inline (no task) and immediately becomes a wiki.
 - A source **with files** runs a conversion task that reassembles its existing chunks into wiki pages; poll the returned task for a per-file summary.
 - Conversion is rejected with `409` if the source is still ingesting — wait for it to finish first.
+- Conversion stops the source's sync schedule, because a sync would replace the wiki's pages with the original content. A wiki never syncs: `/api/manage_sync` refuses a schedule for it and `/api/sync_source` and `/api/connectors/sync` refuse to sync it (`400`).
 
 <Callout type="warning" emoji="⚠️">
 Switching a source to (or from) wiki mode goes only through `POST /api/sources/<id>/wiki/convert`. It cannot be done through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api).

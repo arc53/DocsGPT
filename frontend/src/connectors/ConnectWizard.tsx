@@ -98,9 +98,10 @@ type CreatedSource = { id: string; name: string };
 /**
  * The one connect flow every entry point opens: sign in, choose what to set
  * up, then a summary whose footer follows what happened (Open in Knowledge,
- * Try it in chat, Sync content, or Done). A sync-only connector (S3, Drive)
- * offers two ways on, "Sync content now" (picked) or "Just connect", with
- * what to sync and its retrieval settings under them. A connector with tools
+ * Try it in chat, Sync content, or Done). A sync-only connector (S3, Drive,
+ * SharePoint, Confluence, Reddit) offers two ways on, "Sync content now"
+ * (picked) or "Just connect", with what to sync and its retrieval settings
+ * under them. A connector with tools
  * and sync (GitHub, Linear) asks with a switch each (sync on when opened for
  * Knowledge). Tool connectors create their tools on sign-in, writes needing
  * approval, so they go from the credentials straight to the summary. Every

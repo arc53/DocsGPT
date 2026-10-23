@@ -51,7 +51,7 @@ Every source needs a **Name**. It is how the source appears on the Knowledge pag
 
 **Advanced settings** (not shown for a wiki) holds the chunking and retrieval options for this source. The defaults suit most content; see [Per-source configuration](/Sources/Per-source-configuration) for what each option does.
 
-Click **Add to Knowledge** (**Create** for a wiki). The dialog closes, and a panel in the corner shows the upload, parsing and embedding progress. The source appears on the Knowledge page when indexing finishes. If indexing fails, the source's menu offers **Reingest**.
+Click **Add to Knowledge**. The dialog closes, and a panel in the corner shows the upload, parsing and embedding progress. The source appears on the Knowledge page when indexing finishes. If indexing fails, the source's menu offers **Reingest**.
 </Steps>
 
 ## Upload files
@@ -104,7 +104,7 @@ A source holds at most `WEB_MAX_PAGES` pages (100 by default) across everything 
 
 DocsGPT keeps a page's main content as Markdown: headings, lists, tables and code. It leaves out the navigation, headers, footers, forms and sidebars of links. Images are kept as their alt text. Responses that aren't HTML, and pages with no text, are skipped.
 
-Link addresses inside the page text are dropped by default, because they add text that doesn't help search. If answers should be able to point to the pages a page links to, turn on **Keep links in page text** under **Advanced settings**. It keeps the addresses of links that sit inside sentences, stores about a quarter more text, and can rank search results slightly lower.
+Link addresses inside the page text are dropped by default, because they add text that doesn't help search. If answers should be able to point to the pages a page links to, turn on **Keep links in page text** in the website form, or later in the source's **Settings**. It keeps the addresses of links that sit inside sentences, stores about a quarter more text, and can rank search results slightly lower.
 
 ### Keep it up to date
 
@@ -146,7 +146,7 @@ Each source on the Knowledge page has a menu. Which items appear depends on the 
 - **Sync now** appears for sources that are fetched again: websites, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
 - **Settings** opens one dialog for the source. A website source starts with its pages and schedule (see [Manage the pages of a website source](#manage-the-pages-of-a-website-source)); a GitHub or connector source starts with **Keep up to date**, its sync schedule. Then come the retrieval and chunking settings. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
 - **Test retrieval** runs a question against the source and shows which chunks come back.
-- **Convert to wiki** turns the source into editable wiki pages. This can't be undone.
+- **Convert to wiki** turns the source into editable wiki pages. This can't be undone, and it stops the source's sync schedule: a wiki doesn't sync.
 - **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
 - **Delete** removes the source and its index.
 

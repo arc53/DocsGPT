@@ -654,7 +654,7 @@
         "removeFromSource": "Quitar de la fuente",
         "removeTitle": "¿Quitar «{{name}}»?",
         "removeEntry": "Se eliminan sus fragmentos y la página sale de la lista de esta fuente.",
-        "removeCrawled": "Procede del rastreo de {{host}}. Se eliminan sus fragmentos y las próximas sincronizaciones la omiten. Puedes restaurarla en Ajustes del sitio web.",
+        "removeCrawled": "Procede del rastreo de {{host}}. Se eliminan sus fragmentos y las próximas sincronizaciones la omiten. Puedes restaurarla en los Ajustes de la fuente.",
         "removeFolder": "Se eliminan los fragmentos de sus páginas y las próximas sincronizaciones omiten todas las direcciones bajo {{address}}.",
         "remove": "Quitar",
         "removeAndSkip": "Quitar y omitir",
@@ -2418,7 +2418,7 @@
       "delete": "Eliminar"
     },
     "chunk": {
-      "add": "Agregar Fragmento",
+      "add": "Agregar fragmento",
       "edit": "Editar",
       "title": "Título",
       "enterTitle": "Ingresar título",

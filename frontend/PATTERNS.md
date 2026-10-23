@@ -535,18 +535,6 @@ wiki, a knowledge graph) is one shell:
   Settings is WikiSettingsModal. A card whose source has a schedule shows
   "{frequency} · synced {when}" instead of its date, and "via {connection} ·
   N files" for a connection.
-- **Add forms** (Upload, Website, New wiki in Add knowledge): Name first, the
-  kind's fields, then the `Advanced settings` disclosure, and one submit, "Add to
-  Knowledge", for all three. A wiki's "Initial content" is a default Textarea
-  with its hint in FormField `hint`. A website's "Keep links in page text" is a
-  Website field (`WebsiteFields keepLinks`), not a chunking setting.
-  `settings/components/RetrievalOptions` is flat groups with `GroupHeader`
-  eyebrows (h3, "· tag"): Retrieval · Relevance · Filtering · Graph retrieval ·
-  Graph extraction · Chunking, never a nested toggle. `variant="create"` (the
-  add forms and the connector wizard's sync setup) drops the re-ingest tags and
-  the Filtering group (unless inherited LLM screening doesn't add up) and ends
-  with the muted "Fine-tune filtering after the first ingest…" line; Source
-  settings, Test retrieval and admin Defaults use the default.
 - **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
   more than one thing to open (files, wiki pages). A filter `CommandInput
 variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
@@ -562,7 +550,8 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   scrolls). A source with one file opens
   straight on its chunk list, and a wiki with one page on its reader at full
   width: no navigator, no table.
-- **Item bar**: an open file or page has `tree/ItemBar` above its chunks, the
+- **Item bar**: an open file or website page (TreeBrowser: uploads, websites,
+  synced sources; a wiki page has the Reader) has `tree/ItemBar` above its chunks, the
   same wherever it was opened (table, navigator, citation, the one-file
   shortcut): a `subtle` Card with one `ListRow`, the item's icon and name, its
   address (`link inline` with ExternalLink) or size, muted counts ("N chunks ·
@@ -607,7 +596,7 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   · Files (Files is the embedded file tree; a source with no folder structure
   shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
   header's action row after Test retrieval, only while that tab is open (the
-  Files tab's Add file or Sync, portalled through `TreeBrowser`'s
+  Files tab's Add file or Sync now, portalled through `TreeBrowser`'s
   `actionsTarget`), as on the agent pages; the embedded tree draws no row of
   its own. The Graph tab's toolbar holds the
   entity search (`graph/GraphEntitySearch`: a `SearchInput` whose results
@@ -750,6 +739,19 @@ the column widths, never `min-w-[…]` pins (see DESIGN.md › Table). Add knowl
 tiles, then "From a service" (see DESIGN.md › OptionCard) and "Browse all connectors"
 (`settings.connectors.browseAll`, 12px `ArrowRight`) under the tiles.
 
+Add knowledge's forms (Upload, Website, New wiki): Name first, the
+kind's fields, then the `Advanced settings` disclosure, and one submit, "Add to
+Knowledge", for all three. A wiki's "Initial content" is a default Textarea
+with its hint in FormField `hint`. A website's "Keep links in page text" is a
+Website field (`WebsiteFields keepLinks`), not a chunking setting.
+`settings/components/RetrievalOptions` is flat groups with `GroupHeader`
+eyebrows (h3, "· tag"): Retrieval · Relevance · Filtering · Graph retrieval ·
+Graph extraction · Chunking, never a nested toggle. `variant="create"` (the
+add forms and the connector wizard's sync setup) drops the re-ingest tags and
+the Filtering group (unless inherited LLM screening doesn't add up) and ends
+with the muted "Fine-tune filtering after the first ingest…" line; Source
+settings, Test retrieval and admin Defaults use the default.
+
 The connection drawer (`ConnectionDrawer`, a `default` SidePanel) keeps the
 capability badges in `PanelHeader` children. Its accounts are one `Card subtle
 padding="none" overflow-hidden` of ListRows (name, account line, status Badge,
@@ -793,7 +795,7 @@ service's description, then the account: "Signed in as …", or "Connected
 with the key ending …" for a pasted key). Every step title names the service
 ("Choose what to sync from GitHub") and doesn't change with a choice. A
 sync-only connector (`setup.tools === 'off'`: S3, Drive, SharePoint,
-Confluence) asks how to use it on its first connect with two `OptionCard`s in a
+Confluence, Reddit) asks how to use it on its first connect with two `OptionCard`s in a
 `role="radiogroup"`, "Sync content now" (picked from any entry point) and
 "Just connect"; the setup form sits under them behind a `Separator` in a
 Collapsible that folds away on Just connect and keeps its values. A connector

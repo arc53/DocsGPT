@@ -632,7 +632,7 @@
         "removeFromSource": "Remove from source",
         "removeTitle": "Remove “{{name}}”?",
         "removeEntry": "Its chunks are deleted and the page is taken off this source’s list.",
-        "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in Website settings.",
+        "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in the source's Settings.",
         "removeFolder": "Its pages’ chunks are deleted and later syncs skip every address under {{address}}.",
         "remove": "Remove",
         "removeAndSkip": "Remove and skip",
@@ -2346,7 +2346,7 @@
       "delete": "Delete"
     },
     "chunk": {
-      "add": "Add Chunk",
+      "add": "Add chunk",
       "edit": "Edit",
       "title": "Title",
       "enterTitle": "Enter title",

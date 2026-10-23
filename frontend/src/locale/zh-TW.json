@@ -629,7 +629,7 @@
         "removeFromSource": "從來源中移除",
         "removeTitle": "要移除「{{name}}」嗎？",
         "removeEntry": "其區塊將被刪除，該頁面會從此來源的清單中移除。",
-        "removeCrawled": "它來自對 {{host}} 的爬取。其區塊將被刪除，之後的同步會略過它。你可以在網站設定中還原它。",
+        "removeCrawled": "它來自對 {{host}} 的爬取。其區塊將被刪除，之後的同步會略過它。你可以在來源的設定中還原它。",
         "removeFolder": "其頁面的區塊將被刪除，之後的同步會略過 {{address}} 下的所有網址。",
         "remove": "移除",
         "removeAndSkip": "移除並略過",

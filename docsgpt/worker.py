@@ -1611,7 +1611,7 @@ def remote_worker(
 def _record_website_report(source_id: str, user: str, report: dict, fetched_at: str) -> dict:
     """Keep a Website ingest's report on the source and summarise it for the event.
 
-    Website settings shows it (pages per site, whether the page limit cut a
+    The source's Settings show it (pages per site, whether the page limit cut a
     site short); the completed event carries the summary so the notice can
     say a limit was reached.
 

@@ -632,7 +632,7 @@
         "removeFromSource": "Aus der Quelle entfernen",
         "removeTitle": "„{{name}}“ entfernen?",
         "removeEntry": "Die Chunks werden gelöscht und die Seite wird von der Liste dieser Quelle genommen.",
-        "removeCrawled": "Sie stammt aus dem Crawlen von {{host}}. Die Chunks werden gelöscht und spätere Synchronisierungen überspringen sie. In den Website-Einstellungen kannst du sie wiederherstellen.",
+        "removeCrawled": "Sie stammt aus dem Crawlen von {{host}}. Die Chunks werden gelöscht und spätere Synchronisierungen überspringen sie. In den Einstellungen der Quelle kannst du sie wiederherstellen.",
         "removeFolder": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen überspringen alle Adressen unter {{address}}.",
         "remove": "Entfernen",
         "removeAndSkip": "Entfernen und überspringen",

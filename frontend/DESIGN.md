@@ -264,7 +264,7 @@ Patterns:
   `Input` and `SelectTrigger` are 38px too (Input `default`,
   SelectTrigger's default `field`, Combobox and MultiSelect always `field`),
   so a form column has one height. Page actions beside a
-  page's search field (Add Source, Add Tool, Test retrieval, Sync) are
+  page's search field (Add knowledge, Add Tool, Test retrieval, Sync now) are
   `size="field" shape="pill"`, with no min-width or hand height. With
   `shape="pill"` its text starts 21px in, like the Input and Select pills
   beside it. The agent form's pickers are `combobox field`, each labelled by
@@ -336,7 +336,7 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   or `inline`) has no frame to hold that empty space, so `loading` keeps its
   label readable in place, faded, with the spinner after it. The one exception is a
   button whose busy state says something the user needs: a progress figure
-  (a connector's Sync shows "42%") or a mode (the composer's Voice button shows
+  (a synced source's Sync now shows "42%") or a mode (the composer's Voice button shows
   "Transcribing"). It keeps its busy label with a `Spinner size="xs"` (the
   16px icon step, with a `label` so it doesn't announce "Loading") where its
   icon was.
@@ -1138,8 +1138,8 @@ Schedules and Pin on a draft), never on `ownership`,
   long text the user reads or copies (a prompt, a chunk) is `readOnly`, so it
   keeps full contrast and scrolls. Titles and menu items swap Edit and
   `Pencil` for View and `Eye`.
-- Source views follow the same rule: every write (Add file, Sync, Add chunk,
-  Edit, Delete) shows only with `can(source, 'edit')`; reading, copying and
+- Source views follow the same rule: every write (Add file, Add pages, Sync now,
+  Add chunk, Edit, Delete) shows only with `can(source, 'edit')`; reading, copying and
   paging stay.
 - A page the role can't open is refused twice: its tabs and section items
   are filtered by the same action (`AgentPageHeader`, `navigation/sections`),

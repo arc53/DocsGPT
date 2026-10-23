@@ -654,7 +654,7 @@
         "removeFromSource": "Retirer de la source",
         "removeTitle": "Retirer « {{name}} » ?",
         "removeEntry": "Ses fragments sont supprimés et la page est retirée de la liste de cette source.",
-        "removeCrawled": "Elle provient de l’exploration de {{host}}. Ses fragments sont supprimés et les synchronisations suivantes l’ignorent. Vous pouvez la restaurer dans les paramètres du site web.",
+        "removeCrawled": "Elle provient de l’exploration de {{host}}. Ses fragments sont supprimés et les synchronisations suivantes l’ignorent. Vous pouvez la restaurer dans les paramètres de la source.",
         "removeFolder": "Les fragments de ses pages sont supprimés et les synchronisations suivantes ignorent toutes les adresses sous {{address}}.",
         "remove": "Retirer",
         "removeAndSkip": "Retirer et ignorer",
