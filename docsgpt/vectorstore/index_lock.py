@@ -20,11 +20,31 @@ from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 from docsgpt.cache import get_redis_instance
+from docsgpt.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# How long a worker job waits for the source to be free.
-WORKER_WAIT_SECONDS = 3600
+
+def worker_wait_seconds(visibility_timeout: int) -> int:
+    """How long a worker job waits for a busy source: half the broker's visibility timeout.
+
+    Tasks are acked late, so a task still running when the visibility timeout
+    passes is handed to another worker and runs twice. A job waiting on the
+    lock is still running: it must give up (``SourceBusy``) well before that,
+    and leave the rest of the window for its own work once it gets the lock.
+
+    Args:
+        visibility_timeout: ``CELERY_VISIBILITY_TIMEOUT`` in seconds.
+
+    Returns:
+        The wait in seconds.
+    """
+    return max(0, int(visibility_timeout) // 2)
+
+
+# How long a worker job waits for the source to be free; derived from the
+# visibility timeout so a waiting task is never redelivered.
+WORKER_WAIT_SECONDS = worker_wait_seconds(settings.CELERY_VISIBILITY_TIMEOUT)
 _TTL_SECONDS = 600
 
 

@@ -6,6 +6,7 @@ import time
 from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 import logging
+from typing import Optional
 
 from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import settings
@@ -146,24 +147,30 @@ def upload_index_files():
         update_fields["config"] = config
 
     is_sync = request.form.get("operation") == "sync"
+    if is_sync and faiss_files is not None:
+        # Checked before the files are saved: a sync of a source deleted or
+        # converted meanwhile must not overwrite its index. The check commits
+        # straight away, so no row lock is held while the files upload.
+        with db_session() as conn:
+            refusal = _sync_refusal(source_id, _locked_source(SourcesRepository(conn), source_id, user))
+        if refusal is not None:
+            return refusal
+    if faiss_files is not None:
+        # Outside any transaction: a large index takes a while to store, and
+        # a settings change (or the Knowledge listing's row lock) would wait
+        # on it. Two jobs on one index never save at once: the workers hold
+        # the source's index lock (source_index_lock) across their upload.
+        storage.save_file(faiss_files[0], f"{index_base_path}/index.faiss")
+        storage.save_file(faiss_files[1], f"{index_base_path}/index.pkl")
     with db_session() as conn:
         repo = SourcesRepository(conn)
-        existing = None
-        if looks_like_uuid(source_id):
-            # Locked until the write: a settings change waits instead of
-            # landing between this read and the update.
-            existing = repo.get_for_update(source_id, user)
-        if existing is None:
-            existing = repo.get_by_legacy_id(source_id, user)
-        if is_sync and existing is None:
-            # Deleted while the sync ran: a sync rebuilds a source, never creates one.
-            logger.info(f"Not re-creating deleted source {source_id} from a sync")
-            return {"status": "skipped", "reason": "gone"}
+        # Locked until the write: a settings change waits instead of landing
+        # between this read and the update, and a sync re-checks the row here.
+        existing = _locked_source(repo, source_id, user)
         if is_sync:
-            if SourceConfig.parse(existing.get("config")).kind == "wiki":
-                # Converted while the sync ran: its pages are the content now.
-                logger.info(f"Not writing a sync over wiki source {source_id}")
-                return {"status": "skipped", "reason": "wiki"}
+            refusal = _sync_refusal(source_id, existing)
+            if refusal is not None:
+                return refusal
             # The form carries what the source looked like when the sync was
             # queued; name, type, remote_data, schedule and config may have
             # changed since, so a sync writes only what it rebuilt.
@@ -179,9 +186,6 @@ def upload_index_files():
                 if fingerprint:
                     stored_remote["sync_fingerprint"] = fingerprint
                 update_fields["remote_data"] = stored_remote
-        if faiss_files is not None:
-            storage.save_file(faiss_files[0], f"{index_base_path}/index.faiss")
-            storage.save_file(faiss_files[1], f"{index_base_path}/index.pkl")
         if existing is not None:
             repo.update(str(existing["id"]), user, update_fields)
         else:
@@ -206,6 +210,42 @@ def upload_index_files():
                 legacy_mongo_id=None if looks_like_uuid(source_id) else str(source_id),
             )
     return {"status": "ok"}
+
+
+def _locked_source(repo: SourcesRepository, source_id: str, user: str) -> Optional[dict]:
+    """The source row, locked for update when its id is a uuid, else looked up by its legacy id.
+
+    Args:
+        repo: A repository on the open transaction.
+        source_id: The id the worker sent.
+        user: The owner.
+
+    Returns:
+        The row, or ``None`` when there is none.
+    """
+    existing = repo.get_for_update(source_id, user) if looks_like_uuid(source_id) else None
+    return existing if existing is not None else repo.get_by_legacy_id(source_id, user)
+
+
+def _sync_refusal(source_id: str, existing: Optional[dict]) -> Optional[dict]:
+    """Why a sync's upload must not be written, or ``None`` when it may be.
+
+    Args:
+        source_id: The source.
+        existing: Its row as read now.
+
+    Returns:
+        ``{"status": "skipped", "reason": "gone" | "wiki"}``, or ``None``.
+    """
+    if existing is None:
+        # Deleted while the sync ran: a sync rebuilds a source, never creates one.
+        logger.info(f"Not re-creating deleted source {source_id} from a sync")
+        return {"status": "skipped", "reason": "gone"}
+    if SourceConfig.parse(existing.get("config")).kind == "wiki":
+        # Converted while the sync ran: its pages are the content now.
+        logger.info(f"Not writing a sync over wiki source {source_id}")
+        return {"status": "skipped", "reason": "wiki"}
+    return None
 
 
 # The decision model for Celery workers in local mode: the ``docsgpt decide-server`` contract (``/v1/decide``,

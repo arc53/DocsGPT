@@ -436,6 +436,104 @@ class TestUploadIndexForAConnectorSync:
 
 
 @pytest.mark.unit
+class TestUploadIndexSavesFilesOutsideTheRowLock:
+    """The FAISS files are saved between two short row locks, never while one is held."""
+
+    def _seed(self, pg_conn):
+        return SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", remote_data=SITE, sync_frequency="weekly",
+            directory_structure={"old.md": {"token_count": 1}},
+        )
+
+    def _form(self, src, **extra):
+        import io
+
+        return {
+            "user": USER, "name": "Docs", "tokens": "5", "retriever": "classic", "id": str(src["id"]),
+            "type": "website", "sync_frequency": "weekly", "remote_data": json.dumps(SITE),
+            "directory_structure": json.dumps({"new.md": {"token_count": 5}}),
+            "file_faiss": (io.BytesIO(b"faiss"), "index.faiss"), "file_pkl": (io.BytesIO(b"pkl"), "index.pkl"),
+            **extra,
+        }
+
+    def _post_recording(self, pg_conn, form, on_save=None):
+        from unittest.mock import patch
+
+        from flask import Flask
+
+        from docsgpt.api.internal.routes import internal
+
+        events = []
+
+        @contextmanager
+        def recording_session():
+            events.append("begin")
+            yield pg_conn
+            events.append("commit")
+
+        storage = MagicMock()
+
+        def save(file, path):
+            events.append("save")
+            if on_save:
+                on_save()
+
+        storage.save_file.side_effect = save
+        app = Flask(__name__)
+        app.register_blueprint(internal)
+        with patch("docsgpt.api.internal.routes.settings.INTERNAL_KEY", "k"), patch(
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "faiss"
+        ), patch("docsgpt.api.internal.routes.StorageCreator.get_storage", return_value=storage), patch(
+            "docsgpt.api.internal.routes.db_session", recording_session
+        ):
+            response = app.test_client().post("/api/upload_index", headers={"X-Internal-Key": "k"}, data=form)
+        return response, events
+
+    @pytest.mark.parametrize("operation", ["sync", None])
+    def test_no_transaction_is_open_while_the_files_are_saved(self, pg_conn, operation):
+        src = self._seed(pg_conn)
+        form = self._form(src, **({"operation": operation} if operation else {}))
+
+        response, events = self._post_recording(pg_conn, form)
+
+        assert response.json == {"status": "ok"}
+        saves = [i for i, event in enumerate(events) if event == "save"]
+        assert len(saves) == 2
+        opened = 0
+        for i, event in enumerate(events):
+            opened += {"begin": 1, "commit": -1}.get(event, 0)
+            if i in saves:
+                assert opened == 0
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["directory_structure"] == {
+            "new.md": {"token_count": 5}
+        }
+
+    def test_a_wiki_conversion_during_the_save_keeps_the_rows_fields(self, pg_conn):
+        src = self._seed(pg_conn)
+
+        def convert():
+            SourcesRepository(pg_conn).update(str(src["id"]), USER, {"config": {"kind": "wiki"}})
+
+        response, _events = self._post_recording(pg_conn, self._form(src, operation="sync"), on_save=convert)
+
+        assert response.json == {"status": "skipped", "reason": "wiki"}
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["directory_structure"] == {
+            "old.md": {"token_count": 1}
+        }
+
+    def test_a_source_deleted_during_the_save_is_not_recreated(self, pg_conn):
+        src = self._seed(pg_conn)
+
+        def delete():
+            SourcesRepository(pg_conn).delete(str(src["id"]), USER)
+
+        response, _events = self._post_recording(pg_conn, self._form(src, operation="sync"), on_save=delete)
+
+        assert response.json == {"status": "skipped", "reason": "gone"}
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER) is None
+
+
+@pytest.mark.unit
 class TestUploadIndexForADeletedSource:
     def test_a_sync_never_recreates_a_deleted_source(self, pg_conn):
         import uuid

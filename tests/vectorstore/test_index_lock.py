@@ -112,3 +112,20 @@ class TestSourceIndexLock:
         with source_index_lock("src-1"):
             ran.append(True)
         assert ran == [True]
+
+
+@pytest.mark.unit
+class TestTheWorkerWait:
+    """A task waiting on the lock must give up before the broker redelivers it (acks_late)."""
+
+    def test_the_default_wait_is_well_below_the_visibility_timeout(self):
+        from docsgpt.core.settings import settings
+        from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS
+
+        assert 0 < WORKER_WAIT_SECONDS <= settings.CELERY_VISIBILITY_TIMEOUT / 2
+
+    @pytest.mark.parametrize("visibility, wait", [(3600, 1800), (600, 300), (1, 0)])
+    def test_the_wait_follows_the_visibility_timeout(self, visibility, wait):
+        from docsgpt.vectorstore.index_lock import worker_wait_seconds
+
+        assert worker_wait_seconds(visibility) == wait
