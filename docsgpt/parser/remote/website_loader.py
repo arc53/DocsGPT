@@ -46,6 +46,7 @@ from docsgpt.parser.remote.page_content import (
     final_url,
     host_with_port,
     is_ambiguous_path,
+    merge_requested_urls,
     normalize_percent_encoding,
     normalized_path,
     page_key,
@@ -652,7 +653,10 @@ class WebsiteLoader(BaseRemote):
             cap was lowered) are left out in entry order, and ``report``
             says so. Every fetch, discovery included, is charged to one
             budget (``fetch_budget_for``), so failed or non-HTML fetches can't
-            multiply across sites.
+            multiply across sites. Each document's ``requested_urls`` lists
+            the other addresses that led to its page (``note_requested_url``):
+            entries or links that redirect to a page already loaded are
+            merged into its document instead of dropped.
         """
         # A stored config: the write limits don't apply, the fetch budget does.
         config = parse_website_config(inputs, enforce_page_cap=False)
@@ -660,7 +664,8 @@ class WebsiteLoader(BaseRemote):
         cap = int(settings.WEB_MAX_PAGES)
         fetches = FetchBudget(fetch_budget_for(cap))
         documents: List[Document] = []
-        seen = set()
+        # The document of each page, by page_key.
+        seen: Dict[str, Document] = {}
         site_reports = []
 
         # Page entries the cap left out (a stored config past a lowered cap).
@@ -692,10 +697,14 @@ class WebsiteLoader(BaseRemote):
                 site_reports.append(report)
             added = 0
             for doc in docs:
+                doc.extra_info.setdefault("requested_urls", [])
                 key = page_key(doc.extra_info["source"])
                 if key in seen:
+                    # The page again (an entry or link that redirects to it):
+                    # one document, listing every address that led to it.
+                    merge_requested_urls(seen[key], doc)
                     continue
-                seen.add(key)
+                seen[key] = doc
                 documents.append(doc)
                 added += 1
             if report is not None:

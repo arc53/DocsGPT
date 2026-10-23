@@ -14,6 +14,7 @@ from docsgpt.parser.remote.page_content import (
     host_with_port,
     html_soup,
     is_html,
+    note_requested_url,
     page_document,
     page_key,
 )
@@ -58,8 +59,9 @@ class CrawlerLoader(BaseRemote):
         Returns:
             One document per page that loaded, at most ``limit`` fetches. A
             page that redirects is stored under its final address, and only
-            when the scope accepts that address too; ``requested_url`` holds
-            the link it was reached by.
+            when the scope accepts that address too; ``requested_urls`` holds
+            the links it was reached by (``note_requested_url``), a later one
+            that redirects to it included.
         """
         url = inputs
         if isinstance(url, list) and url:
@@ -85,6 +87,8 @@ class CrawlerLoader(BaseRemote):
         # Links waiting beyond this are dropped: the crawl can't reach them.
         max_queue = _QUEUE_PER_PAGE * self.limit if self.limit is not None else _MAX_QUEUE
         loaded_content = []
+        # The document of each page kept, by page_key.
+        by_key = {}
         # The start page is fetched for its links even when the scope leaves
         # it out (starting at / with Stay under /docs, or a skipped start
         # page); only its content is dropped.
@@ -128,6 +132,9 @@ class CrawlerLoader(BaseRemote):
                     final_key = page_key(page_url)
                     if final_key != current_key:
                         if final_key in done:
+                            if final_key in by_key:
+                                # A page already loaded: this link is another way to it.
+                                note_requested_url(by_key[final_key], current_url)
                             continue
                         done.add(final_key)
                         seen.add(final_key)
@@ -151,12 +158,11 @@ class CrawlerLoader(BaseRemote):
                     # can't handle mustn't cut off the pages it leads to.
                     logging.error(f"Error extracting {current_url}; following its links only: {e}", exc_info=True)
                     document = None
-                if document is not None:
-                    if page_url != current_url:
-                        # The worker matches the tree entry by either address.
-                        document.extra_info["requested_url"] = current_url
-                    if keep:
-                        loaded_content.append(document)
+                if document is not None and keep:
+                    # The worker matches the tree entry by any address that led to it.
+                    note_requested_url(document, current_url)
+                    by_key[page_key(page_url)] = document
+                    loaded_content.append(document)
                 if not html:
                     # Not a page (a PDF or image the site links to), or plain
                     # text or Markdown whose "links" are text: none to follow.

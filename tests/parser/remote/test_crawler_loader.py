@@ -83,6 +83,7 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_fetch, mock_validate_
     assert result[0].extra_info == {
         "source": "http://example.com",
         "file_path": "index.md",
+        "requested_urls": [],
     }
 
 

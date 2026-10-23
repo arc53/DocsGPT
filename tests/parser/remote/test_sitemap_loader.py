@@ -277,6 +277,7 @@ class TestSitemapLoaderLoadData:
             assert docs[0].extra_info == {
                 "source": "https://example.com/page1",
                 "file_path": "page1.md",
+                "requested_urls": [],
             }
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
@@ -385,7 +386,7 @@ class TestSitemapLoaderMalformedEntry:
             docs = loader.load_data("https://example.com/sitemap.xml")
 
         assert [d.extra_info for d in docs] == [
-            {"source": "https://example.com/good", "file_path": "good.md"}
+            {"source": "https://example.com/good", "file_path": "good.md", "requested_urls": []}
         ]
         mock_fetch.assert_called_once()
 

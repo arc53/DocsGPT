@@ -18,6 +18,7 @@ from docsgpt.parser.remote.page_content import (
     fetch_page,
     final_url,
     has_userinfo,
+    note_requested_url,
     page_document,
     page_key,
 )
@@ -271,13 +272,16 @@ class SitemapLoader(BaseRemote):
 
         Returns:
             One document per page that loaded, at most ``limit``. A page that
-            redirected is stored under where it landed, with the address it
-            was listed under in ``requested_url``.
+            redirected is stored under where it landed, with the addresses it
+            was listed under in ``requested_urls`` (``note_requested_url``),
+            one listed later that redirects to it included.
         """
         include_host = spans_multiple_hosts(urls)
         documents = []
         processed_urls = 0  # Counter for processed URLs
         loaded = set()
+        # The document of each page loaded, by page_key.
+        by_key = {}
         for url in urls:
             if self.limit is not None and processed_urls >= self.limit:
                 break  # Stop processing if the limit is reached
@@ -310,6 +314,9 @@ class SitemapLoader(BaseRemote):
                     # failed fetch.
                     landed = page_key(page_url)
                     if landed != key and landed in loaded:
+                        if landed in by_key:
+                            # A page already loaded: this address is another way to it.
+                            note_requested_url(by_key[landed], url)
                         continue
                     if self.accept is not None and not self.accept(page_url):
                         logger.info(f"Dropping {url}: it redirects out of scope to {page_url}")
@@ -325,9 +332,9 @@ class SitemapLoader(BaseRemote):
                     keep_links=self.keep_links,
                 )
                 if document is not None:
-                    if page_url != url:
-                        # The worker matches the tree entry by either address.
-                        document.extra_info["requested_url"] = url
+                    # The worker matches the tree entry by any address that led to it.
+                    note_requested_url(document, url)
+                    by_key[page_key(page_url) if page_url != url else key] = document
                     documents.append(document)
                 processed_urls += 1  # Increment the counter after processing each URL
             except Exception as e:

@@ -402,6 +402,51 @@ def page_key(url: str) -> str:
     return f"{key}?{normalize_percent_encoding(parts.query)}" if parts.query else key
 
 
+def note_requested_url(document: Document, requested: str) -> None:
+    """Record on a web page's document that fetching ``requested`` ended at it.
+
+    ``extra_info["requested_urls"]`` lists, in the order they were met, the
+    distinct addresses (by ``page_key``) that led to the page, other than the
+    page's own (its ``source``, or another spelling of it, such as ``www.``).
+    ``requested_url``, kept for older readers, is its first; with none, it
+    is still set to an address the page answered from under another spelling.
+
+    Args:
+        document: A web page's document; ``extra_info["source"]`` its address.
+        requested: The address that was fetched.
+    """
+    info = document.extra_info
+    urls = info.setdefault("requested_urls", [])
+    source = info.get("source") or ""
+    if requested == source:
+        return
+    try:
+        requested_key = page_key(requested)
+        if requested_key == page_key(source):
+            if not urls:
+                info.setdefault("requested_url", requested)
+            return
+        if any(page_key(url) == requested_key for url in urls):
+            return
+    except ValueError:
+        if requested in urls:
+            return
+    urls.append(requested)
+    info["requested_url"] = urls[0]
+
+
+def merge_requested_urls(kept: Document, duplicate: Document) -> None:
+    """Fold the addresses that led to ``duplicate`` (the same page, loaded again) into ``kept``.
+
+    Args:
+        kept: The page's document that stays.
+        duplicate: A later document of the same page, dropped by the caller.
+    """
+    kept.extra_info.setdefault("requested_urls", [])
+    for requested in duplicate.extra_info.get("requested_urls") or []:
+        note_requested_url(kept, requested)
+
+
 class FetchBudget:
     """Fetches one load may still make, shared by every loader it runs."""
 

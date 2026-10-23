@@ -7,7 +7,15 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_document
+from docsgpt.parser.remote.page_content import (
+    FetchBudget,
+    fetch_page,
+    final_url,
+    merge_requested_urls,
+    note_requested_url,
+    page_document,
+    page_key,
+)
 from docsgpt.parser.schema.base import Document
 
 headers = {
@@ -40,9 +48,10 @@ class WebLoader(BaseRemote):
 
         Returns:
             One document per page that loaded, its ``source`` the address a
-            redirect led to (and ``requested_url`` the address asked for,
-            only when the two differ); a blocked address, a failed fetch or a
-            response with no text is skipped.
+            redirect led to and ``requested_urls`` the other addresses asked
+            for that led to it (``note_requested_url``); addresses that land
+            on one page are one document. A blocked address, a failed fetch
+            or a response with no text is skipped.
         """
         urls = inputs
         if isinstance(urls, str):
@@ -58,6 +67,9 @@ class WebLoader(BaseRemote):
                 )
         include_host = spans_multiple_hosts(valid_urls)
         documents = []
+        # The document of each page, by page_key: addresses that redirect to
+        # one page are one document listing them all.
+        by_key = {}
         for url in valid_urls:
             if self.budget is not None and not self.budget.take():
                 logging.warning(f"Fetch budget spent; not fetching {url}")
@@ -77,9 +89,16 @@ class WebLoader(BaseRemote):
                     explicit=True,
                 )
                 if document is not None:
-                    if page_url != url:
-                        # The worker matches the tree entry by either address.
-                        document.extra_info["requested_url"] = url
+                    # The worker matches the tree entry by any address that led to it.
+                    note_requested_url(document, url)
+                    try:
+                        key = page_key(page_url)
+                    except ValueError:
+                        key = page_url
+                    if key in by_key:
+                        merge_requested_urls(by_key[key], document)
+                        continue
+                    by_key[key] = document
                     documents.append(document)
             except Exception as e:
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)

@@ -1152,6 +1152,96 @@ class TestRedirects:
             "https://y.io/target": "https://y.io/hop",
         }
 
+    def test_every_page_lists_the_other_addresses_that_led_to_it(self, web):
+        web({
+            "https://x.io/old": (301, "/new"),
+            "https://x.io/new": page("New"),
+            "https://x.io/same": page("Same"),
+            "https://x.io/plain": (301, "https://www.x.io/plain"),
+            "https://www.x.io/plain": page("Plain"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/old"}, {"url": "https://x.io/same"}, {"url": "https://x.io/plain"},
+        ]})
+
+        info = {d.extra_info["source"]: d.extra_info for d in docs}
+        assert info["https://x.io/new"]["requested_urls"] == ["https://x.io/old"]
+        assert info["https://x.io/same"]["requested_urls"] == []
+        assert "requested_url" not in info["https://x.io/same"]
+        # Another spelling of the page itself (www.) is no other address.
+        assert info["https://www.x.io/plain"]["requested_urls"] == []
+        assert info["https://www.x.io/plain"]["requested_url"] == "https://x.io/plain"
+
+    @pytest.mark.parametrize("order", [["old-a", "old-b"], ["old-b", "old-a"]])
+    def test_page_entries_that_redirect_to_one_page_are_all_kept(self, web, order):
+        web({
+            "https://x.io/old-a": (301, "/new"),
+            "https://x.io/old-b": (301, "/new"),
+            "https://x.io/new": page("New"),
+            "https://x.io/other": page("Other"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": f"https://x.io/{p}"} for p in [*order, "other"]]})
+
+        assert sources(docs) == ["https://x.io/new", "https://x.io/other"]
+        assert docs[0].extra_info["requested_urls"] == [f"https://x.io/{p}" for p in order]
+        assert docs[0].extra_info["requested_url"] == f"https://x.io/{order[0]}"
+
+    @pytest.mark.parametrize("order", [["new", "old-a"], ["old-a", "new"]])
+    def test_a_page_entry_and_one_that_redirects_to_it(self, web, order):
+        web({"https://x.io/old-a": (301, "/new"), "https://x.io/new": page("New")})
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": f"https://x.io/{p}"} for p in order]})
+
+        assert sources(docs) == ["https://x.io/new"]
+        assert docs[0].extra_info["requested_urls"] == ["https://x.io/old-a"]
+        assert docs[0].extra_info["requested_url"] == "https://x.io/old-a"
+
+    @pytest.mark.parametrize("links", [["/old-a", "/new"], ["/new", "/old-a"]])
+    def test_a_crawl_keeps_a_link_that_redirects_to_a_page_it_has(self, web, links):
+        web({
+            "https://x.io/": page("Home", links=links),
+            "https://x.io/old-a": (301, "/new"),
+            "https://x.io/new": page("New"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]})
+
+        info = {d.extra_info["source"]: d.extra_info for d in docs}
+        assert set(info) == {"https://x.io/", "https://x.io/new"}
+        assert info["https://x.io/new"]["requested_urls"] == ["https://x.io/old-a"]
+
+    @pytest.mark.parametrize("listed", [["old-a", "new"], ["new", "old-a"]])
+    def test_a_sitemap_keeps_an_entry_that_redirects_to_a_page_it_has(self, web, listed):
+        web({
+            "https://x.io/sitemap.xml": urlset(*(f"https://x.io/{p}" for p in listed)),
+            "https://x.io/old-a": (301, "/new"),
+            "https://x.io/new": page("New"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/sitemap.xml"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/new"]
+        assert docs[0].extra_info["requested_urls"] == ["https://x.io/old-a"]
+
+    def test_a_site_page_that_redirects_to_a_page_entry_joins_it(self, web):
+        web({
+            "https://x.io/": page("Home", links=["/old-a"]),
+            "https://x.io/old-a": (301, "/new"),
+            "https://x.io/new": page("New"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/new"}, {"url": "https://x.io/", "mode": "site", "discovery": "links"},
+        ]})
+
+        info = {d.extra_info["source"]: d.extra_info for d in docs}
+        assert info["https://x.io/new"]["requested_urls"] == ["https://x.io/old-a"]
+        assert info["https://x.io/"]["requested_urls"] == []
+
     def test_a_relative_robots_sitemap_line_is_resolved(self, web):
         web({"https://x.io/robots.txt": robots("/maps/sitemap.xml", "https://x.io/other.xml")})
 

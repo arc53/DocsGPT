@@ -95,6 +95,7 @@ class TestWebLoaderLoadData:
             "title": "Test Page",
             "language": "en",
             "file_path": "index.md",
+            "requested_urls": [],
         }
         mock_fetch.assert_called_once_with(
             "https://example.com", headers=headers, timeout=30, budget=None
@@ -116,8 +117,8 @@ class TestWebLoaderLoadData:
         assert result[0].text == "Content from site 1"
         assert result[1].text == "Content from site 2"
         # Two hosts would both map to index.md, so the host prefixes the path.
-        assert result[0].extra_info == {"source": "https://site1.com", "file_path": "site1.com/index.md"}
-        assert result[1].extra_info == {"source": "https://site2.com", "file_path": "site2.com/index.md"}
+        assert result[0].extra_info == {"source": "https://site1.com", "file_path": "site1.com/index.md", "requested_urls": []}
+        assert result[1].extra_info == {"source": "https://site2.com", "file_path": "site2.com/index.md", "requested_urls": []}
 
         assert mock_fetch.call_count == 2
         mock_fetch.assert_any_call(
@@ -165,7 +166,7 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         assert result[0].text == "Bare body"
-        assert result[0].extra_info == {"source": "https://example.com", "file_path": "index.md"}
+        assert result[0].extra_info == {"source": "https://example.com", "file_path": "index.md", "requested_urls": []}
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch("docsgpt.parser.remote.web_loader.fetch_page")
@@ -222,7 +223,7 @@ class TestWebLoaderErrorHandling:
 
         assert len(result) == 1
         assert result[0].text == "Success content"
-        assert result[0].extra_info == {"source": "https://good-url.com", "file_path": "good-url.com/index.md"}
+        assert result[0].extra_info == {"source": "https://good-url.com", "file_path": "good-url.com/index.md", "requested_urls": []}
 
         mock_logging.error.assert_called_once()
         error_call = mock_logging.error.call_args
@@ -384,4 +385,22 @@ class TestWebLoaderRequestedUrl:
 
         assert [d.extra_info["source"] for d in result] == ["https://x.io/new", "https://x.io/same"]
         assert result[0].extra_info["requested_url"] == "https://x.io/old"
+        assert result[0].extra_info["requested_urls"] == ["https://x.io/old"]
         assert "requested_url" not in result[1].extra_info
+        assert result[1].extra_info["requested_urls"] == []
+
+    @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_addresses_that_redirect_to_one_page_are_one_document(self, mock_fetch, mock_validate, web_loader):
+        def fetch(url, *args, **kwargs):
+            response = _fake_response("<html><body><p>Page</p></body></html>")
+            response.url = "https://x.io/new" if url.startswith("https://x.io/old") else url
+            return response
+
+        mock_fetch.side_effect = fetch
+
+        result = web_loader.load_data(["https://x.io/old-b", "https://x.io/new", "https://x.io/old-a"])
+
+        assert [d.extra_info["source"] for d in result] == ["https://x.io/new"]
+        assert result[0].extra_info["requested_urls"] == ["https://x.io/old-b", "https://x.io/old-a"]
+        assert result[0].extra_info["requested_url"] == "https://x.io/old-b"
