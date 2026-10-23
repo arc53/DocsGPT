@@ -1,7 +1,7 @@
 import logging
 from collections import deque
 from typing import Callable, List, Optional, Union
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlsplit
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
 from docsgpt.parser.remote.page_content import (
@@ -9,6 +9,7 @@ from docsgpt.parser.remote.page_content import (
     fetch_page,
     final_url,
     header_charset,
+    host_with_port,
     html_soup,
     is_html,
     page_document,
@@ -73,7 +74,7 @@ class CrawlerLoader(BaseRemote):
         # www. and scheme variants of one page are fetched once; ``seen``
         # holds every page queued or fetched, ``done`` every page fetched
         # (a redirect's target included).
-        site_host = urlparse(url).hostname
+        site_host = _site_of(url)
         seed_key = page_key(url)
         seen = {seed_key}
         done = set()
@@ -166,11 +167,12 @@ class CrawlerLoader(BaseRemote):
         return dedupe_virtual_paths(loaded_content)
 
     def _on_site(self, url: str, site_host: Optional[str]) -> bool:
-        """Whether the crawl may take ``url``: ``accept``, else the start page's host.
+        """Whether the crawl may take ``url``: ``accept``, else the start page's host and port.
 
         Args:
             url: A link or a redirect's target.
-            site_host: The start page's host, for a crawl without ``accept``.
+            site_host: The start page's ``host[:port]`` (``_site_of``), for a
+                crawl without ``accept``.
 
         Returns:
             True when the page is in scope.
@@ -178,13 +180,30 @@ class CrawlerLoader(BaseRemote):
         if self.accept is not None:
             return self.accept(url)
         try:
-            parsed = urlparse(url)
+            parsed = urlsplit(url)
+            # Compare the host itself: a substring match also follows share
+            # links and lookalike hosts that contain the site URL. Another
+            # port is another server.
+            return parsed.scheme in ("http", "https") and _site_of(url) == site_host
         except ValueError:
             return False
-        # Compare the host itself: a substring match also follows share
-        # links and lookalike hosts that contain the site URL.
-        return parsed.scheme in ("http", "https") and parsed.hostname == site_host
 
     def _url_to_virtual_path(self, url):
         """Convert a URL to a virtual ``.md`` path; see ``url_to_virtual_path``."""
         return url_to_virtual_path(url)
+
+
+def _site_of(url: str) -> Optional[str]:
+    """The ``host[:port]`` a crawl without ``accept`` stays on (a port only when it isn't the scheme's own).
+
+    Args:
+        url: An address.
+
+    Returns:
+        The host, with a port of its own; ``None`` for an address without a host.
+
+    Raises:
+        ValueError: If the address or its port cannot be parsed.
+    """
+    parts = urlsplit(url)
+    return host_with_port(parts, parts.hostname) if parts.hostname else None

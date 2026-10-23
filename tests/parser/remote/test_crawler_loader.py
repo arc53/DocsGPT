@@ -351,6 +351,21 @@ def test_the_queue_of_pages_to_visit_is_capped(mock_fetch, mock_validate_url):
     assert crawler.limit_reached is True
 
 
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_a_crawl_stays_on_the_start_page_port(mock_fetch, mock_validate_url):
+    mock_fetch.side_effect = _site({
+        "http://example.com": "<html><body><p><a href='http://example.com:8080/admin'>Admin</a></p>"
+                              "<p><a href='http://example.com:80/a'>A</a></p></body></html>",
+        "http://example.com:80/a": "<html><body>A</body></html>",
+    })
+
+    result = CrawlerLoader(limit=5).load_data("http://example.com")
+
+    assert [doc.extra_info["source"] for doc in result] == ["http://example.com", "http://example.com:80/a"]
+    assert [c.args[0] for c in mock_fetch.call_args_list] == ["http://example.com", "http://example.com:80/a"]
+
+
 class _BytesResponse:
     """A fetched response with raw bytes and, for a redirect, the address it landed on."""
 

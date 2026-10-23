@@ -38,7 +38,15 @@ from docsgpt.parser.remote.base import (
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 # page_key lives with the fetch helpers so every web loader keys pages alike;
 # it stays importable from here.
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_key, remove_dot_segments
+from docsgpt.parser.remote.page_content import (
+    FetchBudget,
+    explicit_port,
+    fetch_page,
+    final_url,
+    host_with_port,
+    page_key,
+    remove_dot_segments,
+)
 from docsgpt.parser.remote.page_content import bare_host as _bare_host
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.web_loader import WebLoader
@@ -103,15 +111,14 @@ def _section_key(url: str) -> str:
         url: A page URL, or a section rule without its ``*``.
 
     Returns:
-        ``host[:port]/path`` (plus ``?query``).
+        ``host[:port]/path`` (plus ``?query``); the port as ``page_key`` keeps
+        it, only when it isn't the scheme's own.
 
     Raises:
         ValueError: If the URL cannot be parsed.
     """
     parts = urlsplit(normalize_page_url(url.strip()))
-    host = (parts.hostname or "").rstrip(".")
-    if parts.port is not None:
-        host = f"{host}:{parts.port}"
+    host = host_with_port(parts, (parts.hostname or "").rstrip("."))
     key = f"{host}{remove_dot_segments(parts.path).rstrip('/')}"
     return f"{key}?{parts.query}" if parts.query else key
 
@@ -162,7 +169,8 @@ class SiteScope:
     ):
         """
         Args:
-            start_url: The entry's start address; its host is the site.
+            start_url: The entry's start address; its host (and its port,
+                when it names one other than the scheme's) is the site.
             path_prefix: Only paths under this one (``/docs/``); empty for all.
             include_subdomains: Also accept other hosts of the same registered
                 domain (``docs.example.co.uk`` for ``example.co.uk``).
@@ -170,7 +178,13 @@ class SiteScope:
                 A page rule ignores ``www.`` as ``page_key`` does; a section
                 matches its host exactly (see ``_in_section``).
         """
-        self.host = _bare_host(urlparse(start_url).hostname)
+        start = urlsplit(start_url)
+        self.host = _bare_host(start.hostname)
+        # Another port is another server: a site is its host and port.
+        try:
+            self.port = explicit_port(start)
+        except ValueError:
+            self.port = None
         self.domain = _registered_domain(self.host)
         self.include_subdomains = include_subdomains
         prefix = remove_dot_segments("/" + (path_prefix or "").strip().strip("/")).strip("/")
@@ -205,6 +219,8 @@ class SiteScope:
         try:
             parsed = urlsplit(url)
             if parsed.scheme not in ("http", "https") or not self._host_ok(_bare_host(parsed.hostname)):
+                return False
+            if explicit_port(parsed) != self.port:
                 return False
             if self.path_prefix:
                 # The path the server serves: ``/docs/../admin`` is not under /docs.

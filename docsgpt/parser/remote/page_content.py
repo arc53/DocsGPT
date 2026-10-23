@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
-from urllib.parse import quote, urldefrag, urljoin, urlparse, urlsplit
+from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit
 
 import requests
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
@@ -153,6 +153,44 @@ def bare_host(host: Optional[str]) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def explicit_port(parts: SplitResult) -> Optional[int]:
+    """The port an address names, unless it is its scheme's own (80 for http, 443 for https).
+
+    Args:
+        parts: The ``urlsplit`` of an address.
+
+    Returns:
+        The port, or ``None`` when there is none or it is the default.
+
+    Raises:
+        ValueError: If the port is not a number in range.
+    """
+    port = parts.port
+    return None if port is None or port == _DEFAULT_PORTS.get(parts.scheme) else port
+
+
+def host_with_port(parts: SplitResult, host: str) -> str:
+    """A key's host part: ``host``, plus ``:port`` when the address names a port of its own.
+
+    Args:
+        parts: The ``urlsplit`` of an address.
+        host: Its host as the key spells it (``bare_host`` or as written).
+
+    Returns:
+        ``host`` or ``host:port``; an IPv6 host goes in brackets.
+
+    Raises:
+        ValueError: If the port is not a number in range.
+    """
+    if ":" in host:
+        host = f"[{host}]"
+    port = explicit_port(parts)
+    return host if port is None else f"{host}:{port}"
+
+
 def _is_dot_segment(segment: str, dots: str) -> bool:
     """Whether a path segment is ``dots`` (``.`` or ``..``), each dot plain or written ``%2e``/``%2E``."""
     return segment.lower().replace("%2e", ".") == dots
@@ -194,18 +232,21 @@ def remove_dot_segments(path: str) -> str:
 def page_key(url: str) -> str:
     """One key per page: scheme, ``www.``, fragment, query order, a trailing slash and dot segments don't count.
 
+    A port does, unless it is the scheme's own: ``x.io:8443/a`` is another
+    server's page than ``x.io/a`` (and ``x.io:443/a``).
+
     Args:
         url: A page URL.
 
     Returns:
-        ``host/path`` (plus ``?query``), for comparing pages and skip rules;
-        ``/docs/../a`` keys as ``/a``, the page a server answers with.
+        ``host[:port]/path`` (plus ``?query``), for comparing pages and skip
+        rules; ``/docs/../a`` keys as ``/a``, the page a server answers with.
 
     Raises:
         ValueError: If the URL cannot be parsed.
     """
     parts = urlsplit(normalize_page_url(url.strip()))
-    key = f"{bare_host(parts.hostname)}{remove_dot_segments(parts.path).rstrip('/')}"
+    key = f"{host_with_port(parts, bare_host(parts.hostname))}{remove_dot_segments(parts.path).rstrip('/')}"
     return f"{key}?{parts.query}" if parts.query else key
 
 

@@ -169,6 +169,31 @@ class TestSiteScope:
         assert page_key("https://x.io/..") == page_key("https://x.io/")
         assert page_key("https://x.io/a..b") == "x.io/a..b"
 
+    def test_page_key_keeps_a_port_other_than_the_default(self):
+        from docsgpt.parser.remote.website_loader import page_key
+
+        assert page_key("https://x.io:8443/a") != page_key("https://x.io/a")
+        assert page_key("https://x.io:8443/a") != page_key("https://x.io:9443/a")
+        assert page_key("https://www.x.io:8443/a/") == page_key("https://x.io:8443/a") == "x.io:8443/a"
+        # The scheme's own port is the address without one.
+        assert page_key("https://x.io:443/a") == page_key("http://x.io:80/a") == page_key("https://x.io/a")
+        assert page_key("http://[::1]:8080/a") == "[::1]:8080/a"
+
+    def test_rules_and_scope_tell_ports_apart(self):
+        scope = SiteScope("https://x.io/", skip=["https://x.io:8443/guide", "https://x.io:9443/*"])
+
+        assert scope.accepts("https://x.io/guide")
+        assert scope.accepts("https://x.io:443/guide")
+        assert not scope.accepts("https://x.io:8443/guide")
+        # Another port is another server: not the site.
+        assert not scope.accepts("https://x.io:8080/other")
+        on_port = SiteScope("https://x.io:8443/", skip=["https://x.io:8443/old/*", "https://x.io:443/new/*"])
+        assert on_port.accepts("https://x.io:8443/a")
+        assert not on_port.accepts("https://x.io/a")
+        assert not on_port.accepts("https://x.io:8443/old/page")
+        assert on_port.accepts("https://x.io:8443/new/page")
+        assert not SiteScope("https://x.io/", skip=["https://x.io:443/new/*"]).accepts("https://x.io/new/page")
+
     def test_skip_rules_exact_and_prefix(self):
         scope = SiteScope(
             "https://docs.example.com/",
@@ -877,6 +902,15 @@ class TestWebsiteLoaderDedupe:
         assert sources(docs) == ["https://x.io/a", "https://x.io/b"]
         assert loader.report["pages"] == 2
         assert loader.report["sites"][0]["pages"] == 1
+
+    def test_the_same_path_on_another_port_is_another_page(self, web):
+        web({"https://x.io/guide": page("Prod guide"), "https://x.io:8443/guide": page("Staging guide")})
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/guide", "mode": "page"},
+            {"url": "https://x.io:8443/guide", "mode": "page"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/guide", "https://x.io:8443/guide"]
 
 
 class TestPlainTextPages:
