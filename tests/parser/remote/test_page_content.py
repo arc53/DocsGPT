@@ -418,6 +418,27 @@ class TestPageDocument:
         assert "title" not in doc.extra_info
 
 
+class TestNulCharacters:
+    # PostgreSQL text and JSONB refuse U+0000: a page carrying one failed its store.
+    def test_plain_text_drops_nul_from_text_and_title(self):
+        doc = page_document(b"# Ti\x00tle\nhello\x00world\n", "text/plain", URL, explicit=True)
+
+        assert doc.text == "# Title\nhelloworld"
+        assert doc.extra_info["title"] == "Title"
+
+    def test_html_drops_nul_from_text_title_and_language(self):
+        body = b"<html lang='e\x00n'><head><title>T\x00x</title></head><body><p>hello\x00world</p></body></html>"
+
+        doc = page_document(body, "text/html", URL)
+
+        assert "\x00" not in doc.text and "helloworld" in doc.text
+        assert doc.extra_info["title"] == "Tx"
+        assert doc.extra_info["language"] == "en"
+
+    def test_a_page_of_only_nul_is_skipped(self):
+        assert page_document(b"\x00\x00", "text/plain", URL, explicit=True) is None
+
+
 class TestKeepLinksCost:
     def test_many_links_in_one_block_stay_linear(self):
         # Each link used to re-read its whole block's text: quadratic in links.

@@ -1017,6 +1017,11 @@ def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str)
         return body.decode("utf-8", errors="replace")
 
 
+def _without_nul(text: str) -> str:
+    """``text`` without U+0000, which PostgreSQL text and JSONB refuse to store."""
+    return text.replace("\x00", "")
+
+
 def page_document(
     body: Union[str, bytes],
     content_type: Optional[str],
@@ -1040,12 +1045,13 @@ def page_document(
         The document, or ``None`` for a binary response (a PDF or image a
         sitemap or crawl reached) or a page with no text. Plain text and
         Markdown are kept as written, titled by their first ``#`` heading.
+        NUL characters are dropped from the text, title and language.
     """
     if not is_html(content_type):
         if not _is_plain_text(content_type, explicit):
             logger.info(f"Skipping {url}: {content_type} is not a web page")
             return None
-        text = _decode_text(body, content_type, url).strip()
+        text = _without_nul(_decode_text(body, content_type, url)).strip()
         if not text:
             logger.info(f"Skipping {url}: no text")
             return None
@@ -1057,14 +1063,17 @@ def page_document(
         metadata["file_path"] = url_to_virtual_path(url, include_host)
         return Document(text, extra_info=metadata)
     page = extract_page(body, url, keep_links=keep_links, encoding=header_charset(content_type))
-    if not page.text.strip():
+    text = _without_nul(page.text)
+    if not text.strip():
         logger.info(f"Skipping {url}: no text")
         return None
     metadata = {"source": url}
-    if page.title:
-        metadata["title"] = page.title
-    if page.language:
-        metadata["language"] = page.language
+    title = _without_nul(page.title or "").strip()
+    if title:
+        metadata["title"] = title
+    language = _without_nul(page.language or "").strip()
+    if language:
+        metadata["language"] = language
     # The worker keys the file tree by file_path; the chunks view filters by it.
     metadata["file_path"] = url_to_virtual_path(url, include_host)
-    return Document(page.text, extra_info=metadata)
+    return Document(text, extra_info=metadata)
