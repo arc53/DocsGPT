@@ -459,3 +459,67 @@ class TestFaissAddChunks:
 
         assert [c["doc_id"] for c in populated.get_chunks()] == before
         _assert_rows_match_documents(populated)
+
+
+class _CappedEmbeddings(_FakeEmbeddings):
+    """Records each request's size and refuses one over ``cap`` inputs, as a remote provider does."""
+
+    def __init__(self, cap):
+        self.cap = cap
+        self.calls = []
+
+    def embed_documents(self, documents):
+        self.calls.append(len(documents))
+        if len(documents) > self.cap:
+            raise RuntimeError(f"400: {len(documents)} inputs in one request")
+        return super().embed_documents(documents)
+
+
+@pytest.mark.unit
+class TestFaissEmbedsInBatches:
+    """A long page's chunks go to the embeddings provider in EMBEDDINGS_BATCH_SIZE slices, then one save."""
+
+    @pytest.fixture
+    def capped(self, populated, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "EMBEDDINGS_BATCH_SIZE", 2)
+        populated.embeddings = _CappedEmbeddings(cap=2)
+        return populated
+
+    def test_add_chunks_embeds_in_slices_and_saves_once(self, capped):
+        texts = [f"Paris fact {i}" for i in range(5)]
+        with patch.object(capped, "_save_to_storage") as save:
+            ids = capped.add_chunks(texts, [{"source": "big.html"}] * 5)
+
+        assert capped.embeddings.calls == [2, 2, 1]
+        save.assert_called_once()
+        assert len(ids) == 5 and capped.index.ntotal == 8
+        assert [capped.documents[i]["page_content"] for i in ids] == texts
+        _assert_rows_match_documents(capped)
+
+    def test_add_texts_embeds_in_slices(self, capped):
+        ids = capped.add_texts([f"Celery fact {i}" for i in range(3)], [{}] * 3)
+
+        assert capped.embeddings.calls == [2, 1]
+        assert len(ids) == 3 and capped.index.ntotal == 6
+        _assert_rows_match_documents(capped)
+
+    def test_a_failed_slice_adds_nothing(self, capped):
+        before = [c["doc_id"] for c in capped.get_chunks()]
+        real = capped.embeddings.embed_documents
+
+        def fail_second(documents):
+            if len(capped.embeddings.calls) == 1:
+                capped.embeddings.calls.append(len(documents))
+                raise RuntimeError("provider unavailable")
+            return real(documents)
+
+        capped.embeddings.embed_documents = fail_second
+        with patch.object(capped, "_save_to_storage") as save:
+            with pytest.raises(RuntimeError, match="provider unavailable"):
+                capped.add_chunks([f"t{i}" for i in range(4)], [{}] * 4)
+
+        save.assert_not_called()
+        assert [c["doc_id"] for c in capped.get_chunks()] == before
+        assert capped.index.ntotal == 3

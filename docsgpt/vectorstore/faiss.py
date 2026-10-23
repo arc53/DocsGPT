@@ -216,6 +216,24 @@ class FaissStore(BaseVectorStore):
             self.index_to_docstore_id[start + offset] = doc_id
         return ids
 
+    def _embed_in_batches(self, texts: List[str]) -> List[List[float]]:
+        """Embed ``texts`` in ``EMBEDDINGS_BATCH_SIZE`` slices, as ingest does.
+
+        Args:
+            texts: The texts to embed.
+
+        Returns:
+            One vector per text, in order.
+        """
+        # Imported here: the embedding pipeline imports the vector stores.
+        from docsgpt.parser.embedding_pipeline import _resolve_batch_size
+
+        step = _resolve_batch_size()
+        vectors: List[List[float]] = []
+        for start in range(0, len(texts), step):
+            vectors.extend(self.embeddings.embed_documents(texts[start:start + step]))
+        return vectors
+
     def _to_document(self, doc_id: str) -> Optional[Document]:
         stored = self.documents.get(doc_id)
         if stored is None:
@@ -276,12 +294,18 @@ class FaissStore(BaseVectorStore):
         ids: Optional[List[str]] = None,
         **kwargs,
     ) -> List[str]:
-        """Embed and append ``texts`` to the index."""
+        """Embed and append ``texts`` to the index.
+
+        The texts go to the embeddings provider in ``EMBEDDINGS_BATCH_SIZE``
+        slices: a long page's chunks in one request would pass a remote
+        provider's per-request limits. Every slice is embedded before any row
+        is added, so a failed slice adds nothing.
+        """
         texts = list(texts)
         if not texts:
             return []
         metadatas = list(metadatas or [{} for _ in texts])
-        vectors = self.embeddings.embed_documents(texts)
+        vectors = self._embed_in_batches(texts)
         if self.index is None:
             faiss = _dependable_faiss_import()
             self.index = faiss.IndexFlatL2(len(vectors[0]))
