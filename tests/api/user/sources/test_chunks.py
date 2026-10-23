@@ -1102,8 +1102,13 @@ class TestChunkEditsTakeTheIndexLock:
             def get(self, key):
                 return self.keys.get(key)
 
-            def delete(self, key):
-                self.keys.pop(key, None)
+            def eval(self, script, numkeys, key, token, *args):
+                # The lock's token-checked renew (expire) and release (del).
+                if self.keys.get(key) != token:
+                    return 0
+                if "'del'" in script:
+                    self.keys.pop(key)
+                return 1
 
         redis = Redis()
         monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
@@ -1114,10 +1119,11 @@ class TestChunkEditsTakeTheIndexLock:
             "docsgpt.api.user.sources.chunks.get_vector_store", return_value=self._store()
         ):
             free = _chunk_edit(app, pg_conn, "add", str(src["id"]), user)
+            released = lock_key(str(src["id"])) not in redis.keys
             redis.keys[lock_key(str(src["id"]))] = "a-sync"
             held = _chunk_edit(app, pg_conn, "add", str(src["id"]), user)
 
-        assert free.status_code == 201
+        assert free.status_code == 201 and released
         assert held.status_code == 409
         # The sync's lock is left alone.
         assert redis.keys[lock_key(str(src["id"]))] == "a-sync"

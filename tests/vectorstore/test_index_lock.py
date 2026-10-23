@@ -6,7 +6,12 @@ import pytest
 
 
 class LockRedis:
-    """The redis-py commands the lock uses (``set`` with nx/xx/ex, ``get``, ``delete``), in memory."""
+    """The redis-py commands the lock uses (``set`` with nx/ex, ``eval`` of its two scripts), in memory.
+
+    ``eval`` runs the lock's compare-and-act scripts atomically, as Redis
+    does: renew (``expire``) or release (``del``) only while the key holds
+    the caller's token.
+    """
 
     def __init__(self):
         self.kv = {}
@@ -36,6 +41,39 @@ class LockRedis:
         self.kv.pop(key, None)
         self.expiry.pop(key, None)
         return int(existed)
+
+    def eval(self, script, numkeys, key, token, *args):
+        if not self._alive(key) or self.kv[key] != token.encode():
+            return 0
+        if "'del'" in script:
+            return self.delete(key)
+        self.expiry[key] = time.time() + int(args[0])
+        return 1
+
+
+class RacingRedis(LockRedis):
+    """A ``LockRedis`` where another job takes the lock right after any read of it.
+
+    A holder that reads the key and then acts on it in a second command acts
+    on the other job's lock; one that checks and acts in one script doesn't.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.armed = False
+        self.taken = False
+
+    def get(self, key):
+        value = super().get(key)
+        if self.armed:
+            self.kv[key] = b"someone-else"
+            self.expiry[key] = time.time() + 600
+            self.taken = True
+        return value
+
+    def others_lock_survived(self, key):
+        """True unless another job took the lock and lost it to this one."""
+        return not self.taken or self.kv.get(key) == b"someone-else"
 
 
 @pytest.fixture
@@ -83,6 +121,33 @@ class TestSourceIndexLock:
         with source_index_lock("src-1", renew=False):
             fake_redis.kv[lock_key("src-1")] = b"someone-else"
         assert fake_redis.get(lock_key("src-1")) == b"someone-else"
+
+    def test_release_never_deletes_a_lock_taken_between_check_and_delete(self, monkeypatch):
+        from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
+
+        redis = RacingRedis()
+        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
+        with source_index_lock("src-1", renew=False):
+            redis.armed = True
+        assert redis.others_lock_survived(lock_key("src-1"))
+
+    def test_renewal_never_overwrites_a_lock_taken_between_check_and_set(self, monkeypatch):
+        from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
+
+        redis = RacingRedis()
+        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
+        with source_index_lock("src-1", ttl_seconds=60, renew_seconds=0.05):
+            redis.armed = True
+            time.sleep(0.2)
+            assert redis.others_lock_survived(lock_key("src-1"))
+
+    def test_renewal_leaves_a_lock_another_job_holds(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
+
+        with source_index_lock("src-1", ttl_seconds=60, renew_seconds=0.05):
+            fake_redis.kv[lock_key("src-1")] = b"someone-else"
+            time.sleep(0.2)
+            assert fake_redis.get(lock_key("src-1")) == b"someone-else"
 
     def test_the_lock_is_renewed_while_held(self, fake_redis):
         from docsgpt.vectorstore.index_lock import lock_key, source_index_lock

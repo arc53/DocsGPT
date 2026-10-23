@@ -47,6 +47,15 @@ def worker_wait_seconds(visibility_timeout: int) -> int:
 WORKER_WAIT_SECONDS = worker_wait_seconds(settings.CELERY_VISIBILITY_TIMEOUT)
 _TTL_SECONDS = 600
 
+# Check the token and act in one step on the server: a separate GET then
+# SET/DEL could act on a lock another job took in between.
+#: Pushes the expiry forward only while the key holds this job's token.
+_RENEW_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
+)
+#: Deletes the key only while it holds this job's token.
+_RELEASE_LUA = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
+
 
 class SourceBusy(RuntimeError):
     """Another job holds the source's index lock past the wait."""
@@ -80,22 +89,14 @@ def _acquire(redis: Any, key: str, token: str, ttl_seconds: int, wait_seconds: f
         time.sleep(poll_seconds)
 
 
-def _holds(redis: Any, key: str, token: str) -> bool:
-    value = redis.get(key)
-    if isinstance(value, bytes):
-        value = value.decode()
-    return value == token
-
-
 def _renew_until(stop: threading.Event, redis: Any, key: str, token: str, ttl_seconds: int,
                  renew_seconds: float) -> None:
     """Push the lock's expiry forward every ``renew_seconds`` while this job holds it."""
     while not stop.wait(renew_seconds):
         try:
-            if not _holds(redis, key, token):
+            if not redis.eval(_RENEW_LUA, 1, key, token, int(ttl_seconds)):
                 logger.warning(f"Lost the source index lock {key}")
                 return
-            redis.set(key, token, xx=True, ex=ttl_seconds)
         except Exception as err:  # noqa: BLE001 - the expiry still frees it
             logger.warning(f"Could not renew the source index lock {key}: {err}")
 
@@ -150,7 +151,6 @@ def source_index_lock(
             renewer.join(timeout=5)
         if held:
             try:
-                if _holds(redis, key, token):
-                    redis.delete(key)
+                redis.eval(_RELEASE_LUA, 1, key, token)
             except Exception as err:  # noqa: BLE001 - the expiry frees it
                 logger.warning(f"Could not release the source index lock {key}: {err}")
