@@ -348,6 +348,32 @@ def is_web_address(url: str) -> bool:
     return parts.scheme in ("http", "https") and bool(host)
 
 
+class WebsiteConfigError(ValueError):
+    """A Website config ``parse_website_config`` refuses.
+
+    The message is English, for logs and older callers; ``code`` and
+    ``details`` let the API hand the UI something to word itself.
+
+    Attributes:
+        code: ``site_limit``, ``skip_limit``, ``url_too_long``,
+            ``page_limit``, ``invalid_address`` or ``invalid_config``.
+        details: The refusal's numbers: ``max_sites``, ``max_skip``,
+            ``max_length``, ``max_pages``, or the offending ``url``; empty
+            for ``invalid_config``.
+    """
+
+    def __init__(self, message: str, code: str = "invalid_config", details: Optional[Dict[str, Any]] = None):
+        """
+        Args:
+            message: The English message.
+            code: The refusal's code.
+            details: Its numbers or the offending value.
+        """
+        super().__init__(message)
+        self.code = code
+        self.details: Dict[str, Any] = dict(details or {})
+
+
 def _with_scheme(url: str) -> str:
     """``url`` with ``https://`` in front when it was written without a scheme (``example.com/docs``).
 
@@ -364,12 +390,17 @@ def _with_scheme(url: str) -> str:
 
 
 def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
-    """The stripped address of an entry field, with a scheme, or ``ValueError`` when it isn't one."""
+    """The stripped address of an entry field, with a scheme, or ``WebsiteConfigError`` when it isn't one."""
     url = value.strip()
     if not is_web_address(url):
-        raise ValueError(f"{label} {url[:200]!r} is not a web address")
+        # The value is echoed back to the client: kept to a URL's length.
+        raise WebsiteConfigError(
+            f"{label} {url[:200]!r} is not a web address", "invalid_address", {"url": url[:MAX_URL_LENGTH]},
+        )
     if enforce_limits and len(url) > MAX_URL_LENGTH:
-        raise ValueError(f"{label} is longer than {MAX_URL_LENGTH} characters")
+        raise WebsiteConfigError(
+            f"{label} is longer than {MAX_URL_LENGTH} characters", "url_too_long", {"max_length": MAX_URL_LENGTH},
+        )
     return _with_scheme(url)
 
 
@@ -393,37 +424,39 @@ def parse_website_config(
         scheme (``example.com/docs``) gets ``https://``, so its host parses.
 
     Raises:
-        ValueError: If the config is malformed, has no entries, an entry URL
-            isn't a web address, or (with ``enforce_page_cap``) a limit is
-            passed.
+        WebsiteConfigError: A ``ValueError`` with a ``code``: the config is
+            malformed or has no entries (``invalid_config``), an entry URL
+            isn't a web address (``invalid_address``), or, with
+            ``enforce_page_cap``, a limit is passed (``page_limit``,
+            ``site_limit``, ``skip_limit``, ``url_too_long``).
     """
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Website config is not JSON: {e}") from e
+            raise WebsiteConfigError(f"Website config is not JSON: {e}") from e
     if not isinstance(raw, dict):
-        raise ValueError("Website config must be an object")
+        raise WebsiteConfigError("Website config must be an object")
     items = raw.get("entries") or []
     if not isinstance(items, list):
-        raise ValueError("Website entries must be a list")
+        raise WebsiteConfigError("Website entries must be a list")
     entries = []
     for item in items:
         if not isinstance(item, dict) or not isinstance(item.get("url"), str) or not item["url"].strip():
-            raise ValueError("Each website entry needs a url")
+            raise WebsiteConfigError("Each website entry needs a url")
         mode = item.get("mode") or "page"
         if mode not in ENTRY_MODES:
-            raise ValueError(f"Unknown website entry mode {mode!r}")
+            raise WebsiteConfigError(f"Unknown website entry mode {mode!r}")
         entry = {"url": _entry_url(item["url"], "Address", enforce_page_cap), "mode": mode}
         if mode == "site":
             discovery = item.get("discovery") or "auto"
             if discovery not in DISCOVERY_MODES:
-                raise ValueError(f"Unknown page discovery {discovery!r}")
+                raise WebsiteConfigError(f"Unknown page discovery {discovery!r}")
             max_pages = item.get("max_pages")
             if max_pages is not None and (
                 not isinstance(max_pages, int) or isinstance(max_pages, bool) or max_pages < 1
             ):
-                raise ValueError("max_pages must be a positive whole number")
+                raise WebsiteConfigError("max_pages must be a positive whole number")
             sitemap_url = item.get("sitemap_url")
             if isinstance(sitemap_url, str) and sitemap_url.strip():
                 sitemap_url = _entry_url(sitemap_url, "Sitemap address", enforce_page_cap)
@@ -438,20 +471,26 @@ def parse_website_config(
             })
         entries.append(entry)
     if not entries:
-        raise ValueError("A website source needs at least one page or site")
+        raise WebsiteConfigError("A website source needs at least one page or site")
     rules = raw.get("skip") or []
     skip = [_with_scheme(r.strip()) for r in rules if isinstance(r, str) and r.strip()] if isinstance(rules, list) else []
     if enforce_page_cap:
         cap = int(settings.WEB_MAX_PAGES)
         # A site brings at least one page, so it counts toward the cap too.
         if len(entries) > cap:
-            raise ValueError(f"A website source holds up to {cap} pages")
+            raise WebsiteConfigError(f"A website source holds up to {cap} pages", "page_limit", {"max_pages": cap})
         if sum(1 for entry in entries if entry["mode"] == "site") > MAX_SITE_ENTRIES:
-            raise ValueError(f"A website source holds up to {MAX_SITE_ENTRIES} sites")
+            raise WebsiteConfigError(
+                f"A website source holds up to {MAX_SITE_ENTRIES} sites", "site_limit", {"max_sites": MAX_SITE_ENTRIES},
+            )
         if len(skip) > MAX_SKIP_RULES:
-            raise ValueError(f"A website source holds up to {MAX_SKIP_RULES} skip rules")
+            raise WebsiteConfigError(
+                f"A website source holds up to {MAX_SKIP_RULES} skip rules", "skip_limit", {"max_skip": MAX_SKIP_RULES},
+            )
         if any(len(rule.removesuffix("*")) > MAX_URL_LENGTH for rule in skip):
-            raise ValueError(f"A skip rule is longer than {MAX_URL_LENGTH} characters")
+            raise WebsiteConfigError(
+                f"A skip rule is longer than {MAX_URL_LENGTH} characters", "url_too_long", {"max_length": MAX_URL_LENGTH},
+            )
     return {"entries": entries, "skip": skip, "keep_links": bool(raw.get("keep_links"))}
 
 

@@ -583,6 +583,80 @@ class TestParseWebsiteConfig:
             parse_website_config({"entries": [{"url": "http://[x", "mode": "page"}]}, enforce_page_cap=False)
 
 
+class TestWebsiteConfigErrors:
+    """Each refusal carries a code and its numbers, for the API to hand the UI."""
+
+    def _error(self, raw, **kwargs):
+        from docsgpt.parser.remote.website_loader import WebsiteConfigError, parse_website_config
+
+        with pytest.raises(WebsiteConfigError) as caught:
+            parse_website_config(raw, **kwargs)
+        assert isinstance(caught.value, ValueError)
+        return caught.value
+
+    def test_limits(self):
+        from docsgpt.parser.remote import website_loader
+
+        one = [{"url": "https://x.io/", "mode": "site"}]
+        sites = [{"url": f"https://s{i}.io/", "mode": "site"} for i in range(website_loader.MAX_SITE_ENTRIES + 1)]
+        error = self._error({"entries": sites})
+        assert (error.code, error.details) == ("site_limit", {"max_sites": website_loader.MAX_SITE_ENTRIES})
+        assert str(error) == f"A website source holds up to {website_loader.MAX_SITE_ENTRIES} sites"
+
+        rules = [f"https://x.io/p{i}" for i in range(website_loader.MAX_SKIP_RULES + 1)]
+        error = self._error({"entries": one, "skip": rules})
+        assert (error.code, error.details) == ("skip_limit", {"max_skip": website_loader.MAX_SKIP_RULES})
+
+        for raw in (
+            {"entries": [{"url": "https://x.io/" + "a" * 2100, "mode": "page"}]},
+            {"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/" + "a" * 2100}]},
+            {"entries": one, "skip": ["https://x.io/" + "a" * 2100]},
+        ):
+            error = self._error(raw)
+            assert (error.code, error.details) == ("url_too_long", {"max_length": website_loader.MAX_URL_LENGTH})
+
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            error = self._error({"entries": [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]})
+        assert (error.code, error.details) == ("page_limit", {"max_pages": 2})
+        assert str(error) == "A website source holds up to 2 pages"
+
+    @pytest.mark.parametrize("url", ["http://[x", "ftp://x.io/a", "javascript:alert(1)"])
+    def test_invalid_address(self, url):
+        error = self._error({"entries": [{"url": f"  {url} ", "mode": "page"}]})
+
+        assert (error.code, error.details) == ("invalid_address", {"url": url})
+
+    def test_an_invalid_sitemap_address(self):
+        error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "http://[x"}]})
+
+        assert (error.code, error.details) == ("invalid_address", {"url": "http://[x"})
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            None,
+            "not json",
+            [],
+            {"entries": "x"},
+            {"entries": []},
+            {"entries": [{"mode": "page"}]},
+            {"entries": [{"url": "https://x.io", "mode": "crawl"}]},
+            {"entries": [{"url": "https://x.io", "mode": "site", "discovery": "magic"}]},
+            {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": 0}]},
+        ],
+    )
+    def test_every_other_refusal_is_invalid_config(self, raw):
+        error = self._error(raw)
+
+        assert (error.code, error.details) == ("invalid_config", {})
+
+    def test_a_stored_config_still_raises_typed_errors(self):
+        error = self._error({"entries": [{"url": "http://[x", "mode": "page"}]}, enforce_page_cap=False)
+
+        assert error.code == "invalid_address"
+
+
 class TestWebsiteLoaderLenientRead:
     def test_a_lowered_cap_does_not_fail_the_load(self, web):
         web({f"https://x.io/{i}": page(f"P{i}") for i in range(3)})
