@@ -1665,6 +1665,15 @@ class BaseAgent(ABC):
         """Combine the document block and the question into one user message."""
         return f"{document_block}\n\n{query}" if document_block else query
 
+    SCHEDULED_RUN_NOTE = (
+        "This turn is a scheduled run: a task the user set up earlier, firing now. "
+        "The user's message is that task, not a request to schedule it. You are the "
+        "reminder or the recurring check, so carry the task out now and report the "
+        "result, in the language the task is written in. Do not tell the user that "
+        "you cannot schedule, remind or repeat tasks: this run is that. If a step "
+        "needs something you do not have (a tool, an account), say which step and why."
+    )
+
     def _build_messages(
         self,
         system_prompt: str,
@@ -1704,6 +1713,15 @@ class BaseAgent(ABC):
                 f"{self.compressed_summary}"
             )
             system_prompt = system_prompt + compression_context
+
+        if getattr(self, "endpoint", None) == "schedule":
+            # Without it a reminder firing on time reads "Remind me: ..." as a
+            # request to set one, and answers that it cannot send reminders.
+            system_prompt = (
+                f"{system_prompt}\n\n---\n\n{self.SCHEDULED_RUN_NOTE}"
+                if system_prompt
+                else self.SCHEDULED_RUN_NOTE
+            )
 
         context_limit = get_token_limit(
             self.model_id, user_id=self.model_user_id or self.user
