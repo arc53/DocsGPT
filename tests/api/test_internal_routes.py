@@ -413,3 +413,28 @@ class TestUploadIndex:
         assert r.status_code == 400
         assert r.json == {"status": "invalid index"}
         assert storage.written == []
+
+    def _sync_seeing(self, pg_conn, storage, source_id, *rows):
+        """Post a sync whose two looks at the source row find ``rows`` in turn."""
+        data = {**self._faiss_form(source_id, *self._index_files()), "operation": "sync"}
+        found = iter(rows)
+        with patch("docsgpt.api.internal.routes._locked_source", side_effect=lambda *a: next(found)):
+            return self._post_faiss(pg_conn, storage, data)
+
+    def test_faiss_sync_of_a_source_deleted_while_its_files_saved_removes_them(self, pg_conn, tmp_path):
+        storage = _RecordingStorage(str(tmp_path))
+
+        r = self._sync_seeing(pg_conn, storage, "legacy-src-11", {"id": "legacy-src-11", "config": {}}, None)
+
+        assert r.json == {"status": "skipped", "reason": "gone"}
+        assert storage.written, "the first look found the source, so the files were stored"
+        assert list((tmp_path / "indexes" / "legacy-src-11").iterdir()) == []
+
+    def test_faiss_sync_of_a_source_converted_while_its_files_saved_keeps_them(self, pg_conn, tmp_path):
+        storage = _RecordingStorage(str(tmp_path))
+        wiki = {"id": "legacy-src-12", "config": {"kind": "wiki"}}
+
+        r = self._sync_seeing(pg_conn, storage, "legacy-src-12", {"id": "legacy-src-12", "config": {}}, wiki)
+
+        assert r.json == {"status": "skipped", "reason": "wiki"}
+        assert (tmp_path / "indexes" / "legacy-src-12" / "index.faiss").exists()

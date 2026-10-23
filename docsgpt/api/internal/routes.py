@@ -183,6 +183,12 @@ def upload_index_files():
         if is_sync:
             refusal = _sync_refusal(source_id, existing)
             if refusal is not None:
+                if faiss_files is not None and refusal.get("reason") == "gone":
+                    # Deleted while the files were stored: nothing will read
+                    # or delete them now, so they go too.
+                    from docsgpt.vectorstore.faiss import delete_stored_index
+
+                    delete_stored_index(storage, index_base_path)
                 return refusal
             # The form carries what the source looked like when the sync was
             # queued; name, type, remote_data, schedule and config may have
