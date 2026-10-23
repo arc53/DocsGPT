@@ -63,6 +63,50 @@ describe('normalizeUrl', () => {
     );
     expect(normalizeUrl('http://2001:db8::1/')).toBeNull();
   });
+
+  // website_loader's _HOST_PORT: a dotted host (or localhost) and `:digits`
+  // is a host and its port, not a scheme.
+  it('reads a bare host:port as a host, not a scheme', () => {
+    expect(normalizeUrl('docs.x.io:8080/guide')).toBe(
+      'https://docs.x.io:8080/guide',
+    );
+    expect(normalizeUrl('docs.x.io:8080')).toBe('https://docs.x.io:8080');
+    expect(normalizeUrl('example.com:443/a')).toBe('https://example.com:443/a');
+    expect(normalizeUrl('Docs.X.io:8080?a=1')).toBe(
+      'https://Docs.X.io:8080?a=1',
+    );
+    // Still refused for what the host is.
+    expect(normalizeUrl('localhost:3000/docs')).toBeNull();
+    expect(normalizeUrl('192.168.1.10:8080/wiki')).toBeNull();
+    // A scheme stays a scheme.
+    expect(normalizeUrl('mailto:me@x.io')).toBeNull();
+    expect(normalizeUrl('https://docs.x.io:8080/a')).toBe(
+      'https://docs.x.io:8080/a',
+    );
+  });
+
+  // The server refuses these too (is_web_address).
+  it('refuses credentials, control characters and malformed hosts', () => {
+    expect(normalizeUrl('https://user:pass@docs.x.io/a')).toBeNull();
+    expect(normalizeUrl('user@docs.x.io/a')).toBeNull();
+    expect(normalizeUrl('https://@docs.x.io/a')).toBeNull();
+    expect(normalizeUrl('https://docs.x.io/a\u0000b')).toBeNull();
+    expect(normalizeUrl('https://docs.x.io/a\tb')).toBeNull();
+    expect(normalizeUrl('https://docs.x.io/a\u007fb')).toBeNull();
+    expect(normalizeUrl('https://docs x.io/a')).toBeNull();
+    expect(normalizeUrl('https://a..b.com/')).toBeNull();
+    expect(normalizeUrl('https://.docs.x.io/')).toBeNull();
+    expect(normalizeUrl(`https://${'a'.repeat(64)}.com/`)).toBeNull();
+    // A label of 63 is fine, and so is the root's trailing dot.
+    expect(normalizeUrl(`https://${'a'.repeat(63)}.com/`)).toBe(
+      `https://${'a'.repeat(63)}.com/`,
+    );
+    expect(normalizeUrl('https://docs.x.io./a')).toBe('https://docs.x.io./a');
+    // An @ in the path or query is not a credential.
+    expect(normalizeUrl('https://docs.x.io/@team?by=a@b')).toBe(
+      'https://docs.x.io/@team?by=a@b',
+    );
+  });
 });
 
 describe('nameFromUrl', () => {

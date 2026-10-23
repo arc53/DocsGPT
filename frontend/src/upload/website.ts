@@ -103,23 +103,57 @@ function isBlockedIpv4(host: string): boolean {
 }
 
 /**
+ * A bare `host:port` (`docs.x.io:8080/guide`): a dotted host or localhost,
+ * then `:digits`. The server reads it as a host and its port, not a scheme
+ * (website_loader's `_HOST_PORT`).
+ */
+const HOST_PORT = /^(?:[^:/?#@\s.]*\.[^:/?#@\s]*|localhost):\d+(?:[/?#]|$)/i;
+
+/** Control characters (C0 and DEL), which no fetchable address holds. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** The longest DNS label. */
+const MAX_LABEL_LENGTH = 63;
+
+/**
+ * Whether a host name has an empty label (`a..b.com`, `.x.io`) or one longer
+ * than DNS allows. The root's trailing dot (`docs.x.io.`) is fine.
+ */
+function hasBadLabel(host: string): boolean {
+  return host
+    .replace(/\.$/, '')
+    .split('.')
+    .some((label) => !label || label.length > MAX_LABEL_LENGTH);
+}
+
+/**
  * A typed address as a fetchable URL: trimmed, `https://` added to a bare
- * host, anything but http(s) refused, and so is a host the backend refuses
- * to fetch (localhost, a private or reserved IPv4 address). A bracketed IPv6
- * address is kept; the backend decides which of those it may reach.
+ * host (`host:port` included), anything but http(s) refused, and so is a
+ * host the backend refuses to fetch (localhost, a private or reserved IPv4
+ * address) and what it can't parse as one: credentials (`user:pass@`),
+ * control characters, whitespace in the host, an empty or over-long label.
+ * A bracketed IPv6 address is kept; the backend decides which of those it
+ * may reach.
  */
 export function normalizeUrl(value: string): string | null {
   const trimmed = value.trim();
-  if (!trimmed) return null;
-  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-    ? trimmed
-    : `https://${trimmed}`;
+  if (!trimmed || CONTROL_CHARS.test(trimmed)) return null;
+  const withScheme =
+    /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !HOST_PORT.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
   try {
     const url = new URL(withScheme);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    // The authority as written: URL drops an empty `@` and maps some spaces.
+    const authority = /^[a-z][a-z0-9+.-]*:\/*([^/?#]*)/i.exec(withScheme)?.[1];
+    if (!authority || authority.includes('@') || /\s/.test(authority))
+      return null;
     const host = url.hostname.toLowerCase();
     const ipv6 = host.startsWith('[') && host.endsWith(']');
     if ((!ipv6 && !host.includes('.')) || BLOCKED_HOSTS.has(host)) return null;
+    if (!ipv6 && hasBadLabel(host)) return null;
     if (isBlockedIpv4(host)) return null;
     return withScheme;
   } catch {
