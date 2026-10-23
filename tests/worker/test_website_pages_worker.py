@@ -957,6 +957,74 @@ class TestRedirectedPages:
 
 
 @pytest.mark.unit
+class TestARefreshStaysInScope:
+    """A crawled page that now leads outside its site's scope, or to a skipped address, leaves as a sync drops it."""
+
+    @pytest.fixture
+    def crawled(self, pg_conn, pipeline):
+        pipeline["store"].seed("old docs a", "https://docs.x.io/docs/a", "docs/a.md")
+        return SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={
+                "entries": [{"url": "https://docs.x.io/docs/", "mode": "site", "path_prefix": "/docs/"}],
+                "skip": ["https://docs.x.io/docs/private/*"],
+            },
+            directory_structure={"docs": {
+                "a.md": _leaf("https://docs.x.io/docs/a", 4), "b.md": _leaf("https://docs.x.io/docs/b", 2),
+            }},
+        )
+
+    @pytest.mark.parametrize("destination", ["https://docs.x.io/blog/a", "https://docs.x.io/docs/private/a"])
+    def test_a_page_redirected_out_of_scope_is_removed_not_stored(
+        self, pg_conn, patch_worker_db, task_self, crawled, pipeline, monkeypatch, destination,
+    ):
+        from docsgpt import worker
+
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/docs/a": destination})
+        with pytest.raises(ValueError, match="outside"):
+            worker.website_pages_worker(
+                task_self, str(crawled["id"]), USER, "refresh", file_path="docs/a.md", url="https://docs.x.io/docs/a",
+            )
+
+        store = pipeline["store"]
+        assert store.texts_for(destination) == [] and store.texts_for("https://docs.x.io/docs/a") == []
+        assert _tree(pg_conn, crawled) == {"docs": {"b.md": _leaf("https://docs.x.io/docs/b", 2)}}
+        kind, payload = pipeline["events"][-1]
+        assert kind == "source.ingest.failed" and payload["reason"] == "out_of_scope"
+
+    def test_a_page_redirected_within_scope_is_stored(
+        self, pg_conn, patch_worker_db, task_self, crawled, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/docs/a": "https://docs.x.io/docs/a2"})
+        worker.website_pages_worker(
+            task_self, str(crawled["id"]), USER, "refresh", file_path="docs/a.md", url="https://docs.x.io/docs/a",
+        )
+
+        assert _tree(pg_conn, crawled)["docs"]["a.md"]["url"] == "https://docs.x.io/docs/a2"
+
+    def test_a_page_entry_is_refreshed_wherever_it_leads(
+        self, pg_conn, patch_worker_db, task_self, crawled, pipeline, monkeypatch,
+    ):
+        # A page listed by address is fetched whatever the sites' scope: a sync keeps it too.
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(crawled["id"]), USER, {"remote_data": {
+            "entries": [
+                {"url": "https://docs.x.io/docs/", "mode": "site", "path_prefix": "/docs/"},
+                {"url": "https://docs.x.io/docs/a", "mode": "page"},
+            ],
+        }})
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/docs/a": "https://docs.x.io/blog/a"})
+        worker.website_pages_worker(
+            task_self, str(crawled["id"]), USER, "refresh", file_path="docs/a.md", url="https://docs.x.io/docs/a",
+        )
+
+        assert _tree(pg_conn, crawled)["docs"]["a.md"]["url"] == "https://docs.x.io/blog/a"
+
+
+@pytest.mark.unit
 class TestThePageCount:
     """Settings show ``metadata.website.pages``; page changes keep it to the tree."""
 

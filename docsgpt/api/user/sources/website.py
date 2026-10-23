@@ -542,7 +542,13 @@ class RefreshWebsitePage(Resource):
     )
 
     @api.expect(refresh_model)
-    @api.doc(description="Re-fetch one page of a Website source now; if it can't be fetched, its content is kept.")
+    @api.doc(
+        description=(
+            "Re-fetch one page of a Website source now; if it can't be fetched, its content is kept. A page "
+            "found by a site's crawl that now leads outside the site's scope or to a skipped address is removed, "
+            "as the next sync would drop it (the task's failed event carries reason out_of_scope)."
+        )
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:

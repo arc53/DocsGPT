@@ -4984,6 +4984,48 @@ def _website_page_targets(
     return fetch, targets, include_host
 
 
+class PageOutOfScope(ValueError):
+    """A refreshed page now leads where the source's sites and skip rules don't reach; it was removed."""
+
+    #: The ``reason`` on the ``source.ingest.failed`` event, for the UI's wording.
+    reason = "out_of_scope"
+
+
+def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]], final_url: str) -> bool:
+    """Whether a sync would still keep a refreshed page fetched as ``final_url``.
+
+    A page entry is fetched wherever it leads, so a page any of whose
+    addresses an entry lists is kept. A page found by a site's crawl is kept
+    only when some site entry's scope, skip rules included, accepts the
+    address it was stored under now (a crawl drops a page that redirects out
+    of scope). A config with no entries (an old source whose address didn't
+    parse) can't say, and keeps it.
+
+    Args:
+        config: The source's Website config.
+        addresses: The page's stored address, the one it was asked for, and
+            the ones the fetch reported.
+        final_url: The address the fetch answered from.
+
+    Returns:
+        False when a sync would drop the page.
+    """
+    from docsgpt.parser.remote.website_loader import SiteScope
+
+    entries = config.get("entries") or []
+    if not entries:
+        return True
+    listed = {_web_page_key(e["url"]) for e in entries if e.get("mode") == "page"}
+    if any(_web_page_key(address) in listed for address in addresses if address):
+        return True
+    skip = config.get("skip") or []
+    return any(
+        SiteScope(e["url"], e.get("path_prefix") or "", bool(e.get("include_subdomains")), skip).accepts(final_url)
+        for e in entries
+        if e.get("mode") == "site"
+    )
+
+
 def _update_page_graph(
     cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str],
     new_chunk_ids: Iterable[str] = (),
@@ -5416,12 +5458,17 @@ def website_pages_worker(
     they were, and the task fails. The route sends whole-site additions and
     pages on a new host to a sync instead: those rename the tree.
 
+    A refreshed page found by a site's crawl that now leads outside the
+    site's scope, or to an address a skip rule covers, is removed rather than
+    stored, as the next sync would drop it; the task fails with
+    ``PageOutOfScope`` (``reason: out_of_scope`` on the failed event). A page
+    entry is refreshed wherever it leads, as a sync fetches it.
+
     A removal (``_remove_web_pages``) deletes the pages' chunks, then their
     tree entries; the route has already saved the skip rules. Each page is
     found by its address in the tree as it is then, wherever a sync moved it.
-    On a graphrag
-    source, the graph follows each change without a full rebuild
-    (``_update_page_graph``).
+    On a graphrag source, the graph follows each change without a full
+    rebuild (``_update_page_graph``).
 
     The run holds the source's index lock (``source_index_lock``), so it
     waits for a sync or another page change on the same source, and writes
@@ -5492,6 +5539,8 @@ def website_pages_worker(
         # didn't run, as it does for a skipped sync.
         if isinstance(e, SourceBusy):
             failed["reason"] = "busy"
+        elif isinstance(e, PageOutOfScope):
+            failed["reason"] = e.reason
         publish_user_event(user, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
         raise
     publish_user_event(
@@ -5615,6 +5664,21 @@ def _run_website_pages(
             # The loader normalised the address past recognition.
             target = {"path": _unique_page_path(url_to_virtual_path(doc_url, include_host), taken), "old_url": None}
             taken.add(target["path"])
+        if operation == "refresh" and not _refresh_in_scope(
+            config, (target["old_url"], requested.get(target["path"]), doc_url, asked), doc_url,
+        ):
+            # A crawled page that now leads out of its site's scope, or to a
+            # skipped address: the next sync drops it, so the refresh does
+            # too rather than storing what no sync would fetch.
+            _remove_web_pages(
+                source_id, user, None, task_id, pages=[{"path": target["path"], "url": target["old_url"]}],
+            )
+            moved = f"{target['old_url']} now leads to {doc_url}, which is" if doc_url != target["old_url"] else (
+                f"{doc_url} is"
+            )
+            raise PageOutOfScope(
+                f"{moved} outside this source's sites or skip rules, so the page was removed, as a sync would"
+            )
         try:
             changes.append(_replace_web_page(store, chunker, doc, target["path"], target["old_url"], fetched_at))
         except Exception as err:  # noqa: BLE001 - re-raised once the finished pages are saved
