@@ -50,10 +50,14 @@ from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
+from docsgpt.vectorstore.index_lock import SourceBusy, source_index_lock
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
 WIKI_INDEX_PATH = "/index.md"
+
+#: How long a source delete waits for a sync or page change on the source to finish before a 409.
+DELETE_LOCK_WAIT_SECONDS = 3.0
 
 # Longest graph-node search term forwarded to the store; longer input is truncated.
 _GRAPH_SEARCH_MAX_LEN = 200
@@ -381,14 +385,46 @@ class PaginatedSources(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
-def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
-    """Delete a source's index, stored files and row. Returns whether it worked.
+def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None, raise_busy: bool = False) -> bool:
+    """Delete a source's index, stored files and row, holding its index lock. Returns whether it worked.
+
+    A sync or a Website page change loads the index and saves the whole of
+    it under the source's index lock; a delete made meanwhile would see its
+    index saved again afterwards, and kept in storage for good. So the delete
+    waits a few seconds for such a job, and the row goes before the lock is
+    released, so a job queued meanwhile finds no source.
 
     Args:
         owner: The source's owner; the row is deleted as them.
         doc: The source row, already authorised for the caller.
         actor: Who asked for the delete (a team editor, say), when not the
             owner. Recorded on the audit event.
+        raise_busy: Raise ``SourceBusy`` when another job holds the source
+            past the wait, instead of returning False.
+
+    Raises:
+        SourceBusy: With ``raise_busy``, when another job holds the source; nothing was deleted.
+    """
+    try:
+        with source_index_lock(str(doc["id"]), wait_seconds=DELETE_LOCK_WAIT_SECONDS, poll_seconds=0.25):
+            return _delete_source_unlocked(owner, doc, actor=actor)
+    except SourceBusy:
+        if raise_busy:
+            raise
+        current_app.logger.warning(f"Source {doc['id']} is busy; it was not deleted")
+        return False
+
+
+def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
+    """``delete_source``'s work, run holding the source's index lock.
+
+    Args:
+        owner: The source's owner.
+        doc: The source row.
+        actor: Who asked for the delete, when not the owner.
+
+    Returns:
+        Whether it worked.
     """
     actor = actor or owner
     storage = StorageCreator.get_storage()
@@ -450,7 +486,10 @@ def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
-        description="Deletes old indexes and associated files",
+        description=(
+            "Deletes a source: its index, stored files and row. 409 (code source_busy) while a sync or "
+            "page change on the source runs; nothing is deleted."
+        ),
         params={"source_id": "The source ID to delete"},
     )
     def get(self):
@@ -473,7 +512,13 @@ class DeleteOldIndexes(Resource):
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        if not delete_source(ra.owner_id, doc, actor=user):
+        try:
+            deleted = delete_source(ra.owner_id, doc, actor=user, raise_busy=True)
+        except SourceBusy:
+            return _sync_refusal(
+                "Another change to this source is still running; try again when it finishes", "source_busy", 409
+            )
+        if not deleted:
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 

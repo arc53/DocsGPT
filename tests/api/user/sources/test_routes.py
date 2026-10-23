@@ -578,6 +578,88 @@ class TestDeleteOldIndexes:
         assert response.status_code == 200
 
 
+class TestDeleteUnderTheIndexLock:
+    """A delete holds the source's index lock: a sync or page change saving meanwhile would bring its index back."""
+
+    def _delete(self, app, pg_conn, user, src, lock, storage):
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.source_index_lock", lock,
+        ), patch("docsgpt.api.user.sources.routes.settings.VECTOR_STORE", "faiss"), patch(
+            "docsgpt.api.user.sources.routes.StorageCreator.get_storage", return_value=storage,
+        ), app.test_request_context(f"/api/delete_old?source_id={src['id']}"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return DeleteOldIndexes().get()
+
+    def test_the_index_and_row_go_while_the_lock_is_held(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-del-locked"
+        src = _seed_source(pg_conn, user, name="faiss-src")
+        held = []
+        storage = MagicMock()
+        storage.file_exists.return_value = True
+        storage.delete_file.side_effect = lambda path: held.append(("deleted", path))
+
+        @contextmanager
+        def fake_lock(source_id, wait_seconds, **kwargs):
+            held.append(("locked", source_id, wait_seconds))
+            yield
+            held.append(("released", SourcesRepository(pg_conn).get_any(str(src["id"]), user)))
+
+        response = self._delete(app, pg_conn, user, src, fake_lock, storage)
+
+        assert response.status_code == 200, response.json
+        assert held[0][:2] == ("locked", str(src["id"]))
+        # A request waits seconds, not the worker's hour.
+        assert 0 < held[0][2] <= 5
+        assert ("deleted", f"indexes/{src['id']}/index.faiss") in held
+        # The row is gone before the lock is released.
+        assert held[-1] == ("released", None)
+
+    def test_a_busy_source_is_409_and_kept(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        user = "u-del-busy"
+        src = _seed_source(pg_conn, user, name="faiss-src")
+        storage = MagicMock()
+        storage.file_exists.return_value = True
+
+        @contextmanager
+        def busy(*args, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        response = self._delete(app, pg_conn, user, src, busy, storage)
+
+        assert response.status_code == 409
+        assert response.json["success"] is False
+        assert response.json["code"] == "source_busy"
+        storage.delete_file.assert_not_called()
+        assert SourcesRepository(pg_conn).get_any(str(src["id"]), user) is not None
+
+    def test_a_busy_source_fails_a_delete_that_asked_for_a_bool(self, app, pg_conn):
+        # Removing a connection with its sources lists a busy one as failed.
+        from docsgpt.api.user.sources.routes import delete_source
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        user = "u-del-busy-bool"
+        src = _seed_source(pg_conn, user, name="faiss-src")
+
+        @contextmanager
+        def busy(*args, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.routes.source_index_lock", busy), patch(
+            "docsgpt.api.user.sources.routes.StorageCreator.get_storage", return_value=MagicMock(),
+        ), app.app_context():
+            assert delete_source(user, src) is False
+
+
 class TestRedirectToSources:
     def test_redirects(self, app):
         from docsgpt.api.user.sources.routes import RedirectToSources

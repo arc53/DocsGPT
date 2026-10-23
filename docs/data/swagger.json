@@ -3893,7 +3893,7 @@
     },
     "/api/delete_old": {
       "get": {
-        "description": "Deletes old indexes and associated files",
+        "description": "Deletes a source: its index, stored files and row. 409 (code source_busy) while a sync or page change on the source runs; nothing is deleted.",
         "operationId": "get_delete_old_indexes",
         "parameters": [
           {
