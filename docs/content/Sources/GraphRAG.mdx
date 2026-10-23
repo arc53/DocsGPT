@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -119,7 +119,7 @@ Per-source extraction knobs live under the source config's `graph` object and ov
 | `gleanings` | `0` | Extra extraction passes per chunk to catch entities missed on the first pass. Off by default (each pass costs additional LLM calls). |
 
 <Callout type="warning" emoji="⚠️">
-Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it.
+Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it. A source runs one extraction at a time, so page changes made close together, or a page change during a full build, wait for each other and share the cap.
 </Callout>
 
 ## Graph retrieval settings

@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -42,7 +42,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
 
 **Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
 
-A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (each source opens in Knowledge, with **Sync now** in its menu), and its tools (on or off, and what each action may do). Disconnecting keeps synced content but stops its sync.
+A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (each source opens in Knowledge, with **Sync now** in its menu), and its tools (on or off, and what each action may do). Disconnecting keeps synced content but stops its sync: **Sync now** and **Reingest** on such a source are refused until its account is connected again, and it never syncs with another of your accounts.
 
 ### Several accounts of one service
 
