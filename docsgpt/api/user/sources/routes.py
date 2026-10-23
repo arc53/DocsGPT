@@ -666,6 +666,8 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], 
             operation_mode="sync",
             doc_id=source_id,
             sync_frequency=doc.get("sync_frequency") or "never",
+            # The sync runs as the owner; its events also reach the caller.
+            actor_id=actor,
         )
     source_data = normalize_remote_data(source_type, doc.get("remote_data"))
     if not source_data:

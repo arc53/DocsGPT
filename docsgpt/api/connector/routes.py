@@ -739,7 +739,10 @@ class ConnectorSync(Resource):
                 retriever=source.get('retriever', 'classic'),
                 operation_mode="sync",
                 doc_id=str(source.get('id') or source_id),
-                sync_frequency=source.get('sync_frequency', 'never')
+                sync_frequency=source.get('sync_frequency', 'never'),
+                # The sync runs as the owner; its events also reach the caller
+                # (a team editor isn't the owner).
+                actor_id=user_id,
             )
 
             return make_response(

@@ -1226,6 +1226,34 @@ class TestReingestARemoteSource:
         assert kwargs["source_type"] == "google_drive"
         assert kwargs["file_ids"] == ["f1"] and kwargs["folder_ids"] == ["d1"] and kwargs["recursive"] is False
         assert connection.call_args.args[1:4] == (user, "google_drive", linked)
+        assert kwargs["actor_id"] == user
+
+    def test_a_team_editors_connector_reingest_runs_as_the_owner_and_reaches_the_editor(self, app, pg_conn):
+        import uuid
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, editor = "alice-reingest-drive", "bob-reingest-drive"
+        src = _seed_source(
+            pg_conn, owner, name="Drive", type="connector:file", remote_data={"provider": "google_drive"},
+        )
+        linked = _connection(pg_conn, owner, source=src)
+        team = TeamsRepository(pg_conn).create("Acme", f"acme-{uuid.uuid4().hex[:8]}", owner)
+        TeamMembersRepository(pg_conn).add_member(team["id"], editor, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(src["id"]), owner_id=owner, granted_by=owner, access_level="editor",
+        )
+
+        response, mocks = _reingest(
+            app, pg_conn, editor, str(src["id"]), connection=MagicMock(return_value={"id": linked}),
+        )
+
+        assert response.status_code == 200, response.json
+        kwargs = mocks["connector"].call_args.kwargs
+        assert kwargs["user"] == owner and kwargs["connection_id"] == linked
+        assert kwargs["actor_id"] == editor
 
     def test_a_connector_source_without_a_usable_connection_is_refused(self, app, pg_conn):
         user = "u-reingest-drive-off"

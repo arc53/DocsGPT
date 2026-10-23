@@ -556,6 +556,8 @@ class TestConnectorSync:
         kwargs = delay.call_args.kwargs
         assert kwargs["user"] == OWNER
         assert kwargs["connection_id"] == owner_connection
+        # The sync runs as the owner; its events also reach the editor.
+        assert kwargs["actor_id"] == EDITOR
 
     def test_editor_cannot_substitute_own_session(self, app, pg_conn):
         from docsgpt.storage.db.repositories.connector_sessions import (
@@ -658,6 +660,7 @@ class TestConnectorSync:
         assert resp.status_code == 200
         assert delay.call_args.kwargs["user"] == OWNER
         assert delay.call_args.kwargs["connection_id"] == owner_connection
+        assert delay.call_args.kwargs["actor_id"] == OWNER
 
     def test_editor_syncs_with_the_sources_own_connection(self, app, pg_conn):
         from sqlalchemy import text
