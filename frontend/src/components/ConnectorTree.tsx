@@ -62,6 +62,11 @@ interface ConnectorTreeProps {
    * False hides Sync now and the chunk writes; browsing stays.
    */
   canEdit?: boolean;
+  /**
+   * Whether the source can sync at all (`canSyncSource`): false hides Sync
+   * now, as for a connector source whose account connection was removed.
+   */
+  canSync?: boolean;
 }
 
 // Provider names are brand names, so they are not translated.
@@ -110,6 +115,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   linkedChunk,
   onCrumbsChange,
   canEdit = true,
+  canSync = true,
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -236,7 +242,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const topRightAction = (
     <>
       {embedded ? null : headerAction}
-      {canEdit ? (
+      {canEdit && canSync ? (
         <Button
           type="button"
           size="field"

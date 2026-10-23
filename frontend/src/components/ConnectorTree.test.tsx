@@ -375,6 +375,20 @@ describe('ConnectorTree and FileTree headers', () => {
     expect(container.textContent).not.toContain('settings.sources.syncNow');
   });
 
+  it('a ConnectorTree that has nothing to sync with hides Sync', async () => {
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="Drive"
+        onBackToDocuments={vi.fn()}
+        headerAction={retrieval}
+        canSync={false}
+      />,
+    );
+    expect(container.textContent).toContain('retrieval');
+    expect(container.textContent).not.toContain('settings.sources.syncNow');
+  });
+
   it('read-only FileTree hides Add file and the row Delete', async () => {
     await render(
       <FileTree

@@ -1943,7 +1943,8 @@
         "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren.",
         "syncRefusedConnector": "Diese Quelle wird über ihre Verbindung synchronisiert.",
         "syncRefusedInvalid": "Diese Quelle wurde nicht gefunden.",
-        "syncRefusedReconnect": "Der Eigentümer muss das Konto dieser Quelle erneut verbinden, bevor sie synchronisiert werden kann."
+        "syncRefusedReconnect": "Der Eigentümer muss das Konto dieser Quelle erneut verbinden, bevor sie synchronisiert werden kann.",
+        "syncRefusedConnectionMissing": "Das Konto dieser Quelle wurde getrennt. Verbinde das Konto erneut, um sie zu synchronisieren."
       },
       "permission": {
         "always": "Erlauben",

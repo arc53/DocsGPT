@@ -2009,7 +2009,8 @@
         "syncRefusedNotSyncable": "Cette source ne peut pas être synchronisée.",
         "syncRefusedConnector": "Cette source se synchronise par sa connexion.",
         "syncRefusedInvalid": "Cette source est introuvable.",
-        "syncRefusedReconnect": "Le propriétaire doit reconnecter le compte de cette source avant qu’elle puisse être synchronisée."
+        "syncRefusedReconnect": "Le propriétaire doit reconnecter le compte de cette source avant qu’elle puisse être synchronisée.",
+        "syncRefusedConnectionMissing": "Le compte de cette source a été déconnecté. Reconnectez le compte pour la synchroniser."
       },
       "permission": {
         "always": "Autoriser",

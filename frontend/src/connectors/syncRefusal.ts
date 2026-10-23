@@ -7,6 +7,8 @@ const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
   ['connector_source', 'syncRefusedConnector'],
   ['invalid_source', 'syncRefusedInvalid'],
   ['reconnect_needed', 'syncRefusedReconnect'],
+  // The source's account connection was removed.
+  ['connection_missing', 'syncRefusedConnectionMissing'],
 ]);
 
 /**

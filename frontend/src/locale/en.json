@@ -1943,7 +1943,8 @@
         "syncRefusedNotSyncable": "This source can’t be synced.",
         "syncRefusedConnector": "This source syncs through its connection.",
         "syncRefusedInvalid": "This source couldn’t be found.",
-        "syncRefusedReconnect": "The owner needs to reconnect this source’s account before it can sync."
+        "syncRefusedReconnect": "The owner needs to reconnect this source’s account before it can sync.",
+        "syncRefusedConnectionMissing": "This source’s account was disconnected. Connect the account again to sync it."
       },
       "permission": {
         "always": "Allow",

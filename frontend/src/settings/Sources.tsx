@@ -78,6 +78,7 @@ import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
+  canSyncSource,
   isGraphSource,
   isSyncedSource,
   isWikiSource,
@@ -614,6 +615,7 @@ export default function Sources({
             sourceName={documentToView.name}
             sourceType={documentToView.type}
             connection={viewConnection}
+            canSync={canSyncSource(documentToView)}
             syncFrequency={documentToView.syncFrequency}
             syncedAt={documentToView.date}
             onBackToDocuments={closeDocument}
@@ -645,7 +647,9 @@ export default function Sources({
               {testRetrievalAction}
               {/* A flat synced source has no tree to sync from: the
                   button starts the sync and toasts. */}
-              {viewCanEdit && sourcePrimary(documentToView) === 'syncNow' ? (
+              {viewCanEdit &&
+              sourcePrimary(documentToView) === 'syncNow' &&
+              canSyncSource(documentToView) ? (
                 <Button
                   type="button"
                   shape="pill"

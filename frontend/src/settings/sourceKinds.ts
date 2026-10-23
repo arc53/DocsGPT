@@ -26,12 +26,25 @@ export const syncSchedule = (doc: Doc): string | null =>
     : null;
 
 /**
+ * Whether the caller's own connector source has lost its connection (the
+ * account was removed; the list says `connectionId: null`): its sync has no
+ * account to read with, and the server refuses it (`connection_missing`). A
+ * team editor's sync uses the owner's account, which only the server sees.
+ */
+const lostConnection = (doc: Doc): boolean =>
+  !!doc.type?.startsWith('connector') &&
+  doc.connectionId === null &&
+  doc.access === 'owner';
+
+/**
  * Whether Sync now can run: the source reads from a connection, a connector,
  * or a remote loader (those store a schedule, `never` included). Never a
- * wiki: a sync would replace its pages.
+ * wiki: a sync would replace its pages; never a connector source of the
+ * caller's whose connection is gone.
  */
 export const canSyncSource = (doc: Doc): boolean =>
   !isWikiSource(doc) &&
+  !lostConnection(doc) &&
   (!!doc.connectionId ||
     !!doc.type?.startsWith('connector') ||
     !!doc.syncFrequency);

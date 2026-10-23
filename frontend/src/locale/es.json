@@ -2009,7 +2009,8 @@
         "syncRefusedNotSyncable": "Esta fuente no se puede sincronizar.",
         "syncRefusedConnector": "Esta fuente se sincroniza a través de su conexión.",
         "syncRefusedInvalid": "No se encontró esta fuente.",
-        "syncRefusedReconnect": "El propietario debe volver a conectar la cuenta de esta fuente antes de poder sincronizarla."
+        "syncRefusedReconnect": "El propietario debe volver a conectar la cuenta de esta fuente antes de poder sincronizarla.",
+        "syncRefusedConnectionMissing": "La cuenta de esta fuente se desconectó. Vuelve a conectar la cuenta para sincronizarla."
       },
       "permission": {
         "always": "Permitir",
