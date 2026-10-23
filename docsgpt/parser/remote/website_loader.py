@@ -452,7 +452,7 @@ def parse_website_config(
     Args:
         raw: The config, as a dict or its JSON.
         enforce_page_cap: Apply the write limits: ``WEB_MAX_PAGES`` on the
-            entries and on a site's ``max_pages``, ``MAX_SITE_ENTRIES``,
+            entries (a site's ``max_pages`` is cut to it), ``MAX_SITE_ENTRIES``,
             ``MAX_SKIP_RULES`` and ``MAX_URL_LENGTH`` (addresses, skip rules
             and ``path_prefix``); page entries that are one page by
             ``page_key`` are cut to the first. Writes keep it on. Reading a
@@ -500,9 +500,10 @@ def parse_website_config(
                 not isinstance(max_pages, int) or isinstance(max_pages, bool) or max_pages < 1
             ):
                 raise WebsiteConfigError("max_pages must be a positive whole number")
-            if enforce_page_cap and max_pages is not None and max_pages > int(settings.WEB_MAX_PAGES):
-                cap = int(settings.WEB_MAX_PAGES)
-                raise WebsiteConfigError(f"A website source holds up to {cap} pages", "page_limit", {"max_pages": cap})
+            if enforce_page_cap and max_pages is not None:
+                # Cut, not refused: a site saved before the cap was lowered
+                # still saves (the source settings can't edit its limit).
+                max_pages = min(max_pages, int(settings.WEB_MAX_PAGES))
             sitemap_url = item.get("sitemap_url")
             if isinstance(sitemap_url, str) and sitemap_url.strip():
                 sitemap_url = _entry_url(sitemap_url, "Sitemap address", enforce_page_cap)

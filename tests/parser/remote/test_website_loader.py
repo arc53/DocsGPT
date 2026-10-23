@@ -798,12 +798,16 @@ class TestWebsiteConfigErrors:
 
         assert (error.code, error.details) == ("url_too_long", {"max_length": website_loader.MAX_URL_LENGTH})
 
-    def test_a_site_limit_past_the_source_cap_is_refused(self):
+    def test_a_site_limit_past_the_source_cap_is_cut_to_the_cap(self):
+        # Cut, not refused: a site saved before the admin lowered the cap
+        # must not block saving the source's settings, which can't edit it.
         with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 50
-            error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 51}]})
+            from docsgpt.parser.remote.website_loader import parse_website_config
 
-        assert (error.code, error.details) == ("page_limit", {"max_pages": 50})
+            config = parse_website_config({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 10 ** 200}]})
+
+        assert config["entries"][0]["max_pages"] == 50
 
     def test_a_stored_config_past_the_limits_still_reads(self):
         from docsgpt.parser.remote import website_loader
