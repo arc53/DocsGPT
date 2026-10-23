@@ -957,6 +957,23 @@ class TestReingestSource:
             response = ReingestSource().post()
         assert response.status_code == 404
 
+    def test_a_failed_lookup_is_400_with_a_code(self, app, pg_conn):
+        """Shaped and coded as /api/sync_source's refusal, so the UI words it."""
+        from docsgpt.api.user.sources.routes import ReingestSource
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.load_source", side_effect=RuntimeError("db down"),
+        ), app.test_request_context(
+            "/api/sources/reingest", method="POST", json={"source_id": "x"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ReingestSource().post()
+        assert response.status_code == 400
+        assert response.json == {
+            "success": False, "error": "Invalid source ID", "message": "Invalid source ID", "code": "invalid_source",
+        }
+
     def test_triggers_reingest_task(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import ReingestSource
 

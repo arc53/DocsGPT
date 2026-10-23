@@ -705,9 +705,7 @@ class ReingestSource(Resource):
             current_app.logger.error(
                 f"Error looking up source: {err}", exc_info=True
             )
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID"}), 400
-            )
+            return _sync_refusal("Invalid source ID", "invalid_source")
         owner = ra.owner_id
         resolved_source_id = str(doc["id"])
         # A wiki's pages are edited in place: neither a sync nor re-reading
