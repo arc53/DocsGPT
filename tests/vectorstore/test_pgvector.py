@@ -429,7 +429,9 @@ class TestPGVectorStoreChunksBySourcePaths:
 
         assert store.chunk_ids_by_file_paths(["a.md", "b/c.md", "a.md"]) == ["3", "7"]
         sql, params = mock_cursor.execute.call_args[0]
-        assert "metadata->>'file_path' = ANY(%s)" in sql and "source_id = %s" in sql
+        # file_path, else (an older ingest) key, else title: the name its tree entry got.
+        assert "COALESCE(NULLIF(metadata->>'file_path', ''), NULLIF(metadata->>'key', '')" in sql
+        assert "NULLIF(metadata->>'title', '')) = ANY(%s)" in sql and "source_id = %s" in sql
         assert params == ("src1", ["a.md", "b/c.md"])
 
     def test_a_file_path_lookup_error_is_raised_not_read_as_no_chunks(self):

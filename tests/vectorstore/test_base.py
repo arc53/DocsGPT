@@ -1032,6 +1032,16 @@ class TestBaseChunksBySourcePath:
         assert store.chunk_ids_by_file_paths(["a.md"]) == ["1"]
         assert store.chunk_ids_by_file_paths([]) == []
 
+    def test_an_older_chunk_without_a_path_is_found_by_its_key_or_title(self):
+        # An ingest before file_path named the tree entry by key, else title.
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "a", "metadata": {"source": "https://x.io/a", "key": "a-key"}},
+            {"doc_id": "2", "text": "b", "metadata": {"source": "https://x.io/b", "title": "Page B"}},
+            {"doc_id": "3", "text": "c", "metadata": {"file_path": "c.md", "title": "Page B"}},
+            {"doc_id": "4", "text": "d", "metadata": {"key": "d-key", "title": "a-key"}},
+        ])
+        assert store.chunk_ids_by_file_paths(["a-key", "Page B"]) == ["1", "2"]
+
     def test_add_chunks_adds_each_in_order(self):
         store = ConcreteVectorStore()
         store.add_chunk = Mock(side_effect=["1", "2"])

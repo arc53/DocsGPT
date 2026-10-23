@@ -883,10 +883,12 @@ class PGVectorStore(BaseVectorStore):
         """Ids of this source's chunks whose ``metadata.file_path`` is one of ``paths``.
 
         One targeted ``SELECT`` that raises on error: a page removal reads
-        "no chunks" as safe to drop the page's tree entry.
+        "no chunks" as safe to drop the page's tree entry. A chunk with no
+        ``file_path`` is matched by its ``key``, else its ``title``, as
+        :func:`~docsgpt.vectorstore.base.legacy_path_key` reads it.
 
         Args:
-            paths: ``metadata.file_path`` values.
+            paths: ``metadata.file_path`` values (tree paths).
 
         Returns:
             The ids, lowest first.
@@ -894,9 +896,12 @@ class PGVectorStore(BaseVectorStore):
         wanted = list(dict.fromkeys(paths))
         if not wanted:
             return []
+        meta = self._metadata_column
+        path_key = (
+            f"COALESCE(NULLIF({meta}->>'file_path', ''), NULLIF({meta}->>'key', ''), NULLIF({meta}->>'title', ''))"
+        )
         rows = self._run_statement(
-            f"SELECT id FROM {self._table_name} "
-            f"WHERE source_id = %s AND {self._metadata_column}->>'file_path' = ANY(%s) ORDER BY id;",
+            f"SELECT id FROM {self._table_name} WHERE source_id = %s AND {path_key} = ANY(%s) ORDER BY id;",
             (self._source_id, wanted),
             fetch=True,
         )

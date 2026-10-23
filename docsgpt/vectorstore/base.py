@@ -470,6 +470,25 @@ def build_local_embeddings(
     return embedding_instance
 
 
+def legacy_path_key(metadata: Dict[str, Any]) -> Optional[str]:
+    """The tree path a chunk was stored under: its ``file_path``, else its ``key``, else its ``title``.
+
+    An ingest that predates ``file_path`` on every web page named the tree
+    entry by the document's ``key`` or ``title``, in that order.
+
+    Args:
+        metadata: The chunk's metadata.
+
+    Returns:
+        The path, or ``None`` when the chunk carries none of them.
+    """
+    for field in ("file_path", "key", "title"):
+        value = metadata.get(field)
+        if value:
+            return str(value)
+    return None
+
+
 class InvalidChunkMetadataError(ValueError):
     """Chunk metadata the store cannot write, such as a key it reserves.
 
@@ -698,9 +717,12 @@ class BaseVectorStore(ABC):
 
         For a page whose tree entry predates entries carrying the page's
         address: its chunks are found by the tree path they were stored under.
+        A chunk from an ingest older still carries no ``file_path``; its tree
+        entry was named by its ``key``, or without one by its ``title``, so
+        those are matched for it (``legacy_path_key``).
 
         Args:
-            paths: ``metadata.file_path`` values.
+            paths: ``metadata.file_path`` values (tree paths).
 
         Returns:
             The ids, in :meth:`_scan_chunks` order.
@@ -714,7 +736,7 @@ class BaseVectorStore(ABC):
         return [
             str(chunk.get("doc_id"))
             for chunk in self._scan_chunks()
-            if (chunk.get("metadata") or {}).get("file_path") in wanted
+            if legacy_path_key(chunk.get("metadata") or {}) in wanted
         ]
 
     def delete_chunks(self, chunk_ids: Iterable[str]) -> int:

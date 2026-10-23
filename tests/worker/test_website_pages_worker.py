@@ -659,7 +659,7 @@ class TestRemoveByAddress:
         )
 
         result = worker.website_pages_worker(
-            task_self, str(src["id"]), USER, "remove", pages=[{"path": "old.md", "url": ""}],
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "old.md", "url": "", "requested_urls": []}],
         )
 
         assert result["pages"] == 1
