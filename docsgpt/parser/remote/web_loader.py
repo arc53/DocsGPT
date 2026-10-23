@@ -51,7 +51,8 @@ class WebLoader(BaseRemote):
         for url in urls:
             try:
                 valid_urls.append(validate_url(url))
-            except SSRFError as e:
+            except (SSRFError, ValueError) as e:
+                # ValueError: a host the idna codec refuses; the other pages still load.
                 logging.warning(
                     f"Skipping URL due to SSRF validation failure: {url} - {e}"
                 )

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 import requests
 
+from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 from docsgpt.parser.remote.website_loader import SiteScope, WebsiteLoader, discover_sitemaps
 
 HTML = "text/html; charset=utf-8"
@@ -1226,6 +1227,65 @@ class TestBoundedFetching:
                                             "limit_reached": False}
         assert short.report["sites"][0]["limit_reached"] is True
         assert sources(docs) == ["https://x.io/a"]
+
+
+class TestUnencodableHosts:
+    """A host with an empty or overlong label skips its page instead of failing the load."""
+
+    BAD = ["https://docs..example.com/x", "https://" + "a" * 64 + ".x.io/p"]
+
+    @pytest.fixture
+    def idna_web(self):
+        def install(sites):
+            def resolve(host):
+                host.encode("idna")  # what socket.gethostbyname does first
+                return "93.184.216.34"
+
+            fake = FakeWeb(sites)
+            stack.enter_context(patch("docsgpt.parser.remote.page_content.pinned_fetch_bytes", fake))
+            stack.enter_context(patch("docsgpt.core.url_validation.socket.gethostbyname", side_effect=resolve))
+            return fake
+
+        with ExitStack() as stack:
+            yield install
+
+    def test_page_entries(self, idna_web):
+        idna_web({"https://x.io/a": page("A"), "https://x.io/b": page("B")})
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/a"}, *({"url": url} for url in self.BAD), {"url": "https://x.io/b"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/a", "https://x.io/b"]
+
+    def test_a_sitemap_entry(self, idna_web):
+        idna_web({
+            "https://x.io/sitemap.xml": urlset("https://x.io/a", *self.BAD, "https://x.io/b"),
+            "https://x.io/a": page("A"),
+            "https://x.io/b": page("B"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [{
+            "url": "https://x.io/", "mode": "site", "include_subdomains": True,
+            "sitemap_url": "https://x.io/sitemap.xml",
+        }]})
+
+        assert sources(docs) == ["https://x.io/a", "https://x.io/b"]
+
+    def test_a_crawl_that_starts_on_one(self, idna_web):
+        idna_web({})
+
+        assert CrawlerLoader().load_data("https://docs..example.com/") == []
+
+    def test_a_crawled_link_to_one(self, idna_web):
+        idna_web({
+            "https://x.io/": page("Home", links=[*self.BAD, "/b"]),
+            "https://x.io/b": page("B"),
+        })
+
+        docs = CrawlerLoader(accept=lambda url: True).load_data("https://x.io/")
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/b"]
 
 
 class TestMenuOnlyStartPage:

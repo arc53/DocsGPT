@@ -217,7 +217,7 @@ class SitemapLoader(BaseRemote):
         # Validate URL to prevent SSRF attacks
         try:
             sitemap_url = validate_url(sitemap_url)
-        except SSRFError as e:
+        except (SSRFError, ValueError) as e:
             logger.error(f"URL validation failed: {e}")
             return []
 
@@ -284,7 +284,9 @@ class SitemapLoader(BaseRemote):
 
             try:
                 url = validate_url(url)
-            except SSRFError as e:
+            except (SSRFError, ValueError) as e:
+                # ValueError: a host the idna codec refuses (``docs..x.io``);
+                # one bad entry never fails the load.
                 logger.error(f"URL validation failed for sitemap entry {url}: {e}")
                 continue
             if self.budget is not None and not self.budget.take():

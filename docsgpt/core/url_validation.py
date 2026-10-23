@@ -113,11 +113,13 @@ def resolve_hostname(hostname: str) -> Optional[str]:
         hostname: The hostname to resolve
 
     Returns:
-        The resolved IP address, or None if resolution fails
+        The resolved IP address, or None if resolution fails, the name
+        included: a host with an empty label or one over 63 characters
+        (``docs..example.com``) fails the idna codec before any lookup.
     """
     try:
         return socket.gethostbyname(hostname)
-    except socket.gaierror:
+    except (socket.gaierror, UnicodeError, ValueError):
         return None
 
 

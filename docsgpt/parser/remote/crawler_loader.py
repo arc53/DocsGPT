@@ -66,7 +66,7 @@ class CrawlerLoader(BaseRemote):
         # Validate URL to prevent SSRF attacks
         try:
             url = validate_url(url)
-        except SSRFError as e:
+        except (SSRFError, ValueError) as e:
             logging.error(f"URL validation failed: {e}")
             return []
 
