@@ -2,7 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -125,6 +125,11 @@ import type { Connection, ConnectorDefinition } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+/** Where Open in Knowledge lands, with the source it opens. */
+function KnowledgePage() {
+  return <div>KNOWLEDGE{useLocation().search}</div>;
+}
+
 const base: ConnectorDefinition = {
   key: 'telegram',
   name: 'Telegram',
@@ -166,6 +171,27 @@ const drive: ConnectorDefinition = {
   capabilities: ['sync'],
   credential_fields: [],
   sync_ingestor: 'google_drive',
+  tool_templates: [],
+  setup: { tools: 'off', sync: 'ask' },
+};
+
+// Sync only, with a pasted key: S3.
+const s3: ConnectorDefinition = {
+  ...base,
+  key: 's3',
+  name: 'Amazon S3',
+  description: 'Sync documents from an S3 bucket.',
+  icon: 's3',
+  category: 'files',
+  auth_kind: 'api_key',
+  capabilities: ['sync'],
+  credential_fields: [
+    { key: 'secret', label: 'Secret key', secret: true, required: true },
+  ],
+  setup_fields: [
+    { key: 'bucket', label: 'Bucket', secret: false, required: true },
+  ],
+  sync_ingestor: 's3',
   tool_templates: [],
   setup: { tools: 'off', sync: 'ask' },
 };
@@ -255,6 +281,7 @@ describe('ConnectWizard', () => {
     onClose = vi.fn(),
     props: Partial<Parameters<typeof ConnectWizard>[0]> = {},
     connections: Connection[] = [],
+    selectedDocs: { id: string }[] = [],
   ) => {
     if (connections.length)
       service.listConnections.mockResolvedValue({
@@ -265,7 +292,17 @@ describe('ConnectWizard', () => {
       reducer: {
         connectors: connectorsReducer,
         notifications: notificationsReducer,
-        preference: (state = { token: null, selectedDocs: [] }) => state,
+        // Applies the chat selection, as the real slice does.
+        preference: (
+          state: { token: null; selectedDocs: { id: string }[] } = {
+            token: null,
+            selectedDocs: [],
+          },
+          action: { type: string; payload?: unknown },
+        ) =>
+          action.type === 'preference/setSelectedDocs'
+            ? { ...state, selectedDocs: action.payload as { id: string }[] }
+            : state,
         conversation: (state = {}) => state,
       },
       preloadedState: {
@@ -277,7 +314,7 @@ describe('ConnectWizard', () => {
           loaded: true,
           failed: false,
         },
-        preference: { token: null, selectedDocs: [] },
+        preference: { token: null, selectedDocs },
         conversation: {},
       },
     });
@@ -297,6 +334,7 @@ describe('ConnectWizard', () => {
                 }
               />
               <Route path="/c/new" element={<div>NEW_CHAT</div>} />
+              <Route path="/settings/knowledge" element={<KnowledgePage />} />
             </Routes>
           </MemoryRouter>
         </Provider>,
@@ -328,6 +366,24 @@ describe('ConnectWizard', () => {
 
   const knowledgeSwitch = () =>
     document.body.querySelector<HTMLButtonElement>('[id^="knowledge-"]');
+
+  /** The sync-only setup's two ways on, as radios. */
+  const choice = (label: string) =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[role="radiogroup"] [role="radio"]',
+      ),
+    ).find((radio) => radio.textContent?.includes(label));
+  const syncNowCard = () => choice('settings.connectors.wizard.syncNow')!;
+  const justConnectCard = () =>
+    choice('settings.connectors.wizard.justConnect')!;
+  /** The footer's buttons, in order, by label. */
+  const footer = () =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="modal-footer"] button',
+      ),
+    ).map((b) => `${b.textContent?.trim()}:${b.dataset.variant}`);
 
   const typeInto = async (input: HTMLInputElement, value: string) => {
     const setter = Object.getOwnPropertyDescriptor(
@@ -459,7 +515,7 @@ describe('ConnectWizard', () => {
     );
   });
 
-  it('finishes setting up without syncing once Sync is turned off', async () => {
+  it('finishes setting up without syncing on Just connect', async () => {
     const onClose = vi.fn();
     await render(drive, onClose, { purpose: 'knowledge' });
     await click('settings.connectors.wizard.signIn');
@@ -467,8 +523,8 @@ describe('ConnectWizard', () => {
     // No Skip: the account exists, one submit says what it does.
     expect(button('settings.connectors.wizard.skip')).toBeUndefined();
     expect(button('modals.uploadDoc.train')).toBeDefined();
-    await act(async () => knowledgeSwitch()!.click());
-    // The title stays put while the switch changes.
+    await act(async () => justConnectCard().click());
+    // The title stays put while the choice changes.
     expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
     await click('settings.connectors.wizard.finishSetup');
     expect(title()).toBe('settings.connectors.wizard.doneTitle');
@@ -511,36 +567,34 @@ describe('ConnectWizard', () => {
         document.body.querySelectorAll<HTMLButtonElement>('button'),
       ).find((b) => b.textContent?.trim() === text);
 
-    it('is off on a plain connect: the account is made, nothing syncs', async () => {
+    it('asks a sync-only service with two choices, Sync content now picked from any entry', async () => {
+      // Opened from Connectors: no purpose.
       await render(drive);
       await click('settings.connectors.wizard.signIn');
       expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.syncToKnowledge',
+      // Not a switch: two radios in one group.
+      expect(knowledgeSwitch()).toBeNull();
+      expect(
+        document.body.querySelectorAll('[role="radiogroup"] [role="radio"]'),
+      ).toHaveLength(2);
+      expect(syncNowCard().getAttribute('aria-checked')).toBe('true');
+      expect(justConnectCard().getAttribute('aria-checked')).toBe('false');
+      expect(syncNowCard().textContent).toContain(
+        'settings.connectors.wizard.syncNowDescription',
       );
-      expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('false');
-      // The picker, name, frequency and retrieval settings stay folded away.
-      expect(document.body.textContent).not.toContain('pick-folder');
-      expect(document.body.textContent).not.toContain(
-        'settings.connectors.wizard.syncFrequency',
+      expect(justConnectCard().textContent).toContain(
+        'settings.connectors.wizard.justConnectDescription',
       );
-      expect(document.body.textContent).not.toContain(
-        'settings.connectors.wizard.retrievalSettings',
-      );
-      // One way on: nothing to skip.
-      expect(button('settings.connectors.wizard.skip')).toBeUndefined();
-      await click('settings.connectors.wizard.finishSetup');
-      expect(service.setup).not.toHaveBeenCalled();
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.doneTitle',
-      );
-      // The summary says nothing syncs yet, and where to start later.
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.syncLater',
-      );
+      // The form sits under the choice, open.
+      const form = document.body
+        .querySelector('[role="radiogroup"]')!
+        .parentElement!.querySelector('[data-slot="collapsible"]')!;
+      expect(form.getAttribute('data-state')).toBe('open');
+      expect(form.textContent).toContain('pick-folder');
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
     });
 
-    it('shows the picker once switched on', async () => {
+    it('folds the form away on Just connect, keeping what was picked', async () => {
       service.setup.mockResolvedValue({
         success: true,
         tools: [],
@@ -548,29 +602,68 @@ describe('ConnectWizard', () => {
       });
       await render(drive);
       await click('settings.connectors.wizard.signIn');
-      await act(async () => knowledgeSwitch()!.click());
-      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
-      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
       await click('pick-folder');
+      await act(async () => justConnectCard().click());
+      expect(justConnectCard().getAttribute('aria-checked')).toBe('true');
+      const form = document.body.querySelector(
+        '[role="radiogroup"] ~ [data-slot="collapsible"]',
+      )!;
+      expect(form.getAttribute('data-state')).toBe('closed');
+      expect(button('settings.connectors.wizard.finishSetup')).toBeDefined();
+      await act(async () => syncNowCard().click());
+      expect(form.getAttribute('data-state')).toBe('open');
+      // Still picked: the form was only folded.
       await click('modals.uploadDoc.train');
       expect(service.setup.mock.calls[0][1].sync.items).toEqual({
         file_ids: [],
         folder_ids: ['folder-1'],
       });
-      expect(document.body.textContent).not.toContain(
-        'settings.connectors.wizard.syncLater',
-      );
     });
 
-    it('drops the picked items when switched back off', async () => {
-      await render(drive, vi.fn(), { purpose: 'knowledge' });
-      await click('settings.connectors.wizard.signIn');
-      expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('true');
-      await click('pick-folder');
-      await act(async () => knowledgeSwitch()!.click());
-      await act(async () => knowledgeSwitch()!.click());
-      // The picker starts over, so nothing is left to add.
-      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+    it('describes the service and the key it connected with', async () => {
+      service.createConnection.mockResolvedValue({
+        success: true,
+        connection: { id: 'conn-s3', account_label: '…1c26' },
+      });
+      await render(s3);
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>(
+          'input[type="password"]',
+        )!,
+        'secret',
+      );
+      await click('settings.connectors.status.connect');
+      const header = document.body.querySelector('[data-slot="modal-header"]')!;
+      expect(header.textContent).toContain(
+        'settings.connectors.descriptions.s3',
+      );
+      expect(header.textContent).toContain(
+        'settings.connectors.wizard.connectedWithKey',
+      );
+      expect(header.textContent).not.toContain(
+        'settings.connectors.wizard.signedInAs',
+      );
+      expect(syncNowCard().getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('keeps the two switches for a service that offers tools and sync', async () => {
+      service.createConnection.mockResolvedValue({
+        success: true,
+        connection: { id: 'conn-gh', account_label: 'octocat' },
+      });
+      await render(github);
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>(
+          'input[type="password"]',
+        )!,
+        'github_pat',
+      );
+      await click('settings.connectors.status.connect');
+      expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
+      expect(knowledgeSwitch()).not.toBeNull();
+      expect(
+        document.body.querySelector('[data-slot="modal-header"]')!.textContent,
+      ).toContain('settings.connectors.wizard.signedInAs');
     });
 
     it('sends the advanced retrieval settings with the sync', async () => {
@@ -648,6 +741,7 @@ describe('ConnectWizard', () => {
         connectionId: 'conn-drive',
       });
       expect(knowledgeSwitch()).toBeNull();
+      expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
       expect(document.body.textContent).toContain('pick-folder');
       expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
     });
@@ -744,6 +838,7 @@ describe('ConnectWizard', () => {
       });
       await render(drive);
       await click('settings.connectors.wizard.signIn');
+      await act(async () => justConnectCard().click());
       await click('settings.connectors.wizard.finishSetup');
       expect(document.body.textContent).not.toContain(
         'settings.connectors.wizard.doneSummaryNone',
@@ -854,22 +949,131 @@ describe('ConnectWizard', () => {
     expect(onClose).toHaveBeenCalledWith(true);
   });
 
-  it('opens a new chat from Try it in chat', async () => {
+  it('opens a new chat over no sources from Try it in chat', async () => {
     service.createConnection.mockResolvedValue({
       success: true,
       connection: { id: 'conn-1' },
     });
-    service.setup.mockResolvedValue({ success: true, tools: [], sources: [] });
+    service.setup.mockResolvedValue({
+      success: true,
+      tools: [TELEGRAM_TOOL],
+      sources: [],
+    });
     const onClose = vi.fn();
-    await render(base, onClose);
+    const store = await render(base, onClose, {}, [], [{ id: 'old-chat-doc' }]);
     await typeInto(
       document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
       't',
     );
     await click('settings.connectors.status.connect');
+    // Tools on: Done and Try it in chat.
+    expect(footer()).toEqual([
+      'settings.connectors.wizard.done:ghost',
+      'settings.connectors.wizard.tryInChat:default',
+    ]);
     await click('settings.connectors.wizard.tryInChat');
     expect(onClose).toHaveBeenCalled();
     expect(document.body.textContent).toContain('NEW_CHAT');
+    // The last chat's sources don't come along.
+    expect(
+      (store.getState() as { preference: { selectedDocs: unknown[] } })
+        .preference.selectedDocs,
+    ).toEqual([]);
+  });
+
+  describe('done footer', () => {
+    it('opens the new source in Knowledge once content is synced', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [{ id: 'src-1', name: 'Handbook' }],
+      });
+      const onClose = vi.fn();
+      await render(drive, onClose);
+      await click('settings.connectors.wizard.signIn');
+      await click('pick-folder');
+      await click('modals.uploadDoc.train');
+      expect(footer()).toEqual([
+        'settings.connectors.wizard.done:ghost',
+        'settings.connectors.openInKnowledge:default',
+      ]);
+      // The alert reports; it gives no directions.
+      expect(successAlert()?.textContent).not.toContain(
+        'settings.connectors.wizard.syncLater',
+      );
+      await click('settings.connectors.openInKnowledge');
+      expect(onClose).toHaveBeenCalledWith(true);
+      expect(document.body.textContent).toContain('KNOWLEDGE?source=src-1');
+    });
+
+    it('offers Sync content when nothing synced, and syncs in place', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [{ id: 'src-1', name: 'Handbook' }],
+      });
+      await render(drive, vi.fn(), {}, [
+        {
+          id: 'conn-drive',
+          connector_key: 'google_drive',
+          status: 'connected',
+        } as Connection,
+        {
+          id: 'conn-other',
+          connector_key: 'google_drive',
+          status: 'connected',
+        } as Connection,
+      ]);
+      await click('settings.connectors.wizard.signIn');
+      await act(async () => justConnectCard().click());
+      await click('settings.connectors.wizard.finishSetup');
+      expect(footer()).toEqual([
+        'settings.connectors.syncContent:outline',
+        'settings.connectors.wizard.done:default',
+      ]);
+      expect(successAlert()?.textContent).toContain(
+        'settings.connectors.wizard.syncLater',
+      );
+      await click('settings.connectors.syncContent');
+      // The wizard's sync step, on the account it just connected.
+      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
+      expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.account',
+      );
+      await click('pick-folder');
+      await click('modals.uploadDoc.train');
+      expect(service.setup.mock.calls[0][0]).toBe('conn-drive');
+      expect(title()).toBe('settings.connectors.wizard.doneTitle');
+    });
+
+    it('records the sync so the drawer can show it while it indexes', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [{ id: 'src-1', name: 'Handbook' }],
+      });
+      const store = await render(drive, vi.fn(), {
+        mode: 'sync',
+        connectionId: 'conn-drive',
+      });
+      await click('pick-folder');
+      await click('modals.uploadDoc.train');
+      const started = (
+        store.getState() as {
+          connectors: {
+            startedSyncs: { id: string; name: string; connectionId: string }[];
+          };
+        }
+      ).connectors.startedSyncs;
+      expect(started).toEqual([
+        expect.objectContaining({
+          id: 'src-1',
+          name: 'Handbook',
+          connectionId: 'conn-drive',
+        }),
+      ]);
+    });
   });
 
   it('signs in to an MCP preset with one button and shows its tools', async () => {
@@ -1339,11 +1543,12 @@ describe('ConnectWizard', () => {
       );
     });
 
-    it('goes straight to the summary after signing in again', async () => {
+    it('goes straight to the summary after signing in again, with a lone Done', async () => {
       await signIn({ mode: 'reconnect', connectionId: 'conn-lin' });
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.doneTitle',
       );
+      expect(footer()).toEqual(['settings.connectors.wizard.done:default']);
     });
 
     it('opens on the picker to sync more from the drawer', async () => {

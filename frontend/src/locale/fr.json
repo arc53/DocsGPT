@@ -1936,7 +1936,7 @@
         "tools": "Outils issus de cette connexion",
         "noAccounts": "Aucun compte connecté pour l’instant.",
         "failed": "Impossible de charger cette connexion.",
-        "lastSync": "Synchronisé {{date}} · {{frequency}}",
+        "lastSync": "Synchronisé {{when}}",
         "paused": "Synchronisation en pause",
         "toolOn": "Activé",
         "toolOff": "Désactivé",
@@ -1945,7 +1945,7 @@
         "keyEnding": "Clé {{hint}}",
         "syncMore": "Synchroniser plus de contenu",
         "refreshTools": "Actualiser les outils",
-        "noSources": "Rien n’a encore été synchronisé depuis cette connexion.",
+        "noSources": "Rien n’est encore synchronisé",
         "remove": "Supprimer",
         "refreshed": "Outils actualisés : {{added}} ajouté(s), {{removed}} retiré(s).",
         "refreshFailed": "Impossible d’actualiser les outils.",
@@ -1960,7 +1960,12 @@
         "addToolsFailed": "Impossible d’ajouter les outils. Réessayez.",
         "rename": "Renommer",
         "toolsHint": "« Demander d’abord » vous sollicite dans la conversation. Les modifications via l’API, le widget et les liens s’autorisent par agent dans les détails d’accès.",
-        "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez."
+        "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez.",
+        "noSourcesHint": "Choisissez du contenu dans {{name}} pour l’ajouter aux connaissances.",
+        "indexing": "Indexation",
+        "firstSyncStarted": "Première synchronisation lancée {{time}}",
+        "sourceMenu": "Actions de la source",
+        "syncStarting": "Lancement de la synchronisation…"
       },
       "permission": {
         "always": "Autoriser",
@@ -2042,13 +2047,18 @@
         "accountNameHint": "Affiché pour vous et l’IA afin de distinguer les comptes, par ex. Bot d’alertes.",
         "syncToKnowledge": "Synchroniser dans Connaissances",
         "syncToKnowledgeDescription": "Choisissez le contenu de {{name}} dans lequel les réponses pourront chercher. Laissez désactivé pour simplement connecter ; vous pourrez synchroniser plus tard depuis Connecteurs.",
-        "syncLater": "Rien n’est encore synchronisé dans Connaissances. Pour ajouter du contenu, ouvrez {{name}} dans Connecteurs et choisissez Synchroniser plus de contenu.",
+        "syncLater": "Rien n’est encore synchronisé dans Connaissances.",
         "retrievalSettings": "Paramètres de récupération avancés",
         "chooseWhatToSetUpFor": "Choisissez ce qu’il faut configurer pour {{name}}",
         "chooseWhatToSyncFrom": "Choisissez ce qu’il faut synchroniser depuis {{name}}",
         "signedInAs": "Connecté en tant que {{account}}.",
         "finishSetup": "Terminer la configuration",
-        "account": "Compte"
+        "account": "Compte",
+        "syncChoice": "Comment utiliser {{name}}",
+        "syncNow": "Synchroniser du contenu maintenant",
+        "syncNowDescription": "Choisissez du contenu dans {{name}} et ajoutez-le aux connaissances.",
+        "justConnect": "Simplement connecter",
+        "justConnectDescription": "Rien n’est ajouté pour l’instant. Synchronisez du contenu plus tard depuis Connecteurs, quand vous en avez besoin."
       },
       "remove": {
         "title": "Supprimer « {{name}} » ?",
@@ -2179,7 +2189,9 @@
         "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
         "notice_many": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser.",
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
-      }
+      },
+      "syncContent": "Synchroniser du contenu",
+      "openInKnowledge": "Ouvrir dans Connaissances"
     },
     "insights": {
       "label": "Analyses"

@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
@@ -32,11 +34,18 @@ import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import { Spinner } from '../components/ui/spinner';
 import { showActionToast } from '../notifications/actionToastSlice';
+import type { SSEEvent } from '../notifications/notificationsSlice';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import { formatCount, formatDateTime } from '../utils/dateTimeUtils';
+import { knowledgeLink } from '../settings/knowledgeLink';
+import {
+  formatCount,
+  formatDateTime,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 import { ACCOUNT_NAME_MAX } from './accounts';
 import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
@@ -47,6 +56,8 @@ import {
   selectConnections,
   selectConnectorsFailed,
   selectConnectorsLoaded,
+  selectStartedSyncs,
+  type StartedSync,
 } from './connectorsSlice';
 import {
   accountLine,
@@ -480,13 +491,43 @@ type AccountHandlers = {
   onRefreshTools: (detail: ConnectionDetail) => Promise<void>;
   /** Turns a tool of this connection on or off for agents and chat. */
   onToggleTool: (toolId: string, on: boolean) => Promise<boolean>;
-  onSyncNow: (source: ConnectionSource) => void;
+  /** Starts a sync; resolves once the server answered. */
+  onSyncNow: (source: ConnectionSource) => Promise<void>;
   /** Creates the tools a connection lacks (skipped at setup, or deleted).
    * Resolves to what went wrong, in plain words, or null. */
   onAddTools: (detail: ConnectionDetail) => Promise<string | null>;
   /** Lets its tool make changes or only read (GitHub's). */
   onSwitchWrites: (detail: ConnectionDetail, allow: boolean) => Promise<void>;
 };
+
+const NO_EVENTS: SSEEvent[] = [];
+const selectEvents = (state: {
+  notifications?: { recentEvents?: SSEEvent[] };
+}) => state.notifications?.recentEvents ?? NO_EVENTS;
+
+/**
+ * The syncs started this session that the server doesn't list yet (its
+ * first ingest is still running) and that haven't failed.
+ *
+ * @param started Every sync started this session.
+ * @param details The loaded accounts, with the sources the server lists.
+ * @param events The recent notification events.
+ */
+function indexingSyncs(
+  started: StartedSync[],
+  details: ConnectionDetail[],
+  events: SSEEvent[],
+): StartedSync[] {
+  const listed = new Set(
+    details.flatMap((detail) => detail.sources.map((source) => source.id)),
+  );
+  const failed = new Set(
+    events
+      .filter((event) => event.type === 'source.ingest.failed')
+      .map((event) => event.scope?.id),
+  );
+  return started.filter((sync) => !listed.has(sync.id) && !failed.has(sync.id));
+}
 
 /**
  * One account in a service's account list: its name, account line, status
@@ -601,6 +642,7 @@ function AccountRow({
 function AccountContent({
   connector,
   detail,
+  indexing,
   onSyncMore,
   onRefreshTools,
   onToggleTool,
@@ -610,12 +652,17 @@ function AccountContent({
 }: {
   connector: ConnectorDefinition;
   detail: ConnectionDetail;
+  /** This account's syncs that are still on their first ingest. */
+  indexing: StartedSync[];
 } & Omit<
   AccountHandlers,
   'onReconnect' | 'onDisconnect' | 'onRemove' | 'onRename'
 >) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
+  // Sources whose Sync now the server hasn't answered yet: one start each.
+  const [syncingIds, setSyncingIds] = useState<string[]>([]);
   const [addingTools, setAddingTools] = useState(false);
   const [addToolsError, setAddToolsError] = useState<string | null>(null);
   const canAddTools =
@@ -623,7 +670,45 @@ function AccountContent({
     detail.tools.length === 0 &&
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
+  const connected = detail.status === 'connected';
+  const hasSources = detail.sources.length + indexing.length > 0;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
+
+  const openSource = (source: ConnectionSource) =>
+    navigate(knowledgeLink({ sourceId: source.id }));
+
+  const syncNow = async (source: ConnectionSource) => {
+    if (syncingIds.includes(source.id)) return;
+    setSyncingIds((ids) => [...ids, source.id]);
+    try {
+      await onSyncNow(source);
+    } finally {
+      setSyncingIds((ids) => ids.filter((id) => id !== source.id));
+    }
+  };
+
+  /**
+   * A source row's ⋯: Sync now (only while the account works and the
+   * source isn't paused for it), then Open in Knowledge. Further source
+   * actions join this list.
+   */
+  const sourceOptions = (source: ConnectionSource): MenuOption[] => [
+    ...(connected && source.sync_state !== 'paused_reconnect'
+      ? [
+          {
+            icon: RotateCw,
+            label: t('settings.connectors.detail.syncNow'),
+            onClick: () => void syncNow(source),
+            disabled: syncingIds.includes(source.id),
+          },
+        ]
+      : []),
+    {
+      icon: BookOpen,
+      label: t('settings.connectors.openInKnowledge'),
+      onClick: () => openSource(source),
+    },
+  ];
   // Hidden once an admin forbids changes; its tool then only reads anyway.
   const canSwitchWrites =
     !!connector.writes_allowed &&
@@ -639,7 +724,7 @@ function AccountContent({
             size="xs"
             title={t('settings.connectors.detail.sources')}
             actions={
-              detail.status === 'connected' ? (
+              connected && hasSources ? (
                 <Button
                   type="button"
                   variant="link"
@@ -653,49 +738,117 @@ function AccountContent({
               ) : undefined
             }
           />
-          {detail.sources.length === 0 ? (
+          {!hasSources ? (
             <EmptyState
-              size="xs"
+              size="sm"
               illustration="none"
               title={t('settings.connectors.detail.noSources')}
+              description={t('settings.connectors.detail.noSourcesHint', {
+                name: connectorName(t, connector),
+                interpolation: { escapeValue: false },
+              })}
+              action={
+                connected ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    shape="pill"
+                    onClick={() => onSyncMore(detail)}
+                  >
+                    {t('settings.connectors.syncContent')}
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <Card variant="subtle" padding="none" className="overflow-hidden">
               <ListRows>
+                {indexing.map((sync) => (
+                  <ListRow
+                    key={sync.id}
+                    title={sync.name}
+                    description={t(
+                      'settings.connectors.detail.firstSyncStarted',
+                      {
+                        time: formatRelative(sync.startedAt) ?? '',
+                        interpolation: { escapeValue: false },
+                      },
+                    )}
+                    trailing={
+                      <Badge variant="neutral">
+                        {t('settings.connectors.detail.indexing')}
+                      </Badge>
+                    }
+                  />
+                ))}
                 {detail.sources.map((source) => (
                   <ListRow
                     key={source.id}
-                    title={source.name}
+                    interactive
+                    asChild
+                    title={
+                      // A stretched button opens the source; the ⋯ sits
+                      // above it, so neither control is inside the other.
+                      <button
+                        type="button"
+                        data-source-open=""
+                        className="block max-w-full cursor-pointer truncate text-left outline-none after:absolute after:inset-0"
+                        onClick={() => openSource(source)}
+                      >
+                        {source.name}
+                      </button>
+                    }
+                    // Worded as on the source's card: "Weekly · synced 2 days
+                    // ago", or just when it last synced off a schedule.
                     description={
-                      source.last_sync
-                        ? t('settings.connectors.detail.lastSync', {
-                            date: formatDateTime(source.last_sync),
-                            frequency: t(
-                              `settings.sources.syncFrequency.${source.sync_frequency}`,
-                              { defaultValue: source.sync_frequency },
-                            ),
-                            interpolation: { escapeValue: false },
-                          })
-                        : undefined
+                      !source.last_sync
+                        ? undefined
+                        : source.sync_frequency &&
+                            source.sync_frequency !== 'never'
+                          ? t('settings.sources.website.synced', {
+                              frequency: t(
+                                `settings.sources.syncFrequency.${source.sync_frequency}`,
+                                { defaultValue: source.sync_frequency },
+                              ),
+                              when:
+                                formatRelative(source.last_sync) ??
+                                formatDateTime(source.last_sync),
+                              interpolation: { escapeValue: false },
+                            })
+                          : t('settings.connectors.detail.lastSync', {
+                              when:
+                                formatRelative(source.last_sync) ??
+                                formatDateTime(source.last_sync),
+                              interpolation: { escapeValue: false },
+                            })
                     }
                     trailing={
-                      source.sync_state === 'paused_reconnect' ? (
-                        <Badge variant="warning">
-                          {t('settings.connectors.detail.paused')}
-                        </Badge>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          shape="pill"
-                          onClick={() => onSyncNow(source)}
-                        >
-                          {t('settings.connectors.detail.syncNow')}
-                        </Button>
-                      )
+                      <div className="relative z-10 flex shrink-0 items-center gap-2">
+                        {source.sync_state === 'paused_reconnect' && (
+                          <Badge variant="warning">
+                            {t('settings.connectors.detail.paused')}
+                          </Badge>
+                        )}
+                        {syncingIds.includes(source.id) && (
+                          <Spinner
+                            size="xs"
+                            label={t('settings.connectors.detail.syncStarting')}
+                          />
+                        )}
+                        <ActionMenu
+                          triggerLabel={t(
+                            'settings.connectors.detail.sourceMenu',
+                          )}
+                          options={sourceOptions(source)}
+                        />
+                      </div>
                     }
-                  />
+                  >
+                    {/* The row's box holds the stretched button, so it draws
+                        that button's focus ring (as an account row does). */}
+                    <div className="has-[[data-source-open]:focus-visible]:ring-ring/50 relative has-[[data-source-open]:focus-visible]:ring-3 has-[[data-source-open]:focus-visible]:ring-inset" />
+                  </ListRow>
                 ))}
               </ListRows>
             </Card>
@@ -807,10 +960,13 @@ function ServiceSection({
   picked,
   onPick,
   onConnect,
+  indexing,
   ...handlers
 }: {
   service: ConnectorDefinition;
   heading: string;
+  /** Syncs still on their first ingest, any account's. */
+  indexing: StartedSync[];
   /** A part's own description; the parent's is in the panel header. */
   description?: string;
   accounts: ConnectionDetail[];
@@ -914,6 +1070,7 @@ function ServiceSection({
           key={shown.id}
           connector={service}
           detail={shown}
+          indexing={indexing.filter((sync) => sync.connectionId === shown.id)}
           onSyncMore={handlers.onSyncMore}
           onRefreshTools={handlers.onRefreshTools}
           onToggleTool={handlers.onToggleTool}
@@ -1014,6 +1171,23 @@ export default function ConnectionDrawer({
     dispatch(loadConnectors({ token }));
     setReloadKey((key) => key + 1);
   }, [dispatch, token]);
+
+  // A sync started this session shows as indexing until the server lists
+  // it, which it does once the first ingest finishes: reload then.
+  const startedSyncs = useSelector(selectStartedSyncs);
+  const events = useSelector(selectEvents);
+  const indexing = indexingSyncs(startedSyncs, loaded?.details ?? [], events);
+  const finishedKey = events
+    .filter(
+      (event) =>
+        event.type === 'source.ingest.completed' &&
+        indexing.some((sync) => sync.id === event.scope?.id),
+    )
+    .map((event) => event.scope?.id)
+    .join(',');
+  useEffect(() => {
+    if (finishedKey) refresh();
+  }, [finishedKey, refresh]);
 
   const serviceOf = (detail: ConnectionDetail) =>
     parts.find((part) => part.key === detail.connector_key) ?? connector;
@@ -1209,6 +1383,7 @@ export default function ConnectionDrawer({
         picked={pickedIn(service.key, accounts)}
         onPick={(id) => setPicked((state) => ({ ...state, [service.key]: id }))}
         onConnect={() => onConnect(service)}
+        indexing={indexing}
         {...handlers}
       />
     ));

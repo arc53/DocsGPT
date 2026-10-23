@@ -1871,7 +1871,7 @@
         "tools": "来自此连接的工具",
         "noAccounts": "尚未连接账号。",
         "failed": "无法加载此连接。",
-        "lastSync": "已于 {{date}} 同步 · {{frequency}}",
+        "lastSync": "{{when}}已同步",
         "paused": "同步已暂停",
         "toolOn": "开启",
         "toolOff": "关闭",
@@ -1880,7 +1880,7 @@
         "keyEnding": "密钥 {{hint}}",
         "syncMore": "同步更多内容",
         "refreshTools": "刷新工具",
-        "noSources": "尚未从此连接同步任何内容。",
+        "noSources": "尚未同步任何内容",
         "remove": "移除",
         "refreshed": "工具已刷新：新增 {{added}} 个，移除 {{removed}} 个。",
         "refreshFailed": "无法刷新工具。",
@@ -1895,7 +1895,12 @@
         "addToolsFailed": "无法添加工具。请重试。",
         "rename": "重命名",
         "toolsHint": "“先询问”会在聊天中询问你。通过 API、小组件和链接进行的更改，需在每个智能体的 Access details 中允许。",
-        "toolsUnavailable": "无法访问 {{name}} 的工具。请重试。"
+        "toolsUnavailable": "无法访问 {{name}} 的工具。请重试。",
+        "noSourcesHint": "从 {{name}} 选择内容以添加到知识库。",
+        "indexing": "正在索引",
+        "firstSyncStarted": "首次同步已开始（{{time}}）",
+        "sourceMenu": "来源操作",
+        "syncStarting": "正在开始同步…"
       },
       "permission": {
         "always": "允许",
@@ -1971,7 +1976,7 @@
         "accountNameHint": "向你和 AI 显示，用于区分账户，例如“告警机器人”。",
         "syncToKnowledge": "同步到知识库",
         "syncToKnowledgeDescription": "从 {{name}} 选择要在回答中搜索的内容。关闭时仅建立连接，之后可在连接器中同步。",
-        "syncLater": "尚未同步任何内容到知识库。要添加内容，请在连接器中打开 {{name}}，然后选择“同步更多内容”。",
+        "syncLater": "尚未同步任何内容到知识库。",
         "retrievalSettings": "高级检索设置",
         "chooseWhatToSetUpFor": "选择要为 {{name}} 设置的内容",
         "chooseWhatToSyncFrom": "选择要从 {{name}} 同步的内容",
@@ -1979,7 +1984,12 @@
         "finishSetup": "完成设置",
         "account": "账号",
         "sourcesCount_one": "{{formatted}} 项",
-        "toolsCount_one": "{{formatted}} 个工具"
+        "toolsCount_one": "{{formatted}} 个工具",
+        "syncChoice": "如何使用 {{name}}",
+        "syncNow": "立即同步内容",
+        "syncNowDescription": "从 {{name}} 选择内容并添加到知识库。",
+        "justConnect": "仅连接",
+        "justConnectDescription": "暂不添加任何内容。需要时可稍后在连接器中同步内容。"
       },
       "remove": {
         "title": "移除“{{name}}”？",
@@ -2098,7 +2108,9 @@
       "injection": {
         "flagged": "疑似提示词注入",
         "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
-      }
+      },
+      "syncContent": "同步内容",
+      "openInKnowledge": "在知识库中打开"
     },
     "insights": {
       "label": "洞察"

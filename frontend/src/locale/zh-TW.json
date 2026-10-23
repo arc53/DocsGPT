@@ -1871,7 +1871,7 @@
         "tools": "來自此連線的工具",
         "noAccounts": "尚未連線帳號。",
         "failed": "無法載入此連線。",
-        "lastSync": "已於 {{date}} 同步 · {{frequency}}",
+        "lastSync": "{{when}}已同步",
         "paused": "同步已暫停",
         "toolOn": "開啟",
         "toolOff": "關閉",
@@ -1880,7 +1880,7 @@
         "keyEnding": "金鑰 {{hint}}",
         "syncMore": "同步更多內容",
         "refreshTools": "重新整理工具",
-        "noSources": "尚未從此連線同步任何內容。",
+        "noSources": "尚未同步任何內容",
         "remove": "移除",
         "refreshed": "工具已重新整理：新增 {{added}} 個，移除 {{removed}} 個。",
         "refreshFailed": "無法重新整理工具。",
@@ -1895,7 +1895,12 @@
         "addToolsFailed": "無法新增工具。請再試一次。",
         "rename": "重新命名",
         "toolsHint": "「先詢問」會在聊天中詢問你。透過 API、小工具和連結進行的變更，需在每個代理的 Access details 中允許。",
-        "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次。"
+        "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次。",
+        "noSourcesHint": "從 {{name}} 選擇內容以新增到知識庫。",
+        "indexing": "正在索引",
+        "firstSyncStarted": "首次同步已開始（{{time}}）",
+        "sourceMenu": "來源操作",
+        "syncStarting": "正在開始同步…"
       },
       "permission": {
         "always": "允許",
@@ -1971,7 +1976,7 @@
         "accountNameHint": "向你和 AI 顯示，用來區分帳戶，例如「警示機器人」。",
         "syncToKnowledge": "同步到知識庫",
         "syncToKnowledgeDescription": "從 {{name}} 選擇要在回答中搜尋的內容。關閉時僅建立連線，之後可在連接器中同步。",
-        "syncLater": "尚未同步任何內容到知識庫。若要新增內容，請在連接器中開啟 {{name}}，然後選擇「同步更多內容」。",
+        "syncLater": "尚未同步任何內容到知識庫。",
         "retrievalSettings": "進階檢索設定",
         "chooseWhatToSetUpFor": "選擇要為 {{name}} 設定的內容",
         "chooseWhatToSyncFrom": "選擇要從 {{name}} 同步的內容",
@@ -1979,7 +1984,12 @@
         "finishSetup": "完成設定",
         "account": "帳號",
         "sourcesCount_one": "{{formatted}} 項",
-        "toolsCount_one": "{{formatted}} 個工具"
+        "toolsCount_one": "{{formatted}} 個工具",
+        "syncChoice": "如何使用 {{name}}",
+        "syncNow": "立即同步內容",
+        "syncNowDescription": "從 {{name}} 選擇內容並新增到知識庫。",
+        "justConnect": "僅連線",
+        "justConnectDescription": "暫不新增任何內容。需要時可稍後在連接器中同步內容。"
       },
       "remove": {
         "title": "要移除「{{name}}」嗎？",
@@ -2099,7 +2109,9 @@
         "flagged": "疑似提示詞注入",
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
-      }
+      },
+      "syncContent": "同步內容",
+      "openInKnowledge": "在知識庫中開啟"
     },
     "insights": {
       "label": "洞察"

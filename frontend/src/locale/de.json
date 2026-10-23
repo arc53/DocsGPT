@@ -1874,7 +1874,7 @@
         "tools": "Werkzeuge aus dieser Verbindung",
         "noAccounts": "Noch kein Konto verbunden.",
         "failed": "Diese Verbindung konnte nicht geladen werden.",
-        "lastSync": "Synchronisiert {{date}} · {{frequency}}",
+        "lastSync": "Synchronisiert {{when}}",
         "paused": "Sync pausiert",
         "toolOn": "An",
         "toolOff": "Aus",
@@ -1883,7 +1883,7 @@
         "keyEnding": "Schlüssel {{hint}}",
         "syncMore": "Weitere Inhalte synchronisieren",
         "refreshTools": "Werkzeuge aktualisieren",
-        "noSources": "Aus dieser Verbindung wurde noch nichts synchronisiert.",
+        "noSources": "Noch nichts synchronisiert",
         "remove": "Entfernen",
         "refreshed": "Werkzeuge aktualisiert: {{added}} hinzugefügt, {{removed}} entfernt.",
         "refreshFailed": "Die Werkzeuge konnten nicht aktualisiert werden.",
@@ -1898,7 +1898,12 @@
         "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
         "rename": "Umbenennen",
         "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugriffsdetails.",
-        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut."
+        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut.",
+        "noSourcesHint": "Wähle Inhalte aus {{name}}, um sie dem Wissen hinzuzufügen.",
+        "indexing": "Wird indexiert",
+        "firstSyncStarted": "Erste Synchronisierung gestartet: {{time}}",
+        "sourceMenu": "Quellenaktionen",
+        "syncStarting": "Synchronisierung wird gestartet…"
       },
       "permission": {
         "always": "Erlauben",
@@ -1976,13 +1981,18 @@
         "accountNameHint": "Wird dir und der KI angezeigt, um Konten zu unterscheiden, z. B. Alarm-Bot.",
         "syncToKnowledge": "Ins Wissen synchronisieren",
         "syncToKnowledgeDescription": "Wähle Inhalte aus {{name}}, die Antworten durchsuchen. Bleibt es aus, wird nur verbunden; synchronisieren kannst du später unter Konnektoren.",
-        "syncLater": "Noch wird nichts ins Wissen synchronisiert. Um Inhalte hinzuzufügen, öffne {{name}} unter Konnektoren und wähle Weitere Inhalte synchronisieren.",
+        "syncLater": "Noch wird nichts ins Wissen synchronisiert.",
         "retrievalSettings": "Erweiterte Abrufeinstellungen",
         "chooseWhatToSetUpFor": "Auswählen, was für {{name}} eingerichtet wird",
         "chooseWhatToSyncFrom": "Auswählen, was aus {{name}} synchronisiert wird",
         "signedInAs": "Angemeldet als {{account}}.",
         "finishSetup": "Einrichtung abschließen",
-        "account": "Konto"
+        "account": "Konto",
+        "syncChoice": "Wie du {{name}} nutzen möchtest",
+        "syncNow": "Inhalte jetzt synchronisieren",
+        "syncNowDescription": "Wähle Inhalte aus {{name}} und füge sie dem Wissen hinzu.",
+        "justConnect": "Nur verbinden",
+        "justConnectDescription": "Noch wird nichts hinzugefügt. Synchronisiere Inhalte später unter Konnektoren, wann immer sie gebraucht werden."
       },
       "remove": {
         "title": "\"{{name}}\" entfernen?",
@@ -2107,7 +2117,9 @@
         "flagged": "Mögliche Prompt-Injection",
         "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
         "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
-      }
+      },
+      "syncContent": "Inhalte synchronisieren",
+      "openInKnowledge": "Im Wissen öffnen"
     },
     "insights": {
       "label": "Einblicke"

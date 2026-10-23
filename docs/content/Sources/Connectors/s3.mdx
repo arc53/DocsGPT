@@ -1,7 +1,7 @@
 ---
 title: Amazon S3 Connector
 description: Sync documents from an Amazon S3 bucket, or S3-compatible storage such as MinIO or Cloudflare R2, into Knowledge.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-23
 ---
 
 import { Callout } from 'nextra/components'
@@ -41,4 +41,4 @@ In **Settings > Connectors**, pick **Amazon S3** and fill in:
 
 ## Sync into Knowledge
 
-Turn on **Sync into Knowledge** and enter the **Bucket** name and an optional **Path prefix** to sync only part of it. DocsGPT reads the files it can parse under that prefix and syncs them on the schedule you choose.
+Keep **Sync content now** selected and enter the **Bucket** name and an optional **Path prefix** to sync only part of it. DocsGPT reads the files it can parse under that prefix and syncs them on the schedule you choose. Choose **Just connect** to only save the account; **Sync content** on the connection's page adds a bucket later.

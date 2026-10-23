@@ -7,6 +7,19 @@ import {
 import connectorsService from '../api/services/connectorsService';
 import type { Connection, ConnectorDefinition } from './types';
 
+/**
+ * A source a connection's sync just started. The server lists a synced
+ * source only once its first ingest has finished, so the connection drawer
+ * shows these meanwhile, as indexing.
+ */
+export type StartedSync = {
+  id: string;
+  name: string;
+  connectionId: string;
+  /** ISO time the sync was started. */
+  startedAt: string;
+};
+
 export type ConnectorsState = {
   /** False when the backend predates connectors (`/api/config`). */
   enabled: boolean;
@@ -21,6 +34,8 @@ export type ConnectorsState = {
    * hold connections from before a connect.
    */
   latestRequestId?: string | null;
+  /** Syncs started this session, newest last (see `StartedSync`). */
+  startedSyncs?: StartedSync[];
 };
 
 const initialState: ConnectorsState = {
@@ -31,6 +46,7 @@ const initialState: ConnectorsState = {
   loaded: false,
   failed: false,
   latestRequestId: null,
+  startedSyncs: [],
 };
 
 /**
@@ -62,6 +78,14 @@ const connectorsSlice = createSlice({
     setConnectorsEnabled(state, action: PayloadAction<boolean>) {
       state.enabled = action.payload;
     },
+    /** Records the sources a sync started (one entry per source id). */
+    syncStarted(state, action: PayloadAction<StartedSync[]>) {
+      const ids = new Set(action.payload.map((sync) => sync.id));
+      state.startedSyncs = [
+        ...(state.startedSyncs ?? []).filter((sync) => !ids.has(sync.id)),
+        ...action.payload,
+      ];
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -87,7 +111,7 @@ const connectorsSlice = createSlice({
   },
 });
 
-export const { setConnectorsEnabled } = connectorsSlice.actions;
+export const { setConnectorsEnabled, syncStarted } = connectorsSlice.actions;
 
 type RootLike = { connectors: ConnectorsState };
 
@@ -123,5 +147,10 @@ export const selectConnectorsLoaded = (state: RootLike) =>
   state.connectors.loaded;
 export const selectConnectorsFailed = (state: RootLike) =>
   state.connectors.failed;
+
+const NO_STARTED_SYNCS: StartedSync[] = [];
+/** The syncs started this session (see `StartedSync`). */
+export const selectStartedSyncs = (state: RootLike) =>
+  state.connectors?.startedSyncs ?? NO_STARTED_SYNCS;
 
 export default connectorsSlice.reducer;

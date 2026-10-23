@@ -2,6 +2,8 @@ import reducer, {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnectionsNeedAttention,
+  selectStartedSyncs,
+  syncStarted,
   type ConnectorsState,
 } from './connectorsSlice';
 import type { Connection } from './types';
@@ -92,5 +94,34 @@ describe('connectionNeedsSignIn', () => {
     expect(selectConnectionsNeedAttention(state(['connected', 'error']))).toBe(
       true,
     );
+  });
+});
+
+describe('connectorsSlice syncStarted', () => {
+  const sync = (id: string, name: string) => ({
+    id,
+    name,
+    connectionId: 'conn-1',
+    startedAt: '2026-10-23T10:00:00Z',
+  });
+
+  it('keeps one entry per source, the latest start', () => {
+    let state = reducer(
+      undefined,
+      syncStarted([sync('a', 'A'), sync('b', 'B')]),
+    );
+    state = reducer(state, syncStarted([sync('a', 'A again')]));
+    expect(selectStartedSyncs({ connectors: state })).toEqual([
+      sync('b', 'B'),
+      sync('a', 'A again'),
+    ]);
+  });
+
+  it('reads none from a state that never had any', () => {
+    expect(
+      selectStartedSyncs({
+        connectors: { startedSyncs: undefined } as ConnectorsState,
+      }),
+    ).toEqual([]);
   });
 });

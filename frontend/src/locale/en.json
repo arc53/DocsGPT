@@ -1874,7 +1874,7 @@
         "tools": "Tools from this connection",
         "noAccounts": "No account connected yet.",
         "failed": "Could not load this connection.",
-        "lastSync": "Synced {{date}} · {{frequency}}",
+        "lastSync": "Synced {{when}}",
         "paused": "Sync paused",
         "toolOn": "On",
         "toolOff": "Off",
@@ -1883,7 +1883,7 @@
         "keyEnding": "Key {{hint}}",
         "syncMore": "Sync more content",
         "refreshTools": "Refresh tools",
-        "noSources": "Nothing synced from this connection yet.",
+        "noSources": "Nothing synced yet",
         "remove": "Remove",
         "refreshed": "Tools refreshed: {{added}} added, {{removed}} removed.",
         "refreshFailed": "Could not refresh the tools.",
@@ -1898,7 +1898,12 @@
         "addToolsFailed": "Could not add the tools. Try again.",
         "rename": "Rename",
         "toolsHint": "“Ask first” asks you in chat. API, widget and link changes are allowed per agent in Access details.",
-        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again."
+        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again.",
+        "noSourcesHint": "Pick content from {{name}} to add it to Knowledge.",
+        "indexing": "Indexing",
+        "firstSyncStarted": "First sync started {{time}}",
+        "sourceMenu": "Source actions",
+        "syncStarting": "Starting the sync…"
       },
       "permission": {
         "always": "Allow",
@@ -1976,13 +1981,18 @@
         "accountNameHint": "Shown to you and the AI to tell accounts apart, e.g. Alerts bot.",
         "syncToKnowledge": "Sync into Knowledge",
         "syncToKnowledgeDescription": "Pick content from {{name}} for answers to search. Leave it off to only connect; you can sync later from Connectors.",
-        "syncLater": "Nothing syncs into Knowledge yet. To add content, open {{name}} in Connectors and choose Sync more content.",
+        "syncLater": "Nothing syncs into Knowledge yet.",
         "retrievalSettings": "Advanced retrieval settings",
         "chooseWhatToSetUpFor": "Choose what to set up for {{name}}",
         "chooseWhatToSyncFrom": "Choose what to sync from {{name}}",
         "signedInAs": "Signed in as {{account}}.",
         "finishSetup": "Finish setup",
-        "account": "Account"
+        "account": "Account",
+        "syncChoice": "How to use {{name}}",
+        "syncNow": "Sync content now",
+        "syncNowDescription": "Pick content from {{name}} and add it to Knowledge.",
+        "justConnect": "Just connect",
+        "justConnectDescription": "Nothing is added yet. Sync content later from Connectors, whenever it's needed."
       },
       "remove": {
         "title": "Remove \"{{name}}\"?",
@@ -2107,7 +2117,9 @@
         "flagged": "Possible prompt injection",
         "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
         "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
-      }
+      },
+      "syncContent": "Sync content",
+      "openInKnowledge": "Open in Knowledge"
     },
     "insights": {
       "label": "Insights"

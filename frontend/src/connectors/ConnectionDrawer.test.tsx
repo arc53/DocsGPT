@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -36,11 +37,19 @@ vi.mock('../api/services/userService', () => ({ default: users }));
 import actionToastReducer, {
   selectActionToast,
 } from '../notifications/actionToastSlice';
+import notificationsReducer, {
+  sseEventReceived,
+} from '../notifications/notificationsSlice';
 import ConnectionDrawer from './ConnectionDrawer';
-import connectorsReducer from './connectorsSlice';
+import connectorsReducer, { type StartedSync } from './connectorsSlice';
 import type { ConnectorDefinition } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+/** Where a source row leads, with the source it opens. */
+function KnowledgePage() {
+  return <div>KNOWLEDGE{useLocation().search}</div>;
+}
 
 const DRIVE = {
   key: 'google_drive',
@@ -105,17 +114,23 @@ describe('ConnectionDrawer', () => {
   let store: ReturnType<typeof makeStore>;
   const makeStore = (
     extra: Record<string, unknown>[] = [],
-    { loaded = true, own = true }: { loaded?: boolean; own?: boolean } = {},
+    {
+      loaded = true,
+      own = true,
+      startedSyncs = [],
+    }: { loaded?: boolean; own?: boolean; startedSyncs?: StartedSync[] } = {},
   ) =>
     configureStore({
       reducer: {
         connectors: connectorsReducer,
         actionToast: actionToastReducer,
+        notifications: notificationsReducer,
         preference: (state = { token: null }) => state,
       },
       preloadedState: {
         connectors: {
           enabled: true,
+          startedSyncs,
           loading: !loaded,
           loaded,
           failed: false,
@@ -162,6 +177,8 @@ describe('ConnectionDrawer', () => {
     parts?: ConnectorDefinition[];
     loaded?: boolean;
     own?: boolean;
+    startedSyncs?: StartedSync[];
+    onConnect?: (connector: ConnectorDefinition, options?: unknown) => void;
   };
   const draw = async (
     connector: ConnectorDefinition,
@@ -170,13 +187,23 @@ describe('ConnectionDrawer', () => {
     await act(async () => {
       root.render(
         <Provider store={store}>
-          <ConnectionDrawer
-            connector={connector}
-            parts={options.parts}
-            initialConnectionId={options.initialConnectionId}
-            onClose={vi.fn()}
-            onConnect={vi.fn()}
-          />
+          <MemoryRouter initialEntries={['/settings/connectors']}>
+            <Routes>
+              <Route
+                path="/settings/connectors"
+                element={
+                  <ConnectionDrawer
+                    connector={connector}
+                    parts={options.parts}
+                    initialConnectionId={options.initialConnectionId}
+                    onClose={vi.fn()}
+                    onConnect={options.onConnect ?? vi.fn()}
+                  />
+                }
+              />
+              <Route path="/settings/knowledge" element={<KnowledgePage />} />
+            </Routes>
+          </MemoryRouter>
         </Provider>,
       );
     });
@@ -452,19 +479,232 @@ describe('ConnectionDrawer', () => {
     ).toBe('destructive');
   });
 
-  it('syncs a source now through its connection', async () => {
-    users.syncConnector.mockResolvedValue({
-      json: async () => ({ success: true }),
+  const openSourceMenu = async (name = 'Handbook') => {
+    const trigger = accountRow(name).querySelector<HTMLButtonElement>(
+      '[aria-label="settings.connectors.detail.sourceMenu"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
     });
+  };
+  const menuLabels = () =>
+    Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((el) => el.textContent);
+
+  it('syncs a source now from its menu, once at a time', async () => {
+    let answer: (value: unknown) => void = () => {};
+    users.syncConnector.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
     await render();
-    await act(async () => button('settings.connectors.detail.syncNow').click());
+    await openSourceMenu();
+    expect(menuLabels()).toEqual([
+      'settings.connectors.detail.syncNow',
+      'settings.connectors.openInKnowledge',
+    ]);
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
     expect(users.syncConnector).toHaveBeenCalledWith('src-1', null);
     expect(users.syncSource).not.toHaveBeenCalled();
+    // Pending: a spinner on the row, and no second start.
+    expect(
+      accountRow('Handbook').querySelector('[data-slot="spinner"]'),
+    ).not.toBeNull();
+    await openSourceMenu();
+    expect(
+      menuItem('settings.connectors.detail.syncNow').hasAttribute(
+        'data-disabled',
+      ),
+    ).toBe(true);
+    await act(async () => {
+      answer({ json: async () => ({ success: true }) });
+    });
+    expect(
+      accountRow('Handbook').querySelector('[data-slot="spinner"]'),
+    ).toBeNull();
+    expect(users.syncConnector).toHaveBeenCalledTimes(1);
     expect(
       selectActionToast(
         store.getState() as Parameters<typeof selectActionToast>[0],
       )?.variant,
     ).toBe('success');
+  });
+
+  it('offers no Sync now while the connection is not connected', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        status: 'reconnect_needed',
+        sources: [{ ...DETAIL.sources[0], sync_state: 'paused_reconnect' }],
+      },
+    });
+    await render(DRIVE, {
+      own: false,
+      extra: [
+        {
+          id: 'conn-1',
+          connector_key: 'google_drive',
+          status: 'reconnect_needed',
+        },
+      ],
+    });
+    await openSourceMenu();
+    expect(menuLabels()).toEqual(['settings.connectors.openInKnowledge']);
+    expect(text()).toContain('settings.connectors.detail.paused');
+  });
+
+  it('opens a source in Knowledge from its row', async () => {
+    await render();
+    const open = accountRow('Handbook').querySelector<HTMLButtonElement>(
+      'button[data-source-open]',
+    )!;
+    expect(open.textContent).toBe('Handbook');
+    await act(async () => open.click());
+    expect(text()).toContain('KNOWLEDGE?source=src-1');
+  });
+
+  it('opens a source in Knowledge from its menu', async () => {
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.openInKnowledge').click(),
+    );
+    expect(text()).toContain('KNOWLEDGE?source=src-1');
+  });
+
+  it('says how a source stays current, the way its card does', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        sources: [
+          { ...DETAIL.sources[0], last_sync: '2026-10-20T10:00:00Z' },
+          {
+            ...DETAIL.sources[0],
+            id: 'src-2',
+            name: 'Notes',
+            sync_frequency: 'never',
+            last_sync: '2026-10-20T10:00:00Z',
+          },
+        ],
+      },
+    });
+    await render();
+    expect(accountRow('Handbook').textContent).toContain(
+      'settings.sources.website.synced',
+    );
+    expect(accountRow('Notes').textContent).toContain(
+      'settings.connectors.detail.lastSync',
+    );
+  });
+
+  describe('knowledge from this connection', () => {
+    it('offers Sync content in an empty state, with no header link', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      const onConnect = vi.fn();
+      await render(DRIVE, { onConnect });
+      const empty = document.body.querySelector<HTMLElement>(
+        '[data-slot="empty-state"]',
+      )!;
+      expect(empty.dataset.size).toBe('sm');
+      expect(empty.textContent).toContain(
+        'settings.connectors.detail.noSources',
+      );
+      expect(empty.textContent).toContain(
+        'settings.connectors.detail.noSourcesHint',
+      );
+      expect(button('settings.connectors.detail.syncMore')).toBeUndefined();
+      const sync = button('settings.connectors.syncContent');
+      expect(sync.dataset.variant).toBe('outline');
+      await act(async () => sync.click());
+      expect(onConnect).toHaveBeenCalledWith(DRIVE, {
+        mode: 'sync',
+        connectionId: 'conn-1',
+      });
+    });
+
+    it('links Sync more content once there is a source', async () => {
+      await render();
+      expect(button('settings.connectors.detail.syncMore')).toBeDefined();
+      expect(button('settings.connectors.syncContent')).toBeUndefined();
+    });
+
+    it('lists a sync it started as indexing until the server lists it', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      await render(DRIVE, {
+        startedSyncs: [
+          {
+            id: 'src-new',
+            name: 'Contracts',
+            connectionId: 'conn-1',
+            startedAt: new Date().toISOString(),
+          },
+          // Another account's sync stays with that account.
+          {
+            id: 'src-elsewhere',
+            name: 'Elsewhere',
+            connectionId: 'conn-9',
+            startedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const row = accountRow('Contracts');
+      expect(row.textContent).toContain('settings.connectors.detail.indexing');
+      expect(row.textContent).toContain(
+        'settings.connectors.detail.firstSyncStarted',
+      );
+      // Not in Knowledge yet: nothing to open or sync.
+      expect(row.querySelector('button')).toBeNull();
+      expect(text()).not.toContain('Elsewhere');
+      // Not "nothing synced" meanwhile; Sync more is offered.
+      expect(
+        document.body.querySelector('[data-slot="empty-state"]'),
+      ).toBeNull();
+      expect(button('settings.connectors.detail.syncMore')).toBeDefined();
+      // Its ingest finishing reloads the list, which now has it.
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: {
+          ...DETAIL,
+          sources: [{ ...DETAIL.sources[0], id: 'src-new', name: 'Contracts' }],
+        },
+      });
+      connectors.listConnections.mockResolvedValueOnce({
+        success: true,
+        connections: [
+          { id: 'conn-1', connector_key: 'google_drive', status: 'connected' },
+        ],
+      });
+      const calls = connectors.getConnection.mock.calls.length;
+      await act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: 'ev-1',
+            type: 'source.ingest.completed',
+            scope: { kind: 'source', id: 'src-new' },
+            payload: {},
+          }),
+        );
+      });
+      expect(connectors.getConnection.mock.calls.length).toBeGreaterThan(calls);
+      expect(accountRow('Contracts').textContent).not.toContain(
+        'settings.connectors.detail.indexing',
+      );
+    });
   });
 
   it('says in plain words that an expired sign-in needs redoing', async () => {

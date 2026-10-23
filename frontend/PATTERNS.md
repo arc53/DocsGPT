@@ -754,6 +754,16 @@ say what the account actually has and are async submits (see DESIGN.md ›
 Modal, not Dialog). Disconnect's submit is primary; only
 Remove is destructive. "In my chats" stays as in DESIGN.md › Switch.
 
+The drawer's "Knowledge from this connection": with nothing synced, an
+`EmptyState size="sm"` with an outline "Sync content"; with sources, the header
+link "Sync more content". Each source row opens the source in Knowledge
+through a stretched button, its description worded as the source's card
+("Weekly · synced 2 days ago"), and its ⋯ is Sync now (connected and not
+paused only; a row `Spinner xs` and a disabled item while it starts) and Open
+in Knowledge. Syncs this session started show first as neutral "Indexing"
+rows ("First sync started …") until the server lists the source
+(`connectorsSlice.startedSyncs`).
+
 Per-action permissions are `connectors/PermissionGroup` everywhere (the
 drawer's ToolPermissions, an agent's API write allowlist, the Tools page
 editor): a `SectionHeader size="xs"`, the group's name with its action tally as
@@ -770,12 +780,23 @@ inline `CollapsibleTrigger`, named "Parameters for {action}").
 The connect wizard (`ConnectWizard`) is a `size="lg"` Modal on every step,
 with the connector's icon tile in `leading` (`Avatar size="xl" shape="square"
 variant="icon"`, as in the connection drawer's header; see DESIGN.md › Avatar) and a `description` (the
-service's description, then "Signed in as …"). Every step title names the
-service ("Choose what to sync from GitHub") and doesn't change with a switch.
-The setup step's footer is one submit named by what it does ("Add to
-Knowledge" while Sync is on, else "Finish setup"; Cancel + "Add to Knowledge"
-when syncing more), never Skip. Every path ends on the done step, whose
-summary is a `success` Alert. With several accounts and none chosen, the
+service's description, then the account: "Signed in as …", or "Connected
+with the key ending …" for a pasted key). Every step title names the service
+("Choose what to sync from GitHub") and doesn't change with a choice. A
+sync-only connector (`setup.tools === 'off'`: S3, Drive, SharePoint,
+Confluence) asks how to use it on its first connect with two `OptionCard`s in a
+`role="radiogroup"`, "Sync content now" (picked from any entry point) and
+"Just connect"; the setup form sits under them behind a `Separator` in a
+Collapsible that folds away on Just connect and keeps its values. A connector
+with tools and sync (GitHub, Linear) keeps one switch each. The setup step's
+footer is one submit named by what it does ("Add to Knowledge" while syncing,
+else "Finish setup"; Cancel + "Add to Knowledge" when syncing more), never
+Skip. Every path ends on the done step, whose summary is a `success` Alert
+that reports and never gives directions; its footer follows what happened: a
+lone Done after a reconnect; Done + "Open in Knowledge" (the first new source)
+when sources were created; Done + "Try it in chat" (a new chat with no sources
+picked) when only tools were turned on; outline "Sync content" (the sync step
+in place, on the account just connected) + Done when nothing syncs yet. With several accounts and none chosen, the
 first setup field is an account Select. The pickers (repositories, Linear,
 SharePoint / Confluence / Drive files) are one recipe: a search on
 `labelSurface="card"`, then an `outline padding="none" overflow-hidden` Card

@@ -1936,7 +1936,7 @@
         "tools": "Herramientas de esta conexión",
         "noAccounts": "Aún no hay ninguna cuenta conectada.",
         "failed": "No se pudo cargar esta conexión.",
-        "lastSync": "Sincronizado {{date}} · {{frequency}}",
+        "lastSync": "Sincronizado {{when}}",
         "paused": "Sincronización en pausa",
         "toolOn": "Activada",
         "toolOff": "Desactivada",
@@ -1945,7 +1945,7 @@
         "keyEnding": "Clave {{hint}}",
         "syncMore": "Sincronizar más contenido",
         "refreshTools": "Actualizar herramientas",
-        "noSources": "Aún no se ha sincronizado nada desde esta conexión.",
+        "noSources": "Aún no hay nada sincronizado",
         "remove": "Eliminar",
         "refreshed": "Herramientas actualizadas: {{added}} añadidas, {{removed}} eliminadas.",
         "refreshFailed": "No se pudieron actualizar las herramientas.",
@@ -1960,7 +1960,12 @@
         "addToolsFailed": "No se pudieron añadir las herramientas. Inténtalo de nuevo.",
         "rename": "Cambiar nombre",
         "toolsHint": "«Preguntar antes» te pregunta en el chat. Los cambios por API, widget y enlace se permiten por agente en Access details.",
-        "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo."
+        "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo.",
+        "noSourcesHint": "Elige contenido de {{name}} para añadirlo a Conocimiento.",
+        "indexing": "Indexando",
+        "firstSyncStarted": "Primera sincronización iniciada {{time}}",
+        "sourceMenu": "Acciones de la fuente",
+        "syncStarting": "Iniciando la sincronización…"
       },
       "permission": {
         "always": "Permitir",
@@ -2042,13 +2047,18 @@
         "accountNameHint": "Se muestra a ti y a la IA para distinguir las cuentas; por ejemplo, Bot de alertas.",
         "syncToKnowledge": "Sincronizar en Conocimiento",
         "syncToKnowledgeDescription": "Elige contenido de {{name}} para que las respuestas lo busquen. Desactivado, solo se conecta; puedes sincronizar más tarde desde Conectores.",
-        "syncLater": "Aún no se sincroniza nada en Conocimiento. Para añadir contenido, abre {{name}} en Conectores y elige Sincronizar más contenido.",
+        "syncLater": "Aún no se sincroniza nada en Conocimiento.",
         "retrievalSettings": "Configuración avanzada de recuperación",
         "chooseWhatToSetUpFor": "Elige qué configurar para {{name}}",
         "chooseWhatToSyncFrom": "Elige qué sincronizar desde {{name}}",
         "signedInAs": "Sesión iniciada como {{account}}.",
         "finishSetup": "Terminar la configuración",
-        "account": "Cuenta"
+        "account": "Cuenta",
+        "syncChoice": "Cómo usar {{name}}",
+        "syncNow": "Sincronizar contenido ahora",
+        "syncNowDescription": "Elige contenido de {{name}} y añádelo a Conocimiento.",
+        "justConnect": "Solo conectar",
+        "justConnectDescription": "Aún no se añade nada. Sincroniza contenido más tarde desde Conectores, cuando haga falta."
       },
       "remove": {
         "title": "¿Eliminar \"{{name}}\"?",
@@ -2179,7 +2189,9 @@
         "notice_one": "La descripción de {{formatted}} acción parece contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísala en Personalizar antes de permitirla.",
         "notice_many": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas.",
         "notice_other": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas."
-      }
+      },
+      "syncContent": "Sincronizar contenido",
+      "openInKnowledge": "Abrir en Conocimiento"
     },
     "insights": {
       "label": "Información"
