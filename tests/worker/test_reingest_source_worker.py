@@ -306,3 +306,58 @@ class TestReingestTakesTheIndexLock:
         assert result["status"] == "skipped" and result["reason"] == "gone"
         assert quiet_reingest["events"][-1][1]["reason"] == "gone"
         quiet_reingest["storage"].is_directory.assert_not_called()
+
+
+@pytest.mark.unit
+class TestReingestRefusesAWiki:
+    """An upload converted to a wiki keeps its files; a reingest would swap the wiki's pages for them."""
+
+    def _wiki(self, pg_conn):
+        return SourcesRepository(pg_conn).create(
+            "handbook", user_id="alice", type="local", retriever="classic",
+            file_path="inputs/alice/handbook", config={"kind": "wiki"},
+            directory_structure={
+                "report.md": {"type": "text/markdown", "size_bytes": 10, "token_count": 5},
+                "notes.md": {"type": "text/markdown", "size_bytes": 10, "token_count": 5},
+            },
+            tokens="10",
+        )
+
+    def test_a_wiki_is_refused(self, pg_conn, patch_worker_db, task_self, quiet_reingest):
+        from docsgpt import worker
+
+        src = self._wiki(pg_conn)
+        task_self.request.id = "reingest-wiki"
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "wiki"
+        kind, payload = quiet_reingest["events"][-1]
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "wiki" and payload["operation"] == "reingest" and payload["error"]
+        assert payload["task_id"] == "reingest-wiki"
+        quiet_reingest["storage"].is_directory.assert_not_called()
+        row = SourcesRepository(pg_conn).get(str(src["id"]), "alice")
+        assert sorted(row["directory_structure"]) == ["notes.md", "report.md"] and row["tokens"] == "10"
+
+    def test_a_conversion_that_finished_while_waiting_is_refused(
+        self, pg_conn, patch_worker_db, task_self, quiet_reingest, monkeypatch,
+    ):
+        from contextlib import contextmanager
+
+        from docsgpt import worker
+
+        src = _local_source(pg_conn)
+
+        @contextmanager
+        def converted_while_waiting(source_id, **kwargs):
+            SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"config": {"kind": "wiki"}})
+            yield
+
+        monkeypatch.setattr(worker, "source_index_lock", converted_while_waiting)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "wiki"
+        assert quiet_reingest["events"][-1][1]["reason"] == "wiki"
+        quiet_reingest["storage"].is_directory.assert_not_called()

@@ -1000,6 +1000,7 @@ def ingest_worker(
 
 # Why a source can't be re-ingested, as its failed event says it.
 _REINGEST_NO_FILES = "This source keeps no files to re-ingest; sync it to rebuild it"
+_REINGEST_WIKI = "This source is a wiki now; its pages are edited in place and it isn't re-ingested"
 
 
 def reingest_source_worker(self, source_id, user):
@@ -1032,6 +1033,8 @@ def reingest_source_worker(self, source_id, user):
         source's index lock (``source_index_lock``), so it takes turns with a
         sync or a Website page change; a source busy past the wait, or
         deleted meanwhile, is skipped the same way (``busy`` / ``gone``).
+        A wiki (an upload converted to one keeps its files) is refused too
+        (``wiki``): its pages would be replaced by the files' chunks.
     """
     # Declared at the function scope so the outer except can include
     # ``name`` in the failed event payload when the failure happens
@@ -1077,6 +1080,8 @@ def reingest_source_worker(self, source_id, user):
         source_name = source.get("name") or ""
         if not source.get("file_path"):
             return _not_run("no_files", _REINGEST_NO_FILES)
+        if _is_wiki_config(source.get("config")):
+            return _not_run("wiki", _REINGEST_WIKI)
 
         # Publish ``queued`` *after* canonicalising ``source_id`` so the
         # event references the same id as the source row. Trade-off
@@ -1115,6 +1120,9 @@ def reingest_source_worker(self, source_id, user):
             return _not_run("gone", _SYNC_SKIP_MESSAGES["gone"])
         if not source.get("file_path"):
             return _not_run("no_files", _REINGEST_NO_FILES)
+        if _is_wiki_config(source.get("config")):
+            # Converted while this waited: the wiki's pages are the source now.
+            return _not_run("wiki", _REINGEST_WIKI)
         # Re-chunk with the source's persisted config (classic defaults
         # when absent/empty), keeping reingest consistent with ingest.
         cfg = SourceConfig.parse(source.get("config"))
