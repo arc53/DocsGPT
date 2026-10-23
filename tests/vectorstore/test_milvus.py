@@ -113,6 +113,25 @@ class TestMilvusStore:
         assert populated.delete_chunks_by_source_path("db.txt") == 1
         assert len(populated.get_chunks()) == 2
 
+    def test_a_chunk_of_another_source_is_not_deleted(self, populated, tmp_path):
+        from docsgpt.vectorstore.milvus import MilvusStore
+
+        with patch(
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=_FakeEmbeddings(),
+        ), patch("docsgpt.vectorstore.milvus.settings") as mock_settings:
+            mock_settings.EMBEDDINGS_NAME = "test_model"
+            mock_settings.MILVUS_COLLECTION_NAME = "test_collection"
+            mock_settings.MILVUS_URI = str(tmp_path / "milvus.db")
+            mock_settings.MILVUS_TOKEN = ""
+            other = MilvusStore(source_id="src-B", embeddings_key="k")
+        other._client = populated._client
+        [b_id] = other.add_texts(["Source B's notes."], [{"source": "b.txt"}])
+
+        assert populated.delete_chunk(b_id) is False
+        assert populated.delete_chunks([b_id]) == 0
+        assert [c["doc_id"] for c in other.get_chunks()] == [b_id]
+
     def test_delete_index_removes_only_this_source(self, populated):
         from docsgpt.vectorstore.milvus import MilvusStore
 

@@ -132,6 +132,12 @@ class TestFaissStore:
         chunk_id = populated.add_chunk("Redis caches things.", {"source": "cache.txt", "source_id": "other"})
         assert populated.documents[chunk_id]["metadata"] == {"source": "cache.txt", "source_id": "src"}
 
+    def test_delete_chunk_with_unknown_id_is_false(self, populated):
+        with patch.object(populated, "_save_to_storage") as save:
+            assert populated.delete_chunk("nope") is False
+        save.assert_not_called()
+        assert len(populated.get_chunks()) == 3
+
     def test_delete_index_with_unknown_id_raises(self, populated):
         with pytest.raises(ValueError, match="not found in index"):
             populated.delete_index(["nope"])

@@ -163,6 +163,51 @@ class TestQdrantStore:
         assert store.save_local() is None
 
 
+@pytest.fixture
+def two_sources(populated):
+    """``populated`` (src-A) plus src-B in the same collection."""
+    from docsgpt.vectorstore.qdrant import QdrantStore
+
+    with patch(
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
+        return_value=_FakeEmbeddings(),
+    ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
+        _settings(mock_settings)
+        other = QdrantStore(source_id="src-B", embeddings_key="k")
+    other._client = populated._client
+    [b_id] = other.add_texts(["Source B's private database notes."], [{"source": "b.txt"}])
+    return populated, other, b_id
+
+
+@pytest.mark.unit
+class TestQdrantChunkMutationsStayInTheirSource:
+    """A chunk id names a point in a collection shared by every source; a store may only change its own."""
+
+    def test_delete_chunk_of_another_source_is_refused(self, two_sources):
+        store_a, store_b, b_id = two_sources
+
+        assert store_a.delete_chunk(b_id) is False
+        assert [c["doc_id"] for c in store_b.get_chunks()] == [b_id]
+
+    def test_delete_chunk_of_a_missing_id_is_false(self, populated):
+        assert populated.delete_chunk("00000000-0000-0000-0000-000000000000") is False
+
+    def test_delete_chunks_counts_only_this_sources(self, two_sources):
+        store_a, store_b, b_id = two_sources
+        own = store_a.get_chunks()[0]["doc_id"]
+
+        assert store_a.delete_chunks([own, b_id]) == 1
+        assert own not in [c["doc_id"] for c in store_a.get_chunks()]
+        assert [c["doc_id"] for c in store_b.get_chunks()] == [b_id]
+
+    def test_update_chunk_of_another_source_is_refused(self, two_sources):
+        store_a, store_b, b_id = two_sources
+
+        with pytest.raises(KeyError):
+            store_a.update_chunk(b_id, "PWNED", {})
+        assert [c["text"] for c in store_b.get_chunks()] == ["Source B's private database notes."]
+
+
 @pytest.mark.unit
 class TestQdrantClientKwargs:
     def test_unset_settings_are_omitted(self):

@@ -342,6 +342,38 @@ def _fake_bson():
 
 
 @pytest.mark.unit
+class TestMongoDBChunkDeletesStayInTheirSource:
+    """Every source shares one collection; a store deletes only its own chunks."""
+
+    def test_delete_chunk_filters_on_the_source(self):
+        store, mock_collection, _ = _make_mongodb_store(source_id="src1")
+        mock_collection.delete_one.return_value = Mock(deleted_count=0)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunk("abc") is False
+
+        mock_collection.delete_one.assert_called_once_with({"_id": ("oid", "abc"), "source_id": "src1"})
+
+    def test_delete_chunks_is_one_scoped_delete(self):
+        store, mock_collection, _ = _make_mongodb_store(source_id="src1")
+        mock_collection.delete_many.return_value = Mock(deleted_count=1)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunks(["abc", "def", "abc"]) == 1
+
+        mock_collection.delete_many.assert_called_once_with(
+            {"_id": {"$in": [("oid", "abc"), ("oid", "def")]}, "source_id": "src1"}
+        )
+
+    def test_delete_chunks_with_a_failing_store_counts_nothing(self):
+        store, mock_collection, _ = _make_mongodb_store(source_id="src1")
+        mock_collection.delete_many.side_effect = Exception("down")
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunks(["abc"]) == 0
+
+
+@pytest.mark.unit
 class TestMongoDBVectorStoreUpdateChunk:
     def _existing(self, **extra):
         return {

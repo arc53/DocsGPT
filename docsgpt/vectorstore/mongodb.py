@@ -292,12 +292,42 @@ class MongoDBVectorStore(BaseVectorStore):
         return chunk_id
 
     def delete_chunk(self, chunk_id):
+        """Delete one of this source's chunks by id.
+
+        The collection holds every source, so the delete is filtered on this
+        source's id: another source's chunk is not touched.
+
+        Returns:
+            bool: False when this source has no such chunk or the delete
+            failed (logged).
+        """
         try:
             from bson.objectid import ObjectId
 
             object_id = ObjectId(chunk_id)
-            result = self._collection.delete_one({"_id": object_id})
+            result = self._collection.delete_one({"_id": object_id, "source_id": self._source_id})
             return result.deleted_count > 0
         except Exception as e:
             logging.error(f"Error deleting chunk: {e}", exc_info=True)
             return False
+
+    def delete_chunks(self, chunk_ids) -> int:
+        """Delete several of this source's chunks in one ``delete_many``.
+
+        Args:
+            chunk_ids: Ids to delete; other sources' and missing ids are skipped.
+
+        Returns:
+            int: How many were deleted; 0 when the delete failed (logged).
+        """
+        try:
+            from bson.objectid import ObjectId
+
+            object_ids = [ObjectId(chunk_id) for chunk_id in dict.fromkeys(str(c) for c in chunk_ids)]
+            if not object_ids:
+                return 0
+            result = self._collection.delete_many({"_id": {"$in": object_ids}, "source_id": self._source_id})
+            return result.deleted_count
+        except Exception as e:
+            logging.error(f"Error deleting chunks: {e}", exc_info=True)
+            return 0

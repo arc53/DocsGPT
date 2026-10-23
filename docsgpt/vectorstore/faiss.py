@@ -516,11 +516,8 @@ class FaissStore(BaseVectorStore):
         self.index_to_docstore_id = dict(enumerate(remaining + [chunk_id]))
 
     def delete_chunk(self, chunk_id: str) -> bool:
-        """Delete a chunk and save to storage."""
-        if chunk_id not in self.documents:
-            raise ValueError(f"Chunk ids not found in index: {[chunk_id]}")
-        self.delete_chunks([chunk_id])
-        return True
+        """Delete a chunk and save to storage; False when this index has no such chunk."""
+        return self.delete_chunks([chunk_id]) == 1
 
     def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
         """Delete several chunks and save to storage once.
