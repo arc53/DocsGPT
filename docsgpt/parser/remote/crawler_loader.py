@@ -1,7 +1,7 @@
 import logging
 from collections import deque
 from typing import Callable, List, Optional, Union
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urldefrag, urljoin, urlsplit
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
 from docsgpt.parser.remote.page_content import (
@@ -14,6 +14,7 @@ from docsgpt.parser.remote.page_content import (
     host_with_port,
     html_soup,
     is_html,
+    link_base,
     note_requested_url,
     page_document,
     page_key,
@@ -176,14 +177,18 @@ class CrawlerLoader(BaseRemote):
                 logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)
                 continue
 
-            # Queue the page's links in document order. A malformed href
+            # Queue the page's links in document order, resolved as a browser
+            # does: against the page's ``<base href>``, the href stripped of
+            # surrounding whitespace, and without its fragment (a spot on the
+            # page, never part of the stored address). A malformed href
             # (``http://[bad``) makes urljoin or the key parse raise; skip it
             # rather than abort the crawl.
+            base = link_base(soup, page_url)
             for a in soup.find_all('a', href=True):
                 if len(queue) >= max_queue:
                     break
                 try:
-                    link = urljoin(page_url, a['href'])
+                    link = urldefrag(urljoin(base, str(a['href']).strip()))[0]
                     link_key = page_key(link)
                 except ValueError:
                     continue

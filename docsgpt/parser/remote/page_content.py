@@ -638,6 +638,28 @@ def _is_bare_link(
     return text == link.get_text(" ", strip=True)
 
 
+def link_base(soup: BeautifulSoup, page_url: str) -> str:
+    """The address a page's relative links resolve against: its first ``<base href>``, else its own.
+
+    Args:
+        soup: The parsed page.
+        page_url: The page's address.
+
+    Returns:
+        The ``<base href>`` made absolute against ``page_url`` when it is an
+        http(s) address with a host; ``page_url`` otherwise.
+    """
+    base = soup.find("base", href=True)
+    if base is None:
+        return page_url
+    try:
+        resolved = urljoin(page_url, str(base["href"]).strip())
+        parts = urlsplit(resolved)
+    except ValueError:
+        return page_url
+    return resolved if parts.scheme in ("http", "https") and parts.hostname else page_url
+
+
 def _text_length(element: Tag) -> int:
     """How many characters of visible text an element holds."""
     return len(element.get_text(" ", strip=True))
@@ -928,7 +950,8 @@ def _extract(soup: BeautifulSoup, url: str, keep_links: bool, plain_when_too_dee
 
     Args:
         soup: The parsed page; changed in place.
-        url: The page's address, for resolving relative links.
+        url: The page's address, for resolving relative links (unless its
+            ``<base href>`` names another; see ``link_base``).
         keep_links: Keep the URL of links that sit inside a sentence.
         plain_when_too_deep: Keep the plain text of a page nested too deep to
             convert; ``False`` raises ``MarkupTooDeepError``.
@@ -941,6 +964,7 @@ def _extract(soup: BeautifulSoup, url: str, keep_links: bool, plain_when_too_dee
     """
     title = _page_title(soup)
     language = (soup.html.get("lang") if soup.html else None) or None
+    base_url = link_base(soup, url)
     root = _pick_root(soup)
     title = title or _first_heading(root)
     # Measured once the chrome is gone: a long menu beside a short article
@@ -952,7 +976,7 @@ def _extract(soup: BeautifulSoup, url: str, keep_links: bool, plain_when_too_dee
     _images_to_alt_text(root)
     _listify_link_runs(soup, root)
     markdown = soup_to_markdown(
-        root, converter=_LinkConverter(url, keep_links), plain_when_too_deep=plain_when_too_deep,
+        root, converter=_LinkConverter(base_url, keep_links), plain_when_too_deep=plain_when_too_deep,
     )
 
     if len(markdown) < _MIN_EXTRACT_SHARE * len(plain):

@@ -203,6 +203,16 @@ class TestLinks:
         assert "[Next page]" not in page.text
         assert "Next page" in page.text
 
+    def test_keep_links_resolves_against_the_page_base_href(self):
+        body = _page(
+            f"<main>{ARTICLE}<p>Read the <a href='setup'>setup page</a> first, then the rest.</p></main>",
+            head="<title>T</title><base href='https://docs.example.com/v2/'>",
+        )
+
+        page = extract_page(body, URL, keep_links=True)
+
+        assert "[setup page](https://docs.example.com/v2/setup)" in page.text
+
     def test_a_destination_with_parentheses_or_spaces_is_kept_whole(self):
         prose = (
             "<p>See <a href='https://en.wikipedia.org/wiki/Foo_(bar)'>Foo</a> and "

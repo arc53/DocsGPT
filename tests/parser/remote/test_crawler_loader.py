@@ -482,3 +482,52 @@ def test_a_non_html_page_that_fails_to_extract_is_still_skipped():
 
     assert docs == []
     assert fetched == ["http://example.com/notes.txt"]
+
+
+def test_links_resolve_against_the_page_base_href():
+    _, fetched = _crawl({
+        "http://example.com/": DummyResponse(
+            "<html><head><base href='/docs/'></head><body><main><h1>Home</h1>"
+            "<p>Read the <a href='a'>guide</a>.</p></main></body></html>"
+        ),
+        "http://example.com/docs/a": _guide("A"),
+    })
+
+    assert fetched == ["http://example.com/", "http://example.com/docs/a"]
+
+
+def test_a_base_href_that_is_not_a_web_address_is_ignored():
+    _, fetched = _crawl({
+        "http://example.com/": DummyResponse(
+            "<html><head><base href='javascript:void(0)'></head><body><main><h1>Home</h1>"
+            "<p>Read the <a href='a'>guide</a>.</p></main></body></html>"
+        ),
+        "http://example.com/a": _guide("A"),
+    })
+
+    assert fetched == ["http://example.com/", "http://example.com/a"]
+
+
+def test_an_href_with_surrounding_whitespace_is_read_without_it():
+    # Browsers strip it: ``/a `` is ``/a``, not ``/a%20``.
+    _, fetched = _crawl({
+        "http://example.com/": DummyResponse(
+            "<html><body><main><h1>Home</h1><p>Read <a href=' /a \n'>A</a>.</p></main></body></html>"
+        ),
+        "http://example.com/a": _guide("A"),
+    })
+
+    assert fetched == ["http://example.com/", "http://example.com/a"]
+
+
+def test_a_crawled_page_is_stored_without_the_link_fragment():
+    docs, fetched = _crawl({
+        "http://example.com/": DummyResponse(
+            "<html><body><main><h1>Home</h1><p>Read <a href='/a#install'>A</a>.</p></main></body></html>"
+        ),
+        "http://example.com/a": _guide("A"),
+    })
+
+    assert fetched == ["http://example.com/", "http://example.com/a"]
+    assert docs[-1].extra_info["source"] == "http://example.com/a"
+    assert docs[-1].extra_info["requested_urls"] == []
