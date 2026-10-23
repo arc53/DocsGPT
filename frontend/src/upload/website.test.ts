@@ -256,6 +256,26 @@ describe('pageKey', () => {
       'https://docs.x.io/p?name=caf%C3%A9&x=(1)',
       'docs.x.io/p?name=caf%C3%A9&x=%281%29',
     ],
+    // The path's percent-encoding: non-ASCII, spaces and control characters
+    // encoded, an unreserved character decoded, any other hex in capitals;
+    // an encoded slash stays encoded.
+    ['https://x.io/café', 'x.io/caf%C3%A9'],
+    ['https://x.io/caf%C3%A9', 'x.io/caf%C3%A9'],
+    ['https://x.io/caf%c3%a9', 'x.io/caf%C3%A9'],
+    ['https://x.io/a~b', 'x.io/a~b'],
+    ['https://x.io/a%7Eb', 'x.io/a~b'],
+    ['https://x.io/a%7eb', 'x.io/a~b'],
+    ['https://x.io/a b', 'x.io/a%20b'],
+    ['https://x.io/a%20b', 'x.io/a%20b'],
+    ['https://x.io/%70rivate/', 'x.io/private'],
+    ['https://x.io/docs/..%2Fadmin', 'x.io/docs/..%2Fadmin'],
+    ['https://x.io/docs/..%2fadmin', 'x.io/docs/..%2Fadmin'],
+    ['https://x.io/a%2Eb', 'x.io/a.b'],
+    ['https://x.io/a%zz', 'x.io/a%zz'],
+    // The host in its ASCII (IDNA) form.
+    ['https://bücher.de/a', 'xn--bcher-kva.de/a'],
+    ['https://xn--bcher-kva.de/a', 'xn--bcher-kva.de/a'],
+    ['https://www.Bücher.de:8080/a', 'xn--bcher-kva.de:8080/a'],
   ])('keys %s as the backend does', (url, key) => {
     expect(pageKey(url)).toBe(key);
   });

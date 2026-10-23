@@ -255,6 +255,45 @@ function removeDotSegments(path: string): string {
   return resolved.join('/') || '/';
 }
 
+/** A lone UTF-16 surrogate, which can't be encoded; Python replaces it too. */
+const LONE_SURROGATE =
+  /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+/** RFC 3986's unreserved characters: the same page written plain or encoded. */
+const UNRESERVED = /^[A-Za-z0-9\-._~]$/;
+
+/**
+ * A path's percent-encoding as the backend's key writes it: non-ASCII,
+ * spaces and control characters encoded (UTF-8), then every `%XX` decoded
+ * when it is an unreserved character and in capitals otherwise, so `%7e`
+ * is `~` and `%c3%a9` is `%C3%A9`. A `%2F` stays encoded (it isn't a
+ * segment break), and a `%` without two hex digits stays as written.
+ */
+function normalizePercent(path: string): string {
+  return (
+    path
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000- \u007f-￿]+/g, (run) =>
+        encodeURIComponent(run.replace(LONE_SURROGATE, '�')),
+      )
+      .replace(/%([0-9a-f]{2})/gi, (triplet, hex: string) => {
+        const char = String.fromCharCode(parseInt(hex, 16));
+        return UNRESERVED.test(char) ? char : triplet.toUpperCase();
+      })
+  );
+}
+
+/** A host name in its ASCII (IDNA) form, as `bücher.de` is `xn--bcher-kva.de`. */
+function asciiHost(host: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (!/[^\u0000-\u007f]/.test(host)) return host;
+  try {
+    return new URL(`http://${host}/`).hostname;
+  } catch {
+    return host;
+  }
+}
+
 /** The port a scheme leaves out of the key. */
 const DEFAULT_PORTS: Record<string, number> = { http: 80, https: 443 };
 
@@ -281,10 +320,12 @@ function splitHost(netloc: string): [string, number | null] {
  * (`page_content.page_key` over `base.normalize_page_url`): the scheme,
  * `www.`, the host's case and trailing dots, the scheme's default port (443
  * for https, 80 for http), a trailing slash, the fragment and the order of
- * the query's parameters don't count. Any other port does, and `.` and `..`
- * path segments (a dot also written `%2e`) resolve, so `/docs/../a` is `/a`;
- * the rest of the path stays as written. Split the way Python's `urlsplit`
- * does, not with `URL`, which would rewrite the path.
+ * the query's parameters don't count. Any other port does. The host is in
+ * its ASCII (IDNA) form; the path's percent-encoding is normalised (see
+ * {@link normalizePercent}), and its `.` and `..` segments (a dot also
+ * written `%2e`) resolve, so `/docs/../a` is `/a`; the rest of the path stays
+ * as written. Split the way Python's `urlsplit` does, not with `URL`, which
+ * would rewrite the path.
  */
 export function pageKey(value: string): string {
   let rest = value.trim();
@@ -305,12 +346,13 @@ export function pageKey(value: string): string {
   const [hostname, port] = splitHost(netloc);
   let host = hostname.toLowerCase().replace(/\.+$/, '');
   if (host.startsWith('www.')) host = host.slice(4);
+  host = asciiHost(host);
   // An IPv6 host keeps its brackets, as the backend's key does.
   if (host.includes(':')) host = `[${host}]`;
   const defaultPort = scheme ? DEFAULT_PORTS[scheme[1].toLowerCase()] : null;
   if (port !== null && port !== defaultPort) host = `${host}:${port}`;
 
-  const key = `${host}${removeDotSegments(path).replace(/\/+$/, '')}`;
+  const key = `${host}${removeDotSegments(normalizePercent(path)).replace(/\/+$/, '')}`;
   return query ? `${key}?${query}` : key;
 }
 
