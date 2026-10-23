@@ -680,8 +680,12 @@ class TestGraphStoreLive:
             # The shared edge keeps the chunk it still comes from.
             assert self._edges(store, source_id) == [("ada", "carol", ["c1"])]
             assert store.get_chunk_ids_for_nodes(source_id, [ada["id"]]) == {ada["id"]: ["c1"]}
-            # The chunk's checkpoint goes, so a new chunk of that id would be extracted.
-            assert store.get_progress(source_id) == {"c1": "done"}
+            # Each deleted chunk's checkpoint becomes a tombstone, so a build that
+            # listed it before the delete skips it rather than writing it back.
+            assert store.get_progress(source_id) == {
+                "c1": "done", "c2": "deleted", "never-extracted": "deleted",
+            }
+            assert store.pending_chunks(source_id, ["c1", "c2", "never-extracted"]) == []
             # Another source's chunk of the same id is untouched.
             assert store.get_node_by_normalized(other, "bob") is not None
             assert store.get_progress(other) == {"c2": "done"}
