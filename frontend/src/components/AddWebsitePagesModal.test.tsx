@@ -276,6 +276,34 @@ describe('AddWebsitePagesModal', () => {
     expect(document.body.textContent).not.toContain('Traceback');
   });
 
+  it('keeps the dialog open while the add is in flight: Cancel and Esc wait for it', async () => {
+    let resolve!: (value: unknown) => void;
+    service.addWebsitePages.mockReturnValue(new Promise((r) => (resolve = r)));
+    await submit();
+    const cancel = buttons().find((b) => b.textContent === 'cancel')!;
+    expect(cancel.disabled).toBe(true);
+    await act(async () => {
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // A refusal still lands in the open dialog.
+    await act(async () =>
+      resolve(
+        reply(400, { success: false, code: 'page_limit', max_pages: 100 }),
+      ),
+    );
+    expect(document.body.textContent).toContain(
+      'settings.sources.website.pageLimit {"count":100}',
+    );
+    expect(onQueued).not.toHaveBeenCalled();
+    expect(buttons().find((b) => b.textContent === 'cancel')!.disabled).toBe(
+      false,
+    );
+  });
+
   it('says the pages are already in the source', async () => {
     service.addWebsitePages.mockResolvedValue(
       reply(400, {

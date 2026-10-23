@@ -119,7 +119,10 @@ export default function AddWebsitePagesModal({
   return (
     <Modal
       open={true}
-      onOpenChange={(open) => !open && onClose()}
+      // Once sent, the add can't be called back: the dialog stays until the
+      // server answers, so a refusal has somewhere to show.
+      onOpenChange={(open) => !open && !pending && onClose()}
+      isPerformingTask={pending}
       title={t('settings.sources.website.addPages')}
       description={sourceName}
       size="lg"
@@ -127,6 +130,7 @@ export default function AddWebsitePagesModal({
         <ModalActions
           cancelLabel={t('cancel')}
           onCancel={onClose}
+          cancelProps={{ disabled: pending }}
           submitLabel={t('settings.sources.website.addPages')}
           onSubmit={submit}
           pending={pending}
