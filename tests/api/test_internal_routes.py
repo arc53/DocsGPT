@@ -335,3 +335,39 @@ class TestUploadIndex:
         assert r.status_code == 200
         assert r.json == {"status": "ok"}
         assert fake_storage.save_file.call_count == 2
+
+    def test_faiss_upload_drops_an_older_json_sidecar_first(self, pg_conn):
+        """The upload carries index.faiss and index.pkl only; an index.json left
+        by an earlier page edit belongs to the old index and must go before the
+        new files land, or a load could pair it with them.
+        """
+        app = _make_app()
+        fake_storage = MagicMock()
+        fake_storage.file_exists.return_value = True
+        data = {
+            **self._base_form(source_id="legacy-src-8"),
+            "file_faiss": (io.BytesIO(b"faiss-data"), "index.faiss"),
+            "file_pkl": (io.BytesIO(b"pkl-data"), "index.pkl"),
+        }
+        with patch(
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+        ), patch(
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "faiss"
+        ), patch(
+            "docsgpt.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
+        ), patch(
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), _patch_db(pg_conn):
+            with app.test_client() as c:
+                r = c.post(
+                    "/api/upload_index",
+                    headers=_AUTH,
+                    data=data,
+                    content_type="multipart/form-data",
+                )
+        assert r.status_code == 200
+        calls = [c[0] for c in fake_storage.method_calls if c[0] in ("delete_file", "save_file")]
+        assert calls[0] == "delete_file"
+        assert fake_storage.delete_file.call_args[0][0].endswith("/index.json")
+        assert fake_storage.save_file.call_count == 2

@@ -160,6 +160,11 @@ def upload_index_files():
         # a settings change (or the Knowledge listing's row lock) would wait
         # on it. Two jobs on one index never save at once: the workers hold
         # the source's index lock (source_index_lock) across their upload.
+        # The upload carries no index.json, so one an earlier page edit wrote
+        # belongs to the old index: drop it first, so a load reads the pickle.
+        json_sidecar = f"{index_base_path}/index.json"
+        if storage.file_exists(json_sidecar):
+            storage.delete_file(json_sidecar)
         storage.save_file(faiss_files[0], f"{index_base_path}/index.faiss")
         storage.save_file(faiss_files[1], f"{index_base_path}/index.pkl")
     with db_session() as conn:
