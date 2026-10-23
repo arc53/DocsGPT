@@ -551,6 +551,52 @@ describe('TreeBrowser', () => {
     expect(container.querySelector('table')).not.toBeNull();
   });
 
+  it('a refresh that drops the open folder steps up to the deepest one left', async () => {
+    const controllerRef: { current: TreeBrowserController | null } = {
+      current: null,
+    };
+    await render(
+      {
+        ...NESTED,
+        'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
+      },
+      { controllerRef } as Partial<React.ComponentProps<typeof TreeBrowser>>,
+    );
+    await openRow('legal');
+    await openRow('2024');
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'legal', '2024']);
+
+    // The folder's last page was removed: the server lists neither folder.
+    state.structure = {
+      'readme.md': NESTED['readme.md'],
+      'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
+    };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    expect(crumbs()).toEqual([SOURCES, 'Contracts']);
+    expect(rows()).toContain('readme.md');
+
+    // Only the inner folder went: its parent stays open.
+    state.structure = {
+      ...NESTED,
+      'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
+    };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    await openRow('legal');
+    await openRow('2024');
+    state.structure = {
+      legal: { 'kept.md': { type: 'md', size_bytes: 1, token_count: 1 } },
+      'readme.md': NESTED['readme.md'],
+    };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'legal']);
+  });
+
   it('reloadFile lists the open file again and closes its open chunk', async () => {
     const controllerRef: { current: TreeBrowserController | null } = {
       current: null,

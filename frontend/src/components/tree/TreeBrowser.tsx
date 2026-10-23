@@ -466,6 +466,22 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     if (!fileAt(directoryStructure, selectedFile.id)) setSelectedFile(null);
   }, [directoryStructure, selectedFile]);
 
+  // A folder a refresh no longer lists (its last page removed, a sync)
+  // steps up to the deepest folder still there, so the crumbs and the table
+  // never show a folder that is gone.
+  useEffect(() => {
+    if (!directoryStructure || typeof directoryStructure !== 'object') return;
+    let node: unknown = directoryStructure;
+    let depth = 0;
+    for (const part of currentPath) {
+      const next = (node as DirectoryStructure)[part];
+      if (!next || typeof next !== 'object' || (next as FileNode).type) break;
+      node = next;
+      depth += 1;
+    }
+    if (depth < currentPath.length) setCurrentPath(currentPath.slice(0, depth));
+  }, [directoryStructure, currentPath]);
+
   const byline = useMemo(() => {
     if (embedded || !directoryStructure) return undefined;
     let structure: unknown = directoryStructure;
