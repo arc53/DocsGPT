@@ -594,3 +594,102 @@ class TestSitemapFormats:
 
         # The whole tree of 40k entries takes several times the 1.5 MB file.
         assert peak < len(xml)
+
+    def test_junk_elements_are_not_kept_while_parsing(self):
+        from docsgpt.parser.remote import sitemap_loader
+
+        # Every element is dropped once read, not only <url>: a 47 KB gzip of
+        # millions of <x/> grew a tree past a gigabyte.
+        junk = b"<x>text</x><lastmod>2024</lastmod>" * 1000
+        xml = (
+            f'<?xml version="1.0"?><urlset xmlns="{NS}">'.encode()
+            + junk
+            + b"<url><loc>https://e.io/a</loc>" + junk + b"</url>"
+            + b"<url><loc>https://e.io/b</loc></url></urlset>"
+        )
+        real_iterparse = sitemap_loader.ET.iterparse
+        tree_sizes = []
+
+        def tracking_iterparse(*args, **kwargs):
+            root = None
+            for event, element in real_iterparse(*args, **kwargs):
+                root = element if root is None else root
+                if event == "end" and sitemap_loader._local_name(element.tag) == "url":
+                    tree_sizes.append(sum(1 for _ in root.iter()))
+                yield event, element
+
+        with patch.object(sitemap_loader.ET, "iterparse", tracking_iterparse):
+            assert SitemapLoader()._parse_sitemap(xml) == ["https://e.io/a", "https://e.io/b"]
+
+        # The root and the entries the parser has read ahead; nothing earlier.
+        assert len(tree_sizes) == 2 and max(tree_sizes) <= 6
+
+    def test_the_tree_is_released_before_child_sitemaps_are_walked(self):
+        import gc
+        import weakref
+
+        from docsgpt.parser.remote import sitemap_loader
+
+        index = "https://e.io/index.xml"
+        child = "https://e.io/child.xml"
+        serve = _serve({index: _sitemap_index(child), child: _urlset("https://e.io/a")})
+        real_iterparse = sitemap_loader.ET.iterparse
+        roots = []
+        alive_during_child = []
+
+        def tracking_iterparse(*args, **kwargs):
+            for event, element in real_iterparse(*args, **kwargs):
+                if not roots:
+                    roots.append(weakref.ref(element))
+                yield event, element
+
+        def fake(url, *args, **kwargs):
+            if url == child:
+                gc.collect()
+                alive_during_child.append(roots[0]() is not None)
+            return serve(url, *args, **kwargs)
+
+        with patch.object(sitemap_loader, "fetch_page", fake), \
+                patch.object(sitemap_loader.ET, "iterparse", tracking_iterparse):
+            assert SitemapLoader().collect_urls([index]) == ["https://e.io/a"]
+
+        assert alive_during_child == [False]
+
+    @pytest.mark.parametrize("codec", ["GBK", "Shift_JIS", "EUC-KR", "Big5", "ISO-8859-2"])
+    def test_an_encoding_expat_cannot_read_is_decoded(self, codec):
+        xml = (
+            f'<?xml version="1.0" encoding="{codec}"?><urlset xmlns="{NS}">'
+            "<url><loc>https://e.io/a</loc></url><url><loc>https://e.io/b</loc></url></urlset>"
+        ).encode(codec)
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://e.io/a", "https://e.io/b"]
+
+    def test_a_multibyte_encoding_keeps_its_characters(self):
+        xml = (
+            f"<?xml version='1.0' encoding='Shift_JIS'?><urlset xmlns='{NS}'>"
+            "<url><loc>https://e.io/文書</loc></url></urlset>"
+        ).encode("shift_jis")
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://e.io/文書"]
+
+    def test_an_unknown_encoding_label_is_read_as_utf8(self):
+        xml = (
+            f'<?xml version="1.0" encoding="x-no-such-charset"?><urlset xmlns="{NS}">'
+            "<url><loc>https://e.io/café</loc></url></urlset>"
+        ).encode()
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://e.io/café"]
+
+    def test_a_sitemap_in_an_unreadable_encoding_does_not_stop_the_walk(self):
+        index = "https://e.io/index.xml"
+        bad = "https://e.io/bad.xml"
+        good = "https://e.io/good.xml"
+        fake = _serve({
+            index: _sitemap_index(bad, good),
+            bad: b'<?xml version="1.0" encoding="GBK"?><urlset><url><loc>https://e.io/x</loc></url></urlset>',
+            good: _urlset("https://e.io/ok"),
+        })
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
+            urls = SitemapLoader().collect_urls([index])
+
+        assert urls == ["https://e.io/x", "https://e.io/ok"]

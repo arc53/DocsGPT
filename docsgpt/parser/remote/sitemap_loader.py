@@ -1,11 +1,12 @@
+import codecs
 import io
 import logging
+import re
 import zlib
 from typing import Callable, List, Optional, Set, Union
 
 import defusedxml.ElementTree as ET
 import requests
-from defusedxml import DefusedXmlException
 
 from docsgpt.parser.remote.base import (
     BaseRemote,
@@ -62,6 +63,103 @@ def _gunzip(data: bytes, url: str) -> Optional[bytes]:
         logger.warning(f"Skipping sitemap {url}: inflates past {MAX_SITEMAP_BYTES} bytes")
         return None
     return content
+
+
+# An XML declaration at the start of a document, and the encoding it names.
+_XML_DECLARATION = re.compile(rb"\s*<\?xml\s[^>]{0,512}?\?>")
+_DECLARED_ENCODING = re.compile(rb"""encoding\s*=\s*["']([A-Za-z0-9._:-]{1,64})["']""")
+_UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def _as_utf8(content: bytes, url: str = "") -> bytes:
+    """Sitemap bytes in a form expat reads, whatever encoding they declare.
+
+    expat reads UTF-8, UTF-16 and Latin-1 itself, but refuses multi-byte
+    codecs (GBK, Shift_JIS, EUC-KR, Big5) and unknown labels, which failed
+    the whole ingest. A document declaring anything but UTF-8 is decoded
+    here with the declared codec (UTF-8 when Python doesn't know the label;
+    bad bytes become U+FFFD) and handed on as UTF-8 without its declaration.
+
+    Args:
+        content: The raw sitemap bytes.
+        url: The sitemap's URL, for the log.
+
+    Returns:
+        The bytes as they were when they are UTF-8 (or a BOM or no ASCII
+        declaration says so), else the document re-encoded as UTF-8.
+    """
+    if content.startswith(_UTF8_BOM):
+        return content
+    declaration = _XML_DECLARATION.match(content)
+    encoding = _DECLARED_ENCODING.search(declaration.group(0)) if declaration else None
+    if encoding is None:
+        return content
+    label = encoding.group(1).decode("ascii")
+    try:
+        codec = codecs.lookup(label).name
+    except LookupError:
+        logger.warning(f"Sitemap {url} declares an unknown encoding {label!r}; reading it as UTF-8")
+        codec = None
+    if codec == "utf-8":
+        return content
+    # A declaration readable as ASCII bytes isn't UTF-16 or UTF-32, whatever it says.
+    if codec is None or codec.startswith(("utf-16", "utf-32")):
+        codec = "utf-8"
+    return content[declaration.end():].decode(codec, errors="replace").encode("utf-8")
+
+
+def _read_entries(
+    content: bytes,
+    on_page: Callable[[str], None],
+    on_child: Callable[[str], None],
+    done: Callable[[], bool],
+) -> bool:
+    """Read a sitemap's ``<url>`` and ``<sitemap>`` entries incrementally.
+
+    Every element is dropped from the tree once it is read, whatever its tag,
+    so a 50 MB sitemap (or a small gzip of millions of junk elements) never
+    becomes a large tree. Tags match by local name, whatever the namespace
+    and however it is quoted. The defusedxml parser keeps entities and
+    external references out. XML that stops parsing keeps the entries read
+    before the error.
+
+    Args:
+        content: Raw sitemap XML, in its declared encoding (see ``_as_utf8``).
+        on_page: Called with each ``<url>``'s first ``<loc>``.
+        on_child: Called with each ``<sitemap>``'s first ``<loc>``.
+        done: Checked after each entry; True stops the reading.
+
+    Returns:
+        False when ``done`` stopped the reading, True otherwise.
+    """
+    # [element, the first <loc> read inside it] for each open element.
+    open_elements: List[list] = []
+    try:
+        for event, element in ET.iterparse(io.BytesIO(_as_utf8(content)), events=("start", "end")):
+            if event == "start":
+                open_elements.append([element, ""])
+                continue
+            _, address = open_elements.pop()
+            parent = open_elements[-1] if open_elements else None
+            name = _local_name(element.tag)
+            if name == "loc":
+                if parent is not None and not parent[1] and _local_name(parent[0].tag) in ("url", "sitemap"):
+                    parent[1] = (element.text or "").strip()
+            elif name == "url" and address:
+                on_page(address)
+            elif name == "sitemap" and address:
+                on_child(address)
+            # Earlier siblings are gone, so this is the parent's only child.
+            element.clear()
+            if parent is not None:
+                parent[0].remove(element)
+            if name in ("url", "sitemap") and done():
+                return False
+    except (ET.ParseError, ValueError, LookupError) as e:
+        # ValueError covers defusedxml's refusals and an encoding expat
+        # still won't take: one bad sitemap never fails the ingest.
+        logger.warning(f"Stopped reading a sitemap that could not be parsed: {e}")
+    return True
 
 
 class SitemapLoader(BaseRemote):
@@ -372,34 +470,14 @@ class SitemapLoader(BaseRemote):
             self._collected.add(key)
             urls.append(url)
 
-        # Read incrementally, dropping each entry once it is read, so a 50 MB
-        # sitemap never becomes a 50 MB tree, and stop once the budget is
-        # collected. Tags match by local name, whatever the namespace and
-        # however it is quoted; the bytes go to the parser as they are, so
-        # it honours the declared encoding. The defusedxml parser keeps
-        # entities and external references out.
-        open_elements = []
-        try:
-            for event, element in ET.iterparse(io.BytesIO(sitemap_content), events=("start", "end")):
-                if event == "start":
-                    open_elements.append(element)
-                    continue
-                open_elements.pop()
-                name = _local_name(element.tag)
-                if name not in ("url", "sitemap"):
-                    continue
-                loc = next((child for child in element if _local_name(child.tag) == "loc"), None)
-                address = (loc.text or "").strip() if loc is not None else ""
-                if address and name == "url":
-                    take_page(address)
-                elif address and len(children) < MAX_SITEMAPS_PER_WALK:
-                    children.append(address)
-                if open_elements:
-                    open_elements[-1].remove(element)
-                if remaining() == 0:
-                    return urls
-        except (ET.ParseError, DefusedXmlException) as e:
-            logger.warning(f"Stopped reading a sitemap that could not be parsed: {e}")
+        def take_child(url: str) -> None:
+            if len(children) < MAX_SITEMAPS_PER_WALK:
+                children.append(url)
+
+        # The tree is gone once this returns, so it isn't held while the
+        # child sitemaps are walked.
+        if not _read_entries(sitemap_content, take_page, take_child, lambda: remaining() == 0):
+            return urls
 
         # Check for nested sitemaps
         for nested_sitemap_url in children:
