@@ -682,3 +682,168 @@ class TestFaissEmbedsInBatches:
         save.assert_not_called()
         assert [c["doc_id"] for c in capped.get_chunks()] == before
         assert capped.index.ntotal == 3
+
+
+class _RefusingStorage(LocalStorage):
+    """Local storage that refuses every write of the files named in ``refuse``."""
+
+    def __init__(self, base_dir):
+        super().__init__(base_dir=base_dir)
+        self.refuse = set()
+        self.written = []
+
+    def save_file(self, file_data, path, **kwargs):
+        name = path.rsplit("/", 1)[-1]
+        if name in self.refuse:
+            raise OSError(f"storage refused {name}")
+        self.written.append(name)
+        return super().save_file(file_data, path, **kwargs)
+
+
+def _seed_docs():
+    return [
+        _SeedDoc("The capital of France is Paris.", {"source": "geo.txt"}),
+        _SeedDoc("Postgres is a relational database.", {"source": "db.txt"}),
+        _SeedDoc("Celery runs background tasks.", {"source": "queue.txt"}),
+    ]
+
+
+@pytest.fixture
+def legacy(tmp_path, make_store_on):
+    """Storage holding an index from before index.json: index.faiss and index.pkl only."""
+    storage = _RefusingStorage(str(tmp_path))
+    make_store_on(storage, docs_init=_seed_docs()).save_local()
+    (tmp_path / "indexes" / "src" / "index.json").unlink()
+    storage.written.clear()
+    return storage
+
+
+def _edit_geo(store, text="About celery instead."):
+    store.update_chunk(_ids_by_source(store)["geo.txt"], text, {"source": "geo.txt"})
+
+
+@pytest.mark.unit
+class TestFaissSaveOverAnUnnamedPair:
+    """A pickle is checked on its row count alone, so a save must not replace it while no index.json names the
+    stored index.faiss: an edit keeps the row count and moves rows, and the pair would read silently wrong."""
+
+    def test_a_legacy_index_is_saved_json_first_then_json_last(self, legacy, make_store_on):
+        store = make_store_on(legacy)
+        _edit_geo(store)
+        _edit_geo(store, "Celery again.")
+
+        assert legacy.written == ["index.json", "index.faiss", "index.pkl", "index.pkl", "index.faiss", "index.json"]
+        _assert_rows_match_documents(make_store_on(legacy))
+
+    @pytest.mark.parametrize("refused", ["index.faiss", "index.pkl"])
+    def test_a_save_of_a_legacy_index_that_stops_part_way_reloads_consistently(
+        self, legacy, make_store_on, refused,
+    ):
+        store = make_store_on(legacy)
+        legacy.refuse = {refused}  # the undo's save is refused too
+
+        with pytest.raises(OSError):
+            _edit_geo(store)
+
+        legacy.refuse = set()
+        _assert_rows_match_documents(make_store_on(legacy))
+
+    def test_a_save_after_a_stale_json_that_stops_part_way_reloads_consistently(
+        self, legacy, make_store_on, tmp_path,
+    ):
+        # index.faiss and index.pkl from one save, index.json from an older one: the pickle is what pairs.
+        folder = tmp_path / "indexes" / "src"
+        make_store_on(legacy).save_local()
+        stale_json = (folder / "index.json").read_bytes()
+        _edit_geo(make_store_on(legacy))
+        (folder / "index.json").write_bytes(stale_json)
+        store = make_store_on(legacy)
+        legacy.refuse = {"index.faiss"}
+
+        with pytest.raises(OSError):
+            store.update_chunk(_ids_by_source(store)["db.txt"], "Celery, not a database.", {"source": "db.txt"})
+
+        legacy.refuse = set()
+        reloaded = make_store_on(legacy)
+        _assert_rows_match_documents(reloaded)
+        assert "celery" in reloaded.documents[_ids_by_source(reloaded)["geo.txt"]]["page_content"]
+
+    def test_a_failed_save_is_retried_in_the_order_its_files_allow(self, tmp_path, make_store_on):
+        # Stopped before index.json: index.faiss and index.pkl are the new pair, the json still names the old index.
+        storage = _RefusingStorage(str(tmp_path))
+        make_store_on(storage, docs_init=_seed_docs()).save_local()
+        store = make_store_on(storage)
+        storage.refuse = {"index.json"}
+        with pytest.raises(OSError):
+            _edit_geo(store)
+        storage.refuse = {"index.faiss"}
+
+        with pytest.raises(OSError):
+            store.update_chunk(_ids_by_source(store)["db.txt"], "Celery, not a database.", {"source": "db.txt"})
+
+        storage.refuse = set()
+        _assert_rows_match_documents(make_store_on(storage))
+
+    def test_a_fresh_build_over_a_legacy_index_that_stops_part_way_reloads_consistently(
+        self, legacy, make_store_on,
+    ):
+        rebuilt = make_store_on(legacy, docs_init=list(reversed(_seed_docs())))
+        legacy.refuse = {"index.faiss"}
+
+        with pytest.raises(OSError):
+            rebuilt.save_local()
+
+        legacy.refuse = set()
+        _assert_rows_match_documents(make_store_on(legacy))
+
+
+class _ReadHookStorage(LocalStorage):
+    """Local storage that runs ``hook`` once as the named file is first read: after it for
+    index.faiss (the reader holds the old index), before it for anything else (the reader gets the new file)."""
+
+    def __init__(self, base_dir):
+        super().__init__(base_dir=base_dir)
+        self.hook_on = None
+        self.hook = None
+
+    def get_file(self, path):
+        import io
+
+        name = path.rsplit("/", 1)[-1]
+        if self.hook is None or name != self.hook_on:
+            return super().get_file(path)
+        hook, self.hook = self.hook, None
+        if name != "index.faiss":
+            hook()
+            return super().get_file(path)
+        data = super().get_file(path).read()
+        hook()
+        return io.BytesIO(data)
+
+
+@pytest.mark.unit
+class TestFaissLoadDuringASave:
+    """A reader takes no lock: a save landing between its reads must not pair one save's index with another's rows."""
+
+    def _editor(self, storage, make_store_on):
+        return lambda: _edit_geo(make_store_on(storage))
+
+    def test_an_index_read_just_before_a_save_is_read_again(self, tmp_path, make_store_on):
+        storage = _ReadHookStorage(str(tmp_path))
+        make_store_on(storage, docs_init=_seed_docs()).save_local()
+        storage.hook_on, storage.hook = "index.faiss", self._editor(storage, make_store_on)
+
+        reader = make_store_on(storage)
+
+        _assert_rows_match_documents(reader)
+        assert "celery" in reader.documents[_ids_by_source(reader)["geo.txt"]]["page_content"]
+
+    def test_a_legacy_index_saved_while_its_pickle_is_read_is_read_again(self, tmp_path, make_store_on):
+        storage = _ReadHookStorage(str(tmp_path))
+        make_store_on(storage, docs_init=_seed_docs()).save_local()
+        (tmp_path / "indexes" / "src" / "index.json").unlink()
+        storage.hook_on, storage.hook = "index.pkl", self._editor(storage, make_store_on)
+
+        reader = make_store_on(storage)
+
+        _assert_rows_match_documents(reader)
