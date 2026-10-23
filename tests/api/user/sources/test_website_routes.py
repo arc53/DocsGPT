@@ -808,6 +808,56 @@ class TestRefreshPage:
         pages_task.delay.assert_not_called()
 
 
+class TestABrokerThatIsDown:
+    """A task that can't be queued is a 500 with code queue_failed, not a bare error; what was saved stays."""
+
+    def _post_failing(self, app, pg_conn, resource, src, **body):
+        from docsgpt.api.user.sources import website
+
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.sync_source"
+        ) as sync_task:
+            pages_task.delay.side_effect = ConnectionError("broker unreachable")
+            sync_task.delay.side_effect = ConnectionError("broker unreachable")
+            return _call(app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body})
+
+    @pytest.mark.parametrize("entry", [
+        {"url": "https://docs.x.io/new", "mode": "page"},
+        {"url": "https://other.io/", "mode": "site"},
+    ])
+    def test_an_add_saves_the_entry_and_says_the_next_sync_fetches_it(self, app, pg_conn, entry):
+        src = _seed(pg_conn)
+        response = self._post_failing(app, pg_conn, "AddWebsitePages", src, entries=[entry])
+
+        assert response.status_code == 500
+        assert response.json == {
+            "success": False, "code": "queue_failed",
+            "error": "The change was saved, but its task couldn't be queued; the next sync picks it up.",
+        }
+        entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert entries[-1]["url"] == entry["url"]
+
+    def test_a_removal_saves_its_rules_and_says_so(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response = self._post_failing(app, pg_conn, "RemoveWebsitePages", src, file_paths=["Deploying/Docker.md"])
+
+        assert response.status_code == 500
+        assert response.json["code"] == "queue_failed"
+        assert "saved" in response.json["error"]
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
+
+    def test_a_refresh_says_it_did_not_run(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response = self._post_failing(app, pg_conn, "RefreshWebsitePage", src, file_path="extra.md")
+
+        assert response.status_code == 500
+        assert response.json == {
+            "success": False, "code": "queue_failed",
+            "error": "The refresh couldn't be queued; try again, or sync the source.",
+        }
+
+
 class _ConfigError(ValueError):
     """Stands in for the parser's typed config error: a ``code`` and its ``details``."""
 

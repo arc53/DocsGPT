@@ -48,6 +48,23 @@ def _error(message: str, status: int = 400, code: Optional[str] = None, **detail
     return make_response(jsonify(body), status)
 
 
+#: The ``queue_failed`` wording for a change saved before its task couldn't be queued.
+QUEUE_FAILED_SAVED = "The change was saved, but its task couldn't be queued; the next sync picks it up."
+#: The ``queue_failed`` wording for a refresh, which saves nothing first.
+QUEUE_FAILED_REFRESH = "The refresh couldn't be queued; try again, or sync the source."
+
+
+def _queue_failed(message: str, err: Exception) -> Response:
+    """The 500 for a task the broker wouldn't take (``code: queue_failed``), logged.
+
+    Args:
+        message: What happened to the change, for the UI.
+        err: What queueing raised.
+    """
+    current_app.logger.error(f"Could not queue a website task: {err}", exc_info=True)
+    return _error(message, 500, code="queue_failed")
+
+
 def _config_error(err: ValueError) -> Response:
     """The 400 for a config ``parse_website_config`` refused.
 
@@ -332,7 +349,8 @@ class RemoveWebsitePages(Resource):
         description=(
             "Remove pages or a folder from a Website source. The config changes now: a page added by address "
             "leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their "
-            "chunks and tree entries go in a background task (task_id), after any running sync."
+            "chunks and tree entries go in a background task (task_id), after any running sync; a 500 with code "
+            "queue_failed when the config was saved but the task couldn't be queued."
         ),
     )
     def post(self):
@@ -399,21 +417,24 @@ class RemoveWebsitePages(Resource):
             # The chunks and tree entries go in the worker, under the source's
             # index lock: a running sync is waited for rather than refused, and
             # no request is held open while a large folder's chunks are deleted.
-            # Each page goes with its URL (and, after a redirect, the address
-            # it was asked for): the worker finds it by that in the tree as it
-            # is then, so a sync that moved it meanwhile still removes the
-            # right page.
+        except AccessDenied as err:
+            return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(f"Error removing website pages: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 500)
+        # Each page goes with its URL (and, after a redirect, the address it
+        # was asked for): the worker finds it by that in the tree as it is
+        # then, so a sync that moved it meanwhile still removes the right page.
+        try:
             task = website_pages.delay(
                 str(doc["id"]), ra.owner_id, "remove", pages=[
                     {"path": path, "url": url, **({"requested_url": requested[path]} if path in requested else {})}
                     for path, url in pages
                 ],
             )
-        except AccessDenied as err:
-            return denied_response(err)
         except Exception as err:
-            current_app.logger.error(f"Error removing website pages: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 500)
+            # The config is saved, so the next sync leaves the pages out.
+            return _queue_failed(QUEUE_FAILED_SAVED, err)
         return make_response(
             jsonify({"success": True, "task_id": task.id, "removed": len(pages), "config": config}), 200
         )
@@ -432,9 +453,12 @@ class AddWebsitePages(Resource):
     @api.expect(add_model)
     @api.doc(
         description=(
-            "Add pages or sites to a Website source; they stay in every sync. Pages on the source's hosts are "
-            "fetched and appended now; a site, or a page on a new host, rebuilds the source like a sync. "
-            "Refused with code page_limit when the source would hold more than WEB_MAX_PAGES pages."
+            "Add pages or sites to a Website source; they stay in every sync. Pages are fetched and appended "
+            "now (mode append). A site rebuilds the source like a sync (mode sync), and so does a page whose host "
+            "makes a single-host source span several hosts (every page moves under a host folder), or any add on "
+            "a vector store that can't change single chunks. Refused with code page_limit when the source would "
+            "hold more than WEB_MAX_PAGES pages; a 500 with code queue_failed when the entries were saved but "
+            "the task couldn't be queued (the next sync fetches them)."
         ),
     )
     def post(self):
@@ -508,18 +532,22 @@ class AddWebsitePages(Resource):
             or not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE)
         )
         source_id = str(doc["id"])
-        if needs_sync:
-            task = sync_source.delay(
-                source_data=config,
-                job_name=doc.get("name", ""),
-                user=ra.owner_id,
-                loader="website",
-                sync_frequency=doc.get("sync_frequency") or "never",
-                retriever=doc.get("retriever") or "classic",
-                doc_id=source_id,
-            )
-        else:
-            task = website_pages.delay(source_id, ra.owner_id, "add", urls=page_urls)
+        try:
+            if needs_sync:
+                task = sync_source.delay(
+                    source_data=config,
+                    job_name=doc.get("name", ""),
+                    user=ra.owner_id,
+                    loader="website",
+                    sync_frequency=doc.get("sync_frequency") or "never",
+                    retriever=doc.get("retriever") or "classic",
+                    doc_id=source_id,
+                )
+            else:
+                task = website_pages.delay(source_id, ra.owner_id, "add", urls=page_urls)
+        except Exception as err:
+            # The entries are saved: the next sync fetches them.
+            return _queue_failed(QUEUE_FAILED_SAVED, err)
         return make_response(
             jsonify({
                 "success": True,
@@ -552,7 +580,8 @@ class RefreshWebsitePage(Resource):
         description=(
             "Re-fetch one page of a Website source now; if it can't be fetched, its content is kept. A page "
             "found by a site's crawl that now leads outside the site's scope or to a skipped address is removed, "
-            "as the next sync would drop it (the task's failed event carries reason out_of_scope)."
+            "as the next sync would drop it (the task's failed event carries reason out_of_scope). A 500 with "
+            "code queue_failed when the task couldn't be queued."
         )
     )
     def post(self):
@@ -580,7 +609,10 @@ class RefreshWebsitePage(Resource):
         path, url = page
         # The worker finds the page by its address under the index lock: a
         # sync that runs first can give its path to another page.
-        task = website_pages.delay(str(doc["id"]), ra.owner_id, "refresh", file_path=path, url=url)
+        try:
+            task = website_pages.delay(str(doc["id"]), ra.owner_id, "refresh", file_path=path, url=url)
+        except Exception as err:
+            return _queue_failed(QUEUE_FAILED_REFRESH, err)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
