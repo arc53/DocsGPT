@@ -187,6 +187,98 @@ class TestExtractGraphWorker:
 
 
 @pytest.mark.unit
+class TestExtractionsTakeTurns:
+    """Each extraction spends what is left of the source's chunk cap: two at once would each spend all of it."""
+
+    def _setup(self, pg_conn, monkeypatch, held):
+        from docsgpt import worker
+
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
+        store.get_chunks.side_effect = lambda: held.append("reading") or [{"doc_id": "c1", "text": "alpha"}]
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        monkeypatch.setattr(
+            "docsgpt.graphrag.extraction.extract_graph_for_source",
+            lambda *a, **k: held.append("extracting") or {"nodes": 1, "edges": 0, "chunks_processed": 1},
+        )
+        events = []
+        monkeypatch.setattr(worker, "publish_user_event", lambda user, etype, payload, **kw: events.append(etype))
+        return worker, source_id, events
+
+    @pytest.mark.parametrize("chunk_ids", [None, ["c1"]])
+    def test_extracts_holding_the_graph_extraction_lock(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, chunk_ids,
+    ):
+        from contextlib import contextmanager
+
+        held = []
+        worker, source_id, _events = self._setup(pg_conn, monkeypatch, held)
+
+        @contextmanager
+        def fake_lock(locked_id, **kwargs):
+            held.append(locked_id)
+            yield
+            held.append("released")
+
+        monkeypatch.setattr(worker, "graph_extract_lock", fake_lock)
+        index_lock = MagicMock(name="source_index_lock")
+        monkeypatch.setattr(worker, "source_index_lock", index_lock)
+
+        worker.extract_graph_worker(task_self, source_id, "alice", chunk_ids=chunk_ids)
+
+        assert held == [source_id, "reading", "extracting", "released"]
+        index_lock.assert_not_called()
+
+    def test_a_busy_source_retries_the_extraction_later(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        from contextlib import contextmanager
+
+        from celery.exceptions import Retry
+
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        held = []
+        worker, source_id, events = self._setup(pg_conn, monkeypatch, held)
+
+        @contextmanager
+        def busy(locked_id, **kwargs):
+            raise SourceBusy("busy")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(worker, "graph_extract_lock", busy)
+        task_self.retry.side_effect = lambda **kwargs: Retry()
+
+        with pytest.raises(Retry):
+            worker.extract_graph_worker(task_self, source_id, "alice", chunk_ids=["c1"])
+
+        assert held == []
+        assert task_self.retry.call_args.kwargs["countdown"] > 0
+        assert "graph.extract.failed" not in events
+
+    def test_busy_past_the_retries_fails_the_build(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        from contextlib import contextmanager
+
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        worker, source_id, events = self._setup(pg_conn, monkeypatch, [])
+
+        @contextmanager
+        def busy(locked_id, **kwargs):
+            raise SourceBusy("busy")
+            yield  # pragma: no cover
+
+        def exhausted(exc=None, **kwargs):
+            raise exc
+
+        monkeypatch.setattr(worker, "graph_extract_lock", busy)
+        task_self.retry.side_effect = exhausted
+
+        with pytest.raises(SourceBusy):
+            worker.extract_graph_worker(task_self, source_id, "alice")
+
+        assert events[-1] == "graph.extract.failed"
+
+
+@pytest.mark.unit
 class TestExtractGraphTrace:
     """A graph build is one execution trace holding every extraction call."""
 

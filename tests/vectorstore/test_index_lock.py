@@ -180,6 +180,40 @@ class TestSourceIndexLock:
 
 
 @pytest.mark.unit
+class TestGraphExtractLock:
+    """One graph extraction at a time per source, apart from the index lock."""
+
+    def test_holds_its_own_key_and_releases_it(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import graph_extract_lock, graph_extract_lock_key, lock_key
+
+        assert graph_extract_lock_key("src-1") == "docsgpt:graph_extract_lock:src-1"
+        with graph_extract_lock("src-1"):
+            assert fake_redis.get(graph_extract_lock_key("src-1")) is not None
+            assert fake_redis.get(lock_key("src-1")) is None
+        assert fake_redis.get(graph_extract_lock_key("src-1")) is None
+
+    def test_a_second_extraction_waits_then_gives_up(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import SourceBusy, graph_extract_lock, source_index_lock
+
+        with graph_extract_lock("src-1"):
+            with pytest.raises(SourceBusy):
+                with graph_extract_lock("src-1", wait_seconds=0.1, poll_seconds=0.05):
+                    pass
+            # A page change on the same source is not held up by an extraction.
+            with source_index_lock("src-1", wait_seconds=0):
+                pass
+
+    def test_without_redis_the_block_runs_unlocked(self, monkeypatch):
+        from docsgpt.vectorstore.index_lock import graph_extract_lock
+
+        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: None)
+        ran = []
+        with graph_extract_lock("src-1"):
+            ran.append(True)
+        assert ran == [True]
+
+
+@pytest.mark.unit
 class TestTheWorkerWait:
     """A task waiting on the lock must give up before the broker redelivers it (acks_late)."""
 

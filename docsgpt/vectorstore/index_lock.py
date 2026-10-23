@@ -10,6 +10,11 @@ It is a Redis key with an expiry, renewed while the job runs, so a worker that
 dies frees it within ``ttl_seconds``. Without Redis (or when Redis errors) the
 job runs unlocked, as before the lock existed: a missing lock is a narrower
 race, not a reason to fail the job.
+
+``graph_extract_lock`` is the same kind of lock under its own key: one graph
+extraction at a time per source, so two runs can't each spend the source's
+remaining chunk allowance. It is apart from the index lock, so a page change
+doesn't wait for a long extraction.
 """
 
 import logging
@@ -66,6 +71,11 @@ def lock_key(source_id: str) -> str:
     return f"docsgpt:source_index_lock:{source_id}"
 
 
+def graph_extract_lock_key(source_id: str) -> str:
+    """The Redis key of a source's graph extraction lock."""
+    return f"docsgpt:graph_extract_lock:{source_id}"
+
+
 def _acquire(redis: Any, key: str, token: str, ttl_seconds: int, wait_seconds: float,
              poll_seconds: float) -> Optional[bool]:
     """Take the lock, polling until ``wait_seconds`` pass.
@@ -82,7 +92,7 @@ def _acquire(redis: Any, key: str, token: str, ttl_seconds: int, wait_seconds: f
             if redis.set(key, token, nx=True, ex=ttl_seconds):
                 return True
         except Exception as err:  # noqa: BLE001 - run unlocked rather than fail the job
-            logger.warning(f"Source index lock unavailable, running unlocked: {err}")
+            logger.warning(f"Lock {key} unavailable, running unlocked: {err}")
             return None
         if time.monotonic() >= deadline:
             raise SourceBusy("Another change to this source is still running; try again when it finishes")
@@ -95,10 +105,64 @@ def _renew_until(stop: threading.Event, redis: Any, key: str, token: str, ttl_se
     while not stop.wait(renew_seconds):
         try:
             if not redis.eval(_RENEW_LUA, 1, key, token, int(ttl_seconds)):
-                logger.warning(f"Lost the source index lock {key}")
+                logger.warning(f"Lost the lock {key}")
                 return
         except Exception as err:  # noqa: BLE001 - the expiry still frees it
-            logger.warning(f"Could not renew the source index lock {key}: {err}")
+            logger.warning(f"Could not renew the lock {key}: {err}")
+
+
+@contextmanager
+def _redis_lock(
+    key: str,
+    wait_seconds: float,
+    ttl_seconds: int,
+    poll_seconds: float,
+    renew: bool,
+    renew_seconds: Optional[float],
+) -> Iterator[None]:
+    """Hold the Redis lock ``key`` for the duration of the block (see ``source_index_lock``).
+
+    Args:
+        key: The lock's Redis key.
+        wait_seconds: How long to wait for another job to finish.
+        ttl_seconds: The lock's expiry, renewed while held.
+        poll_seconds: How often to retry while waiting.
+        renew: Renew the expiry in a background thread while held.
+        renew_seconds: How often to renew; a third of ``ttl_seconds`` by default.
+
+    Yields:
+        Nothing; the block runs holding the lock.
+
+    Raises:
+        SourceBusy: Another job held it for all of ``wait_seconds``.
+    """
+    redis = get_redis_instance()
+    token = uuid.uuid4().hex
+    held = None
+    if redis is None:
+        logger.warning(f"No Redis for the lock {key}; the job runs unlocked")
+    else:
+        held = _acquire(redis, key, token, ttl_seconds, wait_seconds, poll_seconds)
+    stop = threading.Event()
+    renewer = None
+    if held and renew:
+        renewer = threading.Thread(
+            target=_renew_until,
+            args=(stop, redis, key, token, ttl_seconds, renew_seconds or ttl_seconds / 3),
+            daemon=True,
+        )
+        renewer.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        if renewer is not None:
+            renewer.join(timeout=5)
+        if held:
+            try:
+                redis.eval(_RELEASE_LUA, 1, key, token)
+            except Exception as err:  # noqa: BLE001 - the expiry frees it
+                logger.warning(f"Could not release the lock {key}: {err}")
 
 
 @contextmanager
@@ -126,31 +190,40 @@ def source_index_lock(
     Raises:
         SourceBusy: Another job held it for all of ``wait_seconds``.
     """
-    redis = get_redis_instance()
-    key = lock_key(str(source_id))
-    token = uuid.uuid4().hex
-    held = None
-    if redis is None:
-        logger.warning(f"No Redis for the source index lock; {source_id} runs unlocked")
-    else:
-        held = _acquire(redis, key, token, ttl_seconds, wait_seconds, poll_seconds)
-    stop = threading.Event()
-    renewer = None
-    if held and renew:
-        renewer = threading.Thread(
-            target=_renew_until,
-            args=(stop, redis, key, token, ttl_seconds, renew_seconds or ttl_seconds / 3),
-            daemon=True,
-        )
-        renewer.start()
-    try:
+    with _redis_lock(lock_key(str(source_id)), wait_seconds, ttl_seconds, poll_seconds, renew, renew_seconds):
         yield
-    finally:
-        stop.set()
-        if renewer is not None:
-            renewer.join(timeout=5)
-        if held:
-            try:
-                redis.eval(_RELEASE_LUA, 1, key, token)
-            except Exception as err:  # noqa: BLE001 - the expiry frees it
-                logger.warning(f"Could not release the source index lock {key}: {err}")
+
+
+@contextmanager
+def graph_extract_lock(
+    source_id: str,
+    wait_seconds: float = WORKER_WAIT_SECONDS,
+    ttl_seconds: int = _TTL_SECONDS,
+    poll_seconds: float = 1.0,
+    renew: bool = True,
+    renew_seconds: Optional[float] = None,
+) -> Iterator[None]:
+    """Hold a source's graph extraction lock for the duration of the block.
+
+    Each extraction reads how much of the source's chunk cap is left and
+    spends it; two at once would each spend all of it. This lock runs them
+    one at a time. It is not the index lock: page changes and syncs go on
+    while a graph is extracted.
+
+    Args:
+        source_id: The source.
+        wait_seconds: How long to wait for another extraction to finish.
+        ttl_seconds: The lock's expiry, renewed while held.
+        poll_seconds: How often to retry while waiting.
+        renew: Renew the expiry in a background thread while held.
+        renew_seconds: How often to renew; a third of ``ttl_seconds`` by default.
+
+    Yields:
+        Nothing; the block runs holding the lock.
+
+    Raises:
+        SourceBusy: Another extraction held it for all of ``wait_seconds``.
+    """
+    key = graph_extract_lock_key(str(source_id))
+    with _redis_lock(key, wait_seconds, ttl_seconds, poll_seconds, renew, renew_seconds):
+        yield

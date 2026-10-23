@@ -76,7 +76,7 @@ from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
 )
-from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS, SourceBusy, source_index_lock
+from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS, SourceBusy, graph_extract_lock, source_index_lock
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
@@ -6422,6 +6422,11 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None):
     Streams ``graph.extract.progress`` SSE events as chunks are processed and a
     terminal ``graph.extract.completed``/``graph.extract.failed`` on exit.
 
+    The run holds the source's graph extraction lock (``graph_extract_lock``,
+    not the index lock): each extraction spends what is left of the source's
+    chunk cap, and two at once would each spend all of it. The chunks are
+    read under the lock, as they are when the extraction starts.
+
     Args:
         self: Celery task instance.
         source_id: Source whose graph is being built.
@@ -6432,10 +6437,14 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None):
     Returns:
         ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
         extraction summary ``{nodes, edges, chunks_processed, ...}``.
+
+    Raises:
+        celery.exceptions.Retry: Another extraction held the source; this
+            one runs again later.
+        SourceBusy: Still held after the last retry (``graph.extract.failed``
+            is published).
     """
     from docsgpt.graphrag import graphrag_available
-    from docsgpt.graphrag.extraction import extract_graph_for_source
-    from docsgpt.vectorstore.vector_creator import VectorCreator
 
     source_id = str(source_id)
 
@@ -6446,6 +6455,25 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None):
         source = SourcesRepository(conn).get_any(source_id, user)
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    try:
+        with graph_extract_lock(source_id):
+            return _extract_graph(self, source, user, chunk_ids)
+    except SourceBusy as busy:
+        try:
+            raise self.retry(exc=busy, countdown=BUSY_RETRY_COUNTDOWN_SECONDS)
+        except SourceBusy as error:
+            _publish_graph_event(
+                user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
+            )
+            raise
+
+
+def _extract_graph(self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]]) -> Dict[str, Any]:
+    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock."""
+    from docsgpt.graphrag.extraction import extract_graph_for_source
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
     source_id = str(source["id"])
     cfg = SourceConfig.parse(source.get("config"))
 
