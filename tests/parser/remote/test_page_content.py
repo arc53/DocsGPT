@@ -554,6 +554,26 @@ class TestFetchPageRedirects:
         response, _ = self._fetch(routes, budget=FetchBudget(2))
         assert response.url == "https://x.io/b"
 
+    def test_a_location_with_raw_utf8_is_followed_to_the_right_address(self):
+        # http.client reads header bytes as latin-1, so a raw UTF-8 ``/café``
+        # arrives as ``/cafÃ©``; browsers and requests read it as UTF-8.
+        mangled = "/café".encode("utf-8").decode("latin-1")
+        response, hops = self._fetch({
+            "https://x.io/docs": (301, {"Location": mangled}, b""),
+            "https://x.io/café": self.PAGE,
+        })
+
+        assert hops.calls[-1] == "https://x.io/café"
+        assert response.url == "https://x.io/café"
+
+    def test_a_latin1_location_is_kept_as_it_was_read(self):
+        response, hops = self._fetch({
+            "https://x.io/docs": (301, {"Location": "/caf\xe9"}, b""),
+            "https://x.io/caf\xe9": self.PAGE,
+        })
+
+        assert response.url == "https://x.io/caf\xe9"
+
     def test_a_redirect_loop_fails(self):
         with pytest.raises(RedirectError, match="loop"):
             self._fetch({

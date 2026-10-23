@@ -107,6 +107,25 @@ def without_userinfo(url: str) -> str:
     return urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[1]))
 
 
+def _header_text(value: str) -> str:
+    """A header value as its sender wrote it: raw UTF-8 bytes read back as UTF-8.
+
+    ``http.client`` reads header bytes as latin-1, so a ``Location`` sent as
+    raw UTF-8 (``/café``) arrives as ``/cafÃ©``. Browsers and ``requests``
+    read it as UTF-8; a value that isn't UTF-8 stays as it was read.
+
+    Args:
+        value: The header value as ``http.client`` decoded it.
+
+    Returns:
+        The value re-read as UTF-8, or unchanged when its bytes aren't UTF-8.
+    """
+    try:
+        return value.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        return value
+
+
 def fetch_page(
     url: str,
     max_bytes: Optional[int] = None,
@@ -169,7 +188,7 @@ def fetch_page(
             response._content = body
             response.url = current
             return response
-        location = (response.headers.get("Location") or "").strip()
+        location = _header_text(response.headers.get("Location") or "").strip()
         if status not in _REDIRECT_STATUSES or not location:
             raise RedirectError(f"{current} answered {status} with no redirect to follow")
         if hop == MAX_REDIRECTS:
