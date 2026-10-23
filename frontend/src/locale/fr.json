@@ -2336,6 +2336,7 @@
         "pageUrl": "Adresse de la page",
         "siteUrl": "Adresse du site web",
         "addAnotherPage": "Ajouter une autre page",
+        "invalidAddress": "Saisissez une adresse web publique, par exemple docs.example.com",
         "removePage": "Retirer cette adresse",
         "removeAddress": "Retirer {{address}}",
         "maxPages": "Limite de pages",

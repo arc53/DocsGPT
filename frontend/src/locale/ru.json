@@ -2412,6 +2412,7 @@
         "pageUrl": "Адрес страницы",
         "siteUrl": "Адрес сайта",
         "addAnotherPage": "Добавить ещё страницу",
+        "invalidAddress": "Введите общедоступный веб-адрес, например docs.example.com",
         "removePage": "Удалить этот адрес",
         "removeAddress": "Удалить {{address}}",
         "maxPages": "Лимит страниц",

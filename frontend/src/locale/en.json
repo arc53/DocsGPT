@@ -2260,6 +2260,7 @@
         "pageUrl": "Page address",
         "siteUrl": "Website address",
         "addAnotherPage": "Add another page",
+        "invalidAddress": "Enter a public web address, like docs.example.com",
         "removePage": "Remove this address",
         "removeAddress": "Remove {{address}}",
         "maxPages": "Page limit",

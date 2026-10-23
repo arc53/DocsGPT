@@ -2252,6 +2252,7 @@
         "pageUrl": "ページのアドレス",
         "siteUrl": "ウェブサイトのアドレス",
         "addAnotherPage": "別のページを追加",
+        "invalidAddress": "公開されているウェブアドレスを入力してください（例：docs.example.com）",
         "removePage": "このアドレスを削除",
         "removeAddress": "{{address}} を削除",
         "maxPages": "ページ上限",

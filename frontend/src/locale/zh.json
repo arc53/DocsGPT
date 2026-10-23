@@ -2251,6 +2251,7 @@
         "pageUrl": "页面地址",
         "siteUrl": "网站地址",
         "addAnotherPage": "再添加一个页面",
+        "invalidAddress": "请输入公开的网址，例如 docs.example.com",
         "removePage": "移除此地址",
         "removeAddress": "移除 {{address}}",
         "maxPages": "页面上限",

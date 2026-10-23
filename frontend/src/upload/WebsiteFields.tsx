@@ -1,10 +1,11 @@
 import { Plus, X } from 'lucide-react';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { pageAddress } from '../components/tree/pages';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import {
@@ -23,6 +24,7 @@ import {
   type WebsiteDiscovery,
   type WebsiteDraft,
   type WebsiteMode,
+  normalizeUrl,
   tooManyPages,
 } from './website';
 
@@ -76,24 +78,49 @@ export default function WebsiteFields({
 
   const setUrl = (index: number, value: string) =>
     set({ urls: draft.urls.map((url, i) => (i === index ? value : url)) });
+  // The rows the user has left: a refused address says why once its row is
+  // left, not while it is still being typed.
+  const [left, setLeft] = useState<ReadonlySet<number>>(() => new Set());
+  const leave = (index: number) =>
+    setLeft((rows) => (rows.has(index) ? rows : new Set(rows).add(index)));
+  const removeUrl = (index: number) => {
+    set({ urls: draft.urls.filter((_, i) => i !== index) });
+    // The rows below move up one, and keep whether they were left.
+    setLeft(
+      (rows) =>
+        new Set(
+          [...rows]
+            .filter((row) => row !== index)
+            .map((row) => (row > index ? row - 1 : row)),
+        ),
+    );
+  };
+  const refused = (index: number, url: string) =>
+    left.has(index) && !!url.trim() && !normalizeUrl(url);
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         {urls.map((url, index) => (
-          <div key={index} className="flex items-center gap-2">
+          <div key={index} className="flex items-start gap-2">
             {/* The floating label's wrapper doesn't grow by itself in a row. */}
-            <div className="min-w-0 flex-1">
+            <FormField
+              className="min-w-0 flex-1"
+              label={isSite ? tr('siteUrl') : tr('pageUrl')}
+              required={index === 0}
+              // An address the server won't fetch (localhost, a private
+              // network, no dot in the host, credentials) says why.
+              error={refused(index, url) ? tr('invalidAddress') : undefined}
+            >
               <Input
                 type="url"
                 inputMode="url"
                 className="w-full"
-                label={isSite ? tr('siteUrl') : tr('pageUrl')}
                 value={url}
                 onChange={(e) => setUrl(index, e.target.value)}
-                required={index === 0}
+                onBlur={() => leave(index)}
               />
-            </div>
+            </FormField>
             {index > 0 && (
               <IconButton
                 variant="ghost-muted"
@@ -107,9 +134,7 @@ export default function WebsiteFields({
                       })
                     : tr('removePage')
                 }
-                onClick={() =>
-                  set({ urls: draft.urls.filter((_, i) => i !== index) })
-                }
+                onClick={() => removeUrl(index)}
               />
             )}
           </div>
