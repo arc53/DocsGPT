@@ -536,7 +536,10 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
         return _seal_api_tool_secrets(new_config, existing_config, owner_id)
     moved = tool_doc.get("name") == "mcp_tool" and _mcp_origin_changed(new_config, existing_config)
     if moved:
-        existing_config = {k: v for k, v in existing_config.items() if k != "encrypted_credentials"}
+        existing_config = {
+            k: v for k, v in existing_config.items()
+            if k not in ("encrypted_credentials", "encrypted_headers", "header_names")
+        }
     final = _merge_secrets_on_update(new_config, existing_config, config_requirements, owner_id)
     if moved and final.get("auth_type") in _MCP_CREDENTIAL_AUTH_TYPES and not final.get(
         "encrypted_credentials"
@@ -777,6 +780,9 @@ class GetTools(Resource):
                 if tool_copy.get("name") == "api_tool":
                     # Header / query-param values are secrets for everyone.
                     tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
+                if tool_copy.get("name") == "mcp_tool":
+                    # Custom header values are secrets for everyone; the names stay.
+                    tool_copy.setdefault("config", {}).pop("encrypted_headers", None)
                 tool_copy["ownership"] = ownership
                 if str(row["id"]) in account_names:
                     tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]

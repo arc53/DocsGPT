@@ -52,6 +52,8 @@ def _sanitize_mcp_transport(config):
     config.pop("args", None)
     config.pop("connection_id", None)
     config.pop(REMOVED_CONNECTION_KEY, None)
+    config.pop("encrypted_headers", None)
+    config.pop("header_names", None)
     config["transport_type"] = transport_type
     return transport_type
 
@@ -229,6 +231,48 @@ def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
         return {}
 
 
+_HEADER_NAME_CHARS = frozenset(
+    "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+)
+
+
+def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, moved: bool) -> dict:
+    """The custom headers a test or save sends, as ``{name: value}``.
+
+    Header values are secrets, write-only like the API key. An empty value
+    keeps the stored one for the same name (in any capitalization) while the
+    origin is unchanged; a new origin never inherits them, and a name the
+    client no longer sends is dropped.
+
+    Raises:
+        ValueError: ``headers`` is not an object of valid header names to strings.
+    """
+    incoming = config.get("headers") or {}
+    if not isinstance(incoming, dict):
+        raise ValueError("headers must be an object")
+    stored: dict = {}
+    existing_config = (existing_doc or {}).get("config") or {}
+    if not moved and existing_config.get("encrypted_headers"):
+        stored = {
+            str(k).lower(): v
+            for k, v in decrypt_credentials(existing_config["encrypted_headers"], owner_id).items()
+        }
+    merged: dict = {}
+    for raw_name, value in incoming.items():
+        name = str(raw_name).strip()
+        if not name or not set(name) <= _HEADER_NAME_CHARS:
+            raise ValueError(f"Invalid header name: {raw_name!r}")
+        if not isinstance(value, str) or "\r" in value or "\n" in value:
+            raise ValueError(f"Invalid value for header {name}")
+        if any(k.lower() == name.lower() for k in merged):
+            raise ValueError(f"Duplicate header: {name}")
+        if value:
+            merged[name] = value
+        elif name.lower() in stored:
+            merged[name] = stored[name.lower()]
+    return merged
+
+
 def _existing_mcp_context(tool_id, user, config):
     """Resolve the stored MCP tool a test/save refers to, and its credentials.
 
@@ -320,9 +364,10 @@ class TestMCPServerConfig(Resource):
             ctx = _existing_mcp_context(data.get("id"), user, config)
             if not isinstance(ctx, tuple):
                 return ctx
-            _existing_doc, owner_id, _is_owner, _moved, auth_credentials = ctx
+            existing_doc, owner_id, _is_owner, moved, auth_credentials = ctx
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
+            test_config["headers"] = _merge_mcp_headers(config, existing_doc, owner_id, moved)
 
             mcp_tool = MCPTool(config=test_config, user_id=owner_id)
             result = mcp_tool.test_connection()
@@ -438,10 +483,12 @@ class MCPServerSave(Resource):
             ctx = _existing_mcp_context(data.get("id"), user, config)
             if not isinstance(ctx, tuple):
                 return ctx
-            existing_doc, owner_id, is_owner, _moved, merged_credentials = ctx
+            existing_doc, owner_id, is_owner, moved, merged_credentials = ctx
+            merged_headers = _merge_mcp_headers(config, existing_doc, owner_id, moved)
             auth_type = config.get("auth_type", "none")
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = merged_credentials
+            mcp_config["headers"] = merged_headers
 
             if auth_type == "oauth" and not config.get("oauth_task_id"):
                 # Only the owner reaches here for an existing server (see
@@ -488,6 +535,11 @@ class MCPServerSave(Resource):
                     "No valid credentials provided for the selected authentication type"
                 )
             storage_config = config.copy()
+            # Header values are sealed like the credentials; only the names stay readable.
+            storage_config.pop("headers", None)
+            if merged_headers:
+                storage_config["encrypted_headers"] = encrypt_credentials(merged_headers, owner_id)
+                storage_config["header_names"] = list(merged_headers)
 
             if merged_credentials:
                 storage_config["encrypted_credentials"] = encrypt_credentials(

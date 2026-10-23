@@ -235,7 +235,13 @@ class MCPTool(Tool):
         self.transport_type = config.get("transport_type", "auto")
         self.auth_type = config.get("auth_type", "none")
         self.timeout = config.get("timeout", 30)
-        self.custom_headers = config.get("headers", {})
+        self.custom_headers = dict(config.get("headers") or {})
+        if config.get("encrypted_headers") and user_id:
+            # Saved header values are secrets, sealed like the credentials.
+            self.custom_headers = {
+                **decrypt_credentials(config["encrypted_headers"], user_id),
+                **self.custom_headers,
+            }
 
         self.auth_credentials = {}
         if config.get("encrypted_credentials") and user_id:
@@ -328,7 +334,11 @@ class MCPTool(Tool):
             auth_key = f"basic:{username}"
         else:
             auth_key = "none"
-        return f"{self.server_url}#{self.transport_type}#{auth_key}"
+        # Different custom headers must not share a cached client.
+        headers_key = ""
+        if self.custom_headers:
+            headers_key = "#headers:" + _secret_fingerprint(json.dumps(self.custom_headers, sort_keys=True))
+        return f"{self.server_url}#{self.transport_type}#{auth_key}{headers_key}"
 
     def _setup_client(self):
         global _mcp_clients_cache
