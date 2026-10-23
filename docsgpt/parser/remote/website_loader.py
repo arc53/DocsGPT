@@ -452,10 +452,13 @@ def parse_website_config(
     Args:
         raw: The config, as a dict or its JSON.
         enforce_page_cap: Apply the write limits: ``WEB_MAX_PAGES`` on the
-            entries, ``MAX_SITE_ENTRIES``, ``MAX_SKIP_RULES`` and
-            ``MAX_URL_LENGTH``. Writes keep it on. Reading a stored config
-            turns it off, so a lowered cap or a config that grew past a limit
-            (pages appended, skips added on removal) still lists and syncs.
+            entries and on a site's ``max_pages``, ``MAX_SITE_ENTRIES``,
+            ``MAX_SKIP_RULES`` and ``MAX_URL_LENGTH`` (addresses, skip rules
+            and ``path_prefix``); page entries that are one page by
+            ``page_key`` are cut to the first. Writes keep it on. Reading a
+            stored config turns it off, so a lowered cap or a config that
+            grew past a limit (pages appended, skips added on removal) still
+            lists and syncs.
             Every entry URL must parse either way.
 
     Returns:
@@ -497,14 +500,22 @@ def parse_website_config(
                 not isinstance(max_pages, int) or isinstance(max_pages, bool) or max_pages < 1
             ):
                 raise WebsiteConfigError("max_pages must be a positive whole number")
+            if enforce_page_cap and max_pages is not None and max_pages > int(settings.WEB_MAX_PAGES):
+                cap = int(settings.WEB_MAX_PAGES)
+                raise WebsiteConfigError(f"A website source holds up to {cap} pages", "page_limit", {"max_pages": cap})
             sitemap_url = item.get("sitemap_url")
             if isinstance(sitemap_url, str) and sitemap_url.strip():
                 sitemap_url = _entry_url(sitemap_url, "Sitemap address", enforce_page_cap)
             else:
                 sitemap_url = None
+            path_prefix = str(item.get("path_prefix") or "")
+            if enforce_page_cap and len(path_prefix) > MAX_URL_LENGTH:
+                raise WebsiteConfigError(
+                    f"Path is longer than {MAX_URL_LENGTH} characters", "url_too_long", {"max_length": MAX_URL_LENGTH},
+                )
             entry.update({
                 "max_pages": max_pages,
-                "path_prefix": str(item.get("path_prefix") or ""),
+                "path_prefix": path_prefix,
                 "include_subdomains": bool(item.get("include_subdomains")),
                 "discovery": discovery,
                 "sitemap_url": sitemap_url,
@@ -515,6 +526,18 @@ def parse_website_config(
     rules = raw.get("skip") or []
     skip = [_with_scheme(r.strip()) for r in rules if isinstance(r, str) and r.strip()] if isinstance(rules, list) else []
     if enforce_page_cap:
+        # Variants of one page (``/new``, ``/new/``, ``www.``, a fragment)
+        # are one entry: the first is kept.
+        page_keys = set()
+        unique = []
+        for entry in entries:
+            if entry["mode"] == "page":
+                key = page_key(entry["url"])
+                if key in page_keys:
+                    continue
+                page_keys.add(key)
+            unique.append(entry)
+        entries = unique
         cap = int(settings.WEB_MAX_PAGES)
         # A site brings at least one page, so it counts toward the cap too.
         if len(entries) > cap:

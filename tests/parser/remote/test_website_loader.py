@@ -526,6 +526,36 @@ class TestParseWebsiteConfig:
 
         assert config["entries"] == [{"url": "https://x.io/a", "mode": "page"}]
 
+    def test_variants_of_one_page_are_one_entry(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        raw = {"entries": [
+            {"url": "https://x.io/new", "mode": "page"},
+            {"url": "https://x.io/new/", "mode": "page"},
+            {"url": "https://www.x.io/new#a", "mode": "page"},
+            {"url": "https://x.io/new", "mode": "site"},
+            {"url": "https://x.io/other", "mode": "page"},
+        ]}
+
+        written = parse_website_config(raw)
+        stored = parse_website_config(raw, enforce_page_cap=False)
+
+        assert [(e["mode"], e["url"]) for e in written["entries"]] == [
+            ("page", "https://x.io/new"), ("site", "https://x.io/new"), ("page", "https://x.io/other"),
+        ]
+        assert len(stored["entries"]) == 5
+
+    def test_duplicates_do_not_count_toward_the_cap(self):
+        from docsgpt.parser.remote.website_loader import parse_website_config
+
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 2
+            config = parse_website_config({"entries": [
+                {"url": "https://x.io/a"}, {"url": "https://x.io/a/"}, {"url": "https://x.io/b"},
+            ]})
+
+        assert [e["url"] for e in config["entries"]] == ["https://x.io/a", "https://x.io/b"]
+
     def test_rejects_more_pages_than_the_admin_cap(self):
         from docsgpt.parser.remote.website_loader import parse_website_config
 
@@ -759,6 +789,32 @@ class TestWebsiteConfigErrors:
         error = self._error(raw)
 
         assert (error.code, error.details) == ("invalid_config", {})
+
+    def test_a_long_path_prefix_is_refused(self):
+        from docsgpt.parser.remote import website_loader
+
+        site = {"url": "https://x.io/", "mode": "site", "path_prefix": "/" + "a" * website_loader.MAX_URL_LENGTH}
+        error = self._error({"entries": [site]})
+
+        assert (error.code, error.details) == ("url_too_long", {"max_length": website_loader.MAX_URL_LENGTH})
+
+    def test_a_site_limit_past_the_source_cap_is_refused(self):
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 50
+            error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 51}]})
+
+        assert (error.code, error.details) == ("page_limit", {"max_pages": 50})
+
+    def test_a_stored_config_past_the_limits_still_reads(self):
+        from docsgpt.parser.remote import website_loader
+
+        site = {
+            "url": "https://x.io/", "mode": "site", "max_pages": 10 ** 6,
+            "path_prefix": "/" + "a" * website_loader.MAX_URL_LENGTH,
+        }
+        config = website_loader.parse_website_config({"entries": [site]}, enforce_page_cap=False)
+
+        assert config["entries"][0]["max_pages"] == 10 ** 6
 
     def test_a_stored_config_still_raises_typed_errors(self):
         error = self._error({"entries": [{"url": "http://[x", "mode": "page"}]}, enforce_page_cap=False)

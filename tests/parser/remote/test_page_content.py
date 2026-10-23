@@ -128,7 +128,8 @@ class TestMainContent:
     def test_a_short_article_beside_a_long_sidebar_keeps_its_extract(self):
         # A docs page whose sidebar out-weighs the article: stripping the menu
         # is not the extractor eating the content.
-        sidebar = "<nav><ul>" + "".join(f"<li><a href='/s{i}'>Sidebar entry {i}</a></li>" for i in range(60)) + "</ul></nav>"
+        entries = "".join(f"<li><a href='/s{i}'>Sidebar entry {i}</a></li>" for i in range(60))
+        sidebar = f"<nav><ul>{entries}</ul></nav>"
         article = "<h1>Short page</h1><p>Only a short paragraph of real content lives here.</p>"
         page = extract_page(_page(f"<div>{sidebar}<div>{article}</div></div>" + FOOTER), URL)
 
