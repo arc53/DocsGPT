@@ -25,8 +25,8 @@ def _mock_validate_url(url):
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_url):
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_load_data_crawls_same_domain_links(mock_fetch, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             """
@@ -41,12 +41,12 @@ def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_u
         "http://example.com/about": DummyResponse("<html><body>About page</body></html>"),
     }
 
-    def response_side_effect(_method: str, url: str, timeout=30):
+    def response_side_effect(url: str, *_, **__):
         if url not in responses:
             raise AssertionError(f"Unexpected request for URL: {url}")
         return responses[url]
 
-    mock_pinned_request.side_effect = response_side_effect
+    mock_fetch.side_effect = response_side_effect
 
     crawler = CrawlerLoader(limit=5)
 
@@ -65,18 +65,18 @@ def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_u
     texts = {doc.text for doc in result}
     assert texts == {"* About\n* External", "About page"}
 
-    assert mock_pinned_request.call_count == 2
+    assert mock_fetch.call_count == 2
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_load_data_accepts_list_input_and_adds_scheme(mock_pinned_request, mock_validate_url):
-    mock_pinned_request.return_value = DummyResponse("<html><body>No links here</body></html>")
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_load_data_accepts_list_input_and_adds_scheme(mock_fetch, mock_validate_url):
+    mock_fetch.return_value = DummyResponse("<html><body>No links here</body></html>")
     crawler = CrawlerLoader()
 
     result = crawler.load_data(["example.com", "unused.com"])
 
-    mock_pinned_request.assert_called_once_with("GET", "http://example.com", timeout=30)
+    mock_fetch.assert_called_once_with("http://example.com", timeout=30)
 
     assert len(result) == 1
     assert result[0].text == "No links here"
@@ -87,8 +87,8 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_pinned_request, mock_
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_load_data_respects_limit(mock_pinned_request, mock_validate_url):
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_load_data_respects_limit(mock_fetch, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             """
@@ -102,7 +102,7 @@ def test_load_data_respects_limit(mock_pinned_request, mock_validate_url):
         "http://example.com/about": DummyResponse("<html><body>About</body></html>"),
     }
 
-    mock_pinned_request.side_effect = lambda _method, url, timeout=30: responses[url]
+    mock_fetch.side_effect = lambda url, *_, **__: responses[url]
 
     crawler = CrawlerLoader(limit=1)
 
@@ -110,20 +110,20 @@ def test_load_data_respects_limit(mock_pinned_request, mock_validate_url):
 
     assert len(result) == 1
     assert result[0].text == "About"
-    assert mock_pinned_request.call_count == 1
+    assert mock_fetch.call_count == 1
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
 @patch("docsgpt.parser.remote.crawler_loader.logging")
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_load_data_logs_and_skips_on_request_error(mock_pinned_request, mock_logging, mock_validate_url):
-    mock_pinned_request.side_effect = Exception("load failure")
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_load_data_logs_and_skips_on_request_error(mock_fetch, mock_logging, mock_validate_url):
+    mock_fetch.side_effect = Exception("load failure")
     crawler = CrawlerLoader()
 
     result = crawler.load_data("http://example.com")
 
     assert result == []
-    mock_pinned_request.assert_called_once_with("GET", "http://example.com", timeout=30)
+    mock_fetch.assert_called_once_with("http://example.com", timeout=30)
 
     mock_logging.error.assert_called_once()
     message, = mock_logging.error.call_args.args
@@ -176,17 +176,17 @@ class TestCrawlerLoaderGaps:
             return_value="https://example.com",
         ):
             with patch(
-                "docsgpt.parser.remote.crawler_loader.pinned_request"
-            ) as mock_pinned_request:
-                mock_pinned_request.return_value = DummyResponse("<html><body>test</body></html>")
+                "docsgpt.parser.remote.crawler_loader.fetch_page"
+            ) as mock_fetch:
+                mock_fetch.return_value = DummyResponse("<html><body>test</body></html>")
 
                 result = loader.load_data("https://example.com")
                 assert result[0].text == "test"
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_colliding_pages_get_distinct_file_paths(mock_pinned_request, mock_validate_url):
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_colliding_pages_get_distinct_file_paths(mock_fetch, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             "<html><body><a href='/a'>A</a><a href='/a.html'>A2</a>"
@@ -196,7 +196,7 @@ def test_colliding_pages_get_distinct_file_paths(mock_pinned_request, mock_valid
         "http://example.com/a.html": DummyResponse("<html><body>a2</body></html>"),
         "http://example.com/l?page=2": DummyResponse("<html><body>l</body></html>"),
     }
-    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+    mock_fetch.side_effect = lambda url, *_, **__: responses[url]
 
     result = CrawlerLoader(limit=10).load_data("http://example.com")
 
@@ -210,8 +210,8 @@ def test_colliding_pages_get_distinct_file_paths(mock_pinned_request, mock_valid
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_reordered_query_and_fragment_variants_are_fetched_once(mock_pinned_request, mock_validate_url):
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_reordered_query_and_fragment_variants_are_fetched_once(mock_fetch, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             "<html><body><a href='/p?a=1&b=2'>P</a><a href='/p?b=2&a=1'>P2</a>"
@@ -221,11 +221,11 @@ def test_reordered_query_and_fragment_variants_are_fetched_once(mock_pinned_requ
         "http://example.com/p?b=2&a=1": DummyResponse("<html><body>p</body></html>"),
         "http://example.com/p?a=1&b=2#top": DummyResponse("<html><body>p</body></html>"),
     }
-    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+    mock_fetch.side_effect = lambda url, *_, **__: responses[url]
 
     result = CrawlerLoader(limit=10).load_data("http://example.com")
 
-    fetched = [c.args[1] for c in mock_pinned_request.call_args_list]
+    fetched = [c.args[0] for c in mock_fetch.call_args_list]
     assert fetched[0] == "http://example.com"
     assert len(fetched) == 2
     # The page is fetched as a link wrote it, not as its normalized key.
@@ -234,15 +234,15 @@ def test_reordered_query_and_fragment_variants_are_fetched_once(mock_pinned_requ
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_malformed_link_does_not_abort_the_crawl(mock_pinned_request, mock_validate_url):
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_malformed_link_does_not_abort_the_crawl(mock_fetch, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             "<html><body><a href='http://[bad'>Bad</a><a href='/good'>Good</a></body></html>"
         ),
         "http://example.com/good": DummyResponse("<html><body>good</body></html>"),
     }
-    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+    mock_fetch.side_effect = lambda url, *_, **__: responses[url]
 
     result = CrawlerLoader(limit=10).load_data("http://example.com")
 
@@ -250,11 +250,11 @@ def test_malformed_link_does_not_abort_the_crawl(mock_pinned_request, mock_valid
 
 
 @patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
-def test_links_that_only_mention_the_site_are_not_crawled(mock_pinned_request, mock_validate_url):
+@patch("docsgpt.parser.remote.crawler_loader.fetch_page")
+def test_links_that_only_mention_the_site_are_not_crawled(mock_fetch, mock_validate_url):
     requested = []
 
-    def response_side_effect(_method: str, url: str, timeout=30):
+    def response_side_effect(url: str, *_, **__):
         requested.append(url)
         if url == "http://example.com":
             return DummyResponse(
@@ -268,7 +268,7 @@ def test_links_that_only_mention_the_site_are_not_crawled(mock_pinned_request, m
             )
         return DummyResponse("<html><body>page</body></html>")
 
-    mock_pinned_request.side_effect = response_side_effect
+    mock_fetch.side_effect = response_side_effect
 
     result = CrawlerLoader(limit=5).load_data("http://example.com")
 

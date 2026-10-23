@@ -23,6 +23,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from urllib.parse import urlparse, urlsplit
 
+import requests
 import tldextract
 
 from docsgpt.core.settings import settings
@@ -35,10 +36,10 @@ from docsgpt.parser.remote.base import (
     url_to_virtual_path,
 )
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.schema.base import Document
-from docsgpt.security.safe_url import pinned_request
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,37 @@ DISCOVERY_MODES = ("auto", "sitemap", "links")
 MAX_URL_LENGTH = 2048
 MAX_SITE_ENTRIES = 20
 MAX_SKIP_RULES = 1000
+
 # Well-known sitemap locations, tried when robots.txt names none.
 _WELL_KNOWN_SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml")
 _SITEMAP_LINE = re.compile(r"^\s*sitemap\s*:\s*(\S+)", re.IGNORECASE)
 # How much of a response to look at to decide it is a sitemap.
 _SNIFF_BYTES = 64 * 1024
+# Google reads the first 500 KiB of a robots.txt; past that is not a real one.
+_ROBOTS_MAX_BYTES = 512 * 1024
+# robots.txt ``Sitemap:`` lines taken. Sites list one to a handful; each is a
+# sitemap walk.
+MAX_ROBOTS_SITEMAPS = 10
+
+# Every fetch a load makes (pages that fail or aren't HTML, robots.txt,
+# sitemaps) is charged to one budget per source, so dead or non-HTML hosts
+# can't multiply the work by the number of sites. It allows each page of the
+# cap two attempts, plus the discovery fetches of a few sites; a normal load
+# never reaches it.
+_FETCHES_PER_PAGE = 2
+_DISCOVERY_FETCHES = 30
+
+
+def fetch_budget_for(cap: int) -> int:
+    """How many fetches one load of a source may make.
+
+    Args:
+        cap: The source's page cap (``WEB_MAX_PAGES``).
+
+    Returns:
+        The fetch budget.
+    """
+    return _FETCHES_PER_PAGE * int(cap) + _DISCOVERY_FETCHES
 
 # The bundled public-suffix snapshot is enough to tell a registered domain;
 # the default extractor would fetch the live list on first use.
@@ -160,11 +187,24 @@ class SiteScope:
         return not any(key.startswith(section + "/") for section in self.skip_sections)
 
 
-def _fetch(url: str):
-    """GET ``url``; ``None`` on a blocked address, a network error or an error status."""
+def _fetch(url: str, max_bytes: int, budget: Optional[FetchBudget] = None) -> Optional[requests.Response]:
+    """GET at most ``max_bytes`` of ``url`` for discovery.
+
+    Args:
+        url: The address.
+        max_bytes: How much of the body to read; the rest is cut off.
+        budget: The load's fetch budget, charged one fetch.
+
+    Returns:
+        The response, or ``None`` on a spent budget, a blocked address, a
+        network error or an error status.
+    """
+    if budget is not None and not budget.take():
+        logger.debug(f"Sitemap discovery: fetch budget spent before {url}")
+        return None
     try:
         url = validate_url(url)
-        response = pinned_request("GET", url, timeout=15)
+        response = fetch_page(url, max_bytes, timeout=15)
         response.raise_for_status()
         return response
     except (SSRFError, Exception) as e:  # noqa: BLE001 - discovery is best effort
@@ -172,7 +212,15 @@ def _fetch(url: str):
         return None
 
 
-def _looks_like_sitemap(response) -> bool:
+def _looks_like_sitemap(response: requests.Response) -> bool:
+    """Whether a response is a sitemap (XML or gzip), not a soft-404 HTML page.
+
+    Args:
+        response: A fetched well-known sitemap location.
+
+    Returns:
+        True for gzip bytes or a ``<urlset>``/``<sitemapindex>`` near the start.
+    """
     content = response.content if isinstance(response.content, bytes) else b""
     if content[:2] == b"\x1f\x8b":
         return True
@@ -181,32 +229,45 @@ def _looks_like_sitemap(response) -> bool:
 
 
 def _is_sitemap_url(url: str) -> bool:
+    """Whether an address names a sitemap file (``.xml`` or ``.xml.gz``).
+
+    Args:
+        url: A start address.
+
+    Returns:
+        True when its path ends in ``.xml`` or ``.xml.gz``.
+    """
     path = urlparse(url).path.lower()
     return path.endswith(".xml") or path.endswith(".xml.gz")
 
 
-def discover_sitemaps(start_url: str) -> List[str]:
+def discover_sitemaps(start_url: str, budget: Optional[FetchBudget] = None) -> List[str]:
     """Find a site's sitemaps: robots.txt ``Sitemap:`` lines, else the well-known locations.
 
     Args:
         start_url: Any address on the site.
+        budget: The load's fetch budget; each discovery fetch costs one.
 
     Returns:
-        Sitemap URLs to walk, in order; empty when the site has none.
+        Sitemap URLs to walk, in order, at most ``MAX_ROBOTS_SITEMAPS``;
+        empty when the site has none.
     """
     parsed = urlparse(start_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    robots = _fetch(origin + "/robots.txt")
+    robots = _fetch(origin + "/robots.txt", _ROBOTS_MAX_BYTES, budget)
     if robots is not None:
         listed = []
         for line in (robots.text or "").splitlines():
             match = _SITEMAP_LINE.match(line)
             if match and match.group(1) not in listed:
                 listed.append(match.group(1))
+                if len(listed) >= MAX_ROBOTS_SITEMAPS:
+                    break
         if listed:
             return listed
     for path in _WELL_KNOWN_SITEMAPS:
-        response = _fetch(origin + path)
+        # Only the head is sniffed; the sitemap walk fetches it in full.
+        response = _fetch(origin + path, _SNIFF_BYTES, budget)
         # A soft 404 answers every path with the app's HTML shell.
         if response is not None and _looks_like_sitemap(response):
             return [origin + path]
@@ -335,12 +396,13 @@ def parse_website_config(
 class WebsiteLoader(BaseRemote):
     """Load a Website source's pages and sites into documents."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Start with an empty report."""
         # What the last load did, per site: how pages were found and whether
         # the page limit cut it short. Read by the worker for its notice.
         self.report: Dict[str, Any] = {}
 
-    def load_data(self, inputs) -> List[Document]:
+    def load_data(self, inputs: Union[str, Dict[str, Any]]) -> List[Document]:
         """Fetch every entry, drop duplicates, and name pages for the file tree.
 
         Args:
@@ -349,12 +411,15 @@ class WebsiteLoader(BaseRemote):
         Returns:
             One document per page: the pages first, then each site's, in entry
             order. ``WEB_MAX_PAGES`` caps the total, so sites get what the
-            pages leave.
+            pages leave. Every fetch, discovery included, is charged to one
+            budget (``fetch_budget_for``), so failed or non-HTML fetches can't
+            multiply across sites.
         """
         # A stored config: the write limits don't apply, the fetch budget does.
         config = parse_website_config(inputs, enforce_page_cap=False)
         keep_links = config["keep_links"]
         cap = int(settings.WEB_MAX_PAGES)
+        fetches = FetchBudget(fetch_budget_for(cap))
         documents: List[Document] = []
         seen = set()
         site_reports = []
@@ -369,15 +434,15 @@ class WebsiteLoader(BaseRemote):
                     continue
                 if key in seen:
                     continue
-                docs = WebLoader(keep_links=keep_links).load_data([entry["url"]])
+                docs = WebLoader(keep_links=keep_links, budget=fetches).load_data([entry["url"]])
             else:
-                budget = cap - len(documents)
-                if budget < 1:
+                pages_left = min(cap - len(documents), fetches.remaining)
+                if pages_left < 1:
                     site_reports.append({
                         "url": entry["url"], "found_with": None, "pages": 0, "limit_reached": True,
                     })
                     continue
-                docs, report = self._load_site(entry, config["skip"], keep_links, budget)
+                docs, report = self._load_site(entry, config["skip"], keep_links, pages_left, fetches)
                 site_reports.append(report)
             for doc in docs:
                 key = page_key(doc.extra_info["source"])
@@ -396,7 +461,11 @@ class WebsiteLoader(BaseRemote):
 
     @staticmethod
     def _load_site(
-        entry: Dict[str, Any], skip: List[str], keep_links: bool, budget: Optional[int] = None,
+        entry: Dict[str, Any],
+        skip: List[str],
+        keep_links: bool,
+        budget: Optional[int] = None,
+        fetches: Optional[FetchBudget] = None,
     ) -> Tuple[List[Document], Dict[str, Any]]:
         """Load one whole-site entry through its sitemap, else by following links.
 
@@ -405,6 +474,7 @@ class WebsiteLoader(BaseRemote):
             skip: The source's skip rules.
             keep_links: Keep the URL of links inside sentences.
             budget: The most pages the source has left; lowers the entry's limit.
+            fetches: The load's fetch budget, charged for discovery and pages.
 
         Returns:
             The pages, and a report: the start URL, ``found_with`` (``sitemap``,
@@ -423,7 +493,7 @@ class WebsiteLoader(BaseRemote):
         elif pasted_sitemap:
             sitemaps = [url]
         elif discovery in ("auto", "sitemap"):
-            sitemaps = discover_sitemaps(url)
+            sitemaps = discover_sitemaps(url, fetches)
         else:
             sitemaps = []
 
@@ -431,14 +501,14 @@ class WebsiteLoader(BaseRemote):
         found_with = None
         limit_reached = False
         if sitemaps:
-            loader = SitemapLoader(limit=limit, accept=scope.accepts, keep_links=keep_links)
+            loader = SitemapLoader(limit=limit, accept=scope.accepts, keep_links=keep_links, budget=fetches)
             urls = loader.collect_urls(sitemaps)
             if urls:
                 docs = loader.load_pages(urls)
                 found_with = "sitemap"
                 limit_reached = loader.limit_reached
         if not docs and discovery != "sitemap" and not pasted_sitemap:
-            loader = CrawlerLoader(limit=limit, accept=scope.accepts, keep_links=keep_links)
+            loader = CrawlerLoader(limit=limit, accept=scope.accepts, keep_links=keep_links, budget=fetches)
             docs = loader.load_data(url)
             found_with = "links" if docs else None
             limit_reached = loader.limit_reached

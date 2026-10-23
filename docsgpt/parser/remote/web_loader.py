@@ -1,4 +1,5 @@
 import logging
+from typing import List, Optional, Union
 
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.parser.remote.base import (
@@ -6,8 +7,8 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import page_document
-from docsgpt.security.safe_url import pinned_request
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document
+from docsgpt.parser.schema.base import Document
 
 headers = {
     "User-Agent": "Mozilla/5.0",
@@ -22,14 +23,25 @@ headers = {
 
 
 class WebLoader(BaseRemote):
-    def __init__(self, keep_links: bool = False):
+    def __init__(self, keep_links: bool = False, budget: Optional[FetchBudget] = None):
         """
         Args:
             keep_links: Keep the URL of links inside sentences in page text.
+            budget: Fetches the whole load may still make; ``None`` for no cap.
         """
         self.keep_links = keep_links
+        self.budget = budget
 
-    def load_data(self, inputs):
+    def load_data(self, inputs: Union[str, List[str]]) -> List[Document]:
+        """Fetch each address as one page.
+
+        Args:
+            inputs: A URL or a list of them.
+
+        Returns:
+            One document per page that loaded; a blocked address, a failed
+            fetch or a response with no text is skipped.
+        """
         urls = inputs
         if isinstance(urls, str):
             urls = [urls]
@@ -44,8 +56,11 @@ class WebLoader(BaseRemote):
         include_host = spans_multiple_hosts(valid_urls)
         documents = []
         for url in valid_urls:
+            if self.budget is not None and not self.budget.take():
+                logging.warning(f"Fetch budget spent; not fetching {url}")
+                break
             try:
-                response = pinned_request("GET", url, headers=headers, timeout=30)
+                response = fetch_page(url, headers=headers, timeout=30)
                 response.raise_for_status()
                 document = page_document(
                     response.content,

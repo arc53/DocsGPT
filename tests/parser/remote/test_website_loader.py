@@ -2,9 +2,10 @@
 
 import gzip
 from contextlib import ExitStack
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+import requests
 
 from docsgpt.parser.remote.website_loader import SiteScope, WebsiteLoader, discover_sitemaps
 
@@ -36,39 +37,47 @@ def robots(*sitemaps) -> tuple:
 
 
 class FakeWeb:
-    """Answers ``pinned_request`` from a URL map; unknown URLs are 404s."""
+    """Answers ``pinned_fetch_bytes`` from a URL map; unknown URLs are 404s.
+
+    It keeps the real fetcher's contract: at most ``max_bytes`` of body,
+    truncated or refused with ``ResponseTooLargeError``.
+    """
 
     def __init__(self, sites: dict):
         self.sites = sites
         self.fetched = []
+        self.limits = {}
 
-    def __call__(self, method, url, **kwargs):
+    def __call__(self, url, *, max_bytes, headers=None, timeout=10.0, allow_redirects=False, truncate=False):
+        from docsgpt.security.safe_url import ResponseTooLargeError
+
         self.fetched.append(url)
-        response = MagicMock()
+        self.limits[url] = (max_bytes, truncate)
+        response = requests.Response()
         response.url = url
+        response.reason = "Not Found"
         if url not in self.sites:
             response.status_code = 404
-            response.raise_for_status.side_effect = Exception(f"404 {url}")
-            return response
+            return b"", response
         content_type, body = self.sites[url]
         content = body if isinstance(body, bytes) else body.encode()
+        if len(content) > max_bytes:
+            if not truncate:
+                raise ResponseTooLargeError(f"response body exceeds the {max_bytes}-byte limit")
+            content = content[:max_bytes]
         response.status_code = 200
-        response.headers = {"Content-Type": content_type}
-        response.content = content
-        response.text = content.decode("utf-8", "replace")
-        response.raise_for_status.return_value = None
-        return response
+        response.headers["Content-Type"] = content_type
+        return content, response
 
 
 @pytest.fixture
 def web():
-    """Patch every module's fetch with one fake web; DNS answers a public address."""
+    """Patch the shared fetch with one fake web; DNS answers a public address."""
 
     def install(sites):
         fake = FakeWeb(sites)
         stack = ExitStack()
-        for module in ("website_loader", "sitemap_loader", "crawler_loader", "web_loader"):
-            stack.enter_context(patch(f"docsgpt.parser.remote.{module}.pinned_request", fake))
+        stack.enter_context(patch("docsgpt.parser.remote.page_content.pinned_fetch_bytes", fake))
         stack.enter_context(patch("docsgpt.core.url_validation.resolve_hostname", return_value="93.184.216.34"))
         install.stacks.append(stack)
         return fake
@@ -466,3 +475,130 @@ class TestWebsiteLoaderLenientRead:
 
         # Page entries are fetched as stored; the lowered cap only limits sites.
         assert len(docs) == 3
+
+
+class TestBoundedFetching:
+    def test_a_page_is_read_only_up_to_the_markup_cap(self, web):
+        filler = "<p>" + "word " * 200 + "</p>"
+        fake = web({
+            "https://x.io/": page("Home", body=filler + "<a href='/late'>late</a>"),
+            "https://x.io/late": page("Late"),
+        })
+        with patch("docsgpt.parser.remote.page_content.settings") as fake_settings:
+            fake_settings.MARKUP_MAX_BYTES = 300
+            docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]})
+
+        # The link sits past the cap, so the crawl never sees it.
+        assert sources(docs) == ["https://x.io/"]
+        assert fake.limits["https://x.io/"] == (301, True)
+        assert "https://x.io/late" not in fake.fetched
+
+    def test_robots_and_sitemaps_are_size_capped(self, web):
+        from docsgpt.parser.remote.sitemap_loader import MAX_SITEMAP_BYTES
+
+        fake = web({
+            "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
+            "https://x.io/sitemap.xml": urlset("https://x.io/p"),
+            "https://x.io/p": page("P"),
+        })
+        WebsiteLoader().load_data({"entries": [{"url": "https://x.io/", "mode": "site"}]})
+
+        robots_cap, _ = fake.limits["https://x.io/robots.txt"]
+        assert robots_cap <= 512 * 1024
+        assert fake.limits["https://x.io/sitemap.xml"] == (MAX_SITEMAP_BYTES, False)
+
+    def test_an_oversized_sitemap_is_skipped(self, web):
+        with patch("docsgpt.parser.remote.sitemap_loader.MAX_SITEMAP_BYTES", 50):
+            web({
+                "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
+                "https://x.io/sitemap.xml": urlset("https://x.io/p", "https://x.io/q"),
+                "https://x.io/": page("Home"),
+            })
+            loader = WebsiteLoader()
+            docs = loader.load_data({"entries": [{"url": "https://x.io/", "mode": "site"}]})
+
+        # No usable sitemap: Automatic falls back to following links.
+        assert loader.report["sites"][0]["found_with"] == "links"
+        assert sources(docs) == ["https://x.io/"]
+
+    def test_robots_sitemap_lines_are_capped(self, web):
+        from docsgpt.parser.remote.website_loader import MAX_ROBOTS_SITEMAPS
+
+        listed = [f"https://x.io/s{i}.xml" for i in range(MAX_ROBOTS_SITEMAPS + 5)]
+        web({"https://x.io/robots.txt": robots(*listed)})
+
+        assert discover_sitemaps("https://x.io/") == listed[:MAX_ROBOTS_SITEMAPS]
+
+    def test_dead_sites_share_one_fetch_budget(self, web):
+        # Every site lists pages that aren't HTML: no documents, so a budget
+        # that only shrinks for documents would let each site fetch its fill.
+        from docsgpt.parser.remote import website_loader
+
+        sites = {}
+        entries = []
+        for i in range(20):
+            host = f"https://h{i}.io"
+            sites[f"{host}/robots.txt"] = robots(f"{host}/sitemap.xml")
+            sites[f"{host}/sitemap.xml"] = urlset(*[f"{host}/f{j}.pdf" for j in range(10)])
+            sites.update({f"{host}/f{j}.pdf": ("application/pdf", b"%PDF-1.4") for j in range(10)})
+            entries.append({"url": f"{host}/", "mode": "site", "discovery": "sitemap"})
+        fake = web(sites)
+        loader = WebsiteLoader()
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 5
+            fake_settings.WEB_DEFAULT_PAGES = 5
+            docs = loader.load_data({"entries": entries})
+
+        assert docs == []
+        assert len(fake.fetched) <= website_loader.fetch_budget_for(5)
+        assert len(fake.fetched) < 20 * 7
+        assert loader.report["sites"][-1]["limit_reached"] is True
+
+    def test_child_sitemaps_per_walk_are_capped(self, web):
+        from docsgpt.parser.remote.sitemap_loader import MAX_SITEMAPS_PER_WALK
+
+        children = [f"https://x.io/c{i}.xml" for i in range(MAX_SITEMAPS_PER_WALK + 30)]
+        sites = {"https://x.io/index.xml": index(*children)}
+        # Empty children: the page budget never stops the walk on its own.
+        sites.update({child: urlset() for child in children})
+        fake = web(sites)
+        from docsgpt.parser.remote.sitemap_loader import SitemapLoader
+
+        SitemapLoader(limit=100).collect_urls(["https://x.io/index.xml"])
+
+        assert len(fake.fetched) == MAX_SITEMAPS_PER_WALK
+
+    def test_a_nested_entry_that_is_not_a_sitemap_is_not_a_page(self, web):
+        # A hostile index lists pages as child sitemaps: they must not reach
+        # the source past scope and skips.
+        web({
+            "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
+            "https://x.io/sitemap.xml": index("https://evil.io/page", "https://x.io/skipped", "https://x.io/s0.xml"),
+            "https://evil.io/page": page("Evil"),
+            "https://x.io/skipped": page("Skipped"),
+            "https://x.io/s0.xml": urlset("https://x.io/ok"),
+            "https://x.io/ok": page("OK"),
+        })
+        docs = WebsiteLoader().load_data({
+            "entries": [{"url": "https://x.io/", "mode": "site"}],
+            "skip": ["https://x.io/skipped"],
+        })
+
+        assert sources(docs) == ["https://x.io/ok"]
+
+    def test_exactly_the_limit_is_not_reported_as_cut_short(self, web):
+        web({
+            "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
+            "https://x.io/sitemap.xml": urlset("https://x.io/a", "https://x.io/b"),
+            "https://x.io/a": page("A"),
+            "https://x.io/b": page("B"),
+        })
+        exact = WebsiteLoader()
+        exact.load_data({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 2}]})
+        short = WebsiteLoader()
+        docs = short.load_data({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 1}]})
+
+        assert exact.report["sites"][0] == {"url": "https://x.io/", "found_with": "sitemap", "pages": 2,
+                                            "limit_reached": False}
+        assert short.report["sites"][0]["limit_reached"] is True
+        assert sources(docs) == ["https://x.io/a"]

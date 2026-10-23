@@ -15,9 +15,10 @@ lists of bare links never carry them.
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Dict, Optional, Union
 from urllib.parse import urljoin, urlparse
 
+import requests
 from bs4 import BeautifulSoup, NavigableString
 from markdownify import MarkdownConverter
 
@@ -25,8 +26,91 @@ from docsgpt.core.settings import settings
 from docsgpt.parser.file.html_parser import MARKDOWNIFY_OPTIONS, cap_markup_bytes, soup_to_markdown
 from docsgpt.parser.remote.base import url_to_virtual_path
 from docsgpt.parser.schema.base import Document
+from docsgpt.security.safe_url import pinned_fetch_bytes
 
 logger = logging.getLogger(__name__)
+
+# The most of one page a fetch reads when MARKUP_MAX_BYTES is off (0): the
+# gate keeps the parser bounded, this keeps the download bounded.
+_PAGE_CEILING_BYTES = 50 * 1024 * 1024
+
+
+def page_fetch_bytes() -> int:
+    """How much of a page body a fetch reads.
+
+    One byte over ``MARKUP_MAX_BYTES``, so ``cap_markup_bytes`` still sees
+    the page as too large, cuts it on a line and logs it.
+
+    Returns:
+        The byte ceiling to pass to ``fetch_page``.
+    """
+    cap = int(settings.MARKUP_MAX_BYTES)
+    return cap + 1 if cap > 0 else _PAGE_CEILING_BYTES
+
+
+def fetch_page(
+    url: str,
+    max_bytes: Optional[int] = None,
+    *,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: float = 30.0,
+    truncate: bool = True,
+) -> requests.Response:
+    """GET ``url`` through the SSRF-pinned fetcher, reading at most ``max_bytes``.
+
+    The body is streamed and counted after Content-Encoding is undone, so a
+    gzip bomb or a server that never stops sending can't exhaust memory.
+
+    Args:
+        url: The address to fetch.
+        max_bytes: The byte ceiling; ``None`` for a page's (``page_fetch_bytes``).
+        headers: Extra request headers.
+        timeout: Seconds per connect and read.
+        truncate: Keep the first ``max_bytes`` of a larger body; ``False``
+            raises ``ResponseTooLargeError`` instead.
+
+    Returns:
+        The response, its ``content`` the capped body. An error status has an
+        empty body; call ``raise_for_status`` as usual.
+
+    Raises:
+        UnsafeUserUrlError: If the URL fails the SSRF guard.
+        ResponseTooLargeError: If the body is too large and ``truncate`` is off.
+        requests.RequestException: For network failures.
+    """
+    body, response = pinned_fetch_bytes(
+        url,
+        max_bytes=page_fetch_bytes() if max_bytes is None else max_bytes,
+        headers=headers,
+        timeout=timeout,
+        truncate=truncate,
+    )
+    # The stream is spent and closed; hand the capped body back as the
+    # response's content, so callers read ``content`` and ``text`` as usual.
+    response._content = body
+    return response
+
+
+class FetchBudget:
+    """Fetches one load may still make, shared by every loader it runs."""
+
+    def __init__(self, limit: int):
+        """
+        Args:
+            limit: How many fetches the load may make in all.
+        """
+        self.remaining = max(0, int(limit))
+
+    def take(self) -> bool:
+        """Spend one fetch.
+
+        Returns:
+            False, spending nothing, when the budget is used up.
+        """
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
 
 # Site chrome: never the page's content.
 _CHROME_TAGS = [

@@ -122,11 +122,32 @@ class TestParseSitemap:
         </sitemapindex>"""
 
         with patch.object(
-            loader, "_extract_urls",
+            loader, "_walk",
             return_value=["https://example.com/page1"]
         ):
             urls = loader._parse_sitemap(parent_xml)
             assert "https://example.com/page1" in urls
+
+    def test_a_nested_entry_that_is_not_a_sitemap_is_dropped(self):
+        # Only <url> entries are pages; a child "sitemap" that answers with
+        # a page would otherwise skip accept().
+        loader = SitemapLoader(accept=lambda url: False)
+        parent_xml = _sitemap_index("https://evil.io/page")
+
+        with patch.object(loader, "_walk", return_value=None):
+            assert loader._parse_sitemap(parent_xml) == []
+
+    def test_exactly_the_limit_is_not_limit_reached(self):
+        url = "https://example.com/sitemap.xml"
+        exact = SitemapLoader(limit=2)
+        more = SitemapLoader(limit=1)
+        fake = _serve({url: _urlset("https://e.io/a", "https://e.io/b")})
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
+            assert exact.collect_urls([url]) == ["https://e.io/a", "https://e.io/b"]
+            assert more.collect_urls([url]) == ["https://e.io/a"]
+
+        assert exact.limit_reached is False
+        assert more.limit_reached is True
 
     def test_parse_empty_sitemap(self):
         loader = SitemapLoader()
@@ -159,8 +180,8 @@ class TestParseSitemap:
 @pytest.mark.unit
 class TestExtractUrls:
 
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_extract_urls_from_sitemap(self, mock_pinned_request):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_extract_urls_from_sitemap(self, mock_fetch):
         loader = SitemapLoader()
 
         response = MagicMock()
@@ -172,13 +193,13 @@ class TestExtractUrls:
             <url><loc>https://example.com/p</loc></url>
         </urlset>"""
         response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_fetch.return_value = response
 
         urls = loader._extract_urls("https://example.com/sitemap.xml")
         assert "https://example.com/p" in urls
 
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_extract_urls_not_sitemap(self, mock_pinned_request):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_extract_urls_not_sitemap(self, mock_fetch):
         loader = SitemapLoader()
 
         response = MagicMock()
@@ -186,23 +207,23 @@ class TestExtractUrls:
         response.url = "https://example.com/page"
         response.text = "<html>Normal page</html>"
         response.raise_for_status.return_value = None
-        mock_pinned_request.return_value = response
+        mock_fetch.return_value = response
 
         urls = loader._extract_urls("https://example.com/page")
         assert urls == ["https://example.com/page"]
 
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_extract_urls_http_error(self, mock_pinned_request):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_extract_urls_http_error(self, mock_fetch):
         loader = SitemapLoader()
-        mock_pinned_request.side_effect = requests.exceptions.HTTPError("404")
+        mock_fetch.side_effect = requests.exceptions.HTTPError("404")
 
         urls = loader._extract_urls("https://example.com/missing")
         assert urls == []
 
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_extract_urls_connection_error(self, mock_pinned_request):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_extract_urls_connection_error(self, mock_fetch):
         loader = SitemapLoader()
-        mock_pinned_request.side_effect = requests.exceptions.ConnectionError()
+        mock_fetch.side_effect = requests.exceptions.ConnectionError()
 
         urls = loader._extract_urls("https://example.com/bad")
         assert urls == []
@@ -213,7 +234,7 @@ class TestExtractUrls:
         loader = SitemapLoader()
 
         with patch(
-            "docsgpt.parser.remote.sitemap_loader.pinned_request",
+            "docsgpt.parser.remote.sitemap_loader.fetch_page",
             side_effect=UnsafeUserUrlError("blocked"),
         ):
             urls = loader._extract_urls("http://169.254.169.254/")
@@ -239,11 +260,11 @@ def _page_response(text: str) -> MagicMock:
 class TestSitemapLoaderLoadData:
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_load_data_success(self, mock_pinned_request, mock_validate):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_load_data_success(self, mock_fetch, mock_validate):
         loader = SitemapLoader(limit=10)
         mock_validate.side_effect = lambda url: url
-        mock_pinned_request.return_value = _page_response("Page body")
+        mock_fetch.return_value = _page_response("Page body")
 
         with patch.object(
             loader, "_extract_urls",
@@ -267,11 +288,11 @@ class TestSitemapLoaderLoadData:
             assert docs == []
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_load_data_list_input(self, mock_pinned_request, mock_validate):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_load_data_list_input(self, mock_fetch, mock_validate):
         loader = SitemapLoader()
         mock_validate.side_effect = lambda url: url
-        mock_pinned_request.return_value = _page_response("List body")
+        mock_fetch.return_value = _page_response("List body")
 
         with patch.object(
             loader, "_extract_urls",
@@ -282,24 +303,24 @@ class TestSitemapLoaderLoadData:
             assert docs[0].text == "List body"
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_load_data_respects_limit(self, mock_pinned_request, mock_validate):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_load_data_respects_limit(self, mock_fetch, mock_validate):
         loader = SitemapLoader(limit=2)
         mock_validate.side_effect = lambda url: url
-        mock_pinned_request.return_value = _page_response("Limited body")
+        mock_fetch.return_value = _page_response("Limited body")
 
         urls = [f"https://example.com/page{i}" for i in range(10)]
         with patch.object(loader, "_extract_urls", return_value=urls):
             docs = loader.load_data("https://example.com/sitemap.xml")
             assert len(docs) == 2
-            assert mock_pinned_request.call_count == 2
+            assert mock_fetch.call_count == 2
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_load_data_handles_url_error(self, mock_pinned_request, mock_validate):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_load_data_handles_url_error(self, mock_fetch, mock_validate):
         loader = SitemapLoader()
         mock_validate.side_effect = lambda url: url
-        mock_pinned_request.side_effect = Exception("Load failed")
+        mock_fetch.side_effect = Exception("Load failed")
 
         with patch.object(
             loader, "_extract_urls",
@@ -321,11 +342,11 @@ class TestSitemapLoaderLoadData:
             assert docs == []
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_load_data_no_limit(self, mock_pinned_request, mock_validate):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_load_data_no_limit(self, mock_fetch, mock_validate):
         loader = SitemapLoader(limit=None)
         mock_validate.side_effect = lambda url: url
-        mock_pinned_request.return_value = _page_response("No limit body")
+        mock_fetch.return_value = _page_response("No limit body")
 
         urls = [f"https://example.com/page{i}" for i in range(5)]
         with patch.object(loader, "_extract_urls", return_value=urls):
@@ -336,10 +357,10 @@ class TestSitemapLoaderLoadData:
 @pytest.mark.unit
 class TestSitemapLoaderDistinctPaths:
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url", side_effect=lambda url: url)
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_colliding_pages_get_distinct_file_paths(self, mock_pinned_request, mock_validate):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_colliding_pages_get_distinct_file_paths(self, mock_fetch, mock_validate):
         loader = SitemapLoader(limit=None)
-        mock_pinned_request.return_value = _page_response("Page body")
+        mock_fetch.return_value = _page_response("Page body")
         urls =["https://x.io/p?page=2", "https://x.io/p", "https://x.io/p.htm"]
 
         with patch.object(loader, "_extract_urls", return_value=urls):
@@ -352,10 +373,10 @@ class TestSitemapLoaderDistinctPaths:
 class TestSitemapLoaderMalformedEntry:
 
     @patch("docsgpt.core.url_validation.resolve_hostname", return_value="93.184.216.34")
-    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
-    def test_malformed_entry_is_skipped_and_the_rest_ingest(self, mock_pinned_request, _mock_resolve):
+    @patch("docsgpt.parser.remote.sitemap_loader.fetch_page")
+    def test_malformed_entry_is_skipped_and_the_rest_ingest(self, mock_fetch, _mock_resolve):
         loader = SitemapLoader()
-        mock_pinned_request.return_value = _page_response("Good body")
+        mock_fetch.return_value = _page_response("Good body")
 
         with patch.object(
             loader, "_extract_urls",
@@ -366,7 +387,7 @@ class TestSitemapLoaderMalformedEntry:
         assert [d.extra_info for d in docs] == [
             {"source": "https://example.com/good", "file_path": "good.md"}
         ]
-        mock_pinned_request.assert_called_once()
+        mock_fetch.assert_called_once()
 
 
 # =====================================================================
@@ -391,9 +412,9 @@ def _urlset(*pages):
 
 
 def _serve(sites):
-    """A ``pinned_request`` stand-in that answers from a URL -> XML bytes map."""
+    """A ``fetch_page`` stand-in that answers from a URL -> XML bytes map."""
 
-    def fake(method, url, **kwargs):
+    def fake(url, *_, **__):
         body = sites[url]
         response = MagicMock()
         response.headers = {"Content-Type": "application/xml"}
@@ -412,7 +433,7 @@ class TestNestedSitemapSafety:
     def test_self_referencing_index_is_fetched_once(self):
         url = "https://example.com/sitemap.xml"
         fake = _serve({url: _sitemap_index(url)})
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             urls = SitemapLoader()._extract_urls(url)
 
         assert urls == []
@@ -425,10 +446,10 @@ class TestNestedSitemapSafety:
             a: _sitemap_index(b),
             b: _sitemap_index(a),
         })
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             SitemapLoader()._extract_urls(a)
 
-        fetched = [call.args[1] for call in fake.call_args_list]
+        fetched = [call.args[0] for call in fake.call_args_list]
         assert sorted(fetched) == [a, b]
 
     def test_nesting_deeper_than_the_cap_stops(self, caplog):
@@ -438,7 +459,7 @@ class TestNestedSitemapSafety:
         sites = {u: _sitemap_index(chain[i + 1]) for i, u in enumerate(chain[:-1])}
         sites[chain[-1]] = _urlset("https://example.com/deep")
         fake = _serve(sites)
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             urls = SitemapLoader()._extract_urls(chain[0])
 
         assert urls == []
@@ -452,7 +473,7 @@ class TestNestedSitemapSafety:
         for i, child in enumerate(children):
             sites[child] = _urlset(f"https://example.com/page{i}")
         fake = _serve(sites)
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             urls = SitemapLoader(limit=3)._extract_urls(index)
 
         assert len(urls) >= 3
@@ -471,17 +492,17 @@ class TestNestedSitemapSafety:
         for i, child in enumerate(children):
             sites[child] = _urlset(f"https://example.com/child-page{i}")
         fake = _serve(sites)
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             urls = SitemapLoader(limit=3)._extract_urls(root)
 
-        fetched_children = [c.args[1] for c in fake.call_args_list if c.args[1] in children]
+        fetched_children = [c.args[0] for c in fake.call_args_list if c.args[0] in children]
         assert fetched_children == [children[0]]
         assert urls == ["https://example.com/a", "https://example.com/b", "https://example.com/child-page0"]
 
     def test_limit_caps_leaf_urls_in_one_sitemap(self):
         url = "https://example.com/sitemap.xml"
         fake = _serve({url: _urlset(*[f"https://example.com/p{i}" for i in range(10)])})
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             urls = SitemapLoader(limit=3)._extract_urls(url)
 
         assert urls == ["https://example.com/p0", "https://example.com/p1", "https://example.com/p2"]
@@ -498,7 +519,7 @@ class TestNestedSitemapSafety:
             bad: b"<urlset><url><loc>https://example.com/x",
             good: _urlset("https://example.com/ok"),
         })
-        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
             urls = SitemapLoader()._extract_urls(index)
 
         assert urls == ["https://example.com/ok"]

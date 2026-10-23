@@ -1,12 +1,12 @@
 import logging
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Union
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, normalize_page_url, url_to_virtual_path
-from docsgpt.parser.remote.page_content import page_document
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document
+from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
-from docsgpt.security.safe_url import pinned_request
 
 
 class CrawlerLoader(BaseRemote):
@@ -15,6 +15,7 @@ class CrawlerLoader(BaseRemote):
         limit: Optional[int] = 10,
         accept: Optional[Callable[[str], bool]] = None,
         keep_links: bool = False,
+        budget: Optional[FetchBudget] = None,
     ):
         """
         Args:
@@ -22,14 +23,24 @@ class CrawlerLoader(BaseRemote):
             accept: Which links to follow. Default: the start page's scheme
                 and host.
             keep_links: Keep the URL of links inside sentences in page text.
+            budget: Fetches the whole load may still make; ``None`` for no cap.
         """
         self.limit = limit
         self.accept = accept
         self.keep_links = keep_links
+        self.budget = budget
         # Whether the last crawl stopped at the limit with pages left to visit.
         self.limit_reached = False
 
-    def load_data(self, inputs):
+    def load_data(self, inputs: Union[str, List[str]]) -> List[Document]:
+        """Crawl from a start page, following links the scope accepts.
+
+        Args:
+            inputs: The start URL (or a list whose first item is).
+
+        Returns:
+            One document per page that loaded, at most ``limit`` fetches.
+        """
         url = inputs
         if isinstance(url, list) and url:
             url = url[0]
@@ -59,13 +70,19 @@ class CrawlerLoader(BaseRemote):
             page_key = normalize_page_url(current_url)
             if page_key in visited_urls:
                 continue
+            if self.budget is not None and not self.budget.take():
+                self.limit_reached = True
+                break
             visited_urls.add(page_key)
 
             try:
-                response = pinned_request("GET", current_url, timeout=30)
+                # Capped at the page size gate: the links come from the same
+                # bytes the document does.
+                response = fetch_page(current_url, timeout=30)
                 response.raise_for_status()
+                body = response.content
                 document = page_document(
-                    response.content, response.headers.get("Content-Type"), current_url,
+                    body, response.headers.get("Content-Type"), current_url,
                     keep_links=self.keep_links,
                 )
                 if document is None:
@@ -73,7 +90,7 @@ class CrawlerLoader(BaseRemote):
                     # to keep and no links to follow.
                     continue
                 loaded_content.append(document)
-                soup = BeautifulSoup(response.content, "html.parser")
+                soup = BeautifulSoup(body, "html.parser")
             except Exception as e:
                 logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)
                 continue

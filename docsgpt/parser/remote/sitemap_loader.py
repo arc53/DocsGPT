@@ -1,7 +1,7 @@
 import logging
 import re
 import zlib
-from typing import Callable, List, Optional, Set
+from typing import Callable, List, Optional, Set, Union
 
 import defusedxml.ElementTree as ET
 from defusedxml import DefusedXmlException
@@ -11,10 +11,10 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import page_document
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
-from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
+from docsgpt.security.safe_url import UnsafeUserUrlError
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,14 @@ logger = logging.getLogger(__name__)
 # gave. Real sites use one or two; past this it is a loop or a trap.
 MAX_SITEMAP_DEPTH = 5
 
+# How many sitemap files one walk fetches in all, the given ones included.
+# Large sites split by section or by date into a few dozen; an index listing
+# thousands of children is a crawl trap, and each child is a fetch.
+MAX_SITEMAPS_PER_WALK = 50
+
 # The sitemaps protocol caps an uncompressed sitemap at 50 MB; a gzip that
-# inflates past it is refused rather than decompressed into memory.
+# inflates past it is refused rather than decompressed into memory. A
+# download past it (after Content-Encoding is undone) is refused too.
 MAX_SITEMAP_BYTES = 50 * 1024 * 1024
 _GZIP_MAGIC = b"\x1f\x8b"
 
@@ -56,6 +62,7 @@ class SitemapLoader(BaseRemote):
         limit: Optional[int] = 20,
         accept: Optional[Callable[[str], bool]] = None,
         keep_links: bool = False,
+        budget: Optional[FetchBudget] = None,
     ):
         """
         Args:
@@ -64,14 +71,26 @@ class SitemapLoader(BaseRemote):
             accept: Which page URLs count. Applied while walking, so the limit
                 takes the sitemap's own order after exclusions.
             keep_links: Keep the URL of links inside sentences in page text.
+            budget: Fetches the whole load may still make, sitemaps and pages
+                alike; ``None`` for no cap.
         """
         self.limit = limit
         self.accept = accept
         self.keep_links = keep_links
-        # Whether the last walk filled the limit, so the sitemap may list more.
+        self.budget = budget
+        # Whether the last walk found more pages than the limit took.
         self.limit_reached = False
 
-    def load_data(self, inputs):
+    def load_data(self, inputs: Union[str, List[str]]) -> List[Document]:
+        """Walk a sitemap and load the pages it lists.
+
+        Args:
+            inputs: The sitemap URL (or a list whose first item is). A URL
+                that isn't a sitemap is loaded as a page.
+
+        Returns:
+            One document per page that loaded, at most ``limit``.
+        """
         sitemap_url= inputs
         # Check if the input is a list and if it is, use the first element
         if isinstance(sitemap_url, list) and sitemap_url:
@@ -101,19 +120,21 @@ class SitemapLoader(BaseRemote):
 
         Returns:
             Accepted page URLs, in sitemap order, at most ``limit`` of them.
+            ``limit_reached`` says whether the sitemaps list more.
         """
         visited: Set[str] = set()
         urls: List[str] = []
+        # One URL past the limit tells "exactly the limit" from "more left".
+        wanted = None if self.limit is None else self.limit + 1
         for sitemap_url in sitemap_urls:
-            remaining = None if self.limit is None else self.limit - len(urls)
+            remaining = None if wanted is None else wanted - len(urls)
             if remaining is not None and remaining <= 0:
                 break
-            found = self._extract_urls(sitemap_url, visited, 0, remaining)
-            if found == [sitemap_url]:
-                continue
-            urls.extend(found)
-        self.limit_reached = self.limit is not None and len(urls) >= self.limit
-        return urls
+            found = self._walk(sitemap_url, visited, 0, remaining)
+            if found:
+                urls.extend(found)
+        self.limit_reached = self.limit is not None and len(urls) > self.limit
+        return urls if self.limit is None else urls[: self.limit]
 
     def load_pages(self, urls: List[str]) -> List[Document]:
         """Fetch page URLs (already collected from a sitemap) into documents.
@@ -136,8 +157,12 @@ class SitemapLoader(BaseRemote):
             except SSRFError as e:
                 logger.error(f"URL validation failed for sitemap entry {url}: {e}")
                 continue
+            if self.budget is not None and not self.budget.take():
+                logger.warning(f"Fetch budget spent; not fetching {url}")
+                self.limit_reached = True
+                break
             try:
-                response = pinned_request("GET", url, timeout=30)
+                response = fetch_page(url, timeout=30)
                 response.raise_for_status()
                 # A shared extractor, so sitemap pages get a title like the
                 # others do (their citations showed a wall of chunk text).
@@ -166,12 +191,35 @@ class SitemapLoader(BaseRemote):
     ) -> List[str]:
         """Fetch a sitemap (or page) URL and return the page URLs it lists.
 
-        Each sitemap is fetched at most once per walk, and nested sitemap
-        indexes are followed at most ``MAX_SITEMAP_DEPTH`` levels deep, so a
-        sitemap that lists itself (or a ring of them) cannot loop.
-
         Args:
             sitemap_url: The sitemap or page URL to fetch.
+            visited: Sitemap URLs already fetched in this walk (see ``_walk``).
+            depth: How many sitemap indexes deep this URL is.
+            budget: How many more URLs the walk may collect.
+
+        Returns:
+            At most ``budget`` page URLs, or ``[sitemap_url]`` when it is not
+            a sitemap (the legacy sitemap loader then loads it as a page).
+        """
+        found = self._walk(sitemap_url, visited, depth, budget)
+        return [sitemap_url] if found is None else found
+
+    def _walk(
+        self,
+        sitemap_url: str,
+        visited: Optional[Set[str]] = None,
+        depth: int = 0,
+        budget: Optional[int] = None,
+    ) -> Optional[List[str]]:
+        """Fetch a sitemap and return the page URLs it and its children list.
+
+        Each sitemap is fetched at most once per walk, nested sitemap indexes
+        are followed at most ``MAX_SITEMAP_DEPTH`` levels deep, and a walk
+        fetches at most ``MAX_SITEMAPS_PER_WALK`` sitemaps, so a sitemap that
+        lists itself (or a ring, or thousands of children) cannot run away.
+
+        Args:
+            sitemap_url: The sitemap URL to fetch.
             visited: Sitemap URLs already fetched in this walk; shared with
                 the nested calls. ``None`` starts a new walk.
             depth: How many sitemap indexes deep this URL is.
@@ -179,8 +227,8 @@ class SitemapLoader(BaseRemote):
                 from ``limit`` (itself ``None`` for no cap).
 
         Returns:
-            At most ``budget`` page URLs, or ``[sitemap_url]`` when it is not
-            a sitemap.
+            At most ``budget`` page URLs; ``None`` when the URL answered but
+            is not a sitemap.
         """
         budget = self.limit if budget is None else budget
         if budget is not None and budget <= 0:
@@ -195,10 +243,16 @@ class SitemapLoader(BaseRemote):
                 f"Not following sitemap {sitemap_url}: nesting depth exceeds {MAX_SITEMAP_DEPTH}"
             )
             return []
+        if len(visited) >= MAX_SITEMAPS_PER_WALK:
+            logger.warning(f"Not following sitemap {sitemap_url}: the walk read {MAX_SITEMAPS_PER_WALK} sitemaps")
+            return []
+        if self.budget is not None and not self.budget.take():
+            logger.warning(f"Fetch budget spent; not fetching sitemap {sitemap_url}")
+            return []
         visited.add(key)
 
         try:
-            response = pinned_request("GET", sitemap_url, timeout=30)
+            response = fetch_page(sitemap_url, MAX_SITEMAP_BYTES, timeout=30, truncate=False)
             response.raise_for_status()
         except UnsafeUserUrlError as e:
             logger.error(f"URL validation failed for sitemap: {sitemap_url}. Error: {e}")
@@ -219,9 +273,7 @@ class SitemapLoader(BaseRemote):
         if self._is_sitemap(response):
             # It's a sitemap, so parse it and extract URLs
             return self._parse_sitemap(response.content, visited, depth, budget)
-        else:
-            # It's not a sitemap, return the URL itself
-            return [sitemap_url]
+        return None
 
     def _is_sitemap(self, response):
         content_type = response.headers.get('Content-Type', '')
@@ -245,7 +297,8 @@ class SitemapLoader(BaseRemote):
         The URL budget is shared by the whole walk: once it is spent, no more
         page URLs are collected and no more child sitemaps are fetched.
         Unparseable XML is treated as an empty sitemap rather than failing the
-        whole ingest.
+        whole ingest. A child entry that turns out not to be a sitemap is
+        dropped: only ``<url>`` entries are pages, and only after ``accept``.
 
         Args:
             sitemap_content: Raw sitemap XML.
@@ -289,6 +342,6 @@ class SitemapLoader(BaseRemote):
             nested_sitemap_url = (sitemap.text or "").strip()
             if not nested_sitemap_url:
                 continue
-            urls.extend(self._extract_urls(nested_sitemap_url, visited, depth + 1, remaining()))
+            urls.extend(self._walk(nested_sitemap_url, visited, depth + 1, remaining()) or [])
 
         return urls
