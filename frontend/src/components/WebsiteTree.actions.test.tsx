@@ -1039,6 +1039,31 @@ describe('WebsiteTree page management', () => {
     expect(atCall).toEqual([true]);
   });
 
+  it("reads the source's list again when the host says its settings were saved", async () => {
+    await render();
+    service.getWebsite.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        config: { entries: [{ url: 'https://docs.x.io/', mode: 'site' }] },
+      }),
+    });
+    await act(async () => {
+      root.render(
+        <WebsiteTree
+          docId="src-1"
+          sourceName="Docs"
+          onBackToDocuments={() => undefined}
+          hosts={['docs.x.io']}
+          syncFrequency="weekly"
+          settingsVersion={1}
+        />,
+      );
+    });
+    expect(service.getWebsite).toHaveBeenCalledTimes(2);
+    const { text } = await askRemovePage('extra.md', STRUCTURE['extra.md']);
+    expect(text).toContain('settings.sources.website.removeCrawled');
+  });
+
   describe('a sync the host started', () => {
     const renderSyncing = async (
       sync: { startedAt: number; taskId: string | null } | null,

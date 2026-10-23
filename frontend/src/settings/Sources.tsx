@@ -289,6 +289,8 @@ export default function Sources({
   const [busyViewId, setBusyViewId] = useState<string | null>(null);
   const reportBusy = (id: string) => (busy: boolean) =>
     setBusyViewId((current) => (busy ? id : current === id ? null : current));
+  // Bumped when the open source's settings are saved (see WebsiteTree).
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);
@@ -386,7 +388,11 @@ export default function Sources({
       refreshDocs(undefined, currentPage, rowsPerPage);
     },
     onChanged: () => refreshDocs(undefined, currentPage, rowsPerPage),
-    onPatched: patchDoc,
+    onPatched: (id, patch) => {
+      patchDoc(id, patch);
+      // The open view reads what it keeps of the settings again.
+      if (id === documentToView?.id) setSettingsVersion((v) => v + 1);
+    },
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
     syncingId:
@@ -595,6 +601,7 @@ export default function Sources({
           website={documentToView.website}
           syncFrequency={documentToView.syncFrequency}
           syncedAt={documentToView.date}
+          settingsVersion={settingsVersion}
           sync={viewSync}
           onSyncSettled={settleSync}
           onBusyChange={reportBusy(documentToView.id || '')}
@@ -615,6 +622,7 @@ export default function Sources({
             hosts={documentToView.website.hosts}
             syncFrequency={documentToView.syncFrequency}
             syncedAt={documentToView.date}
+            settingsVersion={settingsVersion}
             sync={viewSync}
             onSyncSettled={settleSync}
             onBusyChange={reportBusy(documentToView.id || '')}

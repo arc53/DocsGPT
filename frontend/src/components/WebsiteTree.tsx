@@ -60,6 +60,11 @@ interface WebsiteTreeProps {
   /** When the source was last ingested or synced. */
   syncedAt?: string;
   /**
+   * Bumped by the host each time the source's settings are saved elsewhere
+   * (Source settings), so the tree reads the source's list again.
+   */
+  settingsVersion?: number;
+  /**
    * A sync of this source the host started (the source's ⋯ → Sync now), with
    * when its request went out and the task it queued. The tree waits for it
    * as for its own changes: busy meanwhile, then read again. A new object
@@ -203,6 +208,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   onPagesChanged,
   syncFrequency,
   syncedAt,
+  settingsVersion = 0,
   sync,
   onSyncSettled,
   onBusyChange,
@@ -277,7 +283,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [docId, canEdit, configKey]);
+  }, [docId, canEdit, configKey, settingsVersion]);
 
   // A finished change reads what it touched again, while the tree shows.
   const { attach } = changes;

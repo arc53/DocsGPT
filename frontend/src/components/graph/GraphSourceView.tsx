@@ -67,6 +67,8 @@ interface GraphSourceViewProps {
   syncFrequency?: string;
   /** When the source was last ingested or synced (a Website source's byline). */
   syncedAt?: string;
+  /** A Website source: bumped when its settings are saved (see WebsiteTree). */
+  settingsVersion?: number;
   /**
    * A Website source: a sync the host started. The view waits for it on
    * every tab, as for its page list's own changes (see `useWebsiteChanges`).
@@ -118,6 +120,7 @@ export default function GraphSourceView({
   website,
   syncFrequency,
   syncedAt,
+  settingsVersion,
   sync,
   onSyncSettled,
   onPagesChanged,
@@ -287,6 +290,7 @@ export default function GraphSourceView({
       hosts={website.hosts}
       syncFrequency={syncFrequency}
       syncedAt={syncedAt}
+      settingsVersion={settingsVersion}
       onBackToDocuments={onBackToDocuments}
       initialPath={filesPath}
       linkedChunk={linked}

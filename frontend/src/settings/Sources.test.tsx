@@ -1016,6 +1016,17 @@ describe('Sources access', () => {
     expect(viewProps['website-tree'].syncedAt).toBe('2026-10-23T09:00:00Z');
   });
 
+  it("Source settings saved on an open website view make its tree read the source's list again", async () => {
+    await openView(doc(WEBSITE_OWNER));
+    const before = viewProps['website-tree'].settingsVersion as number;
+    await viewMenu();
+    await clickItem('settings.sources.editConfig');
+    await act(async () =>
+      configModal.props!.onSaved({ syncFrequency: 'weekly' }),
+    );
+    expect(viewProps['website-tree'].settingsVersion).toBe(before + 1);
+  });
+
   it('a GraphRAG website source hands its pages to the graph view', async () => {
     const website = { hosts: ['docs.x.io'], pages: 9 };
     await openView(
