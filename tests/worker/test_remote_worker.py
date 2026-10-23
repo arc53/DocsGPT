@@ -459,6 +459,45 @@ class TestRemoteWorkerWebsite:
         stored = SourcesRepository(pg_conn).get(str(source["id"]), "bob")["metadata"]["website"]
         assert stored["sites"] == loader.report["sites"]
         assert stored["fetched_at"] == leaf["fetched_at"]
+        # Not redirected: no requested address.
+        assert "requested_url" not in leaf
+
+    def test_a_redirected_page_keeps_the_address_it_was_asked_for(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
+    ):
+        # A page entry is listed as typed (/old); removing the page must find that entry.
+        import json as _json
+
+        from docsgpt import worker
+
+        loader = MagicMock(name="website_loader")
+        loader.load_data.return_value = [
+            Document(
+                text="# New\nMoved here.",
+                extra_info={
+                    "source": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old",
+                    "title": "New", "file_path": "new.md",
+                },
+                doc_id="d1",
+            )
+        ]
+        loader.report = {"pages": 1, "sites": []}
+        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
+        uploaded: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
+        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
+
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        config = {"entries": [{"url": "https://docs.x.io/old", "mode": "page"}], "skip": [], "keep_links": False}
+        worker.remote_worker(
+            task_self, config, "Docs", "bob", "website",
+            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
+        )
+
+        leaf = _json.loads(uploaded[0]["directory_structure"])["new.md"]
+        assert leaf["url"] == "https://docs.x.io/new"
+        assert leaf["requested_url"] == "https://docs.x.io/old"
 
     @pytest.mark.parametrize("report, reached", [
         # Page entries cut by the page cap: no site reached its own limit.

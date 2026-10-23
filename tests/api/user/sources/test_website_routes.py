@@ -511,6 +511,48 @@ class TestRemovePages:
             "Deploying/Docker.md", "Deploying/Kubernetes.md",
         ]
 
+    def test_pages_named_outside_a_removed_folder_get_their_own_rules(self, app, pg_conn):
+        # The folder's section rule doesn't cover extra.md; without its own rule the next crawl brings it back.
+        src = _seed(pg_conn)
+        response = self._remove(app, pg_conn, src, file_paths=["extra.md"], directory_path="Deploying")
+
+        assert response.status_code == 200
+        assert response.json["removed"] == 3
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/"]
+        assert saved["skip"] == ["https://docs.x.io/Deploying/*", "https://docs.x.io/extra"]
+
+    def test_a_redirected_page_entry_leaves_the_list_by_its_requested_address(self, app, pg_conn):
+        # Added as /old, stored under /new after the redirect: the entry is /old.
+        tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_url": "https://docs.x.io/old"}}
+        config = {"entries": CONFIG["entries"] + [{"url": "https://docs.x.io/old", "mode": "page"}], "skip": []}
+        src = _seed(pg_conn, remote_data=config, directory_structure=tree)
+        response = self._remove(app, pg_conn, src, file_paths=["new.md"])
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/", "https://docs.x.io/extra"]
+        # The site reaches both addresses, so neither brings the page back.
+        assert saved["skip"] == ["https://docs.x.io/new", "https://docs.x.io/old"]
+        self.pages_task.delay.assert_called_once_with(str(src["id"]), USER, "remove", pages=[
+            {"path": "new.md", "url": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old"},
+        ])
+
+    def test_a_redirected_page_entry_in_a_removed_folder_leaves_the_list(self, app, pg_conn):
+        tree = {"index.md": _leaf("https://docs.x.io/", 5), "guide": {
+            "new.md": {**_leaf("https://docs.x.io/guide/new", 3), "requested_url": "https://docs.x.io/guide/old"},
+        }}
+        config = {"entries": [
+            {"url": "https://docs.x.io/", "mode": "page"}, {"url": "https://docs.x.io/guide/old", "mode": "page"},
+        ]}
+        src = _seed(pg_conn, remote_data=config, directory_structure=tree)
+        response = self._remove(app, pg_conn, src, directory_path="guide")
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/"]
+        assert saved["skip"] == []
+
     def test_too_many_paths_in_one_request_are_refused(self, app, pg_conn):
         src = _seed(pg_conn)
         with patch("docsgpt.api.user.sources.website.MAX_REMOVE_PATHS", 2):
@@ -648,6 +690,18 @@ class TestAddPages:
 
         assert response.status_code == 200
 
+    def test_a_listed_page_that_redirected_counts_once(self, app, pg_conn):
+        # Listed as /old, stored as /new: 4 pages in the tree, /old is one of them.
+        tree = {**TREE, "extra.md": {**_leaf("https://docs.x.io/new", 7), "requested_url": "https://docs.x.io/old"}}
+        src = _seed(pg_conn, directory_structure=tree, remote_data={**CONFIG, "entries": [
+            CONFIG["entries"][0], {"url": "https://docs.x.io/old", "mode": "page"},
+        ]})
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 5
+            response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+
+        assert response.status_code == 200
+
     def test_the_merged_config_is_validated(self, app, pg_conn):
         src = _seed(pg_conn)
         with patch(
@@ -713,6 +767,16 @@ class TestRefreshPage:
         assert response.status_code == 200
         pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md", url="https://docs.x.io/Deploying/Docker",
+        )
+
+    def test_a_redirected_page_is_found_by_the_address_it_was_asked_for(self, app, pg_conn):
+        tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_url": "https://docs.x.io/old"}}
+        src = _seed(pg_conn, directory_structure=tree)
+        response, pages_task = self._refresh(app, pg_conn, src, "old.md", url="https://docs.x.io/old")
+
+        assert response.status_code == 200
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "refresh", file_path="new.md", url="https://docs.x.io/new",
         )
 
     def test_an_address_no_longer_in_the_source_is_400(self, app, pg_conn):

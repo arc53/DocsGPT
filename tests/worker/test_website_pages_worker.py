@@ -815,6 +815,137 @@ class TestTheTreeAndTheChunksAgree:
         assert store.texts_for("https://docs.x.io/a") == [] and store.texts_for("https://docs.x.io/new-a") == ["Moved A"]
 
 
+def _redirecting_loader(monkeypatch, pipeline, redirects, requested_key=True):
+    """``WebLoader.load_data`` following ``redirects`` (asked address to final one).
+
+    With ``requested_key``, a redirected page carries ``extra_info["requested_url"]``
+    as the parser sets it; without, it carries only its final address (an older parser).
+    """
+    from docsgpt.parser.remote import web_loader
+
+    def load(self, inputs):
+        pipeline["fetch_calls"].append((list(inputs), self.keep_links))
+        docs = []
+        for url in inputs:
+            final = redirects.get(url, url)
+            extra = {"source": final, "title": "T"}
+            if final != url and requested_key:
+                extra["requested_url"] = url
+            docs.append(Document(f"text of {final}", extra_info=extra))
+        return docs
+
+    monkeypatch.setattr(web_loader.WebLoader, "load_data", load)
+
+
+@pytest.mark.unit
+class TestRedirectedPages:
+    """A redirected page's leaf keeps the address it was asked for (``requested_url``)."""
+
+    @pytest.mark.parametrize("parser_sets_it", [True, False])
+    def test_an_added_page_that_redirects_keeps_its_requested_address(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch, parser_sets_it,
+    ):
+        from docsgpt import worker
+
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/old": "https://docs.x.io/new"}, parser_sets_it)
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/old"])
+
+        leaf = _tree(pg_conn, source)["new.md"]
+        assert leaf["url"] == "https://docs.x.io/new" and leaf["requested_url"] == "https://docs.x.io/old"
+
+    def test_a_page_that_does_not_redirect_has_no_requested_address(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert "requested_url" not in _tree(pg_conn, source)["b.md"]
+
+    def test_a_refresh_fetches_the_requested_address_and_keeps_it(
+        self, pg_conn, patch_worker_db, task_self, pipeline, monkeypatch,
+    ):
+        # As a sync does: the entry is /old, so /old is what is fetched.
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/old", "mode": "page"}]},
+            directory_structure={"new.md": {**_leaf("https://docs.x.io/new", 4), "requested_url": "https://docs.x.io/old"}},
+        )
+        pipeline["store"].seed("old new", "https://docs.x.io/new", "new.md")
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/old": "https://docs.x.io/new"}, False)
+        worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "refresh", file_path="new.md", url="https://docs.x.io/old",
+        )
+
+        assert pipeline["fetch_calls"][-1][0] == ["https://docs.x.io/old"]
+        tree = _tree(pg_conn, src)
+        assert list(tree) == ["new.md"]
+        assert tree["new.md"]["requested_url"] == "https://docs.x.io/old" and tree["new.md"]["fetched_at"] != OLD
+        assert pipeline["store"].texts_for("https://docs.x.io/new") == ["text of https://docs.x.io/new"]
+
+    def test_re_adding_the_requested_address_replaces_the_page_in_place(
+        self, pg_conn, patch_worker_db, task_self, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/old", "mode": "page"}]},
+            directory_structure={"moved.md": {**_leaf("https://docs.x.io/new", 4), "requested_url": "https://docs.x.io/old"}},
+        )
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/old": "https://docs.x.io/new"})
+        worker.website_pages_worker(task_self, str(src["id"]), USER, "add", urls=["https://docs.x.io/old"])
+
+        tree = _tree(pg_conn, src)
+        assert list(tree) == ["moved.md"] and tree["moved.md"]["fetched_at"] != OLD
+
+    def test_a_removal_finds_the_page_by_its_requested_address(self, pg_conn, patch_worker_db, task_self, pipeline):
+        # A sync since the route ran stored the page as fetched from /old, which no longer redirects.
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.seed("old page", "https://docs.x.io/old", "old.md")
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+            directory_structure={"old.md": _leaf("https://docs.x.io/old", 4), "a.md": _leaf("https://docs.x.io/a", 40)},
+        )
+
+        result = worker.website_pages_worker(task_self, str(src["id"]), USER, "remove", pages=[
+            {"path": "new.md", "url": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old"},
+        ])
+
+        assert result["pages"] == 1
+        assert list(_tree(pg_conn, src)) == ["a.md"]
+        assert store.texts_for("https://docs.x.io/old") == []
+
+    def test_a_removal_by_the_requested_address_finds_the_redirected_leaf(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.seed("new page", "https://docs.x.io/new", "new.md")
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+            directory_structure={
+                "new.md": {**_leaf("https://docs.x.io/new", 4), "requested_url": "https://docs.x.io/old"},
+                "a.md": _leaf("https://docs.x.io/a", 40),
+            },
+        )
+
+        worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "x.md", "url": "https://docs.x.io/old"}],
+        )
+
+        assert list(_tree(pg_conn, src)) == ["a.md"]
+        assert store.texts_for("https://docs.x.io/new") == []
+
+
 @pytest.mark.unit
 class TestThePageCount:
     """Settings show ``metadata.website.pages``; page changes keep it to the tree."""

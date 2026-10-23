@@ -9,7 +9,7 @@ deleted there, and added pages are fetched and appended. Sources made by the old
 loaders read as Website sources and are converted on their first save.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from flask import Response, current_app, jsonify, make_response, request
@@ -365,17 +365,20 @@ class RemoveWebsitePages(Resource):
                     structure = {}
 
                 known = dict(web_pages(structure))
+                requested = _requested_urls(structure)
                 pages = [(path, known[path]) for path in file_paths if path in known]
                 section_rule = None
+                folder_paths: set = set()
                 if directory_path:
                     folder_pages = pages_under(structure, directory_path)
+                    folder_paths = {path for path, _url in folder_pages}
                     named = {path for path, _url in pages}
                     pages.extend(p for p in folder_pages if p[0] not in named)
                     section_rule = folder_skip_rule(directory_path, folder_pages)
                 if not pages:
                     return _error("No such pages in this source", code="not_found")
 
-                config = _without_pages(stored, pages, section_rule)
+                config = _without_pages(stored, pages, section_rule, requested, folder_paths)
                 if not config["entries"]:
                     return _error(
                         "That would leave the source with nothing to fetch; delete the source instead",
@@ -396,11 +399,15 @@ class RemoveWebsitePages(Resource):
             # The chunks and tree entries go in the worker, under the source's
             # index lock: a running sync is waited for rather than refused, and
             # no request is held open while a large folder's chunks are deleted.
-            # Each page goes with its URL: the worker finds it by that in the
-            # tree as it is then, so a sync that moved it meanwhile still
-            # removes the right page.
+            # Each page goes with its URL (and, after a redirect, the address
+            # it was asked for): the worker finds it by that in the tree as it
+            # is then, so a sync that moved it meanwhile still removes the
+            # right page.
             task = website_pages.delay(
-                str(doc["id"]), ra.owner_id, "remove", pages=[{"path": path, "url": url} for path, url in pages]
+                str(doc["id"]), ra.owner_id, "remove", pages=[
+                    {"path": path, "url": url, **({"requested_url": requested[path]} if path in requested else {})}
+                    for path, url in pages
+                ],
             )
         except AccessDenied as err:
             return denied_response(err)
@@ -555,7 +562,7 @@ class RefreshWebsitePage(Resource):
         if refusal is not None:
             return refusal
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
-        page = _find_page(web_pages(structure), data["file_path"], data.get("url"))
+        page = _find_page(web_pages(structure), data["file_path"], data.get("url"), _requested_urls(structure))
         if page is None:
             return _error("No such page in this source", code="not_found")
         path, url = page
@@ -565,13 +572,17 @@ class RefreshWebsitePage(Resource):
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
-def _find_page(pages: list, file_path: str, url: Optional[str]) -> Optional[Tuple[str, str]]:
+def _find_page(
+    pages: list, file_path: str, url: Optional[str], requested: Optional[Dict[str, str]] = None,
+) -> Optional[Tuple[str, str]]:
     """The tree page a refresh names: by address when it gives one, else by path.
 
     Args:
         pages: ``(path, url)`` of the tree's pages.
         file_path: The tree path the caller saw.
-        url: The address the caller saw, if any; matched by ``page_key``.
+        url: The address the caller saw, if any; matched by ``page_key``
+            against each page's address and the one it was asked for.
+        requested: ``{path: requested_url}`` of the pages stored after a redirect.
 
     Returns:
         ``(path, url)`` as the tree holds it now, or ``None``.
@@ -579,7 +590,11 @@ def _find_page(pages: list, file_path: str, url: Optional[str]) -> Optional[Tupl
     if not url:
         return next(((path, page_url) for path, page_url in pages if path == file_path), None)
     key = _key(url)
-    matches = [(path, page_url) for path, page_url in pages if _key(page_url) == key]
+    requested = requested or {}
+    matches = [
+        (path, page_url) for path, page_url in pages
+        if key in {_key(u) for u in (page_url, requested.get(path)) if u}
+    ]
     return next((m for m in matches if m[0] == file_path), matches[0] if matches else None)
 
 
@@ -596,7 +611,8 @@ def _held_pages(config: dict, structure) -> dict:
 
     Its page entries count from when they are listed (one still queued, or
     one whose fetch failed, keeps its place), and so do the pages in its tree
-    (a site's crawl). A page that is both counts once.
+    (a site's crawl). A page that is both counts once, a redirected one too
+    (its entry lists the address its leaf keeps as ``requested_url``).
 
     Args:
         config: The Website config.
@@ -608,9 +624,11 @@ def _held_pages(config: dict, structure) -> dict:
     """
     tree = structure if isinstance(structure, dict) else {}
     tree_pages = web_pages(tree)
-    keys = {_key(url) for _path, url in tree_pages}
-    keys |= {_key(e["url"]) for e in config["entries"] if e["mode"] == "page"}
-    return {"keys": keys, "count": len(keys) + count_pages(tree) - len(tree_pages)}
+    tree_keys = {_key(url) for _path, url in tree_pages}
+    asked_keys = {_key(url) for url in _requested_urls(tree).values()} - tree_keys
+    entry_keys = {_key(e["url"]) for e in config["entries"] if e["mode"] == "page"}
+    held = len(tree_keys) + len(entry_keys - tree_keys - asked_keys)
+    return {"keys": tree_keys | asked_keys | entry_keys, "count": held + count_pages(tree) - len(tree_pages)}
 
 
 def _reachable(entries: list, skip: list, url: str) -> bool:
@@ -631,30 +649,82 @@ def _reachable(entries: list, skip: list, url: str) -> bool:
     )
 
 
-def _without_pages(config: dict, pages: list, section_rule: Optional[str]) -> dict:
+def _requested_urls(structure: Any, prefix: str = "") -> Dict[str, str]:
+    """``{tree path: requested_url}`` for the pages stored after a redirect.
+
+    A redirected page's leaf keeps the address it was asked for beside the
+    one it was stored under (``url``); a page entry is listed as typed, so
+    removing the page has to find the entry by that address.
+
+    Args:
+        structure: ``directory_structure``.
+        prefix: Path of ``structure`` within the whole tree.
+
+    Returns:
+        The asked-for address of each page leaf that has one.
+    """
+    found: Dict[str, str] = {}
+    for name, node in structure.items() if isinstance(structure, dict) else ():
+        path = f"{prefix}/{name}" if prefix else name
+        if isinstance(node, dict) and "token_count" in node:
+            if node.get("url") and isinstance(node.get("requested_url"), str) and node["requested_url"]:
+                found[path] = node["requested_url"]
+        elif isinstance(node, dict):
+            found.update(_requested_urls(node, path))
+    return found
+
+
+def _without_pages(
+    config: dict,
+    pages: list,
+    section_rule: Optional[str],
+    requested: Optional[Dict[str, str]] = None,
+    section_paths: Iterable[str] = (),
+) -> dict:
     """The config after removing pages: page entries leave, and what a site could find again is skipped.
 
     A removed page gets a skip rule whenever a remaining site entry's scope
     reaches it, whether it was added by address or found by the crawl;
     otherwise the next sync brings it back. A folder gets its section rule
-    when a remaining site reaches any of its pages or the section itself.
+    when a remaining site reaches any of its pages or the section itself; a
+    page named beside the folder but outside it gets its own rule.
+
+    A redirected page is one page under two addresses: the one it was stored
+    under and the one it was asked for (its leaf's ``requested_url``). A page
+    entry leaves when it lists either, and each address a site reaches gets
+    a rule.
 
     Args:
         config: The Website config.
         pages: ``(tree path, url)`` of the pages being removed.
         section_rule: A folder's ``https://host/path/*`` rule, when a folder is removed.
+        requested: ``{tree path: requested_url}`` of the pages stored after a redirect.
+        section_paths: Tree paths of the pages the folder (``section_rule``) holds.
 
     Returns:
         A new config.
     """
-    removed = {_key(url) for _path, url in pages}
+    requested = requested or {}
+
+    def addresses(path: str, url: str) -> List[str]:
+        return list(dict.fromkeys(u for u in (url, requested.get(path)) if u))
+
+    removed = {_key(address) for path, url in pages for address in addresses(path, url)}
     entries = [e for e in config["entries"] if not (e["mode"] == "page" and _key(e["url"]) in removed)]
     skip = list(config["skip"])
+    in_section = set(section_paths) if section_rule else set()
+    new_rules = []
     if section_rule:
         section = section_rule[: -len("*")]
-        urls = [url for _path, url in pages] + [section]
-        new_rules = [section_rule] if any(_reachable(entries, skip, url) for url in urls) else []
-    else:
-        new_rules = [url for _path, url in pages if _reachable(entries, skip, url)]
-    skip.extend(rule for rule in new_rules if rule not in skip)
+        urls = [a for path, url in pages if path in in_section for a in addresses(path, url)] + [section]
+        if any(_reachable(entries, skip, url) for url in urls):
+            new_rules.append(section_rule)
+    new_rules.extend(
+        address
+        for path, url in pages
+        if path not in in_section
+        for address in addresses(path, url)
+        if _reachable(entries, skip, address)
+    )
+    skip.extend(rule for rule in dict.fromkeys(new_rules) if rule not in skip)
     return {**config, "entries": entries, "skip": skip}

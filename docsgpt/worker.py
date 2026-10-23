@@ -1494,10 +1494,14 @@ def remote_worker(
 
                 # A web page keeps its address and title, so the Knowledge
                 # tree names it and links it instead of showing "index.md".
+                # After a redirect it keeps the address it was asked for too
+                # (``requested_url``): a page entry is listed as typed, so
+                # removing the page must find that entry.
                 page = None
                 if loader in _WEB_PAGE_LOADERS and doc.extra_info and doc.extra_info.get("source"):
                     page = {
                         "url": doc.extra_info["source"],
+                        "requested_url": doc.extra_info.get("requested_url"),
                         "title": doc.extra_info.get("title"),
                         "fetched_at": fetched_at,
                     }
@@ -4897,7 +4901,7 @@ def _delete_chunks_checked(store: Any, chunk_ids: List[str], relist: Callable[[]
 
 def _website_page_targets(
     operation: str, pages: List[Tuple[str, str]], urls: Optional[List[str]], file_path: Optional[str],
-    taken_paths: Iterable[str] = (), url: Optional[str] = None,
+    taken_paths: Iterable[str] = (), url: Optional[str] = None, requested: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[str], Dict[str, Dict[str, Any]], bool]:
     """What a ``website_pages`` run fetches, and where each page goes in the tree.
 
@@ -4912,6 +4916,10 @@ def _website_page_targets(
     the path the route saw may hold another page. Only a task queued before
     refreshes carried the address falls back to ``file_path``.
 
+    A page stored after a redirect (its leaf's ``requested_url``) is also
+    found by the address it was asked for, and is refreshed by fetching that
+    address again, as a sync fetches its entry.
+
     Args:
         operation: ``add`` or ``refresh``.
         pages: ``(path, url)`` of the pages in the tree.
@@ -4919,6 +4927,7 @@ def _website_page_targets(
         file_path: For ``refresh``: the page's tree path when the route checked it.
         taken_paths: Every leaf path in the tree, pages or not.
         url: For ``refresh``: the page's address when the route checked it.
+        requested: ``{path: requested_url}`` of the pages stored after a redirect.
 
     Returns:
         ``(urls to fetch, {page key: {"path", "old_url"}}, include_host)``;
@@ -4929,10 +4938,14 @@ def _website_page_targets(
     """
     from docsgpt.parser.remote.base import url_to_virtual_path
 
+    requested = requested or {}
     if operation == "refresh":
         if url:
             key = _web_page_key(url)
-            matches = [(path, page_url) for path, page_url in pages if _web_page_key(page_url) == key]
+            matches = [
+                (path, page_url) for path, page_url in pages
+                if key in {_web_page_key(u) for u in (page_url, requested.get(path)) if u}
+            ]
             if not matches:
                 raise ValueError(f"The page {url} is no longer in this source")
             # The path the route saw first, should two leaves share the page.
@@ -4941,12 +4954,18 @@ def _website_page_targets(
             path, stored_url = file_path, dict(pages).get(file_path)
             if not stored_url:
                 raise ValueError(f"No page at {file_path!r} in this source")
-        return [stored_url], {_web_page_key(stored_url): {"path": path, "old_url": stored_url}}, False
+        # A redirected page is fetched from the address it was asked for, as a sync does.
+        fetch_url = requested.get(path) or stored_url
+        return [fetch_url], {_web_page_key(stored_url): {"path": path, "old_url": stored_url}}, False
     if operation != "add":
         raise ValueError(f"Unknown operation {operation!r}")
     stored = {}
     for path, url in pages:
         stored.setdefault(_web_page_key(url), (path, url))
+    for path, url in pages:
+        # An address that redirects to a stored page is that page.
+        if requested.get(path):
+            stored.setdefault(_web_page_key(requested[path]), (path, url))
     include_host = len({urlsplit(u).netloc for _, u in pages} | {urlsplit(u).netloc for u in urls or []}) > 1
     taken = {path for path, _ in pages} | set(taken_paths)
     fetch: List[str] = []
@@ -5027,21 +5046,27 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     Args:
         store: The source's vector store.
         chunker: The source's chunker.
-        doc: The fetched page; ``extra_info["source"]`` is its URL.
+        doc: The fetched page; ``extra_info["source"]`` is its URL, and
+            ``extra_info["requested_url"]`` the address asked for when the
+            fetch was redirected.
         path: Its tree path.
         old_url: The stored address of the copy it replaces, if any.
         fetched_at: When it was fetched (ISO 8601).
 
     Returns:
-        ``{"key", "path", "leaf", "old_url", "old_ids", "new_ids"}``: the tree
-        change for the page, the chunks it replaces and the ones it added.
+        ``{"key", "path", "leaf", "old_url", "requested_url", "old_ids",
+        "new_ids"}``: the tree change for the page, the chunks it replaces and
+        the ones it added. The leaf carries ``requested_url`` only after a
+        redirect.
 
     Raises:
         Exception: Whatever adding the chunks raised; none of them stay.
     """
     url = doc.extra_info["source"]
+    requested_url = doc.extra_info.get("requested_url") or None
     doc.extra_info["file_path"] = path
-    old_ids = store.chunk_ids_by_source_paths([u for u in dict.fromkeys([old_url, url]) if u])
+    # A copy stored under the asked-for address (before it redirected) is this page too.
+    old_ids = store.chunk_ids_by_source_paths([u for u in dict.fromkeys([old_url, url, requested_url]) if u])
     texts: List[str] = []
     metadatas: List[Dict[str, Any]] = []
     token_count = 0
@@ -5058,28 +5083,37 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     # One batch per page: FAISS saves the whole index once, not once per chunk.
     added = store.add_chunks(texts, metadatas) if texts else []
     new_ids = [chunk_id for chunk_id in added if chunk_id is not None]
+    leaf = {
+        "type": "text/markdown",
+        "size_bytes": size_bytes,
+        "token_count": token_count,
+        "url": url,
+        "title": doc.extra_info.get("title"),
+        "fetched_at": fetched_at,
+    }
+    if requested_url and _web_page_key(requested_url) != _web_page_key(url):
+        leaf["requested_url"] = requested_url
     return {
         "key": _web_page_key(url),
         "path": path,
         "old_url": old_url,
+        "requested_url": leaf.get("requested_url"),
         "old_ids": old_ids,
         "new_ids": new_ids,
-        "leaf": {
-            "type": "text/markdown",
-            "size_bytes": size_bytes,
-            "token_count": token_count,
-            "url": url,
-            "title": doc.extra_info.get("title"),
-            "fetched_at": fetched_at,
-        },
+        "leaf": leaf,
     }
 
 
 def _change_keys(change: Dict[str, Any]) -> set:
-    """The ``page_key``s a page change covers: its fetched address and, after a redirect, the one it replaced."""
+    """The ``page_key``s a page change covers.
+
+    Its fetched address and, after a redirect, the one it replaced and the
+    one it was asked for.
+    """
     keys = {change["key"]}
-    if change.get("old_url"):
-        keys.add(_web_page_key(change["old_url"]))
+    for url in (change.get("old_url"), change.get("requested_url")):
+        if url:
+            keys.add(_web_page_key(url))
     return keys
 
 
@@ -5138,7 +5172,7 @@ def _delete_change_chunks(store: Any, change: Dict[str, Any], which: str) -> Non
     ids = change[which]
     if not ids:
         return
-    urls = [change["leaf"]["url"]] + ([change["old_url"]] if change.get("old_url") else [])
+    urls = [change["leaf"]["url"]] + [u for u in (change.get("old_url"), change.get("requested_url")) if u]
     try:
         _delete_chunks_checked(store, ids, lambda: store.chunk_ids_by_source_paths(urls))
     except Exception:  # noqa: BLE001 - the tree is settled; the caller reports the rest
@@ -5224,9 +5258,14 @@ def _pages_to_remove(
     their address) and a bare ``file_paths`` entry (a task queued before
     ``pages`` existed) fall back to the path.
 
+    A redirected page is one page under both its addresses: the leaf's
+    ``url`` and its ``requested_url`` are matched against the page's ``url``
+    and ``requested_url``, so a sync that fetched it again (redirected or
+    not any more) still removes it.
+
     Args:
         structure: ``directory_structure``, as it is now.
-        pages: ``{"path", "url"}`` per page.
+        pages: ``{"path", "url", "requested_url"?}`` per page.
         file_paths: Tree paths, from a task queued before ``pages``.
 
     Returns:
@@ -5237,16 +5276,18 @@ def _pages_to_remove(
     by_key: Dict[str, List[Tuple[str, Optional[str]]]] = {}
     for path, leaf in leaves:
         if leaf.get("url"):
-            by_key.setdefault(_web_page_key(leaf["url"]), []).append((path, leaf["url"]))
+            for address in dict.fromkeys(u for u in (leaf["url"], leaf.get("requested_url")) if u):
+                by_key.setdefault(_web_page_key(address), []).append((path, leaf["url"]))
     by_path = {path: leaf.get("url") or None for path, leaf in leaves}
     requested = list(pages or []) + [{"path": path} for path in file_paths or []]
     found: List[Tuple[str, Optional[str]]] = []
     for page in requested:
         if not isinstance(page, dict):
             continue
-        url = page.get("url")
-        if url:
-            found.extend(by_key.get(_web_page_key(url), []))
+        addresses = [u for u in (page.get("url"), page.get("requested_url")) if u]
+        if addresses:
+            for address in addresses:
+                found.extend(by_key.get(_web_page_key(address), []))
         elif page.get("path") in by_path:
             found.append((page["path"], by_path[page["path"]]))
     return list(dict.fromkeys(found))
@@ -5507,14 +5548,24 @@ def _run_website_pages(
     config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
     # Every leaf's path is taken, not only the pages': a leaf from before
     # leaves carried their address must not be overwritten by a new page.
-    leaf_paths = {path for path, _leaf in _tree_leaves(structure)}
+    leaves = _tree_leaves(structure)
+    leaf_paths = {path for path, _leaf in leaves}
+    requested = {path: leaf["requested_url"] for path, leaf in leaves if leaf.get("url") and leaf.get("requested_url")}
     fetch, targets, include_host = _website_page_targets(
-        operation, web_pages(structure), urls, file_path, taken_paths=leaf_paths, url=url,
+        operation, web_pages(structure), urls, file_path, taken_paths=leaf_paths, url=url, requested=requested,
     )
 
     docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
     if not docs:
         raise ValueError("None of the pages could be fetched; the source is unchanged")
+    if len(fetch) == 1:
+        # One address asked for: a page that came back under another was
+        # redirected, whether or not the loader says so.
+        for doc in docs:
+            if not doc.extra_info.get("requested_url") and _web_page_key(doc.extra_info["source"]) != _web_page_key(
+                fetch[0]
+            ):
+                doc.extra_info["requested_url"] = fetch[0]
 
     cfg = SourceConfig.parse(source.get("config"))
     chunker = ChunkerCreator.create_chunker(
@@ -5533,11 +5584,15 @@ def _run_website_pages(
     changes: List[Dict[str, Any]] = []
     failure: Optional[BaseException] = None
     for doc in docs:
-        url = doc.extra_info["source"]
-        key = _web_page_key(url)
+        doc_url = doc.extra_info["source"]
+        key = _web_page_key(doc_url)
         if any(change["key"] == key for change in changes):
             continue
         target = targets.get(key)
+        asked = doc.extra_info.get("requested_url")
+        if target is None and asked and (targets.get(_web_page_key(asked)) or {}).get("old_url"):
+            # The address asked for is a stored page (by its requested_url): replaced in place.
+            target = targets[_web_page_key(asked)]
         if target is None and operation == "refresh":
             # A page is stored under the address it redirects to: a refreshed
             # page that now redirects replaces itself, in place.
@@ -5547,7 +5602,7 @@ def _run_website_pages(
             target = in_tree[key]
         elif target is None:
             # The loader normalised the address past recognition.
-            target = {"path": _unique_page_path(url_to_virtual_path(url, include_host), taken), "old_url": None}
+            target = {"path": _unique_page_path(url_to_virtual_path(doc_url, include_host), taken), "old_url": None}
             taken.add(target["path"])
         try:
             changes.append(_replace_web_page(store, chunker, doc, target["path"], target["old_url"], fetched_at))
