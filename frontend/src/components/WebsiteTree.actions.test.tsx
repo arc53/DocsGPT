@@ -663,6 +663,60 @@ describe('WebsiteTree page management', () => {
     expect(controller.reloadFile).toHaveBeenCalledWith();
   });
 
+  describe('added pages that could not be fetched', () => {
+    const addPages = async (failedPages?: unknown) => {
+      await render();
+      captured.props!.controllerRef!.current = fakeController();
+      const add = Array.from(container.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('settings.sources.website.addPages'),
+      )!;
+      await act(async () => add.click());
+      await act(async () =>
+        captured.onQueued!(Date.now(), 'task-a', {
+          mode: 'append',
+          urls: ['https://docs.x.io/a', 'https://docs.x.io/b'],
+        }),
+      );
+      await act(async () =>
+        emitTerminal(
+          'completed',
+          'task-a',
+          failedPages === undefined ? {} : { failed_pages: failedPages },
+        ),
+      );
+    };
+
+    it('names the one page and says the next sync tries it again', async () => {
+      await addPages(['https://docs.x.io/b/']);
+      expect(toasted()).toEqual([
+        {
+          variant: 'warning',
+          message: expect.stringMatching(
+            /^settings\.sources\.website\.pageNotFetched .*"url":"docs\.x\.io\/b"/,
+          ),
+        },
+      ]);
+    });
+
+    it('counts several pages', async () => {
+      await addPages(['https://docs.x.io/a', 'https://docs.x.io/b']);
+      expect(toasted()).toEqual([
+        {
+          variant: 'warning',
+          message: expect.stringMatching(
+            /^settings\.sources\.website\.pagesNotFetched .*"count":2/,
+          ),
+        },
+      ]);
+    });
+
+    it('says nothing when every page came in', async () => {
+      await addPages();
+      await addPages([]);
+      expect(toasted()).toEqual([]);
+    });
+  });
+
   it('after appended pages, lists the open page again only when it was one of them', async () => {
     await render();
     const controller = fakeController();

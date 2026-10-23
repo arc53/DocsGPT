@@ -17,10 +17,27 @@ export type ReingestTerminal = 'completed' | 'failed' | 'timeout' | 'unmounted';
  * How a wait ended, with the terminal event's `reason` when it gave one: a
  * queued change that didn't run fails with `busy` (another change held the
  * source too long), `wiki` (the source became a wiki) or `gone` (deleted).
+ * A finished Website page add lists the pages it couldn't fetch in
+ * `failedPages` (their addresses; empty when every page came in).
  */
 export interface ReingestOutcome {
   terminal: ReingestTerminal;
   reason: string | null;
+  failedPages: string[];
+}
+
+/** An outcome that carries no event: an unmount or a timeout. */
+const bare = (terminal: ReingestTerminal): ReingestOutcome => ({
+  terminal,
+  reason: null,
+  failedPages: [],
+});
+
+/** The addresses in an event's `failed_pages`, when it lists any. */
+function failedPagesOf(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((url): url is string => typeof url === 'string' && !!url)
+    : [];
 }
 
 export interface WaitForTerminalOptions {
@@ -108,8 +125,7 @@ export function useReingestSseWaiter() {
     const settleAll = settleAllRef.current;
     return () => {
       mountedRef.current = false;
-      for (const settle of Array.from(settleAll))
-        settle({ terminal: 'unmounted', reason: null });
+      for (const settle of Array.from(settleAll)) settle(bare('unmounted'));
     };
   }, []);
 
@@ -121,7 +137,7 @@ export function useReingestSseWaiter() {
     ) =>
       new Promise<ReingestOutcome>((resolve) => {
         if (!mountedRef.current) {
-          resolve({ terminal: 'unmounted', reason: null });
+          resolve(bare('unmounted'));
           return;
         }
         const taskId = options.taskId || null;
@@ -158,6 +174,7 @@ export function useReingestSseWaiter() {
                   ? 'completed'
                   : 'failed',
               reason: typeof reason === 'string' ? reason : null,
+              failedPages: failedPagesOf(event.payload?.failed_pages),
             };
           }
           return null;
@@ -184,10 +201,7 @@ export function useReingestSseWaiter() {
           settleAllRef.current.delete(finish);
           resolve(value);
         };
-        timer = window.setTimeout(
-          () => finish({ terminal: 'timeout', reason: null }),
-          MAX_WAIT_MS,
-        );
+        timer = window.setTimeout(() => finish(bare('timeout')), MAX_WAIT_MS);
         pendingRef.current.add(check);
         settleAllRef.current.add(finish);
       }),

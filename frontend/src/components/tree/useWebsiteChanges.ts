@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
 
 import { showActionToast } from '../../notifications/actionToastSlice';
+import { pageAddress } from './pages';
 import { type ReingestTerminal, useReingestSseWaiter } from './useReingestWait';
 
 /** A sync the host started: when its request went out and the task it queued. */
@@ -151,7 +152,7 @@ export function useWebsiteChanges({
       { name, taskId, affects, hold }: AwaitChangeOptions = {},
     ): Promise<ReingestTerminal> => {
       const id = hold ?? begin(label);
-      const { terminal, reason } = await waitForChange(
+      const { terminal, reason, failedPages } = await waitForChange(
         docIdRef.current,
         startedAt,
         { taskId },
@@ -167,6 +168,21 @@ export function useWebsiteChanges({
       if (terminal === 'completed') {
         await reload(affects);
         onPagesChangedRef.current?.();
+        // Added pages the worker couldn't fetch stay listed, and the next
+        // sync tries them again.
+        if (failedPages.length === 1)
+          toast(
+            'warning',
+            tr('pageNotFetched', {
+              url: pageAddress(failedPages[0]),
+              interpolation: { escapeValue: false },
+            }),
+          );
+        else if (failedPages.length > 1)
+          toast(
+            'warning',
+            tr('pagesNotFetched', { count: failedPages.length }),
+          );
       } else if (terminal === 'timeout') {
         // Still queued or running: the buttons come back, and the tree
         // shows whatever has landed so far.

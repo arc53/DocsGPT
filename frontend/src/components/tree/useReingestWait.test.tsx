@@ -149,7 +149,11 @@ describe('useReingestSseWaiter', () => {
       );
     });
     await flush();
-    expect(result.value).toEqual({ terminal: 'failed', reason: 'busy' });
+    expect(result.value).toEqual({
+      terminal: 'failed',
+      reason: 'busy',
+      failedPages: [],
+    });
 
     const plain: { value: unknown } = { value: null };
     void waiter
@@ -163,7 +167,35 @@ describe('useReingestSseWaiter', () => {
       );
     });
     await flush();
-    expect(plain.value).toEqual({ terminal: 'completed', reason: null });
+    expect(plain.value).toEqual({
+      terminal: 'completed',
+      reason: null,
+      failedPages: [],
+    });
+  });
+
+  it('waitForChange carries the pages a finished add could not fetch', async () => {
+    mount();
+    const result: { value: unknown } = { value: null };
+    void waiter
+      .waitForChange('src-1', Date.now(), { taskId: 'task-a' })
+      .then((value) => (result.value = value));
+    act(() => {
+      store.dispatch(
+        sseEventReceived(
+          terminal('completed', Date.now(), {
+            task_id: 'task-a',
+            failed_pages: ['https://docs.x.io/a', 7, '', 'https://docs.x.io/b'],
+          }),
+        ),
+      );
+    });
+    await flush();
+    expect(result.value).toEqual({
+      terminal: 'completed',
+      reason: null,
+      failedPages: ['https://docs.x.io/a', 'https://docs.x.io/b'],
+    });
   });
 
   it('settles pending waits when the component unmounts', async () => {
