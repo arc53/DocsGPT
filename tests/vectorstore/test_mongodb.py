@@ -227,16 +227,29 @@ class TestMongoDBVectorStoreGetChunks:
         assert "embedding" not in chunks[0]["metadata"]
         assert "source_id" not in chunks[0]["metadata"]
 
-    def test_get_chunks_skips_empty_text(self):
+    def test_get_chunks_lists_chunks_with_no_text(self):
+        # Removing a page lists its chunks by metadata; one with no text must still be found and deleted.
         store, mock_collection, _ = _make_mongodb_store()
 
         docs = [
-            {"_id": "id1", "text": None, "embedding": [0.1], "source_id": "src"},
+            {"_id": "id1", "text": None, "embedding": [0.1], "source_id": "src", "source": "a.md"},
+            {"_id": "id2", "text": "", "embedding": [0.1], "source_id": "src", "source": "a.md"},
         ]
         mock_collection.find.return_value = iter(docs)
 
         chunks = store.get_chunks()
-        assert len(chunks) == 0
+        assert [(c["doc_id"], c["text"], c["metadata"]) for c in chunks] == [
+            ("id1", "", {"source": "a.md"}),
+            ("id2", "", {"source": "a.md"}),
+        ]
+
+    def test_chunks_with_no_text_are_found_by_source(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.find.return_value = iter(
+            [{"_id": "id1", "text": "", "embedding": [0.1], "source_id": "src", "source": "a.md"}]
+        )
+
+        assert store.chunk_ids_by_source_paths(["a.md"]) == ["id1"]
 
     def test_get_chunks_returns_empty_on_error(self):
         store, mock_collection, _ = _make_mongodb_store()

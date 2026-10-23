@@ -191,23 +191,24 @@ class MongoDBVectorStore(BaseVectorStore):
             return []
 
     def _scan_chunks(self):
-        """Every chunk of this source; a store error raises."""
+        """Every chunk of this source, one with no text included; a store error raises.
+
+        A chunk with no text is listed too (its text as ``""``): removing a
+        page finds its chunks through this list, and one left out would
+        never be deleted.
+        """
         chunks = []
         cursor = self._collection.find({"source_id": self._source_id})
         for doc in cursor:
             doc_id = str(doc.get("_id"))
-            text = doc.get(self._text_key)
+            text = doc.get(self._text_key) or ""
             metadata = {
                 k: v
                 for k, v in doc.items()
                 if k
                 not in ["_id", self._text_key, self._embedding_key, "source_id"]
             }
-
-            if text:
-                chunks.append(
-                    {"doc_id": doc_id, "text": text, "metadata": metadata}
-                )
+            chunks.append({"doc_id": doc_id, "text": text, "metadata": metadata})
 
         return chunks
 
