@@ -99,6 +99,29 @@ class TestReingestSourceTask:
         mock_worker.assert_called_once_with(ANY, "source123", "user1")
         assert result == {"status": "ok"}
 
+    @pytest.mark.unit
+    def test_a_busy_skip_does_not_stick_to_the_source_key(self, pg_conn):
+        """The route keys every reingest of a source alike; a busy skip must not replay for 24h."""
+        from docsgpt.api.user.tasks import reingest_source_task
+
+        outcomes = [{"status": "skipped", "reason": "busy"}, {"status": "completed"}]
+        runs = []
+
+        def _fake_worker(self, source_id, user):
+            runs.append(source_id)
+            return outcomes[len(runs) - 1]
+
+        key = "reingest-source:user1:source123"
+        with _patch_decorator_db(pg_conn), patch(
+            "docsgpt.worker.reingest_source_worker", side_effect=_fake_worker,
+        ):
+            first = reingest_source_task("source123", "user1", idempotency_key=key)
+            second = reingest_source_task("source123", "user1", idempotency_key=key)
+
+        assert first == {"status": "skipped", "reason": "busy"}
+        assert second == {"status": "completed"}
+        assert len(runs) == 2
+
 
 class TestConvertSourceToWikiTask:
     @pytest.mark.unit
