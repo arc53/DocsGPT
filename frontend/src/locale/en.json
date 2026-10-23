@@ -530,6 +530,7 @@
         "save": "Save",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
         "prescreenInvalidHint": "Check the LLM screening values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "syncAfterSave": "Save your changes first. A sync uses the saved settings.",
         "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
         "reingestLater": "Later",
         "errors": {

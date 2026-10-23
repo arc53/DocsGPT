@@ -495,6 +495,11 @@ type RetrievalOptionsProps = {
   // screening doesn't add up, so the submit it blocks can be unblocked.
   // `default` shows every group, tagged.
   variant?: 'default' | 'create';
+  // Create forms: changes when the form starts over (another source type),
+  // so a Filtering group the screening brought in goes again. Until then it
+  // stays once shown, so fixing the screening doesn't pull it from under the
+  // cursor.
+  resetKey?: unknown;
 };
 
 /**
@@ -518,6 +523,7 @@ export default function RetrievalOptions({
   title,
   decision = NO_DECISION_FEATURES,
   variant = 'default',
+  resetKey,
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -525,6 +531,15 @@ export default function RetrievalOptions({
   const bodyId = useId();
   const ingestHidden = queryOnly || retrievalOnly;
   const creating = variant === 'create';
+  // A create form's Filtering group, once the screening brought it in.
+  const [filteringKept, setFilteringKept] = useState(false);
+  const [keptFor, setKeptFor] = useState(resetKey);
+  if (keptFor !== resetKey) {
+    setKeptFor(resetKey);
+    setFilteringKept(false);
+  }
+  const prescreenValid = isPrescreenConfigValid(value);
+  if (creating && !prescreenValid && !filteringKept) setFilteringKept(true);
 
   const strategyOptions = useMemo(
     () =>
@@ -704,8 +719,8 @@ export default function RetrievalOptions({
   // threshold and LLM screening. A flat group, never behind a toggle. A
   // create form leaves it out, unless the screening (from the admin's
   // defaults) no longer adds up, which would block the submit with no way
-  // to fix it.
-  const showFiltering = !creating || !isPrescreenConfigValid(value);
+  // to fix it; then it stays until the form resets.
+  const showFiltering = !creating || !prescreenValid || filteringKept;
   const filteringGroup = showFiltering && (
     <div className="flex flex-col gap-3">
       <GroupHeader title={tr('filtering.title')} tag={tag('filtering.tag')} />

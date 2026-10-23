@@ -1212,6 +1212,7 @@ function Upload({
                     availableModels={availableModels}
                     decision={decision}
                     variant="create"
+                    resetKey={ingestor.type}
                   />
                 )}
               </div>

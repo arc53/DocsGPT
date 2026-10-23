@@ -305,6 +305,23 @@ describe('SourceConfigModal first section, by kind', () => {
     expect(setModalState).toHaveBeenCalledWith('INACTIVE');
   });
 
+  it('turns Sync now off while there are unsaved changes, and says why', async () => {
+    await render(
+      doc({ type: 's3', connectionId: 'conn-1', syncFrequency: 'daily' }),
+    );
+    expect(button('settings.sources.syncNow')!.disabled).toBe(false);
+    await pickSchedule('weekly');
+    const sync = button('settings.sources.syncNow')!;
+    expect(sync.disabled).toBe(true);
+    await act(async () => sync.click());
+    expect(onSyncNow).not.toHaveBeenCalled();
+    // The hint shows on the wrapper, which a disabled button can't be.
+    await act(async () => sync.parentElement!.focus());
+    expect(document.body.textContent).toContain(
+      'settings.sources.configModal.syncAfterSave',
+    );
+  });
+
   it('a viewer sees no schedule and no Sync now', async () => {
     await render(
       doc({

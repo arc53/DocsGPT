@@ -530,6 +530,7 @@
         "save": "Speichern",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
         "prescreenInvalidHint": "Prüfe die Werte der LLM-Vorfilterung: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
+        "syncAfterSave": "Speichere zuerst deine Änderungen. Die Synchronisierung verwendet die gespeicherten Einstellungen.",
         "reingestRequired": "Deine Änderungen wurden gespeichert. Die geänderten Chunking-Einstellungen wirken erst nach einem erneuten Indexieren. Jetzt erneut indexieren?",
         "reingestLater": "Später",
         "errors": {

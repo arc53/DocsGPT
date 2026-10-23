@@ -528,6 +528,7 @@
         "save": "儲存",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
         "prescreenInvalidHint": "請檢查 LLM 篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
+        "syncAfterSave": "請先儲存變更。同步會使用已儲存的設定。",
         "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
         "reingestLater": "稍後",
         "errors": {

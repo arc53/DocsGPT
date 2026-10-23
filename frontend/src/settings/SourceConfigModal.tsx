@@ -8,8 +8,14 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SettingRows } from '../components/ui/setting-row';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
+import { cn, focusRing } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { SyncFrequency } from '../upload/website';
 import { can } from '../utils/accessUtils';
@@ -252,6 +258,41 @@ export default function SourceConfigModal({
   // The backend rejects an incoherent prescreen config; block save up-front.
   const prescreenValid = isPrescreenConfigValid(options);
 
+  // A sync fetches with the saved settings: off until the edits are saved,
+  // or they'd be lost when the dialog closes behind it.
+  const syncNow = (
+    <Button
+      type="button"
+      variant="outline"
+      size="lg"
+      shape="pill"
+      disabled={saving || hasChanges}
+      onClick={() => {
+        onSyncNow?.();
+        closeModal();
+      }}
+    >
+      {t('settings.sources.syncNow')}
+    </Button>
+  );
+  const syncNowButton = hasChanges ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          className={cn('flex flex-col rounded-full outline-none', focusRing)}
+        >
+          {syncNow}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        {t('settings.sources.configModal.syncAfterSave')}
+      </TooltipContent>
+    </Tooltip>
+  ) : (
+    syncNow
+  );
+
   const footer = reingestPrompt ? (
     <ModalActions
       cancelLabel={t('settings.sources.configModal.reingestLater')}
@@ -270,23 +311,7 @@ export default function SourceConfigModal({
       onSubmit={handleSave}
       pending={saving}
       disabled={!hasChanges || !prescreenValid}
-      footerStart={
-        section && onSyncNow ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            shape="pill"
-            disabled={saving}
-            onClick={() => {
-              onSyncNow();
-              closeModal();
-            }}
-          >
-            {t('settings.sources.syncNow')}
-          </Button>
-        ) : undefined
-      }
+      footerStart={section && onSyncNow ? syncNowButton : undefined}
     />
   );
 

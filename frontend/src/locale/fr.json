@@ -544,6 +544,7 @@
         "save": "Enregistrer",
         "chunkingChangeHint": "Vous avez modifié un paramètre de découpage. Après l’enregistrement, il faudra réindexer cette source pour qu’il prenne effet.",
         "prescreenInvalidHint": "Vérifiez les valeurs de la présélection par LLM : le nombre de candidats à récupérer doit être au moins égal au nombre de fragments, et le nombre de fragments à conserver ne doit pas dépasser celui des candidats.",
+        "syncAfterSave": "Enregistrez d’abord vos modifications. La synchronisation utilise les réglages enregistrés.",
         "reingestRequired": "Vos modifications ont été enregistrées. Les paramètres de découpage modifiés ne prennent effet qu’après une réindexation. Réindexer maintenant ?",
         "reingestLater": "Plus tard",
         "errors": {

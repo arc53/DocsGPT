@@ -358,4 +358,36 @@ describe('RetrievalOptions groups', () => {
     // Chunking stays: it can only be set before the first ingest.
     expect(container.querySelector('#chunking-strategy')).not.toBeNull();
   });
+
+  it('keeps Filtering on a create form once shown, until the form resets', () => {
+    const prescreen = (candidate_k: number) => ({
+      ...filtering,
+      retrieval: {
+        ...filtering.retrieval,
+        chunks: 4,
+        prescreen: {
+          ...filtering.retrieval.prescreen,
+          enabled: true,
+          candidate_k,
+          max_keep: 2,
+        },
+      },
+    });
+    const shown = () =>
+      container.querySelector('#retrieval-prescreen') !== null;
+    // The screening doesn't add up (fewer candidates than chunks): shown.
+    render({ variant: 'create', alwaysOpen: true, value: prescreen(2) });
+    expect(shown()).toBe(true);
+    // Fixing it while typing leaves the group where it is.
+    render({ variant: 'create', alwaysOpen: true, value: prescreen(8) });
+    expect(shown()).toBe(true);
+    // A reset (another form) starts without it again.
+    render({
+      variant: 'create',
+      alwaysOpen: true,
+      value: prescreen(8),
+      resetKey: 'other',
+    });
+    expect(shown()).toBe(false);
+  });
 });

@@ -528,6 +528,7 @@
         "save": "保存",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
         "prescreenInvalidHint": "请检查 LLM 筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
+        "syncAfterSave": "请先保存更改。同步使用已保存的设置。",
         "reingestRequired": "您的更改已保存。修改的分块设置需重新索引后才会生效。立即重新索引？",
         "reingestLater": "稍后",
         "errors": {

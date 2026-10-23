@@ -544,6 +544,7 @@
         "save": "Guardar",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
         "prescreenInvalidHint": "Revisa los valores de la preselección con LLM: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
+        "syncAfterSave": "Guarda primero los cambios. La sincronización usa la configuración guardada.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
         "reingestLater": "Más tarde",
         "errors": {
