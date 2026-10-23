@@ -59,20 +59,33 @@ def html_to_markdown(html: Union[str, bytes]) -> str:
     return soup_to_markdown(BeautifulSoup(html, "html.parser"))
 
 
-def soup_to_markdown(soup, converter=None) -> str:
+class MarkupTooDeepError(ValueError):
+    """Markup nested too deep for the recursive Markdown conversion."""
+
+
+def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> str:
     """Convert a parsed ``BeautifulSoup`` tree to Markdown.
 
     Destructive: the non-content elements in ``_DROP_TAGS`` (including
     ``<title>``) are removed from ``soup``; read the title first.
+
+    markdownify converts one element per recursion level, so a tree nested a
+    few hundred deep (html.parser nests every unclosed ``<p>``, ``<li>`` or
+    ``<span>`` in the one before it) exhausts Python's recursion limit.
 
     Args:
         soup: The parsed document (or one element of it).
         converter: A ``MarkdownConverter`` to use instead of the default one
             built from ``MARKDOWNIFY_OPTIONS`` (the web extractor passes one
             that rewrites links).
+        plain_when_too_deep: For a tree nested too deep, return its plain
+            text, one line per string; ``False`` raises ``MarkupTooDeepError``.
 
     Returns:
         Markdown with runs of blank lines collapsed to one.
+
+    Raises:
+        MarkupTooDeepError: The tree is too deep and ``plain_when_too_deep`` is off.
     """
     from bs4 import CData, Declaration, ProcessingInstruction
     from markdownify import MarkdownConverter
@@ -91,7 +104,14 @@ def soup_to_markdown(soup, converter=None) -> str:
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
     converter = converter or MarkdownConverter(**MARKDOWNIFY_OPTIONS)
-    markdown = converter.convert_soup(soup)
+    try:
+        markdown = converter.convert_soup(soup)
+    except RecursionError as e:
+        if not plain_when_too_deep:
+            raise MarkupTooDeepError("markup is nested too deep to convert to Markdown") from e
+        logger.warning("Markup is nested too deep to convert to Markdown; keeping its plain text")
+        # get_text walks the tree without recursing.
+        markdown = soup.get_text("\n", strip=True)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 

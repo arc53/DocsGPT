@@ -20,11 +20,16 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit
 
 import requests
-from bs4 import BeautifulSoup, CData, Comment, NavigableString, Tag
+from bs4 import BeautifulSoup, CData, Comment, FeatureNotFound, NavigableString, Tag
 from markdownify import MarkdownConverter
 
 from docsgpt.core.settings import settings
-from docsgpt.parser.file.html_parser import MARKDOWNIFY_OPTIONS, cap_markup_bytes, soup_to_markdown
+from docsgpt.parser.file.html_parser import (
+    MARKDOWNIFY_OPTIONS,
+    MarkupTooDeepError,
+    cap_markup_bytes,
+    soup_to_markdown,
+)
 from docsgpt.parser.remote.base import normalize_page_url, url_to_virtual_path
 from docsgpt.parser.schema.base import Document
 from docsgpt.security.safe_url import pinned_fetch_bytes
@@ -609,11 +614,42 @@ def extract_page(
         The Markdown, the ``<title>`` (else the first heading) and the
         ``lang`` attribute. When the extract is near-empty against the page's
         text without its chrome (the controls stripped after it can hold the
-        content), the text is that plain text instead.
+        content), the text is that plain text instead. A page nested too deep
+        to convert is parsed again the way browsers close implied end tags
+        (``lxml``), and keeps its plain text when that is still too deep.
     """
     if isinstance(html, bytes):
         html = cap_markup_bytes(html, int(settings.MARKUP_MAX_BYTES), url)
-    soup = html_soup(html, encoding)
+    try:
+        return _extract(html_soup(html, encoding), url, keep_links, plain_when_too_deep=False)
+    except MarkupTooDeepError:
+        pass
+    # html.parser nests every unclosed <p> or <li> in the one before it, so a
+    # long list written the HTML 4 way nests hundreds deep; lxml closes them.
+    logger.info(f"Page {url} nests too deep to convert; parsing it again with lxml")
+    try:
+        soup = html_soup(html, encoding, parser="lxml")
+    except FeatureNotFound:
+        soup = html_soup(html, encoding)
+    return _extract(soup, url, keep_links, plain_when_too_deep=True)
+
+
+def _extract(soup: BeautifulSoup, url: str, keep_links: bool, plain_when_too_deep: bool) -> PageContent:
+    """``extract_page`` of a parsed page.
+
+    Args:
+        soup: The parsed page; changed in place.
+        url: The page's address, for resolving relative links.
+        keep_links: Keep the URL of links that sit inside a sentence.
+        plain_when_too_deep: Keep the plain text of a page nested too deep to
+            convert; ``False`` raises ``MarkupTooDeepError``.
+
+    Returns:
+        The page's content, as ``extract_page`` describes.
+
+    Raises:
+        MarkupTooDeepError: The page is too deep and ``plain_when_too_deep`` is off.
+    """
     title = soup.title.get_text(strip=True) if soup.title else ""
     language = (soup.html.get("lang") if soup.html else None) or None
     root = _pick_root(soup)
@@ -626,7 +662,9 @@ def extract_page(
     _strip_controls(root)
     _images_to_alt_text(root)
     _listify_link_runs(soup, root)
-    markdown = soup_to_markdown(root, converter=_LinkConverter(url, keep_links))
+    markdown = soup_to_markdown(
+        root, converter=_LinkConverter(url, keep_links), plain_when_too_deep=plain_when_too_deep,
+    )
 
     if len(markdown) < _MIN_EXTRACT_SHARE * len(plain):
         logger.info(f"Page extract of {url} is near-empty ({len(markdown)} of {len(plain)} chars); keeping plain text")
@@ -716,7 +754,7 @@ def header_charset(content_type: Optional[str]) -> Optional[str]:
     return match.group(1)
 
 
-def html_soup(html: Union[str, bytes], encoding: Optional[str] = None) -> BeautifulSoup:
+def html_soup(html: Union[str, bytes], encoding: Optional[str] = None, parser: str = "html.parser") -> BeautifulSoup:
     """Parse a page, decoding bytes by the header's charset when it gives one.
 
     Args:
@@ -724,13 +762,17 @@ def html_soup(html: Union[str, bytes], encoding: Optional[str] = None) -> Beauti
         encoding: The ``Content-Type`` charset (``header_charset``); ``None``
             leaves BeautifulSoup to read the page's ``<meta>`` or guess. A
             byte-order mark wins over it, as in browsers.
+        parser: The BeautifulSoup tree builder.
 
     Returns:
         The parsed page.
+
+    Raises:
+        FeatureNotFound: If ``parser`` isn't installed.
     """
     if isinstance(html, bytes) and encoding and not html.startswith(_BOMS):
-        return BeautifulSoup(html, "html.parser", from_encoding=encoding)
-    return BeautifulSoup(html, "html.parser")
+        return BeautifulSoup(html, parser, from_encoding=encoding)
+    return BeautifulSoup(html, parser)
 
 
 def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str) -> str:

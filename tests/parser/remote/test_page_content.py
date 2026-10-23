@@ -216,6 +216,43 @@ class TestMetadataAndGuards:
         assert "Pricing details" in page.text
 
 
+class TestDeepMarkup:
+    def test_a_page_nested_too_deep_to_convert_keeps_its_text(self):
+        # Markdown conversion recurses per level: thousands of nested
+        # elements used to raise RecursionError and lose the page.
+        body = (
+            "<html><body><main><h1>Title</h1><p>real content here</p>" + "<div>" * 3000 + "deep text"
+            + "</div>" * 3000 + "</main></body></html>"
+        ).encode()
+
+        doc = page_document(body, "text/html", URL)
+
+        assert doc is not None
+        assert "Title" in doc.text and "real content here" in doc.text and "deep text" in doc.text
+
+    @pytest.mark.parametrize("tag", ["p", "li", "span", "font", "b"])
+    def test_hundreds_of_unclosed_elements_keep_the_page(self, tag):
+        # html.parser nests each unclosed element in the one before it.
+        body = "<html><body><h1>Changelog</h1>" + "".join(f"<{tag}>entry {i}\n" for i in range(600)) + "</body></html>"
+
+        doc = page_document(body.encode(), "text/html", URL)
+
+        assert doc is not None
+        assert "Changelog" in doc.text
+        assert "entry 0" in doc.text and "entry 599" in doc.text
+
+    def test_unclosed_list_items_still_convert_to_a_list(self):
+        # Browsers close an <li> at the next one; reparsed that way, the page
+        # keeps its Markdown rather than falling back to plain text.
+        pytest.importorskip("lxml")
+        body = "<html><body><h1>Changelog</h1><ul>" + "".join(f"<li>entry {i}\n" for i in range(600)) + "</ul></body></html>"
+
+        doc = page_document(body.encode(), "text/html", URL)
+
+        assert "# Changelog" in doc.text
+        assert "* entry 599" in doc.text or "- entry 599" in doc.text
+
+
 class TestPageDocument:
     def test_builds_a_document_with_web_metadata(self):
         doc = page_document(_page(f"<main>{ARTICLE}</main>").encode(), "text/html; charset=utf-8", URL)

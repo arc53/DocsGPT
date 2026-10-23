@@ -328,3 +328,14 @@ def test_the_web_extractor_gives_a_crawled_table_the_same_shape():
 
     rows = [line for line in markdown.splitlines() if line.startswith("|")]
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_markup_nested_too_deep_to_convert_keeps_its_text():
+    # markdownify converts recursively; a few hundred unclosed tags (which
+    # html.parser nests) used to raise RecursionError and lose the file.
+    html = "<html><body><h1>Changelog</h1>" + "".join(f"<span>entry {i}\n" for i in range(3000)) + "</body></html>"
+
+    text = html_to_markdown(html)
+
+    assert "Changelog" in text
+    assert "entry 0" in text and "entry 2999" in text
