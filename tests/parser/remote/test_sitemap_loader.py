@@ -466,6 +466,44 @@ class TestNestedSitemapSafety:
         assert fake.call_count == MAX_SITEMAP_DEPTH + 1
         assert "depth" in caplog.text.lower()
 
+    def test_elements_that_never_close_stop_the_reading(self, caplog):
+        # Every element is dropped once it closes; one that never closes was
+        # kept, so a small gzip of nested open tags held gigabytes.
+        import tracemalloc
+
+        from docsgpt.parser.remote.sitemap_loader import MAX_XML_NESTING, _read_entries
+
+        content = (
+            b'<?xml version="1.0"?><urlset><url><loc>https://example.com/a</loc></url>'
+            + b"<a>" * 300_000 + b"<url><loc>https://example.com/b</loc></url>"
+        )
+        pages = []
+
+        tracemalloc.start()
+        try:
+            _read_entries(content, pages.append, lambda url: None, lambda: False)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        assert pages == ["https://example.com/a"]
+        assert peak < 5 * 1024 * 1024
+        assert f"nested more than {MAX_XML_NESTING}" in caplog.text
+
+    def test_a_real_sitemap_is_well_within_the_nesting_bound(self):
+        from docsgpt.parser.remote.sitemap_loader import _read_entries
+
+        content = (
+            b'<?xml version="1.0"?><urlset xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
+            b"<url><loc>https://example.com/a</loc><image:image><image:loc>https://example.com/i.png</image:loc>"
+            b"</image:image></url></urlset>"
+        )
+        pages = []
+
+        _read_entries(content, pages.append, lambda url: None, lambda: False)
+
+        assert pages == ["https://example.com/a"]
+
     def test_limit_stops_following_child_sitemaps(self):
         index = "https://example.com/index.xml"
         children = [f"https://example.com/child{i}.xml" for i in range(50)]

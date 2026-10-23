@@ -34,6 +34,11 @@ MAX_SITEMAPS_PER_WALK = 50
 # download past it (after Content-Encoding is undone) is refused too.
 MAX_SITEMAP_BYTES = 50 * 1024 * 1024
 _GZIP_MAGIC = b"\x1f\x8b"
+# How deep a sitemap's elements may nest. A real one nests three deep
+# (``urlset > url > loc``, an extension's ``image:image > image:loc`` one more);
+# an element is dropped only once it closes, so a file of tags that never
+# close would otherwise be held in memory whole.
+MAX_XML_NESTING = 8
 # How much of a response to look at for a root tag, when its type doesn't say.
 _SNIFF_BYTES = 64 * 1024
 
@@ -118,10 +123,11 @@ def _read_entries(
 
     Every element is dropped from the tree once it is read, whatever its tag,
     so a 50 MB sitemap (or a small gzip of millions of junk elements) never
-    becomes a large tree. Tags match by local name, whatever the namespace
-    and however it is quoted. The defusedxml parser keeps entities and
-    external references out. XML that stops parsing keeps the entries read
-    before the error.
+    becomes a large tree; reading stops at an element nested deeper than
+    ``MAX_XML_NESTING``, as elements that never close can't be dropped. Tags
+    match by local name, whatever the namespace and however it is quoted.
+    The defusedxml parser keeps entities and external references out. XML
+    that stops parsing, or nests too deep, keeps the entries read before.
 
     Args:
         content: Raw sitemap XML, in its declared encoding (see ``_as_utf8``).
@@ -137,6 +143,9 @@ def _read_entries(
     try:
         for event, element in ET.iterparse(io.BytesIO(_as_utf8(content)), events=("start", "end")):
             if event == "start":
+                if len(open_elements) >= MAX_XML_NESTING:
+                    logger.warning(f"Stopped reading a sitemap whose elements are nested more than {MAX_XML_NESTING} deep")
+                    return True
                 open_elements.append([element, ""])
                 continue
             _, address = open_elements.pop()
