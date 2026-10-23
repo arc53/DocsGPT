@@ -99,6 +99,34 @@ class TestCombinedJson:
         assert names == ["doc1"]
         assert all(d.get("id") for d in response.json)
 
+    def test_a_web_source_carries_its_website_summary_and_file_count(self, app, pg_conn):
+        # Citation links fall back to this list; without ``website`` a website
+        # source would open as a plain file tree.
+        from docsgpt.api.user.sources.routes import CombinedJson
+
+        user = "u-list-web"
+        leaf = {"type": "text/markdown", "size_bytes": 1, "token_count": 1}
+        _seed_source(
+            pg_conn, user, name="web", type="website",
+            remote_data={"entries": [{"url": "https://www.docs.x.io/", "mode": "site"}]},
+            directory_structure={
+                "index.md": {**leaf, "url": "https://www.docs.x.io/"},
+                "guide": {"a.md": {**leaf, "url": "https://www.docs.x.io/guide/a"}},
+            },
+        )
+        _seed_source(pg_conn, user, name="flat", type="local")
+
+        with _patch_db(pg_conn), app.test_request_context("/api/sources"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CombinedJson().get()
+
+        rows = {row["name"]: row for row in response.json}
+        assert rows["web"]["website"] == {"hosts": ["docs.x.io"], "pages": 2}
+        assert rows["web"]["files"] == 2
+        assert rows["flat"]["website"] is None
+        assert rows["flat"]["files"] is None
+
     def test_returns_empty_list_when_user_has_no_sources(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import CombinedJson
 

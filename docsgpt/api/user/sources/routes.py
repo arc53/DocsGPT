@@ -152,6 +152,12 @@ def _website_summary(row: dict) -> Optional[dict]:
         return None
 
 
+def _file_count(row: dict) -> Optional[int]:
+    """How many files a source's tree holds (a synced source's card says it); ``None`` for a flat source."""
+    structure = row.get("directory_structure")
+    return count_pages(structure) if isinstance(structure, dict) and structure else None
+
+
 def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
     """Add ``access`` + ``allowed_actions`` to a listed source row.
 
@@ -229,6 +235,10 @@ class CombinedJson(Resource):
                     "ownership": ownership,
                     "team_access": team_access,
                     "connectionId": _connection_id(index),
+                    # As in the paginated listing: citation links fall back
+                    # to this list, and a website source opens as one.
+                    "website": _website_summary(index),
+                    "files": _file_count(index),
                 }
                 return _with_access(
                     entry,
@@ -328,14 +338,7 @@ class PaginatedSources(Resource):
                     ),
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
-                    # How many files the tree holds (a synced source's card
-                    # says it); None for a flat source.
-                    "files": (
-                        count_pages(doc["directory_structure"])
-                        if isinstance(doc.get("directory_structure"), dict)
-                        and doc["directory_structure"]
-                        else None
-                    ),
+                    "files": _file_count(doc),
                 }
                 paginated_docs.append(
                     _with_access(
