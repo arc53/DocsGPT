@@ -738,6 +738,24 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_a_reset_keeps_the_tombstones(self, store, source_id):
+        # A page-change extraction listed c2 before a page change deleted it and
+        # a sync reset the graph: it must still not write c2 back.
+        try:
+            self._apply(store, source_id, "c1", ["ada"], [])
+            store.delete_chunks(source_id, ["c2"])
+
+            store.delete_by_source(source_id)
+            store.apply_chunk(
+                source_id, "c2", [{"name": "Bob", "normalized_name": "bob", "type": "t", "description": "b"}], [], {},
+            )
+
+            assert store.count_nodes(source_id) == 0
+            assert store.get_progress(source_id) == {"c2": "deleted"}
+            assert store.pending_chunks(source_id, ["c1", "c3"]) == ["c1", "c3"]
+        finally:
+            store.delete_by_source(source_id)
+
     def test_checkpoint_pending_and_mark(self, store, source_id):
         try:
             all_chunks = ["c1", "c2", "c3"]
@@ -909,6 +927,14 @@ class TestGraphStoreParameterization:
             assert params == (sid,)
             tables.append(sql.split('"')[1])
         assert tables == ["graph_node_chunks", "graph_edges", "graph_nodes", "graph_ingest_progress"]
+
+    def test_delete_by_source_keeps_the_tombstones(self):
+        store, cursor = self._store_with_mock_conn()
+        store.delete_by_source(str(uuid.uuid4()))
+
+        progress = cursor.execute.call_args_list[-1].args[0].as_string()
+        assert "graph_ingest_progress" in progress
+        assert "status IS DISTINCT FROM 'deleted'" in progress
 
     def test_search_binds_embedding_and_source(self):
         store, cursor = self._store_with_mock_conn()

@@ -53,7 +53,7 @@ MAX_NODE_RELATIONSHIPS = 300
 # chunk was deleted from the vector store (a page removed or refreshed), and
 # chunk ids are never reused (pgvector's serial ids, FAISS/Qdrant uuids, Mongo
 # ObjectIds), so a build still holding it in its snapshot skips it. A full
-# reset (``delete_by_source``) clears tombstones with the rest of the graph.
+# reset (``delete_by_source``) keeps the tombstones: a build may outlive it.
 _DONE = "done"
 _DELETED = "deleted"
 
@@ -2111,7 +2111,13 @@ class GraphStore:
             conn.rollback()
 
     def delete_by_source(self, source_id: str):
-        """Remove every graph row for a source (no FK cascade across clusters)."""
+        """Remove every graph row for a source (no FK cascade across clusters).
+
+        The ``deleted`` tombstones stay: an extraction that listed a chunk
+        before a page change deleted it may still be running past the reset,
+        and must not write the chunk back. Chunk ids are never reused, so a
+        tombstone never hides a chunk of the rebuilt index.
+        """
         self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -2119,16 +2125,18 @@ class GraphStore:
             # A reset while a build is still writing must not land in the
             # middle of one of its chunks.
             _lock_source(cursor, source_id)
-            for table in (
-                "graph_node_chunks",
-                "graph_edges",
-                "graph_nodes",
-                "graph_ingest_progress",
+            every_row = "DELETE FROM {} WHERE source_id = %s;"
+            for table, statement in (
+                ("graph_node_chunks", every_row),
+                ("graph_edges", every_row),
+                ("graph_nodes", every_row),
+                (
+                    "graph_ingest_progress",
+                    "DELETE FROM {} WHERE source_id = %s AND status IS DISTINCT FROM 'deleted';",
+                ),
             ):
                 cursor.execute(
-                    sql.SQL("DELETE FROM {} WHERE source_id = %s;").format(
-                        sql.Identifier(table)
-                    ),
+                    sql.SQL(statement).format(sql.Identifier(table)),
                     (source_id,),
                 )
             conn.commit()
