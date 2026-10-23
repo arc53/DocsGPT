@@ -772,6 +772,7 @@ describe('Sources access', () => {
 
   it.each([
     ['reconnect_needed', 409, 'syncRefusedReconnect'],
+    ['connection_missing', 409, 'syncRefusedConnectionMissing'],
     ['wiki', 400, 'syncRefusedWiki'],
   ])(
     "a reingest refused with %s says why in the UI's words",

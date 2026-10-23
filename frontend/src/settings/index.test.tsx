@@ -118,6 +118,19 @@ describe('Settings source delete', () => {
     expect(actionTypes()).not.toContain('preference/setSourceDocs');
   });
 
+  it('a delete refused while a change holds the source says to try again', async () => {
+    service.deletePath.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ success: false, code: 'source_busy' }),
+    });
+    await clickDelete();
+    await expect(deleted.result).rejects.toThrow(
+      'settings.sources.chunkErrors.busy',
+    );
+    expect(actionTypes()).not.toContain('preference/setSourceDocs');
+  });
+
   it('a failed request rejects with the delete message', async () => {
     service.deletePath.mockRejectedValue(new Error('network'));
     await clickDelete();

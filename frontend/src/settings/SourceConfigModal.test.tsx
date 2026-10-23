@@ -493,6 +493,15 @@ describe('SourceConfigModal first section, by kind', () => {
 
   it.each([
     [{ code: 'wiki', error: 'A wiki…' }, 'settings.sources.website.wikiSource'],
+    // A new address with credentials or a host the server won't fetch.
+    [
+      {
+        code: 'invalid_address',
+        url: 'https://user:pw@docs.x.io/',
+        error: "Entry 'https://user:pw@docs.x.io/' is not a web address",
+      },
+      'settings.sources.website.invalidAddress',
+    ],
     [
       { success: false, error: 'A source fetches from up to 20 sites' },
       'A source fetches from up to 20 sites',

@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { ACTIVITY_MONITORS_PATH } from '../activity/paths';
 import userService from '../api/services/userService';
+import { isSourceBusy } from '../components/chunkUtils';
 import { syncForgotten } from '../connectors/connectorsSlice';
 import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
@@ -61,6 +62,9 @@ export default function Settings() {
       throw new Error(t('settings.sources.errors.delete'));
     }
     if (!response.ok) {
+      // A page change or a sync holding the source: it can be tried again.
+      if (await isSourceBusy(response))
+        throw new Error(t('settings.sources.chunkErrors.busy'));
       throw new Error(
         response.status === 403
           ? t('settings.sources.errors.forbidden')
