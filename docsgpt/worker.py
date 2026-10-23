@@ -5514,6 +5514,11 @@ def _pages_to_remove(
     (the same fields), so a sync that fetched it again (redirected or not any
     more) still removes it.
 
+    A leaf from before leaves carried their address is matched by its path,
+    also when the route resolved its address from its chunks (``url`` given,
+    and no leaf carries it): a sync writes every leaf's address, so a tree
+    that still has such a leaf hasn't had its paths re-derived since.
+
     Args:
         structure: ``directory_structure``, as it is now.
         pages: ``{"path", "url", "requested_urls"?, "requested_url"?}`` per page.
@@ -5539,7 +5544,7 @@ def _pages_to_remove(
         matched = [match for address in addresses for match in by_key.get(_web_page_key(address), [])]
         if matched:
             found.extend(matched)
-        elif not addresses and page.get("path") in by_path:
+        elif page.get("path") in by_path and (not addresses or by_path[page["path"]] is None):
             found.append((page["path"], by_path[page["path"]]))
     return list(dict.fromkeys(found))
 
@@ -5569,7 +5574,9 @@ def _remove_web_pages(
         user: Its owner.
         file_paths: Tree paths, from a task queued before ``pages``.
         task_id: The page task's id.
-        pages: ``{"path", "url"}`` of the pages to remove.
+        pages: ``{"path", "url", "requested_urls"?}`` of the pages to remove;
+            for a leaf without an address, ``url`` is the one the route
+            resolved from its chunks, or ``""``.
 
     Returns:
         ``(path, url)`` of the pages removed.
@@ -5600,12 +5607,19 @@ def _remove_web_pages(
 
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
     urls = list(dict.fromkeys(url for _path, url in found if url))
-    # A leaf without an address has its chunks found by the path they were stored under.
+    # A leaf without an address has its chunks found by the path they were
+    # stored under, and by the address the route resolved for it, if any (a
+    # chunk from an older ingest may carry no path).
     legacy_paths = [path for path, url in found if not url]
+    legacy_urls = list(dict.fromkeys(
+        page["url"] for page in pages or []
+        if isinstance(page, dict) and page.get("url") and page.get("path") in legacy_paths
+    ))
 
     def _listed() -> List[str]:
         ids = store.chunk_ids_by_source_paths(urls) if urls else []
-        return ids + (store.chunk_ids_by_file_paths(legacy_paths) if legacy_paths else [])
+        ids += store.chunk_ids_by_file_paths(legacy_paths) if legacy_paths else []
+        return ids + (store.chunk_ids_by_source_paths(legacy_urls) if legacy_urls else [])
 
     chunk_ids = list(dict.fromkeys(_listed()))
     cfg = SourceConfig.parse(source.get("config"))

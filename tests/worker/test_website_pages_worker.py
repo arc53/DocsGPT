@@ -627,6 +627,49 @@ class TestRemoveByAddress:
         assert store.texts_for("https://docs.x.io/keep.html") == ["other page"]
         assert list(_tree(pg_conn, src)) == ["keep.md"]
 
+    def test_a_legacy_leaf_whose_address_the_route_resolved_is_removed_by_path(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        # The route reads a legacy leaf's address from its chunks; the leaf itself still has none.
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.chunks.clear()
+        store.seed("legacy page", "https://docs.x.io/old.html", "old.md")
+        # A chunk stored without a file_path (an older ingest) is found by its address.
+        store.chunks["bare"] = {"text": "legacy page two", "metadata": {"source": "https://docs.x.io/old.html"}}
+        store.seed("other page", "https://docs.x.io/keep.html", "keep.md")
+        legacy = {"type": "text/markdown", "size_bytes": 10, "token_count": 4}
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="crawler", remote_data="https://docs.x.io/",
+            directory_structure={"old.md": dict(legacy), "keep.md": dict(legacy)},
+        )
+
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "old.md", "url": "https://docs.x.io/old.html"}],
+        )
+
+        assert result["pages"] == 1
+        assert store.texts_for("https://docs.x.io/old.html") == []
+        assert store.texts_for("https://docs.x.io/keep.html") == ["other page"]
+        assert list(_tree(pg_conn, src)) == ["keep.md"]
+
+    def test_a_resolved_address_never_takes_a_leaf_that_has_one(self, pg_conn, patch_worker_db, task_self, pipeline):
+        # Only a leaf without an address falls back to its path.
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", remote_data={"entries": []},
+            directory_structure={"a.md": _leaf("https://docs.x.io/a", 40)},
+        )
+
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "a.md", "url": "https://docs.x.io/zzz"}],
+        )
+
+        assert result["pages"] == 0
+        assert list(_tree(pg_conn, src)) == ["a.md"]
+
     def test_a_pgvector_outage_while_listing_a_legacy_leaf_keeps_the_leaf(
         self, pg_conn, patch_worker_db, monkeypatch,
     ):
