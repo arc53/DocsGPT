@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import threading
 import time
 from typing import Any, Iterable
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -328,7 +329,137 @@ def validate_user_base_url(url: str) -> None:
     _validate_and_pick_ip(url)
 
 
-class _PinnedHostAdapter(HTTPAdapter):
+class _Watchdog:
+    """Cuts a fetch's connections once its wall-clock budget is spent.
+
+    Socket timeouts bound each read, not the fetch: a server trickling header
+    lines, or compressed bytes that decode to nothing, can keep every read
+    inside the timeout for as long as it likes. A timer started before the
+    request shuts down every socket the fetch has opened when the budget
+    runs out, so the blocked read returns at once, whichever stage it is in.
+
+    Each socket is tracked through a duplicate of its descriptor, held until
+    :meth:`cancel`: shutting the duplicate down ends the shared connection
+    even after TLS has wrapped (and detached) the original, and a held
+    descriptor can't be closed and reused by an unrelated connection
+    before the timer fires.
+    """
+
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+        self.ends = time.monotonic() + seconds
+        self.expired = False
+        self._lock = threading.Lock()
+        self._done = False
+        self._sockets: list[socket.socket] = []
+        self._timer = threading.Timer(seconds, self._expire)
+        self._timer.daemon = True
+
+    def start(self) -> None:
+        """Start the clock: the timer, and the deadline the body reads check."""
+        self.ends = time.monotonic() + self.seconds
+        self._timer.start()
+
+    def watch(self, sock: socket.socket) -> None:
+        """Track a newly opened connection socket; shut it at once if the time is already up.
+
+        Args:
+            sock: The connected socket, before any TLS wrapping.
+        """
+        try:
+            duplicate = sock.dup()
+        except Exception:  # noqa: BLE001 — a socket that can't be duplicated is left to its read timeout
+            return
+        with self._lock:
+            if self._done:
+                duplicate.close()
+                return
+            self._sockets.append(duplicate)
+            if self.expired:
+                _shutdown(duplicate)
+
+    def cancel(self) -> None:
+        """Stop the timer and let go of the tracked sockets. Safe to call more than once."""
+        self._timer.cancel()
+        with self._lock:
+            self._done = True
+            sockets, self._sockets = self._sockets, []
+        for sock in sockets:
+            sock.close()
+
+    def _expire(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self.expired = True
+            for sock in self._sockets:
+                _shutdown(sock)
+
+
+def _shutdown(sock: socket.socket) -> None:
+    """Shut both directions of ``sock``, ignoring a socket that is already gone."""
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+class _WatchedConnection:
+    """Connection mixin that hands each new socket to the class's :class:`_Watchdog`."""
+
+    _watchdog: _Watchdog
+
+    def _new_conn(self) -> socket.socket:
+        sock = super()._new_conn()  # type: ignore[misc]
+        self._watchdog.watch(sock)
+        return sock
+
+
+def _watch_pools(manager: urllib3.PoolManager, watchdog: _Watchdog) -> None:
+    """Make every connection ``manager`` opens report its socket to ``watchdog``.
+
+    Wraps the manager's own pool and connection classes (plain, proxy or
+    SOCKS alike) in subclasses, so nothing else about how it connects changes.
+
+    Args:
+        manager: A urllib3 pool manager, before it has opened any pool.
+        watchdog: The fetch's watchdog.
+    """
+    watched: dict[str, type] = {}
+    for scheme, pool_cls in manager.pool_classes_by_scheme.items():
+        conn_cls = type(
+            f"_Watched{pool_cls.ConnectionCls.__name__}",
+            (_WatchedConnection, pool_cls.ConnectionCls),
+            {"_watchdog": watchdog},
+        )
+        watched[scheme] = type(f"_Watched{pool_cls.__name__}", (pool_cls,), {"ConnectionCls": conn_cls})
+    manager.pool_classes_by_scheme = watched
+
+
+class _WatchedAdapter(HTTPAdapter):
+    """Adapter whose connections, direct or through a proxy, are watched by a :class:`_Watchdog`.
+
+    Without a watchdog it behaves as a plain :class:`HTTPAdapter`.
+    """
+
+    def __init__(self, *args: Any, watchdog: _Watchdog | None = None, **kwargs: Any) -> None:
+        self._watchdog = watchdog
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        super().init_poolmanager(*args, **kwargs)
+        if self._watchdog is not None:
+            _watch_pools(self.poolmanager, self._watchdog)
+
+    def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> urllib3.PoolManager:
+        fresh = proxy not in self.proxy_manager
+        manager = super().proxy_manager_for(proxy, **proxy_kwargs)
+        if fresh and self._watchdog is not None:
+            _watch_pools(manager, self._watchdog)
+        return manager
+
+
+class _PinnedHostAdapter(_WatchedAdapter):
     """HTTPS adapter that performs SNI and cert verification against a
     fixed hostname even when the URL connects to an IP literal.
 
@@ -359,13 +490,22 @@ def _ip_to_url_host(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
 
 
 def _pinned_session(
-    url: str, headers: dict[str, str] | None
+    url: str,
+    headers: dict[str, str] | None,
+    *,
+    watchdog: _Watchdog | None = None,
 ) -> tuple[requests.Session, str, dict[str, str]]:
     """Run the SSRF guard once and build a session pinned to the chosen IP.
 
     Single home for the pinning preamble (validate/pick IP, netloc rewrite,
     ``Host`` header, HTTPS adapter mount) shared by :func:`pinned_request`
     and :func:`pinned_fetch_bytes`, so the guard cannot drift between them.
+
+    Args:
+        url: The URL to validate and pin.
+        headers: Caller headers; ``Host`` is replaced.
+        watchdog: When given, every connection the session opens is
+            reported to it, so it can cut them when time is up.
 
     Returns:
         Tuple of the session (caller must close it), the IP-literal URL,
@@ -394,8 +534,11 @@ def _pinned_session(
     session = requests.Session()
     if parts.username is not None:
         session.auth = (unquote(parts.username), unquote(parts.password or ""))
+    if watchdog is not None:
+        session.mount("http://", _WatchedAdapter(watchdog=watchdog))
+        session.mount("https://", _WatchedAdapter(watchdog=watchdog))
     if parts.scheme == "https":
-        session.mount("https://", _PinnedHostAdapter(host))
+        session.mount("https://", _PinnedHostAdapter(host, watchdog=watchdog))
     return session, pinned_url, request_headers
 
 
@@ -494,9 +637,11 @@ def pinned_fetch_bytes(
     ``truncate`` the read stops at the ceiling and returns the first
     ``max_bytes`` instead of raising (a page watched for changes).
 
-    ``timeout`` bounds the connect and each socket read; the body read as a
-    whole is bounded by ``total_timeout``, so a server that trickles bytes
-    just inside the read timeout can't hold the fetch open forever.
+    ``timeout`` bounds the connect and each socket read; the fetch as a
+    whole — headers and body — is bounded by ``total_timeout``, so a server
+    that trickles header lines or body bytes just inside the read timeout
+    can't hold the fetch open forever. A watchdog started before the request
+    shuts the connection down when that time is up (see :class:`_Watchdog`).
 
     Args:
         url: Absolute http(s) URL to GET.
@@ -507,7 +652,7 @@ def pinned_fetch_bytes(
             given URL is validated.
         truncate: Return the first ``max_bytes`` of a larger body instead of
             raising.
-        total_timeout: Seconds the body read may take in all; ``None`` for
+        total_timeout: Seconds the fetch may take in all; ``None`` for
             twice ``timeout``, at least ``_MIN_TOTAL_TIMEOUT``.
 
     Returns:
@@ -517,56 +662,110 @@ def pinned_fetch_bytes(
     Raises:
         UnsafeUserUrlError: If the URL fails the SSRF guard.
         ResponseTooLargeError: If the body exceeds ``max_bytes``.
-        requests.Timeout: If the body takes longer than ``total_timeout``.
+        requests.ReadTimeout: If the fetch takes longer than ``total_timeout``.
         requests.RequestException: For network-level failures.
     """
 
     if total_timeout is None:
         total_timeout = max(2 * timeout, _MIN_TOTAL_TIMEOUT)
-    session, pinned_url, request_headers = _pinned_session(url, headers)
+    watchdog = _Watchdog(total_timeout)
+    session, pinned_url, request_headers = _pinned_session(url, headers, watchdog=watchdog)
     try:
-        response = session.request(
-            method="GET",
-            url=pinned_url,
-            headers=request_headers,
+        watchdog.start()
+        result = _read_pinned(
+            session,
+            pinned_url,
+            request_headers,
+            max_bytes=max_bytes,
             timeout=timeout,
             allow_redirects=allow_redirects,
-            stream=True,
+            truncate=truncate,
+            watchdog=watchdog,
         )
-        try:
-            # An error response's body is never used (callers
-            # raise_for_status) — skip the transfer and let the caller
-            # surface the more informative HTTP-status error.
-            if response.status_code >= 400:
-                return b"", response
-            declared = response.headers.get("Content-Length")
-            if not truncate and declared and declared.isdigit() and int(declared) > max_bytes:
-                raise ResponseTooLargeError(
-                    f"response declares {declared} bytes, over the "
-                    f"{max_bytes}-byte limit"
-                )
-            chunks: list[bytes] = []
-            received = 0
-            deadline = time.monotonic() + total_timeout
-            for chunk in _body_chunks(response, _BODY_CHUNK):
-                if time.monotonic() > deadline:
-                    raise requests.exceptions.ReadTimeout(
-                        f"response body took longer than {total_timeout:g}s"
-                    )
-                received += len(chunk)
-                if received > max_bytes and truncate:
-                    chunks.append(chunk[: max_bytes - (received - len(chunk))])
-                    break
-                if received > max_bytes:
-                    raise ResponseTooLargeError(
-                        f"response body exceeds the {max_bytes}-byte limit"
-                    )
-                chunks.append(chunk)
-            return b"".join(chunks), response
-        finally:
-            response.close()
+    except ResponseTooLargeError:
+        raise
+    except Exception as exc:
+        # A cut connection surfaces as whatever the read was doing (a
+        # disconnect, a protocol or TLS error); report it as the timeout.
+        if watchdog.expired:
+            raise _fetch_timeout(total_timeout) from exc
+        raise
     finally:
+        watchdog.cancel()
         session.close()
+    # A cut connection can also end cleanly (an EOF mid-headers or in a body
+    # with no length): what was read then is not the whole response.
+    if watchdog.expired:
+        raise _fetch_timeout(total_timeout)
+    return result
+
+
+def _fetch_timeout(total_timeout: float) -> requests.exceptions.ReadTimeout:
+    """The error a fetch that ran past ``total_timeout`` raises."""
+    return requests.exceptions.ReadTimeout(f"the fetch took longer than {total_timeout:g}s")
+
+
+def _read_pinned(
+    session: requests.Session,
+    pinned_url: str,
+    request_headers: dict[str, str],
+    *,
+    max_bytes: int,
+    timeout: float,
+    allow_redirects: bool,
+    truncate: bool,
+    watchdog: _Watchdog,
+) -> tuple[bytes, requests.Response]:
+    """Send the pinned GET and read at most ``max_bytes`` of its body.
+
+    The body half of :func:`pinned_fetch_bytes`, which owns the session and
+    the watchdog; the arguments are as it describes them.
+
+    Returns:
+        Tuple of the body bytes and the (already-closed) ``Response``.
+
+    Raises:
+        ResponseTooLargeError: If the body exceeds ``max_bytes``.
+        requests.ReadTimeout: If the watchdog's time runs out between reads.
+        requests.RequestException: For network-level failures.
+    """
+    response = session.request(
+        method="GET",
+        url=pinned_url,
+        headers=request_headers,
+        timeout=timeout,
+        allow_redirects=allow_redirects,
+        stream=True,
+    )
+    try:
+        # An error response's body is never used (callers
+        # raise_for_status) — skip the transfer and let the caller
+        # surface the more informative HTTP-status error.
+        if response.status_code >= 400:
+            return b"", response
+        declared = response.headers.get("Content-Length")
+        if not truncate and declared and declared.isdigit() and int(declared) > max_bytes:
+            raise ResponseTooLargeError(
+                f"response declares {declared} bytes, over the "
+                f"{max_bytes}-byte limit"
+            )
+        chunks: list[bytes] = []
+        received = 0
+        for chunk in _body_chunks(response, _BODY_CHUNK):
+            if time.monotonic() > watchdog.ends:
+                raise _fetch_timeout(watchdog.seconds)
+            received += len(chunk)
+            if received > max_bytes and truncate:
+                chunks.append(chunk[: max_bytes - (received - len(chunk))])
+                break
+            if received > max_bytes:
+                raise ResponseTooLargeError(
+                    f"response body exceeds the {max_bytes}-byte limit"
+                )
+            chunks.append(chunk)
+        return b"".join(chunks), response
+    finally:
+        response.close()
 
 
 def pinned_post(

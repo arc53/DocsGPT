@@ -1034,6 +1034,33 @@ def test_pinned_fetch_bytes_reads_chunked_gzip_bodies_from_a_real_socket(local_s
     assert small == body[:1000]
 
 
+@pytest.mark.unit
+def test_pinned_fetch_bytes_total_timeout_covers_trickled_headers(local_server):
+    import time
+
+    base, routes = local_server
+
+    def trickled_headers(handler):
+        # Header lines, each well inside the read timeout; the body never comes.
+        try:
+            handler.wfile.write(b"HTTP/1.1 200 OK\r\n")
+            for i in range(40):
+                handler.wfile.write(b"X-Pad-%d: a\r\n" % i)
+                handler.wfile.flush()
+                time.sleep(0.2)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    routes["/headers"] = trickled_headers
+
+    started = time.monotonic()
+    with pytest.raises(requests.Timeout):
+        pinned_fetch_bytes(base + "/headers", max_bytes=1000, timeout=1.0, total_timeout=1.0)
+
+    assert time.monotonic() - started < 3
+
+
+
 # guarded_async_client: per-request SSRF guard for async SDKs (MCP)
 
 
