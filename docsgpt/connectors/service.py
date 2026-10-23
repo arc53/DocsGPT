@@ -1093,15 +1093,17 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
 def owner_sync_connection(
     conn, owner_id: str, provider: str, connection_id: Optional[str] = None,
 ) -> Optional[dict]:
-    """The owner's usable connection for ``provider``, or None.
+    """The source's own connection, when the owner can sync with it, or None.
 
     Used when a sync of a connector source is queued for its owner without a
     browser naming a connection (a team editor's Sync now, a Reingest): the
-    sync runs with the owner's account, the source's own connection when it
-    has one, else the owner's first connection for the provider. A connection
-    that is not connected (signed out, flagged for reconnect, holding no
-    credentials), cannot be decrypted, or has an expired access token that
-    can't be refreshed counts as missing.
+    sync runs with the owner's account the source names. A source that names
+    none (its connection was removed) has no account to sync with: another of
+    the owner's connections for the provider would read the selection with a
+    different account, and the sync would re-link the source to it. A
+    connection that is not connected (signed out, flagged for reconnect,
+    holding no credentials), cannot be decrypted, or has an expired access
+    token that can't be refreshed counts as missing.
 
     Args:
         conn: Open database connection.
@@ -1110,17 +1112,15 @@ def owner_sync_connection(
         connection_id: The source's own connection, if it names one.
 
     Returns:
-        Optional[dict]: The connection row, or None when the owner must reconnect.
+        Optional[dict]: The connection row, or None when there is none or the owner must reconnect.
     """
     from docsgpt.parser.connectors.connector_creator import ConnectorCreator
     from docsgpt.security.encryption import CredentialDecryptionError
 
-    repo = ConnectorSessionsRepository(conn)
-    if connection_id:
-        row = repo.get_for_user(str(connection_id), owner_id)
-        candidates = [row] if owns_connector_session(row, owner_id, provider) else []
-    else:
-        candidates = [s for s in repo.list_for_user(owner_id) if owns_connector_session(s, owner_id, provider)]
+    if not connection_id:
+        return None
+    row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
+    candidates = [row] if owns_connector_session(row, owner_id, provider) else []
     for session in candidates:
         if normalize_status(session) != STATUS_CONNECTED:
             continue

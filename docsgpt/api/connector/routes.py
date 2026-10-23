@@ -595,13 +595,19 @@ class ConnectorSync(Resource):
                 "connection_id": fields.String(
                     required=False,
                     description="Connection to sync with; defaults to the source's own (ignored for "
-                    "team editors, whose sync uses the owner's connection)",
+                    "team editors, whose sync always uses the source's own connection)",
                 ),
                 "session_token": fields.String(required=False, description="Legacy; use connection_id")
             },
         )
     )
-    @api.doc(description="Sync connector source to check for modifications")
+    @api.doc(
+        description=(
+            "Sync connector source to check for modifications. A 409 with code connection_missing when the "
+            "source has no connection (it was removed) and none is named, as for a team editor, who can't "
+            "name one; code reconnect_needed when a team editor's sync finds the source's connection signed out."
+        )
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -689,6 +695,21 @@ class ConnectorSync(Resource):
             else:
                 # A grantee can't name a connection: theirs would read the
                 # source's files with another account.
+                if not source_connection:
+                    # As for the owner: with its connection removed (or never
+                    # named), another of the owner's accounts would read the
+                    # selection, and the sync would re-link the source to it.
+                    message = (
+                        "This source's account connection was removed; "
+                        "the owner needs to connect the account again to sync it."
+                    )
+                    return make_response(
+                        jsonify({
+                            "success": False, "error": message, "message": message,
+                            "code": "connection_missing",
+                        }),
+                        409,
+                    )
                 with db_readonly() as conn:
                     session = service.owner_sync_connection(conn, owner_id, source_type, source_connection)
                 if session is None:

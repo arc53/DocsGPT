@@ -525,6 +525,16 @@ def _owner_session(pg_conn, token="st-owner", token_info=None):
     return str(row["id"])
 
 
+def _link(pg_conn, sid, connection):
+    """Point the source at ``connection``, as an ingest through a connection does."""
+    from sqlalchemy import text
+
+    pg_conn.execute(
+        text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = CAST(:s AS uuid)"),
+        {"c": connection, "s": sid},
+    )
+
+
 def _connector_sync(app, pg_conn, user, body):
     from docsgpt.api.connector.routes import ConnectorSync
 
@@ -540,6 +550,7 @@ class TestConnectorSync:
     def test_editor_syncs_with_owner_session(self, app, pg_conn):
         sid = _connector_source(pg_conn)
         owner_connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, owner_connection)
         resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
         assert resp.status_code == 200
         kwargs = delay.call_args.kwargs
@@ -553,6 +564,7 @@ class TestConnectorSync:
 
         sid = _connector_source(pg_conn)
         owner_connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, owner_connection)
         repo = ConnectorSessionsRepository(pg_conn)
         row = repo.upsert(EDITOR, "google_drive", status="authorized")
         repo.update(str(row["id"]), {"session_token": "st-editor", "token_info": {"access_token": "x"}})
@@ -564,13 +576,47 @@ class TestConnectorSync:
         assert delay.call_args.kwargs["connection_id"] == owner_connection
 
     def test_owner_session_missing_returns_409(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
         sid = _connector_source(pg_conn)
+        connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, connection)
+        ConnectorSessionsRepository(pg_conn).update(connection, {"status": "reconnect_needed"})
         resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
         assert resp.status_code == 409
         assert "owner" in resp.json["error"].lower()
         assert resp.json["message"] == resp.json["error"]
         # The UI words the refusal itself.
         assert resp.json["code"] == "reconnect_needed"
+        delay.assert_not_called()
+
+    def test_editor_sync_after_the_connection_was_removed_says_so(self, app, pg_conn):
+        """The owner's other account must not read the selection: that would re-link the source to it."""
+        from sqlalchemy import text
+
+        sid = _connector_source(pg_conn)
+        connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, connection)
+        pg_conn.execute(text("DELETE FROM connector_sessions WHERE id = CAST(:c AS uuid)"), {"c": connection})
+        _owner_session(pg_conn, token="st-other")
+
+        resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
+
+        assert resp.status_code == 409
+        assert resp.json["code"] == "connection_missing"
+        assert "owner" in resp.json["error"].lower()
+        assert resp.json["message"] == resp.json["error"]
+        delay.assert_not_called()
+
+    def test_editor_sync_of_a_source_that_never_named_a_connection_is_refused(self, app, pg_conn):
+        # As the owner's own Sync now refuses it: no account is the source's.
+        sid = _connector_source(pg_conn)
+        _owner_session(pg_conn)
+
+        resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
+
+        assert resp.status_code == 409
+        assert resp.json["code"] == "connection_missing"
         delay.assert_not_called()
 
     def test_owner_sync_after_the_connection_was_removed_says_so(self, app, pg_conn):

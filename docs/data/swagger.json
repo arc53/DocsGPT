@@ -214,7 +214,7 @@
     "ConnectorSyncModel": {
       "properties": {
         "connection_id": {
-          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync uses the owner's connection)",
+          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync always uses the source's own connection)",
           "type": "string"
         },
         "session_token": {
@@ -3641,7 +3641,7 @@
     },
     "/api/connectors/sync": {
       "post": {
-        "description": "Sync connector source to check for modifications",
+        "description": "Sync connector source to check for modifications. A 409 with code connection_missing when the source has no connection (it was removed) and none is named, as for a team editor, who can't name one; code reconnect_needed when a team editor's sync finds the source's connection signed out.",
         "operationId": "post_connector_sync",
         "parameters": [
           {
@@ -5758,7 +5758,7 @@
     },
     "/api/sources/reingest": {
       "post": {
-        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id.",
+        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again.",
         "operationId": "post_reingest_source",
         "parameters": [
           {

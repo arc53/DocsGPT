@@ -1167,6 +1167,21 @@ def _reingest(app, pg_conn, user, source_id, **patches):
     return response, mocks
 
 
+def _connection(pg_conn, user, provider="google_drive", source=None):
+    """A connector session row for ``user``, linked to ``source`` when given; its id."""
+    from sqlalchemy import text
+
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    connection = str(ConnectorSessionsRepository(pg_conn).upsert(user, provider, status="authorized")["id"])
+    if source is not None:
+        pg_conn.execute(
+            text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = CAST(:s AS uuid)"),
+            {"c": connection, "s": str(source["id"])},
+        )
+    return connection
+
+
 class TestReingestARemoteSource:
     """A source with no stored files (Website, crawler, connector) is rebuilt by a sync of its stored config.
 
@@ -1197,6 +1212,7 @@ class TestReingestARemoteSource:
             pg_conn, user, name="Drive", type="connector:file", sync_frequency="daily",
             remote_data={"provider": "google_drive", "file_ids": ["f1"], "folder_ids": ["d1"], "recursive": False},
         )
+        linked = _connection(pg_conn, user, source=src)
         connection = MagicMock(return_value={"id": "conn-1"})
 
         response, mocks = _reingest(app, pg_conn, user, str(src["id"]), connection=connection)
@@ -1209,19 +1225,41 @@ class TestReingestARemoteSource:
         assert kwargs["user"] == user and kwargs["connection_id"] == "conn-1"
         assert kwargs["source_type"] == "google_drive"
         assert kwargs["file_ids"] == ["f1"] and kwargs["folder_ids"] == ["d1"] and kwargs["recursive"] is False
-        assert connection.call_args.args[1:3] == (user, "google_drive")
+        assert connection.call_args.args[1:4] == (user, "google_drive", linked)
 
     def test_a_connector_source_without_a_usable_connection_is_refused(self, app, pg_conn):
         user = "u-reingest-drive-off"
         src = _seed_source(
             pg_conn, user, name="Drive", type="connector:file", remote_data={"provider": "google_drive"},
         )
+        _connection(pg_conn, user, source=src)
 
         response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
 
         assert response.status_code == 409
         assert response.json["success"] is False and response.json["code"] == "reconnect_needed"
-        mocks["connector"].assert_not_called() and mocks["reingest"].assert_not_called()
+        mocks["connector"].assert_not_called()
+        mocks["reingest"].assert_not_called()
+
+    def test_a_connector_source_whose_connection_was_removed_is_refused(self, app, pg_conn):
+        """As its Sync now: another of the owner's accounts must not read the selection and re-link it."""
+        user = "u-reingest-drive-gone"
+        _connection(pg_conn, user)  # another account for the provider
+        src = _seed_source(
+            pg_conn, user, name="Drive", type="connector:file", remote_data={"provider": "google_drive"},
+        )
+        connection = MagicMock(return_value={"id": "conn-other"})
+
+        response, mocks = _reingest(app, pg_conn, user, str(src["id"]), connection=connection)
+
+        assert response.status_code == 409
+        assert response.json["code"] == "connection_missing"
+        assert response.json["error"] == (
+            "This source's account connection was removed; connect the account again to sync it."
+        )
+        connection.assert_not_called()
+        mocks["connector"].assert_not_called()
+        mocks["reingest"].assert_not_called()
 
     def test_a_wiki_is_refused(self, app, pg_conn):
         user = "u-reingest-wiki"

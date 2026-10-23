@@ -601,6 +601,10 @@ class SyncSource(Resource):
 
 
 _RECONNECT_TO_SYNC = "The owner needs to reconnect this source's account before it can be synced."
+_CONNECTION_REMOVED = "This source's account connection was removed; connect the account again to sync it."
+_CONNECTION_REMOVED_EDITOR = (
+    "This source's account connection was removed; the owner needs to connect the account again to sync it."
+)
 
 
 def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], Any]] | Response:
@@ -619,9 +623,10 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], 
 
     Returns:
         A callable that queues the sync and returns its task; a refusal
-        (a connector source whose owner must reconnect); or ``None`` when
-        the source has nothing to sync, so the reingest task runs and
-        reports that.
+        (a connector source whose connection was removed, 409
+        ``connection_missing``, or whose owner must reconnect, 409
+        ``reconnect_needed``); or ``None`` when the source has nothing to
+        sync, so the reingest task runs and reports that.
     """
     source_id = str(doc["id"])
     source_type = doc.get("type") or ""
@@ -629,10 +634,17 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[Callable[[], 
         provider = _get_provider_from_remote_data(doc.get("remote_data"))
         if not provider:
             return None
+        connection_id = _connection_id(doc)
+        if not connection_id:
+            # Refused as /api/connectors/sync refuses it: another of the
+            # owner's accounts would read the selection, and the sync would
+            # re-link the source to it.
+            text = _CONNECTION_REMOVED if actor == owner else _CONNECTION_REMOVED_EDITOR
+            return _sync_refusal(text, "connection_missing", 409)
         from docsgpt.connectors import service as connector_service
 
         with db_readonly() as conn:
-            session = connector_service.owner_sync_connection(conn, owner, provider, _connection_id(doc))
+            session = connector_service.owner_sync_connection(conn, owner, provider, connection_id)
         if session is None:
             return _sync_refusal(_RECONNECT_TO_SYNC, "reconnect_needed", 409)
         remote_data = doc.get("remote_data")
@@ -685,7 +697,9 @@ class ReingestSource(Resource):
         "change. A source with no stored files (Website, crawler, connector) "
         "is synced from its stored config instead; either way the answer is "
         "``{success, task_id}`` and the task's source.ingest events carry that "
-        "task_id."
+        "task_id. A connector source can be refused with a 409: code "
+        "connection_missing when its connection was removed, reconnect_needed "
+        "when the owner must sign it in again."
     )
     def post(self):
         decoded_token = request.decoded_token
