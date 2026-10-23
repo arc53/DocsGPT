@@ -1400,6 +1400,47 @@ class TestAGraphSource:
         assert graph["store"].deleted == [(str(source["id"]), ["old-1"])]
         assert "a.md" in _tree(pg_conn, source)
 
+    def test_a_faiss_removal_whose_save_fails_keeps_the_graph(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph, monkeypatch,
+    ):
+        # The loaded FAISS index dropped the chunks before its save failed; storage
+        # still holds them, so the graph must not be told they are gone.
+        from unittest.mock import MagicMock
+
+        import faiss
+        import numpy as np
+
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+        from docsgpt.vectorstore import vector_creator
+        from docsgpt.vectorstore.faiss import FaissStore
+
+        _make_graph(pg_conn, source)
+        url = "https://docs.x.io/a"
+        store = FaissStore.__new__(FaissStore)
+        store.source_id, store.path = str(source["id"]), f"indexes/{source['id']}"
+        store.index = faiss.IndexFlatL2(4)
+        store.index.add(np.eye(3, 4, dtype=np.float32))
+        store.documents = {
+            "c1": {"page_content": "a", "metadata": {"source": url}},
+            "c2": {"page_content": "b", "metadata": {"source": url}},
+            "c3": {"page_content": "c", "metadata": {"source": "https://docs.x.io/other"}},
+        }
+        store.index_to_docstore_id = {0: "c1", 1: "c2", 2: "c3"}
+        store.storage = MagicMock()
+        store.storage.save_file.side_effect = OSError("S3 PutObject failed")
+        monkeypatch.setattr(settings, "VECTOR_STORE", "faiss")
+        monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+
+        with pytest.raises(OSError):
+            worker.website_pages_worker(
+                task_self, str(source["id"]), USER, "remove", pages=[{"path": "a.md", "url": url}],
+            )
+
+        assert graph["store"].deleted == []
+        assert sorted(store.chunk_ids_by_source_paths([url])) == ["c1", "c2"]
+        assert "a.md" in _tree(pg_conn, source)
+
 
 @pytest.mark.unit
 class TestAFailureBeforeTheRun:

@@ -5556,7 +5556,9 @@ def _remove_web_pages(
         _delete_chunks_checked(store, chunk_ids, _listed)
     except Exception:
         # Some chunks may be gone already; a retry lists only the rest, so
-        # the graph drops the deleted ones now or never.
+        # the graph drops the deleted ones now or never. The listing reads
+        # what the store holds: a FAISS delete whose save failed has put its
+        # chunks back in the loaded index, so none of them reads as gone.
         try:
             still = {str(chunk_id) for chunk_id in _listed()}
         except Exception:  # noqa: BLE001 - can't tell which went; the next full build settles the graph
