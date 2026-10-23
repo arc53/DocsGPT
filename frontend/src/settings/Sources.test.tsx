@@ -752,6 +752,31 @@ describe('Sources access', () => {
     expect(toasts()).toHaveLength(1);
   });
 
+  it.each([
+    ['reconnect_needed', 409, 'syncRefusedReconnect'],
+    ['wiki', 400, 'syncRefusedWiki'],
+  ])(
+    "a reingest refused with %s says why in the UI's words",
+    async (code, status, name) => {
+      service.reingestSource.mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ success: false, code, error: 'English' }),
+      });
+      await render(doc({ ingestStatus: 'failed' }));
+      await menuItems();
+      await clickItem('settings.sources.reingest');
+      const message = `settings.connectors.detail.${name}`;
+      expect(toasts().map((action) => action.payload.message)).toEqual([
+        message,
+      ]);
+      const failed = dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action?.payload?.updates?.status === 'failed');
+      expect(failed?.payload.updates.errorMessage).toBe(message);
+    },
+  );
+
   const openView = async (document: Doc) => {
     await render(document);
     await act(async () =>

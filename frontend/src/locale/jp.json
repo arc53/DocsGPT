@@ -1938,7 +1938,8 @@
         "syncRefusedWiki": "このソースは Wiki になりました。直接編集するもので、同期はしません。",
         "syncRefusedNotSyncable": "このソースは同期できません。",
         "syncRefusedConnector": "このソースは接続を通じて同期されます。",
-        "syncRefusedInvalid": "このソースが見つかりませんでした。"
+        "syncRefusedInvalid": "このソースが見つかりませんでした。",
+        "syncRefusedReconnect": "同期する前に、所有者がこのソースのアカウントを再接続する必要があります。"
       },
       "permission": {
         "always": "許可",

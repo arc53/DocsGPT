@@ -225,8 +225,13 @@ export function useSourceActions({
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.success) {
-        fail(data?.error || data?.message);
-        showActionError(t('settings.sources.errors.reingest'), response.status);
+        // A remote source's reingest is a sync: its refusals share the codes.
+        const refusal = syncRefusal(t, data, {
+          status: response.status,
+          fallback: t('settings.sources.errors.reingest'),
+        });
+        fail(refusal);
+        showActionError(refusal, response.status);
         return;
       }
       onChanged();

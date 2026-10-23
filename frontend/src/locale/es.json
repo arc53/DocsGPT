@@ -2007,7 +2007,8 @@
         "syncRefusedWiki": "Esta fuente ahora es una wiki: se edita directamente y ya no se sincroniza.",
         "syncRefusedNotSyncable": "Esta fuente no se puede sincronizar.",
         "syncRefusedConnector": "Esta fuente se sincroniza a través de su conexión.",
-        "syncRefusedInvalid": "No se encontró esta fuente."
+        "syncRefusedInvalid": "No se encontró esta fuente.",
+        "syncRefusedReconnect": "El propietario debe volver a conectar la cuenta de esta fuente antes de poder sincronizarla."
       },
       "permission": {
         "always": "Permitir",

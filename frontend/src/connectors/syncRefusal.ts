@@ -1,11 +1,12 @@
 import type { TFunction } from 'i18next';
 
-/** /api/sync_source and /api/connectors/sync refusal codes, and the key each. */
+/** /api/sync_source, /api/connectors/sync and reingest refusal codes, and the key each. */
 const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
   ['wiki', 'syncRefusedWiki'],
   ['not_syncable', 'syncRefusedNotSyncable'],
   ['connector_source', 'syncRefusedConnector'],
   ['invalid_source', 'syncRefusedInvalid'],
+  ['reconnect_needed', 'syncRefusedReconnect'],
 ]);
 
 /**

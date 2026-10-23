@@ -1941,7 +1941,8 @@
         "syncRefusedWiki": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und nicht mehr synchronisiert.",
         "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren.",
         "syncRefusedConnector": "Diese Quelle wird über ihre Verbindung synchronisiert.",
-        "syncRefusedInvalid": "Diese Quelle wurde nicht gefunden."
+        "syncRefusedInvalid": "Diese Quelle wurde nicht gefunden.",
+        "syncRefusedReconnect": "Der Eigentümer muss das Konto dieser Quelle erneut verbinden, bevor sie synchronisiert werden kann."
       },
       "permission": {
         "always": "Erlauben",

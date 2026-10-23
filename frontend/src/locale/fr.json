@@ -2007,7 +2007,8 @@
         "syncRefusedWiki": "Cette source est désormais un wiki : elle se modifie sur place et ne se synchronise plus.",
         "syncRefusedNotSyncable": "Cette source ne peut pas être synchronisée.",
         "syncRefusedConnector": "Cette source se synchronise par sa connexion.",
-        "syncRefusedInvalid": "Cette source est introuvable."
+        "syncRefusedInvalid": "Cette source est introuvable.",
+        "syncRefusedReconnect": "Le propriétaire doit reconnecter le compte de cette source avant qu’elle puisse être synchronisée."
       },
       "permission": {
         "always": "Autoriser",

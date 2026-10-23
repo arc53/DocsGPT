@@ -12,6 +12,7 @@ describe('syncRefusal', () => {
     ['not_syncable', 'syncRefusedNotSyncable'],
     ['connector_source', 'syncRefusedConnector'],
     ['invalid_source', 'syncRefusedInvalid'],
+    ['reconnect_needed', 'syncRefusedReconnect'],
   ])('words the %s code', (code, name) => {
     expect(syncRefusal(t, { code, error: 'English' }, { status: 400 })).toBe(
       key(name),

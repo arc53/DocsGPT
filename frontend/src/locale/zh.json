@@ -1938,7 +1938,8 @@
         "syncRefusedWiki": "此来源现在是 Wiki：直接在此编辑，不再同步。",
         "syncRefusedNotSyncable": "此来源无法同步。",
         "syncRefusedConnector": "此来源通过其连接进行同步。",
-        "syncRefusedInvalid": "找不到此来源。"
+        "syncRefusedInvalid": "找不到此来源。",
+        "syncRefusedReconnect": "所有者需要重新连接此来源的账户，才能进行同步。"
       },
       "permission": {
         "always": "允许",
