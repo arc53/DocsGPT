@@ -11,6 +11,7 @@ import string
 import tempfile
 import threading
 import traceback
+from contextlib import ExitStack
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import uuid
@@ -997,6 +998,10 @@ def ingest_worker(
     }
 
 
+# Why a source can't be re-ingested, as its failed event says it.
+_REINGEST_NO_FILES = "This source keeps no files to re-ingest; sync it to rebuild it"
+
+
 def reingest_source_worker(self, source_id, user):
     """
     Re-ingestion worker that handles incremental updates by:
@@ -1018,6 +1023,15 @@ def reingest_source_worker(self, source_id, user):
         ``completed`` (carrying ``chunks_added`` / ``chunks_deleted``),
         or ``failed``. v1 limitation; revisit if reingest gains a
         progress-driven UI.
+
+        It re-reads the files the source keeps in storage, so a source that
+        keeps none (a Website, crawler or connector source: ``file_path`` is
+        empty) is refused with a ``failed`` event (``reason: "no_files"``)
+        rather than raised, which would retry and then mark the source
+        failed; the API syncs those instead. The work runs holding the
+        source's index lock (``source_index_lock``), so it takes turns with a
+        sync or a Website page change; a source busy past the wait, or
+        deleted meanwhile, is skipped the same way (``busy`` / ``gone``).
     """
     # Declared at the function scope so the outer except can include
     # ``name`` in the failed event payload when the failure happens
@@ -1026,6 +1040,26 @@ def reingest_source_worker(self, source_id, user):
     # Tracks inner-block failures so a ``completed`` event reflects
     # partial-success accurately rather than masking it.
     inner_warnings: list[str] = []
+    # Holds the source's index lock once taken; released on every way out.
+    held = ExitStack()
+
+    def _not_run(reason: str, error: str) -> Dict[str, Any]:
+        logging.info("Not re-ingesting source %s: %s", source_id, reason)
+        publish_user_event(
+            user,
+            "source.ingest.failed",
+            {
+                "source_id": str(source_id),
+                "name": source_name,
+                "filename": source_name,
+                "operation": "reingest",
+                "error": error,
+                "reason": reason,
+                **_task_id_field(self),
+            },
+            scope={"kind": "source", "id": str(source_id)},
+        )
+        return {"source_id": str(source_id), "user": user, "status": "skipped", "reason": reason}
 
     try:
         from docsgpt.vectorstore.vector_creator import VectorCreator
@@ -1041,9 +1075,8 @@ def reingest_source_worker(self, source_id, user):
             raise ValueError(f"Source {source_id} not found or access denied")
         source_id = str(source["id"])
         source_name = source.get("name") or ""
-        # Re-chunk with the source's persisted config (classic defaults
-        # when absent/empty), keeping reingest consistent with ingest.
-        cfg = SourceConfig.parse(source.get("config"))
+        if not source.get("file_path"):
+            return _not_run("no_files", _REINGEST_NO_FILES)
 
         # Publish ``queued`` *after* canonicalising ``source_id`` so the
         # event references the same id as the source row. Trade-off
@@ -1070,6 +1103,21 @@ def reingest_source_worker(self, source_id, user):
         else:
             # The failed attempt before cleared the Activity marker.
             mark_ingest_running(user, queued)
+
+        try:
+            held.enter_context(source_index_lock(source_id))
+        except SourceBusy:
+            return _not_run("busy", _SYNC_SKIP_MESSAGES["busy"])
+        # Read again under the lock: the source as it is now, or gone.
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        if not source:
+            return _not_run("gone", _SYNC_SKIP_MESSAGES["gone"])
+        if not source.get("file_path"):
+            return _not_run("no_files", _REINGEST_NO_FILES)
+        # Re-chunk with the source's persisted config (classic defaults
+        # when absent/empty), keeping reingest consistent with ingest.
+        cfg = SourceConfig.parse(source.get("config"))
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
@@ -1389,6 +1437,8 @@ def reingest_source_worker(self, source_id, user):
             scope={"kind": "source", "id": str(source_id)},
         )
         raise
+    finally:
+        held.close()
 
 
 def _task_id_field(task: Any) -> Dict[str, str]:
