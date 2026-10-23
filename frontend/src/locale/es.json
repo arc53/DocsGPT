@@ -1976,7 +1976,9 @@
         "indexing": "Indexando",
         "firstSyncStarted": "Primera sincronización iniciada {{time}}",
         "sourceMenu": "Acciones de la fuente",
-        "syncStarting": "Iniciando la sincronización…"
+        "syncStarting": "Iniciando la sincronización…",
+        "syncRefusedWiki": "Esta fuente ahora es una wiki: se edita directamente y ya no se sincroniza.",
+        "syncRefusedNotSyncable": "Esta fuente no se puede sincronizar."
       },
       "permission": {
         "always": "Permitir",

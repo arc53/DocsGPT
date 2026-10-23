@@ -41,7 +41,10 @@ import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
 import ConnectionDrawer from './ConnectionDrawer';
-import connectorsReducer, { type StartedSync } from './connectorsSlice';
+import connectorsReducer, {
+  selectStartedSyncs,
+  type StartedSync,
+} from './connectorsSlice';
 import type { ConnectorDefinition } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -566,6 +569,41 @@ describe('ConnectionDrawer', () => {
     expect(toast?.message).toBe('Sign in again first.');
   });
 
+  it.each([
+    ['wiki', 'settings.connectors.detail.syncRefusedWiki'],
+    ['not_syncable', 'settings.connectors.detail.syncRefusedNotSyncable'],
+  ])('says in its own words why a sync was refused (%s)', async (code, key) => {
+    users.syncConnector.mockResolvedValue({
+      json: async () => ({ success: false, code, error: 'English text' }),
+    });
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
+    expect(
+      selectActionToast(
+        store.getState() as Parameters<typeof selectActionToast>[0],
+      )?.message,
+    ).toBe(key);
+  });
+
+  it("reads a refusal's message when it has no error", async () => {
+    users.syncConnector.mockResolvedValue({
+      json: async () => ({ success: false, message: 'Nothing to sync.' }),
+    });
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
+    expect(
+      selectActionToast(
+        store.getState() as Parameters<typeof selectActionToast>[0],
+      )?.message,
+    ).toBe('Nothing to sync.');
+  });
+
   it('falls back to a localized sync failure with no server message', async () => {
     users.syncConnector.mockRejectedValue(new Error('offline'));
     await render();
@@ -749,6 +787,66 @@ describe('ConnectionDrawer', () => {
       expect(accountRow('Contracts').textContent).not.toContain(
         'settings.connectors.detail.indexing',
       );
+      // Listed now, it is no longer kept as started.
+      expect(
+        selectStartedSyncs(
+          store.getState() as Parameters<typeof selectStartedSyncs>[0],
+        ).map((sync) => sync.id),
+      ).toEqual(['src-elsewhere']);
+    });
+
+    const started = (minutesAgo = 0) => ({
+      id: 'src-new',
+      name: 'Contracts',
+      connectionId: 'conn-1',
+      startedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    });
+
+    it.each(['completed', 'failed'])(
+      'stops showing a sync as indexing once its ingest %s, listed or not',
+      async (outcome) => {
+        // Never listed: the source was deleted, or can't be listed.
+        connectors.getConnection.mockResolvedValue({
+          success: true,
+          connection: { ...DETAIL, sources: [] },
+        });
+        connectors.listConnections.mockResolvedValue({
+          success: true,
+          connections: [
+            {
+              id: 'conn-1',
+              connector_key: 'google_drive',
+              status: 'connected',
+            },
+          ],
+        });
+        await render(DRIVE, { startedSyncs: [started()] });
+        expect(text()).toContain('Contracts');
+        await act(async () => {
+          store.dispatch(
+            sseEventReceived({
+              id: 'ev-1',
+              type: `source.ingest.${outcome}`,
+              scope: { kind: 'source', id: 'src-new' },
+              payload: {},
+            }),
+          );
+        });
+        // The account still shows, without the sync.
+        expect(text()).toContain('lena@example.com');
+        expect(text()).not.toContain('Contracts');
+        expect(text()).not.toContain('settings.connectors.detail.indexing');
+      },
+    );
+
+    it('gives up on a sync with no word on its ingest after 15 minutes', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      await render(DRIVE, { startedSyncs: [started(16)] });
+      expect(text()).not.toContain('Contracts');
+      expect(text()).not.toContain('settings.connectors.detail.indexing');
     });
   });
 
@@ -942,6 +1040,47 @@ describe('ConnectionDrawer', () => {
         expect(group.classList.contains('w-full')).toBe(true);
       }
     });
+
+    it.each([
+      ['deleteSources', []],
+      ['keepSources', ['src-new', 'src-other']],
+    ])(
+      'removing an account (%s) forgets the syncs whose sources went with it',
+      async (choice, kept) => {
+        connectors.remove.mockResolvedValue({ success: true });
+        await render(DRIVE, {
+          startedSyncs: [
+            {
+              id: 'src-new',
+              name: 'Contracts',
+              connectionId: 'conn-1',
+              startedAt: new Date().toISOString(),
+            },
+            {
+              id: 'src-other',
+              name: 'Elsewhere',
+              connectionId: 'conn-9',
+              startedAt: new Date().toISOString(),
+            },
+          ],
+        });
+        await openAccountMenu();
+        await act(async () =>
+          menuItem('settings.connectors.detail.remove').click(),
+        );
+        await act(async () =>
+          inDialog(`settings.connectors.remove.${choice}`).click(),
+        );
+        await act(async () =>
+          inDialog('settings.connectors.detail.remove').click(),
+        );
+        expect(connectors.remove).toHaveBeenCalled();
+        const left = selectStartedSyncs(
+          store.getState() as Parameters<typeof selectStartedSyncs>[0],
+        ).map((sync) => sync.id);
+        expect(left).toEqual(choice === 'deleteSources' ? ['src-other'] : kept);
+      },
+    );
 
     it("names a part's account by its own service when it has no name", async () => {
       connectors.getConnection.mockImplementation(async (id: string) => ({

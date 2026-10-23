@@ -58,6 +58,7 @@ import {
   selectConnectorsLoaded,
   selectStartedSyncs,
   type StartedSync,
+  syncForgotten,
 } from './connectorsSlice';
 import {
   accountLine,
@@ -65,6 +66,12 @@ import {
   connectorName,
   isKeyHint,
 } from './i18n';
+import {
+  firstIngestState,
+  isStillIndexing,
+  STARTED_SYNC_GIVE_UP_MS,
+  startedSyncAge,
+} from './startedSyncs';
 import ToolPermissions from './ToolPermissions';
 import type {
   Capability,
@@ -232,7 +239,8 @@ function RemoveConnectionModal({
   /** The account, as `confirmName` gives it. */
   name: string;
   onClose: () => void;
-  onRemoved: () => void;
+  /** After the server removed it, with what became of its sources. */
+  onRemoved: (sources: 'keep' | 'delete') => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -244,7 +252,7 @@ function RemoveConnectionModal({
       .remove(detail.id, { sources, tools }, token)
       .then((data) => {
         if (!data?.success) throw new Error('remove failed');
-        onRemoved();
+        onRemoved(sources);
       });
 
   return (
@@ -505,28 +513,55 @@ const selectEvents = (state: {
   notifications?: { recentEvents?: SSEEvent[] };
 }) => state.notifications?.recentEvents ?? NO_EVENTS;
 
+/** The ids of the sources the loaded accounts list. */
+function listedSourceIds(details: ConnectionDetail[]): Set<string> {
+  return new Set(
+    details.flatMap((detail) => detail.sources.map((source) => source.id)),
+  );
+}
+
 /**
- * The syncs started this session that the server doesn't list yet (its
- * first ingest is still running) and that haven't failed.
+ * The syncs started this session that the server doesn't list yet and whose
+ * first ingest is still running: no completed or failed event for it, and
+ * started under STARTED_SYNC_GIVE_UP_MS ago. A source deleted after its
+ * sync, or a terminal event this tab missed, so never shows as indexing for
+ * the rest of the session.
  *
  * @param started Every sync started this session.
- * @param details The loaded accounts, with the sources the server lists.
+ * @param listed The ids of the sources the server lists.
  * @param events The recent notification events.
+ * @param now This browser's clock.
  */
 function indexingSyncs(
   started: StartedSync[],
-  details: ConnectionDetail[],
+  listed: Set<string>,
   events: SSEEvent[],
+  now: number,
 ): StartedSync[] {
-  const listed = new Set(
-    details.flatMap((detail) => detail.sources.map((source) => source.id)),
+  return started.filter(
+    (sync) => !listed.has(sync.id) && isStillIndexing(sync, events, now),
   );
-  const failed = new Set(
-    events
-      .filter((event) => event.type === 'source.ingest.failed')
-      .map((event) => event.scope?.id),
+}
+
+/**
+ * A refused sync in the user's language: the server's `code` when it has a
+ * key, else its own words (`error`, or `message` from /api/sync_source),
+ * else the generic failure.
+ */
+function syncRefusal(t: TFunction, data: unknown): string {
+  const body = (data ?? {}) as {
+    code?: unknown;
+    error?: unknown;
+    message?: unknown;
+  };
+  if (body.code === 'wiki')
+    return t('settings.connectors.detail.syncRefusedWiki');
+  if (body.code === 'not_syncable')
+    return t('settings.connectors.detail.syncRefusedNotSyncable');
+  const text = [body.error, body.message].find(
+    (value): value is string => typeof value === 'string' && !!value,
   );
-  return started.filter((sync) => !listed.has(sync.id) && !failed.has(sync.id));
+  return text ?? t('settings.connectors.detail.syncFailed');
 }
 
 /**
@@ -1180,18 +1215,43 @@ export default function ConnectionDrawer({
   // it, which it does once the first ingest finishes: reload then.
   const startedSyncs = useSelector(selectStartedSyncs);
   const events = useSelector(selectEvents);
-  const indexing = indexingSyncs(startedSyncs, loaded?.details ?? [], events);
-  const finishedKey = events
+  // Bumped when the oldest shown sync reaches its give-up age.
+  const [now, setNow] = useState(() => Date.now());
+  const listed = listedSourceIds(loaded?.details ?? []);
+  const indexing = indexingSyncs(startedSyncs, listed, events, now);
+  const finishedKey = startedSyncs
     .filter(
-      (event) =>
-        event.type === 'source.ingest.completed' &&
-        indexing.some((sync) => sync.id === event.scope?.id),
+      (sync) =>
+        !listed.has(sync.id) &&
+        firstIngestState(events, sync.id) === 'completed',
     )
-    .map((event) => event.scope?.id)
+    .map((sync) => sync.id)
     .join(',');
   useEffect(() => {
     if (finishedKey) refresh();
   }, [finishedKey, refresh]);
+  // Once listed, a finished sync is the source's own row: forget it.
+  const forgetKey = startedSyncs
+    .filter(
+      (sync) =>
+        listed.has(sync.id) &&
+        firstIngestState(events, sync.id) === 'completed',
+    )
+    .map((sync) => sync.id)
+    .join(',');
+  useEffect(() => {
+    if (forgetKey) dispatch(syncForgotten(forgetKey.split(',')));
+  }, [forgetKey, dispatch]);
+  const nextGiveUp = Math.min(
+    ...indexing.map(
+      (sync) => STARTED_SYNC_GIVE_UP_MS - startedSyncAge(sync, now),
+    ),
+  );
+  useEffect(() => {
+    if (!Number.isFinite(nextGiveUp)) return;
+    const timer = setTimeout(() => setNow(Date.now()), nextGiveUp);
+    return () => clearTimeout(timer);
+  }, [nextGiveUp]);
 
   const serviceOf = (detail: ConnectionDetail) =>
     parts.find((part) => part.key === detail.connector_key) ?? connector;
@@ -1249,9 +1309,7 @@ export default function ConnectionDrawer({
         dispatch(
           showActionToast({
             variant: 'destructive',
-            message:
-              (typeof data?.error === 'string' && data.error) ||
-              t('settings.connectors.detail.syncFailed'),
+            message: syncRefusal(t, data),
           }),
         );
         return;
@@ -1477,7 +1535,16 @@ export default function ConnectionDrawer({
           detail={toRemove}
           name={confirmName(toRemove, serviceName(toRemove))}
           onClose={() => setToRemove(null)}
-          onRemoved={() => {
+          onRemoved={(sources) => {
+            // Its deleted sources' syncs no longer show as indexing.
+            if (sources === 'delete')
+              dispatch(
+                syncForgotten(
+                  startedSyncs
+                    .filter((sync) => sync.connectionId === toRemove.id)
+                    .map((sync) => sync.id),
+                ),
+              );
             setToRemove(null);
             refresh();
           }}

@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { ACTIVITY_MONITORS_PATH } from '../activity/paths';
 import userService from '../api/services/userService';
+import { syncForgotten } from '../connectors/connectorsSlice';
 import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
 import SectionIndexPage from '../navigation/SectionIndexPage';
@@ -70,6 +71,8 @@ export default function Settings() {
       dispatch(setPaginatedDocuments(withoutDoc(paginatedDocuments)));
     }
     if (documents) dispatch(setSourceDocs(withoutDoc(documents)));
+    // A sync started for it this session no longer shows as indexing.
+    if (doc.id) dispatch(syncForgotten([doc.id]));
   };
 
   if (showIndex) {

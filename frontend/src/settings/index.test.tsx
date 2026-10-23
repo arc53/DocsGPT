@@ -139,5 +139,10 @@ describe('Settings source delete', () => {
       type: 'preference/setSourceDocs',
       payload: [{ id: 'a', name: 'A' }],
     });
+    // A sync it started this session no longer shows as indexing.
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'connectors/syncForgotten',
+      payload: ['b'],
+    });
   });
 });

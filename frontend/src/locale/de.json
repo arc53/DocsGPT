@@ -1914,7 +1914,9 @@
         "indexing": "Wird indexiert",
         "firstSyncStarted": "Erste Synchronisierung gestartet: {{time}}",
         "sourceMenu": "Quellenaktionen",
-        "syncStarting": "Synchronisierung wird gestartet…"
+        "syncStarting": "Synchronisierung wird gestartet…",
+        "syncRefusedWiki": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und nicht mehr synchronisiert.",
+        "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren."
       },
       "permission": {
         "always": "Erlauben",

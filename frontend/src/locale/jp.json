@@ -1911,7 +1911,9 @@
         "indexing": "インデックス作成中",
         "firstSyncStarted": "初回同期を開始（{{time}}）",
         "sourceMenu": "ソースの操作",
-        "syncStarting": "同期を開始しています…"
+        "syncStarting": "同期を開始しています…",
+        "syncRefusedWiki": "このソースは Wiki になりました。直接編集するもので、同期はしません。",
+        "syncRefusedNotSyncable": "このソースは同期できません。"
       },
       "permission": {
         "always": "許可",

@@ -62,6 +62,11 @@ import {
   selectConnectorsLoaded,
   selectStartedSyncs,
 } from '../connectors/connectorsSlice';
+import {
+  firstIngestState,
+  STARTED_SYNC_GIVE_UP_MS,
+  startedSyncAge,
+} from '../connectors/startedSyncs';
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
@@ -81,32 +86,12 @@ const selectEvents = (state: {
   notifications?: { recentEvents?: SSEEvent[] };
 }) => state.notifications?.recentEvents ?? NO_EVENTS;
 
-/**
- * Where a source's first ingest stands, from the recent events: a synced
- * source is listed only once it has finished.
- *
- * @param events The recent notification events, newest first.
- * @param sourceId The source to look for.
- * @returns The newest terminal state, or null while it still runs.
- */
-const firstIngestState = (
-  events: SSEEvent[],
-  sourceId: string,
-): 'completed' | 'failed' | null => {
-  for (const event of events) {
-    if (event.scope?.id !== sourceId) continue;
-    if (event.type === 'source.ingest.completed') return 'completed';
-    if (event.type === 'source.ingest.failed') return 'failed';
-  }
-  return null;
-};
-
 // A sync with no word on its first ingest (live events off, or the stream
 // resumed past the event) is looked for on the list instead: from 2 minutes
-// after it started, every 30 s, until 15 minutes, when the page stops.
+// after it started, every 30 s, until 15 minutes (STARTED_SYNC_GIVE_UP_MS),
+// when the page stops.
 const POLL_AFTER_MS = 2 * 60_000;
 const POLL_EVERY_MS = 30_000;
-const GIVE_UP_MS = 15 * 60_000;
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
@@ -403,8 +388,8 @@ export default function Sources({
 
   // The fallback when no event comes (see POLL_AFTER_MS): read the app's
   // knowledge list, and this page too once a waited-for source is on it.
-  // Past GIVE_UP_MS the link is dropped, so nothing opens by surprise later;
-  // the card stays as indexing until a list holds the source.
+  // Past STARTED_SYNC_GIVE_UP_MS the link is dropped, so nothing opens by
+  // surprise later; the card stays as indexing until a list holds the source.
   const pollLists = useRef<(ids: string[]) => void>(() => undefined);
   const giveUp = useRef<(ids: string[]) => void>(() => undefined);
   useEffect(() => {
@@ -437,11 +422,11 @@ export default function Sources({
     const check = (poll: boolean) => {
       const now = Date.now();
       const ages = waiting
-        .map((sync) => ({ id: sync.id, age: now - Date.parse(sync.startedAt) }))
+        .map((sync) => ({ id: sync.id, age: startedSyncAge(sync, now) }))
         .filter(({ age }) => Number.isFinite(age));
-      const expired = ages.filter(({ age }) => age >= GIVE_UP_MS);
+      const expired = ages.filter(({ age }) => age >= STARTED_SYNC_GIVE_UP_MS);
       if (expired.length > 0) giveUp.current(expired.map(({ id }) => id));
-      const active = ages.filter(({ age }) => age < GIVE_UP_MS);
+      const active = ages.filter(({ age }) => age < STARTED_SYNC_GIVE_UP_MS);
       if (active.length === 0) return;
       const due = active.filter(({ age }) => age >= POLL_AFTER_MS);
       if (poll && due.length > 0) pollLists.current(due.map(({ id }) => id));
@@ -449,7 +434,7 @@ export default function Sources({
         ...active.map(({ age }) =>
           age < POLL_AFTER_MS
             ? POLL_AFTER_MS - age
-            : Math.min(POLL_EVERY_MS, GIVE_UP_MS - age),
+            : Math.min(POLL_EVERY_MS, STARTED_SYNC_GIVE_UP_MS - age),
         ),
       );
       timer = setTimeout(() => check(true), next);

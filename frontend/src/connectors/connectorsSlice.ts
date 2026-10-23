@@ -86,6 +86,16 @@ const connectorsSlice = createSlice({
         ...action.payload,
       ];
     },
+    /**
+     * Drops started syncs that no longer need showing: their source is
+     * listed, deleted, or its first ingest finished elsewhere.
+     */
+    syncForgotten(state, action: PayloadAction<string[]>) {
+      const ids = new Set(action.payload);
+      state.startedSyncs = (state.startedSyncs ?? []).filter(
+        (sync) => !ids.has(sync.id),
+      );
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -111,7 +121,8 @@ const connectorsSlice = createSlice({
   },
 });
 
-export const { setConnectorsEnabled, syncStarted } = connectorsSlice.actions;
+export const { setConnectorsEnabled, syncStarted, syncForgotten } =
+  connectorsSlice.actions;
 
 type RootLike = { connectors: ConnectorsState };
 

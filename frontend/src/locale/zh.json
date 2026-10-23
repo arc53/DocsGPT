@@ -1911,7 +1911,9 @@
         "indexing": "正在索引",
         "firstSyncStarted": "首次同步已开始（{{time}}）",
         "sourceMenu": "来源操作",
-        "syncStarting": "正在开始同步…"
+        "syncStarting": "正在开始同步…",
+        "syncRefusedWiki": "此来源现在是 Wiki：直接在此编辑，不再同步。",
+        "syncRefusedNotSyncable": "此来源无法同步。"
       },
       "permission": {
         "always": "允许",

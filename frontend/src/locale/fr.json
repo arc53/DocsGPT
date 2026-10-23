@@ -1976,7 +1976,9 @@
         "indexing": "Indexation",
         "firstSyncStarted": "Première synchronisation lancée {{time}}",
         "sourceMenu": "Actions de la source",
-        "syncStarting": "Lancement de la synchronisation…"
+        "syncStarting": "Lancement de la synchronisation…",
+        "syncRefusedWiki": "Cette source est désormais un wiki : elle se modifie sur place et ne se synchronise plus.",
+        "syncRefusedNotSyncable": "Cette source ne peut pas être synchronisée."
       },
       "permission": {
         "always": "Autoriser",

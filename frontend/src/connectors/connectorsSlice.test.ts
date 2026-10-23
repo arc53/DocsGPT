@@ -3,6 +3,7 @@ import reducer, {
   loadConnectors,
   selectConnectionsNeedAttention,
   selectStartedSyncs,
+  syncForgotten,
   syncStarted,
   type ConnectorsState,
 } from './connectorsSlice';
@@ -115,6 +116,15 @@ describe('connectorsSlice syncStarted', () => {
       sync('b', 'B'),
       sync('a', 'A again'),
     ]);
+  });
+
+  it('forgets the syncs it is told to', () => {
+    let state = reducer(
+      undefined,
+      syncStarted([sync('a', 'A'), sync('b', 'B'), sync('c', 'C')]),
+    );
+    state = reducer(state, syncForgotten(['a', 'c', 'unknown']));
+    expect(selectStartedSyncs({ connectors: state })).toEqual([sync('b', 'B')]);
   });
 
   it('reads none from a state that never had any', () => {

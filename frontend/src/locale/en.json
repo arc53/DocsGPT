@@ -1914,7 +1914,9 @@
         "indexing": "Indexing",
         "firstSyncStarted": "First sync started {{time}}",
         "sourceMenu": "Source actions",
-        "syncStarting": "Starting the sync…"
+        "syncStarting": "Starting the sync…",
+        "syncRefusedWiki": "This source is a wiki now: it’s edited in place and no longer syncs.",
+        "syncRefusedNotSyncable": "This source can’t be synced."
       },
       "permission": {
         "always": "Allow",
