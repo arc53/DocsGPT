@@ -10,8 +10,9 @@ const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
 
 /**
  * A refused Sync now in the user's language: the server's `code` when it has
- * a key, else its own words (`error`, or `message` from /api/sync_source),
- * else the caller's generic failure. A server error's text is never shown.
+ * a key (a 404 without one reads as `invalid_source`), else its own words
+ * (`error`, or `message` from /api/sync_source), else the caller's generic
+ * failure. A server error's text is never shown.
  *
  * @param t The translate function.
  * @param data The response's JSON, if it parsed.
@@ -29,7 +30,10 @@ export function syncRefusal(
     error?: unknown;
     message?: unknown;
   };
-  const key = SYNC_REFUSAL_KEYS.get(body.code);
+  // A 404 without a code is a source deleted since the page loaded.
+  const key =
+    SYNC_REFUSAL_KEYS.get(body.code) ??
+    (status === 404 ? 'syncRefusedInvalid' : undefined);
   if (key) return t(`settings.connectors.detail.${key}`);
   const text =
     status !== undefined && status >= 500

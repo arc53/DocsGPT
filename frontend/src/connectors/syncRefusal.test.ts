@@ -18,6 +18,15 @@ describe('syncRefusal', () => {
     );
   });
 
+  it.each([{ error: 'Source not found' }, { message: 'Source not found' }])(
+    'words a deleted source (a 404 with no code, %o)',
+    (body) => {
+      expect(syncRefusal(t, body, { status: 404 })).toBe(
+        key('syncRefusedInvalid'),
+      );
+    },
+  );
+
   it("shows the server's error, else its message, for another refusal", () => {
     expect(syncRefusal(t, { error: 'Paused', message: 'x' })).toBe('Paused');
     expect(syncRefusal(t, { error: '', message: 'Nothing to sync.' })).toBe(
