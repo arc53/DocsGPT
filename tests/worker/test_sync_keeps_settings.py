@@ -388,6 +388,54 @@ class TestASkippedSyncTellsTheUI:
 
 
 @pytest.mark.unit
+class TestUploadIndexForAConnectorSync:
+    def _seed(self, pg_conn, **fields):
+        values = {
+            "type": "connector:file", "sync_frequency": "daily",
+            "remote_data": {"provider": "google_drive", "folder_ids": ["picked-meanwhile"], "sync_fingerprint": "old"},
+            "config": {"kind": "wiki"}, "directory_structure": {"/page.md": {"token_count": 1}},
+        }
+        values.update(fields)
+        return SourcesRepository(pg_conn).create("Drive", user_id=USER, **values)
+
+    def _form(self, src, **extra):
+        return {
+            "user": USER, "name": "Drive", "tokens": "9", "retriever": "classic", "id": str(src["id"]),
+            "type": "connector:file", "sync_frequency": "never", "operation": "sync",
+            "remote_data": json.dumps({"provider": "google_drive", "folder_ids": ["root"], "sync_fingerprint": "new"}),
+            "directory_structure": json.dumps({"drive.pdf": {"token_count": 9}}), **extra,
+        }
+
+    def test_a_wiki_converted_meanwhile_is_kept(self, pg_conn):
+        src = self._seed(pg_conn)
+
+        response = _post(pg_conn, self._form(src, sync_fingerprint="new"))
+
+        assert response.json == {"status": "skipped", "reason": "wiki"}
+        row = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert row["config"]["kind"] == "wiki" and row["directory_structure"] == {"/page.md": {"token_count": 1}}
+
+    def test_stores_the_fingerprint_on_the_rows_selection(self, pg_conn):
+        src = self._seed(pg_conn, config={"chunking": {"max_tokens": 300}})
+
+        _post(pg_conn, self._form(src, sync_fingerprint="new"))
+
+        row = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert row["remote_data"] == {"provider": "google_drive", "folder_ids": ["picked-meanwhile"],
+                                      "sync_fingerprint": "new"}
+        assert row["sync_frequency"] == "daily" and row["config"]["chunking"]["max_tokens"] == 300
+        assert row["directory_structure"] == {"drive.pdf": {"token_count": 9}}
+
+    def test_an_empty_fingerprint_clears_it(self, pg_conn):
+        src = self._seed(pg_conn, config={})
+
+        _post(pg_conn, self._form(src, sync_fingerprint=""))
+
+        row = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert "sync_fingerprint" not in row["remote_data"]
+
+
+@pytest.mark.unit
 class TestUploadIndexForADeletedSource:
     def test_a_sync_never_recreates_a_deleted_source(self, pg_conn):
         import uuid

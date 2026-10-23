@@ -263,8 +263,10 @@ class TestIngestConnectorSkipsUnchangedSync:
         connector = _mock_connector_pipeline
         connector.sync_fingerprint.return_value = "fp-1"
         src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+        # The source's settings changed after its last ingest.
+        SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"chunking": {"max_tokens": 500}}})
 
-        _sync(worker, task_self, str(src["id"]), config={"chunking": {"max_tokens": 500}})
+        _sync(worker, task_self, str(src["id"]))
 
         connector.download_to_directory.assert_called_once()
 
@@ -328,3 +330,132 @@ class TestConnectorSyncFingerprint:
         tuned = worker._connector_sync_fingerprint("fp", {"chunking": {"max_tokens": 500}})
         assert tuned != base
         assert tuned == worker._connector_sync_fingerprint("fp", '{"chunking": {"max_tokens": 500}}')
+
+
+@pytest.mark.unit
+class TestConnectorSyncTakesTheIndexLock:
+    """A connector sync takes turns with the source's other index jobs, and keeps the row's settings."""
+
+    def test_a_sync_uploads_holding_the_lock(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from contextlib import contextmanager
+
+        from docsgpt import worker
+
+        src = _gdrive_source(pg_conn, {})
+        held = []
+
+        @contextmanager
+        def fake_lock(source_id, **kwargs):
+            held.append(source_id)
+            yield
+            held.append("released")
+
+        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: held.append("upload"))
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert held == [str(src["id"]), "upload", "released"]
+
+    def test_a_wiki_conversion_finished_while_waiting_is_respected(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from contextlib import contextmanager
+
+        from docsgpt import worker
+
+        src = _gdrive_source(pg_conn, {})
+
+        @contextmanager
+        def converted_while_waiting(source_id, **kwargs):
+            SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"kind": "wiki"}})
+            yield
+
+        monkeypatch.setattr(worker, "source_index_lock", converted_while_waiting)
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        )
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result == {"status": "skipped", "reason": "wiki"}
+        _mock_connector_pipeline.download_to_directory.assert_not_called()
+        assert [(kind, payload["reason"]) for kind, payload in events] == [("source.ingest.failed", "wiki")]
+
+    def test_a_deleted_source_is_skipped(self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        result = _sync(worker, task_self, str(uuid.uuid4()))
+
+        assert result == {"status": "skipped", "reason": "gone"}
+        _mock_connector_pipeline.download_to_directory.assert_not_called()
+
+    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
+        from contextlib import contextmanager
+
+        from docsgpt import worker
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        src = _gdrive_source(pg_conn, {})
+
+        @contextmanager
+        def busy(source_id, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        monkeypatch.setattr(worker, "source_index_lock", busy)
+
+        assert _sync(worker, task_self, str(src["id"])) == {"status": "skipped", "reason": "busy"}
+        _mock_connector_pipeline.download_to_directory.assert_not_called()
+
+    def test_a_sync_sends_content_and_its_fingerprint_only(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.download_to_directory.return_value = {
+            "files_downloaded": 1, "empty_result": False, "sync_fingerprint": "fp-2",
+        }
+        src = _gdrive_source(pg_conn, {})
+        SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"chunking": {"max_tokens": 300}}})
+        uploads = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        _sync(worker, task_self, str(src["id"]), config={"chunking": {"max_tokens": 900}})
+
+        [sent] = uploads
+        assert sent["operation"] == "sync"
+        assert "config" not in sent
+        # Chunked, and fingerprinted, with the row's settings as they are under the lock.
+        stored = {"chunking": {"max_tokens": 300}}
+        assert sent["sync_fingerprint"] == worker._connector_sync_fingerprint("fp-2", stored)
+
+    def test_a_sync_reads_the_rows_selection(
+        self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        src = _gdrive_source(pg_conn, {"folder_ids": ["picked-meanwhile"], "file_ids": ["f9"]})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        selection = _mock_connector_pipeline.download_to_directory.call_args.args[1]
+        assert selection["folder_ids"] == ["picked-meanwhile"] and selection["file_ids"] == ["f9"]
+
+    def test_the_first_ingest_still_sends_everything(self, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        uploads = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload", config={"chunking": {"max_tokens": 9}},
+        )
+
+        assert "operation" not in uploads[0]
+        assert uploads[0]["config"]

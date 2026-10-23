@@ -168,6 +168,17 @@ def upload_index_files():
             # queued; name, type, remote_data, schedule and config may have
             # changed since, so a sync writes only what it rebuilt.
             update_fields = {key: update_fields[key] for key in _SYNC_FIELDS}
+            fingerprint = request.form.get("sync_fingerprint")
+            stored_remote = existing.get("remote_data")
+            if fingerprint is not None and isinstance(stored_remote, dict):
+                # A connector sync's fingerprint of what it read, so the next
+                # one can skip an unchanged selection; empty clears it (a file
+                # failed). It goes onto the row's current selection: one changed
+                # meanwhile fingerprints differently, so its next sync re-reads.
+                stored_remote = {k: v for k, v in stored_remote.items() if k != "sync_fingerprint"}
+                if fingerprint:
+                    stored_remote["sync_fingerprint"] = fingerprint
+                update_fields["remote_data"] = stored_remote
         if faiss_files is not None:
             storage.save_file(faiss_files[0], f"{index_base_path}/index.faiss")
             storage.save_file(faiss_files[1], f"{index_base_path}/index.pkl")

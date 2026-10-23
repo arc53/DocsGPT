@@ -4177,6 +4177,8 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             doc_id=str(source["id"]),
             sync_frequency=source.get("sync_frequency") or "never",
             config=source.get("config") or None,
+            # A scheduled run: nobody waits on it, so a skip goes unannounced.
+            notify_skip=False,
         )
     except ConnectionUnavailable:
         return {"status": "paused"}
@@ -4200,9 +4202,20 @@ def ingest_connector(
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    notify_skip: bool = True,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
+
+    A sync runs holding the source's index lock (``source_index_lock``), so it
+    takes turns with a Website page change, a wiki conversion or another sync
+    on the source. The row is read under the lock: a source deleted or
+    converted to a wiki while the sync waited is skipped, and the sync
+    downloads the row's current selection and chunks with its current
+    settings. Its upload is marked ``operation: "sync"``, so the API writes
+    only the rebuilt content (and the selection fingerprint) and keeps the
+    row's settings. A first ingest (``upload``) takes no lock: its row
+    doesn't exist yet, and the upload creates it.
 
     Args:
         job_name: Name of the ingestion job
@@ -4218,26 +4231,113 @@ def ingest_connector(
         doc_id: Document ID for sync operations (required when operation_mode="sync")
         sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
         config: Per-source ``SourceConfig`` dict. ``None``/``{}`` → classic
-            defaults (byte-identical to prior behavior).
+            defaults (byte-identical to prior behavior). A sync uses the
+            row's own instead, unless the row can't be read.
         idempotency_key: When provided, the ``source_id`` is derived
             deterministically so a retried upload reuses the same source row.
         source_id: When supplied, the worker uses it verbatim so SSE envelopes
             carry the same id the HTTP route already returned to the frontend
             — required for non-idempotent uploads where the route can't
             predict ``_derive_source_id(idempotency_key)``.
+        notify_skip: Publish a ``source.ingest.failed`` event (with
+            ``reason``) when a sync is skipped. Off for scheduled syncs.
+
+    Returns:
+        The ingest summary, or ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``.
     """
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
     )
-    if (
-        operation_mode == "sync"
-        and doc_id
-        and _is_wiki_config(_stored_source_config(doc_id, user))
-    ):
-        # A sync would replace a wiki's pages with the connector's files.
-        logging.info("Skipping sync of wiki source %s", doc_id)
-        return {"status": "skipped", "reason": "wiki"}
+    if operation_mode != "sync" or not doc_id:
+        return _ingest_connector(
+            self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
+            operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
+        )
 
+    def _skipped(reason: str) -> Dict[str, Any]:
+        logging.info("Skipping sync of connector source %s: %s", doc_id, reason)
+        if notify_skip:
+            _publish_sync_not_run(self, user, doc_id, job_name, source_type, _SYNC_SKIP_MESSAGES[reason], reason)
+        return {"status": "skipped", "reason": reason}
+
+    try:
+        with source_index_lock(str(doc_id)):
+            read, row = _read_source_for_sync(doc_id, user)
+            if read:
+                if row is None:
+                    return _skipped("gone")
+                config = row.get("config")
+                if isinstance(config, str):
+                    try:
+                        config = json.loads(config)
+                    except ValueError:
+                        config = None
+                if _is_wiki_config(config):
+                    # A sync would replace a wiki's pages with the connector's files.
+                    return _skipped("wiki")
+                config = config or None
+                job_name = row.get("name") or job_name
+                retriever = row.get("retriever") or retriever
+                sync_frequency = row.get("sync_frequency") or sync_frequency
+                selection = row.get("remote_data")
+                if isinstance(selection, str):
+                    try:
+                        selection = json.loads(selection)
+                    except ValueError:
+                        selection = None
+                if isinstance(selection, dict):
+                    file_ids = selection.get("file_ids", file_ids)
+                    folder_ids = selection.get("folder_ids", folder_ids)
+                    recursive = selection.get("recursive", recursive)
+            return _ingest_connector(
+                self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
+                operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
+            )
+    except SourceBusy:
+        return _skipped("busy")
+
+
+def _ingest_connector(
+    self: Any,
+    job_name: str,
+    user: str,
+    source_type: str,
+    session_token: Optional[str],
+    file_ids: Optional[List[str]],
+    folder_ids: Optional[List[str]],
+    recursive: bool,
+    retriever: str,
+    operation_mode: str,
+    doc_id: Optional[str],
+    sync_frequency: str,
+    config: Any,
+    idempotency_key: Optional[str],
+    source_id: Optional[str],
+    connection_id: Optional[str],
+) -> Dict[str, Any]:
+    """The body of ``ingest_connector``; a sync runs it holding the source's index lock.
+
+    Args:
+        self: Celery task instance.
+        job_name: As ``ingest_connector``.
+        user: As ``ingest_connector``.
+        source_type: As ``ingest_connector``.
+        session_token: As ``ingest_connector``.
+        file_ids: As ``ingest_connector``.
+        folder_ids: As ``ingest_connector``.
+        recursive: As ``ingest_connector``.
+        retriever: As ``ingest_connector``.
+        operation_mode: As ``ingest_connector``.
+        doc_id: As ``ingest_connector``.
+        sync_frequency: As ``ingest_connector``.
+        config: As ``ingest_connector``.
+        idempotency_key: As ``ingest_connector``.
+        source_id: As ``ingest_connector``.
+        connection_id: As ``ingest_connector``.
+
+    Returns:
+        As ``ingest_connector``.
+    """
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
     # sync mode reuses ``doc_id``; otherwise the caller-supplied
     # ``source_id`` (minted by the HTTP route and already echoed to the
@@ -4461,7 +4561,13 @@ def ingest_connector(
                 "directory_structure": json.dumps(directory_structure),
                 "sync_frequency": sync_frequency,
             }
-            if config:
+            if operation_mode == "sync":
+                # The API keeps the row's own settings (a wiki conversion or a
+                # schedule change may have landed since the row was read) and
+                # stores only the fingerprint; an empty one clears it.
+                file_data["operation"] = "sync"
+                file_data["sync_fingerprint"] = sync_fingerprint or ""
+            elif config:
                 file_data["config"] = json.dumps(config)
 
             file_data["last_sync"] = datetime.datetime.now(datetime.timezone.utc)
