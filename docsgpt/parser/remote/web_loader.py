@@ -8,6 +8,7 @@ from docsgpt.parser.remote.base import (
     spans_multiple_hosts,
 )
 from docsgpt.parser.remote.page_content import (
+    PAGE_HEADERS,
     FetchBudget,
     fetch_page,
     final_url,
@@ -18,16 +19,8 @@ from docsgpt.parser.remote.page_content import (
 )
 from docsgpt.parser.schema.base import Document
 
-headers = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*"
-    ";q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Referer": "https://www.google.com/",
-    "DNT": "1",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+# Every web fetch sends these; kept importable under the old name.
+headers = PAGE_HEADERS
 
 
 class WebLoader(BaseRemote):

@@ -50,12 +50,15 @@ class FakeWeb:
         self.sites = sites
         self.fetched = []
         self.limits = {}
+        # The request headers each URL was fetched with.
+        self.headers = {}
 
     def __call__(self, url, *, max_bytes, headers=None, timeout=10.0, allow_redirects=False, truncate=False):
         from docsgpt.security.safe_url import ResponseTooLargeError
 
         self.fetched.append(url)
         self.limits[url] = (max_bytes, truncate)
+        self.headers[url] = headers
         response = requests.Response()
         response.url = url
         response.reason = "Not Found"
@@ -1373,6 +1376,29 @@ class TestBoundedFetching:
         robots_cap, _ = fake.limits["https://x.io/robots.txt"]
         assert robots_cap <= 512 * 1024
         assert fake.limits["https://x.io/sitemap.xml"] == (MAX_SITEMAP_BYTES, False)
+
+    def test_every_fetch_sends_the_same_browser_headers(self, web):
+        # Sites that refuse python-requests' User-Agent refused the crawl and
+        # sitemap fetches while serving the page entries.
+        from docsgpt.parser.remote.page_content import PAGE_HEADERS
+
+        fake = web({
+            "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
+            "https://x.io/sitemap.xml": urlset("https://x.io/p"),
+            "https://x.io/p": page("P"),
+            "https://y.io/": page("Y", links=["/a"]),
+            "https://y.io/a": page("A"),
+            "https://z.io/page": page("Z"),
+        })
+        WebsiteLoader().load_data({"entries": [
+            {"url": "https://z.io/page", "mode": "page"},
+            {"url": "https://x.io/", "mode": "site"},
+            {"url": "https://y.io/", "mode": "site", "discovery": "links"},
+        ]})
+
+        assert {"https://z.io/page", "https://x.io/robots.txt", "https://x.io/p", "https://y.io/a"} <= set(fake.headers)
+        assert all(sent == PAGE_HEADERS for sent in fake.headers.values())
+        assert PAGE_HEADERS["User-Agent"].startswith("Mozilla/")
 
     def test_an_oversized_sitemap_is_skipped(self, web):
         with patch("docsgpt.parser.remote.sitemap_loader.MAX_SITEMAP_BYTES", 50):

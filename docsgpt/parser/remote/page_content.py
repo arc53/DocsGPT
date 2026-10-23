@@ -55,6 +55,19 @@ def page_fetch_bytes() -> int:
     return cap + 1 if cap > 0 else _PAGE_CEILING_BYTES
 
 
+# The request headers of every web fetch (pages, links, robots.txt,
+# sitemaps): sites that refuse python-requests' User-Agent served a page
+# entry and refused the same site's crawl.
+PAGE_HEADERS: Dict[str, str] = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Referer": "https://www.google.com/",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 # Redirect hops one fetch follows, as browsers and crawlers allow a handful.
 MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
@@ -149,7 +162,7 @@ def fetch_page(
     Args:
         url: The address to fetch.
         max_bytes: The byte ceiling; ``None`` for a page's (``page_fetch_bytes``).
-        headers: Extra request headers.
+        headers: Request headers; ``None`` for ``PAGE_HEADERS``.
         timeout: Seconds per connect and read.
         truncate: Keep the first ``max_bytes`` of a larger body; ``False``
             raises ``ResponseTooLargeError`` instead.
@@ -177,7 +190,7 @@ def fetch_page(
         body, response = pinned_fetch_bytes(
             current,
             max_bytes=page_fetch_bytes() if max_bytes is None else max_bytes,
-            headers=headers,
+            headers=PAGE_HEADERS if headers is None else headers,
             timeout=timeout,
             truncate=truncate,
         )
