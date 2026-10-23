@@ -1060,6 +1060,125 @@ def test_pinned_fetch_bytes_total_timeout_covers_trickled_headers(local_server):
     assert time.monotonic() - started < 3
 
 
+def _gzip_of_empty_blocks(handler, pause: float = 0.2, blocks: int = 40) -> None:
+    """A gzip body that sends empty stored blocks: bytes keep arriving, none decode."""
+    import time
+
+    handler.send_response(200)
+    handler.send_header("Content-Encoding", "gzip")
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+    try:
+        handler.wfile.write(b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff")
+        for _ in range(blocks):
+            handler.wfile.write(b"\x00\x00\x00\xff\xff")
+            handler.wfile.flush()
+            time.sleep(pause)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_total_timeout_covers_a_compressed_body_that_decodes_to_nothing(local_server):
+    import time
+
+    base, routes = local_server
+    routes["/empty-gzip"] = _gzip_of_empty_blocks
+
+    started = time.monotonic()
+    with pytest.raises(requests.Timeout):
+        pinned_fetch_bytes(base + "/empty-gzip", max_bytes=1000, timeout=1.0, total_timeout=1.0)
+
+    assert time.monotonic() - started < 3
+
+
+class _PieceReader:
+    """A raw stream handing out one queued piece per read, as a socket does."""
+
+    def __init__(self, pieces: list[bytes]) -> None:
+        self._pieces = list(pieces)
+
+    def read1(self, amt: int = -1) -> bytes:
+        return self._pieces.pop(0) if self._pieces else b""
+
+    def read(self, amt: int = -1) -> bytes:
+        return self.read1(amt)
+
+    def close(self) -> None:
+        pass
+
+
+def _raw_response(pieces: list[bytes], encoding: str):
+    """A ``requests.Response`` whose ``raw`` is a urllib3 stream over ``pieces``."""
+    import urllib3
+
+    raw = urllib3.response.HTTPResponse(
+        body=_PieceReader(pieces),
+        headers={"Content-Encoding": encoding},
+        preload_content=False,
+        decode_content=True,
+    )
+    response = requests.Response()
+    response.raw = raw
+    response.status_code = 200
+    return response
+
+
+@pytest.mark.unit
+def test_body_chunks_hands_back_every_raw_read_even_when_it_decodes_to_nothing():
+    import gzip
+
+    from docsgpt.security.safe_url import _body_chunks
+
+    tail = gzip.compress(b"done")[10:]
+    pieces = [b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"] + [b"\x00\x00\x00\xff\xff"] * 5 + [tail]
+
+    chunks = list(_body_chunks(_raw_response(pieces, "gzip"), 65536))
+
+    # One piece per raw read, so the caller's deadline check runs on each.
+    assert len(chunks) >= len(pieces)
+    assert b"".join(chunks) == b"done"
+
+
+@pytest.mark.unit
+def test_body_chunks_inflates_one_raw_read_in_bounded_pieces():
+    import gzip
+
+    from docsgpt.security.safe_url import _body_chunks
+
+    bomb = gzip.compress(b"\0" * 5_000_000)
+
+    pieces = iter(_body_chunks(_raw_response([bomb], "gzip"), 4096))
+    first = [next(pieces) for _ in range(3)]
+
+    assert all(len(piece) <= 4096 for piece in first)
+    assert sum(len(piece) for piece in pieces) + sum(map(len, first)) == 5_000_000
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("encoding", ["deflate", "deflate, gzip", "gzip, gzip"])
+def test_body_chunks_decodes_deflate_and_stacked_encodings(encoding):
+    import gzip
+    import zlib
+
+    from docsgpt.security.safe_url import _body_chunks
+
+    body = b"<p>hello</p>" * 2000
+    packed = body
+    for coding in [c.strip() for c in encoding.split(",")]:
+        packed = gzip.compress(packed) if coding == "gzip" else zlib.compress(packed)
+    pieces = [packed[i:i + 500] for i in range(0, len(packed), 500)]
+
+    assert b"".join(_body_chunks(_raw_response(pieces, encoding), 4096)) == body
+
+
+@pytest.mark.unit
+def test_body_chunks_raises_a_decoding_error_for_a_corrupt_body():
+    from docsgpt.security.safe_url import _body_chunks
+
+    with pytest.raises(requests.exceptions.ContentDecodingError):
+        list(_body_chunks(_raw_response([b"this is not gzip at all"], "gzip"), 4096))
+
 
 # guarded_async_client: per-request SSRF guard for async SDKs (MCP)
 

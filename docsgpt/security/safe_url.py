@@ -37,7 +37,7 @@ import ipaddress
 import socket
 import threading
 import time
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 # httpx2 (the maintained fork of httpx, by its original author, published by
@@ -582,40 +582,89 @@ _MIN_TOTAL_TIMEOUT = 30.0
 _BODY_CHUNK = 65536
 
 
+# What a content decoder raises on bad input, as urllib3 itself catches it.
+_DECODER_ERRORS: tuple[type[Exception], ...] = (
+    *urllib3.response.BaseHTTPResponse.DECODER_ERROR_CLASSES,
+    urllib3.exceptions.DecodeError,
+)
+
+
 def _body_chunks(response: requests.Response, chunk_size: int) -> Iterable[bytes]:
-    """The decoded body, in pieces that arrive as soon as the socket has data.
+    """The decoded body, one piece per socket read.
 
     ``iter_content`` blocks until a whole ``chunk_size`` arrives, so a server
     sending a byte at a time holds one read for as long as it likes and a
-    deadline between chunks never fires. ``read1`` returns after a single
-    socket read. Errors are raised as ``iter_content`` raises them.
+    deadline between chunks never fires. The body is read raw with ``read1``,
+    which returns after a single socket read, and decoded here: urllib3's
+    own decoding loops on the socket while the decoder yields nothing, so a
+    compressed stream of empty blocks would never come back to the deadline.
+    A read that decodes to nothing is handed back as ``b""`` for that reason.
+    Decoding is capped at ``chunk_size`` per piece, so one small raw read
+    can't inflate past the caller's ceiling before it is checked. Errors are
+    raised as ``iter_content`` raises them.
 
     Args:
         response: A streamed response.
         chunk_size: The most bytes per piece.
 
     Yields:
-        Body bytes, Content-Encoding undone.
+        Body bytes, Content-Encoding undone; ``b""`` for a raw read that
+        decoded to nothing yet.
     """
     raw = getattr(response, "raw", None)
     if not isinstance(raw, urllib3.response.BaseHTTPResponse):
         # Not a urllib3 stream (a stand-in): it has only iter_content.
         yield from response.iter_content(chunk_size=chunk_size)
         return
+    # The decoder urllib3 would pick for this Content-Encoding (stacked ones
+    # included), or None when the body is sent as is.
+    raw._init_decoder()
+    decoder = raw._decoder
     while True:
         try:
-            data = raw.read1(chunk_size, decode_content=True)
+            data = raw.read1(chunk_size, decode_content=False)
         except urllib3.exceptions.ProtocolError as exc:
             raise requests.exceptions.ChunkedEncodingError(exc) from exc
-        except urllib3.exceptions.DecodeError as exc:
-            raise requests.exceptions.ContentDecodingError(exc) from exc
         except urllib3.exceptions.ReadTimeoutError as exc:
             raise requests.exceptions.ConnectionError(exc) from exc
         except urllib3.exceptions.SSLError as exc:
             raise requests.exceptions.SSLError(exc) from exc
+        if decoder is None:
+            if not data:
+                return
+            yield data
+            continue
+        if data:
+            yield _decode(lambda: decoder.decompress(data, max_length=chunk_size))
+        # Drain what the cap held back; at the end of the body, flush too.
+        while decoder.has_unconsumed_tail:
+            piece = _decode(lambda: decoder.decompress(b"", max_length=chunk_size))
+            if not piece:
+                break
+            yield piece
         if not data:
+            tail = _decode(decoder.flush)
+            if tail:
+                yield tail
             return
-        yield data
+
+
+def _decode(step: Callable[[], bytes]) -> bytes:
+    """Run one decoder step, raising a bad body as ``requests`` does.
+
+    Args:
+        step: A call to the decoder's ``decompress`` or ``flush``.
+
+    Returns:
+        The decoded bytes.
+
+    Raises:
+        requests.exceptions.ContentDecodingError: If the body can't be decoded.
+    """
+    try:
+        return step()
+    except _DECODER_ERRORS as exc:
+        raise requests.exceptions.ContentDecodingError(exc) from exc
 
 
 def pinned_fetch_bytes(
