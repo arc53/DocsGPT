@@ -84,9 +84,12 @@ vi.mock('../preferences/preferenceApi', async (importOriginal) => ({
 const sourceDefaults = vi.hoisted(() =>
   vi.fn(() => Promise.resolve({ ok: false, json: async () => ({}) })),
 );
+// What /api/config answers (the website page limits).
+const appConfig = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock('../api/services/userService', () => ({
   default: {
-    getConfig: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+    getConfig: () =>
+      Promise.resolve({ json: () => Promise.resolve(appConfig.value) }),
     getSourceDefaults: () => sourceDefaults(),
   },
 }));
@@ -856,6 +859,105 @@ describe('Upload source-type tiles', () => {
     expect(JSON.parse(String(sent[0].get('data'))).keep_links).toBe(true);
     vi.unstubAllGlobals();
   });
+
+  const typeUrl = async (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+  const trainButton = () =>
+    Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.train',
+    )!;
+
+  it('holds no more page addresses than the source can, and says so', async () => {
+    appConfig.value = { web_default_pages: 2, web_max_pages: 2 };
+    try {
+      await openType('website');
+      const addAnother = () =>
+        Array.from(document.body.querySelectorAll('button')).find(
+          (b) => b.textContent === 'modals.uploadDoc.website.addAnotherPage',
+        )!;
+      await act(async () => addAnother().click());
+      await act(async () => addAnother().click());
+      const inputs = Array.from(
+        document.body.querySelectorAll<HTMLInputElement>('input[type="url"]'),
+      );
+      expect(inputs).toHaveLength(3);
+      await typeUrl(inputs[0], 'https://docs.example.com/a');
+      await typeUrl(inputs[1], 'https://docs.example.com/b');
+      expect(trainButton().disabled).toBe(false);
+      expect(document.body.textContent).not.toContain(
+        'settings.sources.website.pageLimit',
+      );
+
+      await typeUrl(inputs[2], 'https://docs.example.com/c');
+      expect(trainButton().disabled).toBe(true);
+      expect(
+        document.body.querySelector('[role="alert"]')?.textContent,
+      ).toContain('settings.sources.website.pageLimit');
+    } finally {
+      appConfig.value = {};
+    }
+  });
+
+  it.each([
+    [
+      'the reason the server gives',
+      JSON.stringify({ success: false, error: 'No pages to add' }),
+      'No pages to add',
+    ],
+    [
+      'a generic line otherwise',
+      '<html>Bad Request</html>',
+      'common.actionFailed',
+    ],
+  ])(
+    'a refused ingest shows %s, never the status text',
+    async (_, body, shown) => {
+      class FakeXhr {
+        upload = { addEventListener() {} };
+        status = 0;
+        statusText = '';
+        responseText = '';
+        onload: (() => void) | null = null;
+        addEventListener() {}
+        open() {}
+        setRequestHeader() {}
+        send() {
+          this.status = 400;
+          this.statusText = 'BAD REQUEST';
+          this.responseText = body;
+          this.onload?.();
+        }
+      }
+      vi.stubGlobal('XMLHttpRequest', FakeXhr);
+      const dispatch = vi.spyOn(fakeStore, 'dispatch');
+      try {
+        await openType('website');
+        await typeUrl(
+          document.body.querySelector<HTMLInputElement>('input[type="url"]')!,
+          'https://docs.example.com/guide',
+        );
+        await act(async () => trainButton().click());
+        const failed = dispatch.mock.calls
+          .map(
+            ([action]) =>
+              action as { payload?: { updates?: Record<string, unknown> } },
+          )
+          .find((action) => action.payload?.updates?.status === 'failed');
+        expect(failed?.payload?.updates?.errorMessage).toBe(shown);
+      } finally {
+        dispatch.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 });
 
 // A service connected from Connect your data syncs its content like an upload

@@ -5,7 +5,9 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import WebsiteFields from '../upload/WebsiteFields';
-import useWebPageLimits from '../upload/useWebPageLimits';
+import useWebPageLimits, {
+  useReseedMaxPages,
+} from '../upload/useWebPageLimits';
 import {
   defaultWebsiteDraft,
   isWebsiteDraftValid,
@@ -44,6 +46,7 @@ export default function AddWebsitePagesModal({
   const [draft, setDraft] = useState<WebsiteDraft>(() =>
     defaultWebsiteDraft(limits.defaultPages),
   );
+  useReseedMaxPages(limits.defaultPages, setDraft);
   const [pending, setPending] = useState(false);
   // The message to show when the server refused, worded here.
   const [error, setError] = useState<string | null>(null);

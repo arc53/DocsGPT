@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import userService from '../api/services/userService';
-import { DEFAULT_WEB_PAGES, MAX_WEB_PAGES } from './website';
+import { DEFAULT_WEB_PAGES, MAX_WEB_PAGES, type WebsiteDraft } from './website';
 
 /**
  * A whole-site Website source's page limit: its default and the admin's cap
@@ -39,4 +39,29 @@ export default function useWebPageLimits(enabled = true) {
   }, [enabled]);
 
   return limits;
+}
+
+/**
+ * Moves a draft's page limit to the admin's default when /api/config answers
+ * after the draft was made (it starts on the shipped fallback), unless the
+ * user already changed it.
+ *
+ * @param defaultPages The current default (`useWebPageLimits().defaultPages`).
+ * @param setDraft The draft's setter.
+ */
+export function useReseedMaxPages(
+  defaultPages: number,
+  setDraft: React.Dispatch<React.SetStateAction<WebsiteDraft>>,
+) {
+  const seededRef = useRef(defaultPages);
+  useEffect(() => {
+    const previous = seededRef.current;
+    if (previous === defaultPages) return;
+    seededRef.current = defaultPages;
+    setDraft((draft) =>
+      draft.maxPages === previous
+        ? { ...draft, maxPages: defaultPages }
+        : draft,
+    );
+  }, [defaultPages, setDraft]);
 }

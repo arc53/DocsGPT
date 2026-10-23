@@ -7,6 +7,7 @@ import {
   normalizeUrl,
   pageKey,
   pathPrefixFromUrl,
+  tooManyPages,
   websiteConfig,
 } from './website';
 
@@ -26,6 +27,27 @@ describe('normalizeUrl', () => {
     expect(normalizeUrl('ftp://x.io/a')).toBeNull();
     expect(normalizeUrl('not a url')).toBeNull();
     expect(normalizeUrl('javascript:alert(1)')).toBeNull();
+  });
+
+  // The backend's validate_url refuses these, so the ingest would fail later.
+  it('rejects the addresses the server never fetches', () => {
+    expect(normalizeUrl('localhost:8080/docs')).toBeNull();
+    expect(normalizeUrl('http://localhost/docs')).toBeNull();
+    expect(normalizeUrl('http://localhost.localdomain/')).toBeNull();
+    expect(normalizeUrl('http://metadata.google.internal/')).toBeNull();
+    expect(normalizeUrl('http://127.0.0.1:3000/')).toBeNull();
+    expect(normalizeUrl('http://10.0.0.5/')).toBeNull();
+    expect(normalizeUrl('http://172.20.1.1/')).toBeNull();
+    expect(normalizeUrl('http://192.168.1.10/')).toBeNull();
+    expect(normalizeUrl('http://169.254.169.254/latest')).toBeNull();
+    expect(normalizeUrl('http://100.64.0.1/')).toBeNull();
+    expect(normalizeUrl('http://0.0.0.0/')).toBeNull();
+    // Public addresses, numeric or not, stay.
+    expect(normalizeUrl('http://8.8.8.8/')).toBe('http://8.8.8.8/');
+    expect(normalizeUrl('http://172.32.0.1/')).toBe('http://172.32.0.1/');
+    expect(normalizeUrl('https://localhost.dev/')).toBe(
+      'https://localhost.dev/',
+    );
   });
 });
 
@@ -118,6 +140,32 @@ describe('pageKey', () => {
     expect(pageKey('https://docs.x.io/guides')).not.toBe(key);
     expect(pageKey('https://docs.x.io/guide?v=2')).not.toBe(key);
   });
+
+  // The backend's own keys for these (website_loader.page_key, run on each).
+  it.each([
+    ['https://docs.x.io/guide', 'docs.x.io/guide'],
+    ['http://www.docs.x.io/guide/', 'docs.x.io/guide'],
+    ['https://DOCS.x.io/guide#install', 'docs.x.io/guide'],
+    ['https://docs.x.io./guide', 'docs.x.io/guide'],
+    ['https://www.docs.x.io../guide//', 'docs.x.io/guide'],
+    ['https://docs.x.io/p?b=2&a=1', 'docs.x.io/p?a=1&b=2'],
+    ['https://docs.x.io/p?a=1&b=2#top', 'docs.x.io/p?a=1&b=2'],
+    ['https://docs.x.io/p?flag', 'docs.x.io/p?flag='],
+    ['https://docs.x.io/p?a=1&&b=', 'docs.x.io/p?a=1&b='],
+    ['https://docs.x.io/p?q=a+b&r=%7E~*', 'docs.x.io/p?q=a+b&r=~~%2A'],
+    ['https://docs.x.io/p?z=1&a=2&a=1', 'docs.x.io/p?a=1&a=2&z=1'],
+    ['https://docs.x.io/p?', 'docs.x.io/p'],
+    ['https://user:pw@Docs.X.io:8080/Guide/', 'docs.x.io/Guide'],
+    ['https://docs.x.io', 'docs.x.io'],
+    ['https://docs.x.io/A%20B/', 'docs.x.io/A%20B'],
+    ['  https://docs.x.io/trim  ', 'docs.x.io/trim'],
+    [
+      'https://docs.x.io/p?name=caf%C3%A9&x=(1)',
+      'docs.x.io/p?name=caf%C3%A9&x=%281%29',
+    ],
+  ])('keys %s as the backend does', (url, key) => {
+    expect(pageKey(url)).toBe(key);
+  });
 });
 
 describe('isWebsiteDraftValid', () => {
@@ -149,5 +197,21 @@ describe('isWebsiteDraftValid', () => {
     expect(isWebsiteDraftValid({ ...site, maxPages: 500 }, 500)).toBe(true);
     expect(isWebsiteDraftValid({ ...site, maxPages: 501 }, 500)).toBe(false);
     expect(isWebsiteDraftValid({ ...site, maxPages: 0 }, 500)).toBe(false);
+  });
+
+  it('holds no more page addresses than the cap', () => {
+    const pages = (count: number) => ({
+      ...defaultWebsiteDraft(2),
+      urls: [
+        ...Array.from({ length: count }, (_, i) => `https://x.io/${i}`),
+        '',
+      ],
+    });
+    expect(isWebsiteDraftValid(pages(2), 2)).toBe(true);
+    expect(isWebsiteDraftValid(pages(3), 2)).toBe(false);
+    expect(tooManyPages(pages(3), 2)).toBe(true);
+    expect(tooManyPages(pages(2), 2)).toBe(false);
+    // A whole site uses only its first address.
+    expect(tooManyPages({ ...pages(3), mode: 'site' }, 2)).toBe(false);
   });
 });

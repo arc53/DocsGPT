@@ -58,9 +58,52 @@ export function defaultWebsiteDraft(defaultPages: number): WebsiteDraft {
   };
 }
 
+// Hosts the backend's validate_url refuses by name (url_validation.py).
+const BLOCKED_HOSTS = new Set([
+  'localhost',
+  'localhost.localdomain',
+  'metadata.google.internal',
+]);
+
+// The IPv4 ranges it refuses (private, loopback, link-local, carrier-grade
+// NAT, reserved, multicast), as [first octets, prefix length].
+const BLOCKED_IPV4: [number[], number][] = [
+  [[0], 8],
+  [[10], 8],
+  [[100, 64], 10],
+  [[127], 8],
+  [[169, 254], 16],
+  [[172, 16], 12],
+  [[192, 0, 0], 24],
+  [[192, 0, 2], 24],
+  [[192, 168], 16],
+  [[198, 18], 15],
+  [[198, 51, 100], 24],
+  [[203, 0, 113], 24],
+  [[224], 3],
+];
+
+/** Whether a host is an IPv4 address on a network the server won't reach. */
+function isBlockedIpv4(host: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!match) return false;
+  const value = match
+    .slice(1)
+    .reduce((total, octet) => total * 256 + Number(octet), 0);
+  return BLOCKED_IPV4.some(([octets, bits]) => {
+    const base = [0, 1, 2, 3].reduce(
+      (total, i) => total * 256 + (octets[i] ?? 0),
+      0,
+    );
+    const size = 2 ** (32 - bits);
+    return Math.floor(value / size) === Math.floor(base / size);
+  });
+}
+
 /**
  * A typed address as a fetchable URL: trimmed, `https://` added to a bare
- * host, anything but http(s) refused.
+ * host, anything but http(s) refused, and so is a host the backend refuses
+ * to fetch (localhost, a private or reserved IPv4 address).
  */
 export function normalizeUrl(value: string): string | null {
   const trimmed = value.trim();
@@ -71,8 +114,9 @@ export function normalizeUrl(value: string): string | null {
   try {
     const url = new URL(withScheme);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    if (!url.hostname.includes('.') && url.hostname !== 'localhost')
-      return null;
+    const host = url.hostname.toLowerCase();
+    if (!host.includes('.') || BLOCKED_HOSTS.has(host)) return null;
+    if (isBlockedIpv4(host)) return null;
     return withScheme;
   } catch {
     return null;
@@ -97,20 +141,88 @@ export function pathPrefixFromUrl(value: string): string {
   return url.pathname;
 }
 
+/** Python's `unquote_plus`: `+` is a space, runs of `%XX` are UTF-8 bytes. */
+function unquotePlus(value: string): string {
+  return value.replace(/\+/g, ' ').replace(/(?:%[0-9a-f]{2})+/gi, (run) => {
+    const bytes = new Uint8Array(run.length / 3);
+    for (let i = 0; i < bytes.length; i += 1)
+      bytes[i] = parseInt(run.slice(i * 3 + 1, i * 3 + 3), 16);
+    return new TextDecoder().decode(bytes);
+  });
+}
+
+/** Python's `quote_plus`: only letters, digits and `_.-~` stay as they are. */
+function quotePlus(value: string): string {
+  // A lone surrogate can't be encoded; Python replaces it too.
+  const encoded = encodeURIComponent(
+    value.replace(
+      /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g,
+      '�',
+    ),
+  );
+  return encoded
+    .replace(
+      /[!'()*]/g,
+      (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+    )
+    .replace(/%20/g, '+');
+}
+
 /**
- * One key per page, as the backend compares them (`website_loader.page_key`):
- * scheme, `www.`, the host's case, a trailing slash and the fragment don't
- * count; the query does.
+ * A query with its parameters sorted, as the backend's `normalize_page_url`
+ * writes it (`urlencode(sorted(parse_qsl(query, keep_blank_values=True)))`).
+ */
+function sortedQuery(query: string): string {
+  const pairs: [string, string][] = [];
+  for (const part of query.split('&')) {
+    if (!part) continue;
+    const at = part.indexOf('=');
+    const name = at === -1 ? part : part.slice(0, at);
+    const value = at === -1 ? '' : part.slice(at + 1);
+    pairs.push([unquotePlus(name), unquotePlus(value)]);
+  }
+  const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  pairs.sort((a, b) => compare(a[0], b[0]) || compare(a[1], b[1]));
+  return pairs
+    .map(([name, value]) => `${quotePlus(name)}=${quotePlus(value)}`)
+    .join('&');
+}
+
+/**
+ * One key per page, exactly as the backend compares them
+ * (`website_loader.page_key` over `base.normalize_page_url`): the scheme,
+ * `www.`, the host's case and trailing dots, a trailing slash, the fragment
+ * and the order of the query's parameters don't count; the path stays as
+ * written. Split the way Python's `urlsplit` does, not with `URL`, which
+ * would rewrite the path.
  */
 export function pageKey(value: string): string {
-  try {
-    const url = new URL(value);
-    const host = url.hostname.toLowerCase().replace(/^www\./, '');
-    const path = url.pathname.replace(/\/+$/, '');
-    return `${host}${path}${url.search}`;
-  } catch {
-    return value.trim();
+  let rest = value.trim();
+  const scheme = /^[a-z][a-z0-9+.-]*:/i.exec(rest);
+  if (scheme) rest = rest.slice(scheme[0].length);
+  const hash = rest.indexOf('#');
+  if (hash !== -1) rest = rest.slice(0, hash);
+  let netloc = '';
+  if (rest.startsWith('//')) {
+    const end = rest.slice(2).search(/[/?]/);
+    netloc = end === -1 ? rest.slice(2) : rest.slice(2, end + 2);
+    rest = end === -1 ? '' : rest.slice(end + 2);
   }
+  const mark = rest.indexOf('?');
+  const path = mark === -1 ? rest : rest.slice(0, mark);
+  const query = mark === -1 ? '' : sortedQuery(rest.slice(mark + 1));
+
+  const hostinfo = netloc.slice(netloc.lastIndexOf('@') + 1);
+  const bracket = hostinfo.indexOf('[');
+  let host =
+    bracket !== -1
+      ? hostinfo.slice(bracket + 1).split(']')[0]
+      : hostinfo.split(':')[0];
+  host = host.toLowerCase().replace(/\.+$/, '');
+  if (host.startsWith('www.')) host = host.slice(4);
+
+  const key = `${host}${path.replace(/\/+$/, '')}`;
+  return query ? `${key}?${query}` : key;
 }
 
 export function websiteConfig(
@@ -140,14 +252,28 @@ export function websiteConfig(
   return { entries, skip: [], keep_links: keepLinks };
 }
 
+/** The addresses a draft fetches: every filled one, or a site's first. */
+function filledUrls(draft: WebsiteDraft): string[] {
+  return (draft.mode === 'page' ? draft.urls : draft.urls.slice(0, 1))
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Whether "This page" lists more addresses than a source holds
+ * (WEB_MAX_PAGES; the backend refuses the config).
+ */
+export function tooManyPages(draft: WebsiteDraft, maxPages: number): boolean {
+  return draft.mode === 'page' && filledUrls(draft).length > maxPages;
+}
+
 export function isWebsiteDraftValid(
   draft: WebsiteDraft,
   maxPages: number,
 ): boolean {
-  const filled = (draft.mode === 'page' ? draft.urls : draft.urls.slice(0, 1))
-    .map((url) => url.trim())
-    .filter(Boolean);
+  const filled = filledUrls(draft);
   if (!filled.length || filled.some((url) => !normalizeUrl(url))) return false;
+  if (tooManyPages(draft, maxPages)) return false;
   if (draft.mode === 'site') {
     if (
       !Number.isInteger(draft.maxPages) ||

@@ -2,6 +2,7 @@ import { Plus, X } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
@@ -21,6 +22,7 @@ import {
   type WebsiteDiscovery,
   type WebsiteDraft,
   type WebsiteMode,
+  tooManyPages,
 } from './website';
 
 const DISCOVERY: WebsiteDiscovery[] = ['auto', 'sitemap', 'links'];
@@ -33,7 +35,8 @@ const DISCOVERY: WebsiteDiscovery[] = ['auto', 'sitemap', 'links'];
  *
  * @param draft The form's state (see `website.ts`).
  * @param onChange Receives the next draft.
- * @param maxPages The admin's cap on a site's page limit (WEB_MAX_PAGES).
+ * @param maxPages The admin's cap on a source's pages (WEB_MAX_PAGES): a
+ *   site's page limit, and how many addresses "This page" may list.
  * @param syncFrequency The schedule; the row is hidden without it.
  * @param onSyncFrequencyChange Receives the picked schedule.
  * @param keepLinks The source's "Keep links in page text"; the row is hidden
@@ -113,6 +116,13 @@ export default function WebsiteFields({
             <Plus className="size-4" />
             {tr('addAnotherPage')}
           </Button>
+        )}
+        {tooManyPages(draft, maxPages) && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {t('settings.sources.website.pageLimit', { count: maxPages })}
+            </AlertDescription>
+          </Alert>
         )}
       </div>
 

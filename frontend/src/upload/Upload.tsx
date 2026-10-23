@@ -69,7 +69,7 @@ import RetrievalOptions, {
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import WebsiteFields from './WebsiteFields';
-import useWebPageLimits from './useWebPageLimits';
+import useWebPageLimits, { useReseedMaxPages } from './useWebPageLimits';
 import {
   defaultWebsiteDraft,
   isWebsiteDraftValid,
@@ -84,6 +84,28 @@ import {
 const MAX_UPLOAD_BYTES = 25000000;
 /** Service tiles on the first step: two rows of three. */
 const SERVICE_TILE_LIMIT = 6;
+
+/**
+ * Why the server refused an upload or ingest: its JSON `error` or `message`
+ * when it sent one, else a generic line (never the HTTP status text).
+ *
+ * @param responseText The response body.
+ * @param fallback The localized generic message.
+ * @returns The message for the upload toast.
+ */
+function refusalMessage(responseText: string, fallback: string): string {
+  try {
+    const data = JSON.parse(responseText) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    for (const value of [data?.error, data?.message])
+      if (typeof value === 'string' && value.trim()) return value;
+  } catch {
+    // Not JSON (a proxy's error page): the generic line.
+  }
+  return fallback;
+}
 
 function Upload({
   receivedFile = [],
@@ -152,6 +174,7 @@ function Upload({
   const [websiteDraft, setWebsiteDraft] = useState<WebsiteDraft>(() =>
     defaultWebsiteDraft(webLimits.defaultPages),
   );
+  useReseedMaxPages(webLimits.defaultPages, setWebsiteDraft);
   const [syncFrequency, setSyncFrequency] = useState<SyncFrequency>('never');
   const [syncTouched, setSyncTouched] = useState(false);
   const [prefixTouched, setPrefixTouched] = useState(false);
@@ -693,7 +716,10 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          refusalMessage(xhr.responseText, t('common.actionFailed')),
+        );
       }
     };
 
@@ -791,7 +817,10 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          refusalMessage(xhr.responseText, t('common.actionFailed')),
+        );
       }
     };
 
