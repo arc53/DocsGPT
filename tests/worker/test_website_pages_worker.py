@@ -1,5 +1,7 @@
 """Tests for ``website_pages_worker``: adding pages to and refreshing a page of a Website source."""
 
+from contextlib import contextmanager
+
 import pytest
 
 from docsgpt.parser.schema.base import Document
@@ -95,9 +97,13 @@ def pipeline(monkeypatch):
 
     pages = {}
     fetch_calls = []
+    # Run while the pages are being fetched: another change landing mid-task.
+    during_fetch = []
 
     def fake_load(self, inputs):
         fetch_calls.append((list(inputs), self.keep_links))
+        for hook in during_fetch:
+            hook()
         return [
             Document(pages[url], extra_info={"source": url, "title": f"Title {url[-1]}", "file_path": "ignored.md"})
             for url in inputs if url in pages
@@ -106,7 +112,7 @@ def pipeline(monkeypatch):
     monkeypatch.setattr(web_loader.WebLoader, "load_data", fake_load)
     events = []
     monkeypatch.setattr(worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload)))
-    return {"store": store, "pages": pages, "fetch_calls": fetch_calls, "events": events}
+    return {"store": store, "pages": pages, "fetch_calls": fetch_calls, "events": events, "during_fetch": during_fetch}
 
 
 def _source_row(pg_conn, source):
@@ -148,6 +154,20 @@ class TestAddPages:
         kinds = [kind for kind, _ in pipeline["events"]]
         assert kinds == ["source.ingest.queued", "source.ingest.completed"]
         assert pipeline["events"][-1][1]["operation"] == "add_pages"
+
+    def test_events_carry_the_task_id(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        # The UI matches the events to the request that queued the task.
+        from docsgpt import worker
+
+        task_self.request.id = "task-9"
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+        with pytest.raises(ValueError):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/gone"])
+
+        kinds = [kind for kind, _ in pipeline["events"]]
+        assert kinds[-1] == "source.ingest.failed" and "source.ingest.completed" in kinds
+        assert all(payload["task_id"] == "task-9" for _, payload in pipeline["events"])
 
     def test_adding_a_page_already_there_replaces_it(self, pg_conn, patch_worker_db, task_self, source, pipeline):
         from docsgpt import worker
@@ -295,3 +315,86 @@ class TestRefreshPage:
 
         with pytest.raises(ValueError):
             worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="nope.md")
+
+
+@pytest.mark.unit
+class TestConcurrentChanges:
+    """Another change lands while the pages are fetched; neither is lost."""
+
+    def test_a_tree_and_config_change_mid_task_survive(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        from docsgpt import worker
+
+        repo = SourcesRepository(pg_conn)
+        changed_config = {"entries": [{"url": "https://docs.x.io/a", "mode": "page"}], "skip": ["https://docs.x.io/z"]}
+
+        def other_change():
+            tree = dict(_tree(pg_conn, source))
+            tree["z.md"] = _leaf("https://docs.x.io/z", 3)
+            repo.update(str(source["id"]), USER, {"directory_structure": tree, "remote_data": changed_config})
+
+        pipeline["during_fetch"].append(other_change)
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        row = _source_row(pg_conn, source)
+        assert sorted(row["directory_structure"]) == ["a.md", "b.md", "z.md"]
+        assert row["remote_data"]["skip"] == ["https://docs.x.io/z"]
+        assert int(row["tokens"]) == 40 + 3 + row["directory_structure"]["b.md"]["token_count"]
+
+    def test_a_page_removed_mid_refresh_is_not_brought_back(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        repo = SourcesRepository(pg_conn)
+        pipeline["during_fetch"].append(
+            lambda: repo.update(str(source["id"]), USER, {"directory_structure": {}, "tokens": "0"})
+        )
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert _tree(pg_conn, source) == {}
+        assert pipeline["store"].texts_for("https://docs.x.io/a") == []
+
+    def test_a_source_converted_to_a_wiki_is_left_alone(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"config": {"kind": "wiki"}})
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        with pytest.raises(ValueError, match="wiki"):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert pipeline["fetch_calls"] == []
+        assert pipeline["store"].log == []
+
+    def test_a_wiki_conversion_mid_task_drops_the_new_chunks(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        repo = SourcesRepository(pg_conn)
+        pipeline["during_fetch"].append(lambda: repo.update(str(source["id"]), USER, {"config": {"kind": "wiki"}}))
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        with pytest.raises(ValueError, match="wiki"):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert pipeline["store"].texts_for("https://docs.x.io/b") == []
+        assert "b.md" not in _tree(pg_conn, source)
+
+    def test_runs_holding_the_source_index_lock(self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch):
+        from docsgpt import worker
+
+        held = []
+
+        @contextmanager
+        def fake_lock(source_id, **kwargs):
+            held.append(source_id)
+            yield
+            held.append("released")
+
+        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
+        pipeline["during_fetch"].append(lambda: held.append("fetching"))
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert held == [str(source["id"]), "fetching", "released"]

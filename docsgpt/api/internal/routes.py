@@ -14,6 +14,7 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db import source_defaults
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_session
+from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.storage.storage_creator import StorageCreator
 
 
@@ -23,6 +24,9 @@ current_dir = str(home_dir())
 
 
 internal = Blueprint("internal", __name__)
+
+# What a sync's write changes on an existing source: the content it rebuilt.
+_SYNC_FIELDS = ("date", "model", "tokens", "directory_structure")
 
 
 @internal.before_request
@@ -115,12 +119,9 @@ def upload_index_files():
         file_pkl = request.files["file_pkl"]
         if file_pkl.filename == "":
             return {"status": "no file name"}
-
-        # Save index files to storage
-        faiss_storage_path = f"{index_base_path}/index.faiss"
-        pkl_storage_path = f"{index_base_path}/index.pkl"
-        storage.save_file(file_faiss, faiss_storage_path)
-        storage.save_file(file_pkl, pkl_storage_path)
+        faiss_files = (file_faiss, file_pkl)
+    else:
+        faiss_files = None
 
     now = datetime.datetime.now(datetime.timezone.utc)
     update_fields = {
@@ -144,13 +145,28 @@ def upload_index_files():
     if config is not None:
         update_fields["config"] = config
 
+    is_sync = request.form.get("operation") == "sync"
     with db_session() as conn:
         repo = SourcesRepository(conn)
         existing = None
         if looks_like_uuid(source_id):
-            existing = repo.get(source_id, user)
+            # Locked until the write: a settings change waits instead of
+            # landing between this read and the update.
+            existing = repo.get_for_update(source_id, user)
         if existing is None:
             existing = repo.get_by_legacy_id(source_id, user)
+        if is_sync and existing is not None:
+            if SourceConfig.parse(existing.get("config")).kind == "wiki":
+                # Converted while the sync ran: its pages are the content now.
+                logger.info(f"Not writing a sync over wiki source {source_id}")
+                return {"status": "skipped", "reason": "wiki"}
+            # The form carries what the source looked like when the sync was
+            # queued; name, type, remote_data, schedule and config may have
+            # changed since, so a sync writes only what it rebuilt.
+            update_fields = {key: update_fields[key] for key in _SYNC_FIELDS}
+        if faiss_files is not None:
+            storage.save_file(faiss_files[0], f"{index_base_path}/index.faiss")
+            storage.save_file(faiss_files[1], f"{index_base_path}/index.pkl")
         if existing is not None:
             repo.update(str(existing["id"]), user, update_fields)
         else:

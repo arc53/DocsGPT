@@ -202,6 +202,32 @@ class SourcesRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_for_update(self, source_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+        """Read a source and lock its row until the transaction ends.
+
+        A read-modify-write of ``remote_data`` or ``directory_structure``
+        (a Website page change, a sync's final write) re-reads the row with
+        this inside its write transaction, so a concurrent change waits
+        rather than being overwritten.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner to scope to; ``None`` only after the caller has
+                checked access itself (a team member edits the owner's row).
+
+        Returns:
+            The row, or ``None`` when it doesn't exist (or isn't the owner's).
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        sql = "SELECT * FROM sources WHERE id = CAST(:id AS uuid)"
+        params = {"id": str(source_id)}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        row = self._conn.execute(text(sql + " FOR UPDATE"), params).fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def get_any(self, source_id: str, user_id: str) -> Optional[dict]:
         """Resolve a source by either PG UUID or legacy Mongo ObjectId string.
 

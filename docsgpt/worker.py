@@ -75,6 +75,7 @@ from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
 )
+from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS, SourceBusy, source_index_lock
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
@@ -1330,6 +1331,19 @@ def reingest_source_worker(self, source_id, user):
         raise
 
 
+def _task_id_field(task: Any) -> Dict[str, str]:
+    """``{"task_id": id}`` for a running Celery task, so the UI can match its events to the request.
+
+    Args:
+        task: The bound Celery task (``self``).
+
+    Returns:
+        The field, or ``{}`` when there is no string task id (a direct call).
+    """
+    task_id = getattr(getattr(task, "request", None), "id", None)
+    return {"task_id": task_id} if isinstance(task_id, str) and task_id else {}
+
+
 def remote_worker(
     self,
     source_data,
@@ -1376,6 +1390,7 @@ def remote_worker(
         "job_name": name_job,
         "loader": loader,
         "operation": operation_mode,
+        **_task_id_field(self),
     }
     if self.request.retries == 0:
         publish_user_event(
@@ -1538,7 +1553,12 @@ def remote_worker(
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
         }
-        if config:
+        if operation_mode == "sync":
+            # The API keeps the row's own name, type, remote_data, schedule
+            # and config: they may have changed since this sync was queued,
+            # and ``config`` here only chose how to chunk.
+            file_data["operation"] = "sync"
+        elif config:
             file_data["config"] = json.dumps(config)
 
         if operation_mode == "sync":
@@ -1575,6 +1595,7 @@ def remote_worker(
                 # Forward-looking contract: see ingest_worker.
                 "limited": False,
                 **website_fields,
+                **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1591,6 +1612,7 @@ def remote_worker(
                 "loader": loader,
                 "operation": operation_mode,
                 "error": str(e)[:1024],
+                **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1685,39 +1707,68 @@ def _is_wiki_config(config: Any) -> bool:
 
 
 def sync(
-    self,
-    source_data,
-    name_job,
-    user,
-    loader,
-    sync_frequency,
-    retriever,
-    doc_id=None,
-    directory="temp",
-    connection_id=None,
-):
-    config = _stored_source_config(doc_id, user)
-    if _is_wiki_config(config):
-        # A sync wipes the index and re-reads the remote content, which
-        # would replace a wiki's pages; a converted source no longer syncs.
-        logging.info("Skipping sync of wiki source %s", doc_id)
-        return {"status": "skipped", "reason": "wiki"}
+    self: Any,
+    source_data: Any,
+    name_job: str,
+    user: str,
+    loader: str,
+    sync_frequency: str,
+    retriever: str,
+    doc_id: Optional[str] = None,
+    directory: str = "temp",
+    connection_id: Optional[str] = None,
+    lock_wait_seconds: float = WORKER_WAIT_SECONDS,
+) -> Dict[str, Any]:
+    """Re-read a remote source and rebuild its index, holding its index lock.
+
+    The lock makes a sync and a Website page change (or another sync) on one
+    source take turns: each rewrites the index, and a FAISS index is saved
+    whole, so the last save would win. The wiki check runs under the lock,
+    so a conversion that finished while this sync waited is respected.
+
+    Args:
+        self: Celery task instance.
+        source_data: What the loader reads (the queued ``remote_data``).
+        name_job: The source's name.
+        user: Its owner.
+        loader: The remote loader.
+        sync_frequency: Its schedule.
+        retriever: Its retriever.
+        doc_id: The source.
+        directory: Scratch directory for the build.
+        connection_id: The connection the loader reads through, if any.
+        lock_wait_seconds: How long to wait for another job on the source.
+
+    Returns:
+        ``{"status": "success"}``, ``{"status": "skipped", "reason": "wiki" | "busy"}``
+        or ``{"status": "error", "error": ...}``.
+    """
     try:
-        remote_worker(
-            self,
-            source_data,
-            name_job,
-            user,
-            loader,
-            directory,
-            retriever,
-            sync_frequency,
-            "sync",
-            doc_id,
-            # Re-chunk with the source's own settings, not the defaults.
-            config=config,
-            connection_id=connection_id,
-        )
+        with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
+            config = _stored_source_config(doc_id, user)
+            if _is_wiki_config(config):
+                # A sync wipes the index and re-reads the remote content, which
+                # would replace a wiki's pages; a converted source no longer syncs.
+                logging.info("Skipping sync of wiki source %s", doc_id)
+                return {"status": "skipped", "reason": "wiki"}
+            remote_worker(
+                self,
+                source_data,
+                name_job,
+                user,
+                loader,
+                directory,
+                retriever,
+                sync_frequency,
+                "sync",
+                doc_id,
+                # Re-chunk with the source's own settings, not the defaults.
+                config=config,
+                connection_id=connection_id,
+            )
+    except SourceBusy:
+        logging.info("Skipping sync of source %s: another change to it is running", doc_id)
+        return {"status": "skipped", "reason": "busy"}
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
@@ -1799,13 +1850,15 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
+        # A source busy with another change is left to the next schedule
+        # rather than holding up every sync after it.
         resp = sync(
             self, source_data, name, user, source_type, frequency, retriever, doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+            lock_wait_seconds=0,
         )
-        sync_counts[
-            "sync_success" if resp["status"] == "success" else "sync_failure"
-        ] += 1
+        outcome = {"success": "sync_success", "skipped": "sync_skipped"}.get(resp["status"], "sync_failure")
+        sync_counts[outcome] += 1
     return {
         key: sync_counts[key]
         for key in [
@@ -4680,7 +4733,8 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
         fetched_at: When it was fetched (ISO 8601).
 
     Returns:
-        ``{"key", "path", "leaf"}``: the tree change for the page.
+        ``{"key", "path", "leaf", "old_url", "new_ids"}``: the tree change for
+        the page, and what it replaced and added.
 
     Raises:
         Exception: Whatever adding a chunk raised, after the rollback.
@@ -4717,6 +4771,8 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     return {
         "key": _web_page_key(url),
         "path": path,
+        "old_url": old_url,
+        "new_ids": new_ids,
         "leaf": {
             "type": "text/markdown",
             "size_bytes": size_bytes,
@@ -4746,6 +4802,56 @@ def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]
         set_page(structure, change["path"], change["leaf"])
 
 
+def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Write a ``website_pages`` run's page changes onto the source's current tree.
+
+    The row is re-read under a row lock inside the write, so a change made
+    while the pages were fetched (a sync's new tree, a removal, a config
+    edit) is kept: only this run's pages are set. A page this run replaced
+    that has since left the tree (removed meanwhile) is not brought back, and
+    its new chunks are deleted. A source that became a wiki meanwhile is not
+    touched at all.
+
+    Args:
+        store: The source's vector store.
+        source_id: The source.
+        user: Its owner.
+        changes: ``_replace_web_page`` results.
+
+    Returns:
+        The changes written.
+
+    Raises:
+        ValueError: The source is gone or became a wiki; the new chunks were deleted.
+    """
+    from docsgpt.parser.remote.website_tree import total_tokens, web_pages
+
+    kept: List[Dict[str, Any]] = []
+    with db_session() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_for_update(source_id, user)
+        gone = row is None or _is_wiki_config(row.get("config"))
+        if not gone:
+            structure = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
+            present = {_web_page_key(url) for _, url in web_pages(structure)}
+            kept = [
+                change for change in changes
+                if change["old_url"] is None or change["key"] in present or _web_page_key(change["old_url"]) in present
+            ]
+            _apply_page_changes(structure, kept)
+            repo.update(source_id, user, {"directory_structure": structure, "tokens": str(total_tokens(structure))})
+    for change in changes:
+        if change in kept or not change["new_ids"]:
+            continue
+        try:
+            store.delete_chunks(change["new_ids"])
+        except Exception:  # noqa: BLE001 - nothing references them; report the rest
+            logging.error("Could not delete the unused chunks of %s", change["leaf"]["url"], exc_info=True)
+    if gone:
+        raise ValueError("The source was deleted or became a wiki while its pages were fetched; nothing was changed")
+    return kept
+
+
 def website_pages_worker(
     self: Any,
     source_id: str,
@@ -4765,6 +4871,10 @@ def website_pages_worker(
     they were, and the task fails. The route sends whole-site additions and
     pages on a new host to a sync instead: those rename the tree.
 
+    The run holds the source's index lock (``source_index_lock``), so it
+    waits for a sync or another page change on the same source, and writes
+    its pages onto the tree as it is when it finishes.
+
     Args:
         self: Celery task instance.
         source_id: The Website source.
@@ -4778,12 +4888,9 @@ def website_pages_worker(
         ``{"status": "ok", "pages": n}``.
 
     Raises:
-        ValueError: The source or page is unknown, or no page could be fetched.
+        ValueError: The source or page is unknown, the source is a wiki, or no
+            page could be fetched.
     """
-    from docsgpt.parser.remote.web_loader import WebLoader
-    from docsgpt.parser.remote.website_tree import config_from_legacy, total_tokens, web_pages
-    from docsgpt.vectorstore.vector_creator import VectorCreator
-
     source_id = str(source_id)
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
@@ -4796,60 +4903,13 @@ def website_pages_worker(
         "job_name": source.get("name", ""),
         "loader": "website",
         "operation": event_operation,
+        **_task_id_field(self),
     }
     publish_user_event(user, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
 
     try:
-        structure = source.get("directory_structure") or {}
-        if not isinstance(structure, dict):
-            structure = {}
-        config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
-        fetch, targets, include_host = _website_page_targets(operation, web_pages(structure), urls, file_path)
-
-        docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
-        if not docs:
-            raise ValueError("None of the pages could be fetched; the source is unchanged")
-
-        cfg = SourceConfig.parse(source.get("config"))
-        chunker = ChunkerCreator.create_chunker(
-            cfg.chunking.strategy,
-            chunking_strategy=cfg.chunking.strategy,
-            max_tokens=cfg.chunking.max_tokens,
-            min_tokens=cfg.chunking.min_tokens,
-            duplicate_headers=cfg.chunking.duplicate_headers,
-        )
-        store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
-        fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        taken = {path for path, _ in web_pages(structure)} | {t["path"] for t in targets.values()}
-        changes: List[Dict[str, Any]] = []
-        failure: Optional[BaseException] = None
-        for doc in docs:
-            url = doc.extra_info["source"]
-            key = _web_page_key(url)
-            if any(change["key"] == key for change in changes):
-                continue
-            target = targets.get(key)
-            if target is None:
-                # The loader normalised the address past recognition.
-                from docsgpt.parser.remote.base import url_to_virtual_path
-
-                target = {"path": _unique_page_path(url_to_virtual_path(url, include_host), taken), "old_url": None}
-                taken.add(target["path"])
-            try:
-                changes.append(_replace_web_page(store, chunker, doc, target["path"], target["old_url"], fetched_at))
-            except Exception as err:  # noqa: BLE001 - re-raised once the finished pages are saved
-                failure = err
-                break
-
-        if changes:
-            _apply_page_changes(structure, changes)
-            with db_session() as conn:
-                SourcesRepository(conn).update(
-                    source_id, user,
-                    {"directory_structure": structure, "tokens": str(total_tokens(structure))},
-                )
-        if failure is not None:
-            raise failure
+        with source_index_lock(source_id):
+            changes = _run_website_pages(source_id, user, operation, urls, file_path)
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         publish_user_event(
@@ -4862,6 +4922,82 @@ def website_pages_worker(
         scope={"kind": "source", "id": source_id},
     )
     return {"status": "ok", "pages": len(changes)}
+
+
+def _run_website_pages(
+    source_id: str, user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
+) -> List[Dict[str, Any]]:
+    """The body of ``website_pages_worker``, run holding the source's index lock.
+
+    Args:
+        source_id: The source.
+        user: Its owner.
+        operation: ``add`` or ``refresh``.
+        urls: For ``add``: the addresses to fetch.
+        file_path: For ``refresh``: the page's tree path.
+
+    Returns:
+        The page changes written.
+
+    Raises:
+        ValueError: As ``website_pages_worker``.
+        Exception: Whatever storing a page raised, once the pages before it are saved.
+    """
+    from docsgpt.parser.remote.base import url_to_virtual_path
+    from docsgpt.parser.remote.web_loader import WebLoader
+    from docsgpt.parser.remote.website_tree import config_from_legacy, web_pages
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    # Read again under the lock: a sync that held it has rewritten the tree.
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    if _is_wiki_config(source.get("config")):
+        raise ValueError("This source is a wiki now; its pages are edited in place")
+    structure = source.get("directory_structure") or {}
+    if not isinstance(structure, dict):
+        structure = {}
+    config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
+    fetch, targets, include_host = _website_page_targets(operation, web_pages(structure), urls, file_path)
+
+    docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
+    if not docs:
+        raise ValueError("None of the pages could be fetched; the source is unchanged")
+
+    cfg = SourceConfig.parse(source.get("config"))
+    chunker = ChunkerCreator.create_chunker(
+        cfg.chunking.strategy,
+        chunking_strategy=cfg.chunking.strategy,
+        max_tokens=cfg.chunking.max_tokens,
+        min_tokens=cfg.chunking.min_tokens,
+        duplicate_headers=cfg.chunking.duplicate_headers,
+    )
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+    fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    taken = {path for path, _ in web_pages(structure)} | {t["path"] for t in targets.values()}
+    changes: List[Dict[str, Any]] = []
+    failure: Optional[BaseException] = None
+    for doc in docs:
+        url = doc.extra_info["source"]
+        key = _web_page_key(url)
+        if any(change["key"] == key for change in changes):
+            continue
+        target = targets.get(key)
+        if target is None:
+            # The loader normalised the address past recognition.
+            target = {"path": _unique_page_path(url_to_virtual_path(url, include_host), taken), "old_url": None}
+            taken.add(target["path"])
+        try:
+            changes.append(_replace_web_page(store, chunker, doc, target["path"], target["old_url"], fetched_at))
+        except Exception as err:  # noqa: BLE001 - re-raised once the finished pages are saved
+            failure = err
+            break
+
+    kept = _save_page_changes(store, source_id, user, changes) if changes else []
+    if failure is not None:
+        raise failure
+    return kept
 
 
 def _wiki_page_path_from_rel(rel_path):
@@ -4979,6 +5115,14 @@ def convert_source_to_wiki_worker(self, source_id, user):
         ``{"status": "no_pages", ...}`` when nothing was reassembled, or
         ``{"status": "already_wiki"}`` when the source is already a wiki.
     """
+    # It reads every chunk and deletes them: a sync or a Website page change
+    # on the source meanwhile would be lost or half-converted.
+    with source_index_lock(str(source_id)):
+        return _convert_source_to_wiki(self, source_id, user)
+
+
+def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, Any]:
+    """The body of ``convert_source_to_wiki_worker``, run holding the source's index lock."""
     from docsgpt.api.user.tasks import reembed_wiki_page
     from docsgpt.vectorstore.vector_creator import VectorCreator
 

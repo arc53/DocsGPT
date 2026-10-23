@@ -34,6 +34,7 @@ from docsgpt.parser.remote.website_tree import (
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.vectorstore.index_lock import REQUEST_WAIT_SECONDS, SourceBusy, source_index_lock
 
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
@@ -44,6 +45,30 @@ def _error(message: str, status: int = 400, code: str | None = None, **details):
     if code:
         body["code"] = code
     return make_response(jsonify(body), status)
+
+
+def _load_locked(conn, source_id: str, user: str, action: str) -> tuple:
+    """``load_source``, then the row re-read under a row lock for this transaction.
+
+    A route that reads ``remote_data`` or the tree and writes it back builds on
+    the locked row, so a change committed meanwhile is kept, and the next
+    writer waits for this one.
+
+    Args:
+        conn: The write transaction's connection.
+        source_id: Source id from the request.
+        user: The caller's ``sub``.
+        action: The ``source`` action to check.
+
+    Returns:
+        ``(locked row, ResourceAccess)``.
+
+    Raises:
+        AccessDenied: As ``load_source``.
+    """
+    doc, ra = load_source(conn, source_id, user, action)
+    locked = SourcesRepository(conn).get_for_update(str(doc["id"]))
+    return (locked if locked is not None else doc), ra
 
 
 def _website_config(doc: dict):
@@ -123,7 +148,7 @@ class WebsiteSettings(Resource):
             return _error(str(err))
         try:
             with db_session() as conn:
-                doc, ra = load_source(conn, data["source_id"], user, "edit")
+                doc, ra = _load_locked(conn, data["source_id"], user, "edit")
                 if _website_config(doc) is None:
                     return _error("Not a website source")
                 fields_ = {"remote_data": config, "type": "website"}
@@ -165,8 +190,12 @@ class RemoveWebsitePages(Resource):
         file_paths = [p for p in data.get("file_paths") or [] if isinstance(p, str)]
         directory_path = (data.get("directory_path") or "").strip("/")
         try:
-            with db_session() as conn:
-                doc, ra = load_source(conn, data["source_id"], user, "edit")
+            with db_readonly() as conn:
+                doc, _ra = load_source(conn, data["source_id"], user, "edit")
+            # Chunks are deleted here and now: wait briefly for a sync or a
+            # page change on the source rather than race its index writes.
+            with source_index_lock(str(doc["id"]), wait_seconds=REQUEST_WAIT_SECONDS), db_session() as conn:
+                doc, ra = _load_locked(conn, data["source_id"], user, "edit")
                 config = _website_config(doc)
                 if config is None:
                     return _error("Not a website source")
@@ -207,6 +236,8 @@ class RemoveWebsitePages(Resource):
                 )
         except AccessDenied as err:
             return denied_response(err)
+        except SourceBusy as err:
+            return _error(str(err), 409, code="source_busy")
         except Exception as err:
             current_app.logger.error(f"Error removing website pages: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -246,7 +277,7 @@ class AddWebsitePages(Resource):
             return _error(str(err))
         try:
             with db_session() as conn:
-                doc, ra = load_source(conn, data["source_id"], user, "edit")
+                doc, ra = _load_locked(conn, data["source_id"], user, "edit")
                 config = _website_config(doc)
                 if config is None:
                     return _error("Not a website source")

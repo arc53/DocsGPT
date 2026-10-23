@@ -340,3 +340,31 @@ class TestDelete:
         deleted = repo.delete(created["id"], "other-user")
         assert deleted is False
         assert repo.get(created["id"], "u") is not None
+
+
+class TestGetForUpdate:
+    def test_reads_and_locks_the_row(self, pg_conn):
+        from sqlalchemy import text
+
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u", directory_structure={"a.md": {"token_count": 1}})
+        row = repo.get_for_update(str(created["id"]), "u")
+        assert row["directory_structure"] == {"a.md": {"token_count": 1}}
+        # The row stays locked until this transaction ends.
+        locked = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+                "WHERE c.relname = 'sources' AND l.mode = 'RowShareLock' AND l.pid = pg_backend_pid()"
+            )
+        ).scalar()
+        assert locked >= 1
+
+    def test_scoped_to_the_owner_when_given(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u")
+        assert repo.get_for_update(str(created["id"]), "other") is None
+        # Unscoped: the caller has already checked access (a team member).
+        assert repo.get_for_update(str(created["id"]))["id"] == created["id"]
+
+    def test_a_non_uuid_is_none(self, pg_conn):
+        assert _repo(pg_conn).get_for_update("not-a-uuid", "u") is None

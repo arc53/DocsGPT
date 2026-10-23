@@ -126,7 +126,7 @@ class TestSyncWorker:
 
         def _fake_sync(self, source_data, name_job, user, loader,
                        sync_frequency, retriever, doc_id=None, directory="temp",
-                       connection_id=None):
+                       connection_id=None, lock_wait_seconds=None):
             captured.append({
                 "name_job": name_job,
                 "user": user,

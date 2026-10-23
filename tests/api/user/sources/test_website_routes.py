@@ -341,3 +341,95 @@ class TestRefreshPage:
 
         assert response.status_code == 400
         pages_task.delay.assert_not_called()
+
+
+@contextmanager
+def _change_after_load(pg_conn, fields):
+    """Commit ``fields`` to the row right after the route's first read: a concurrent change.
+
+    The route must build on the row as it is under its lock, not on that first read.
+    """
+    from docsgpt.api.user.sources import website
+
+    real = website.load_source
+
+    def load_then_change(conn, source_id, user, action):
+        doc, ra = real(conn, source_id, user, action)
+        SourcesRepository(pg_conn).update(str(doc["id"]), USER, fields)
+        return doc, ra
+
+    with patch("docsgpt.api.user.sources.website.load_source", load_then_change):
+        yield
+
+
+class TestConcurrentEdits:
+    def test_an_add_keeps_an_entry_added_meanwhile(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import AddWebsitePages
+
+        src = _seed(pg_conn)
+        meanwhile = {**CONFIG, "entries": CONFIG["entries"] + [{"url": "https://docs.x.io/other", "mode": "page"}]}
+        with _change_after_load(pg_conn, {"remote_data": meanwhile}), patch(
+            "docsgpt.api.user.sources.website.website_pages"
+        ) as pages_task:
+            pages_task.delay.return_value = MagicMock(id="t")
+            response = _call(app, pg_conn, AddWebsitePages, "POST", json={
+                "source_id": str(src["id"]), "entries": [{"url": "https://docs.x.io/new", "mode": "page"}],
+            })
+
+        assert response.status_code == 200
+        urls = [e["url"] for e in SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]]
+        assert urls == ["https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/other", "https://docs.x.io/new"]
+
+    def test_a_removal_keeps_a_page_added_meanwhile(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import RemoveWebsitePages
+
+        src = _seed(pg_conn)
+        meanwhile = {**TREE, "late.md": _leaf("https://docs.x.io/late", 4)}
+        with _change_after_load(pg_conn, {"directory_structure": meanwhile}), patch(
+            "docsgpt.api.user.sources.website.get_vector_store", return_value=MagicMock()
+        ):
+            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
+                "source_id": str(src["id"]), "file_paths": ["extra.md"],
+            })
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
+        assert "late.md" in saved["directory_structure"]
+        assert "extra.md" not in saved["directory_structure"]
+        assert saved["tokens"] == "59"
+
+    def test_a_settings_save_keeps_a_schedule_set_meanwhile(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        src = _seed(pg_conn)
+        with _change_after_load(pg_conn, {"sync_frequency": "daily"}):
+            response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+                "source_id": str(src["id"]), "entries": CONFIG["entries"],
+            })
+
+        assert response.status_code == 200
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["sync_frequency"] == "daily"
+
+    def test_a_removal_while_a_sync_runs_is_refused(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import RemoveWebsitePages
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        src = _seed(pg_conn)
+        store = MagicMock()
+
+        @contextmanager
+        def busy(source_id, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        with patch("docsgpt.api.user.sources.website.source_index_lock", busy), patch(
+            "docsgpt.api.user.sources.website.get_vector_store", return_value=store
+        ):
+            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
+                "source_id": str(src["id"]), "file_paths": ["extra.md"],
+            })
+
+        assert response.status_code == 409
+        assert response.json["code"] == "source_busy"
+        store.delete_chunks_by_source_path.assert_not_called()
+        assert "extra.md" in SourcesRepository(pg_conn).get(str(src["id"]), USER)["directory_structure"]
