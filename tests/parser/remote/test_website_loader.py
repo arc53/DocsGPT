@@ -1025,6 +1025,27 @@ class TestRedirects:
         assert sources(docs) == ["https://x.io/", "https://x.io/new"]
         assert fake.fetched.count("https://x.io/new") == 1
 
+    def test_a_meta_refresh_stub_is_a_redirect_not_a_page(self, web):
+        # What mkdocs-redirects and jekyll-redirect-from leave at a moved page.
+        stub = (
+            "<!doctype html><html><head><title>Redirecting...</title><link rel='canonical' href='/new/'>"
+            "<meta http-equiv='refresh' content='0; url=/new/'></head><body><h1>Redirecting...</h1>"
+            "<a href='/new/'>Click here if you are not redirected.</a></body></html>"
+        )
+        web({
+            "https://x.io/": page("Home", links=["/old/", "/new/", "/away/"]),
+            "https://x.io/old/": (HTML, stub),
+            "https://x.io/away/": (HTML, stub.replace("/new/", "https://other.io/")),
+            "https://x.io/new/": page("New"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "discovery": "links", "max_pages": 3},
+        ]})
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/new/"]
+        assert docs[1].extra_info["requested_urls"] == ["https://x.io/old/"]
+
     def test_a_skip_rule_applies_to_where_a_page_redirects(self, web):
         web({
             "https://x.io/sitemap.xml": urlset("https://x.io/a", "https://x.io/b"),

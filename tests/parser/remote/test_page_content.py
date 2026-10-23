@@ -652,6 +652,42 @@ class TestFetchPageRedirects:
 
         assert response.url == "https://x.io/caf\xe9"
 
+    @staticmethod
+    def _stub(content: str, title: str = "Redirecting...") -> tuple:
+        body = (
+            f"<html><head><title>{title}</title><meta http-equiv='Refresh' content=\"{content}\"></head>"
+            "<body><h1>Redirecting...</h1><a href='/new/'>Click here if you are not redirected.</a></body></html>"
+        )
+        return 200, {"Content-Type": "text/html"}, body.encode()
+
+    @pytest.mark.parametrize("content", ["0; url=/new/", "0;URL='/new/#top'", "1, /new/", " 0 ; url = '/new/'"])
+    def test_a_meta_refresh_stub_is_followed_like_a_redirect(self, content):
+        budget = FetchBudget(5)
+        response, hops = self._fetch(
+            {"https://x.io/old/": self._stub(content), "https://x.io/new/": self.PAGE},
+            url="https://x.io/old/",
+            budget=budget,
+        )
+
+        assert response.url == "https://x.io/new/"
+        assert response.content == self.PAGE[2]
+        assert hops.calls == ["https://x.io/old/", "https://x.io/new/"]
+        assert budget.remaining == 4
+
+    @pytest.mark.parametrize("content", ["5; url=/new/", "0", "0; url=javascript:alert(1)", "0; url=/old/"])
+    def test_a_slow_empty_foreign_or_self_refresh_is_a_page(self, content):
+        response, hops = self._fetch({"https://x.io/old/": self._stub(content)}, url="https://x.io/old/")
+
+        assert response.url == "https://x.io/old/"
+        assert hops.calls == ["https://x.io/old/"]
+
+    def test_meta_refresh_hops_count_toward_the_redirect_limit(self):
+        routes = {f"https://x.io/{i}": self._stub(f"0; url=/{i + 1}") for i in range(6)}
+        routes["https://x.io/6"] = self.PAGE
+
+        with pytest.raises(RedirectError, match="redirects"):
+            self._fetch(routes, url="https://x.io/0")
+
     def test_a_redirect_loop_fails(self):
         with pytest.raises(RedirectError, match="loop"):
             self._fetch({

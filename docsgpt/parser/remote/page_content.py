@@ -143,7 +143,8 @@ def fetch_page(
     Redirects are followed by hand, up to ``MAX_REDIRECTS``: each ``Location``
     is made absolute against the address that sent it and fetched through
     the same pinned fetcher, so every hop passes the SSRF guard on its own.
-    A 3xx is never returned as content.
+    A 3xx is never returned as content, nor is an HTML stub that refreshes
+    to another address at once (``refresh_target``): it is a hop like a 3xx.
 
     Args:
         url: The address to fetch.
@@ -181,19 +182,24 @@ def fetch_page(
             truncate=truncate,
         )
         status = response.status_code
-        if not 300 <= status < 400:
+        if 300 <= status < 400:
+            location = _header_text(response.headers.get("Location") or "").strip()
+            if status not in _REDIRECT_STATUSES or not location:
+                raise RedirectError(f"{current} answered {status} with no redirect to follow")
+            target = urldefrag(urljoin(current, location))[0]
+        else:
             # The stream is spent and closed; hand the capped body back as the
             # response's content, so callers read ``content`` and ``text`` as
             # usual. ``url`` is the pinned IP until it is set to the page's.
             response._content = body
             response.url = current
-            return response
-        location = _header_text(response.headers.get("Location") or "").strip()
-        if status not in _REDIRECT_STATUSES or not location:
-            raise RedirectError(f"{current} answered {status} with no redirect to follow")
+            # A stub that sends the browser on at once ("Redirecting…") is a
+            # redirect too; a page that refreshes to itself is a page.
+            target = refresh_target(response, current)
+            if target is None or target in seen:
+                return response
         if hop == MAX_REDIRECTS:
             raise RedirectError(f"{url} took more than {MAX_REDIRECTS} redirects")
-        target = urldefrag(urljoin(current, location))[0]
         if has_userinfo(target):
             raise CredentialsInUrlError(f"{url} redirects to an address with credentials; not following it")
         if target in seen:
@@ -203,6 +209,61 @@ def fetch_page(
         seen.add(target)
         current = target
     raise RedirectError(f"{url} took more than {MAX_REDIRECTS} redirects")  # pragma: no cover - loop returns
+
+
+# A ``<meta http-equiv=refresh>`` waiting at most this many seconds is a
+# redirect stub; a longer wait is a page that shows its text first.
+_REFRESH_MAX_DELAY = 1
+# How much of a page is searched for a refresh: it sits in the ``<head>``.
+_REFRESH_SCAN_BYTES = 64 * 1024
+# A refresh's ``content``: the delay, then optionally ``;`` or ``,`` and the
+# address, itself optionally after ``url=``.
+_REFRESH_CONTENT = re.compile(r"\s*(\d+)(?:\.\d*)?\s*(?:[;,]\s*(?:url\s*=\s*)?(.*))?", re.IGNORECASE | re.DOTALL)
+
+
+def _is_refresh(value: Optional[str]) -> bool:
+    """Whether an ``http-equiv`` value is ``refresh``, in any case."""
+    return bool(value) and value.strip().lower() == "refresh"
+
+
+def refresh_target(response: requests.Response, url: str) -> Optional[str]:
+    """Where a page's ``<meta http-equiv=refresh>`` sends the browser straight away, if anywhere.
+
+    Static site generators answer a moved page with a stub ("Redirecting…")
+    that refreshes to the new address after no wait.
+
+    Args:
+        response: A response, its ``content`` the body.
+        url: The address it answered from, for a relative target.
+
+    Returns:
+        The http(s) address, without its fragment, of a refresh waiting at
+        most ``_REFRESH_MAX_DELAY`` seconds; ``None`` for a response that
+        isn't a 2xx HTML page, has no such refresh, or names no address.
+    """
+    if not 200 <= response.status_code < 300:
+        return None
+    content_type = response.headers.get("Content-Type")
+    body = response.content
+    if not is_html(content_type) or not isinstance(body, bytes):
+        return None
+    head = body[:_REFRESH_SCAN_BYTES]
+    if b"refresh" not in head.lower():
+        return None
+    meta = html_soup(head, header_charset(content_type)).find("meta", attrs={"http-equiv": _is_refresh})
+    match = _REFRESH_CONTENT.match(str(meta.get("content") or "")) if meta is not None else None
+    if match is None or int(match.group(1)) > _REFRESH_MAX_DELAY:
+        return None
+    address = (match.group(2) or "").strip()
+    if address[:1] in ("'", '"'):
+        address = address[1:].split(address[0], 1)[0].strip()
+    if not address:
+        return None
+    try:
+        target = urldefrag(urljoin(url, address))[0]
+        return target if urlsplit(target).scheme in ("http", "https") else None
+    except ValueError:
+        return None
 
 
 def final_url(response: Any, requested: str) -> str:
