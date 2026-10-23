@@ -13,7 +13,14 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_document, page_key
+from docsgpt.parser.remote.page_content import (
+    FetchBudget,
+    fetch_page,
+    final_url,
+    has_userinfo,
+    page_document,
+    page_key,
+)
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError
@@ -477,6 +484,9 @@ class SitemapLoader(BaseRemote):
             # Scope first: a sitemap can list a million pages of other hosts.
             if self.accept is not None and not self.accept(url):
                 return
+            if has_userinfo(url):
+                # ``user:password@``: never fetched, nor stored as a page.
+                return
             try:
                 key = page_key(url)
             except ValueError:
@@ -487,7 +497,7 @@ class SitemapLoader(BaseRemote):
             urls.append(url)
 
         def take_child(url: str) -> None:
-            if len(children) < MAX_SITEMAPS_PER_WALK:
+            if len(children) < MAX_SITEMAPS_PER_WALK and not has_userinfo(url):
                 children.append(url)
 
         # The tree is gone once this returns, so it isn't held while the

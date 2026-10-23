@@ -661,6 +661,52 @@ class TestParseWebsiteConfig:
             parse_website_config({"entries": [{"url": url, "mode": "page"}]})
         assert caught.value.code == "invalid_address"
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://\x00/",
+            "https://x.io/a\x00b",
+            "https://x.io/a\tb",
+            "https://x.io/\x7f",
+            "exa mple.com",
+            "https://exa mple.com/",
+            "https://docs..example.com/",
+            "https://.x.io/",
+            "https://" + "a" * 64 + ".io/",
+            "https://" + "ü" * 60 + ".de/",
+            "https://alice:s3cret@x.io/a",
+            "alice:s3cret@x.io/a",
+            "https://alice@x.io/",
+            "https://@x.io/",
+        ],
+    )
+    def test_control_characters_bad_hosts_and_credentials_are_not_web_addresses(self, url):
+        from docsgpt.parser.remote.website_loader import WebsiteConfigError, is_web_address, parse_website_config
+
+        assert not is_web_address(url)
+        with pytest.raises(WebsiteConfigError) as caught:
+            parse_website_config({"entries": [{"url": url, "mode": "page"}]})
+        assert caught.value.code == "invalid_address"
+
+    @pytest.mark.parametrize(
+        "url",
+        ["https://x.io./a", "https://bücher.de/", "https://" + "a" * 63 + ".io/", "https://[::1]:8080/a",
+         "https://x.io/a b", "https://x.io/?q=a@b"],
+    )
+    def test_ordinary_hosts_are_still_web_addresses(self, url):
+        from docsgpt.parser.remote.website_loader import is_web_address
+
+        assert is_web_address(url)
+
+    def test_a_sitemap_address_with_credentials_is_refused(self):
+        from docsgpt.parser.remote.website_loader import WebsiteConfigError, parse_website_config
+
+        with pytest.raises(WebsiteConfigError) as caught:
+            parse_website_config({"entries": [
+                {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://alice:s3cret@x.io/sitemap.xml"},
+            ]})
+        assert caught.value.code == "invalid_address"
+
     def test_a_long_run_of_dots_is_checked_in_linear_time(self):
         import time
 
@@ -1286,6 +1332,53 @@ class TestUnencodableHosts:
         docs = CrawlerLoader(accept=lambda url: True).load_data("https://x.io/")
 
         assert sources(docs) == ["https://x.io/", "https://x.io/b"]
+
+
+class TestCredentialedLinks:
+    """A discovered address with ``user:password@`` is never fetched or stored."""
+
+    CREDENTIALED = "https://alice:s3cret@x.io/private"
+
+    def test_a_crawl_skips_a_link_with_credentials(self, web):
+        fake = web({
+            "https://x.io/": page("Home", links=[self.CREDENTIALED, "/b"]),
+            "https://x.io/b": page("B"),
+            self.CREDENTIALED: page("Private"),
+        })
+
+        # It doesn't use up the page limit either.
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "discovery": "links", "max_pages": 2},
+        ]})
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/b"]
+        assert self.CREDENTIALED not in fake.fetched
+
+    def test_a_sitemap_skips_an_entry_with_credentials(self, web):
+        fake = web({
+            "https://x.io/sitemap.xml": urlset(self.CREDENTIALED, "https://x.io/b"),
+            "https://x.io/b": page("B"),
+            self.CREDENTIALED: page("Private"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/sitemap.xml", "max_pages": 1},
+        ]})
+
+        assert sources(docs) == ["https://x.io/b"]
+        assert self.CREDENTIALED not in fake.fetched
+
+    def test_a_redirect_to_an_address_with_credentials_is_not_stored(self, web):
+        web({
+            "https://x.io/a": (302, self.CREDENTIALED),
+            self.CREDENTIALED: page("Private"),
+            "https://x.io/b": page("B"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/a"}, {"url": "https://x.io/b"}]})
+
+        assert sources(docs) == ["https://x.io/b"]
+        assert not any("s3cret" in str(doc.extra_info) for doc in docs)
 
 
 class TestMenuOnlyStartPage:

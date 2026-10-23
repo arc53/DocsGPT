@@ -21,7 +21,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-from urllib.parse import urljoin, urlparse, urlsplit
+from urllib.parse import SplitResult, urljoin, urlparse, urlsplit
 
 import requests
 import tldextract
@@ -376,7 +376,34 @@ def is_web_address(url: str) -> bool:
 
     Returns:
         True when it parses, is http or https, and names a host (and a valid
-        port, when it has one).
+        port, when it has one). False for an address with a control
+        character anywhere (a NUL can't even be stored), whitespace or a
+        backslash in its host part, a host label that is empty or longer
+        than DNS allows, or ``user:password@`` credentials: the fetch would
+        send them, and the page's stored address would keep them.
+    """
+    if _CONTROL_CHARACTER.search(url):
+        return False
+    parts = _web_parts(url)
+    if parts is None:
+        return False
+    if "@" in parts.netloc or "\\" in parts.netloc or any(ch.isspace() for ch in parts.netloc):
+        return False
+    return _labels_ok(parts.hostname)
+
+
+def _web_parts(url: str) -> Optional[SplitResult]:
+    """The parts of an address that parses as http(s) with a host and a valid port, else ``None``.
+
+    The check a stored config's addresses get: one ``is_web_address`` now
+    refuses (credentials, a bad host label) still reads, and its fetch is
+    refused on its own, so one such page can't fail the whole load.
+
+    Args:
+        url: An address; a missing scheme is taken as ``http://``.
+
+    Returns:
+        The ``urlsplit`` of the address with its scheme, or ``None``.
     """
     try:
         candidate = url if _has_scheme(url) else "http://" + url
@@ -384,8 +411,39 @@ def is_web_address(url: str) -> bool:
         host = parts.hostname
         parts.port  # noqa: B018 - raises ValueError on a port out of range
     except ValueError:
-        return False
-    return parts.scheme in ("http", "https") and bool(host)
+        return None
+    return parts if parts.scheme in ("http", "https") and host else None
+
+
+# C0 controls and DEL: a URL never carries them as written.
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+# The longest DNS label, in its ASCII (punycode) form.
+_MAX_LABEL_LENGTH = 63
+
+
+def _labels_ok(host: str) -> bool:
+    """Whether a host name's labels can be dialed: none empty, none past 63 characters as ASCII.
+
+    One trailing dot (the root, ``x.io.``) is allowed. An IP literal has no labels.
+
+    Args:
+        host: The ``hostname`` of a parsed address.
+
+    Returns:
+        False for ``docs..x.io``, ``.x.io`` or a label too long for DNS.
+    """
+    if ":" in host:
+        return True  # IPv6, from inside brackets
+    labels = host.split(".")
+    if labels[-1] == "" and len(labels) > 1:
+        labels.pop()
+    for label in labels:
+        if not label:
+            return False
+        ascii_length = len(label) if label.isascii() else len("xn--") + len(label.encode("punycode"))
+        if ascii_length > _MAX_LABEL_LENGTH:
+            return False
+    return True
 
 
 class WebsiteConfigError(ValueError):
@@ -430,9 +488,13 @@ def _with_scheme(url: str) -> str:
 
 
 def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
-    """The stripped address of an entry field, with a scheme, or ``WebsiteConfigError`` when it isn't one."""
+    """The stripped address of an entry field, with a scheme, or ``WebsiteConfigError`` when it isn't one.
+
+    A write (``enforce_limits``) takes only an ``is_web_address``; a stored
+    config read back only needs addresses that parse (``_web_parts``).
+    """
     url = value.strip()
-    if not is_web_address(url):
+    if not (is_web_address(url) if enforce_limits else _web_parts(url) is not None):
         # The value is echoed back to the client: kept to a URL's length.
         raise WebsiteConfigError(
             f"{label} {url[:200]!r} is not a web address", "invalid_address", {"url": url[:MAX_URL_LENGTH]},

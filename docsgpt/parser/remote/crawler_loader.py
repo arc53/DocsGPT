@@ -8,6 +8,7 @@ from docsgpt.parser.remote.page_content import (
     FetchBudget,
     fetch_page,
     final_url,
+    has_userinfo,
     header_charset,
     host_with_port,
     html_soup,
@@ -178,6 +179,9 @@ class CrawlerLoader(BaseRemote):
                     link = urljoin(page_url, a['href'])
                     link_key = page_key(link)
                 except ValueError:
+                    continue
+                if has_userinfo(link):
+                    # ``user:password@``: never fetched, nor stored as a page.
                     continue
                 if link_key in seen:
                     continue

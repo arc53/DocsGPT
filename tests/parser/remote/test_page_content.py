@@ -10,6 +10,7 @@ import pytest
 import requests
 
 from docsgpt.parser.remote.page_content import (
+    CredentialsInUrlError,
     FetchBudget,
     RedirectError,
     _listify_link_runs,
@@ -506,6 +507,19 @@ class TestFetchPageRedirects:
         response, _ = self._fetch({"https://x.io/docs": self.PAGE})
 
         assert response.url == "https://x.io/docs"
+
+    def test_an_address_with_credentials_is_not_fetched(self):
+        # The fetcher would send them as Basic auth, and the page's source
+        # (shown in citations) would carry the password.
+        with pytest.raises(CredentialsInUrlError):
+            self._fetch({"https://alice:s3cret@x.io/docs": self.PAGE}, url="https://alice:s3cret@x.io/docs")
+
+    def test_a_redirect_to_an_address_with_credentials_is_not_followed(self):
+        with pytest.raises(CredentialsInUrlError):
+            self._fetch({
+                "https://x.io/docs": (302, {"Location": "https://alice:s3cret@x.io/private"}, b""),
+                "https://alice:s3cret@x.io/private": self.PAGE,
+            })
 
     def test_each_hop_is_charged_to_the_budget(self):
         budget = FetchBudget(1)

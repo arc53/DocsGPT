@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
-from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit
+from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup, CData, Comment, FeatureNotFound, NavigableString, Tag
@@ -63,6 +63,49 @@ class RedirectError(requests.RequestException):
     """A redirect a fetch won't follow: no ``Location``, a loop, too many hops, or no budget left."""
 
 
+class CredentialsInUrlError(requests.exceptions.InvalidURL):
+    """An address with ``user:password@`` in it, which a fetch won't dial.
+
+    The fetcher would send them as Basic auth, and the page's address (its
+    ``source``, shown in citations) would keep the password. Pages behind a
+    sign-in aren't read.
+    """
+
+
+def has_userinfo(url: str) -> bool:
+    """Whether an address carries ``user[:password]@`` before its host.
+
+    Args:
+        url: An address.
+
+    Returns:
+        True when its authority has an ``@``; False for one that doesn't
+        parse (its fetch fails on its own).
+    """
+    try:
+        return "@" in urlsplit(url).netloc
+    except ValueError:
+        return False
+
+
+def without_userinfo(url: str) -> str:
+    """An address with any ``user[:password]@`` taken out, for logs and messages.
+
+    Args:
+        url: An address.
+
+    Returns:
+        The address without its userinfo; unchanged when it has none or doesn't parse.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if "@" not in parts.netloc:
+        return url
+    return urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[1]))
+
+
 def fetch_page(
     url: str,
     max_bytes: Optional[int] = None,
@@ -101,9 +144,12 @@ def fetch_page(
         UnsafeUserUrlError: If the URL, or a redirect target, fails the SSRF guard.
         RedirectError: A 3xx without a ``Location``, a redirect loop, more
             than ``MAX_REDIRECTS`` hops, or a spent budget mid-chain.
+        CredentialsInUrlError: The URL, or a redirect target, has ``user:password@``.
         ResponseTooLargeError: If the body is too large and ``truncate`` is off.
         requests.RequestException: For network failures.
     """
+    if has_userinfo(url):
+        raise CredentialsInUrlError(f"{without_userinfo(url)} has credentials in its address; not fetching it")
     current = url
     seen = {url}
     for hop in range(MAX_REDIRECTS + 1):
@@ -128,6 +174,8 @@ def fetch_page(
         if hop == MAX_REDIRECTS:
             raise RedirectError(f"{url} took more than {MAX_REDIRECTS} redirects")
         target = urldefrag(urljoin(current, location))[0]
+        if has_userinfo(target):
+            raise CredentialsInUrlError(f"{url} redirects to an address with credentials; not following it")
         if target in seen:
             raise RedirectError(f"{url} redirects in a loop at {target}")
         if budget is not None and not budget.take():
