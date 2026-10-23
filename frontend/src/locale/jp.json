@@ -677,6 +677,7 @@
         "tooManyPaths_one": "一度に削除できるページは最大 {{count}} 件です。",
         "tooManyPaths_other": "一度に削除できるページは最大 {{count}} 件です。",
         "notWebsite": "このソースはウェブサイトのソースではありません。",
+        "alreadyListed": "これらのページとサイトはすでにこのソースにあります。",
         "badRequest": "リクエストを読み取れませんでした。ページを再読み込みしてもう一度お試しください。"
       },
       "deleteSource": "ソースを削除",

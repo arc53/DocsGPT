@@ -680,6 +680,7 @@
         "tooManyPaths_one": "Du kannst bis zu {{count}} Seite auf einmal entfernen.",
         "tooManyPaths_other": "Du kannst bis zu {{count}} Seiten auf einmal entfernen.",
         "notWebsite": "Diese Quelle ist keine Website-Quelle.",
+        "alreadyListed": "Diese Seiten und Websites sind bereits in dieser Quelle.",
         "badRequest": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
       },
       "deleteSource": "Quelle löschen",

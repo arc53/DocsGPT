@@ -680,6 +680,7 @@
         "tooManyPaths_one": "You can remove up to {{count}} page at once.",
         "tooManyPaths_other": "You can remove up to {{count}} pages at once.",
         "notWebsite": "This source isn’t a website source.",
+        "alreadyListed": "These pages and sites are already in this source.",
         "badRequest": "The request couldn’t be read. Reload the page and try again."
       },
       "deleteSource": "Delete source",

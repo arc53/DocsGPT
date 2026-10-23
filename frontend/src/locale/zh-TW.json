@@ -677,6 +677,7 @@
         "tooManyPaths_one": "一次最多可移除 {{count}} 個頁面。",
         "tooManyPaths_other": "一次最多可移除 {{count}} 個頁面。",
         "notWebsite": "此來源不是網站來源。",
+        "alreadyListed": "這些頁面和網站已在此來源中。",
         "badRequest": "無法讀取該請求。請重新載入頁面後再試一次。"
       },
       "deleteSource": "刪除來源",

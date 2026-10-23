@@ -706,6 +706,7 @@
         "tooManyPaths_other": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
         "tooManyPaths_many": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
         "notWebsite": "Cette source n’est pas une source de site web.",
+        "alreadyListed": "Ces pages et ces sites sont déjà dans cette source.",
         "badRequest": "La requête n’a pas pu être lue. Rechargez la page et réessayez."
       },
       "deleteSource": "Supprimer la source",

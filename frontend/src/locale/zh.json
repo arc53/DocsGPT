@@ -677,6 +677,7 @@
         "tooManyPaths_one": "一次最多可移除 {{count}} 个页面。",
         "tooManyPaths_other": "一次最多可移除 {{count}} 个页面。",
         "notWebsite": "此来源不是网站来源。",
+        "alreadyListed": "这些页面和网站已在此来源中。",
         "badRequest": "无法读取该请求。请重新加载页面后再试。"
       },
       "deleteSource": "删除来源",

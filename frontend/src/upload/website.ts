@@ -365,6 +365,8 @@ const REFUSAL_KEYS = new Map<unknown, string>([
   ['not_found', 'notFound'],
   ['bad_sync_frequency', 'badSyncFrequency'],
   ['not_website', 'notWebsite'],
+  // Add pages naming only what the source already fetches.
+  ['already_listed', 'alreadyListed'],
   // Saved, but its task couldn't be queued: the next sync runs it.
   ['queue_failed', 'queueFailed'],
   // A body the UI never builds: one line for all three.

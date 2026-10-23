@@ -706,6 +706,7 @@
         "tooManyPaths_other": "Puedes quitar hasta {{count}} páginas a la vez.",
         "tooManyPaths_many": "Puedes quitar hasta {{count}} páginas a la vez.",
         "notWebsite": "Esta fuente no es una fuente de sitio web.",
+        "alreadyListed": "Estas páginas y sitios ya están en esta fuente.",
         "badRequest": "No se pudo leer la solicitud. Recarga la página e inténtalo de nuevo."
       },
       "deleteSource": "Eliminar fuente",

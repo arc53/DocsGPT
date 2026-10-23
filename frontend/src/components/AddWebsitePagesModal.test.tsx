@@ -276,6 +276,22 @@ describe('AddWebsitePagesModal', () => {
     expect(document.body.textContent).not.toContain('Traceback');
   });
 
+  it('says the pages are already in the source', async () => {
+    service.addWebsitePages.mockResolvedValue(
+      reply(400, {
+        success: false,
+        code: 'already_listed',
+        error: 'These pages and sites are already in this source.',
+      }),
+    );
+    await submit();
+
+    expect(document.body.textContent).toContain(
+      'settings.sources.website.alreadyListed',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('an add the server runs as a sync waits like any add', async () => {
     service.addWebsitePages.mockResolvedValue(
       reply(200, { success: true, mode: 'sync', task_id: 'task-3' }),
