@@ -49,6 +49,10 @@ class FakeStore:
         wanted = set(paths)
         return [cid for cid, c in self.chunks.items() if c["metadata"].get("source") in wanted]
 
+    def chunk_ids_by_file_paths(self, paths):
+        wanted = set(paths)
+        return [cid for cid, c in self.chunks.items() if c["metadata"].get("file_path") in wanted]
+
     def delete_chunks(self, chunk_ids):
         deleted = 0
         for chunk_id in list(chunk_ids):
@@ -465,6 +469,206 @@ class TestRemovePages:
             worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["a.md"])
 
         assert pipeline["store"].log == []
+
+
+@pytest.mark.unit
+class TestRemoveByAddress:
+    """A removal names each page by its address too, so a path a sync re-sorted can't remove another page."""
+
+    def test_the_page_is_found_wherever_its_path_moved(self, pg_conn, patch_worker_db, task_self, pipeline):
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.seed("A html", "https://docs.x.io/a.html", "a-2.md")
+        # The route saw /a.html at a.md; a sync then gave a.md to /a and moved /a.html to a-2.md.
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+            directory_structure={"a.md": _leaf("https://docs.x.io/a", 40), "a-2.md": _leaf("https://docs.x.io/a.html", 5)},
+        )
+
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "a.md", "url": "https://docs.x.io/a.html"}],
+        )
+
+        assert result["pages"] == 1
+        assert store.texts_for("https://docs.x.io/a") == ["old A one", "old A two"]
+        assert store.texts_for("https://docs.x.io/a.html") == []
+        assert _tree(pg_conn, src) == {"a.md": _leaf("https://docs.x.io/a", 40)}
+
+    def test_a_page_no_longer_in_the_tree_removes_nothing(self, pg_conn, patch_worker_db, task_self, pipeline):
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/a", "mode": "page"}]},
+            directory_structure={"a.md": _leaf("https://docs.x.io/a", 40)},
+        )
+
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "a.md", "url": "https://docs.x.io/a.html"}],
+        )
+
+        assert result["pages"] == 0
+        assert pipeline["store"].log == []
+        assert _tree(pg_conn, src) == {"a.md": _leaf("https://docs.x.io/a", 40)}
+
+    def test_an_address_variant_finds_the_page(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        from docsgpt import worker
+
+        worker.website_pages_worker(
+            task_self, str(two_pages["id"]), USER, "remove",
+            pages=[{"path": "guide/b.md", "url": "https://docs.x.io/guide/b#intro"}],
+        )
+
+        assert pipeline["store"].texts_for("https://docs.x.io/guide/b") == []
+        assert _tree(pg_conn, two_pages) == {"a.md": _leaf("https://docs.x.io/a", 40)}
+
+    def test_a_legacy_leaf_without_an_address_is_removed_by_path(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.chunks.clear()
+        store.seed("legacy page", "https://docs.x.io/old.html", "old.md")
+        store.seed("other page", "https://docs.x.io/keep.html", "keep.md")
+        legacy = {"type": "text/markdown", "size_bytes": 10, "token_count": 4}
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="crawler", remote_data="https://docs.x.io/",
+            directory_structure={"old.md": dict(legacy), "keep.md": dict(legacy)},
+        )
+
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove", pages=[{"path": "old.md", "url": ""}],
+        )
+
+        assert result["pages"] == 1
+        assert store.texts_for("https://docs.x.io/old.html") == []
+        assert store.texts_for("https://docs.x.io/keep.html") == ["other page"]
+        assert list(_tree(pg_conn, src)) == ["keep.md"]
+
+    def test_the_task_passes_pages_through(self, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.api.user import tasks
+
+        seen = []
+        monkeypatch.setattr(worker, "website_pages_worker", lambda *a, **k: seen.append(k) or {"status": "ok"})
+        pages = [{"path": "a.md", "url": "https://docs.x.io/a"}]
+
+        tasks.website_pages.run("src", USER, "remove", pages=pages)
+        tasks.website_pages.run("src", USER, "remove", file_paths=["a.md"])
+
+        assert seen[0]["pages"] == pages and seen[1]["file_paths"] == ["a.md"]
+
+
+class SwallowingStore(FakeStore):
+    """A store whose ``delete_chunk`` logs and returns False on an error, as MongoDB, Qdrant and Milvus do."""
+
+    def __init__(self, fail_ids=()):
+        super().__init__()
+        self.fail_ids = set(fail_ids)
+
+    def delete_chunks(self, chunk_ids):
+        deleted = 0
+        for chunk_id in list(chunk_ids):
+            if chunk_id in self.fail_ids:
+                continue
+            if self.chunks.pop(chunk_id, None) is not None:
+                deleted += 1
+                self.log.append(("delete", chunk_id))
+        return deleted
+
+
+@pytest.mark.unit
+class TestADeleteThatFailsQuietly:
+    """A store that reports a failed delete with a count, not an error, still fails the change."""
+
+    def _use(self, monkeypatch, store):
+        from docsgpt.vectorstore import vector_creator
+
+        monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+
+    def test_a_removal_fails_and_writes_nothing(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline,
+                                                monkeypatch):
+        from docsgpt import worker
+
+        store = SwallowingStore()
+        store.seed("B one", "https://docs.x.io/guide/b", "guide/b.md")
+        store.fail_ids = set(store.chunks)
+        self._use(monkeypatch, store)
+
+        with pytest.raises(RuntimeError, match="could not be deleted"):
+            worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["guide/b.md"])
+
+        assert store.texts_for("https://docs.x.io/guide/b") == ["B one"]
+        assert "b.md" in _tree(pg_conn, two_pages)["guide"]
+        assert pipeline["events"][-1][0] == "source.ingest.failed"
+
+    def test_ids_already_gone_are_not_a_failure(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        # FAISS and pgvector skip an id that isn't there; one deleted meanwhile is as good as deleted.
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        real_delete = store.delete_chunks
+
+        def one_went_meanwhile(chunk_ids):
+            ids = list(chunk_ids)
+            store.chunks.pop(ids[0])
+            return real_delete(ids)
+
+        store.delete_chunks = one_went_meanwhile
+        worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["a.md"])
+
+        assert "a.md" not in _tree(pg_conn, two_pages)
+
+    def test_a_failed_rollback_still_reports_the_original_error(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch, caplog,
+    ):
+        from docsgpt import worker
+
+        store = SwallowingStore()
+        store.seed("old A", "https://docs.x.io/a", "a.md")
+        store.fail_on = lambda text, metadata: text == "boom"
+        real_add = store.add_chunk
+
+        def add_and_mark(text, metadata=None):
+            chunk_id = real_add(text, metadata)
+            store.fail_ids.add(chunk_id)  # the rollback can't delete it
+            return chunk_id
+
+        store.add_chunk = add_and_mark
+        self._use(monkeypatch, store)
+        pipeline["pages"]["https://docs.x.io/a"] = "first\n\nboom"
+
+        with pytest.raises(RuntimeError, match="embedding provider unavailable"):
+            worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert "roll back" in caplog.text
+        assert _tree(pg_conn, source) == {"a.md": _leaf("https://docs.x.io/a", 40)}
+
+
+@pytest.mark.unit
+class TestAddOnALegacyTree:
+    def test_a_new_page_never_takes_a_legacy_leafs_path(self, pg_conn, patch_worker_db, task_self, pipeline):
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        store.chunks.clear()
+        store.seed("legacy html page", "https://docs.x.io/a.html", "a.md")
+        legacy_leaf = {"type": "text/markdown", "size_bytes": 10, "token_count": 40}  # before leaves had a url
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="url", remote_data="https://docs.x.io/a.html",
+            directory_structure={"a.md": legacy_leaf},
+        )
+        pipeline["pages"]["https://docs.x.io/a"] = "New page A"
+
+        worker.website_pages_worker(task_self, str(src["id"]), USER, "add", urls=["https://docs.x.io/a"])
+
+        tree = _tree(pg_conn, src)
+        assert tree["a.md"] == legacy_leaf
+        assert tree["a-2.md"]["url"] == "https://docs.x.io/a"
+        assert store.texts_for("https://docs.x.io/a.html") == ["legacy html page"]
 
 
 @pytest.mark.unit

@@ -1024,6 +1024,22 @@ class TestBaseChunksBySourcePath:
         with pytest.raises(NotImplementedError):
             ConcreteVectorStore().delete_chunks_by_source_path("https://x.io/a")
 
+    def test_lists_a_legacy_pages_chunks_by_their_tree_path(self):
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "a", "metadata": {"source": "https://x.io/a", "file_path": "a.md"}},
+            {"doc_id": "2", "text": "b", "metadata": {"source": "https://x.io/b", "file_path": "b.md"}},
+        ])
+        assert store.chunk_ids_by_file_paths(["a.md"]) == ["1"]
+        assert store.chunk_ids_by_file_paths([]) == []
+
+    def test_listing_by_tree_path_raises_on_a_failed_scan(self):
+        class _Down(ConcreteVectorStore):
+            def _scan_chunks(self):
+                raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError):
+            _Down().chunk_ids_by_file_paths(["a.md"])
+
 
 @pytest.mark.unit
 class TestSupportsChunkEdits:

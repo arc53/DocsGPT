@@ -11,7 +11,7 @@ import string
 import tempfile
 import threading
 import traceback
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import uuid
 from collections import Counter
@@ -4863,21 +4863,76 @@ def _unique_page_path(path: str, taken: set) -> str:
     return f"{stem}-{suffix}.md"
 
 
+def _tree_leaves(structure: Any, prefix: str = "") -> List[Tuple[str, Dict[str, Any]]]:
+    """Every file in a tree, web page or not: a leaf is a node with a ``token_count``.
+
+    A tree from before leaves carried their page's ``url`` has leaves without
+    one; their paths are taken all the same.
+
+    Args:
+        structure: ``directory_structure``.
+        prefix: Path of ``structure`` within the whole tree.
+
+    Returns:
+        ``(path, leaf)`` for each leaf, depth first in stored order.
+    """
+    leaves: List[Tuple[str, Dict[str, Any]]] = []
+    for name, node in (structure or {}).items() if isinstance(structure, dict) else ():
+        path = f"{prefix}/{name}" if prefix else name
+        if isinstance(node, dict) and "token_count" in node:
+            leaves.append((path, node))
+        elif isinstance(node, dict):
+            leaves.extend(_tree_leaves(node, path))
+    return leaves
+
+
+def _delete_chunks_checked(store: Any, chunk_ids: List[str], relist: Callable[[], Iterable[str]]) -> None:
+    """Delete chunks, raising unless every one of them is gone.
+
+    ``delete_chunks`` returns a count, and MongoDB, Qdrant and Milvus report a
+    failed delete only by not counting it. FAISS and pgvector also leave out
+    ids they don't hold, so a short count alone can't tell a failure from a
+    chunk that was already gone: the chunks are listed again, and only an id
+    still listed is a failure.
+
+    Args:
+        store: The source's vector store.
+        chunk_ids: The ids to delete.
+        relist: Lists the ids the deleted chunks were found by (their pages' chunks now).
+
+    Raises:
+        RuntimeError: Some of the chunks are still stored.
+        Exception: Whatever the delete or the listing raised.
+    """
+    ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+    if not ids:
+        return
+    deleted = store.delete_chunks(ids)
+    if isinstance(deleted, int) and deleted >= len(ids):
+        return
+    left = set(ids) & {str(chunk_id) for chunk_id in relist()}
+    if left:
+        raise RuntimeError(f"{len(left)} of {len(ids)} chunks could not be deleted; the change was not saved")
+
+
 def _website_page_targets(
     operation: str, pages: List[Tuple[str, str]], urls: Optional[List[str]], file_path: Optional[str],
+    taken_paths: Iterable[str] = (),
 ) -> Tuple[List[str], Dict[str, Dict[str, Any]], bool]:
     """What a ``website_pages`` run fetches, and where each page goes in the tree.
 
     A page already in the tree (matched by ``page_key``, so ``/docs/`` and
     ``/docs#a`` are one page) keeps its path and has its stored copy
     replaced. A new page takes its virtual path, or a free ``-N`` variant of
-    it when a different page already has that path.
+    it when another leaf already has that path (a page, or a leaf from before
+    leaves carried their address).
 
     Args:
         operation: ``add`` or ``refresh``.
         pages: ``(path, url)`` of the pages in the tree.
         urls: For ``add``: the addresses to fetch.
         file_path: For ``refresh``: the page's tree path.
+        taken_paths: Every leaf path in the tree, pages or not.
 
     Returns:
         ``(urls to fetch, {page key: {"path", "old_url"}}, include_host)``;
@@ -4899,7 +4954,7 @@ def _website_page_targets(
     for path, url in pages:
         stored.setdefault(_web_page_key(url), (path, url))
     include_host = len({urlsplit(u).netloc for _, u in pages} | {urlsplit(u).netloc for u in urls or []}) > 1
-    taken = {path for path, _ in pages}
+    taken = {path for path, _ in pages} | set(taken_paths)
     fetch: List[str] = []
     targets: Dict[str, Dict[str, Any]] = {}
     for url in urls or []:
@@ -5005,13 +5060,18 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     except Exception:
         if new_ids:
             try:
-                store.delete_chunks(new_ids)
+                _delete_chunks_checked(store, new_ids, lambda: store.chunk_ids_by_source_paths([url]))
             except Exception:  # noqa: BLE001 - the original error is the one to report
-                logging.error("Could not roll back the new chunks of %s", url, exc_info=True)
+                logging.error(
+                    "Could not roll back the new chunks of %s; %d chunks stay indexed beside the old copy: %s",
+                    url, len(new_ids), new_ids, exc_info=True,
+                )
         raise
     if old_ids:
         try:
-            store.delete_chunks(old_ids)
+            _delete_chunks_checked(
+                store, old_ids, lambda: store.chunk_ids_by_source_paths([u for u in (old_url, url) if u]),
+            )
         except Exception:  # noqa: BLE001 - the new copy is stored; the old one only lingers
             logging.error("Could not delete the previous chunks of %s", url, exc_info=True)
     return {
@@ -5090,8 +5150,9 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
     for change in changes:
         if change in kept or not change["new_ids"]:
             continue
+        url = change["leaf"]["url"]
         try:
-            store.delete_chunks(change["new_ids"])
+            _delete_chunks_checked(store, change["new_ids"], lambda: store.chunk_ids_by_source_paths([url]))
         except Exception:  # noqa: BLE001 - nothing references them; report the rest
             logging.error("Could not delete the unused chunks of %s", change["leaf"]["url"], exc_info=True)
     if gone:
@@ -5099,25 +5160,70 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
     return kept
 
 
+def _pages_to_remove(
+    structure: Dict[str, Any], pages: Optional[List[Dict[str, str]]], file_paths: Optional[List[str]],
+) -> List[Tuple[str, Optional[str]]]:
+    """Resolve a removal's pages against the tree as it is now.
+
+    A page named with its address is the leaf whose address has the same
+    ``page_key``, wherever it is now: a sync that ran after the route
+    re-derives the paths (sorted by URL), so the path the route saw may hold
+    another page. A page named without one (a leaf from before leaves carried
+    their address) and a bare ``file_paths`` entry (a task queued before
+    ``pages`` existed) fall back to the path.
+
+    Args:
+        structure: ``directory_structure``, as it is now.
+        pages: ``{"path", "url"}`` per page.
+        file_paths: Tree paths, from a task queued before ``pages``.
+
+    Returns:
+        ``(path, url)`` per leaf to remove; ``url`` is ``None`` for a leaf
+        without one. A page no longer in the tree is left out.
+    """
+    leaves = _tree_leaves(structure)
+    by_key: Dict[str, List[Tuple[str, Optional[str]]]] = {}
+    for path, leaf in leaves:
+        if leaf.get("url"):
+            by_key.setdefault(_web_page_key(leaf["url"]), []).append((path, leaf["url"]))
+    by_path = {path: leaf.get("url") or None for path, leaf in leaves}
+    requested = list(pages or []) + [{"path": path} for path in file_paths or []]
+    found: List[Tuple[str, Optional[str]]] = []
+    for page in requested:
+        if not isinstance(page, dict):
+            continue
+        url = page.get("url")
+        if url:
+            found.extend(by_key.get(_web_page_key(url), []))
+        elif page.get("path") in by_path:
+            found.append((page["path"], by_path[page["path"]]))
+    return list(dict.fromkeys(found))
+
+
 def _remove_web_pages(
     source_id: str, user: str, file_paths: Optional[List[str]], task_id: Optional[str] = None,
-) -> List[Tuple[str, str]]:
+    pages: Optional[List[Dict[str, str]]] = None,
+) -> List[Tuple[str, Optional[str]]]:
     """Delete pages from a Website source: their chunks first, then their tree entries.
 
     Run holding the source's index lock. The pages are looked up in the tree
-    as it is now, so a path that has left it (a retried task, a sync that
-    rebuilt the tree) is ignored. The chunks go in one batched delete (FAISS
-    saves once); if it fails, the tree is not written, so every page still
-    listed keeps its chunks and the removal can be tried again. The tree is
-    written on the row re-read under a row lock, so a change made meanwhile
-    is kept. A graphrag source's graph then drops the chunks' entities and
-    relationships (``_update_page_graph``).
+    as it is now (``_pages_to_remove``): by address, so a sync that moved a
+    page to another path can't make the removal take whichever page holds the
+    old one, and a page that has left the tree (a retried task, a sync that
+    dropped it) is ignored. The chunks go in one batched delete (FAISS saves
+    once) and are checked gone (``_delete_chunks_checked``); if any is still
+    stored, the tree is not written, so every page still listed keeps its
+    chunks and the removal can be tried again. The tree is written on the
+    row re-read under a row lock, so a change made meanwhile is kept. A
+    graphrag source's graph then drops the chunks' entities and relationships
+    (``_update_page_graph``).
 
     Args:
         source_id: The source.
         user: Its owner.
-        file_paths: Tree paths of the pages to remove.
+        file_paths: Tree paths, from a task queued before ``pages``.
         task_id: The page task's id.
+        pages: ``{"path", "url"}`` of the pages to remove.
 
     Returns:
         ``(path, url)`` of the pages removed.
@@ -5125,9 +5231,10 @@ def _remove_web_pages(
     Raises:
         ValueError: The store can't delete single chunks, or the source is
             gone or a wiki.
-        Exception: Whatever deleting the chunks raised; nothing was written.
+        Exception: Whatever deleting the chunks raised, or some are still
+            stored; nothing was written.
     """
-    from docsgpt.parser.remote.website_tree import remove_pages, total_tokens, web_pages
+    from docsgpt.parser.remote.website_tree import remove_pages, total_tokens
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
     if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
@@ -5141,29 +5248,38 @@ def _remove_web_pages(
     if _is_wiki_config(source.get("config")):
         raise ValueError("This source is a wiki now; its pages are edited in place")
     structure = source.get("directory_structure") if isinstance(source.get("directory_structure"), dict) else {}
-    known = dict(web_pages(structure))
-    pages = [(path, known[path]) for path in dict.fromkeys(file_paths or []) if path in known]
-    if not pages:
+    found = _pages_to_remove(structure, pages, file_paths)
+    if not found:
         return []
 
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
-    chunk_ids = store.chunk_ids_by_source_paths(list(dict.fromkeys(url for _path, url in pages)))
-    if chunk_ids:
-        store.delete_chunks(chunk_ids)
+    urls = list(dict.fromkeys(url for _path, url in found if url))
+    # A leaf without an address has its chunks found by the path they were stored under.
+    legacy_paths = [path for path, url in found if not url]
 
-    removed = dict(pages)
+    def _listed() -> List[str]:
+        ids = store.chunk_ids_by_source_paths(urls) if urls else []
+        return ids + (store.chunk_ids_by_file_paths(legacy_paths) if legacy_paths else [])
+
+    chunk_ids = list(dict.fromkeys(_listed()))
+    _delete_chunks_checked(store, chunk_ids, _listed)
+
+    removed_keys = {_web_page_key(url) for url in urls}
     with db_session() as conn:
         repo = SourcesRepository(conn)
         row = repo.get_for_update(source_id, user)
         if row is None:
             raise ValueError(f"Source {source_id} was deleted while its pages were removed")
         tree = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
-        # Only the entries still holding the page whose chunks were deleted.
-        stale = [path for path, url in web_pages(tree) if removed.get(path) == url]
+        # Only the entries still holding a page whose chunks were deleted.
+        stale = [
+            path for path, leaf in _tree_leaves(tree)
+            if (_web_page_key(leaf["url"]) in removed_keys if leaf.get("url") else path in legacy_paths)
+        ]
         remove_pages(tree, stale)
         repo.update(source_id, user, {"directory_structure": tree, "tokens": str(total_tokens(tree))})
     _update_page_graph(SourceConfig.parse(source.get("config")), source_id, user, task_id, chunk_ids, extract=False)
-    return pages
+    return found
 
 
 def website_pages_worker(
@@ -5174,6 +5290,7 @@ def website_pages_worker(
     urls: Optional[List[str]] = None,
     file_path: Optional[str] = None,
     file_paths: Optional[List[str]] = None,
+    pages: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """Add pages to a Website source, refresh one or remove some, without re-fetching the rest.
 
@@ -5187,7 +5304,9 @@ def website_pages_worker(
     pages on a new host to a sync instead: those rename the tree.
 
     A removal (``_remove_web_pages``) deletes the pages' chunks, then their
-    tree entries; the route has already saved the skip rules. On a graphrag
+    tree entries; the route has already saved the skip rules. Each page is
+    found by its address in the tree as it is then, wherever a sync moved it.
+    On a graphrag
     source, the graph follows each change without a full rebuild
     (``_update_page_graph``).
 
@@ -5200,10 +5319,13 @@ def website_pages_worker(
         source_id: The Website source.
         user: Its owner (the route resolves it).
         operation: ``add`` (fetch ``urls``), ``refresh`` (re-fetch the page
-            at ``file_path``) or ``remove`` (delete the pages at ``file_paths``).
+            at ``file_path``) or ``remove`` (delete ``pages``).
         urls: Page URLs to add; they are already in the source's config.
         file_path: Tree path of the page to refresh.
-        file_paths: Tree paths of the pages to remove.
+        file_paths: Tree paths of pages to remove, from a task queued before
+            ``pages``; matched by path.
+        pages: ``{"path", "url"}`` of the pages to remove, matched by address
+            (by path only for a leaf without one).
 
     Returns:
         ``{"status": "ok", "pages": n}``.
@@ -5232,7 +5354,7 @@ def website_pages_worker(
         task_id = envelope.get("task_id")
         with source_index_lock(source_id):
             if operation == "remove":
-                changes = _remove_web_pages(source_id, user, file_paths, task_id)
+                changes = _remove_web_pages(source_id, user, file_paths, task_id, pages=pages)
             else:
                 changes = _run_website_pages(source_id, user, operation, urls, file_path, task_id)
     except Exception as e:
@@ -5294,7 +5416,12 @@ def _run_website_pages(
     if not isinstance(structure, dict):
         structure = {}
     config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
-    fetch, targets, include_host = _website_page_targets(operation, web_pages(structure), urls, file_path)
+    # Every leaf's path is taken, not only the pages': a leaf from before
+    # leaves carried their address must not be overwritten by a new page.
+    leaf_paths = {path for path, _leaf in _tree_leaves(structure)}
+    fetch, targets, include_host = _website_page_targets(
+        operation, web_pages(structure), urls, file_path, taken_paths=leaf_paths,
+    )
 
     docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
     if not docs:
@@ -5310,7 +5437,7 @@ def _run_website_pages(
     )
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
     fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    taken = {path for path, _ in web_pages(structure)} | {t["path"] for t in targets.values()}
+    taken = leaf_paths | {t["path"] for t in targets.values()}
     changes: List[Dict[str, Any]] = []
     failure: Optional[BaseException] = None
     for doc in docs:

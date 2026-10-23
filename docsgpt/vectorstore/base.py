@@ -655,8 +655,39 @@ class BaseVectorStore(ABC):
             if (chunk.get("metadata") or {}).get("source") in wanted
         ]
 
+    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.file_path`` is one of ``paths``.
+
+        For a page whose tree entry predates entries carrying the page's
+        address: its chunks are found by the tree path they were stored under.
+
+        Args:
+            paths: ``metadata.file_path`` values.
+
+        Returns:
+            The ids, in :meth:`_scan_chunks` order.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
+        """
+        wanted = set(paths)
+        if not wanted:
+            return []
+        return [
+            str(chunk.get("doc_id"))
+            for chunk in self._scan_chunks()
+            if (chunk.get("metadata") or {}).get("file_path") in wanted
+        ]
+
     def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
         """Delete several chunks; stores that save per write override this to save once.
+
+        The count is all a caller learns: an id that wasn't deleted, because it
+        wasn't there or because the delete failed, isn't counted. MongoDB,
+        Qdrant and Milvus log a failed ``delete_chunk`` and return False, and
+        FAISS and pgvector skip ids they don't hold. A caller that must know
+        every chunk is gone compares the count and, when it is short, lists
+        the chunks again: an id still listed failed, one not listed is gone.
 
         Args:
             chunk_ids: Ids of the chunks to delete.
