@@ -16,6 +16,7 @@ from docsgpt.parser.remote.page_content import (
     note_requested_url,
     page_document,
     page_key,
+    within_url_limits,
 )
 from docsgpt.parser.schema.base import Document
 
@@ -51,6 +52,10 @@ class WebLoader(BaseRemote):
             urls = [urls]
         valid_urls = []
         for url in urls:
+            if not within_url_limits(url):
+                # A stored entry from before the write limits: a folder per segment.
+                logging.warning(f"Skipping an address too long or too deep to fetch: {url[:200]}")
+                continue
             try:
                 valid_urls.append(validate_url(url))
             except (SSRFError, ValueError) as e:
@@ -71,6 +76,9 @@ class WebLoader(BaseRemote):
                 response = fetch_page(url, headers=headers, timeout=30, budget=self.budget)
                 response.raise_for_status()
                 page_url = final_url(response, url)
+                if not within_url_limits(page_url):
+                    logging.warning(f"Skipping {url}: it redirects to an address too long or too deep to store")
+                    continue
                 document = page_document(
                     response.content,
                     response.headers.get("Content-Type"),

@@ -21,6 +21,7 @@ from docsgpt.parser.remote.page_content import (
     note_requested_url,
     page_document,
     page_key,
+    within_url_limits,
 )
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
@@ -318,7 +319,7 @@ class SitemapLoader(BaseRemote):
                             # A page already loaded: this address is another way to it.
                             note_requested_url(by_key[landed], url)
                         continue
-                    if self.accept is not None and not self.accept(page_url):
+                    if not within_url_limits(page_url) or (self.accept is not None and not self.accept(page_url)):
                         logger.info(f"Dropping {url}: it redirects out of scope to {page_url}")
                         continue
                     loaded.add(landed)
@@ -490,6 +491,9 @@ class SitemapLoader(BaseRemote):
         def take_page(url: str) -> None:
             # Scope first: a sitemap can list a million pages of other hosts.
             if self.accept is not None and not self.accept(url):
+                return
+            if not within_url_limits(url):
+                # Too long or too deep: its tree entry would be a folder per segment.
                 return
             if has_userinfo(url):
                 # ``user:password@``: never fetched, nor stored as a page.

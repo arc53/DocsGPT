@@ -18,6 +18,7 @@ from docsgpt.parser.remote.page_content import (
     note_requested_url,
     page_document,
     page_key,
+    within_url_limits,
 )
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
@@ -73,6 +74,9 @@ class CrawlerLoader(BaseRemote):
             url = validate_url(url)
         except (SSRFError, ValueError) as e:
             logging.error(f"URL validation failed: {e}")
+            return []
+        if not within_url_limits(url):
+            logging.error(f"Not crawling from an address too long or too deep to fetch: {url[:200]}")
             return []
 
         # Breadth-first in link order, so a capped crawl takes the same pages
@@ -212,8 +216,11 @@ class CrawlerLoader(BaseRemote):
                 crawl without ``accept``.
 
         Returns:
-            True when the page is in scope.
+            True when the page is in scope; never for an address too long or
+            too deep to fetch (``within_url_limits``).
         """
+        if not within_url_limits(url):
+            return False
         if self.accept is not None:
             return self.accept(url)
         try:

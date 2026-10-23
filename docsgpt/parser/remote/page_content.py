@@ -103,6 +103,32 @@ def has_userinfo(url: str) -> bool:
         return False
 
 
+# The longest address a load fetches or a config holds: many servers and
+# browsers refuse longer ones anyway.
+MAX_URL_LENGTH = 2048
+# The most ``/`` a fetched address's path may hold. Each is a folder of the
+# source's file tree, and a link trap (``/a/a/a/…``) a thousand deep broke
+# every walk of it; real sites stay within a dozen or so.
+MAX_PATH_SEGMENTS = 64
+
+
+def within_url_limits(url: str) -> bool:
+    """Whether a load may fetch an address: at most ``MAX_URL_LENGTH`` long, ``MAX_PATH_SEGMENTS`` deep.
+
+    Args:
+        url: An address.
+
+    Returns:
+        False for one past either limit, or one that doesn't parse.
+    """
+    if len(url) > MAX_URL_LENGTH:
+        return False
+    try:
+        return urlsplit(url).path.count("/") <= MAX_PATH_SEGMENTS
+    except ValueError:
+        return False
+
+
 def without_userinfo(url: str) -> str:
     """An address with any ``user[:password]@`` taken out, for logs and messages.
 
@@ -178,7 +204,8 @@ def fetch_page(
     Raises:
         UnsafeUserUrlError: If the URL, or a redirect target, fails the SSRF guard.
         RedirectError: A 3xx without a ``Location``, a redirect loop, more
-            than ``MAX_REDIRECTS`` hops, or a spent budget mid-chain.
+            than ``MAX_REDIRECTS`` hops, a target past ``within_url_limits``,
+            or a spent budget mid-chain.
         CredentialsInUrlError: The URL, or a redirect target, has ``user:password@``.
         ResponseTooLargeError: If the body is too large and ``truncate`` is off.
         requests.RequestException: For network failures.
@@ -218,6 +245,8 @@ def fetch_page(
             raise CredentialsInUrlError(f"{url} redirects to an address with credentials; not following it")
         if target in seen:
             raise RedirectError(f"{url} redirects in a loop at {target}")
+        if not within_url_limits(target):
+            raise RedirectError(f"{url} redirects to an address too long or too deep to fetch")
         if budget is not None and not budget.take():
             raise RedirectError(f"Fetch budget spent following {url} to {target}")
         seen.add(target)

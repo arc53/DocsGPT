@@ -40,6 +40,8 @@ from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 # page_key lives with the fetch helpers so every web loader keys pages alike;
 # it stays importable from here.
 from docsgpt.parser.remote.page_content import (
+    MAX_PATH_SEGMENTS,
+    MAX_URL_LENGTH,
     FetchBudget,
     ascii_host,
     explicit_port,
@@ -51,6 +53,7 @@ from docsgpt.parser.remote.page_content import (
     normalize_percent_encoding,
     normalized_path,
     page_key,
+    within_url_limits,
 )
 from docsgpt.parser.remote.page_content import bare_host as _bare_host
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
@@ -63,12 +66,12 @@ ENTRY_MODES = ("page", "site")
 DISCOVERY_MODES = ("auto", "sitemap", "links")
 
 # Write limits on a config, so one saved source can't make every listing,
-# sync and settings view walk an unbounded list. URLs past 2048 characters are
-# refused by many servers and browsers anyway. Twenty sites is far more than
+# sync and settings view walk an unbounded list. Addresses are held to
+# ``MAX_URL_LENGTH`` characters and ``MAX_PATH_SEGMENTS`` deep, as every
+# fetch is (``within_url_limits``). Twenty sites is far more than
 # a real source needs, and each site fans out into discovery fetches. Skip
 # rules grow one per removed page (a folder adds one section rule), so the cap
 # leaves room for years of pruning; a rule is a URL plus an optional ``*``.
-MAX_URL_LENGTH = 2048
 MAX_SITE_ENTRIES = 20
 MAX_SKIP_RULES = 1000
 
@@ -523,8 +526,11 @@ def _with_scheme(url: str) -> str:
 def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
     """The stripped address of an entry field, with a scheme, or ``WebsiteConfigError`` when it isn't one.
 
-    A write (``enforce_limits``) takes only an ``is_web_address``; a stored
-    config read back only needs addresses that parse (``_web_parts``).
+    A write (``enforce_limits``) takes only an ``is_web_address`` at most
+    ``MAX_URL_LENGTH`` long and ``MAX_PATH_SEGMENTS`` deep (deeper is
+    ``invalid_address``: no fetch would take it); a stored config read back
+    only needs addresses that parse (``_web_parts``), and its loads leave one
+    past the limits out.
     """
     url = value.strip()
     if not (is_web_address(url) if enforce_limits else _web_parts(url) is not None):
@@ -535,6 +541,12 @@ def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
     if enforce_limits and len(url) > MAX_URL_LENGTH:
         raise WebsiteConfigError(
             f"{label} is longer than {MAX_URL_LENGTH} characters", "url_too_long", {"max_length": MAX_URL_LENGTH},
+        )
+    if enforce_limits and not within_url_limits(_with_scheme(url)):
+        raise WebsiteConfigError(
+            f"{label} {url[:200]!r} is nested more than {MAX_PATH_SEGMENTS} folders deep",
+            "invalid_address",
+            {"url": url},
         )
     return _with_scheme(url)
 

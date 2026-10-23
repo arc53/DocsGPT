@@ -8,6 +8,7 @@ from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.website_loader import WebsiteLoader
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
+    count_pages,
     folder_skip_rule,
     pages_under,
     remove_pages,
@@ -82,6 +83,21 @@ class TestTree:
 
         assert structure["Agents"]["basics.md"]["token_count"] == 9
         assert total_tokens(structure) == 9 + 6 + 20 + 30 + 7
+
+    def test_a_tree_thousands_of_folders_deep_is_walked(self):
+        # A tree stored before deep addresses were refused broke every
+        # recursive walk of it, and with it the sources listing.
+        structure = tree()
+        path = "/".join(["a"] * 5000) + "/deep.md"
+        set_page(structure, path, leaf("https://docs.x.io/deep", 3))
+
+        assert web_pages(structure)[-1] == (path, "https://docs.x.io/deep")
+        assert web_pages(structure)[:2] == web_pages(tree())[:2]
+        assert pages_under(structure, "/".join(["a"] * 4000)) == [(path, "https://docs.x.io/deep")]
+        assert count_pages(structure) == 5
+        assert total_tokens(structure) == 5 + 20 + 30 + 7 + 3
+        remove_pages(structure, [path])
+        assert "a" not in structure
 
 
 class TestRemovalRules:

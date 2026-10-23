@@ -8,7 +8,7 @@ first time they are edited.
 """
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from docsgpt.parser.remote.base import folder_segment, folder_url_segment, url_to_virtual_path
@@ -37,19 +37,47 @@ def web_pages(structure: Dict[str, Any], prefix: str = "", include_unaddressed: 
 
     Returns:
         ``(path, url)`` for each leaf that carries a ``url``, and with
-        ``include_unaddressed`` each one that doesn't.
+        ``include_unaddressed`` each one that doesn't. Walked with a stack,
+        not recursion: a tree stored from a deep address is thousands of
+        folders deep.
     """
     pages: List[Page] = []
-    for name, node in (structure or {}).items():
-        path = f"{prefix}/{name}" if prefix else name
-        if _is_leaf(node):
-            if node.get("url"):
-                pages.append((path, node["url"]))
-            elif include_unaddressed:
-                pages.append((path, ""))
-        elif isinstance(node, dict):
-            pages.extend(web_pages(node, path, include_unaddressed))
+    # (folder path, the folder's entries still to visit), innermost last.
+    stack = [(prefix, iter((structure or {}).items()))]
+    while stack:
+        base, entries = stack[-1]
+        for name, node in entries:
+            path = f"{base}/{name}" if base else name
+            if _is_leaf(node):
+                if node.get("url"):
+                    pages.append((path, node["url"]))
+                elif include_unaddressed:
+                    pages.append((path, ""))
+            elif isinstance(node, dict):
+                # Its pages come before the rest of this folder's.
+                stack.append((path, iter(node.items())))
+                break
+        else:
+            stack.pop()
     return pages
+
+
+def _leaves(structure: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Every leaf of a tree, in no particular order, walked with a stack rather than recursion.
+
+    Args:
+        structure: ``directory_structure``.
+
+    Yields:
+        Each leaf node.
+    """
+    folders = [structure or {}]
+    while folders:
+        for node in folders.pop().values():
+            if _is_leaf(node):
+                yield node
+            elif isinstance(node, dict):
+                folders.append(node)
 
 
 def pages_under(structure: Dict[str, Any], dir_path: str, include_unaddressed: bool = False) -> List[Page]:
@@ -122,24 +150,12 @@ def count_pages(structure: Dict[str, Any]) -> int:
     Leaves from before pages carried their ``url`` count too, so an older
     crawler or sitemap source isn't shown as empty.
     """
-    count = 0
-    for node in (structure or {}).values():
-        if _is_leaf(node):
-            count += 1
-        elif isinstance(node, dict):
-            count += count_pages(node)
-    return count
+    return sum(1 for _ in _leaves(structure))
 
 
 def total_tokens(structure: Dict[str, Any]) -> int:
     """Sum of the tree's leaf token counts (the source's ``tokens``)."""
-    total = 0
-    for node in (structure or {}).values():
-        if _is_leaf(node):
-            total += int(node.get("token_count") or 0)
-        elif isinstance(node, dict):
-            total += total_tokens(node)
-    return total
+    return sum(int(node.get("token_count") or 0) for node in _leaves(structure))
 
 
 def _under_host_folder(page: Page) -> bool:

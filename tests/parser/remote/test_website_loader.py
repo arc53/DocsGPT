@@ -901,6 +901,23 @@ class TestWebsiteConfigErrors:
 
         assert (error.code, error.details) == ("invalid_address", {"url": url})
 
+    def test_an_address_nested_too_deep_is_refused_on_write(self):
+        from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS, parse_website_config
+
+        deep = "https://x.io" + "/a" * (MAX_PATH_SEGMENTS + 1)
+        for raw in (
+            {"entries": [{"url": deep, "mode": "page"}]},
+            {"entries": [{"url": deep, "mode": "site"}]},
+            {"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": deep + ".xml"}]},
+        ):
+            error = self._error(raw)
+            assert error.code == "invalid_address"
+            assert error.details["url"].startswith("https://x.io/a/a")
+        # A stored config still reads: its loads leave the page out.
+        assert parse_website_config({"entries": [{"url": deep, "mode": "page"}]}, enforce_page_cap=False)
+        ok = "https://x.io" + "/a" * MAX_PATH_SEGMENTS
+        assert parse_website_config({"entries": [{"url": ok, "mode": "page"}]})["entries"][0]["url"] == ok
+
     def test_an_invalid_sitemap_address(self):
         error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "http://[x"}]})
 
@@ -1439,6 +1456,43 @@ class TestBoundedFetching:
             timer = stack.enter_context(patch(f"docsgpt.parser.remote.{module}.time"))
             timer.monotonic.side_effect = lambda: clock[0]
         return fake, stack
+
+    def test_addresses_nested_too_deep_or_too_long_are_never_fetched(self, web):
+        # A tree a thousand folders deep broke every recursive walk of it.
+        from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS, MAX_URL_LENGTH
+
+        deep = "/a" * 1100
+        too_many = "/b" * (MAX_PATH_SEGMENTS + 1)
+        long = "/" + "c" * MAX_URL_LENGTH
+        fake = web({
+            "https://x.io/": page("Home", links=["/guide", deep, too_many, long, "/hop"]),
+            "https://x.io/guide": page("Guide"),
+            "https://x.io/hop": (301, deep),
+            "https://y.io/robots.txt": robots("https://y.io/sitemap.xml"),
+            "https://y.io/sitemap.xml": urlset("https://y.io/p", "https://y.io" + deep),
+            "https://y.io/p": page("P"),
+            "https://z.io" + deep: page("Z"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://z.io" + deep, "mode": "page"},
+            {"url": "https://x.io/", "mode": "site", "discovery": "links"},
+            {"url": "https://y.io/", "mode": "site"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/guide", "https://y.io/p"]
+        assert not any(url.endswith("/a/a") or url.endswith("/b/b") or "ccc" in url for url in fake.fetched)
+
+    def test_the_url_limits(self):
+        # The crawl, the sitemap walk, page entries and redirects all check
+        # them; a scope doesn't, so a stored page past them can still be skipped.
+        from docsgpt.parser.remote.page_content import within_url_limits
+        from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS
+
+        assert within_url_limits("https://x.io" + "/a" * MAX_PATH_SEGMENTS)
+        assert not within_url_limits("https://x.io" + "/a" * (MAX_PATH_SEGMENTS + 1))
+        assert not within_url_limits("https://x.io/" + "a" * 2100)
+        assert SiteScope("https://x.io/").accepts("https://x.io" + "/a" * (MAX_PATH_SEGMENTS + 1))
 
     def test_a_tarpit_site_is_cut_off_at_the_load_deadline(self, web):
         from docsgpt.parser.remote import website_loader
