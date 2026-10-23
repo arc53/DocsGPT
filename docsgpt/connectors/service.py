@@ -294,10 +294,19 @@ def serialize_tool(
         "actions": actions,
         # An MCP tool's saved custom headers, by name only: the values are secrets.
         # None when the row carries no config, so a reconnect leaves them as saved.
-        "header_names": list((_json(row.get("config")) or {}).get("header_names") or [])
+        "header_names": _mcp_header_names(_json(row.get("config")) or {})
         if row.get("name") == "mcp_tool" and "config" in row
         else None,
     }
+
+
+def _mcp_header_names(config: dict) -> list:
+    """An MCP tool's saved custom header names, plaintext ones saved before sealing too."""
+    names = config.get("header_names")
+    if names:
+        return list(names)
+    legacy = config.get("headers")
+    return list(legacy) if isinstance(legacy, dict) else []
 
 
 def connection_detail(conn, row: dict) -> dict:

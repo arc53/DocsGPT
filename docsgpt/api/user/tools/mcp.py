@@ -252,10 +252,14 @@ def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, m
     existing_config = (existing_doc or {}).get("config") or {}
     if not moved and existing_config.get("encrypted_headers"):
         saved = decrypt_credentials(existing_config["encrypted_headers"], owner_id)
+    elif not moved and isinstance(existing_config.get("headers"), dict):
+        # Saved in the clear before header values were sealed; the next save seals them.
+        saved = dict(existing_config["headers"])
     if "headers" not in config:
         return dict(saved)
-    incoming = config.get("headers") or {}
+    incoming = config["headers"]
     if not isinstance(incoming, dict):
+        # ``null``, ``false`` or ``[]`` are mistakes, not "remove every header".
         raise ValueError("headers must be an object")
     stored = {str(k).lower(): v for k, v in saved.items()}
     merged: dict = {}
@@ -272,6 +276,25 @@ def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, m
         elif name.lower() in stored:
             merged[name] = stored[name.lower()]
     return merged
+
+
+def _seal_mcp_headers(headers: dict, owner_id: str) -> dict:
+    """The stored form of an MCP tool's custom headers: sealed values, readable names.
+
+    Returns:
+        ``{"encrypted_headers": ..., "header_names": [...]}``, or ``{}`` when
+        there are no headers.
+
+    Raises:
+        RuntimeError: Encryption failed. Nothing may be stored then, so the
+            saved headers stay as they were.
+    """
+    if not headers:
+        return {}
+    blob = encrypt_credentials(headers, owner_id)
+    if not blob:
+        raise RuntimeError("Could not encrypt the MCP custom headers")
+    return {"encrypted_headers": blob, "header_names": list(headers)}
 
 
 def _existing_mcp_context(tool_id, user, config):
@@ -538,9 +561,8 @@ class MCPServerSave(Resource):
             storage_config = config.copy()
             # Header values are sealed like the credentials; only the names stay readable.
             storage_config.pop("headers", None)
-            if merged_headers:
-                storage_config["encrypted_headers"] = encrypt_credentials(merged_headers, owner_id)
-                storage_config["header_names"] = list(merged_headers)
+            # Raises before anything is written, so the saved headers stay as they were.
+            storage_config.update(_seal_mcp_headers(merged_headers, owner_id))
 
             if merged_credentials:
                 storage_config["encrypted_credentials"] = encrypt_credentials(
