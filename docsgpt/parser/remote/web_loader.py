@@ -7,7 +7,7 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_document
 from docsgpt.parser.schema.base import Document
 
 headers = {
@@ -39,8 +39,9 @@ class WebLoader(BaseRemote):
             inputs: A URL or a list of them.
 
         Returns:
-            One document per page that loaded; a blocked address, a failed
-            fetch or a response with no text is skipped.
+            One document per page that loaded, its ``source`` the address a
+            redirect led to; a blocked address, a failed fetch or a response
+            with no text is skipped.
         """
         urls = inputs
         if isinstance(urls, str):
@@ -60,12 +61,13 @@ class WebLoader(BaseRemote):
                 logging.warning(f"Fetch budget spent; not fetching {url}")
                 break
             try:
-                response = fetch_page(url, headers=headers, timeout=30)
+                response = fetch_page(url, headers=headers, timeout=30, budget=self.budget)
                 response.raise_for_status()
                 document = page_document(
                     response.content,
                     response.headers.get("Content-Type"),
-                    url,
+                    # Stored under the address it redirected to.
+                    final_url(response, url),
                     include_host=include_host,
                     keep_links=self.keep_links,
                     # Each address was asked for: JSON there is wanted text.

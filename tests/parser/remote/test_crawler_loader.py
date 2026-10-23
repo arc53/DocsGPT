@@ -76,7 +76,7 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_fetch, mock_validate_
 
     result = crawler.load_data(["example.com", "unused.com"])
 
-    mock_fetch.assert_called_once_with("http://example.com", timeout=30)
+    mock_fetch.assert_called_once_with("http://example.com", timeout=30, budget=None)
 
     assert len(result) == 1
     assert result[0].text == "No links here"
@@ -123,7 +123,7 @@ def test_load_data_logs_and_skips_on_request_error(mock_fetch, mock_logging, moc
     result = crawler.load_data("http://example.com")
 
     assert result == []
-    mock_fetch.assert_called_once_with("http://example.com", timeout=30)
+    mock_fetch.assert_called_once_with("http://example.com", timeout=30, budget=None)
 
     mock_logging.error.assert_called_once()
     message, = mock_logging.error.call_args.args

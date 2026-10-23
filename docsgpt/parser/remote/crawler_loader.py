@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, is_html, page_document, page_key
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, is_html, page_document, page_key
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 
@@ -45,7 +45,9 @@ class CrawlerLoader(BaseRemote):
             inputs: The start URL (or a list whose first item is).
 
         Returns:
-            One document per page that loaded, at most ``limit`` fetches.
+            One document per page that loaded, at most ``limit`` fetches. A
+            page that redirects is stored under its final address, and only
+            when the scope accepts that address too.
         """
         url = inputs
         if isinstance(url, list) and url:
@@ -61,11 +63,12 @@ class CrawlerLoader(BaseRemote):
         # Breadth-first in link order, so a capped crawl takes the same pages
         # every time. Keyed by page_key, so fragment, query-order, slash,
         # www. and scheme variants of one page are fetched once; ``seen``
-        # holds every page queued or fetched.
-        start = urlparse(url)
-        site = (start.scheme, start.hostname)
+        # holds every page queued or fetched, ``done`` every page fetched
+        # (a redirect's target included).
+        site_host = urlparse(url).hostname
         seed_key = page_key(url)
         seen = {seed_key}
+        done = set()
         queue = deque([url])
         # Links waiting beyond this are dropped: the crawl can't reach them.
         max_queue = _QUEUE_PER_PAGE * self.limit if self.limit is not None else _MAX_QUEUE
@@ -86,6 +89,10 @@ class CrawlerLoader(BaseRemote):
                 break
             current_url = queue.popleft()
             current_key = page_key(current_url)
+            if current_key in done:
+                # An earlier page redirected here.
+                continue
+            done.add(current_key)
             if self.budget is not None and not self.budget.take():
                 self.limit_reached = True
                 break
@@ -96,16 +103,30 @@ class CrawlerLoader(BaseRemote):
             try:
                 # Capped at the page size gate: the links come from the same
                 # bytes the document does.
-                response = fetch_page(current_url, timeout=30)
+                response = fetch_page(current_url, timeout=30, budget=self.budget)
                 response.raise_for_status()
+                page_url = final_url(response, current_url)
+                keep = keep_seed if is_seed else True
+                final_key = page_key(page_url)
+                if final_key != current_key:
+                    # Redirected: the page is where it landed, which must be
+                    # new and in scope like any link.
+                    if final_key in done:
+                        continue
+                    done.add(final_key)
+                    seen.add(final_key)
+                    keep = self._on_site(page_url, site_host)
+                    if not keep and not is_seed:
+                        logging.info(f"Dropping {current_url}: it redirects out of scope to {page_url}")
+                        continue
                 body = response.content
                 content_type = response.headers.get("Content-Type")
-                document = page_document(body, content_type, current_url, keep_links=self.keep_links)
+                document = page_document(body, content_type, page_url, keep_links=self.keep_links)
                 if document is None:
                     # Not a page (a PDF or image the site links to): no text
                     # to keep and no links to follow.
                     continue
-                if keep_seed or not is_seed:
+                if keep:
                     loaded_content.append(document)
                 if not is_html(content_type):
                     # Plain text or Markdown: kept, but its "links" are text.
@@ -122,24 +143,37 @@ class CrawlerLoader(BaseRemote):
                 if len(queue) >= max_queue:
                     break
                 try:
-                    link = urljoin(current_url, a['href'])
+                    link = urljoin(page_url, a['href'])
                     link_key = page_key(link)
-                    parsed_link = urlparse(link)
                 except ValueError:
                     continue
                 if link_key in seen:
                     continue
-                if self.accept is not None:
-                    on_site = self.accept(link)
-                else:
-                    # Compare the host itself: a substring match also follows
-                    # share links and lookalike hosts that contain the site URL.
-                    on_site = (parsed_link.scheme, parsed_link.hostname) == site
-                if on_site:
+                if self._on_site(link, site_host):
                     seen.add(link_key)
                     queue.append(link)
 
         return dedupe_virtual_paths(loaded_content)
+
+    def _on_site(self, url: str, site_host: Optional[str]) -> bool:
+        """Whether the crawl may take ``url``: ``accept``, else the start page's host.
+
+        Args:
+            url: A link or a redirect's target.
+            site_host: The start page's host, for a crawl without ``accept``.
+
+        Returns:
+            True when the page is in scope.
+        """
+        if self.accept is not None:
+            return self.accept(url)
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return False
+        # Compare the host itself: a substring match also follows share
+        # links and lookalike hosts that contain the site URL.
+        return parsed.scheme in ("http", "https") and parsed.hostname == site_host
 
     def _url_to_virtual_path(self, url):
         """Convert a URL to a virtual ``.md`` path; see ``url_to_virtual_path``."""

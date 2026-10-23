@@ -15,8 +15,8 @@ lists of bare links never carry them.
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, Optional, Union
-from urllib.parse import urljoin, urlparse, urlsplit
+from typing import Any, Dict, Optional, Union
+from urllib.parse import urldefrag, urljoin, urlparse, urlsplit
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -48,6 +48,15 @@ def page_fetch_bytes() -> int:
     return cap + 1 if cap > 0 else _PAGE_CEILING_BYTES
 
 
+# Redirect hops one fetch follows, as browsers and crawlers allow a handful.
+MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+class RedirectError(requests.RequestException):
+    """A redirect a fetch won't follow: no ``Location``, a loop, too many hops, or no budget left."""
+
+
 def fetch_page(
     url: str,
     max_bytes: Optional[int] = None,
@@ -55,11 +64,17 @@ def fetch_page(
     headers: Optional[Dict[str, str]] = None,
     timeout: float = 30.0,
     truncate: bool = True,
+    budget: Optional["FetchBudget"] = None,
 ) -> requests.Response:
     """GET ``url`` through the SSRF-pinned fetcher, reading at most ``max_bytes``.
 
     The body is streamed and counted after Content-Encoding is undone, so a
     gzip bomb or a server that never stops sending can't exhaust memory.
+
+    Redirects are followed by hand, up to ``MAX_REDIRECTS``: each ``Location``
+    is made absolute against the address that sent it and fetched through
+    the same pinned fetcher, so every hop passes the SSRF guard on its own.
+    A 3xx is never returned as content.
 
     Args:
         url: The address to fetch.
@@ -68,27 +83,67 @@ def fetch_page(
         timeout: Seconds per connect and read.
         truncate: Keep the first ``max_bytes`` of a larger body; ``False``
             raises ``ResponseTooLargeError`` instead.
+        budget: The load's fetch budget, charged one fetch per redirect hop
+            (the caller has paid for the first request).
 
     Returns:
-        The response, its ``content`` the capped body. An error status has an
+        The final response, its ``content`` the capped body and its ``url``
+        the address that answered (not the dialed IP). An error status has an
         empty body; call ``raise_for_status`` as usual.
 
     Raises:
-        UnsafeUserUrlError: If the URL fails the SSRF guard.
+        UnsafeUserUrlError: If the URL, or a redirect target, fails the SSRF guard.
+        RedirectError: A 3xx without a ``Location``, a redirect loop, more
+            than ``MAX_REDIRECTS`` hops, or a spent budget mid-chain.
         ResponseTooLargeError: If the body is too large and ``truncate`` is off.
         requests.RequestException: For network failures.
     """
-    body, response = pinned_fetch_bytes(
-        url,
-        max_bytes=page_fetch_bytes() if max_bytes is None else max_bytes,
-        headers=headers,
-        timeout=timeout,
-        truncate=truncate,
-    )
-    # The stream is spent and closed; hand the capped body back as the
-    # response's content, so callers read ``content`` and ``text`` as usual.
-    response._content = body
-    return response
+    current = url
+    seen = {url}
+    for hop in range(MAX_REDIRECTS + 1):
+        body, response = pinned_fetch_bytes(
+            current,
+            max_bytes=page_fetch_bytes() if max_bytes is None else max_bytes,
+            headers=headers,
+            timeout=timeout,
+            truncate=truncate,
+        )
+        status = response.status_code
+        if not 300 <= status < 400:
+            # The stream is spent and closed; hand the capped body back as the
+            # response's content, so callers read ``content`` and ``text`` as
+            # usual. ``url`` is the pinned IP until it is set to the page's.
+            response._content = body
+            response.url = current
+            return response
+        location = (response.headers.get("Location") or "").strip()
+        if status not in _REDIRECT_STATUSES or not location:
+            raise RedirectError(f"{current} answered {status} with no redirect to follow")
+        if hop == MAX_REDIRECTS:
+            raise RedirectError(f"{url} took more than {MAX_REDIRECTS} redirects")
+        target = urldefrag(urljoin(current, location))[0]
+        if target in seen:
+            raise RedirectError(f"{url} redirects in a loop at {target}")
+        if budget is not None and not budget.take():
+            raise RedirectError(f"Fetch budget spent following {url} to {target}")
+        seen.add(target)
+        current = target
+    raise RedirectError(f"{url} took more than {MAX_REDIRECTS} redirects")  # pragma: no cover - loop returns
+
+
+def final_url(response: Any, requested: str) -> str:
+    """The address a fetched page answered from, after redirects.
+
+    Args:
+        response: A ``fetch_page`` response.
+        requested: The address that was asked for, used when the response
+            carries none.
+
+    Returns:
+        The final URL.
+    """
+    url = getattr(response, "url", None)
+    return url if isinstance(url, str) and url else requested
 
 
 def bare_host(host: Optional[str]) -> str:

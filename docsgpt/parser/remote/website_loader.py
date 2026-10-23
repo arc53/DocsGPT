@@ -21,7 +21,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import urljoin, urlparse, urlsplit
 
 import requests
 import tldextract
@@ -38,7 +38,7 @@ from docsgpt.parser.remote.base import (
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 # page_key lives with the fetch helpers so every web loader keys pages alike;
 # it stays importable from here.
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_key
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_key
 from docsgpt.parser.remote.page_content import bare_host as _bare_host
 from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 from docsgpt.parser.remote.web_loader import WebLoader
@@ -204,17 +204,18 @@ class SiteScope:
         """
         try:
             parsed = urlparse(url)
-            key = page_key(url)
+            if parsed.scheme not in ("http", "https") or not self._host_ok(_bare_host(parsed.hostname)):
+                return False
+            if self.path_prefix:
+                path = parsed.path or "/"
+                if path.rstrip("/") != self.path_prefix and not path.startswith(self.path_prefix + "/"):
+                    return False
+            if not self.skip_pages and not self.skip_sections:
+                return True
+            if page_key(url) in self.skip_pages:
+                return False
             section_key = _section_key(url)
         except ValueError:
-            return False
-        if parsed.scheme not in ("http", "https") or not self._host_ok(_bare_host(parsed.hostname)):
-            return False
-        if self.path_prefix:
-            path = parsed.path or "/"
-            if path.rstrip("/") != self.path_prefix and not path.startswith(self.path_prefix + "/"):
-                return False
-        if key in self.skip_pages:
             return False
         return not any(_in_section(section_key, section) for section in self.skip_sections)
 
@@ -225,18 +226,20 @@ def _fetch(url: str, max_bytes: int, budget: Optional[FetchBudget] = None) -> Op
     Args:
         url: The address.
         max_bytes: How much of the body to read; the rest is cut off.
-        budget: The load's fetch budget, charged one fetch.
+        budget: The load's fetch budget, charged one fetch, plus one per
+            redirect hop.
 
     Returns:
-        The response, or ``None`` on a spent budget, a blocked address, a
-        network error or an error status.
+        The response (``url`` the address it answered from, after redirects),
+        or ``None`` on a spent budget, a blocked address, a network error, a
+        redirect that can't be followed or an error status.
     """
     if budget is not None and not budget.take():
         logger.debug(f"Sitemap discovery: fetch budget spent before {url}")
         return None
     try:
         url = validate_url(url)
-        response = fetch_page(url, max_bytes, timeout=15)
+        response = fetch_page(url, max_bytes, timeout=15, budget=budget)
         response.raise_for_status()
         return response
     except (SSRFError, Exception) as e:  # noqa: BLE001 - discovery is best effort
@@ -286,13 +289,23 @@ def discover_sitemaps(start_url: str, budget: Optional[FetchBudget] = None) -> L
     """
     parsed = urlparse(start_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    robots = _fetch(origin + "/robots.txt", _ROBOTS_MAX_BYTES, budget)
+    robots_url = origin + "/robots.txt"
+    robots = _fetch(robots_url, _ROBOTS_MAX_BYTES, budget)
     if robots is not None:
+        # A relative line (``Sitemap: /sitemap.xml``) is on the host that
+        # served the robots.txt, after any redirect.
+        base = final_url(robots, robots_url)
         listed = []
         for line in (robots.text or "").splitlines():
             match = _SITEMAP_LINE.match(line)
-            if match and match.group(1) not in listed:
-                listed.append(match.group(1))
+            if not match:
+                continue
+            try:
+                sitemap = urljoin(base, match.group(1))
+            except ValueError:
+                continue
+            if sitemap not in listed:
+                listed.append(sitemap)
                 if len(listed) >= MAX_ROBOTS_SITEMAPS:
                     break
         if listed:
@@ -302,7 +315,7 @@ def discover_sitemaps(start_url: str, budget: Optional[FetchBudget] = None) -> L
         response = _fetch(origin + path, _SNIFF_BYTES, budget)
         # A soft 404 answers every path with the app's HTML shell.
         if response is not None and _looks_like_sitemap(response):
-            return [origin + path]
+            return [final_url(response, origin + path)]
     return []
 
 

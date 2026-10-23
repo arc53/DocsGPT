@@ -62,6 +62,11 @@ class FakeWeb:
             response.status_code = 404
             return b"", response
         content_type, body = self.sites[url]
+        if isinstance(content_type, int):
+            # A redirect: (status, Location).
+            response.status_code = content_type
+            response.headers["Location"] = body
+            return b"<html><head><title>301 Moved Permanently</title></head></html>", response
         content = body if isinstance(body, bytes) else body.encode()
         if len(content) > max_bytes:
             if not truncate:
@@ -599,6 +604,86 @@ class TestWebsiteLoaderLenientRead:
         loader.load_data({"entries": [{"url": "https://x.io/a", "mode": "page"}]})
 
         assert loader.report["limit_reached"] is False
+
+
+class TestRedirects:
+    def test_a_page_entry_is_stored_under_the_address_it_redirects_to(self, web):
+        web({"https://x.io/docs": (301, "/docs/"), "https://x.io/docs/": page("Real docs")})
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/docs", "mode": "page"}]})
+
+        assert sources(docs) == ["https://x.io/docs/"]
+        assert docs[0].extra_info["title"] == "Real docs"
+        assert "Moved" not in docs[0].text
+
+    def test_a_redirect_without_a_location_is_not_indexed(self, web):
+        web({"https://x.io/docs": (302, "")})
+
+        assert WebsiteLoader().load_data({"entries": [{"url": "https://x.io/docs", "mode": "page"}]}) == []
+
+    def test_a_crawl_drops_a_page_that_redirects_out_of_scope(self, web):
+        web({
+            "https://x.io/docs/": page("Docs", links=["/docs/a", "/docs/b", "/docs/c"]),
+            "https://x.io/docs/a": (301, "https://login.other.io/sso"),
+            "https://login.other.io/sso": page("Sign in"),
+            "https://x.io/docs/b": (301, "/blog/b"),
+            "https://x.io/blog/b": page("Blog B"),
+            "https://x.io/docs/c": (308, "/docs/c/"),
+            "https://x.io/docs/c/": page("C"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/docs/", "mode": "site", "discovery": "links", "path_prefix": "/docs"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/docs/", "https://x.io/docs/c/"]
+
+    def test_a_crawl_does_not_load_a_redirect_target_twice(self, web):
+        fake = web({
+            "https://x.io/": page("Home", links=["/old", "/new"]),
+            "https://x.io/old": (301, "/new"),
+            "https://x.io/new": page("New"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]})
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/new"]
+        assert fake.fetched.count("https://x.io/new") == 1
+
+    def test_a_skip_rule_applies_to_where_a_page_redirects(self, web):
+        web({
+            "https://x.io/sitemap.xml": urlset("https://x.io/a", "https://x.io/b"),
+            "https://x.io/a": (301, "https://x.io/changelog"),
+            "https://x.io/changelog": page("Changelog"),
+            "https://x.io/b": page("B"),
+        })
+
+        docs = WebsiteLoader().load_data({
+            "entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/sitemap.xml"}],
+            "skip": ["https://x.io/changelog"],
+        })
+
+        assert sources(docs) == ["https://x.io/b"]
+
+    def test_robots_and_sitemaps_follow_redirects(self, web):
+        web({
+            "http://x.io/robots.txt": (301, "https://x.io/robots.txt"),
+            "https://x.io/robots.txt": robots("http://x.io/sitemap.xml"),
+            "http://x.io/sitemap.xml": (301, "https://x.io/sitemap.xml"),
+            "https://x.io/sitemap.xml": urlset("https://x.io/a"),
+            "https://x.io/a": page("A"),
+        })
+        loader = WebsiteLoader()
+
+        docs = loader.load_data({"entries": [{"url": "http://x.io/", "mode": "site"}]})
+
+        assert sources(docs) == ["https://x.io/a"]
+        assert loader.report["sites"][0]["found_with"] == "sitemap"
+
+    def test_a_relative_robots_sitemap_line_is_resolved(self, web):
+        web({"https://x.io/robots.txt": robots("/maps/sitemap.xml", "https://x.io/other.xml")})
+
+        assert discover_sitemaps("https://x.io/docs/") == ["https://x.io/maps/sitemap.xml", "https://x.io/other.xml"]
 
 
 class TestWebsiteLoaderDedupe:

@@ -97,7 +97,7 @@ class TestWebLoaderLoadData:
             "file_path": "index.md",
         }
         mock_fetch.assert_called_once_with(
-            "https://example.com", headers=headers, timeout=30
+            "https://example.com", headers=headers, timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -121,10 +121,10 @@ class TestWebLoaderLoadData:
 
         assert mock_fetch.call_count == 2
         mock_fetch.assert_any_call(
-            "https://site1.com", headers=headers, timeout=30
+            "https://site1.com", headers=headers, timeout=30, budget=None
         )
         mock_fetch.assert_any_call(
-            "https://site2.com", headers=headers, timeout=30
+            "https://site2.com", headers=headers, timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -138,7 +138,7 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         mock_fetch.assert_called_once_with(
-            "http://example.com", headers=headers, timeout=30
+            "http://example.com", headers=headers, timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -152,7 +152,7 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         mock_fetch.assert_called_once_with(
-            "https://example.com", headers=headers, timeout=30
+            "https://example.com", headers=headers, timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -275,7 +275,7 @@ class TestWebLoaderSSRF:
         assert len(result) == 1
         assert result[0].text == "Public page"
         mock_fetch.assert_called_once_with(
-            "https://example.com", headers=headers, timeout=30
+            "https://example.com", headers=headers, timeout=30, budget=None
         )
 
 

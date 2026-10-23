@@ -1,12 +1,15 @@
 """Tests for the shared web page extractor (main content → Markdown)."""
 
+import io
 import re
+import socket
 import time
 from unittest.mock import patch
 
 import pytest
+import requests
 
-from docsgpt.parser.remote.page_content import extract_page, page_document
+from docsgpt.parser.remote.page_content import FetchBudget, RedirectError, extract_page, fetch_page, page_document
 
 URL = "https://docs.example.com/guide/setup"
 
@@ -291,3 +294,97 @@ class TestKeepLinksCost:
 
         assert "[setup guide](https://docs.example.com/guide)" in doc.text
         assert "Menu entry" in doc.text and "(https://docs.example.com/menu)" not in doc.text
+
+
+class _Hops:
+    """A ``pinned_fetch_bytes`` stand-in: URL -> (status, headers, body); records each call."""
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.calls = []
+
+    def __call__(self, url, *, max_bytes, headers=None, timeout=10.0, total_timeout=None, truncate=False):
+        self.calls.append(url)
+        status, response_headers, body = self.routes[url]
+        response = requests.Response()
+        response.status_code = status
+        response.url = "http://93.184.216.34/pinned"  # the dialed address, never the page's
+        response.headers.update(response_headers)
+        return body, response
+
+
+class TestFetchPageRedirects:
+    PAGE = (200, {"Content-Type": "text/html"}, b"<html><body>Real docs</body></html>")
+
+    def _fetch(self, routes, url="https://x.io/docs", **kwargs):
+        hops = _Hops(routes)
+        with patch("docsgpt.parser.remote.page_content.pinned_fetch_bytes", hops):
+            return fetch_page(url, **kwargs), hops
+
+    def test_follows_redirects_to_the_final_page(self):
+        response, hops = self._fetch({
+            "https://x.io/docs": (301, {"Location": "/docs/"}, b"<h1>301 Moved Permanently</h1>"),
+            "https://x.io/docs/": (302, {"Location": "https://www.x.io/docs/"}, b""),
+            "https://www.x.io/docs/": self.PAGE,
+        })
+
+        assert response.status_code == 200
+        assert response.content == self.PAGE[2]
+        assert response.url == "https://www.x.io/docs/"
+        assert hops.calls == ["https://x.io/docs", "https://x.io/docs/", "https://www.x.io/docs/"]
+
+    def test_a_page_that_does_not_redirect_keeps_its_address(self):
+        response, _ = self._fetch({"https://x.io/docs": self.PAGE})
+
+        assert response.url == "https://x.io/docs"
+
+    def test_each_hop_is_charged_to_the_budget(self):
+        budget = FetchBudget(1)
+        routes = {
+            "https://x.io/docs": (301, {"Location": "/a"}, b""),
+            "https://x.io/a": (301, {"Location": "/b"}, b""),
+            "https://x.io/b": self.PAGE,
+        }
+
+        with pytest.raises(RedirectError, match="budget"):
+            self._fetch(routes, budget=budget)
+        assert budget.remaining == 0
+        response, _ = self._fetch(routes, budget=FetchBudget(2))
+        assert response.url == "https://x.io/b"
+
+    def test_a_redirect_loop_fails(self):
+        with pytest.raises(RedirectError, match="loop"):
+            self._fetch({
+                "https://x.io/docs": (301, {"Location": "/a"}, b""),
+                "https://x.io/a": (302, {"Location": "https://x.io/docs"}, b""),
+            })
+
+    def test_more_than_five_redirects_fail(self):
+        routes = {f"https://x.io/{i}": (307, {"Location": f"/{i + 1}"}, b"") for i in range(6)}
+        routes["https://x.io/6"] = self.PAGE
+
+        with pytest.raises(RedirectError, match="redirects"):
+            self._fetch(routes, url="https://x.io/0")
+        response, _ = self._fetch(routes, url="https://x.io/1")
+        assert response.url == "https://x.io/6"
+
+    @pytest.mark.parametrize("status, headers", [(301, {}), (302, {"Location": "  "}), (304, {}), (300, {})])
+    def test_a_3xx_without_a_location_is_a_failure_not_content(self, status, headers):
+        with pytest.raises(RedirectError):
+            self._fetch({"https://x.io/docs": (status, headers, b"<h1>Moved</h1>")})
+
+    def test_every_hop_passes_the_ssrf_guard(self, monkeypatch):
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        def send(self, prepared, **kwargs):
+            response = requests.Response()
+            response.status_code = 302
+            response.headers["Location"] = "http://169.254.169.254/latest/meta-data/"
+            response.raw = io.BytesIO(b"")
+            return response
+
+        monkeypatch.setattr(requests.Session, "send", send)
+        addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        with patch("socket.getaddrinfo", return_value=addrinfo):
+            with pytest.raises(UnsafeUserUrlError):
+                fetch_page("http://example.com/start")

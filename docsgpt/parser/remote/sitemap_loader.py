@@ -1,5 +1,5 @@
+import io
 import logging
-import re
 import zlib
 from typing import Callable, List, Optional, Set, Union
 
@@ -12,7 +12,7 @@ from docsgpt.parser.remote.base import (
     dedupe_virtual_paths,
     spans_multiple_hosts,
 )
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document, page_key
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, final_url, page_document, page_key
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError
@@ -33,6 +33,13 @@ MAX_SITEMAPS_PER_WALK = 50
 # download past it (after Content-Encoding is undone) is refused too.
 MAX_SITEMAP_BYTES = 50 * 1024 * 1024
 _GZIP_MAGIC = b"\x1f\x8b"
+# How much of a response to look at for a root tag, when its type doesn't say.
+_SNIFF_BYTES = 64 * 1024
+
+
+def _local_name(tag: object) -> str:
+    """An XML tag without its namespace (``{ns}loc`` and ``loc`` are ``loc``)."""
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
 
 
 def _gunzip(data: bytes, url: str) -> Optional[bytes]:
@@ -176,14 +183,26 @@ class SitemapLoader(BaseRemote):
                 self.limit_reached = True
                 break
             try:
-                response = fetch_page(url, timeout=30)
+                response = fetch_page(url, timeout=30, budget=self.budget)
                 response.raise_for_status()
+                page_url = final_url(response, url)
+                if page_url != url:
+                    # Redirected: stored where it landed, which must be a new
+                    # page the scope takes; otherwise it is dropped like a
+                    # failed fetch.
+                    landed = page_key(page_url)
+                    if landed != key and landed in loaded:
+                        continue
+                    if self.accept is not None and not self.accept(page_url):
+                        logger.info(f"Dropping {url}: it redirects out of scope to {page_url}")
+                        continue
+                    loaded.add(landed)
                 # A shared extractor, so sitemap pages get a title like the
                 # others do (their citations showed a wall of chunk text).
                 document = page_document(
                     response.content,
                     response.headers.get("Content-Type"),
-                    url,
+                    page_url,
                     include_host=include_host,
                     keep_links=self.keep_links,
                 )
@@ -268,7 +287,7 @@ class SitemapLoader(BaseRemote):
         visited.add(key)
 
         try:
-            response = fetch_page(sitemap_url, MAX_SITEMAP_BYTES, timeout=30, truncate=False)
+            response = fetch_page(sitemap_url, MAX_SITEMAP_BYTES, timeout=30, truncate=False, budget=self.budget)
             response.raise_for_status()
         except UnsafeUserUrlError as e:
             logger.error(f"URL validation failed for sitemap: {sitemap_url}. Error: {e}")
@@ -292,15 +311,15 @@ class SitemapLoader(BaseRemote):
         return None
 
     def _is_sitemap(self, response: requests.Response) -> bool:
-        """Whether a fetched response is sitemap XML (by type, extension or a root tag)."""
+        """Whether a fetched response is sitemap XML (by type, extension or a root tag near the start)."""
         content_type = response.headers.get('Content-Type', '')
         if 'xml' in content_type or response.url.endswith('.xml'):
             return True
-
-        if '<sitemapindex' in response.text or '<urlset' in response.text:
-            return True
-
-        return False
+        # Sniff the head of the bytes: decoding a whole large body as text
+        # guesses its charset over every byte.
+        content = response.content
+        head = content[:_SNIFF_BYTES] if isinstance(content, bytes) else (response.text or "").encode()
+        return b"<sitemapindex" in head or b"<urlset" in head
 
     def _parse_sitemap(
         self,
@@ -312,13 +331,15 @@ class SitemapLoader(BaseRemote):
         """Return the page URLs in a sitemap, following nested sitemap indexes.
 
         The URL budget is shared by the whole walk: once it is spent, no more
-        page URLs are collected and no more child sitemaps are fetched.
-        Unparseable XML is treated as an empty sitemap rather than failing the
-        whole ingest. A child entry that turns out not to be a sitemap is
-        dropped: only ``<url>`` entries are pages, and only after ``accept``.
+        page URLs are collected (the file isn't read further) and no more
+        child sitemaps are fetched. XML that stops parsing keeps the entries
+        read before the error rather than failing the whole ingest. A child
+        entry that turns out not to be a sitemap is dropped: only ``<url>``
+        entries are pages, and only after ``accept``. A page counts once per
+        walk (by ``page_key``).
 
         Args:
-            sitemap_content: Raw sitemap XML.
+            sitemap_content: Raw sitemap XML, in its declared encoding.
             visited: Sitemap URLs already fetched in this walk.
             depth: How many sitemap indexes deep this sitemap is.
             budget: How many more URLs the walk may collect. ``None`` starts
@@ -332,40 +353,58 @@ class SitemapLoader(BaseRemote):
         if visited is None:
             visited = set()
             self._collected = set()
-        try:
-            # Remove namespaces
-            text = re.sub(' xmlns="[^"]+"', '', sitemap_content.decode('utf-8'), count=1)
-            root = ET.fromstring(text)
-        except (ET.ParseError, DefusedXmlException, UnicodeDecodeError) as e:
-            logger.warning(f"Skipping sitemap that could not be parsed: {e}")
-            return []
+        urls: List[str] = []
+        children: List[str] = []
 
         def remaining() -> Optional[int]:
             return None if budget is None else budget - len(urls)
 
-        urls: List[str] = []
-        for loc in root.findall('.//url/loc'):
-            if remaining() == 0:
-                return urls
-            if not loc.text or not loc.text.strip():
-                continue
-            url = loc.text.strip()
+        def take_page(url: str) -> None:
+            # Scope first: a sitemap can list a million pages of other hosts.
+            if self.accept is not None and not self.accept(url):
+                return
             try:
                 key = page_key(url)
             except ValueError:
-                continue
-            if key in self._collected or (self.accept is not None and not self.accept(url)):
-                continue
+                return
+            if key in self._collected:
+                return
             self._collected.add(key)
             urls.append(url)
 
+        # Read incrementally, dropping each entry once it is read, so a 50 MB
+        # sitemap never becomes a 50 MB tree, and stop once the budget is
+        # collected. Tags match by local name, whatever the namespace and
+        # however it is quoted; the bytes go to the parser as they are, so
+        # it honours the declared encoding. The defusedxml parser keeps
+        # entities and external references out.
+        open_elements = []
+        try:
+            for event, element in ET.iterparse(io.BytesIO(sitemap_content), events=("start", "end")):
+                if event == "start":
+                    open_elements.append(element)
+                    continue
+                open_elements.pop()
+                name = _local_name(element.tag)
+                if name not in ("url", "sitemap"):
+                    continue
+                loc = next((child for child in element if _local_name(child.tag) == "loc"), None)
+                address = (loc.text or "").strip() if loc is not None else ""
+                if address and name == "url":
+                    take_page(address)
+                elif address and len(children) < MAX_SITEMAPS_PER_WALK:
+                    children.append(address)
+                if open_elements:
+                    open_elements[-1].remove(element)
+                if remaining() == 0:
+                    return urls
+        except (ET.ParseError, DefusedXmlException) as e:
+            logger.warning(f"Stopped reading a sitemap that could not be parsed: {e}")
+
         # Check for nested sitemaps
-        for sitemap in root.findall('.//sitemap/loc'):
+        for nested_sitemap_url in children:
             if remaining() == 0:
                 break
-            nested_sitemap_url = (sitemap.text or "").strip()
-            if not nested_sitemap_url:
-                continue
             urls.extend(self._walk(nested_sitemap_url, visited, depth + 1, remaining()) or [])
 
         return urls

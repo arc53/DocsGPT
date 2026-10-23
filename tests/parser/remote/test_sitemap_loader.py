@@ -523,3 +523,74 @@ class TestNestedSitemapSafety:
             urls = SitemapLoader()._extract_urls(index)
 
         assert urls == ["https://example.com/ok"]
+
+
+NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+
+@pytest.mark.unit
+class TestSitemapFormats:
+
+    @pytest.mark.parametrize(
+        "xml",
+        [
+            # Single-quoted namespace.
+            f"<?xml version='1.0'?><urlset xmlns='{NS}'><url><loc>https://e.io/a</loc></url></urlset>".encode(),
+            # A prefixed namespace.
+            f'<sm:urlset xmlns:sm="{NS}"><sm:url><sm:loc>https://e.io/a</sm:loc></sm:url></sm:urlset>'.encode(),
+            # A byte-order mark.
+            b"\xef\xbb\xbf" + _urlset("https://e.io/a"),
+            # No namespace at all.
+            b"<urlset><url><loc> https://e.io/a </loc></url></urlset>",
+        ],
+    )
+    def test_valid_sitemaps_are_read(self, xml):
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://e.io/a"]
+
+    def test_the_declared_encoding_is_honoured(self):
+        xml = (
+            f'<?xml version="1.0" encoding="ISO-8859-1"?><urlset xmlns="{NS}">'
+            "<url><loc>https://e.io/caf\xe9</loc></url><url><loc>https://e.io/b</loc></url></urlset>"
+        ).encode("latin-1")
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://e.io/caf\xe9", "https://e.io/b"]
+
+    def test_a_sitemap_index_with_single_quotes_is_followed(self):
+        index = "https://e.io/index.xml"
+        child = "https://e.io/child.xml"
+        fake = _serve({
+            index: f"<sitemapindex xmlns='{NS}'><sitemap><loc>{child}</loc></sitemap></sitemapindex>".encode(),
+            child: _urlset("https://e.io/a"),
+        })
+        with patch("docsgpt.parser.remote.sitemap_loader.fetch_page", fake):
+            assert SitemapLoader().collect_urls([index]) == ["https://e.io/a"]
+
+    def test_entities_stay_forbidden(self):
+        xml = (
+            b'<?xml version="1.0"?><!DOCTYPE u [<!ENTITY e "https://e.io/x">]>'
+            b"<urlset><url><loc>&e;</loc></url></urlset>"
+        )
+
+        assert SitemapLoader()._parse_sitemap(xml) == []
+
+    def test_parsing_stops_once_the_limit_is_collected(self):
+        # Read incrementally: a broken tail past the limit is never reached.
+        xml = _urlset(*[f"https://e.io/p{i}" for i in range(10)])[:-len("</urlset>")] + b"<url><loc>"
+
+        assert SitemapLoader(limit=3)._parse_sitemap(xml) == ["https://e.io/p0", "https://e.io/p1", "https://e.io/p2"]
+
+    def test_a_large_sitemap_is_parsed_in_bounded_memory(self):
+        import tracemalloc
+
+        xml = _urlset(*[f"https://elsewhere.io/page/{i}" for i in range(40000)])
+        loader = SitemapLoader(limit=10, accept=lambda url: False)
+
+        tracemalloc.start()
+        try:
+            assert loader._parse_sitemap(xml) == []
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        # The whole tree of 40k entries takes several times the 1.5 MB file.
+        assert peak < len(xml)
