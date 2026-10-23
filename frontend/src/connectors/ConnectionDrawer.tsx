@@ -7,7 +7,7 @@ import {
   Trash2,
   Unplug,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -71,7 +71,6 @@ import {
   firstIngestState,
   isStillIndexing,
   STARTED_SYNC_GIVE_UP_MS,
-  startedSyncAge,
 } from './startedSyncs';
 import ToolPermissions from './ToolPermissions';
 import type {
@@ -513,6 +512,8 @@ const NO_EVENTS: SSEEvent[] = [];
 const selectEvents = (state: {
   notifications?: { recentEvents?: SSEEvent[] };
 }) => state.notifications?.recentEvents ?? NO_EVENTS;
+
+const NO_DETAILS: ConnectionDetail[] = [];
 
 /** The ids of the sources the loaded accounts list. */
 function listedSourceIds(details: ConnectionDetail[]): Set<string> {
@@ -1131,9 +1132,11 @@ export default function ConnectionDrawer({
   const listFailed = useSelector(selectConnectorsFailed);
   // The details belong to the connector they were loaded for, so opening
   // another one never shows the last one's accounts (or none) meanwhile.
+  // `reload` is the `reloadKey` the read started under.
   const [loaded, setLoaded] = useState<{
     key: string;
     details: ConnectionDetail[];
+    reload: number;
   } | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -1178,6 +1181,7 @@ export default function ConnectionDrawer({
         setLoaded({
           key,
           details: responses.map((response) => response.connection),
+          reload: reloadKey,
         });
       })
       .catch(() => !cancelled && setFailedKey(key));
@@ -1192,14 +1196,21 @@ export default function ConnectionDrawer({
   }, [dispatch, token]);
 
   // A sync started this session shows as indexing until the server lists
-  // it, which it does once the first ingest finishes: reload then.
+  // it, which it does once the first ingest finishes: reload then. Only the
+  // syncs of the accounts shown count: closed, or open on another connector,
+  // the drawer leaves a sync to the drawer that shows its account.
   const startedSyncs = useSelector(selectStartedSyncs);
   const events = useSelector(selectEvents);
   // Bumped when the oldest shown sync reaches its give-up age.
   const [now, setNow] = useState(() => Date.now());
-  const listed = listedSourceIds(loaded?.details ?? []);
-  const indexing = indexingSyncs(startedSyncs, listed, events, now);
-  const finishedKey = startedSyncs
+  const shownDetails =
+    connector && loaded?.key === connector.key ? loaded.details : NO_DETAILS;
+  const ownSyncs = startedSyncs.filter((sync) =>
+    shownDetails.some((detail) => detail.id === sync.connectionId),
+  );
+  const listed = listedSourceIds(shownDetails);
+  const indexing = indexingSyncs(ownSyncs, listed, events, now);
+  const finishedKey = ownSyncs
     .filter(
       (sync) =>
         !listed.has(sync.id) &&
@@ -1207,11 +1218,29 @@ export default function ConnectionDrawer({
     )
     .map((sync) => sync.id)
     .join(',');
+  // Each finished sync's reload, by the `reloadKey` it starts under.
+  const reloadFor = useRef(new Map<string, number>());
   useEffect(() => {
-    if (finishedKey) refresh();
+    if (!finishedKey) return;
+    for (const id of finishedKey.split(','))
+      if (!reloadFor.current.has(id)) reloadFor.current.set(id, reloadKey + 1);
+    refresh();
+    // reloadKey is read, not watched: the reload it starts changes it.
   }, [finishedKey, refresh]);
-  // Once listed, a finished sync is the source's own row: forget it.
-  const forgetKey = startedSyncs
+  // Once its reload is in, a finished sync is the source's own row, or one
+  // the caller can't list: forget it either way, so no later drawer reloads
+  // for it again.
+  useEffect(() => {
+    if (!loaded) return;
+    const done = Array.from(reloadFor.current)
+      .filter(([, reload]) => loaded.reload >= reload)
+      .map(([id]) => id);
+    if (done.length === 0) return;
+    done.forEach((id) => reloadFor.current.delete(id));
+    dispatch(syncForgotten(done));
+  }, [loaded, dispatch]);
+  // A finished sync already listed (a source synced again): forget it.
+  const forgetKey = ownSyncs
     .filter(
       (sync) =>
         listed.has(sync.id) &&
@@ -1222,14 +1251,19 @@ export default function ConnectionDrawer({
   useEffect(() => {
     if (forgetKey) dispatch(syncForgotten(forgetKey.split(',')));
   }, [forgetKey, dispatch]);
+  // The give-up is a moment, so a sync started after the drawer mounted
+  // still gives up STARTED_SYNC_GIVE_UP_MS after it started.
   const nextGiveUp = Math.min(
     ...indexing.map(
-      (sync) => STARTED_SYNC_GIVE_UP_MS - startedSyncAge(sync, now),
+      (sync) => Date.parse(sync.startedAt) + STARTED_SYNC_GIVE_UP_MS,
     ),
   );
   useEffect(() => {
     if (!Number.isFinite(nextGiveUp)) return;
-    const timer = setTimeout(() => setNow(Date.now()), nextGiveUp);
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.max(0, nextGiveUp - Date.now()),
+    );
     return () => clearTimeout(timer);
   }, [nextGiveUp]);
 

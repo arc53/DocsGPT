@@ -43,6 +43,7 @@ import notificationsReducer, {
 import ConnectionDrawer from './ConnectionDrawer';
 import connectorsReducer, {
   selectStartedSyncs,
+  syncStarted,
   type StartedSync,
 } from './connectorsSlice';
 import type { ConnectorDefinition } from './types';
@@ -184,7 +185,7 @@ describe('ConnectionDrawer', () => {
     onConnect?: (connector: ConnectorDefinition, options?: unknown) => void;
   };
   const draw = async (
-    connector: ConnectorDefinition,
+    connector: ConnectorDefinition | null,
     options: RenderOptions,
   ) => {
     await act(async () => {
@@ -212,7 +213,7 @@ describe('ConnectionDrawer', () => {
     });
   };
   const render = async (
-    connector: ConnectorDefinition = DRIVE,
+    connector: ConnectorDefinition | null = DRIVE,
     options: RenderOptions = {},
   ) => {
     store = makeStore(options.extra, options);
@@ -797,6 +798,22 @@ describe('ConnectionDrawer', () => {
       ).toEqual(['src-elsewhere']);
     });
 
+    const startedIds = () =>
+      selectStartedSyncs(
+        store.getState() as Parameters<typeof selectStartedSyncs>[0],
+      ).map((sync) => sync.id);
+    const completed = (id: string) =>
+      act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: `ev-${id}`,
+            type: 'source.ingest.completed',
+            scope: { kind: 'source', id },
+            payload: {},
+          }),
+        );
+      });
+
     const started = (minutesAgo = 0) => ({
       id: 'src-new',
       name: 'Contracts',
@@ -838,6 +855,11 @@ describe('ConnectionDrawer', () => {
         expect(text()).toContain('lena@example.com');
         expect(text()).not.toContain('Contracts');
         expect(text()).not.toContain('settings.connectors.detail.indexing');
+        // A finished one the reload still doesn't list is forgotten, so the
+        // next drawer doesn't reload for it again; a failed one is kept.
+        expect(startedIds()).toEqual(
+          outcome === 'completed' ? [] : ['src-new'],
+        );
       },
     );
 
@@ -849,6 +871,49 @@ describe('ConnectionDrawer', () => {
       await render(DRIVE, { startedSyncs: [started(16)] });
       expect(text()).not.toContain('Contracts');
       expect(text()).not.toContain('settings.connectors.detail.indexing');
+    });
+
+    it('gives up 15 minutes after a sync started while it was mounted', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-23T10:00:00Z') });
+      try {
+        connectors.getConnection.mockResolvedValue({
+          success: true,
+          connection: { ...DETAIL, sources: [] },
+        });
+        await render(DRIVE);
+        await act(async () => vi.advanceTimersByTime(5 * 60_000));
+        await act(async () => store.dispatch(syncStarted([started()])));
+        expect(text()).toContain('Contracts');
+        await act(async () => vi.advanceTimersByTime(15 * 60_000 - 1_000));
+        expect(text()).toContain('Contracts');
+        await act(async () => vi.advanceTimersByTime(2_000));
+        expect(text()).not.toContain('Contracts');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does nothing about a finished sync while closed', async () => {
+      await render(null, { startedSyncs: [started()] });
+      const loads = connectors.listConnections.mock.calls.length;
+      const reads = connectors.getConnection.mock.calls.length;
+      await completed('src-new');
+      expect(connectors.listConnections.mock.calls.length).toBe(loads);
+      expect(connectors.getConnection.mock.calls.length).toBe(reads);
+      // Kept for the drawer that opens on its account.
+      expect(startedIds()).toEqual(['src-new']);
+    });
+
+    it("leaves another account's finished sync to that account", async () => {
+      await render(DRIVE, {
+        startedSyncs: [{ ...started(), connectionId: 'conn-9' }],
+      });
+      const loads = connectors.listConnections.mock.calls.length;
+      const reads = connectors.getConnection.mock.calls.length;
+      await completed('src-new');
+      expect(connectors.listConnections.mock.calls.length).toBe(loads);
+      expect(connectors.getConnection.mock.calls.length).toBe(reads);
+      expect(startedIds()).toEqual(['src-new']);
     });
   });
 
