@@ -95,6 +95,9 @@ MAX_TOKENS = 1250
 ATTACHMENT_MAX_TOKENS = 100_000
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
+# How long a task that found its source busy (another job held the lock past
+# the wait) waits before it runs again.
+BUSY_RETRY_COUNTDOWN_SECONDS = 60
 
 
 def count_structure_files(node: dict) -> int:
@@ -4916,6 +4919,12 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     chunk metadata shape matches the reingest path (``source``/``title``/
     ``filename``) so retrieval and future targeted deletes line up.
 
+    The work holds the source's index lock (``source_index_lock``): pages
+    re-embedded at once (a wiki conversion queues one task per page) would
+    each save the whole FAISS index and drop the others' chunks. A source
+    busy past the wait retries the task later; once the retries run out the
+    page is marked ``failed``.
+
     Args:
         self: Celery task instance.
         source_id: Source the page belongs to.
@@ -4926,15 +4935,35 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     Returns:
         A status dict: ``{"status", "added", "deleted"}`` on re-embed, or
         ``{"status": "deleted", "deleted": n}`` when the page is gone.
-    """
-    from docsgpt.vectorstore.vector_creator import VectorCreator
 
+    Raises:
+        celery.exceptions.Retry: The source was busy; the task runs again later.
+        SourceBusy: Still busy after the last retry.
+    """
     source_id = str(source_id)
 
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    try:
+        with source_index_lock(source_id):
+            return _reembed_wiki_page(source, path, user)
+    except SourceBusy as busy:
+        try:
+            raise self.retry(exc=busy, countdown=BUSY_RETRY_COUNTDOWN_SECONDS)
+        except SourceBusy:
+            # Out of retries: the page is not embedded, and says so.
+            with db_session() as conn:
+                WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
+            raise
+
+
+def _reembed_wiki_page(source: Dict[str, Any], path: str, user: str) -> Dict[str, Any]:
+    """The body of ``reembed_wiki_page_worker``, run holding the source's index lock."""
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
     source_id = str(source["id"])
     cfg = SourceConfig.parse(source.get("config"))
 
