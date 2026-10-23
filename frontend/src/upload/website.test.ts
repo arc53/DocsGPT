@@ -131,6 +131,23 @@ describe('websiteConfig', () => {
     });
   });
 
+  it('sends each "This page" address once, keeping the first spelling', () => {
+    const draft = {
+      ...defaultWebsiteDraft(100),
+      urls: [
+        'https://docs.x.io/a',
+        'http://www.docs.x.io/a/',
+        'https://docs.x.io/b',
+        'docs.x.io/docs/../a',
+      ],
+    };
+
+    expect(websiteConfig(draft, false).entries).toEqual([
+      { url: 'https://docs.x.io/a', mode: 'page' },
+      { url: 'https://docs.x.io/b', mode: 'page' },
+    ]);
+  });
+
   it('sends a sitemap URL only when pages are found through the sitemap', () => {
     const draft = {
       ...defaultWebsiteDraft(100),
@@ -168,7 +185,22 @@ describe('pageKey', () => {
     ['https://docs.x.io/p?q=a+b&r=%7E~*', 'docs.x.io/p?q=a+b&r=~~%2A'],
     ['https://docs.x.io/p?z=1&a=2&a=1', 'docs.x.io/p?a=1&a=2&z=1'],
     ['https://docs.x.io/p?', 'docs.x.io/p'],
-    ['https://user:pw@Docs.X.io:8080/Guide/', 'docs.x.io/Guide'],
+    ['https://user:pw@Docs.X.io:8080/Guide/', 'docs.x.io:8080/Guide'],
+    // A port counts unless it is the scheme's default.
+    ['https://x.io:8443/a', 'x.io:8443/a'],
+    ['https://x.io:443/a', 'x.io/a'],
+    ['http://x.io:80/a', 'x.io/a'],
+    ['http://x.io:443/a', 'x.io:443/a'],
+    ['https://x.io:80/a', 'x.io:80/a'],
+    // Dot segments resolve, a percent-encoded dot too; only whole segments.
+    ['https://x.io/docs/../a', 'x.io/a'],
+    ['https://x.io/docs/./a', 'x.io/docs/a'],
+    ['https://x.io/docs/%2e%2E/a', 'x.io/a'],
+    ['https://x.io/docs/%2E/a', 'x.io/docs/a'],
+    ['https://x.io/../../a', 'x.io/a'],
+    ['https://x.io/a/b/..', 'x.io/a'],
+    ['https://x.io/a..b/c', 'x.io/a..b/c'],
+    ['https://x.io/docs/../a?b=2&a=1', 'x.io/a?a=1&b=2'],
     ['https://docs.x.io', 'docs.x.io'],
     ['https://docs.x.io/A%20B/', 'docs.x.io/A%20B'],
     ['  https://docs.x.io/trim  ', 'docs.x.io/trim'],
@@ -224,6 +256,13 @@ describe('isWebsiteDraftValid', () => {
     expect(isWebsiteDraftValid(pages(3), 2)).toBe(false);
     expect(tooManyPages(pages(3), 2)).toBe(true);
     expect(tooManyPages(pages(2), 2)).toBe(false);
+    // The same page twice counts once, as it is sent once.
+    expect(
+      tooManyPages(
+        { ...pages(2), urls: ['https://x.io/0', 'x.io/0/', 'https://x.io/1'] },
+        2,
+      ),
+    ).toBe(false);
     // A whole site uses only its first address.
     expect(tooManyPages({ ...pages(3), mode: 'site' }, 2)).toBe(false);
   });

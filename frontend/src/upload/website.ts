@@ -192,17 +192,69 @@ function sortedQuery(query: string): string {
     .join('&');
 }
 
+/** Whether a path segment is `dots` (`.` or `..`), each dot plain or `%2e`. */
+function isDotSegment(segment: string, dots: string): boolean {
+  return segment.toLowerCase().replace(/%2e/g, '.') === dots;
+}
+
+/**
+ * A path with its `.` and `..` segments resolved, as the backend's
+ * `remove_dot_segments` does (RFC 3986, 5.2.4): a percent-encoded dot counts,
+ * only whole segments are dots, `..` never climbs above the root, and a dot
+ * segment at the end leaves a trailing slash.
+ */
+function removeDotSegments(path: string): string {
+  if (!path.includes('.') && !path.includes('%2')) return path;
+  const segments = path.split('/');
+  // "" for an absolute path: the root is never popped.
+  const resolved = segments.slice(0, 1);
+  for (let i = 1; i < segments.length; i += 1) {
+    const segment = segments[i];
+    if (isDotSegment(segment, '..')) {
+      if (resolved.length > 1) resolved.pop();
+    } else if (!isDotSegment(segment, '.')) {
+      resolved.push(segment);
+      continue;
+    }
+    if (i === segments.length - 1) resolved.push('');
+  }
+  return resolved.join('/') || '/';
+}
+
+/** The port a scheme leaves out of the key. */
+const DEFAULT_PORTS: Record<string, number> = { http: 80, https: 443 };
+
+/** A netloc's host and port, split as `urlsplit`'s `hostname` and `port`. */
+function splitHost(netloc: string): [string, number | null] {
+  const hostinfo = netloc.slice(netloc.lastIndexOf('@') + 1);
+  let host: string;
+  let port: string;
+  const bracket = hostinfo.indexOf('[');
+  if (bracket !== -1) {
+    const [inside, after = ''] = hostinfo.slice(bracket + 1).split(']');
+    host = inside;
+    port = after.startsWith(':') ? after.slice(1) : '';
+  } else {
+    const colon = hostinfo.indexOf(':');
+    host = colon === -1 ? hostinfo : hostinfo.slice(0, colon);
+    port = colon === -1 ? '' : hostinfo.slice(colon + 1);
+  }
+  return [host, /^\d+$/.test(port) ? Number(port) : null];
+}
+
 /**
  * One key per page, exactly as the backend compares them
- * (`website_loader.page_key` over `base.normalize_page_url`): the scheme,
- * `www.`, the host's case and trailing dots, a trailing slash, the fragment
- * and the order of the query's parameters don't count; the path stays as
- * written. Split the way Python's `urlsplit` does, not with `URL`, which
- * would rewrite the path.
+ * (`page_content.page_key` over `base.normalize_page_url`): the scheme,
+ * `www.`, the host's case and trailing dots, the scheme's default port (443
+ * for https, 80 for http), a trailing slash, the fragment and the order of
+ * the query's parameters don't count. Any other port does, and `.` and `..`
+ * path segments (a dot also written `%2e`) resolve, so `/docs/../a` is `/a`;
+ * the rest of the path stays as written. Split the way Python's `urlsplit`
+ * does, not with `URL`, which would rewrite the path.
  */
 export function pageKey(value: string): string {
   let rest = value.trim();
-  const scheme = /^[a-z][a-z0-9+.-]*:/i.exec(rest);
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(rest);
   if (scheme) rest = rest.slice(scheme[0].length);
   const hash = rest.indexOf('#');
   if (hash !== -1) rest = rest.slice(0, hash);
@@ -216,17 +268,25 @@ export function pageKey(value: string): string {
   const path = mark === -1 ? rest : rest.slice(0, mark);
   const query = mark === -1 ? '' : sortedQuery(rest.slice(mark + 1));
 
-  const hostinfo = netloc.slice(netloc.lastIndexOf('@') + 1);
-  const bracket = hostinfo.indexOf('[');
-  let host =
-    bracket !== -1
-      ? hostinfo.slice(bracket + 1).split(']')[0]
-      : hostinfo.split(':')[0];
-  host = host.toLowerCase().replace(/\.+$/, '');
+  const [hostname, port] = splitHost(netloc);
+  let host = hostname.toLowerCase().replace(/\.+$/, '');
   if (host.startsWith('www.')) host = host.slice(4);
+  const defaultPort = scheme ? DEFAULT_PORTS[scheme[1].toLowerCase()] : null;
+  if (port !== null && port !== defaultPort) host = `${host}:${port}`;
 
-  const key = `${host}${path.replace(/\/+$/, '')}`;
+  const key = `${host}${removeDotSegments(path).replace(/\/+$/, '')}`;
   return query ? `${key}?${query}` : key;
+}
+
+/** Addresses naming the same page (see {@link pageKey}) once, the first kept. */
+function uniquePages(urls: string[]): string[] {
+  const seen = new Set<string>();
+  return urls.filter((url) => {
+    const key = pageKey(normalizeUrl(url) ?? url);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function websiteConfig(
@@ -238,7 +298,7 @@ export function websiteConfig(
     .filter((url): url is string => !!url);
   let entries: WebsiteEntry[];
   if (draft.mode === 'page') {
-    entries = urls.map((url) => ({ url, mode: 'page' }));
+    entries = uniquePages(urls).map((url) => ({ url, mode: 'page' }));
   } else {
     const entry: WebsiteEntry = {
       url: urls[0],
@@ -264,11 +324,14 @@ function filledUrls(draft: WebsiteDraft): string[] {
 }
 
 /**
- * Whether "This page" lists more addresses than a source holds
- * (WEB_MAX_PAGES; the backend refuses the config).
+ * Whether "This page" lists more pages than a source holds (WEB_MAX_PAGES;
+ * the backend refuses the config). The same page written twice counts once,
+ * as {@link websiteConfig} sends it once.
  */
 export function tooManyPages(draft: WebsiteDraft, maxPages: number): boolean {
-  return draft.mode === 'page' && filledUrls(draft).length > maxPages;
+  return (
+    draft.mode === 'page' && uniquePages(filledUrls(draft)).length > maxPages
+  );
 }
 
 export function isWebsiteDraftValid(
