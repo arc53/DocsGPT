@@ -136,9 +136,6 @@ function pageKeysOf(node: FileNode | null | undefined): string[] {
 /** A remove the server refused; its message is what the dialog shows. */
 class RemoveRefused extends Error {}
 
-/** A change the server saved but couldn't queue; its message is the warning. */
-class QueueFailed extends Error {}
-
 /** What a remove asks to confirm: its copy depends on where the page came from. */
 type PendingRemoval = {
   name: string;
@@ -300,6 +297,21 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       dispatch(
         showActionToast({ variant: 'info', message: tr('stillRunning') }),
       );
+    } else if (terminal === 'failed' && reason === 'out_of_scope') {
+      // A refreshed page that now leads outside the source: the worker
+      // removed it, as a sync would.
+      await controllerRef.current?.refreshDirectory();
+      setConfigKey((key) => key + 1);
+      onPagesChangedRef.current?.();
+      dispatch(
+        showActionToast({
+          variant: 'warning',
+          message: tr('refreshOutOfScope', {
+            name,
+            interpolation: { escapeValue: false },
+          }),
+        }),
+      );
     } else if (terminal === 'failed' && reason === 'busy') {
       dispatch(
         showActionToast({ variant: 'warning', message: tr('changeBusy') }),
@@ -330,15 +342,17 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       );
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        refusal = websiteRefusal(t, response.status, data);
-        if (refusal && isQueueFailed(data)) throw new QueueFailed(refusal);
+        // A refresh saves nothing first: one the server couldn't queue just
+        // failed, unlike an add or a remove (no "the next sync picks it up").
+        refusal = isQueueFailed(data)
+          ? null
+          : websiteRefusal(t, response.status, data);
         throw new Error('refresh failed');
       }
       taskId = typeof data?.task_id === 'string' ? data.task_id : null;
-    } catch (error) {
+    } catch {
       if (mountedRef.current) setStatus(null);
-      if (error instanceof QueueFailed) warnQueueFailed(error.message);
-      else toastFailure('refreshFailed', name, refusal);
+      toastFailure('refreshFailed', name, refusal);
       return;
     }
     await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {

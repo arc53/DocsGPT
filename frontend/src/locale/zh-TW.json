@@ -632,6 +632,7 @@
         "syncing": "正在同步來源…",
         "refreshPage": "重新整理頁面",
         "refreshFailed": "無法重新整理「{{name}}」，其內容保持不變。",
+        "refreshOutOfScope": "「{{name}}」現在指向此來源之外，因此已像同步時一樣被移除。",
         "removeFromSource": "從來源中移除",
         "removeTitle": "要移除「{{name}}」嗎？",
         "removeEntry": "其區塊將被刪除，該頁面會從此來源的清單中移除。",

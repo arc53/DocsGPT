@@ -632,6 +632,7 @@
         "syncing": "ソースを同期しています…",
         "refreshPage": "ページを更新",
         "refreshFailed": "「{{name}}」を更新できませんでした。内容はそのまま残ります。",
+        "refreshOutOfScope": "「{{name}}」は現在このソースの範囲外を指しているため、同期と同じく削除されました。",
         "removeFromSource": "ソースから削除",
         "removeTitle": "「{{name}}」を削除しますか？",
         "removeEntry": "チャンクが削除され、このページはソースのリストから外れます。",

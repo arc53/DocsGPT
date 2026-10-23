@@ -635,6 +635,7 @@
         "syncing": "Syncing the source…",
         "refreshPage": "Refresh page",
         "refreshFailed": "Couldn’t refresh “{{name}}”; its content is kept.",
+        "refreshOutOfScope": "“{{name}}” now leads outside this source, so it was removed, as a sync would.",
         "removeFromSource": "Remove from source",
         "removeTitle": "Remove “{{name}}”?",
         "removeEntry": "Its chunks are deleted and the page is taken off this source’s list.",

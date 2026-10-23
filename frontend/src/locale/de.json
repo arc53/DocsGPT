@@ -635,6 +635,7 @@
         "syncing": "Quelle wird synchronisiert …",
         "refreshPage": "Seite aktualisieren",
         "refreshFailed": "„{{name}}“ konnte nicht aktualisiert werden; der Inhalt bleibt erhalten.",
+        "refreshOutOfScope": "„{{name}}“ führt jetzt aus dieser Quelle hinaus und wurde deshalb entfernt, wie es auch eine Synchronisierung täte.",
         "removeFromSource": "Aus der Quelle entfernen",
         "removeTitle": "„{{name}}“ entfernen?",
         "removeEntry": "Die Chunks werden gelöscht und die Seite wird von der Liste dieser Quelle genommen.",

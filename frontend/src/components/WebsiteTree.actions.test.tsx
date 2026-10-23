@@ -375,6 +375,26 @@ describe('WebsiteTree page management', () => {
     ]);
   });
 
+  it('a refreshed page that now leads out of the source says it was removed and reads the tree again', async () => {
+    await render();
+    const controller = await startRefresh();
+    service.getWebsite.mockClear();
+    await act(async () =>
+      emitTerminal('failed', 'task-1', { reason: 'out_of_scope' }),
+    );
+    expect(controller.refreshDirectory).toHaveBeenCalled();
+    expect(service.getWebsite).toHaveBeenCalled();
+    expect(toasted()).toEqual([
+      {
+        variant: 'warning',
+        message: expect.stringMatching(
+          '^settings.sources.website.refreshOutOfScope',
+        ),
+      },
+    ]);
+    expect(captured.props!.statusLabel).toBeNull();
+  });
+
   it.each([
     ['wiki', 'settings.sources.website.wikiSource'],
     ['gone', 'settings.sources.website.sourceGone'],
@@ -946,8 +966,15 @@ describe('WebsiteTree page management', () => {
     expect(service.getWebsite).toHaveBeenCalled();
   });
 
-  it('a refresh saved but not queued warns instead of failing', async () => {
-    service.refreshWebsitePage.mockResolvedValue(refused(500, QUEUE_FAILED));
+  it("a refresh the server couldn't queue fails in the refresh's own words", async () => {
+    // Nothing was saved for a refresh, so "the next sync picks it up" is wrong.
+    service.refreshWebsitePage.mockResolvedValue(
+      refused(500, {
+        success: false,
+        code: 'queue_failed',
+        error: "The refresh couldn't be queued; try again, or sync the source.",
+      }),
+    );
     await render();
     const refresh = menu({
       name: 'extra.md',
@@ -956,7 +983,12 @@ describe('WebsiteTree page management', () => {
     }).find((o) => o.label === 'settings.sources.website.refreshPage')!;
     await act(async () => refresh.onClick(new Event('click')));
     expect(toasted()).toEqual([
-      { variant: 'warning', message: 'settings.sources.website.queueFailed' },
+      {
+        variant: 'destructive',
+        message: expect.stringMatching(
+          '^settings.sources.website.refreshFailed',
+        ),
+      },
     ]);
     expect(captured.props!.statusLabel).toBeNull();
   });

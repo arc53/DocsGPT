@@ -657,6 +657,7 @@
         "syncing": "Synchronisation de la source…",
         "refreshPage": "Actualiser la page",
         "refreshFailed": "Impossible d’actualiser « {{name}} » ; son contenu est conservé.",
+        "refreshOutOfScope": "« {{name}} » mène désormais hors de cette source ; la page a été retirée, comme le ferait une synchronisation.",
         "removeFromSource": "Retirer de la source",
         "removeTitle": "Retirer « {{name}} » ?",
         "removeEntry": "Ses fragments sont supprimés et la page est retirée de la liste de cette source.",

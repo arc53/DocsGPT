@@ -632,6 +632,7 @@
         "syncing": "正在同步来源…",
         "refreshPage": "刷新页面",
         "refreshFailed": "无法刷新“{{name}}”，其内容保持不变。",
+        "refreshOutOfScope": "“{{name}}”现在指向此来源之外，因此已像同步时一样被移除。",
         "removeFromSource": "从来源中移除",
         "removeTitle": "移除“{{name}}”？",
         "removeEntry": "其分块将被删除，该页面会从此来源的列表中移除。",

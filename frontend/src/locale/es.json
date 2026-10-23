@@ -657,6 +657,7 @@
         "syncing": "Sincronizando la fuente…",
         "refreshPage": "Actualizar página",
         "refreshFailed": "No se pudo actualizar «{{name}}»; su contenido se conserva.",
+        "refreshOutOfScope": "«{{name}}» ahora lleva fuera de esta fuente, así que se quitó, como haría una sincronización.",
         "removeFromSource": "Quitar de la fuente",
         "removeTitle": "¿Quitar «{{name}}»?",
         "removeEntry": "Se eliminan sus fragmentos y la página sale de la lista de esta fuente.",
