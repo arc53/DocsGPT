@@ -15,6 +15,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import type { MenuOption } from '../components/ui/dropdown-menu';
+import { syncRefusal } from '../connectors/syncRefusal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import type { Doc } from '../models/misc';
 import type { Model } from '../models/types';
@@ -154,7 +155,10 @@ export function useSourceActions({
         : await userService.syncSource({ source_id: doc.id }, token);
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.success) {
-        showActionError(failed, response.status);
+        showActionError(
+          syncRefusal(t, data, { status: response.status, fallback: failed }),
+          response.status,
+        );
         return;
       }
       dispatch(

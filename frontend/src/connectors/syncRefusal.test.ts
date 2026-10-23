@@ -1,0 +1,38 @@
+import type { TFunction } from 'i18next';
+import { describe, expect, it } from 'vitest';
+
+import { syncRefusal } from './syncRefusal';
+
+const t = ((key: string) => key) as unknown as TFunction;
+const key = (name: string) => `settings.connectors.detail.${name}`;
+
+describe('syncRefusal', () => {
+  it.each([
+    ['wiki', 'syncRefusedWiki'],
+    ['not_syncable', 'syncRefusedNotSyncable'],
+    ['connector_source', 'syncRefusedConnector'],
+    ['invalid_source', 'syncRefusedInvalid'],
+  ])('words the %s code', (code, name) => {
+    expect(syncRefusal(t, { code, error: 'English' }, { status: 400 })).toBe(
+      key(name),
+    );
+  });
+
+  it("shows the server's error, else its message, for another refusal", () => {
+    expect(syncRefusal(t, { error: 'Paused', message: 'x' })).toBe('Paused');
+    expect(syncRefusal(t, { error: '', message: 'Nothing to sync.' })).toBe(
+      'Nothing to sync.',
+    );
+  });
+
+  it('falls back to the generic line', () => {
+    expect(syncRefusal(t, null)).toBe(key('syncFailed'));
+    expect(syncRefusal(t, { success: false }, { fallback: 'generic' })).toBe(
+      'generic',
+    );
+    // A server error's text (a traceback) is never shown.
+    expect(
+      syncRefusal(t, { error: 'Traceback' }, { status: 500, fallback: 'g' }),
+    ).toBe('g');
+  });
+});

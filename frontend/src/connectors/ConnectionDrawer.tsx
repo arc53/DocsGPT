@@ -66,6 +66,7 @@ import {
   connectorName,
   isKeyHint,
 } from './i18n';
+import { syncRefusal } from './syncRefusal';
 import {
   firstIngestState,
   isStillIndexing,
@@ -541,33 +542,6 @@ function indexingSyncs(
   return started.filter(
     (sync) => !listed.has(sync.id) && isStillIndexing(sync, events, now),
   );
-}
-
-/** /api/sync_source and /api/connectors/sync refusal codes, and the key each. */
-const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
-  ['wiki', 'syncRefusedWiki'],
-  ['not_syncable', 'syncRefusedNotSyncable'],
-  ['connector_source', 'syncRefusedConnector'],
-  ['invalid_source', 'syncRefusedInvalid'],
-]);
-
-/**
- * A refused sync in the user's language: the server's `code` when it has a
- * key, else its own words (`error`, or `message` from /api/sync_source),
- * else the generic failure.
- */
-function syncRefusal(t: TFunction, data: unknown): string {
-  const body = (data ?? {}) as {
-    code?: unknown;
-    error?: unknown;
-    message?: unknown;
-  };
-  const key = SYNC_REFUSAL_KEYS.get(body.code);
-  if (key) return t(`settings.connectors.detail.${key}`);
-  const text = [body.error, body.message].find(
-    (value): value is string => typeof value === 'string' && !!value,
-  );
-  return text ?? t('settings.connectors.detail.syncFailed');
 }
 
 /**
@@ -1315,7 +1289,7 @@ export default function ConnectionDrawer({
         dispatch(
           showActionToast({
             variant: 'destructive',
-            message: syncRefusal(t, data),
+            message: syncRefusal(t, data, { status: response.status }),
           }),
         );
         return;

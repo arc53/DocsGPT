@@ -604,7 +604,32 @@ describe('Sources access', () => {
     await clickItem('settings.sources.syncNow');
     expect(toasts()).toEqual([
       expect.objectContaining({
-        payload: expect.objectContaining({ variant: 'destructive' }),
+        payload: {
+          variant: 'destructive',
+          message: 'settings.sources.errors.forbidden',
+        },
+      }),
+    ]);
+  });
+
+  it.each([
+    [
+      { success: false, code: 'wiki', error: 'English' },
+      'settings.connectors.detail.syncRefusedWiki',
+    ],
+    [{ success: false, message: 'Nothing to sync.' }, 'Nothing to sync.'],
+  ])('a refused Sync now says why (%o)', async (body, message) => {
+    service.syncSource.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => body,
+    });
+    await render(doc({ syncFrequency: 'daily' }));
+    await menuItems();
+    await clickItem('settings.sources.syncNow');
+    expect(toasts()).toEqual([
+      expect.objectContaining({
+        payload: { variant: 'destructive', message },
       }),
     ]);
   });

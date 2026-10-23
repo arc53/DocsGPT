@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import { syncRefusal } from '../connectors/syncRefusal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -115,15 +116,21 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const controllerRef = useRef<TreeBrowserController | null>(null);
   const { waitForTerminal, mountedRef } = useReingestSseWaiter();
 
-  /** A failed sync as a destructive toast: the forbidden message on a 403. */
-  const toastSyncFailed = (status?: number) =>
+  /**
+   * A failed sync as a destructive toast: the forbidden message on a 403,
+   * else why the server refused (see `syncRefusal`), else the generic line.
+   */
+  const toastSyncFailed = (status?: number, data?: unknown) =>
     dispatch(
       showActionToast({
         variant: 'destructive',
         message:
           status === 403
             ? t('settings.sources.errors.forbidden')
-            : t('settings.sources.errors.sync'),
+            : syncRefusal(t, data, {
+                status,
+                fallback: t('settings.sources.errors.sync'),
+              }),
       }),
     );
 
@@ -193,7 +200,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           toastSyncFailed();
         }
       } else {
-        toastSyncFailed(response.status);
+        toastSyncFailed(response.status, data);
       }
     } catch (err) {
       console.error('Error syncing source:', err);

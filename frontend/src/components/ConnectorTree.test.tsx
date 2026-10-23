@@ -225,6 +225,31 @@ describe('ConnectorTree and FileTree headers', () => {
     ]);
   });
 
+  it.each([
+    [
+      { code: 'not_syncable', error: 'English' },
+      'settings.connectors.detail.syncRefusedNotSyncable',
+    ],
+    [{ success: false, message: 'Nothing to sync.' }, 'Nothing to sync.'],
+  ])('a refused sync says why (%o)', async (body, message) => {
+    dispatch.mockReset();
+    sync.source.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => body,
+    });
+    await render(
+      <ConnectorTree
+        docId="doc"
+        sourceName="Bucket"
+        onBackToDocuments={vi.fn()}
+        sourceType="s3"
+      />,
+    );
+    await confirmSync();
+    expect(toasts()).toEqual([{ variant: 'destructive', message }]);
+  });
+
   it('embedded ConnectorTree drops the badge and headerAction, keeps Sync', async () => {
     await render(
       <ConnectorTree
