@@ -18,9 +18,10 @@ from flask_restx import fields, Resource
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
-from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, sources_ns
+from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, _with_scheme, sources_ns
 from docsgpt.api.user.tasks import sync_source, website_pages
 from docsgpt.core.settings import settings
+from docsgpt.parser.remote import website_loader
 from docsgpt.parser.remote.website_loader import SiteScope, page_key, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
@@ -148,6 +149,52 @@ def _website_config(doc: dict) -> Optional[dict]:
     return config_from_legacy(doc.get("type"), doc.get("remote_data"))
 
 
+def _growth_refusal(config: dict, stored: dict) -> Optional[Response]:
+    """The 400 when a change grows a config past a write limit, or ``None``.
+
+    The limits apply to what a change adds, not to what the source already
+    holds: a source over a limit (the admin lowered ``WEB_MAX_PAGES``, or it
+    was saved before a limit existed) can still shrink, and be saved as it
+    is. So the page cap, the site limit and the skip-rule limit refuse only a
+    count that is past the limit and larger than the stored one, and the
+    length limit only an address or rule the source didn't hold.
+
+    Args:
+        config: The new config, parsed without the write limits.
+        stored: The source's config before the change.
+
+    Returns:
+        The refusal, with a ``code`` and the limit for the UI's wording.
+    """
+    entries, old_entries = config["entries"], stored["entries"]
+    cap = int(settings.WEB_MAX_PAGES)
+    # A site brings at least one page, so it counts toward the cap too.
+    if len(entries) > cap and len(entries) > len(old_entries):
+        return _error(f"A website source holds up to {cap} pages", code="page_limit", max_pages=cap)
+    max_sites = website_loader.MAX_SITE_ENTRIES
+    sites = sum(1 for entry in entries if entry["mode"] == "site")
+    if sites > max_sites and sites > sum(1 for entry in old_entries if entry["mode"] == "site"):
+        return _error(f"A website source holds up to {max_sites} sites", code="site_limit", max_sites=max_sites)
+    max_skip = website_loader.MAX_SKIP_RULES
+    if len(config["skip"]) > max_skip and len(config["skip"]) > len(stored["skip"]):
+        return _error(
+            f"A website source holds up to {max_skip} skip rules", code="skip_limit", max_skip=max_skip
+        )
+    max_length = website_loader.MAX_URL_LENGTH
+    old_urls = {url for entry in old_entries for url in (entry["url"], entry.get("sitemap_url")) if url}
+    new_urls = [url for entry in entries for url in (entry["url"], entry.get("sitemap_url")) if url]
+    if any(len(url) > max_length and url not in old_urls for url in new_urls):
+        return _error(
+            f"An address is longer than {max_length} characters", code="url_too_long", max_length=max_length
+        )
+    old_rules = set(stored["skip"])
+    if any(len(rule.removesuffix("*")) > max_length and rule not in old_rules for rule in config["skip"]):
+        return _error(
+            f"A skip rule is longer than {max_length} characters", code="url_too_long", max_length=max_length
+        )
+    return None
+
+
 @sources_ns.route("/website")
 class WebsiteSettings(Resource):
     save_model = api.model(
@@ -163,9 +210,15 @@ class WebsiteSettings(Resource):
                 ),
             ),
             "skip": fields.List(
-                fields.String, description="Pages (url) or sections (https://host/path/*) to leave out"
+                fields.String,
+                description=(
+                    "Pages (url) or sections (https://host/path/*) to leave out; left out, the stored "
+                    "list is kept, and [] clears it"
+                ),
             ),
-            "keep_links": fields.Boolean(description="Keep the URL of links inside sentences in page text"),
+            "keep_links": fields.Boolean(
+                description="Keep the URL of links inside sentences in page text; left out, the stored setting is kept"
+            ),
             "sync_frequency": fields.String(description="never, daily, weekly or monthly"),
         },
     )
@@ -216,17 +269,27 @@ class WebsiteSettings(Resource):
         if sync_frequency is not None and sync_frequency not in _SYNC_FREQUENCIES:
             return _error(f"Unknown sync_frequency {sync_frequency!r}")
         try:
-            config = parse_website_config(
-                {"entries": data["entries"], "skip": data.get("skip") or [], "keep_links": data.get("keep_links")}
-            )
-        except ValueError as err:
-            return _error(str(err))
-        try:
             with db_session() as conn:
                 doc, ra = _load_locked(conn, data["source_id"], user, "edit")
-                if _website_config(doc) is None:
+                stored = _website_config(doc)
+                if stored is None:
                     return _error("Not a website source")
                 refusal = _wiki_refusal(doc)
+                if refusal is not None:
+                    return refusal
+                # A key left out keeps its stored value, as in PATCH /sources/<id>/config.
+                raw = {
+                    "entries": data["entries"],
+                    "skip": data["skip"] if data.get("skip") is not None else stored["skip"],
+                    "keep_links": (
+                        data["keep_links"] if data.get("keep_links") is not None else stored["keep_links"]
+                    ),
+                }
+                try:
+                    config = parse_website_config(raw, enforce_page_cap=False)
+                except ValueError as err:
+                    return _error(str(err))
+                refusal = _growth_refusal(config, stored)
                 if refusal is not None:
                     return refusal
                 fields_ = {"remote_data": config, "type": "website"}
@@ -281,8 +344,8 @@ class RemoveWebsitePages(Resource):
                 refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
                 if refusal is not None:
                     return refusal
-                config = _website_config(doc)
-                if config is None:
+                stored = _website_config(doc)
+                if stored is None:
                     return _error("Not a website source")
                 structure = doc.get("directory_structure") or {}
                 if not isinstance(structure, dict):
@@ -299,18 +362,18 @@ class RemoveWebsitePages(Resource):
                 if not pages:
                     return _error("No such pages in this source")
 
-                config = _without_pages(config, pages, section_rule)
+                config = _without_pages(stored, pages, section_rule)
                 if not config["entries"]:
                     return _error(
                         "That would leave the source with nothing to fetch; delete the source instead",
                         code="last_entry",
                     )
-                # The skip list grows with each removal; it is held to the
-                # same limits as a saved config.
-                try:
-                    config = parse_website_config(config)
-                except ValueError as err:
-                    return _error(str(err))
+                # A removal only shrinks the entries, so of the write limits
+                # only the skip rules it adds are checked: a source over the
+                # page cap (lowered since it was saved) can still shrink.
+                refusal = _growth_refusal(config, stored)
+                if refusal is not None:
+                    return refusal
 
                 # Saved now, so a sync that starts before the worker runs
                 # already leaves the pages out.
@@ -386,10 +449,18 @@ class AddWebsitePages(Resource):
                 total = held["count"] + new_pages
                 if total > cap or (adds_site and total >= cap):
                     return _error(f"A website source holds up to {cap} pages", code="page_limit", max_pages=cap)
+                # The new entries were checked against the write limits above;
+                # what the source already holds is checked only for growth.
                 try:
-                    config = parse_website_config({**config, "entries": config["entries"] + added})
+                    merged = parse_website_config(
+                        {**config, "entries": config["entries"] + added}, enforce_page_cap=False
+                    )
                 except ValueError as err:
                     return _error(str(err))
+                refusal = _growth_refusal(merged, config)
+                if refusal is not None:
+                    return refusal
+                config = merged
                 SourcesRepository(conn).update(
                     str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
                 )
@@ -397,9 +468,11 @@ class AddWebsitePages(Resource):
             return denied_response(err)
 
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
-        hosts = {urlparse(url).netloc for _path, url in web_pages(structure)}
+        # Read through ``_with_scheme``: an address written without a scheme
+        # has no host for ``urlparse``, and would count as a new one.
+        hosts = {urlparse(_with_scheme(url)).netloc for _path, url in web_pages(structure)}
         page_urls = [e["url"] for e in new_entries if e["mode"] == "page"]
-        new_hosts = hosts | {urlparse(url).netloc for url in page_urls}
+        new_hosts = hosts | {urlparse(_with_scheme(url)).netloc for url in page_urls}
         # A site can bring any number of pages, and a first second host puts
         # every page under a host folder: both rebuild rather than append.
         # A store that can't add single chunks (Elasticsearch) rebuilds too.

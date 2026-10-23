@@ -162,6 +162,173 @@ class TestSaveWebsite:
 
         assert response.status_code == 400
 
+    def test_a_save_without_skip_or_keep_links_keeps_them(self, app, pg_conn):
+        # As PATCH /sources/<id>/config: a key left out keeps its stored value.
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        stored = {**CONFIG, "skip": ["https://docs.x.io/old/*"], "keep_links": True}
+        src = _seed(pg_conn, remote_data=stored)
+        response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+            "source_id": str(src["id"]), "entries": CONFIG["entries"], "sync_frequency": "daily",
+        })
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert saved["skip"] == ["https://docs.x.io/old/*"]
+        assert saved["keep_links"] is True
+        assert response.json["config"]["skip"] == ["https://docs.x.io/old/*"]
+
+    def test_an_empty_skip_and_keep_links_false_clear_them(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        src = _seed(pg_conn, remote_data={**CONFIG, "skip": ["https://docs.x.io/old/*"], "keep_links": True})
+        response = _call(app, pg_conn, WebsiteSettings, "POST", json={
+            "source_id": str(src["id"]), "entries": CONFIG["entries"], "skip": [], "keep_links": False,
+        })
+
+        assert response.status_code == 200
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert saved["skip"] == []
+        assert saved["keep_links"] is False
+
+
+LONG_URL = "https://docs.x.io/" + "a" * 2100
+
+
+def _post(app, pg_conn, resource: str, src, **body):
+    """POST ``body`` for ``src`` to a website route, with both tasks mocked."""
+    from docsgpt.api.user.sources import website
+
+    with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+        "docsgpt.api.user.sources.website.sync_source"
+    ) as sync_task:
+        pages_task.delay.return_value = MagicMock(id="pages-task")
+        sync_task.delay.return_value = MagicMock(id="sync-task")
+        response = _call(
+            app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
+        )
+    return response, pages_task, sync_task
+
+
+class TestOldDataPastAWriteLimit:
+    """A write limit refuses a change that grows past it, not one that keeps what is already stored.
+
+    A source can hold more than a limit allows: the admin lowered
+    ``WEB_MAX_PAGES``, or it was saved before a limit existed. Its owner can
+    still shrink it and save it unchanged.
+    """
+
+    SEVEN = CONFIG["entries"] + [{"url": f"https://docs.x.io/p{i}", "mode": "page"} for i in range(5)]
+
+    @pytest.fixture
+    def cap_of_five(self):
+        with patch("docsgpt.core.settings.settings.WEB_MAX_PAGES", 5):
+            yield
+
+    def test_a_removal_works_once_the_page_cap_is_lowered(self, app, pg_conn, cap_of_five):
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": self.SEVEN})
+        response, pages_task, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["extra.md"])
+
+        assert response.status_code == 200, response.json
+        pages_task.delay.assert_called_once()
+        assert len(SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]) == 6
+
+    def test_a_removal_works_with_an_old_address_past_the_length_limit(self, app, pg_conn):
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": CONFIG["entries"] + [{"url": LONG_URL}]})
+        response, pages_task, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["extra.md"])
+
+        assert response.status_code == 200, response.json
+        pages_task.delay.assert_called_once()
+
+    def test_a_removal_whose_new_rule_is_too_long_is_refused(self, app, pg_conn):
+        src = _seed(pg_conn, directory_structure={**TREE, "long.md": _leaf(LONG_URL, 3)})
+        response, pages_task, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["long.md"])
+
+        assert response.status_code == 400
+        assert response.json["code"] == "url_too_long"
+        assert response.json["max_length"] == 2048
+        pages_task.delay.assert_not_called()
+
+    def test_a_removal_that_adds_no_rule_works_past_the_skip_limit(self, app, pg_conn):
+        stored = {**CONFIG, "skip": ["https://docs.x.io/old", "https://docs.x.io/extra"]}
+        src = _seed(pg_conn, remote_data=stored)
+        with patch("docsgpt.parser.remote.website_loader.MAX_SKIP_RULES", 1):
+            response, _, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["extra.md"])
+
+        assert response.status_code == 200, response.json
+
+    def test_a_settings_save_works_once_the_page_cap_is_lowered(self, app, pg_conn, cap_of_five):
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": self.SEVEN})
+        unchanged, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=self.SEVEN, keep_links=True)
+        grown, _, _ = _post(
+            app, pg_conn, "WebsiteSettings", src, entries=self.SEVEN + [{"url": "https://docs.x.io/new"}]
+        )
+
+        assert unchanged.status_code == 200, unchanged.json
+        assert grown.status_code == 400
+        assert grown.json["code"] == "page_limit"
+        assert grown.json["max_pages"] == 5
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert len(saved["entries"]) == 7
+        assert saved["keep_links"] is True
+
+    def test_a_settings_save_keeps_an_old_address_past_the_length_limit(self, app, pg_conn):
+        entries = CONFIG["entries"] + [{"url": LONG_URL, "mode": "page"}]
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": entries})
+        kept, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=entries)
+        added, _, _ = _post(
+            app, pg_conn, "WebsiteSettings", src, entries=entries + [{"url": LONG_URL + "b", "mode": "page"}]
+        )
+
+        assert kept.status_code == 200, kept.json
+        assert added.status_code == 400
+        assert added.json["code"] == "url_too_long"
+        assert added.json["max_length"] == 2048
+
+    def test_a_settings_save_keeps_skip_rules_past_the_limit(self, app, pg_conn):
+        skip = ["https://docs.x.io/old", LONG_URL]
+        src = _seed(pg_conn, remote_data={**CONFIG, "skip": skip})
+        with patch("docsgpt.parser.remote.website_loader.MAX_SKIP_RULES", 1):
+            kept, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=CONFIG["entries"], skip=skip)
+            grown, _, _ = _post(
+                app, pg_conn, "WebsiteSettings", src,
+                entries=CONFIG["entries"], skip=skip + ["https://docs.x.io/new"],
+            )
+
+        assert kept.status_code == 200, kept.json
+        assert grown.status_code == 400
+        assert grown.json["code"] == "skip_limit"
+        assert grown.json["max_skip"] == 1
+
+    def test_a_settings_save_keeps_sites_past_the_limit(self, app, pg_conn):
+        sites = [{"url": "https://docs.x.io/", "mode": "site"}, {"url": "https://blog.x.io/", "mode": "site"}]
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": sites})
+        with patch("docsgpt.parser.remote.website_loader.MAX_SITE_ENTRIES", 1):
+            kept, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=sites)
+            grown, _, _ = _post(
+                app, pg_conn, "WebsiteSettings", src, entries=sites + [{"url": "https://api.x.io/", "mode": "site"}]
+            )
+
+        assert kept.status_code == 200, kept.json
+        assert grown.status_code == 400
+        assert grown.json["code"] == "site_limit"
+        assert grown.json["max_sites"] == 1
+
+    def test_adding_a_page_works_with_old_data_past_a_limit(self, app, pg_conn):
+        stored = {
+            **CONFIG,
+            "entries": CONFIG["entries"] + [{"url": LONG_URL, "mode": "page"}],
+            "skip": ["https://docs.x.io/old", "https://docs.x.io/older"],
+        }
+        src = _seed(pg_conn, remote_data=stored)
+        with patch("docsgpt.parser.remote.website_loader.MAX_SKIP_RULES", 1):
+            response, pages_task, _ = _post(
+                app, pg_conn, "AddWebsitePages", src, entries=[{"url": "https://docs.x.io/new", "mode": "page"}]
+            )
+
+        assert response.status_code == 200, response.json
+        pages_task.delay.assert_called_once()
+
 
 class TestRemovePages:
     """The route checks the removal and saves its skip rules; the worker deletes the pages."""
@@ -249,6 +416,8 @@ class TestRemovePages:
 
         assert response.status_code == 400
         assert "skip rules" in response.json["error"]
+        assert response.json["code"] == "skip_limit"
+        assert response.json["max_skip"] == 1
         self.pages_task.delay.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/old"]
@@ -409,6 +578,24 @@ class TestAddPages:
         src = _seed(pg_conn)
         other_host = [{"url": "https://github.com/a/b", "mode": "page"}]
         response, pages_task, sync_task = self._add(app, pg_conn, src, other_host)
+
+        assert response.json["mode"] == "sync"
+        sync_task.delay.assert_called_once()
+
+    @pytest.mark.parametrize("address", ["docs.x.io/new", "https://docs.x.io/new"])
+    def test_a_page_written_without_a_scheme_on_a_listed_host_is_appended(self, app, pg_conn, address):
+        src = _seed(pg_conn)
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [{"url": address, "mode": "page"}])
+
+        assert response.status_code == 200, response.json
+        assert response.json["mode"] == "append"
+        pages_task.delay.assert_called_once()
+        sync_task.delay.assert_not_called()
+
+    def test_a_page_on_a_new_host_rebuilds_a_source_listed_without_schemes(self, app, pg_conn):
+        # Hosts come from the tree's page URLs; an old scheme-less entry doesn't change that.
+        src = _seed(pg_conn, remote_data={**CONFIG, "entries": [{"url": "docs.x.io/", "mode": "site"}]})
+        response, _, sync_task = self._add(app, pg_conn, src, [{"url": "github.com/a/b", "mode": "page"}])
 
         assert response.json["mode"] == "sync"
         sync_task.delay.assert_called_once()

@@ -1691,11 +1691,11 @@
           "type": "array"
         },
         "keep_links": {
-          "description": "Keep the URL of links inside sentences in page text",
+          "description": "Keep the URL of links inside sentences in page text; left out, the stored setting is kept",
           "type": "boolean"
         },
         "skip": {
-          "description": "Pages (url) or sections (https://host/path/*) to leave out",
+          "description": "Pages (url) or sections (https://host/path/*) to leave out; left out, the stored list is kept, and [] clears it",
           "items": {
             "type": "string"
           },

@@ -360,6 +360,17 @@ class TestPaginatedSources:
         assert rows["bad-website"]["website"] is None
         assert rows["good"]["website"] == {"hosts": ["x.io"], "pages": 1}
 
+    def test_an_address_stored_without_a_scheme_still_names_its_host(self, app):
+        from docsgpt.api.user.sources.routes import _website_summary
+
+        row = {"type": "website", "remote_data": {"entries": [
+            {"url": "docs.x.io/a", "mode": "page"},
+            {"url": "www.docs.x.io/b", "mode": "page"},
+            {"url": "Y.io/c", "mode": "page"},
+        ]}}
+        with app.app_context():
+            assert _website_summary(row) == {"hosts": ["docs.x.io", "y.io"], "pages": 0}
+
     def test_one_failing_summary_does_not_fail_the_listing(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import PaginatedSources
 

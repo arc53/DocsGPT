@@ -91,6 +91,15 @@ def _is_wiki(doc: dict) -> bool:
 _WIKI_NO_SYNC = "A wiki is edited in place and doesn't sync."
 
 
+def _with_scheme(url: str) -> str:
+    """``url``, with ``https://`` in front when it was written without a scheme, so its host can be read.
+
+    Older Website sources may store an address as the user typed it
+    (``docs.x.io/a``), which ``urlparse`` reads as a path with no host.
+    """
+    return url if "://" in url else f"https://{url}"
+
+
 def _website_summary(row: dict) -> Optional[dict]:
     """Where a web source comes from, for its Knowledge card.
 
@@ -113,7 +122,7 @@ def _website_summary(row: dict) -> Optional[dict]:
             return None
         hosts: list[str] = []
         for entry in config["entries"]:
-            host = (urlparse(entry["url"]).hostname or "").removeprefix("www.")
+            host = (urlparse(_with_scheme(entry["url"])).hostname or "").removeprefix("www.")
             if host and host not in hosts:
                 hosts.append(host)
         structure = row.get("directory_structure")
