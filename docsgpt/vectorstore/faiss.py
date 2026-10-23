@@ -1,9 +1,10 @@
+import hashlib
 import io
 import logging
 import os
 import tempfile
 import uuid
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
@@ -14,7 +15,7 @@ from docsgpt.vectorstore.document_class import Document
 from docsgpt.vectorstore.faiss_docstore import (
     dump_json_sidecar,
     dump_pickle_sidecar,
-    load_json_sidecar,
+    load_json_sidecar_with_fingerprint,
     load_pickle_sidecar,
 )
 
@@ -67,6 +68,27 @@ def get_vectorstore(path: str) -> str:
         raise ValueError("Invalid source_id path")
 
     return candidate
+
+
+def _sidecar_mismatch(
+    ntotal: int, mapping: Dict[int, str], recorded_sha256: Optional[str], index_sha256: str,
+) -> Optional[str]:
+    """Why a sidecar doesn't belong to the index it sits beside, or ``None`` when it does.
+
+    Args:
+        ntotal: The index's row count.
+        mapping: The sidecar's row-to-id mapping.
+        recorded_sha256: The index fingerprint the sidecar was saved with, if it records one.
+        index_sha256: The stored index's fingerprint.
+
+    Returns:
+        The reason, or ``None``.
+    """
+    if recorded_sha256 is not None and recorded_sha256 != index_sha256:
+        return "was saved with another index.faiss"
+    if len(mapping) != ntotal or sorted(mapping) != list(range(ntotal)):
+        return f"lists {len(mapping)} rows, the index holds {ntotal}"
+    return None
 
 
 class FaissStore(BaseVectorStore):
@@ -175,7 +197,20 @@ class FaissStore(BaseVectorStore):
             )
 
     def _load_from_storage(self) -> None:
-        """Load the index and its sidecar, preferring JSON over the pickle."""
+        """Load the index and a sidecar that belongs to it, preferring JSON over the pickle.
+
+        The files are saved one after another, so a save that stopped part
+        way, or a sync's upload (``index.faiss`` and ``index.pkl`` only), can
+        leave a sidecar from another save beside the index. A sidecar is used
+        only when its rows are the index's rows (``0..ntotal-1``) and, for a
+        JSON one that records it, the index's SHA-256 is the one it was saved
+        with; the pickle is tried when the JSON one doesn't match.
+
+        Raises:
+            FileNotFoundError: The index or every sidecar is missing.
+            ValueError: No sidecar matches the index; reading it would give
+                one chunk's text for another's vector.
+        """
         faiss = _dependable_faiss_import()
         faiss_path = f"{self.path}/{FAISS_INDEX}"
         json_path = f"{self.path}/{JSON_SIDECAR}"
@@ -184,21 +219,41 @@ class FaissStore(BaseVectorStore):
         if not self.storage.file_exists(faiss_path):
             raise FileNotFoundError(f"Index files not found in storage at {self.path}")
 
+        candidates = []
         if self.storage.file_exists(json_path):
-            sidecar, loader = json_path, load_json_sidecar
-        elif self.storage.file_exists(pickle_path):
-            sidecar, loader = pickle_path, load_pickle_sidecar
-        else:
+            candidates.append((json_path, load_json_sidecar_with_fingerprint))
+        if self.storage.file_exists(pickle_path):
+            candidates.append((pickle_path, lambda data: (*load_pickle_sidecar(data), None)))
+        if not candidates:
             raise FileNotFoundError(f"Index files not found in storage at {self.path}")
 
+        index_bytes = self.storage.get_file(faiss_path).read()
         with tempfile.TemporaryDirectory() as temp_dir:
             local_faiss = os.path.join(temp_dir, FAISS_INDEX)
             with open(local_faiss, "wb") as f:
-                f.write(self.storage.get_file(faiss_path).read())
+                f.write(index_bytes)
             self.index = faiss.read_index(local_faiss)
+        fingerprint = hashlib.sha256(index_bytes).hexdigest()
 
-        self.documents, self.index_to_docstore_id = loader(
-            self.storage.get_file(sidecar).read()
+        problems = []
+        for sidecar, loader in candidates:
+            name = sidecar.rsplit("/", 1)[-1]
+            try:
+                documents, mapping, recorded = loader(self.storage.get_file(sidecar).read())
+            except Exception as error:  # noqa: BLE001 - the other sidecar may still be good
+                problems.append(f"{name} unreadable: {error}")
+                continue
+            problem = _sidecar_mismatch(self.index.ntotal, mapping, recorded, fingerprint)
+            if problem is not None:
+                problems.append(f"{name} {problem}")
+                continue
+            if problems:
+                logger.warning("FAISS index at %s: %s; loaded %s instead", self.path, "; ".join(problems), name)
+            self.documents, self.index_to_docstore_id = documents, mapping
+            return
+        raise ValueError(
+            f"The FAISS index at {self.path} is out of step with its sidecar ({'; '.join(problems)}); "
+            f"sync or re-ingest the source to rebuild it"
         )
 
     # -- Internals -------------------------------------------------------
@@ -371,8 +426,7 @@ class FaissStore(BaseVectorStore):
         Each save rewrites the whole index, so adding a page one chunk at a
         time would rewrite it once per chunk. All the texts are embedded
         before any is added, so a failed embed adds nothing; a failed save
-        takes the chunks back out of the loaded index, which then matches the
-        stored one again.
+        takes the chunks back out (``_save_or_undo``).
 
         Args:
             texts: The chunks' texts.
@@ -387,11 +441,7 @@ class FaissStore(BaseVectorStore):
             return []
         metadatas = list(metadatas) if metadatas is not None else [{} for _ in texts]
         ids = self.add_texts(texts, [self._own_metadata(metadata) for metadata in metadatas])
-        try:
-            self._save_to_storage()
-        except Exception:
-            self.delete_index(ids)
-            raise
+        self._save_or_undo(lambda: self.delete_index(ids))
         return ids
 
     def update_chunk(self, chunk_id: str, text: str, metadata: Dict[str, Any]) -> str:
@@ -402,6 +452,8 @@ class FaissStore(BaseVectorStore):
         the new vector appended; the row mapping is renumbered to match, and
         the docstore entry is replaced where it stands so :meth:`get_chunks`
         keeps its order. Saved to storage once.
+
+        A failed save puts the chunk back as it was (``_save_or_undo``).
 
         Args:
             chunk_id: Id of the chunk to replace.
@@ -429,9 +481,31 @@ class FaissStore(BaseVectorStore):
                 f"expected (1, {self.index.d})"
             )
 
-        row = rows_by_id[chunk_id]
+        old_vector = self.index.reconstruct(rows_by_id[chunk_id]).reshape(1, -1)
+        old_document = self.documents[chunk_id]
+        self._replace_vector(chunk_id, vector)
+        self.documents[chunk_id] = {
+            "page_content": text,
+            "metadata": self._own_metadata(metadata),
+        }
+
+        def undo() -> None:
+            self._replace_vector(chunk_id, old_vector)
+            self.documents[chunk_id] = old_document
+
+        self._save_or_undo(undo)
+        return chunk_id
+
+    def _replace_vector(self, chunk_id: str, vector: np.ndarray) -> None:
+        """Swap one chunk's vector, renumbering the rows to match.
+
+        Args:
+            chunk_id: A chunk with a row in the index.
+            vector: Its new vector, shape ``(1, d)``.
+        """
+        row = next(r for r, doc_id in self.index_to_docstore_id.items() if doc_id == chunk_id)
         self.index.remove_ids(np.array([row], dtype=np.int64))
-        self.index.add(vector)
+        self.index.add(np.asarray(vector, dtype=np.float32))
         # remove_ids compacts the index and add appends, so the edited chunk's
         # vector is now the last row; renumber as delete_index does.
         remaining = [
@@ -440,24 +514,21 @@ class FaissStore(BaseVectorStore):
             if current_row != row
         ]
         self.index_to_docstore_id = dict(enumerate(remaining + [chunk_id]))
-        self.documents[chunk_id] = {
-            "page_content": text,
-            "metadata": self._own_metadata(metadata),
-        }
-        self._save_to_storage()
-        return chunk_id
 
     def delete_chunk(self, chunk_id: str) -> bool:
         """Delete a chunk and save to storage."""
-        self.delete_index([chunk_id])
-        self._save_to_storage()
+        if chunk_id not in self.documents:
+            raise ValueError(f"Chunk ids not found in index: {[chunk_id]}")
+        self.delete_chunks([chunk_id])
         return True
 
     def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
         """Delete several chunks and save to storage once.
 
         Each save rewrites the whole index, so deleting a page (or a folder of
-        pages) one chunk at a time would rewrite it once per chunk.
+        pages) one chunk at a time would rewrite it once per chunk. A failed
+        save puts the chunks back (``_save_or_undo``), so a caller listing the
+        store again sees them still there.
 
         Args:
             chunk_ids: Ids to delete; ones not in the index are ignored.
@@ -468,34 +539,90 @@ class FaissStore(BaseVectorStore):
         present = list(dict.fromkeys(cid for cid in chunk_ids if cid in self.documents))
         if not present:
             return 0
+        rows_by_id = {doc_id: row for row, doc_id in self.index_to_docstore_id.items()}
+        removed = [
+            (doc_id, self.index.reconstruct(rows_by_id[doc_id]), self.documents[doc_id]) for doc_id in present
+        ]
+        documents_before = dict(self.documents)
         self.delete_index(present)
-        self._save_to_storage()
+
+        def undo() -> None:
+            self._append(
+                [document["page_content"] for _, _, document in removed],
+                [document["metadata"] for _, _, document in removed],
+                [vector for _, vector, _ in removed],
+                [doc_id for doc_id, _, _ in removed],
+            )
+            # Back in their places in the docstore, so get_chunks keeps its order.
+            self.documents = documents_before
+
+        self._save_or_undo(undo)
         return len(present)
 
     # -- Persistence -----------------------------------------------------
 
+    def _save_or_undo(self, undo: Callable[[], None]) -> None:
+        """Save, or undo the change in memory and try to put storage back, raising the save's error.
+
+        A save that stopped part way may have stored some of the files; saving
+        the undone index again stores the previous state whole when storage
+        lets it. When it doesn't, the files still never pair wrongly: the JSON
+        sidecar is written last and names its index (``_save_to_storage``).
+
+        Args:
+            undo: Puts the loaded index back as it was before the change.
+
+        Raises:
+            Exception: Whatever the save raised.
+        """
+        try:
+            self._save_to_storage()
+        except Exception:
+            undo()
+            try:
+                self._save_to_storage()
+            except Exception:  # noqa: BLE001 - the first error is the one to report
+                logger.error(
+                    "Could not store the FAISS index of source %s again after a failed save; "
+                    "it is read back from whichever whole save its files hold",
+                    self.source_id, exc_info=True,
+                )
+            raise
+
     def _write_index_files(self, directory: str) -> None:
-        """Write index.faiss plus both sidecars into ``directory``."""
+        """Write index.faiss plus both sidecars into ``directory``.
+
+        The JSON sidecar records the SHA-256 of the ``index.faiss`` written
+        with it (see ``_load_from_storage``).
+        """
         faiss = _dependable_faiss_import()
         os.makedirs(directory, exist_ok=True)
-        faiss.write_index(self.index, os.path.join(directory, FAISS_INDEX))
+        index_path = os.path.join(directory, FAISS_INDEX)
+        faiss.write_index(self.index, index_path)
+        digest = hashlib.sha256()
+        with open(index_path, "rb") as f:
+            for block in iter(lambda: f.read(1 << 20), b""):
+                digest.update(block)
         with open(os.path.join(directory, JSON_SIDECAR), "wb") as f:
-            f.write(dump_json_sidecar(self.documents, self.index_to_docstore_id))
+            f.write(dump_json_sidecar(self.documents, self.index_to_docstore_id, digest.hexdigest()))
         with open(os.path.join(directory, PICKLE_SIDECAR), "wb") as f:
             f.write(dump_pickle_sidecar(self.documents, self.index_to_docstore_id))
 
     def _save_to_storage(self) -> bool:
         """Persist the index through the configured storage backend.
 
-        Each file is replaced atomically by the backend, so an interrupted save
-        leaves the previous one readable. The three are still written in
-        sequence: a crash between them pairs a new index with an older sidecar,
-        which stays consistent because the ids and row order are preserved.
+        Each file is replaced atomically by the backend, but the three are
+        written one after another, so a save can stop between them. The order
+        makes every such stop readable: ``index.pkl``, then ``index.faiss``,
+        then ``index.json``, which names the index it belongs to and so marks
+        the save complete. Stopped before the index: the old index and the old
+        JSON still match. Stopped after it: the old JSON names another index,
+        and the new pickle beside the new index is read instead.
         """
         with tempfile.TemporaryDirectory() as temp_dir:
             self._write_index_files(temp_dir)
             storage_path = get_vectorstore(self.source_id)
-            for name in (FAISS_INDEX, JSON_SIDECAR, PICKLE_SIDECAR):
+            for name in (PICKLE_SIDECAR, FAISS_INDEX, JSON_SIDECAR):
                 with open(os.path.join(temp_dir, name), "rb") as f:
                     self.storage.save_file(io.BytesIO(f.read()), f"{storage_path}/{name}")
         return True

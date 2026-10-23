@@ -461,6 +461,159 @@ class TestFaissAddChunks:
         _assert_rows_match_documents(populated)
 
 
+class _FlakyStorage(LocalStorage):
+    """Local storage whose writes start failing after ``ok_writes`` more succeed."""
+
+    def __init__(self, base_dir):
+        super().__init__(base_dir=base_dir)
+        self.ok_writes = None
+        self.written = []
+
+    def save_file(self, file_data, path, **kwargs):
+        if self.ok_writes is not None:
+            if self.ok_writes <= 0:
+                raise OSError("storage write failed")
+            self.ok_writes -= 1
+        self.written.append(path.rsplit("/", 1)[-1])
+        return super().save_file(file_data, path, **kwargs)
+
+
+@pytest.fixture
+def flaky(tmp_path):
+    return _FlakyStorage(str(tmp_path))
+
+
+@pytest.fixture
+def flaky_store(flaky, make_store_on):
+    store = make_store_on(flaky, docs_init=[
+        _SeedDoc("The capital of France is Paris.", {"source": "geo.txt"}),
+        _SeedDoc("Postgres is a relational database.", {"source": "db.txt"}),
+        _SeedDoc("Celery runs background tasks.", {"source": "queue.txt"}),
+    ])
+    store.save_local()
+    flaky.written.clear()
+    return store
+
+
+@pytest.fixture
+def make_store_on():
+    def _make(storage, docs_init=None):
+        with patch(
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings", return_value=_FakeEmbeddings(),
+        ), patch(
+            "docsgpt.vectorstore.faiss.StorageCreator.get_storage", return_value=storage,
+        ), patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
+            mock_settings.EMBEDDINGS_NAME = "test_model"
+            return FaissStore("src", "key", docs_init=docs_init)
+
+    return _make
+
+
+def _ids_by_source(store):
+    return {c["metadata"]["source"]: c["doc_id"] for c in store.get_chunks()}
+
+
+@pytest.mark.unit
+class TestFaissSaveIsNeverMisaligned:
+    """index.faiss and its sidecar are separate files; a save that stops between them must not pair rows wrongly."""
+
+    def test_the_json_sidecar_is_written_last_and_names_its_index(self, flaky_store, flaky, tmp_path):
+        flaky_store.delete_chunks([_ids_by_source(flaky_store)["geo.txt"]])
+
+        assert flaky.written == ["index.pkl", "index.faiss", "index.json"]
+        payload = json.loads((tmp_path / "indexes" / "src" / "index.json").read_text())
+        import hashlib
+
+        index_bytes = (tmp_path / "indexes" / "src" / "index.faiss").read_bytes()
+        assert payload["index_sha256"] == hashlib.sha256(index_bytes).hexdigest()
+        assert payload["ntotal"] == 2
+
+    @pytest.mark.parametrize("ok_writes", [0, 1, 2])
+    def test_a_delete_whose_save_stops_part_way_reloads_consistently(
+        self, flaky_store, flaky, make_store_on, ok_writes,
+    ):
+        geo = _ids_by_source(flaky_store)["geo.txt"]
+        flaky.ok_writes = ok_writes
+
+        with pytest.raises(OSError):
+            flaky_store.delete_chunks([geo])
+
+        # The loaded store is back as it was, so a caller relisting it learns nothing was deleted.
+        assert geo in flaky_store.documents
+        _assert_rows_match_documents(flaky_store)
+        flaky.ok_writes = None
+        reloaded = make_store_on(flaky)
+        _assert_rows_match_documents(reloaded)
+        hit = reloaded.search_with_scores("q", k=1, query_vector=[0.0, 0.0, 1.0])[0][0]
+        assert "Celery" in hit.page_content
+
+    @pytest.mark.parametrize("ok_writes", [0, 1, 2])
+    def test_an_update_whose_save_stops_part_way_reloads_consistently(
+        self, flaky_store, flaky, make_store_on, ok_writes,
+    ):
+        geo = _ids_by_source(flaky_store)["geo.txt"]
+        flaky.ok_writes = ok_writes
+
+        with pytest.raises(OSError):
+            flaky_store.update_chunk(geo, "Celery workers in Paris? No: about celery.", {"source": "geo.txt"})
+
+        assert flaky_store.documents[geo]["page_content"] == "The capital of France is Paris."
+        _assert_rows_match_documents(flaky_store)
+        flaky.ok_writes = None
+        _assert_rows_match_documents(make_store_on(flaky))
+
+    def test_a_failed_save_is_undone_in_storage_when_it_can_be(self, flaky_store, flaky, make_store_on):
+        geo = _ids_by_source(flaky_store)["geo.txt"]
+        flaky.ok_writes = 2  # pkl + index written, json refused; the undo's writes then go through
+
+        def recover(*a, **k):
+            flaky.ok_writes = None
+
+        real_save = flaky.save_file
+
+        def save_file(file_data, path, **kwargs):
+            try:
+                return real_save(file_data, path, **kwargs)
+            except OSError:
+                recover()
+                raise
+
+        flaky.save_file = save_file
+        with pytest.raises(OSError):
+            flaky_store.delete_chunks([geo])
+
+        reloaded = make_store_on(flaky)
+        assert geo in reloaded.documents
+        _assert_rows_match_documents(reloaded)
+
+    def test_a_stale_json_sidecar_falls_back_to_the_pickle_that_matches(self, flaky_store, flaky, make_store_on,
+                                                                        tmp_path):
+        # A sync's upload stores index.faiss + index.pkl and leaves the json an earlier edit wrote.
+        folder = tmp_path / "indexes" / "src"
+        stale_json = (folder / "index.json").read_bytes()
+        flaky_store.delete_chunks([_ids_by_source(flaky_store)["geo.txt"]])
+        (folder / "index.json").write_bytes(stale_json)
+
+        reloaded = make_store_on(flaky)
+
+        assert sorted(_ids_by_source(reloaded)) == ["db.txt", "queue.txt"]
+        _assert_rows_match_documents(reloaded)
+
+    def test_an_index_that_matches_no_sidecar_fails_loudly(self, flaky_store, flaky, make_store_on, tmp_path):
+        folder = tmp_path / "indexes" / "src"
+        old_pkl = (folder / "index.pkl").read_bytes()
+        old_json = json.loads((folder / "index.json").read_text())
+        flaky_store.delete_chunks([_ids_by_source(flaky_store)["geo.txt"]])
+        (folder / "index.pkl").write_bytes(old_pkl)
+        # A sidecar from before sidecars named their index: only the row count can be checked.
+        old_json.pop("index_sha256", None)
+        old_json.pop("ntotal", None)
+        (folder / "index.json").write_text(json.dumps(old_json))
+
+        with pytest.raises(Exception, match="out of step"):
+            make_store_on(flaky)
+
+
 class _CappedEmbeddings(_FakeEmbeddings):
     """Records each request's size and refuses one over ``cap`` inputs, as a remote provider does."""
 

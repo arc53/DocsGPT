@@ -170,6 +170,20 @@ class TestJsonSidecar:
         documents, mapping = load_json_sidecar(dump_json_sidecar({}, {}))
         assert documents == {} and mapping == {}
 
+    def test_the_index_fingerprint_round_trips(self):
+        from docsgpt.vectorstore.faiss_docstore import load_json_sidecar_with_fingerprint
+
+        data = dump_json_sidecar(DOCUMENTS, MAPPING, "ab" * 32)
+        documents, mapping, fingerprint = load_json_sidecar_with_fingerprint(data)
+
+        assert (documents, mapping, fingerprint) == (DOCUMENTS, MAPPING, "ab" * 32)
+        assert load_json_sidecar(data) == (DOCUMENTS, MAPPING)
+
+    def test_a_sidecar_without_a_fingerprint_reads_as_none(self):
+        from docsgpt.vectorstore.faiss_docstore import load_json_sidecar_with_fingerprint
+
+        assert load_json_sidecar_with_fingerprint(dump_json_sidecar(DOCUMENTS, MAPPING))[2] is None
+
 
 @pytest.mark.unit
 class TestRealLegacyFixture:

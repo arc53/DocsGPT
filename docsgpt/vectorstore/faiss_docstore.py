@@ -13,7 +13,9 @@ previous ``pickle.load`` would execute arbitrary code from an uploaded file.
 
 ``index.json`` is the format written going forward. ``index.pkl`` is written
 alongside it, byte-compatible with langchain's layout, so an older DocsGPT can
-still read an index this version has re-saved.
+still read an index this version has re-saved. ``index.json`` also records the
+SHA-256 of the ``index.faiss`` it was saved with, so a reader can tell a
+sidecar that belongs to another save of the index.
 """
 
 import io
@@ -22,7 +24,7 @@ import pickle
 import sys
 import types
 from contextlib import contextmanager
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # Module paths the legacy pickle references, mapped onto the stand-ins below.
 _LEGACY_DOCUMENT_PATHS = (
@@ -195,6 +197,22 @@ def dump_pickle_sidecar(
 
 def load_json_sidecar(data: bytes) -> Tuple[Dict[str, Dict[str, Any]], Dict[int, str]]:
     """Read an ``index.json`` sidecar."""
+    documents, mapping, _ = load_json_sidecar_with_fingerprint(data)
+    return documents, mapping
+
+
+def load_json_sidecar_with_fingerprint(
+    data: bytes,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[int, str], Optional[str]]:
+    """Read an ``index.json`` sidecar and the fingerprint of the index it was written with.
+
+    Args:
+        data: The sidecar's bytes.
+
+    Returns:
+        ``(documents, index_to_docstore_id, index_sha256)``; the last is
+        ``None`` for a sidecar written before sidecars recorded it.
+    """
     payload = json.loads(data.decode("utf-8"))
     documents = {
         doc_id: {
@@ -207,14 +225,32 @@ def load_json_sidecar(data: bytes) -> Tuple[Dict[str, Dict[str, Any]], Dict[int,
         int(row): doc_id
         for row, doc_id in (payload.get("index_to_docstore_id") or {}).items()
     }
-    return documents, mapping
+    fingerprint = payload.get("index_sha256")
+    return documents, mapping, fingerprint if isinstance(fingerprint, str) else None
 
 
 def dump_json_sidecar(
-    documents: Dict[str, Dict[str, Any]], index_to_docstore_id: Dict[int, str]
+    documents: Dict[str, Dict[str, Any]],
+    index_to_docstore_id: Dict[int, str],
+    index_sha256: Optional[str] = None,
 ) -> bytes:
-    """Serialize to the pickle-free sidecar written going forward."""
+    """Serialize to the pickle-free sidecar written going forward.
+
+    Args:
+        documents: Chunk id to ``{"page_content", "metadata"}``.
+        index_to_docstore_id: FAISS row to chunk id.
+        index_sha256: SHA-256 of the ``index.faiss`` bytes these rows belong
+            to, so a reader can tell this sidecar from one paired with another
+            save of the index. Also records the row count when given.
+
+    Returns:
+        The sidecar's bytes.
+    """
+    fingerprint = (
+        {"index_sha256": index_sha256, "ntotal": len(index_to_docstore_id)} if index_sha256 else {}
+    )
     payload = {
+        **fingerprint,
         "version": 1,
         "documents": {
             doc_id: {
