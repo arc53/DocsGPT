@@ -605,6 +605,16 @@ class TestParseWebsiteConfig:
             parse_website_config({"entries": [{"url": url, "mode": "page"}]})
         assert caught.value.code == "invalid_address"
 
+    def test_a_long_run_of_dots_is_checked_in_linear_time(self):
+        import time
+
+        from docsgpt.parser.remote.website_loader import is_web_address
+
+        started = time.perf_counter()
+        # A scheme of dots reaches the host:port check, which must not backtrack.
+        is_web_address("a" + "." * 20000 + ":x")
+        assert time.perf_counter() - started < 0.2
+
     def test_a_stored_scheme_less_site_still_has_a_host(self, web):
         web({"https://x.io/docs": page("Docs", links=["/docs/a"]), "https://x.io/docs/a": page("A")})
 

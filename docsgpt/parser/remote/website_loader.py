@@ -329,7 +329,8 @@ def _clamp_pages(requested: Optional[int]) -> int:
 # ``host:port`` at the start of an address: ``urlsplit`` reads ``y.io:8080/c``
 # as scheme ``y.io``. A dotted host, or localhost, is never a scheme people
 # use, so it is taken as a host; ``tel:911`` or ``mailto:x`` stay schemes.
-_HOST_PORT = re.compile(r"^(?:[^:/?#@\s]*\.[^:/?#@\s]*|localhost):\d+(?:[/?#]|$)", re.IGNORECASE)
+# The part before the first dot excludes dots, so a run of them can't backtrack.
+_HOST_PORT = re.compile(r"^(?:[^:/?#@\s.]*\.[^:/?#@\s]*|localhost):\d+(?:[/?#]|$)", re.IGNORECASE)
 
 
 def _has_scheme(url: str) -> bool:
