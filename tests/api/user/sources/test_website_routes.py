@@ -164,26 +164,36 @@ class TestSaveWebsite:
 
 
 class TestRemovePages:
-    def _remove(self, app, pg_conn, src, store, **body):
+    """The route checks the removal and saves its skip rules; the worker deletes the pages."""
+
+    def _remove(self, app, pg_conn, src, **body):
         from docsgpt.api.user.sources.website import RemoveWebsitePages
 
-        with patch("docsgpt.api.user.sources.website.get_vector_store", return_value=store):
-            return _call(app, pg_conn, RemoveWebsitePages, "POST", json={"source_id": str(src["id"]), **body})
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore"
+        ) as create_store:
+            pages_task.delay.return_value = MagicMock(id="remove-task")
+            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={"source_id": str(src["id"]), **body})
+        # No chunk is touched in the request: the worker deletes them.
+        create_store.assert_not_called()
+        self.pages_task = pages_task
+        return response
 
     def test_a_page_added_by_address_leaves_the_list(self, app, pg_conn):
         src = _seed(pg_conn)
-        store = MagicMock()
-        response = self._remove(app, pg_conn, src, store, file_paths=["extra.md"])
+        response = self._remove(app, pg_conn, src, file_paths=["extra.md"])
 
         assert response.status_code == 200
-        store.delete_chunks_by_source_paths.assert_called_once_with(["https://docs.x.io/extra"])
+        assert response.json["task_id"] == "remove-task"
+        self.pages_task.delay.assert_called_once_with(str(src["id"]), USER, "remove", file_paths=["extra.md"])
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/"]
         # The remaining site can find the page too, so it is skipped as well:
         # otherwise the next sync brings it back.
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/extra"]
-        assert "extra.md" not in saved["directory_structure"]
-        assert saved["tokens"] == "55"
+        # The page list changes when the worker has deleted the chunks.
+        assert "extra.md" in saved["directory_structure"]
+        assert saved["tokens"] == "62"
 
     def test_a_page_entry_no_site_can_reach_adds_no_rule(self, app, pg_conn):
         src = _seed(
@@ -193,7 +203,7 @@ class TestRemovePages:
                 {"url": "https://docs.x.io/extra", "mode": "page"},
             ]},
         )
-        response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["extra.md"])
+        response = self._remove(app, pg_conn, src, file_paths=["extra.md"])
 
         assert response.status_code == 200
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
@@ -208,7 +218,7 @@ class TestRemovePages:
                 {"url": "https://docs.x.io/Deploying/Kubernetes", "mode": "page"},
             ]},
         )
-        response = self._remove(app, pg_conn, src, MagicMock(), directory_path="Deploying")
+        response = self._remove(app, pg_conn, src, directory_path="Deploying")
 
         assert response.status_code == 200
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
@@ -224,27 +234,26 @@ class TestRemovePages:
                 {"url": "https://docs.x.io/Deploying/Kubernetes", "mode": "page"},
             ]},
         )
-        response = self._remove(app, pg_conn, src, MagicMock(), directory_path="Deploying")
+        response = self._remove(app, pg_conn, src, directory_path="Deploying")
 
         assert response.status_code == 200
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["skip"] == []
 
     def test_a_removal_past_the_skip_rule_limit_is_refused(self, app, pg_conn):
         src = _seed(pg_conn, remote_data={**CONFIG, "skip": ["https://docs.x.io/old"]})
-        store = MagicMock()
         with patch("docsgpt.parser.remote.website_loader.MAX_SKIP_RULES", 1):
-            response = self._remove(app, pg_conn, src, store, file_paths=["Deploying/Docker.md"])
+            response = self._remove(app, pg_conn, src, file_paths=["Deploying/Docker.md"])
 
         assert response.status_code == 400
         assert "skip rules" in response.json["error"]
-        store.delete_chunks_by_source_paths.assert_not_called()
+        self.pages_task.delay.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/old"]
         assert "Docker.md" in saved["directory_structure"]["Deploying"]
 
     def test_a_page_already_skipped_gets_no_second_rule(self, app, pg_conn):
         src = _seed(pg_conn, remote_data={**CONFIG, "skip": ["https://docs.x.io/Deploying/*"]})
-        response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["Deploying/Docker.md"])
+        response = self._remove(app, pg_conn, src, file_paths=["Deploying/Docker.md"])
 
         assert response.status_code == 200
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["skip"] == [
@@ -253,28 +262,27 @@ class TestRemovePages:
 
     def test_a_crawled_page_is_skipped_in_later_syncs(self, app, pg_conn):
         src = _seed(pg_conn)
-        response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["Deploying/Docker.md"])
+        response = self._remove(app, pg_conn, src, file_paths=["Deploying/Docker.md"])
 
         assert response.status_code == 200
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
-        assert "Docker.md" not in saved["directory_structure"]["Deploying"]
+        self.pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "remove", file_paths=["Deploying/Docker.md"]
+        )
 
     def test_a_folder_becomes_one_section_rule(self, app, pg_conn):
         src = _seed(pg_conn)
-        store = MagicMock()
-        response = self._remove(app, pg_conn, src, store, directory_path="Deploying")
+        response = self._remove(app, pg_conn, src, directory_path="Deploying")
 
         assert response.status_code == 200
         assert response.json["removed"] == 2
-        # One pass over the store for the whole folder (FAISS saves once).
-        store.delete_chunks_by_source_paths.assert_called_once_with(
-            ["https://docs.x.io/Deploying/Docker", "https://docs.x.io/Deploying/Kubernetes"]
+        # One task for the whole folder (FAISS saves once).
+        self.pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "remove", file_paths=["Deploying/Docker.md", "Deploying/Kubernetes.md"]
         )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/*"]
-        assert "Deploying" not in saved["directory_structure"]
-        assert saved["tokens"] == "12"
 
     def test_removing_the_last_page_entry_of_a_page_only_source_is_refused(self, app, pg_conn):
         src = _seed(
@@ -282,19 +290,28 @@ class TestRemovePages:
             remote_data={"entries": [{"url": "https://docs.x.io/extra", "mode": "page"}]},
             directory_structure={"extra.md": _leaf("https://docs.x.io/extra", 7)},
         )
-        store = MagicMock()
-        response = self._remove(app, pg_conn, src, store, file_paths=["extra.md"])
+        response = self._remove(app, pg_conn, src, file_paths=["extra.md"])
 
         assert response.status_code == 400
         # The UI words this one itself.
         assert response.json["code"] == "last_entry"
-        store.delete_chunks_by_source_paths.assert_not_called()
+        self.pages_task.delay.assert_not_called()
 
     def test_unknown_paths_are_400(self, app, pg_conn):
         src = _seed(pg_conn)
-        response = self._remove(app, pg_conn, src, MagicMock(), file_paths=["nope.md"])
+        response = self._remove(app, pg_conn, src, file_paths=["nope.md"])
 
         assert response.status_code == 400
+        self.pages_task.delay.assert_not_called()
+
+    def test_someone_without_edit_access_is_refused(self, app, pg_conn):
+        src = SourcesRepository(pg_conn).create(
+            "Theirs", user_id="other", type="website", remote_data=CONFIG, directory_structure=TREE
+        )
+        response = self._remove(app, pg_conn, src, file_paths=["extra.md"])
+
+        assert response.status_code == 404
+        self.pages_task.delay.assert_not_called()
 
 
 class TestAddPages:
@@ -501,23 +518,22 @@ class TestConcurrentEdits:
             "https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/other", "https://docs.x.io/new",
         ]
 
-    def test_a_removal_keeps_a_page_added_meanwhile(self, app, pg_conn):
+    def test_a_removal_keeps_an_entry_added_meanwhile(self, app, pg_conn):
         from docsgpt.api.user.sources.website import RemoveWebsitePages
 
         src = _seed(pg_conn)
-        meanwhile = {**TREE, "late.md": _leaf("https://docs.x.io/late", 4)}
-        with _change_after_load(pg_conn, {"directory_structure": meanwhile}), patch(
-            "docsgpt.api.user.sources.website.get_vector_store", return_value=MagicMock()
-        ):
+        meanwhile = {**CONFIG, "entries": CONFIG["entries"] + [{"url": "https://docs.x.io/late", "mode": "page"}]}
+        with _change_after_load(pg_conn, {"remote_data": meanwhile}), patch(
+            "docsgpt.api.user.sources.website.website_pages"
+        ) as pages_task:
+            pages_task.delay.return_value = MagicMock(id="t")
             response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
                 "source_id": str(src["id"]), "file_paths": ["extra.md"],
             })
 
         assert response.status_code == 200
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
-        assert "late.md" in saved["directory_structure"]
-        assert "extra.md" not in saved["directory_structure"]
-        assert saved["tokens"] == "59"
+        assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/", "https://docs.x.io/late"]
 
     def test_a_settings_save_keeps_a_schedule_set_meanwhile(self, app, pg_conn):
         from docsgpt.api.user.sources.website import WebsiteSettings
@@ -531,29 +547,26 @@ class TestConcurrentEdits:
         assert response.status_code == 200
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["sync_frequency"] == "daily"
 
-    def test_a_removal_while_a_sync_runs_is_refused(self, app, pg_conn):
+    def test_a_removal_while_a_sync_runs_is_queued(self, app, pg_conn):
+        # The worker waits for the sync's index lock; the request doesn't take it.
         from docsgpt.api.user.sources.website import RemoveWebsitePages
         from docsgpt.vectorstore.index_lock import SourceBusy
 
         src = _seed(pg_conn)
-        store = MagicMock()
 
-        @contextmanager
-        def busy(source_id, **kwargs):
+        def busy(*args, **kwargs):
             raise SourceBusy("busy")
-            yield
 
-        with patch("docsgpt.api.user.sources.website.source_index_lock", busy), patch(
-            "docsgpt.api.user.sources.website.get_vector_store", return_value=store
-        ):
+        with patch("docsgpt.vectorstore.index_lock._acquire", busy), patch(
+            "docsgpt.api.user.sources.website.website_pages"
+        ) as pages_task:
+            pages_task.delay.return_value = MagicMock(id="t")
             response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
                 "source_id": str(src["id"]), "file_paths": ["extra.md"],
             })
 
-        assert response.status_code == 409
-        assert response.json["code"] == "source_busy"
-        store.delete_chunks_by_source_paths.assert_not_called()
-        assert "extra.md" in SourcesRepository(pg_conn).get(str(src["id"]), USER)["directory_structure"]
+        assert response.status_code == 200
+        pages_task.delay.assert_called_once()
 
 
 class TestAWikiIsNotEditedAsAWebsite:
@@ -572,10 +585,9 @@ class TestAWikiIsNotEditedAsAWebsite:
         from docsgpt.api.user.sources import website
 
         src = _seed(pg_conn, config={"kind": "wiki"}, sync_frequency="never")
-        store = MagicMock()
         with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
             "docsgpt.api.user.sources.website.sync_source"
-        ) as sync_task, patch("docsgpt.api.user.sources.website.get_vector_store", return_value=store):
+        ) as sync_task:
             response = _call(
                 app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
             )
@@ -584,7 +596,6 @@ class TestAWikiIsNotEditedAsAWebsite:
         assert response.json["code"] == "wiki"
         pages_task.delay.assert_not_called()
         sync_task.delay.assert_not_called()
-        store.delete_chunks_by_source_paths.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["sync_frequency"] == "never"
         assert saved["remote_data"] == CONFIG
@@ -610,10 +621,7 @@ class TestAStoreWithoutChunkEdits:
         from docsgpt.api.user.sources import website
 
         src = _seed(pg_conn)
-        store = MagicMock()
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
-            "docsgpt.api.user.sources.website.get_vector_store", return_value=store
-        ):
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task:
             response = _call(
                 app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
             )
@@ -621,7 +629,6 @@ class TestAStoreWithoutChunkEdits:
         assert response.status_code == 400
         assert response.json["code"] == "chunks_unsupported"
         pages_task.delay.assert_not_called()
-        store.delete_chunks_by_source_paths.assert_not_called()
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert saved["remote_data"] == CONFIG
         assert "extra.md" in saved["directory_structure"]

@@ -291,7 +291,6 @@ export function isWebsiteDraftValid(
 
 /** Refusal codes of the /api/website routes and the website key that words each. */
 const REFUSAL_KEYS = new Map<unknown, string>([
-  ['source_busy', 'sourceBusy'],
   ['wiki', 'wikiSource'],
   ['chunks_unsupported', 'chunksUnsupported'],
   ['last_entry', 'removeLast'],
@@ -300,9 +299,8 @@ const REFUSAL_KEYS = new Map<unknown, string>([
 /**
  * What to tell the user when a /api/website route refuses a request.
  *
- * A code the UI knows is worded here (a source busy with a sync, a wiki, a
- * vector store that can't change single pages, the last entry, the page
- * cap). Any other 400 carries the server's own message (a config past its
+ * A code the UI knows is worded here (a wiki, a vector store that can't
+ * change single pages, the last entry, the page cap). Any other 400 carries the server's own message (a config past its
  * limits, a page that isn't there), which is shown as written.
  *
  * @param t The translate function.

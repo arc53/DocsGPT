@@ -2,10 +2,10 @@
 
 A Website source stores what it fetches (pages and sites) and what a site's
 crawl must skip; see ``parser/remote/website_loader.py``. These routes edit
-that list, so every change survives a sync. Removing a page also deletes its
-chunks and its tree entry at once; a page found by a site's crawl is added to
-``skip`` so the next sync leaves it out. Added pages are fetched and appended
-by ``website_pages_worker``. Sources made by the older url/crawler/sitemap
+that list, so every change survives a sync. A page found by a site's crawl is
+added to ``skip`` when it is removed, so the next sync leaves it out. The
+chunks and tree entries change in ``website_pages_worker``: removed pages are
+deleted there, and added pages are fetched and appended. Sources made by the older url/crawler/sitemap
 loaders read as Website sources and are converted on their first save.
 """
 
@@ -16,7 +16,6 @@ from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Resource
 
 from docsgpt.api import api
-from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, sources_ns
@@ -28,14 +27,11 @@ from docsgpt.parser.remote.website_tree import (
     count_pages,
     folder_skip_rule,
     pages_under,
-    remove_pages,
-    total_tokens,
     web_pages,
 )
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
-from docsgpt.vectorstore.index_lock import REQUEST_WAIT_SECONDS, SourceBusy, source_index_lock
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 _SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
@@ -207,8 +203,9 @@ class RemoveWebsitePages(Resource):
     @api.expect(remove_model)
     @api.doc(
         description=(
-            "Remove pages or a folder from a Website source: their chunks and tree entries go now. A page added "
-            "by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs."
+            "Remove pages or a folder from a Website source. The config changes now: a page added by address "
+            "leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their "
+            "chunks and tree entries go in a background task (task_id), after any running sync."
         ),
     )
     def post(self):
@@ -223,15 +220,11 @@ class RemoveWebsitePages(Resource):
         file_paths = [p for p in data.get("file_paths") or [] if isinstance(p, str)]
         directory_path = (data.get("directory_path") or "").strip("/")
         try:
-            with db_readonly() as conn:
-                doc, _ra = load_source(conn, data["source_id"], user, "edit")
-            refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
-            if refusal is not None:
-                return refusal
-            # Chunks are deleted here and now: wait briefly for a sync or a
-            # page change on the source rather than race its index writes.
-            with source_index_lock(str(doc["id"]), wait_seconds=REQUEST_WAIT_SECONDS), db_session() as conn:
+            with db_session() as conn:
                 doc, ra = _load_locked(conn, data["source_id"], user, "edit")
+                refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
+                if refusal is not None:
+                    return refusal
                 config = _website_config(doc)
                 if config is None:
                     return _error("Not a website source")
@@ -262,28 +255,25 @@ class RemoveWebsitePages(Resource):
                 except ValueError as err:
                     return _error(str(err))
 
-                # One pass for every page: FAISS rewrites its whole index per
-                # save, so a folder is saved once rather than once per chunk.
-                get_vector_store(str(doc["id"])).delete_chunks_by_source_paths([url for _path, url in pages])
-                remove_pages(structure, [path for path, _url in pages])
+                # Saved now, so a sync that starts before the worker runs
+                # already leaves the pages out.
                 SourcesRepository(conn).update(
-                    str(doc["id"]),
-                    ra.owner_id,
-                    {
-                        "remote_data": config,
-                        "type": "website",
-                        "directory_structure": structure,
-                        "tokens": str(total_tokens(structure)),
-                    },
+                    str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
                 )
+            # The chunks and tree entries go in the worker, under the source's
+            # index lock: a running sync is waited for rather than refused, and
+            # no request is held open while a large folder's chunks are deleted.
+            task = website_pages.delay(
+                str(doc["id"]), ra.owner_id, "remove", file_paths=[path for path, _url in pages]
+            )
         except AccessDenied as err:
             return denied_response(err)
-        except SourceBusy as err:
-            return _error(str(err), 409, code="source_busy")
         except Exception as err:
             current_app.logger.error(f"Error removing website pages: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
-        return make_response(jsonify({"success": True, "removed": len(pages), "config": config}), 200)
+        return make_response(
+            jsonify({"success": True, "task_id": task.id, "removed": len(pages), "config": config}), 200
+        )
 
 
 @sources_ns.route("/website/pages")

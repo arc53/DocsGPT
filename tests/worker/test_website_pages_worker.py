@@ -321,6 +321,152 @@ class TestRefreshPage:
             worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="nope.md")
 
 
+@pytest.fixture
+def two_pages(pg_conn, pipeline):
+    """A source with pages ``a.md`` and ``guide/b.md``, each with its chunks."""
+    pipeline["store"].seed("B one", "https://docs.x.io/guide/b", "guide/b.md")
+    return SourcesRepository(pg_conn).create(
+        "Docs",
+        user_id=USER,
+        type="website",
+        remote_data={"entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+        directory_structure={
+            "a.md": _leaf("https://docs.x.io/a", 40), "guide": {"b.md": _leaf("https://docs.x.io/guide/b", 9)},
+        },
+        tokens="49",
+    )
+
+
+@pytest.mark.unit
+class TestRemovePages:
+    def test_deletes_the_pages_chunks_then_their_entries(
+        self, pg_conn, patch_worker_db, task_self, two_pages, pipeline,
+    ):
+        from docsgpt import worker
+
+        task_self.request.id = "remove-1"
+        store = pipeline["store"]
+        trees_at_delete = []
+        real_delete = store.delete_chunks
+
+        def delete_and_look(chunk_ids):
+            # The page is still listed while its chunks go: the list changes last.
+            trees_at_delete.append(_tree(pg_conn, two_pages))
+            return real_delete(chunk_ids)
+
+        store.delete_chunks = delete_and_look
+        result = worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["guide/b.md"])
+
+        assert result == {"status": "ok", "pages": 1}
+        assert store.texts_for("https://docs.x.io/guide/b") == []
+        assert store.texts_for("https://docs.x.io/a") == ["old A one", "old A two"]
+        assert "b.md" in trees_at_delete[0]["guide"]
+        row = _source_row(pg_conn, two_pages)
+        assert row["directory_structure"] == {"a.md": _leaf("https://docs.x.io/a", 40)}
+        assert row["tokens"] == "40"
+        assert [kind for kind, _ in pipeline["events"]] == ["source.ingest.queued", "source.ingest.completed"]
+        assert all(payload["task_id"] == "remove-1" for _, payload in pipeline["events"])
+        assert pipeline["events"][-1][1]["operation"] == "remove_pages"
+        assert pipeline["fetch_calls"] == []
+
+    def test_a_folder_goes_in_one_delete(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        calls = []
+        real_delete = store.delete_chunks
+        store.delete_chunks = lambda ids: calls.append(list(ids)) or real_delete(ids)
+        worker.website_pages_worker(
+            task_self, str(two_pages["id"]), USER, "remove", file_paths=["a.md", "guide/b.md"],
+        )
+
+        assert len(calls) == 1 and len(calls[0]) == 3
+        assert store.chunks == {}
+        assert _tree(pg_conn, two_pages) == {}
+
+    def test_pages_already_gone_are_ignored(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        # A retried task, or a sync that rebuilt the tree meanwhile.
+        from docsgpt import worker
+
+        result = worker.website_pages_worker(
+            task_self, str(two_pages["id"]), USER, "remove", file_paths=["gone.md"],
+        )
+
+        assert result["pages"] == 0
+        assert pipeline["store"].log == []
+        assert sorted(_tree(pg_conn, two_pages)) == ["a.md", "guide"]
+        assert pipeline["events"][-1][0] == "source.ingest.completed"
+
+    def test_a_failed_delete_leaves_the_page_listed(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        from docsgpt import worker
+
+        def fail(chunk_ids):
+            raise RuntimeError("index unavailable")
+
+        pipeline["store"].delete_chunks = fail
+        with pytest.raises(RuntimeError):
+            worker.website_pages_worker(
+                task_self, str(two_pages["id"]), USER, "remove", file_paths=["guide/b.md"],
+            )
+
+        assert pipeline["store"].texts_for("https://docs.x.io/guide/b") == ["B one"]
+        row = _source_row(pg_conn, two_pages)
+        assert "b.md" in row["directory_structure"]["guide"]
+        assert row["tokens"] == "49"
+        assert pipeline["events"][-1][0] == "source.ingest.failed"
+
+    def test_a_page_added_meanwhile_is_kept(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        # The tree is written on the row as it is when the chunks are gone.
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        real_delete = store.delete_chunks
+
+        def delete_then_add(chunk_ids):
+            deleted = real_delete(chunk_ids)
+            tree = dict(_tree(pg_conn, two_pages))
+            tree["c.md"] = _leaf("https://docs.x.io/c", 3)
+            SourcesRepository(pg_conn).update(str(two_pages["id"]), USER, {"directory_structure": tree})
+            return deleted
+
+        store.delete_chunks = delete_then_add
+        worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["guide/b.md"])
+
+        row = _source_row(pg_conn, two_pages)
+        assert sorted(row["directory_structure"]) == ["a.md", "c.md"]
+        assert row["tokens"] == "43"
+
+    def test_runs_holding_the_source_index_lock(
+        self, pg_conn, patch_worker_db, task_self, two_pages, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        held = []
+
+        @contextmanager
+        def fake_lock(source_id, **kwargs):
+            held.append("locked")
+            yield
+            held.append("released")
+
+        store = pipeline["store"]
+        real_delete = store.delete_chunks
+        store.delete_chunks = lambda ids: held.append("delete") or real_delete(ids)
+        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
+        worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["guide/b.md"])
+
+        assert held == ["locked", "delete", "released"]
+
+    def test_a_wiki_is_left_alone(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(two_pages["id"]), USER, {"config": {"kind": "wiki"}})
+        with pytest.raises(ValueError, match="wiki"):
+            worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["a.md"])
+
+        assert pipeline["store"].log == []
+
+
 @pytest.mark.unit
 class TestAStoreWithoutChunkEdits:
     def test_fails_clearly_instead_of_reporting_success(

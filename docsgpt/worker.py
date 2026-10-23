@@ -4852,6 +4852,68 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
     return kept
 
 
+def _remove_web_pages(source_id: str, user: str, file_paths: Optional[List[str]]) -> List[Tuple[str, str]]:
+    """Delete pages from a Website source: their chunks first, then their tree entries.
+
+    Run holding the source's index lock. The pages are looked up in the tree
+    as it is now, so a path that has left it (a retried task, a sync that
+    rebuilt the tree) is ignored. The chunks go in one batched delete (FAISS
+    saves once); if it fails, the tree is not written, so every page still
+    listed keeps its chunks and the removal can be tried again. The tree is
+    written on the row re-read under a row lock, so a change made meanwhile
+    is kept.
+
+    Args:
+        source_id: The source.
+        user: Its owner.
+        file_paths: Tree paths of the pages to remove.
+
+    Returns:
+        ``(path, url)`` of the pages removed.
+
+    Raises:
+        ValueError: The store can't delete single chunks, or the source is
+            gone or a wiki.
+        Exception: Whatever deleting the chunks raised; nothing was written.
+    """
+    from docsgpt.parser.remote.website_tree import remove_pages, total_tokens, web_pages
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        raise ValueError(
+            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead"
+        )
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    if _is_wiki_config(source.get("config")):
+        raise ValueError("This source is a wiki now; its pages are edited in place")
+    structure = source.get("directory_structure") if isinstance(source.get("directory_structure"), dict) else {}
+    known = dict(web_pages(structure))
+    pages = [(path, known[path]) for path in dict.fromkeys(file_paths or []) if path in known]
+    if not pages:
+        return []
+
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+    chunk_ids = store.chunk_ids_by_source_paths(list(dict.fromkeys(url for _path, url in pages)))
+    if chunk_ids:
+        store.delete_chunks(chunk_ids)
+
+    removed = dict(pages)
+    with db_session() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_for_update(source_id, user)
+        if row is None:
+            raise ValueError(f"Source {source_id} was deleted while its pages were removed")
+        tree = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
+        # Only the entries still holding the page whose chunks were deleted.
+        stale = [path for path, url in web_pages(tree) if removed.get(path) == url]
+        remove_pages(tree, stale)
+        repo.update(source_id, user, {"directory_structure": tree, "tokens": str(total_tokens(tree))})
+    return pages
+
+
 def website_pages_worker(
     self: Any,
     source_id: str,
@@ -4859,8 +4921,9 @@ def website_pages_worker(
     operation: str,
     urls: Optional[List[str]] = None,
     file_path: Optional[str] = None,
+    file_paths: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Add pages to a Website source, or refresh one, without re-fetching the rest.
+    """Add pages to a Website source, refresh one or remove some, without re-fetching the rest.
 
     A sync wipes the index and rebuilds it; this changes only the pages named.
     Each page is fetched first, so one that can't be fetched leaves the source
@@ -4871,6 +4934,9 @@ def website_pages_worker(
     they were, and the task fails. The route sends whole-site additions and
     pages on a new host to a sync instead: those rename the tree.
 
+    A removal (``_remove_web_pages``) deletes the pages' chunks, then their
+    tree entries; the route has already saved the skip rules.
+
     The run holds the source's index lock (``source_index_lock``), so it
     waits for a sync or another page change on the same source, and writes
     its pages onto the tree as it is when it finishes.
@@ -4879,10 +4945,11 @@ def website_pages_worker(
         self: Celery task instance.
         source_id: The Website source.
         user: Its owner (the route resolves it).
-        operation: ``add`` (fetch ``urls``) or ``refresh`` (re-fetch the page
-            at ``file_path``).
+        operation: ``add`` (fetch ``urls``), ``refresh`` (re-fetch the page
+            at ``file_path``) or ``remove`` (delete the pages at ``file_paths``).
         urls: Page URLs to add; they are already in the source's config.
         file_path: Tree path of the page to refresh.
+        file_paths: Tree paths of the pages to remove.
 
     Returns:
         ``{"status": "ok", "pages": n}``.
@@ -4897,7 +4964,7 @@ def website_pages_worker(
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
-    event_operation = "add_pages" if operation == "add" else "refresh_page"
+    event_operation = {"add": "add_pages", "remove": "remove_pages"}.get(operation, "refresh_page")
     envelope = {
         "source_id": source_id,
         "job_name": source.get("name", ""),
@@ -4909,7 +4976,10 @@ def website_pages_worker(
 
     try:
         with source_index_lock(source_id):
-            changes = _run_website_pages(source_id, user, operation, urls, file_path)
+            if operation == "remove":
+                changes = _remove_web_pages(source_id, user, file_paths)
+            else:
+                changes = _run_website_pages(source_id, user, operation, urls, file_path)
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         publish_user_event(

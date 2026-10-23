@@ -236,8 +236,14 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     });
   };
 
+  /**
+   * Asks the server to remove the pages. A refusal stays in the dialog; once
+   * the removal is queued the dialog closes and the header shows it until the
+   * worker has deleted the pages.
+   */
   const confirmRemove = async () => {
     if (!removal) return;
+    const startedAt = Date.now();
     const body = removal.isFile
       ? { source_id: docId, file_paths: [removal.path] }
       : { source_id: docId, directory_path: removal.path };
@@ -247,9 +253,12 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       throw new RemoveRefused(
         websiteRefusal(t, response.status, data) ?? tr('removeFailed'),
       );
+    const { name } = removal;
     setRemoval(null);
-    await controllerRef.current?.refreshDirectory();
-    setConfigKey((key) => key + 1);
+    void awaitChange(tr('removing'), startedAt, 'removeFailed', {
+      name,
+      taskId: typeof data.task_id === 'string' ? data.task_id : null,
+    });
   };
 
   const askRemove = (name: string, isFile: boolean, node?: FileNode) => {

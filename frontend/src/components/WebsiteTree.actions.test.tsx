@@ -278,8 +278,65 @@ describe('WebsiteTree page management', () => {
     json: async () => body,
   });
 
+  it('a remove closes the dialog and waits for its task in the header', async () => {
+    service.removeWebsitePages.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 'task-r' }),
+    });
+    await render();
+    const controller = fakeController();
+    captured.props!.controllerRef!.current = controller;
+    await removeEntry();
+
+    expect(document.body.textContent).not.toContain(
+      'settings.sources.website.removeEntry',
+    );
+    expect(captured.props!.statusLabel).toBe(
+      'settings.sources.website.removing',
+    );
+    const page = STRUCTURE['extra.md'];
+    expect(
+      menu({ name: 'extra.md', isFile: true, node: page }).at(-1)!.disabled,
+    ).toBe(true);
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+
+    service.getWebsite.mockClear();
+    await act(async () => emitTerminal('completed', 'task-other'));
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+    await act(async () => emitTerminal('completed', 'task-r'));
+    expect(controller.refreshDirectory).toHaveBeenCalled();
+    // The source's list of page entries is read again too.
+    expect(service.getWebsite).toHaveBeenCalled();
+    expect(captured.props!.statusLabel).toBeNull();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('a remove that fails in the worker toasts it', async () => {
+    service.removeWebsitePages.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 'task-r' }),
+    });
+    await render();
+    const controller = fakeController();
+    captured.props!.controllerRef!.current = controller;
+    await removeEntry();
+    await act(async () => emitTerminal('failed', 'task-r'));
+
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+    expect(captured.props!.statusLabel).toBeNull();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          variant: 'destructive',
+          message: expect.stringContaining(
+            'settings.sources.website.removeFailed',
+          ),
+        }),
+      }),
+    );
+  });
+
   it.each([
-    [409, { code: 'source_busy', error: 'busy' }, 'sourceBusy'],
     [400, { code: 'wiki', error: 'wiki' }, 'wikiSource'],
     [400, { code: 'chunks_unsupported', error: 'no' }, 'chunksUnsupported'],
     [400, { code: 'last_entry', error: 'last' }, 'removeLast'],

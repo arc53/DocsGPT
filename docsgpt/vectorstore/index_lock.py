@@ -25,8 +25,6 @@ logger = logging.getLogger(__name__)
 
 # How long a worker job waits for the source to be free.
 WORKER_WAIT_SECONDS = 3600
-# How long an HTTP request waits before answering that the source is busy.
-REQUEST_WAIT_SECONDS = 5
 _TTL_SECONDS = 600
 
 

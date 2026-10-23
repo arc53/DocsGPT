@@ -7415,7 +7415,7 @@
     },
     "/api/website/remove": {
       "post": {
-        "description": "Remove pages or a folder from a Website source: their chunks and tree entries go now. A page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs.",
+        "description": "Remove pages or a folder from a Website source. The config changes now: a page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their chunks and tree entries go in a background task (task_id), after any running sync.",
         "operationId": "post_remove_website_pages",
         "parameters": [
           {

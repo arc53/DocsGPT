@@ -224,9 +224,6 @@ describe('websiteRefusal', () => {
   const key = (name: string) => `settings.sources.website.${name}`;
 
   it('words the codes the UI knows', () => {
-    expect(websiteRefusal(t, 409, { code: 'source_busy', error: 'x' })).toBe(
-      key('sourceBusy'),
-    );
     expect(websiteRefusal(t, 400, { code: 'wiki', error: 'x' })).toBe(
       key('wikiSource'),
     );

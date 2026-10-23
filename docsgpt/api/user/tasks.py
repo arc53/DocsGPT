@@ -281,15 +281,19 @@ def website_pages(
     operation: str,
     urls: Optional[List[str]] = None,
     file_path: Optional[str] = None,
+    file_paths: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Add pages to a Website source, or refresh one (``website_pages_worker``).
+    """Add pages to a Website source, refresh one, or remove some (``website_pages_worker``).
 
     Not retried: a page that can't be fetched fails the same way again, and
-    the worker has already reported it.
+    the worker has already reported it. A failed removal changes nothing, so
+    it can be asked for again.
     """
     from docsgpt.worker import website_pages_worker
 
-    return website_pages_worker(self, source_id, user, operation, urls=urls, file_path=file_path)
+    return website_pages_worker(
+        self, source_id, user, operation, urls=urls, file_path=file_path, file_paths=file_paths
+    )
 
 
 @celery.task(bind=True)
