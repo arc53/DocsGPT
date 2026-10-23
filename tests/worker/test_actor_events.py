@@ -13,6 +13,7 @@ import pytest
 
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from tests.worker.test_ingest_connector import _gdrive_source, _mock_connector_pipeline  # noqa: F401
 from tests.worker.test_website_pages_worker import USER, pipeline, source  # noqa: F401
 
 EDITOR = "editor-1"
@@ -190,3 +191,107 @@ class TestTheTasksPassTheActor:
         tasks.sync_source({}, "Docs", USER, "website", "never", "classic", "src", actor_id=EDITOR)
 
         assert seen[0]["actor_id"] == EDITOR
+
+    def test_ingest_connector(self, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.api.user import tasks
+
+        seen = []
+        monkeypatch.setattr(worker, "ingest_connector", lambda *a, **k: seen.append(k) or {})
+
+        tasks.ingest_connector_task.run("job", "dave", "google_drive", actor_id=EDITOR)
+        tasks.ingest_connector_task.run("job", "dave", "google_drive")
+
+        assert seen[0]["actor_id"] == EDITOR and "actor_id" not in seen[1]
+
+
+@pytest.mark.unit
+class TestConnector:
+    """A team editor's connector re-ingest or Sync now: its events reach the editor too."""
+
+    def _sync(self, worker, task_self, source_id, **kwargs):
+        return worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive", session_token="tok", folder_ids=["root"],
+            operation_mode="sync", doc_id=source_id, sync_frequency="daily", **kwargs,
+        )
+
+    def test_a_sync_goes_to_both_and_the_embedding_knows_the_editor(
+        self, pg_conn, patch_worker_db, task_self, heard, monkeypatch, _mock_connector_pipeline,  # noqa: F811
+    ):
+        from docsgpt import worker
+
+        embedded = []
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: embedded.append(k))
+        src = _gdrive_source(pg_conn, {})
+
+        self._sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+
+        assert _recipients(heard, "source.ingest.queued") == sorted(["dave", EDITOR])
+        assert _recipients(heard, "source.ingest.completed") == sorted(["dave", EDITOR])
+        assert embedded[0]["actor_id"] == EDITOR
+
+    def test_an_unchanged_sync_goes_to_both(
+        self, pg_conn, patch_worker_db, task_self, heard, _mock_connector_pipeline,  # noqa: F811
+    ):
+        from docsgpt import worker
+
+        _mock_connector_pipeline.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+
+        self._sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+
+        assert _recipients(heard, "source.ingest.completed") == sorted(["dave", EDITOR])
+
+    def test_an_empty_download_goes_to_both(
+        self, pg_conn, patch_worker_db, task_self, heard, _mock_connector_pipeline,  # noqa: F811
+    ):
+        from docsgpt import worker
+
+        _mock_connector_pipeline.download_to_directory.return_value = {"files_downloaded": 0, "empty_result": True}
+        src = _gdrive_source(pg_conn, {})
+
+        self._sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+
+        assert _recipients(heard, "source.ingest.completed") == sorted(["dave", EDITOR])
+
+    def test_a_failure_goes_to_both(
+        self, pg_conn, patch_worker_db, task_self, heard, _mock_connector_pipeline,  # noqa: F811
+    ):
+        from docsgpt import worker
+
+        _mock_connector_pipeline.download_to_directory.side_effect = RuntimeError("drive down")
+        src = _gdrive_source(pg_conn, {})
+
+        with pytest.raises(RuntimeError):
+            self._sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+
+        assert _recipients(heard, "source.ingest.failed") == sorted(["dave", EDITOR])
+
+    def test_a_skipped_sync_goes_to_both(
+        self, pg_conn, patch_worker_db, task_self, heard, monkeypatch, _mock_connector_pipeline,  # noqa: F811
+    ):
+        from docsgpt import worker
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        src = _gdrive_source(pg_conn, {})
+
+        @contextmanager
+        def busy(source_id, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        monkeypatch.setattr(worker, "source_index_lock", busy)
+
+        assert self._sync(worker, task_self, str(src["id"]), actor_id=EDITOR)["reason"] == "busy"
+        assert _recipients(heard, "source.ingest.failed") == sorted(["dave", EDITOR])
+
+    def test_the_owner_alone_hears_it_once(
+        self, pg_conn, patch_worker_db, task_self, heard, _mock_connector_pipeline,  # noqa: F811
+    ):
+        from docsgpt import worker
+
+        src = _gdrive_source(pg_conn, {})
+
+        self._sync(worker, task_self, str(src["id"]))
+
+        assert {user for user, _kind, _payload in heard} == {"dave"}

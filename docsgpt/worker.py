@@ -4359,6 +4359,7 @@ def ingest_connector(
     source_id=None,
     connection_id=None,
     notify_skip: bool = True,
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -4398,6 +4399,8 @@ def ingest_connector(
             predict ``_derive_source_id(idempotency_key)``.
         notify_skip: Publish a ``source.ingest.failed`` event (with
             ``reason``) when a sync is skipped. Off for scheduled syncs.
+        actor_id: The user who asked for the ingest or sync (a team editor),
+            who gets its ``source.ingest.*`` events too; ``None`` for the owner.
 
     Returns:
         The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
@@ -4412,19 +4415,22 @@ def ingest_connector(
         return _ingest_connector(
             self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
             operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
+            actor_id=actor_id,
         )
 
     def _skipped(reason: str) -> Dict[str, Any]:
         logging.info("Skipping sync of connector source %s: %s", doc_id, reason)
         if notify_skip:
-            _publish_sync_not_run(self, user, doc_id, job_name, source_type, _SYNC_SKIP_MESSAGES[reason], reason)
+            _publish_sync_not_run(
+                self, user, doc_id, job_name, source_type, _SYNC_SKIP_MESSAGES[reason], reason, actor_id=actor_id,
+            )
         return {"status": "skipped", "reason": reason}
 
     try:
         with source_index_lock(str(doc_id)):
             read, row = _read_source_for_sync(doc_id, user)
             if not read:
-                _publish_sync_not_run(self, user, doc_id, job_name, source_type, _SYNC_UNREADABLE)
+                _publish_sync_not_run(self, user, doc_id, job_name, source_type, _SYNC_UNREADABLE, actor_id=actor_id)
                 return {"status": "error", "error": _SYNC_UNREADABLE}
             if row is None:
                 return _skipped("gone")
@@ -4454,6 +4460,7 @@ def ingest_connector(
             return _ingest_connector(
                 self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
                 operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
+                actor_id=actor_id,
             )
     except SourceBusy:
         return _skipped("busy")
@@ -4476,6 +4483,7 @@ def _ingest_connector(
     idempotency_key: Optional[str],
     source_id: Optional[str],
     connection_id: Optional[str],
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """The body of ``ingest_connector``; a sync runs it holding the source's index lock.
 
@@ -4496,6 +4504,7 @@ def _ingest_connector(
         idempotency_key: As ``ingest_connector``.
         source_id: As ``ingest_connector``.
         connection_id: As ``ingest_connector``.
+        actor_id: As ``ingest_connector``.
 
     Returns:
         As ``ingest_connector``.
@@ -4526,8 +4535,8 @@ def _ingest_connector(
         **_task_id_field(self),
     }
     if self.request.retries == 0:
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.queued",
             queued,
             scope={"kind": "source", "id": source_id_for_events},
@@ -4574,8 +4583,8 @@ def _ingest_connector(
             ):
                 logging.info(f"No changes in {source_type} source {source_id_for_events}; sync skipped")
                 _mark_source_synced(source_id_for_events, user)
-                publish_user_event(
-                    user,
+                _publish_source_event(
+                    user, actor_id,
                     "source.ingest.completed",
                     {
                         "source_id": source_id_for_events,
@@ -4611,8 +4620,8 @@ def _ingest_connector(
                 # Connector returned no files — surface as a benign
                 # ``completed`` event with zero tokens so the toast
                 # closes out cleanly instead of waiting on polling.
-                publish_user_event(
-                    user,
+                _publish_source_event(
+                    user, actor_id,
                     "source.ingest.completed",
                     {
                         "source_id": source_id_for_events,
@@ -4699,6 +4708,7 @@ def _ingest_connector(
                 docs, vector_store_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                actor_id=actor_id,
                 progress_start=60, progress_end=100,
             )
             assert_index_complete(source_uuid)
@@ -4762,7 +4772,7 @@ def _ingest_connector(
                 _drop_refused_sync_vectors(refused, source_id_for_events)
                 _publish_sync_not_run(
                     self, user, source_id_for_events, job_name, source_type,
-                    _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused,
+                    _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused, actor_id=actor_id,
                 )
                 return {"id": source_id_for_events, "status": "skipped", "reason": refused}
             if connection_id:
@@ -4775,8 +4785,8 @@ def _ingest_connector(
 
             logging.info(f"Remote ingestion completed: {job_name}")
 
-            publish_user_event(
-                user,
+            _publish_source_event(
+                user, actor_id,
                 "source.ingest.completed",
                 {
                     "source_id": source_id_for_events,
@@ -4801,8 +4811,8 @@ def _ingest_connector(
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,

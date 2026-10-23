@@ -553,8 +553,13 @@ def ingest_connector_task(
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    actor_id=None,
 ):
-    """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never")."""
+    """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
+
+    ``actor_id`` is the user who asked, when not the owner (a team editor's
+    re-ingest or Sync now): the ``source.ingest.*`` events go to them too.
+    """
     from docsgpt.worker import ingest_connector
 
     resp = ingest_connector(
@@ -574,6 +579,8 @@ def ingest_connector_task(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        # Only when given, so the worker's call shape is unchanged otherwise.
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
