@@ -615,6 +615,102 @@ describe('Chunks', () => {
     expect(sizes).toContain(12);
   });
 
+  describe('a reload while the edit drawer is open', () => {
+    const titled = () =>
+      service.getDocumentChunks.mockImplementation(async () =>
+        chunksResponse({
+          chunks: [
+            {
+              doc_id: 'c1',
+              text: '## Late pickup clause',
+              metadata: { token_count: 42, title: 'Clause' },
+            },
+          ],
+        }),
+      );
+
+    const openEdit = async () => {
+      const controllerRef: React.ComponentProps<
+        typeof Chunks
+      >['controllerRef'] = { current: null };
+      await render({ embedded: true, path: 'legal/msa.pdf', controllerRef });
+      await act(async () => tile()!.click());
+      await act(async () => buttonByText('modals.chunk.edit')!.click());
+      return controllerRef;
+    };
+
+    it('waits for unsaved edits, and their Save stays an edit', async () => {
+      titled();
+      service.updateChunk.mockImplementation(async () => ({
+        ok: true,
+        json: async () => ({ chunk_id: 'c1' }),
+      }));
+      const controllerRef = await openEdit();
+      await act(async () =>
+        setFieldValue(drawer()!.querySelector('textarea')!, '## New text'),
+      );
+      service.getDocumentChunks.mockClear();
+      await act(async () => controllerRef.current!.reload());
+      // Nothing reloads under the drawer, which is still the chunk's edit.
+      expect(service.getDocumentChunks).not.toHaveBeenCalled();
+      expect(drawer()!.textContent).toContain('settings.sources.editChunk');
+      expect(drawer()!.querySelector('textarea')!.value).toBe('## New text');
+      await act(async () => buttonByText('modals.chunk.save')!.click());
+      expect(service.addChunk).not.toHaveBeenCalled();
+      expect(service.updateChunk).toHaveBeenCalledTimes(1);
+      // Then the reload it waited for: back on the grid, listed again.
+      expect(drawer()).toBeNull();
+      expect(tile()).not.toBeNull();
+      const sizes = service.getDocumentChunks.mock.calls.map((c) => c[2]);
+      expect(sizes).toContain(12);
+    });
+
+    it('runs once unsaved edits are discarded', async () => {
+      titled();
+      const controllerRef = await openEdit();
+      await act(async () =>
+        setFieldValue(drawer()!.querySelector('textarea')!, '## New text'),
+      );
+      await act(async () => controllerRef.current!.reload());
+      service.getDocumentChunks.mockClear();
+      await act(async () =>
+        buttonByText('settings.sources.editor.cancel')!.click(),
+      );
+      await act(async () =>
+        buttonByText('settings.sources.editor.discard')!.click(),
+      );
+      expect(drawer()).toBeNull();
+      expect(tile()).not.toBeNull();
+      expect(service.getDocumentChunks).toHaveBeenCalled();
+      expect(service.addChunk).not.toHaveBeenCalled();
+    });
+
+    it('closes a drawer with no edits and reloads at once', async () => {
+      titled();
+      const controllerRef = await openEdit();
+      service.getDocumentChunks.mockClear();
+      await act(async () => controllerRef.current!.reload());
+      expect(drawer()).toBeNull();
+      expect(tile()).not.toBeNull();
+      expect(service.getDocumentChunks).toHaveBeenCalled();
+    });
+
+    it('keeps an Add drawer open and lists the file again behind it', async () => {
+      const controllerRef: React.ComponentProps<
+        typeof Chunks
+      >['controllerRef'] = { current: null };
+      await render({ embedded: true, path: 'a.md', controllerRef });
+      await act(async () => buttonByText('settings.sources.addChunk')!.click());
+      await act(async () =>
+        setFieldValue(drawer()!.querySelector('textarea')!, 'Fresh'),
+      );
+      service.getDocumentChunks.mockClear();
+      await act(async () => controllerRef.current!.reload());
+      expect(service.getDocumentChunks).toHaveBeenCalled();
+      expect(drawer()!.querySelector('textarea')!.value).toBe('Fresh');
+    });
+  });
+
   it('an edit the search no longer matches still shows the saved text', async () => {
     service.updateChunk.mockImplementation(async () => ({
       ok: true,

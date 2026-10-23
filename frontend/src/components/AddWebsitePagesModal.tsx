@@ -19,6 +19,12 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Modal, ModalActions } from './ui/modal';
 
 /**
+ * What an accepted Add pages changes: `append` fetches `urls` into the
+ * source (a page it already held is replaced); `sync` rebuilds the source.
+ */
+export type WebsitePagesChange = { mode: 'append' | 'sync'; urls: string[] };
+
+/**
  * "Add pages" on a Website source: the Website form without its name or
  * schedule, which the source already has. Pages are fetched now and stay in
  * every sync; a whole site rebuilds the source (see /api/website/pages).
@@ -29,8 +35,9 @@ import { Modal, ModalActions } from './ui/modal';
  *   extracted into it with an LLM.
  * @param onClose Closes the dialog.
  * @param onQueued Called once the server accepts, with when the request went
- *   out and the task it queued, so the caller can wait for the ingest to
- *   finish.
+ *   out, the task it queued, and what it changes (the server's `mode` and the
+ *   page addresses sent), so the caller can wait for the ingest to finish and
+ *   reload only what it touched.
  */
 export default function AddWebsitePagesModal({
   sourceId,
@@ -43,7 +50,11 @@ export default function AddWebsitePagesModal({
   sourceName: string;
   graph?: boolean;
   onClose: () => void;
-  onQueued: (startedAt: number, taskId: string | null) => void;
+  onQueued: (
+    startedAt: number,
+    taskId: string | null,
+    change: WebsitePagesChange,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -60,12 +71,10 @@ export default function AddWebsitePagesModal({
     setPending(true);
     setError(null);
     const startedAt = Date.now();
+    const { entries } = websiteConfig(draft, false);
     try {
       const response = await userService.addWebsitePages(
-        {
-          source_id: sourceId,
-          entries: websiteConfig(draft, false).entries,
-        },
+        { source_id: sourceId, entries },
         token,
       );
       const data = await response.json().catch(() => null);
@@ -81,6 +90,12 @@ export default function AddWebsitePagesModal({
       onQueued(
         startedAt,
         typeof data.task_id === 'string' ? data.task_id : null,
+        {
+          mode: data.mode === 'append' ? 'append' : 'sync',
+          urls: entries
+            .filter((entry) => entry.mode === 'page')
+            .map((entry) => entry.url),
+        },
       );
       onClose();
     } catch {

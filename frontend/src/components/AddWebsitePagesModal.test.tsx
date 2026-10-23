@@ -137,7 +137,10 @@ describe('AddWebsitePagesModal', () => {
     await submit('fill site');
 
     expect(sentEntries()[0].max_pages).toBe(20);
-    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-9');
+    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-9', {
+      mode: 'sync',
+      urls: [],
+    });
   });
 
   it('keeps a page limit the user typed before config answered', async () => {
@@ -174,7 +177,11 @@ describe('AddWebsitePagesModal', () => {
       },
       'token',
     );
-    expect(onQueued).toHaveBeenCalled();
+    // What it changes, so the caller reloads only the pages it names.
+    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), null, {
+      mode: 'append',
+      urls: ['https://docs.x.io/new'],
+    });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -231,7 +238,10 @@ describe('AddWebsitePagesModal', () => {
     );
     await submit();
 
-    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-3');
+    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-3', {
+      mode: 'sync',
+      urls: ['https://docs.x.io/new'],
+    });
     expect(onClose).toHaveBeenCalled();
   });
 });

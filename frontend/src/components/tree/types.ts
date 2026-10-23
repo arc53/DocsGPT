@@ -38,7 +38,8 @@ export interface TreeBrowserController {
   resetPath: () => void;
   /**
    * Lists the open file's chunks again (its content changed: a refreshed
-   * page). With a path, only when that file is the open one.
+   * page). With a path, only when that file is the open one; with a test,
+   * only when it holds for the open file's path.
    */
-  reloadFile: (path?: string) => void;
+  reloadFile: (path?: string | ((openPath: string) => boolean)) => void;
 }

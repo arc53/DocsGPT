@@ -98,6 +98,18 @@ function pageOrigin(
   return null;
 }
 
+/** The page at a tree path (`Deploying/Docker.md`), or null. */
+function pageAt(structure: DirectoryStructure, path: string): FileNode | null {
+  let node: unknown = structure;
+  for (const part of path.split('/')) {
+    if (!node || typeof node !== 'object') return null;
+    node = (node as DirectoryStructure)[part];
+  }
+  return node && typeof node === 'object' && 'token_count' in node
+    ? (node as FileNode)
+    : null;
+}
+
 /** A remove the server refused; its message is what the dialog shows. */
 class RemoveRefused extends Error {}
 
@@ -147,6 +159,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   const controllerRef = useRef<TreeBrowserController | null>(null);
   const currentPathRef = useRef<string[]>([]);
   const [structure, setStructure] = useState<DirectoryStructure>({});
+  // Read by a change's wait, which outlives the render that started it.
+  const structureRef = useRef(structure);
+  structureRef.current = structure;
   // Keys of the pages the source lists by address (from its config).
   const [pageEntries, setPageEntries] = useState<Set<string>>(new Set());
   // The origin of the config's first entry (scheme, host and port).
@@ -196,7 +211,10 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
 
   /**
    * Waits for a background change to finish, then reloads the tree and the
-   * open page's chunks (all of them, or only when `changedPath` is open).
+   * open page's chunks when the change could have touched them: `affects`
+   * is the changed page's path or a test on the open page's path, `false`
+   * for a change that leaves every remaining page as it was (a removal; a
+   * removed open page closes by itself), and omitted for a rebuild.
    */
   const awaitChange = async (
     label: string,
@@ -205,8 +223,12 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     {
       name,
       taskId,
-      changedPath,
-    }: { name?: string; taskId?: string | null; changedPath?: string } = {},
+      affects,
+    }: {
+      name?: string;
+      taskId?: string | null;
+      affects?: string | ((path: string) => boolean) | false;
+    } = {},
   ) => {
     setStatus(label);
     const terminal = await waitForTerminal(docId, startedAt, { taskId });
@@ -214,9 +236,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     setStatus(null);
     if (terminal === 'completed') {
       await controllerRef.current?.refreshDirectory();
-      if (changedPath !== undefined)
-        controllerRef.current?.reloadFile(changedPath);
-      else controllerRef.current?.reloadFile();
+      if (affects === undefined) controllerRef.current?.reloadFile();
+      else if (affects !== false) controllerRef.current?.reloadFile(affects);
       setConfigKey((key) => key + 1);
     } else if (terminal === 'failed') {
       toastFailure(failure, name);
@@ -248,7 +269,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
       name,
       taskId,
-      changedPath: path,
+      affects: path,
     });
   };
 
@@ -274,6 +295,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     void awaitChange(tr('removing'), startedAt, 'removeFailed', {
       name,
       taskId: typeof data.task_id === 'string' ? data.task_id : null,
+      affects: false,
     });
   };
 
@@ -511,11 +533,21 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           sourceName={sourceName}
           graph={graph}
           onClose={() => setAddOpen(false)}
-          onQueued={(startedAt, taskId) =>
+          onQueued={(startedAt, taskId, change) => {
+            // Appended pages replace only the pages they name; a rebuild
+            // may change any page.
+            const added = new Set(change.urls.map(pageKey));
             void awaitChange(tr('addingPages'), startedAt, 'addFailed', {
               taskId,
-            })
-          }
+              affects:
+                change.mode === 'append'
+                  ? (path) => {
+                      const url = pageAt(structureRef.current, path)?.url;
+                      return typeof url === 'string' && added.has(pageKey(url));
+                    }
+                  : undefined,
+            });
+          }}
         />
       )}
     </>

@@ -428,14 +428,44 @@ const Chunks: React.FC<ChunksProps> = ({
     return target !== page;
   };
 
+  // By the mode alone, so a closing edit drawer keeps its title.
+  const editing = sheetMode === 'edit';
+  const savedText = editing ? openChunk?.text || '' : '';
+  const savedTitle = editing
+    ? openChunk?.metadata?.title || ''
+    : addBaselineTitle;
+  const sheetDirty = draft !== savedText || draftTitle.trim() !== savedTitle;
+
+  const reload = () => {
+    stepRef.current++;
+    setStepping(false);
+    setOpenChunk(null);
+    setPositionLost(false);
+    void fetchChunks();
+  };
+
+  // A reload that came while the edit drawer held unsaved text: it runs once
+  // the drawer closes, so the edit is never turned into a new chunk.
+  const reloadPendingRef = useRef(false);
+  useEffect(() => {
+    if (sheetOpen || !reloadPendingRef.current) return;
+    reloadPendingRef.current = false;
+    reload();
+  }, [sheetOpen]);
+
   useImperativeHandle(controllerRef, () => ({
     closeChunk: () => closeChunk(),
     reload: () => {
-      stepRef.current++;
-      setStepping(false);
-      setOpenChunk(null);
-      setPositionLost(false);
-      void fetchChunks();
+      if (sheetOpen && editing) {
+        // The open chunk's id may be gone: unsaved text waits, a clean
+        // drawer closes with it.
+        if (sheetDirty) {
+          reloadPendingRef.current = true;
+          return;
+        }
+        closeSheet();
+      }
+      reload();
     },
   }));
 
@@ -935,12 +965,6 @@ const Chunks: React.FC<ChunksProps> = ({
     </ReaderPanel>
   );
 
-  const editing = sheetMode === 'edit' && !!openChunk;
-  const savedText = editing ? openChunk?.text || '' : '';
-  const savedTitle = editing
-    ? openChunk?.metadata?.title || ''
-    : addBaselineTitle;
-
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {embedded ? null : renderHeader()}
@@ -978,29 +1002,30 @@ const Chunks: React.FC<ChunksProps> = ({
             : t('settings.sources.addChunk')
         }
         description={
-          !editing
+          !editing || !openChunk
             ? fileLabel || undefined
             : positionLost
               ? t('settings.sources.editChunkDescriptionUnplaced', {
                   file: fileLabel,
-                  tokens: formatChunkTokens(openChunk?.metadata),
+                  tokens: formatChunkTokens(openChunk.metadata),
                   interpolation: { escapeValue: false },
                 })
               : t('settings.sources.editChunkDescription', {
                   file: fileLabel,
                   n: openPosition,
-                  tokens: formatChunkTokens(openChunk?.metadata),
+                  tokens: formatChunkTokens(openChunk.metadata),
                   interpolation: { escapeValue: false },
                 })
         }
         value={draft}
         onChange={setDraft}
-        dirty={draft !== savedText || draftTitle.trim() !== savedTitle}
-        onSave={() =>
-          editing && openChunk
-            ? handleUpdateChunk(draft, draftTitle, openChunk)
-            : handleAddChunk(draft, draftTitle)
-        }
+        dirty={sheetDirty}
+        onSave={() => {
+          // An edit drawer never saves as a new chunk, even with no chunk open.
+          if (!editing) void handleAddChunk(draft, draftTitle);
+          else if (openChunk)
+            void handleUpdateChunk(draft, draftTitle, openChunk);
+        }}
         fields={
           <FormField
             label={t('modals.chunk.title')}

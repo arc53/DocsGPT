@@ -434,8 +434,13 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   const openFileId = openFile?.id ?? null;
 
   const reloadFile = useCallback(
-    (path?: string) => {
-      if (!openFileId || (path !== undefined && path !== openFileId)) return;
+    (path?: string | ((openPath: string) => boolean)) => {
+      if (!openFileId) return;
+      const affected =
+        typeof path === 'function'
+          ? path(openFileId)
+          : path === undefined || path === openFileId;
+      if (!affected) return;
       chunksControllerRef.current?.reload();
     },
     [openFileId],

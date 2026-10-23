@@ -11,7 +11,13 @@ const { bus, captured, dispatch, service } = vi.hoisted(() => ({
   bus: { events: [] as unknown[], listeners: new Set<() => void>() },
   captured: {
     props: null as TreeBrowserProps | null,
-    onQueued: null as ((startedAt: number, taskId?: string) => void) | null,
+    onQueued: null as
+      | ((
+          startedAt: number,
+          taskId?: string | null,
+          change?: { mode?: string; urls: string[] },
+        ) => void)
+      | null,
   },
   service: {
     getWebsite: vi.fn(),
@@ -61,7 +67,7 @@ vi.mock('./tree/TreeBrowser', () => ({
 vi.mock('./AddWebsitePagesModal', () => ({
   default: (props: {
     graph?: boolean;
-    onQueued: (startedAt: number, taskId?: string) => void;
+    onQueued: NonNullable<typeof captured.onQueued>;
   }) => {
     captured.onQueued = props.onQueued;
     return <div>add-pages-modal{props.graph ? ' graph' : ''}</div>;
@@ -310,6 +316,8 @@ describe('WebsiteTree page management', () => {
     expect(service.getWebsite).toHaveBeenCalled();
     expect(captured.props!.statusLabel).toBeNull();
     expect(dispatch).not.toHaveBeenCalled();
+    // The pages left keep their chunks; a removed open page closes itself.
+    expect(controller.reloadFile).not.toHaveBeenCalled();
   });
 
   it('a remove that fails in the worker toasts it', async () => {
@@ -529,10 +537,35 @@ describe('WebsiteTree page management', () => {
       b.textContent?.includes('settings.sources.website.addPages'),
     )!;
     await act(async () => add.click());
-    await act(async () => captured.onQueued!(Date.now(), 'task-2'));
+    await act(async () =>
+      captured.onQueued!(Date.now(), 'task-2', { mode: 'sync', urls: [] }),
+    );
     await act(async () => emitTerminal());
     expect(controller.refreshDirectory).toHaveBeenCalled();
     expect(controller.reloadFile).toHaveBeenCalledWith();
+  });
+
+  it('after appended pages, lists the open page again only when it was one of them', async () => {
+    await render();
+    const controller = fakeController();
+    captured.props!.controllerRef!.current = controller;
+    const add = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('settings.sources.website.addPages'),
+    )!;
+    await act(async () => add.click());
+    await act(async () =>
+      captured.onQueued!(Date.now(), 'task-2', {
+        mode: 'append',
+        urls: ['https://docs.x.io/extra/', 'https://docs.x.io/new'],
+      }),
+    );
+    await act(async () => emitTerminal());
+    expect(controller.reloadFile).toHaveBeenCalledTimes(1);
+    const affects = controller.reloadFile.mock.calls[0][0] as (
+      path: string,
+    ) => boolean;
+    expect(affects('extra.md')).toBe(true);
+    expect(affects('Deploying/Docker.md')).toBe(false);
   });
 
   it('turns the row changes off while a change runs', async () => {

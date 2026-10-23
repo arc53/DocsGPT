@@ -576,6 +576,16 @@ describe('TreeBrowser', () => {
     expect(listed()).toBe(before + 1);
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
     expect(tile()?.textContent).toContain('New rates');
+
+    // A test on the open file's path decides the same way.
+    await act(async () =>
+      controllerRef.current?.reloadFile((path) => path === 'legal/x.md'),
+    );
+    expect(listed()).toBe(before + 1);
+    await act(async () =>
+      controllerRef.current?.reloadFile((path) => path === 'readme.md'),
+    );
+    expect(listed()).toBe(before + 2);
   });
 
   it('a page bar links only a web address', async () => {
