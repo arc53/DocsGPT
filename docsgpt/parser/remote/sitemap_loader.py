@@ -4,6 +4,7 @@ import zlib
 from typing import Callable, List, Optional, Set, Union
 
 import defusedxml.ElementTree as ET
+import requests
 from defusedxml import DefusedXmlException
 
 from docsgpt.parser.remote.base import (
@@ -275,7 +276,8 @@ class SitemapLoader(BaseRemote):
             return self._parse_sitemap(response.content, visited, depth, budget)
         return None
 
-    def _is_sitemap(self, response):
+    def _is_sitemap(self, response: requests.Response) -> bool:
+        """Whether a fetched response is sitemap XML (by type, extension or a root tag)."""
         content_type = response.headers.get('Content-Type', '')
         if 'xml' in content_type or response.url.endswith('.xml'):
             return True

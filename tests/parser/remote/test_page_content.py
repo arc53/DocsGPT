@@ -16,7 +16,8 @@ def _page(body: str, head: str = "<title>Setup | Example</title>", lang: str = "
 
 SITE_CHROME = (
     "<header><a href='/'>Example</a><nav><a href='/a'>Home</a><a href='/b'>Docs</a></nav></header>"
-    "<nav aria-label='sidebar'><ul><li><a href='/x'>Sidebar one</a></li><li><a href='/y'>Sidebar two</a></li></ul></nav>"
+    "<nav aria-label='sidebar'><ul><li><a href='/x'>Sidebar one</a></li>"
+    "<li><a href='/y'>Sidebar two</a></li></ul></nav>"
 )
 FOOTER = "<footer>Copyright Example Inc. <a href='/privacy'>Privacy</a></footer>"
 ARTICLE = (
@@ -62,7 +63,9 @@ class TestMainContent:
         assert "\\_" not in page.text
 
     def test_footnote_aside_is_kept_but_a_link_list_aside_is_dropped(self):
-        footnote = "<aside class='footnote'><p>[1] As noted in the errata for RFC 7159, JSON permits U+2028.</p></aside>"
+        footnote = (
+            "<aside class='footnote'><p>[1] As noted in the errata for RFC 7159, JSON permits U+2028.</p></aside>"
+        )
         related = "<aside><a href='/p'>Related one</a> <a href='/q'>Related two</a></aside>"
         page = extract_page(_page(f"<main>{ARTICLE}{footnote}{related}</main>"), URL)
 
@@ -93,7 +96,9 @@ class TestMainContent:
 
     def test_adjacent_links_become_a_list(self):
         # Card grids and tag lists put links side by side with no text between.
-        cards = "<div class='cards'><a href='/q'><span>Quickstart</span></a><a href='/c'><span>Concepts</span></a></div>"
+        cards = (
+            "<div class='cards'><a href='/q'><span>Quickstart</span></a><a href='/c'><span>Concepts</span></a></div>"
+        )
         page = extract_page(_page(f"<main>{ARTICLE}{cards}</main>"), URL)
 
         assert "QuickstartConcepts" not in page.text

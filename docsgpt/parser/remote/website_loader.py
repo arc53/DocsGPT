@@ -99,6 +99,7 @@ def _bare_host(host: Optional[str]) -> str:
 
 
 def _registered_domain(host: str) -> str:
+    """The registered domain of a host (``example.co.uk`` for ``docs.example.co.uk``); empty when it has none."""
     extracted = _domains(host)
     if not extracted.domain or not extracted.suffix:
         return ""
@@ -180,6 +181,7 @@ class SiteScope:
                 logger.warning(f"Ignoring unparseable skip rule {rule!r}")
 
     def _host_ok(self, host: str) -> bool:
+        """Whether a bare host is the site, or a subdomain of it when those are on."""
         if host == self.host:
             return True
         return bool(self.include_subdomains and self.domain and _registered_domain(host) == self.domain)
@@ -297,6 +299,7 @@ def discover_sitemaps(start_url: str, budget: Optional[FetchBudget] = None) -> L
 
 
 def _clamp_pages(requested: Optional[int]) -> int:
+    """A site's page limit: its own, else ``WEB_DEFAULT_PAGES``, kept within 1..``WEB_MAX_PAGES``."""
     limit = int(requested) if requested else int(settings.WEB_DEFAULT_PAGES)
     return max(1, min(limit, int(settings.WEB_MAX_PAGES)))
 

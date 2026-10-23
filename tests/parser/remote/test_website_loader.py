@@ -29,7 +29,9 @@ def urlset(*pages_) -> tuple:
 
 def index(*children) -> tuple:
     locs = "".join(f"<sitemap><loc>{c}</loc></sitemap>" for c in children)
-    return XML, f'<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{locs}</sitemapindex>'
+    return XML, (
+        f'<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{locs}</sitemapindex>'
+    )
 
 
 def robots(*sitemaps) -> tuple:
@@ -380,7 +382,9 @@ class TestParseWebsiteConfig:
     def test_fills_site_defaults_and_accepts_json(self):
         from docsgpt.parser.remote.website_loader import parse_website_config
 
-        config = parse_website_config('{"entries": [{"url": " https://x.io/ ", "mode": "site"}], "skip": ["", "https://x.io/a"]}')
+        config = parse_website_config(
+            '{"entries": [{"url": " https://x.io/ ", "mode": "site"}], "skip": ["", "https://x.io/a"]}'
+        )
 
         assert config == {
             "entries": [{
@@ -554,7 +558,9 @@ class TestBoundedFetching:
         })
         with patch("docsgpt.parser.remote.page_content.settings") as fake_settings:
             fake_settings.MARKUP_MAX_BYTES = 300
-            docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]})
+            docs = WebsiteLoader().load_data(
+                {"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]}
+            )
 
         # The link sits past the cap, so the crawl never sees it.
         assert sources(docs) == ["https://x.io/"]

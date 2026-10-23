@@ -21,6 +21,7 @@ Page = Tuple[str, str]  # (tree path, page URL)
 
 
 def _is_leaf(node: Any) -> bool:
+    """Whether a tree node is a file (it carries a ``token_count``), not a folder."""
     return isinstance(node, dict) and "token_count" in node
 
 
@@ -164,6 +165,15 @@ def folder_skip_rule(dir_path: str, pages: List[Page]) -> Optional[str]:
 
 
 def _urls(remote_data: Any) -> List[str]:
+    """The URLs an old url/crawler/sitemap source stored, in any of its shapes.
+
+    Args:
+        remote_data: A URL, a list of them, a dict holding one under
+            ``url``/``urls``/``raw``, or the JSON of any of these.
+
+    Returns:
+        The non-empty URLs, stripped.
+    """
     if isinstance(remote_data, str):
         stripped = remote_data.strip()
         if stripped[:1] in ("{", "["):

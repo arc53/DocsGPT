@@ -19,7 +19,7 @@ from typing import Dict, Optional, Union
 from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Tag
 from markdownify import MarkdownConverter
 
 from docsgpt.core.settings import settings
@@ -166,7 +166,7 @@ class _LinkConverter(MarkdownConverter):
         return f"[{text}]({url})"
 
 
-def _is_bare_link(link) -> bool:
+def _is_bare_link(link: Tag) -> bool:
     """Whether a link is the whole text of its block (a menu item, a card, a TOC entry)."""
     block = link.find_parent(_TEXT_BLOCKS)
     if block is None:
@@ -174,11 +174,12 @@ def _is_bare_link(link) -> bool:
     return block.get_text(" ", strip=True) == link.get_text(" ", strip=True)
 
 
-def _text_length(element) -> int:
+def _text_length(element: Tag) -> int:
+    """How many characters of visible text an element holds."""
     return len(element.get_text(" ", strip=True))
 
 
-def _pick_root(soup):
+def _pick_root(soup: BeautifulSoup) -> Tag:
     """The page's main content element: a single ``main``/``article``, else ``body``."""
     body = soup.body or soup
     total = _text_length(body)
@@ -189,7 +190,8 @@ def _pick_root(soup):
     return body
 
 
-def _strip_chrome(root) -> None:
+def _strip_chrome(root: Tag) -> None:
+    """Remove site chrome in place: scripts, menus, page headers and footers, link-list asides, permalinks."""
     for tag in root.find_all(_CHROME_TAGS):
         tag.decompose()
     for role in _CHROME_ROLES:
@@ -210,13 +212,14 @@ def _strip_chrome(root) -> None:
         tag.decompose()
 
 
-def _images_to_alt_text(root) -> None:
+def _images_to_alt_text(root: Tag) -> None:
+    """Replace each image with its alt text, in place."""
     for img in root.find_all("img"):
         alt = (img.get("alt") or "").strip()
         img.replace_with(NavigableString(alt))
 
 
-def _listify_link_runs(soup, root) -> None:
+def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
     """Turn runs of adjacent links (card grids, tag lists) into a list.
 
     With no text between them, markdownify glues their labels into one word
@@ -245,7 +248,8 @@ def _listify_link_runs(soup, root) -> None:
                 item.append(link.extract())
 
 
-def _first_heading(root) -> Optional[str]:
+def _first_heading(root: Tag) -> Optional[str]:
+    """The text of the first ``<h1>``, or ``None``."""
     heading = root.find("h1")
     text = heading.get_text(" ", strip=True) if heading else ""
     return text or None
