@@ -180,6 +180,32 @@ class TestSiteScope:
         assert page_key("https://x.io:443/a") == page_key("http://x.io:80/a") == page_key("https://x.io/a")
         assert page_key("http://[::1]:8080/a") == "[::1]:8080/a"
 
+    def test_page_key_writes_an_international_host_in_its_ascii_form(self):
+        # As a browser's ``new URL()`` does: one page, however its host is spelled.
+        from docsgpt.parser.remote.website_loader import page_key
+
+        assert page_key("https://bücher.de/a") == page_key("https://xn--bcher-kva.de/a") == "xn--bcher-kva.de/a"
+        assert page_key("https://BÜCHER.de/a") == "xn--bcher-kva.de/a"
+        assert page_key("https://www.пример.рф/") == "xn--e1afmkfd.xn--p1ai"
+        assert page_key("https://faß.de/") == "xn--fa-hia.de"
+        # An ASCII label is kept as written, even one IDNA wouldn't take.
+        assert page_key("https://a_b.ü.de/") == "a_b.xn--tda.de"
+
+    def test_page_key_of_a_host_idna_refuses_is_its_lowercase_form(self):
+        from docsgpt.parser.remote.website_loader import page_key
+
+        # A label may not start with a combining mark.
+        assert page_key("https://́A.de/x") == "́a.de/x"
+
+    def test_scope_and_rules_compare_international_hosts_in_ascii(self):
+        scope = SiteScope("https://bücher.de/", skip=["https://xn--bcher-kva.de/old", "https://bücher.de/private/*"])
+        punycode = SiteScope("https://xn--bcher-kva.de/")
+
+        assert scope.accepts("https://xn--bcher-kva.de/a")
+        assert punycode.accepts("https://bücher.de/a")
+        assert not scope.accepts("https://bücher.de/old")
+        assert not scope.accepts("https://xn--bcher-kva.de/private/key")
+
     def test_rules_and_scope_tell_ports_apart(self):
         scope = SiteScope("https://x.io/", skip=["https://x.io:8443/guide", "https://x.io:9443/*"])
 

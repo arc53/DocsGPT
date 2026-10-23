@@ -6,6 +6,7 @@ from urllib.parse import urljoin, urlsplit
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
 from docsgpt.parser.remote.page_content import (
     FetchBudget,
+    ascii_host,
     fetch_page,
     final_url,
     has_userinfo,
@@ -231,4 +232,5 @@ def _site_of(url: str) -> Optional[str]:
         ValueError: If the address or its port cannot be parsed.
     """
     parts = urlsplit(url)
-    return host_with_port(parts, parts.hostname) if parts.hostname else None
+    # ASCII form: a link may spell an international host either way.
+    return host_with_port(parts, ascii_host(parts.hostname)) if parts.hostname else None

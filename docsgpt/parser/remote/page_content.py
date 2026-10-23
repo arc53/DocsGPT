@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 
+import idna
 import requests
 from bs4 import BeautifulSoup, CData, Comment, FeatureNotFound, NavigableString, Tag
 from markdownify import MarkdownConverter
@@ -200,9 +201,34 @@ def final_url(response: Any, requested: str) -> str:
     return url if isinstance(url, str) and url else requested
 
 
+def ascii_host(host: Optional[str]) -> str:
+    """A host in the lower-case ASCII form a browser's ``new URL()`` gives it.
+
+    A label with non-ASCII characters is mapped (UTS #46, non-transitional:
+    ``faß`` stays distinct from ``fass``) and written in punycode, so
+    ``bücher.de`` and ``xn--bcher-kva.de`` are one host. An ASCII label is
+    only lower-cased, whatever IDNA thinks of it (``a_b`` stays).
+
+    Args:
+        host: A host name as ``urlsplit`` reads it.
+
+    Returns:
+        The ASCII form; the lower-cased host as given when IDNA refuses it.
+    """
+    host = host or ""
+    if host.isascii():
+        return host.lower()
+    try:
+        mapped = idna.uts46_remap(host, std3_rules=False, transitional=False)
+        labels = [label if label.isascii() else idna.alabel(label).decode("ascii") for label in mapped.split(".")]
+    except (idna.IDNAError, UnicodeError, ValueError):
+        return host.lower()
+    return ".".join(labels).lower()
+
+
 def bare_host(host: Optional[str]) -> str:
-    """A host compared case-insensitively, with ``www.`` treated as the bare host."""
-    host = (host or "").lower().rstrip(".")
+    """A host compared case-insensitively in its ASCII form, with ``www.`` treated as the bare host."""
+    host = ascii_host(host).rstrip(".")
     return host[4:] if host.startswith("www.") else host
 
 

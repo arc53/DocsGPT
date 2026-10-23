@@ -40,6 +40,7 @@ from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 # it stays importable from here.
 from docsgpt.parser.remote.page_content import (
     FetchBudget,
+    ascii_host,
     explicit_port,
     fetch_page,
     final_url,
@@ -105,7 +106,7 @@ _domains = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, include_ps
 
 
 def _section_key(url: str) -> str:
-    """A ``page_key`` whose host is kept as written (``www.`` included), for section rules.
+    """A ``page_key`` whose host keeps its ``www.``, for section rules (its ASCII form, as ``page_key``'s).
 
     Args:
         url: A page URL, or a section rule without its ``*``.
@@ -118,7 +119,7 @@ def _section_key(url: str) -> str:
         ValueError: If the URL cannot be parsed.
     """
     parts = urlsplit(normalize_page_url(url.strip()))
-    host = host_with_port(parts, (parts.hostname or "").rstrip("."))
+    host = host_with_port(parts, ascii_host(parts.hostname).rstrip("."))
     key = f"{host}{remove_dot_segments(parts.path).rstrip('/')}"
     return f"{key}?{parts.query}" if parts.query else key
 
