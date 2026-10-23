@@ -642,6 +642,7 @@
         "removeCrawled": "它来自对 {{host}} 的抓取。其分块将被删除，之后的同步会跳过它。你可以在来源的设置中恢复它。",
         "removeGeneric": "其分块将被删除，之后的同步不会再抓取它。",
         "removeFolder": "其页面的分块将被删除，之后的同步会跳过 {{address}} 下的所有地址。",
+        "removeFolderGeneric": "其页面的分块将被删除，之后的同步不会再抓取这些页面。",
         "remove": "移除",
         "removeAndSkip": "移除并跳过",
         "removeFailed": "无法移除。",

@@ -668,6 +668,7 @@
         "removeCrawled": "Elle provient de l’exploration de {{host}}. Ses fragments sont supprimés et les synchronisations suivantes l’ignorent. Vous pouvez la restaurer dans les paramètres de la source.",
         "removeGeneric": "Ses fragments sont supprimés et les synchronisations suivantes ne la récupèrent plus.",
         "removeFolder": "Les fragments de ses pages sont supprimés et les synchronisations suivantes ignorent toutes les adresses sous {{address}}.",
+        "removeFolderGeneric": "Les fragments de ses pages sont supprimés et les synchronisations suivantes ne les récupèrent plus.",
         "remove": "Retirer",
         "removeAndSkip": "Retirer et ignorer",
         "removeFailed": "Impossible de la retirer.",

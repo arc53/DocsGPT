@@ -269,6 +269,64 @@ describe('WebsiteTree page management', () => {
     );
   });
 
+  // A page from before pages kept their address (an older website source):
+  // where it came from is unknown, so the copy says only what holds anyway.
+  describe('a page with no address', () => {
+    const LEGACY = {
+      'legacy.md': { type: 'text/markdown', token_count: 1 },
+      Old: { 'a.md': { type: 'text/markdown', token_count: 1 } },
+    };
+
+    const renderLegacy = async () => {
+      await render();
+      await act(async () => {
+        captured.props!.onDirectoryDataLoaded!({ directory_structure: LEGACY });
+      });
+    };
+
+    it('removing it names no host', async () => {
+      await renderLegacy();
+      const remove = menu({
+        name: 'legacy.md',
+        isFile: true,
+        node: LEGACY['legacy.md'],
+      }).at(-1)!;
+      await act(async () => remove.onClick(new Event('click')));
+
+      expect(document.body.textContent).toContain(
+        'settings.sources.website.removeGeneric',
+      );
+      expect(document.body.textContent).not.toContain('removeCrawled');
+      const submit = Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'settings.sources.website.remove',
+      )!;
+      await act(async () => submit.click());
+      expect(service.removeWebsitePages).toHaveBeenCalledWith(
+        { source_id: 'src-1', file_paths: ['legacy.md'] },
+        'token',
+      );
+    });
+
+    it('removing a folder of them names no address', async () => {
+      await renderLegacy();
+      const remove = menu({ name: 'Old', isFile: false }).at(-1)!;
+      await act(async () => remove.onClick(new Event('click')));
+
+      expect(document.body.textContent).toContain(
+        'settings.sources.website.removeFolderGeneric',
+      );
+      expect(document.body.textContent).not.toContain('removeFolder ');
+      const submit = Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'settings.sources.website.remove',
+      )!;
+      await act(async () => submit.click());
+      expect(service.removeWebsitePages).toHaveBeenCalledWith(
+        { source_id: 'src-1', directory_path: 'Old' },
+        'token',
+      );
+    });
+  });
+
   /** Opens Remove on the page added by address and confirms it. */
   const removeEntry = async () => {
     const remove = menu({

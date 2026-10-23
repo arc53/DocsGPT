@@ -645,6 +645,7 @@
         "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in the source’s Settings.",
         "removeGeneric": "Its chunks are deleted and later syncs don’t fetch it again.",
         "removeFolder": "Its pages’ chunks are deleted and later syncs skip every address under {{address}}.",
+        "removeFolderGeneric": "Its pages’ chunks are deleted and later syncs don’t fetch them again.",
         "remove": "Remove",
         "removeAndSkip": "Remove and skip",
         "removeFailed": "Couldn’t remove it.",

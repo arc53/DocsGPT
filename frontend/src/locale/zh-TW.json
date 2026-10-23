@@ -642,6 +642,7 @@
         "removeCrawled": "它來自對 {{host}} 的爬取。其區塊將被刪除，之後的同步會略過它。你可以在來源的設定中還原它。",
         "removeGeneric": "其區塊將被刪除，之後的同步不會再擷取它。",
         "removeFolder": "其頁面的區塊將被刪除，之後的同步會略過 {{address}} 下的所有網址。",
+        "removeFolderGeneric": "其頁面的區塊將被刪除，之後的同步不會再擷取這些頁面。",
         "remove": "移除",
         "removeAndSkip": "移除並略過",
         "removeFailed": "無法移除。",

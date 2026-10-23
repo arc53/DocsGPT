@@ -645,6 +645,7 @@
         "removeCrawled": "Sie stammt aus dem Crawlen von {{host}}. Die Chunks werden gelöscht und spätere Synchronisierungen überspringen sie. In den Einstellungen der Quelle kannst du sie wiederherstellen.",
         "removeGeneric": "Die Chunks werden gelöscht und spätere Synchronisierungen rufen die Seite nicht mehr ab.",
         "removeFolder": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen überspringen alle Adressen unter {{address}}.",
+        "removeFolderGeneric": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen rufen die Seiten nicht mehr ab.",
         "remove": "Entfernen",
         "removeAndSkip": "Entfernen und überspringen",
         "removeFailed": "Konnte nicht entfernt werden.",

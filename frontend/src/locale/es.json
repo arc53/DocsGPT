@@ -668,6 +668,7 @@
         "removeCrawled": "Procede del rastreo de {{host}}. Se eliminan sus fragmentos y las próximas sincronizaciones la omiten. Puedes restaurarla en los Ajustes de la fuente.",
         "removeGeneric": "Se eliminan sus fragmentos y las próximas sincronizaciones no vuelven a obtenerla.",
         "removeFolder": "Se eliminan los fragmentos de sus páginas y las próximas sincronizaciones omiten todas las direcciones bajo {{address}}.",
+        "removeFolderGeneric": "Se eliminan los fragmentos de sus páginas y las próximas sincronizaciones no vuelven a obtenerlas.",
         "remove": "Quitar",
         "removeAndSkip": "Quitar y omitir",
         "removeFailed": "No se pudo quitar.",

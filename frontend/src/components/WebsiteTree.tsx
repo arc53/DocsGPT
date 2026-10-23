@@ -165,8 +165,11 @@ type PendingRemoval = {
   isFile: boolean;
   /** A page's keys (see {@link pageKeysOf}); none for a folder. */
   keys: string[];
-  /** The page's host, or the folder's address. */
-  where: string;
+  /**
+   * The page's host, or the folder's address; null for a page (or a folder
+   * of pages) without an address, from before pages kept theirs.
+   */
+  where: string | null;
 };
 
 /**
@@ -380,7 +383,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         path,
         isFile,
         keys: [],
-        where: folderAddress(structure, path) ?? path,
+        where: folderAddress(structure, path),
       });
       return;
     }
@@ -391,20 +394,20 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       path,
       isFile,
       keys: pageKeysOf(node),
-      where: hostOf(url),
+      where: hostOf(url) || null,
     });
   };
 
   /**
    * Where a page to remove came from, decided as the dialog draws, so the
    * copy follows the source's list once it loads: `unknown` until then (and
-   * when it can't be read).
+   * when it can't be read, or the page has no address to tell by).
    */
   const removalKind = (
     pending: PendingRemoval,
-  ): 'entry' | 'crawled' | 'folder' | 'unknown' => {
-    if (!pending.isFile) return 'folder';
-    if (!pageEntries) return 'unknown';
+  ): 'entry' | 'crawled' | 'folder' | 'unknownFolder' | 'unknown' => {
+    if (!pending.isFile) return pending.where ? 'folder' : 'unknownFolder';
+    if (!pageEntries || !pending.where) return 'unknown';
     return pending.keys.some((key) => pageEntries.has(key))
       ? 'entry'
       : 'crawled';
@@ -543,6 +546,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     // Not known yet where it came from: only what holds either way.
     if (kind === 'unknown')
       return { description: tr('removeGeneric'), submit: tr('remove') };
+    if (kind === 'unknownFolder')
+      return { description: tr('removeFolderGeneric'), submit: tr('remove') };
     if (kind === 'folder')
       return {
         description: tr('removeFolder', {
