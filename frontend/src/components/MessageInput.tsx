@@ -617,7 +617,12 @@ export default function MessageInput({
           }),
         );
       };
-      const onIdle = () => fail('no progress from the worker');
+      const onIdle = () => {
+        // While the stream is down silence proves nothing: the status poll
+        // decides, and the window starts again when the stream is back.
+        if (streamDownPoll !== undefined) return;
+        fail('no progress from the worker');
+      };
       const onQueueCheck = async () => {
         if (handled || started) return;
         const task = taskId
@@ -673,6 +678,7 @@ export default function MessageInput({
         } else if (!down && streamDownPoll !== undefined) {
           window.clearInterval(streamDownPoll);
           streamDownPoll = undefined;
+          if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
         }
       };
       if (started) arm(ATTACHMENT_IDLE_MS, onIdle);

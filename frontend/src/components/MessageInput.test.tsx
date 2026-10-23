@@ -666,6 +666,36 @@ describe('MessageInput send with a failed attachment', () => {
     expect(statusOf()).toBe('processing');
   });
 
+  it('does not fail a file on silence while neither channel can answer', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    // One answer that a worker has the file, then the status is unreachable
+    // too (the browser is offline).
+    const getTaskStatus = taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    getTaskStatus.mockRejectedValue(new TypeError('Failed to fetch'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+    });
+    expect(statusOf()).toBe('processing');
+
+    // Back online with nothing to hear: the idle window starts again.
+    await act(async () => {
+      store.dispatch(sseHealthChanged('healthy'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000 - 1_000);
+    });
+    expect(statusOf()).toBe('processing');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(statusOf()).toBe('failed');
+  });
+
   it('stops asking once the event stream is back', async () => {
     vi.useFakeTimers();
     store.dispatch(sseHealthChanged('unhealthy'));
