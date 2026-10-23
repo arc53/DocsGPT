@@ -59,6 +59,11 @@ class CrawlerLoader(BaseRemote):
         site = (start.scheme, start.hostname)
         urls_to_visit = [url]
         loaded_content = []
+        # The start page is fetched for its links even when the scope leaves
+        # it out (starting at / with Stay under /docs, or a skipped start
+        # page); only its content is dropped.
+        seed_key = normalize_page_url(url)
+        keep_seed = self.accept is None or self.accept(url)
 
         while urls_to_visit:
             # Checked before each fetch, so failed and non-page fetches count
@@ -87,7 +92,8 @@ class CrawlerLoader(BaseRemote):
                     # Not a page (a PDF or image the site links to): no text
                     # to keep and no links to follow.
                     continue
-                loaded_content.append(document)
+                if keep_seed or page_key != seed_key:
+                    loaded_content.append(document)
                 if not is_html(content_type):
                     # Plain text or Markdown: kept, but its "links" are text.
                     continue

@@ -122,6 +122,28 @@ def page_key(url: str) -> str:
     return f"{key}?{parts.query}" if parts.query else key
 
 
+def _in_section(key: str, section: str) -> bool:
+    """Whether a page key falls under a section rule's key.
+
+    A section is the folder of the same name in the file tree, so it holds
+    the pages below its path. A path section's own page sits beside the
+    folder (``/Deploying`` is ``Deploying.md``) and stays; a host section
+    (``https://host/*``, a removed host folder) also holds the host's root
+    page, ``host/index.md``, with or without a query.
+
+    Args:
+        key: A candidate page's ``page_key``.
+        section: The rule's ``page_key``, without the ``*``.
+
+    Returns:
+        True when the rule covers the page.
+    """
+    if key.startswith(section + "/"):
+        return True
+    host_only = "/" not in section and "?" not in section
+    return host_only and (key == section or key.startswith(section + "?"))
+
+
 class SiteScope:
     """Which addresses a whole-site entry may reach."""
 
@@ -184,7 +206,7 @@ class SiteScope:
                 return False
         if key in self.skip_pages:
             return False
-        return not any(key.startswith(section + "/") for section in self.skip_sections)
+        return not any(_in_section(key, section) for section in self.skip_sections)
 
 
 def _fetch(url: str, max_bytes: int, budget: Optional[FetchBudget] = None) -> Optional[requests.Response]:

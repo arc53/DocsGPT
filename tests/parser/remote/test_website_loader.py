@@ -132,7 +132,21 @@ class TestSiteScope:
         assert not scope.accepts("https://docs.example.com/changelog#v2")
         assert not scope.accepts("https://docs.example.com/Deploying/Kubernetes")
         assert scope.accepts("https://docs.example.com/changelogs")
+        # The section's own page sits beside its folder (Deploying.md), so
+        # removing the folder leaves it.
         assert scope.accepts("https://docs.example.com/Deploying")
+
+    def test_a_host_folder_rule_covers_the_host_root_page(self):
+        # A removed host folder in a multi-host source holds host/index.md.
+        scope = SiteScope("https://a.io/", skip=["https://b.io/*"], include_subdomains=False)
+        wide = SiteScope("https://a.io/", skip=["https://www.a.io/*"])
+
+        assert not wide.accepts("https://a.io/")
+        assert not wide.accepts("https://a.io")
+        assert not wide.accepts("https://a.io/?lang=de")
+        assert not wide.accepts("https://a.io/docs")
+        assert scope.accepts("https://a.io/")
+        assert not SiteScope("https://b.io/", skip=["https://b.io/*"]).accepts("https://b.io/")
 
 
 class TestDiscoverSitemaps:
@@ -274,6 +288,31 @@ class TestWebsiteLoaderSites:
         })
 
         assert sorted(sources(docs)) == ["https://x.io/docs/", "https://x.io/docs/a"]
+
+    def test_an_out_of_scope_start_page_is_followed_but_not_kept(self, web):
+        fake = web({
+            "https://x.io/": page("Home", links=["/docs/a", "/blog/b"]),
+            "https://x.io/docs/a": page("A"),
+            "https://x.io/blog/b": page("B"),
+        })
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "discovery": "links", "path_prefix": "/docs"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/docs/a"]
+        assert "https://x.io/" in fake.fetched
+
+    def test_a_skipped_start_page_is_not_reimported(self, web):
+        web({
+            "https://x.io/": page("Home", links=["/a"]),
+            "https://x.io/a": page("A"),
+        })
+        docs = WebsiteLoader().load_data({
+            "entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}],
+            "skip": ["https://x.io/"],
+        })
+
+        assert sources(docs) == ["https://x.io/a"]
 
     def test_page_limit_is_clamped_to_the_admin_cap(self, web):
         links = [f"/p{i}" for i in range(10)]
