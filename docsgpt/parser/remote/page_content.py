@@ -286,11 +286,60 @@ def extract_page(html: Union[str, bytes], url: str, keep_links: bool = False) ->
     return PageContent(text=markdown, title=title or None, language=language)
 
 
-def _is_html(content_type: Optional[str]) -> bool:
+# Text a page address may serve instead of HTML (llms.txt, a raw README), kept
+# as written. JSON counts only for a page added by address: there it was asked
+# for, while a crawl or sitemap reaching JSON has hit an API or a feed.
+_PLAIN_TEXT_TYPES = ("text/plain", "text/markdown", "text/x-markdown")
+_ATX_TITLE = re.compile(r"^#\s+(.+?)\s*#*\s*$", re.MULTILINE)
+
+
+def _media_type(content_type: Optional[str]) -> str:
+    """The bare, lower-case media type of a ``Content-Type`` header."""
+    return (content_type or "").split(";")[0].strip().lower()
+
+
+def is_html(content_type: Optional[str]) -> bool:
+    """Whether a response is an HTML page (and so may hold links to follow).
+
+    Args:
+        content_type: The response's ``Content-Type``; ``None`` is taken as HTML.
+
+    Returns:
+        True for HTML and XHTML.
+    """
     if not content_type:
         return True
-    media = content_type.split(";")[0].strip().lower()
+    media = _media_type(content_type)
     return media in ("text/html", "application/xhtml+xml") or media.endswith("+html")
+
+
+def _is_plain_text(content_type: Optional[str], explicit: bool) -> bool:
+    """Whether a non-HTML response is text to keep as written."""
+    media = _media_type(content_type)
+    if media in _PLAIN_TEXT_TYPES:
+        return True
+    return explicit and (media == "application/json" or media.endswith("+json"))
+
+
+def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str) -> str:
+    """Size-cap and decode a plain-text body by its declared charset (UTF-8 otherwise).
+
+    Args:
+        body: The response body.
+        content_type: The ``Content-Type``, for its ``charset``.
+        url: The address, for the size warning.
+
+    Returns:
+        The text, cut at ``MARKUP_MAX_BYTES`` on a line boundary.
+    """
+    if isinstance(body, str):
+        body = body.encode("utf-8")
+    body = cap_markup_bytes(body, int(settings.MARKUP_MAX_BYTES), url)
+    match = re.search(r"charset\s*=\s*\"?([\w.:-]+)", content_type or "", re.IGNORECASE)
+    try:
+        return body.decode(match.group(1) if match else "utf-8", errors="replace")
+    except LookupError:
+        return body.decode("utf-8", errors="replace")
 
 
 def page_document(
@@ -299,6 +348,7 @@ def page_document(
     url: str,
     include_host: bool = False,
     keep_links: bool = False,
+    explicit: bool = False,
 ) -> Optional[Document]:
     """Build the ingest ``Document`` for a fetched page.
 
@@ -308,14 +358,28 @@ def page_document(
         url: The page's address, stored as ``source``.
         include_host: Prefix the host in ``file_path`` (an ingest spanning hosts).
         keep_links: Keep the URL of links inside sentences.
+        explicit: The page was added by its address, not found by a crawl or
+            sitemap; JSON is then kept as text too.
 
     Returns:
-        The document, or ``None`` for a non-HTML response (a PDF or image a
-        sitemap or crawl reached) or a page with no text.
+        The document, or ``None`` for a binary response (a PDF or image a
+        sitemap or crawl reached) or a page with no text. Plain text and
+        Markdown are kept as written, titled by their first ``#`` heading.
     """
-    if not _is_html(content_type):
-        logger.info(f"Skipping {url}: {content_type} is not a web page")
-        return None
+    if not is_html(content_type):
+        if not _is_plain_text(content_type, explicit):
+            logger.info(f"Skipping {url}: {content_type} is not a web page")
+            return None
+        text = _decode_text(body, content_type, url).strip()
+        if not text:
+            logger.info(f"Skipping {url}: no text")
+            return None
+        metadata = {"source": url}
+        heading = _ATX_TITLE.search(text)
+        if heading and _media_type(content_type) in _PLAIN_TEXT_TYPES:
+            metadata["title"] = heading.group(1)
+        metadata["file_path"] = url_to_virtual_path(url, include_host)
+        return Document(text, extra_info=metadata)
     page = extract_page(body, url, keep_links=keep_links)
     if not page.text.strip():
         logger.info(f"Skipping {url}: no text")

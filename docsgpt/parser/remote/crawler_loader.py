@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, normalize_page_url, url_to_virtual_path
-from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, page_document
+from docsgpt.parser.remote.page_content import FetchBudget, fetch_page, is_html, page_document
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 
@@ -81,15 +81,16 @@ class CrawlerLoader(BaseRemote):
                 response = fetch_page(current_url, timeout=30)
                 response.raise_for_status()
                 body = response.content
-                document = page_document(
-                    body, response.headers.get("Content-Type"), current_url,
-                    keep_links=self.keep_links,
-                )
+                content_type = response.headers.get("Content-Type")
+                document = page_document(body, content_type, current_url, keep_links=self.keep_links)
                 if document is None:
                     # Not a page (a PDF or image the site links to): no text
                     # to keep and no links to follow.
                     continue
                 loaded_content.append(document)
+                if not is_html(content_type):
+                    # Plain text or Markdown: kept, but its "links" are text.
+                    continue
                 soup = BeautifulSoup(body, "html.parser")
             except Exception as e:
                 logging.error(f"Error processing URL {current_url}: {e}", exc_info=True)

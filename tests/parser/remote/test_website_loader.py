@@ -477,6 +477,35 @@ class TestWebsiteLoaderLenientRead:
         assert len(docs) == 3
 
 
+class TestPlainTextPages:
+    def test_a_plain_text_page_entry_ingests(self, web):
+        web({
+            "https://x.io/llms.txt": ("text/plain; charset=utf-8", "# X\n\nX is a product.\n"),
+            "https://x.io/api.json": ("application/json", '{"version": 2}'),
+        })
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/llms.txt", "mode": "page"},
+            {"url": "https://x.io/api.json", "mode": "page"},
+        ]})
+
+        assert sources(docs) == ["https://x.io/llms.txt", "https://x.io/api.json"]
+        assert docs[0].text == "# X\n\nX is a product."
+
+    def test_a_crawl_keeps_plain_text_but_follows_no_links_from_it(self, web):
+        fake = web({
+            "https://x.io/": page("Home", links=["/notes.md", "/data.json"]),
+            "https://x.io/notes.md": ("text/markdown", "# Notes\n\n<a href='/hidden'>hidden</a> and [x](/other)\n"),
+            "https://x.io/data.json": ("application/json", '{"a": 1}'),
+            "https://x.io/hidden": page("Hidden"),
+            "https://x.io/other": page("Other"),
+        })
+        docs = WebsiteLoader().load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]})
+
+        assert sorted(sources(docs)) == ["https://x.io/", "https://x.io/notes.md"]
+        assert "https://x.io/hidden" not in fake.fetched
+        assert "https://x.io/other" not in fake.fetched
+
+
 class TestBoundedFetching:
     def test_a_page_is_read_only_up_to_the_markup_cap(self, web):
         filler = "<p>" + "word " * 200 + "</p>"

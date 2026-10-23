@@ -68,6 +68,8 @@ class WebLoader(BaseRemote):
                     url,
                     include_host=include_host,
                     keep_links=self.keep_links,
+                    # Each address was asked for: JSON there is wanted text.
+                    explicit=True,
                 )
                 if document is not None:
                     documents.append(document)

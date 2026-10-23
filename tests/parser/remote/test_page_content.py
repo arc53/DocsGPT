@@ -1,6 +1,9 @@
 """Tests for the shared web page extractor (main content → Markdown)."""
 
 import re
+from unittest.mock import patch
+
+import pytest
 
 from docsgpt.parser.remote.page_content import extract_page, page_document
 
@@ -182,3 +185,39 @@ class TestPageDocument:
         doc = page_document(_page(f"<main>{ARTICLE}</main>"), None, URL)
 
         assert doc is not None
+
+    @pytest.mark.parametrize("content_type", ["text/plain; charset=utf-8", "text/markdown", "text/x-markdown"])
+    def test_plain_text_and_markdown_are_kept_as_written(self, content_type):
+        # llms.txt, a raw README: on main the url loader took any response's text.
+        body = "# Example docs\n\n> Read this first.\n\n- [Setup](https://x.io/setup): install <b>it</b>\n"
+        doc = page_document(body.encode(), content_type, "https://x.io/llms.txt")
+
+        assert doc is not None
+        assert doc.text == body.strip()
+        assert doc.extra_info["source"] == "https://x.io/llms.txt"
+        assert doc.extra_info["title"] == "Example docs"
+        assert doc.extra_info["file_path"]
+
+    def test_plain_text_uses_the_declared_charset(self):
+        doc = page_document("Grüße aus Köln".encode("latin-1"), "text/plain; charset=latin-1", URL)
+
+        assert doc.text == "Grüße aus Köln"
+        assert "title" not in doc.extra_info
+
+    def test_plain_text_is_capped_at_the_markup_limit(self):
+        body = ("line of text\n" * 100).encode()
+        with patch("docsgpt.parser.remote.page_content.settings") as fake_settings:
+            fake_settings.MARKUP_MAX_BYTES = 130
+            doc = page_document(body, "text/plain", URL)
+
+        assert len(doc.text.encode()) <= 130
+
+    def test_empty_plain_text_is_skipped(self):
+        assert page_document(b"  \n", "text/plain", URL) is None
+
+    def test_json_is_text_only_when_the_page_was_asked_for(self):
+        body = b'{"name": "example", "version": 2}'
+
+        assert page_document(body, "application/json", URL) is None
+        doc = page_document(body, "application/json", URL, explicit=True)
+        assert doc.text == body.decode()
